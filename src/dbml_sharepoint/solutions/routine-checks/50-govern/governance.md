@@ -57,7 +57,7 @@ this template has misread it.
   an Action taken (the list now enforces that, so the review is about
   whether the action was *right*), and then the **Escalated** view,
   every one of those reached its escalation point and somebody closed it.
-- **Monthly**: completeness rate per checkpoint (entries ÷ expected), read
+- **Monthly**: completeness rate per checkpoint (entries / expected), read
   from **By checkpoint**. Chronic gaps are a rostering/design
   conversation, and a checkpoint nobody can sustain gets redesigned, not
   ignored.

@@ -66,7 +66,7 @@ A SharePoint list never replaces a mandated system:
 | Research & QI projects sent to a partner HREC | research-ethics-register-simple | The single-list register for a service referring to a partner's HREC; a service with its own research office wants the multi-list shape instead. Two separate gates (ethics approval and site authorisation) on one row |
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
 | Corporate risk tiers | risk-register | See boundary 2 |
-| Everything else | the general library | Assets, contracts, onboarding, training, service requests… |
+| Everything else | the general library | Assets, contracts, onboarding, training, service requests... |
 
 ## A pragmatic first-90-days sequence
 
@@ -74,7 +74,7 @@ A SharePoint list never replaces a mandated system:
    committees; routine-checks for the vaccine fridges.
 2. **Month 1, the compliance spine**: credentialing-register load;
    equipment-maintenance schedule load; volunteer-register load.
-3. **Month 2–3, the improvement engine**: process-register inventory
+3. **Month 2-3, the improvement engine**: process-register inventory
    workshops; compliance-obligations one-standard slice;
    improvement-register opened and fed.
 4. **Then**: let the process-register worklist drive what gets digitised

@@ -26,7 +26,7 @@ redeploy puts the declared name back.
 
 ## Adding a contract (2 minutes)
 
-1. Open the **CT_Contract** list → **New**.
+1. Open the **CT_Contract** list -> **New**.
 2. **The contract**: **Title** is the name people actually use ("Office
    cleaning: Sparkle Ltd"), plus **Counterparty**, **Contract Ref** if you
    use one, **Contract Type** and a two-sentence **Summary**.
@@ -44,9 +44,9 @@ redeploy puts the declared name back.
 
 ## Keeping it honest
 
-- When a contract enters renewal talks → set Status **In renewal**. It
+- When a contract enters renewal talks -> set Status **In renewal**. It
   turns amber: someone is holding a decision.
-- When it ends → **Exited** (don't delete; history is the point). The end
+- When it ends -> **Exited** (don't delete; history is the point). The end
   date stops showing red the moment you do. That colour is for live
   contracts only.
 - Changed dates on renewal? Update Start/End. The term recalculates.

@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = complaints-feedback`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -91,7 +91,7 @@ site that already holds real feedback.
       - Recorder: can submit, cannot edit after saving;
       - Handler: can triage and edit.
 - [ ] Received `2026-07-01`, Acknowledged `2026-07-03`, Closed `2026-07-15`
-      → **Days To Acknowledge = 2**, **Days To Close = 14**. Both draw as
+      -> **Days To Acknowledge = 2**, **Days To Close = 14**. Both draw as
       bars, and both take their **colour from Severity** rather than from
       their own value: two days is green on a Standard item and red on a
       Critical one, which is the point.
@@ -123,7 +123,7 @@ site that already holds real feedback.
       - The acknowledgement **timeframe**. Days To Acknowledge is a
         calculated column, and validation formulas cannot read those
         either. The SLA is a review, not a refusal.
-- [ ] List Settings → Indexed columns shows `Status`, `FeedbackType`,
+- [ ] List Settings -> Indexed columns shows `Status`, `FeedbackType`,
       `Severity` and `ReceivedDate`.
 - [ ] Populate both working groups; delete the test row (as Handler).
 - [ ] Even as an owner: changing a deployed column's type, choices or

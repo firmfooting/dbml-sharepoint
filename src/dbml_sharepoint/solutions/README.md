@@ -18,17 +18,17 @@ ones, measure what matters, and close the loop.
 
 | Template | Process | Highlights |
 | --- | --- | --- |
-| [process-register](process-register/) | Business-process inventory | The digitisation backbone: calculated digitisation-priority score (criticality × pain) |
-| [improvement-register](improvement-register/) | Continuous improvement log | Idea → test → adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
+| [process-register](process-register/) | Business-process inventory | The digitisation backbone: calculated digitisation-priority score (criticality x pain) |
+| [improvement-register](improvement-register/) | Continuous improvement log | Idea -> test -> adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
 | [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline, making "improved" provable |
-| [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture → existing-system routing → selective assessment and hand-off |
-| [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit×feasibility priority score; gate + graveyard discipline |
+| [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture -> existing-system routing -> selective assessment and hand-off |
+| [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit x feasibility priority score; gate + graveyard discipline |
 | [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
 
 **The digitisation journey, using this theme:** inventory processes and
-score the pain (*process-register*) → deploy quick-win templates or build
-your own schema for the worst ones → define how you'll know it worked
-(*measures-register*) → run the smaller fixes as improvement cycles
+score the pain (*process-register*) -> deploy quick-win templates or build
+your own schema for the worst ones -> define how you'll know it worked
+(*measures-register*) -> run the smaller fixes as improvement cycles
 (*improvement-register*) and the bigger ones through *project-pipeline* /
 *change-register*. When a delivery team discovers a worthwhile business
 problem outside its authority, *opportunities-register* captures it once,
@@ -39,12 +39,12 @@ hand-off into that same improvement/investment chain.
 
 | Template | Process | Highlights |
 | --- | --- | --- |
-| [risk-register](risk-register/) | Organisational risk | **Self-rating 5×5 matrix**: rating and score calculated, matrix-inconsistent entries impossible |
+| [risk-register](risk-register/) | Organisational risk | **Self-rating 5x5 matrix**: rating and score calculated, matrix-inconsistent entries impossible |
 | [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
-| [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log → dated chase trail → raised theme; how promptly the record was made is itself a column |
-| [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation → owner → evidence → review |
+| [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log -> dated chase trail -> raised theme; how promptly the record was made is itself a column |
+| [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation -> owner -> evidence -> review |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation, the lookup every other register's "per your delegations" points at |
 | [raci-matrix](raci-matrix/) | Who does what, and who answers for it | One Accountable per row, structurally; consulted parties must state their input; criticality-driven re-confirmation |
@@ -184,8 +184,8 @@ reverts and reports.
 **Notes are form text.** A column's `note:` deploys as the SharePoint column
 Description, which the modern list form shows as help text under the input at
 data-entry time, so every note is written as a plain-language hint for the
-person filling in the form ("Calculated automatically…", "Filled
-automatically: … Leave as-is."). Design rationale and mechanics live in `//`
+person filling in the form ("Calculated automatically...", "Filled
+automatically: ... Leave as-is."). Design rationale and mechanics live in `//`
 comments beside the columns, which never deploy. When you customise a
 template, keep that split: if it isn't something a staff member should read
 on the form, it belongs in a comment, not a note.
@@ -250,7 +250,7 @@ a directory the next upgrade replaces.
 2. **Read `build/deploy-manifest.md`.** It opens with step-by-step run
    instructions and must show **0 validation errors**.
 3. Open the target site's classic settings page
-   (`/_layouts/15/settings.aspx`) signed in as a **Site Owner**, press F12 →
+   (`/_layouts/15/settings.aspx`) signed in as a **Site Owner**, press F12 ->
    Console (type `allow pasting` if the browser objects), paste the whole of
    `build/deploy.js.txt`, Enter.
 4. Watch the `[SP-DEPLOY]` lines; success ends with `errors: []`. On any
@@ -344,7 +344,7 @@ them very differently:
 
 - **Display-name renames.** Detected: reverted and reported on the next
   re-paste.
-- **Hiding it from the forms** via "Edit form → Edit columns". **Not
+- **Hiding it from the forms** via "Edit form -> Edit columns". **Not
   detected and not repaired.** That toggle writes the content type's
   `FieldLink.Hidden` rather than anything on the field, so field-level
   sealing never covered it. A live probe confirmed an operator can untick

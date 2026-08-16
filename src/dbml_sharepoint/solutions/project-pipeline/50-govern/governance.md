@@ -17,7 +17,7 @@ staff/customers. Medium: clear improvement for a team or process. Low: nice.
 dependencies. Moderate: some unknowns or dependencies. Hard: novel,
 contended resources, external dependencies.
 
-Score = Benefit × Feasibility (1–9). It ranks the conversation; it doesn't
+Score = Benefit x Feasibility (1-9). It ranks the conversation; it doesn't
 end it. A strategic Hard/High (score 3) can absolutely beat a trivial
 Easy/Medium (6). The gate's job is to overrule the score *out loud*.
 

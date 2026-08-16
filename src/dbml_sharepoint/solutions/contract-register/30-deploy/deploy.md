@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = contract-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -16,7 +16,7 @@ against the checklist below. Template-specific notes follow.
       colour-mapped in `mapping.yaml`, so a renamed member also silently
       loses its colour.
 - [ ] **Decide your expiry horizon before first deploy.** The
-      *Expiring 90 days* view filters `EndDate ≤ today+90`. If your renewal
+      *Expiring 90 days* view filters `EndDate <= today+90`. If your renewal
       governance runs on a different cadence, change the `today+90` in
       `mapping.yaml` now. A view title and a filter that disagree is worse
       than either.
@@ -78,10 +78,10 @@ site that already holds real contracts.
       predicate, so a quarter-boundary reading has to come from your own
       reporting; the two differ on the first day of a quarter and anyone
       reconciling a procurement pack will notice.
-- [ ] List Settings → Indexed columns shows `Status`, `EndDate` and
+- [ ] List Settings -> Indexed columns shows `Status`, `EndDate` and
       `ContractType`. The build manifest lists the same three under
       **indexed columns**.
-- [ ] Create a test row with StartDate `2026-01-01`, EndDate `2027-06-30` →
+- [ ] Create a test row with StartDate `2026-01-01`, EndDate `2027-06-30` ->
       **Term (months) shows 17** automatically, as a data bar against a
       five-year scale.
 - [ ] `ContractRef` rejects a duplicate value (unique constraint).
@@ -114,7 +114,7 @@ site that already holds real contracts.
       the escalation is suppressed. Set a test row to Exited and confirm
       the colour drops.
 - [ ] As an ordinary site Member: the list is **read-only**.
-- [ ] Site permissions → Groups: `CT Contract Managers` (empty, now add
+- [ ] Site permissions -> Groups: `CT Contract Managers` (empty, now add
       your contract managers) and `dbml List Administrators` (empty, leave
       it empty; the deploy script self-enrols per run).
 - [ ] Delete the test row (as a Contract Manager).

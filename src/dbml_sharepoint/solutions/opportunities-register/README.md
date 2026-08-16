@@ -75,9 +75,9 @@ pack. That is the main defence against governance tax.
 
 Only `Assess here` continues through:
 
-`Assessing` → `Awaiting decision` → one of:
+`Assessing` -> `Awaiting decision` -> one of:
 
-- `Accepted` → `Transferred` after an existing destination accepts it;
+- `Accepted` -> `Transferred` after an existing destination accepts it;
 - `Parked` with a real review date and trigger;
 - `Not proceeding` with a short rationale.
 
@@ -88,7 +88,7 @@ and the other says why it took that path. Stewards keep the pair coherent.
 
 Routine assessment uses:
 
-`Priority Score = Benefit Potential × Time Criticality`
+`Priority Score = Benefit Potential x Time Criticality`
 
 | Input | 1 | 2 | 3 | 4 |
 | --- | ---: | ---: | ---: | ---: |
@@ -97,10 +97,10 @@ Routine assessment uses:
 
 | Score | Conversation cue |
 | ---: | --- |
-| 1–4 | Routine |
-| 5–8 | Consider |
-| 9–12 | Prioritise |
-| 13–16 | Prompt decision |
+| 1-4 | Routine |
+| 5-8 | Consider |
+| 9-12 | Prioritise |
+| 13-16 | Prompt decision |
 
 This is not a risk or safety instrument. Selecting an existing safety/risk,
 equity, service-continuity, executive or statutory override blanks the number
@@ -111,7 +111,7 @@ framework then determines urgency.
 
 | Moment | Design target | Control |
 | --- | --- | --- |
-| Submit | About 60–90 seconds | Four facts + stop gate; links optional |
+| Submit | About 60-90 seconds | Four facts + stop gate; links optional |
 | Triage | Most records in under 3 minutes | Redirect, hand off, duplicate or close without assessment |
 | Assess | Only where a real choice remains | Coarse value/time/effort; link detailed evidence |
 | Decide | Existing authority, usually asynchronously | Only material or contested decisions reach a forum |

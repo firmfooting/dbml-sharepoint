@@ -139,7 +139,7 @@ supporting events under the theme they belong to.
 | Role | Who | Responsibility |
 | --- | --- | --- |
 | Register owner | One named person | Owns the categories logged, the denominator, and what is raised. Answers for the register's fairness. |
-| Curators | 2–4 people | Review the queue, accept or reject events, assemble and own themes. The only people who can see `ServiceIssue`. |
+| Curators | 2-4 people | Review the queue, accept or reject events, assemble and own themes. The only people who can see `ServiceIssue`. |
 | Contributors | Named staff | Log events and follow-ups. Cannot edit after saving, which is what makes the record worth having. |
 | List administrators | Empty by default | Schema changes and redeploys, per run. |
 

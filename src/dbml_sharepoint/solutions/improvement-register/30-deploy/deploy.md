@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = improvement-register`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's console
-→ **verify** against the checklist below. Template-specific notes follow.
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console
+-> **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
 
@@ -65,7 +65,7 @@ site that already holds real improvements.
       modern view bar because this template has an authored default.
 - [ ] **"Adopted this quarter" is a rolling ninety days, not a calendar
       quarter.** CAML has no calendar-quarter predicate, so the view filters
-      `AdoptedDate ≥ today-90`. The two differ on the first day of a
+      `AdoptedDate >= today-90`. The two differ on the first day of a
       quarter, and someone reconciling the quarterly slide against a
       committee pack will notice. This is the substitution, stated. If you
       need calendar quarters exactly, export and pivot rather than trusting
@@ -83,14 +83,14 @@ site that already holds real improvements.
 - [ ] **By source** is unfiltered on purpose: the quarterly question is
       whether the loops are real, and that is the size of each group across
       the whole register.
-- [ ] Raised `2026-07-01` + Adopted `2026-08-15` →
+- [ ] Raised `2026-07-01` + Adopted `2026-08-15` ->
       **DaysIdeaToOutcome = 45**, rendered as a bar a quarter of the way
       across. On the seeded build the 240-day cycle pins at full width.
 - [ ] The bar is **not** coloured by stage. That is deliberate: the fleet
       rule takes a bar's fill from the rating column beside it, and nothing
       beside this one is a rating. Colouring it from Stage would repeat the
       Stage chip two columns away and say nothing about the number.
-- [ ] List Settings → Indexed columns shows `Stage`, `Source`, `Owner` and
+- [ ] List Settings -> Indexed columns shows `Stage`, `Source`, `Owner` and
       `RaisedDate`. The build manifest lists the same four.
 - [ ] The New form shows **The idea**, **Plan the test** and **Test and
       outcome**, each holding the fields named in

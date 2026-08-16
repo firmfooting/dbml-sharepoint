@@ -5,7 +5,7 @@
 Had a meeting, call or meaningful email exchange with an external contact?
 Before you move on:
 
-1. **SC_Interaction** → **New**. The form is three sections and they run
+1. **SC_Interaction** -> **New**. The form is three sections and they run
    in that order.
 2. *What happened*: a **Title** that a colleague could skim (for example,
    "Quarterly review: funding timeline discussed"), the **Contact** (add
@@ -30,7 +30,7 @@ one is everything.
   is where the quarterly check finds it; do not let yours be the one that
   sits there.
 - New person: **SC_Contact**: name, organisation, role, work email/phone.
-  **Professional facts only** in Notes ("prefers phone", "works Tuesdays–
+  **Professional facts only** in Notes ("prefers phone", "works Tuesdays to
   Thursdays"), never opinions or personal details; they'd be visible to
   the whole team and possibly to the contact themselves under privacy law.
   The form header says exactly that, every time it opens, because that is

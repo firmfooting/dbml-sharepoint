@@ -6,7 +6,7 @@ If something went wrong (safety, security, systems, facilities, a process
 failure), report it. You don't decide whether it's "serious enough"; that's
 what triage is for.
 
-1. Open **IN_Incident** → **New**.
+1. Open **IN_Incident** -> **New**.
 2. **What happened**: **Title**, one plain line: "Ladder left blocking
    fire exit, Store B". **Category**; pick the closest. **Occurred date**
    if it happened earlier than today, **Reported date** = today. Then
@@ -30,13 +30,13 @@ whole row pink; that is the only row-level signal on the list, and it is
 reserved for exactly that.
 
 1. **Triage queue** daily: set `Severity` properly, set `Handler` to
-   yourself, Status → **Triaged**.
-2. Work it: Status → **In progress**. Record what you learn in Detail
+   yourself, Status -> **Triaged**.
+2. Work it: Status -> **In progress**. Record what you learn in Detail
    (append, don't overwrite the reporter's words).
 3. Fix the cause, not just the symptom: create **Corrective actions**
    linked to the incident, each with **one named person** and a due date.
    An action assigned to a team is an action assigned to nobody.
-4. When the situation is resolved: Status → **Resolved**, and **Resolved
+4. When the situation is resolved: Status -> **Resolved**, and **Resolved
    Date** appears. The list will not save without it. Days-to-resolve
    calculates itself and draws a bar coloured by the incident's severity,
    so eight days reads differently on a Minor and on a Critical.

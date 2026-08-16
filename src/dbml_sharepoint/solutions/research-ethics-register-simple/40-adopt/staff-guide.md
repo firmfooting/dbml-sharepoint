@@ -71,7 +71,7 @@ is what keeps it usable in year ten. Nothing is deleted; it moves to
 
 ## Adding a project (3 minutes)
 
-1. Open the **RG_Project** list → **New**.
+1. Open the **RG_Project** list -> **New**.
 2. **The project**: the **Title** worded as the ethics application words it,
    **Project Type**, **Department**, and the **Principal Investigator** named
    as the application names them (they are often at the partner site, which

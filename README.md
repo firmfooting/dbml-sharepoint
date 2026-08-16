@@ -9,15 +9,15 @@ deploy.
 
 ```text
 schema.dbml + mapping.yaml + release.yaml
-        │
-        ▼   dbml-sharepoint build
-┌──────────────────────────────┐
-│ deploy-manifest.md  ← read   │
-│ deploy.js.txt           ← paste  │
-│ rollback.js.txt         ← escape │
-└──────────────────────────────┘
-        │
-        ▼   paste into the site's browser console (F12)
+        |
+        v   dbml-sharepoint build
++--------------------------------+
+| deploy-manifest.md   <- read   |
+| deploy.js.txt        <- paste  |
+| rollback.js.txt      <- escape |
++--------------------------------+
+        |
+        v   paste into the site's browser console (F12)
    SharePoint Online lists, ready to use
 ```
 
@@ -111,7 +111,7 @@ Then:
 2. Open `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
    (a classic page; the script's wrong-site guard needs `_spPageContextInfo`)
    signed in as a Site Owner.
-3. F12 → Console → paste the whole of `build/deploy.js.txt` → Enter.
+3. F12 -> Console -> paste the whole of `build/deploy.js.txt` -> Enter.
 4. Watch the `[SP-DEPLOY]` lines; success ends with a summary and `errors: []`.
 
 > The pasteable scripts end in **`.js.txt`**, not `.js`. They exist to be
@@ -125,7 +125,7 @@ Then:
 
 | File | Owns |
 | --- | --- |
-| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), indexes, notes (→ column descriptions) |
+| `schema.dbml` | Tables, columns, types, enums (-> Choice), refs (-> Lookup), indexes, notes (-> column descriptions) |
 | `mapping.yaml` | List prefix, entity kind/template/site-role, views, versioning, calculated-column formulas, permission levels, groups, per-list ACLs |
 | `release.yaml` | Release tag + schema version stamped into every artefact for provenance |
 
@@ -218,10 +218,10 @@ spine sits at the package root:
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
-| `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
-| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
-| root | `bundle` · `templating` · `cli` · `wizard` · `catalogue` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI and its interactive wizard, the extension protocol |
+| `model/` | `parser`, `mapping_loader`, `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
+| `analysis/` | `validator`, `ordering`, `typemap`, `phases`, `permissions`, `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
+| `generators/` | `jsgen`, `rollbackgen`, `assessgen`, `demogen`, `manifestgen`, `reportgen` | Each renders one artifact family from model + analysis |
+| root | `bundle`, `templating`, `cli`, `wizard`, `catalogue`, `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI and its interactive wizard, the extension protocol |
 
 The shipped solution templates live in `src/dbml_sharepoint/solutions/`,
 inside the package, because only files under it reach the wheel and the
@@ -239,7 +239,7 @@ structural rather than a promise.
 
 Conventions: underscore-prefixed names are module-private. Anything
 imported across modules is public and unprefixed. Extension CLIs
-compose `clear_generated` → validate → manifest → `emit_bundle` rather
+compose `clear_generated` -> validate -> manifest -> `emit_bundle` rather
 than re-implementing emission.
 
 Full documentation lives at

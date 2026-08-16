@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = incident-management`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -58,7 +58,7 @@ site that already holds real incidents.
 ## After the paste: verification checklist
 
 - [ ] `IN_Incident` and `IN_CorrectiveAction` exist; the custom permission
-      level **IN Report Only** exists (Site settings → Site permissions →
+      level **IN Report Only** exists (Site settings -> Site permissions ->
       Permission levels).
 - [ ] `IN_Incident` has **Open by severity** (the default), **Triage
       queue** and **Resolved last 90 days**. `IN_CorrectiveAction` has
@@ -85,7 +85,7 @@ site that already holds real incidents.
 - [ ] An open **Critical** incident washes the whole row dusty rose in
       **Open by severity**. That is the one row-level signal this list
       declares, and the reason it reads is that nothing competes with it.
-- [ ] Set ReportedDate `2026-07-01`, ResolvedDate `2026-07-08` →
+- [ ] Set ReportedDate `2026-07-01`, ResolvedDate `2026-07-08` ->
       **Days To Resolve = 7**, drawn as a bar against a 30-day scale and
       coloured from that incident's **Severity**, not from its own value.
 - [ ] A corrective action past its **Due Date** shows red with a warning

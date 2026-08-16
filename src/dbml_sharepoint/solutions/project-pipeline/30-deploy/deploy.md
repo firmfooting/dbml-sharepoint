@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = project-pipeline`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -80,16 +80,16 @@ site that already holds real proposals.
       get one. `Decision notes` is on it, because an unannotated graveyard
       is a list of dates.
 - [ ] Score spot-checks on a test proposal:
-      - Benefit High + Feasibility Easy → **PriorityScore = 9**
-      - Benefit Medium + Feasibility Moderate → **4**
-      - Benefit Low + Feasibility Hard → **1**
-      - Clear Benefit → score goes **blank** (unscored is visible), and
+      - Benefit High + Feasibility Easy -> **PriorityScore = 9**
+      - Benefit Medium + Feasibility Moderate -> **4**
+      - Benefit Low + Feasibility Hard -> **1**
+      - Clear Benefit -> score goes **blank** (unscored is visible), and
         the bar disappears rather than rendering at zero length.
 - [ ] The score bar's fill comes from `Benefit`, not from the score: a
       High-benefit proposal is green whatever its feasibility drags the
       number down to. That is the fleet pattern. The bar and the band
       column beside it cannot disagree, because they read the same map.
-- [ ] List Settings → Indexed columns shows `Stage` and `ProposedDate`.
+- [ ] List Settings -> Indexed columns shows `Stage` and `ProposedDate`.
       The build manifest lists the same two. SharePoint cannot index the
       calculated `PriorityScore`, so the two views that sort by it are not
       guaranteed to scale past the list-view threshold.

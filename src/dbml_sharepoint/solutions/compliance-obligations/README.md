@@ -10,7 +10,7 @@ compliance status, linked evidence and a review date. One list:
 **The value case.** Accreditation and audit both ask the same structured
 question: *how do you know you comply?* Organisations without an
 obligations register answer it fresh every cycle, from memory, expensively.
-With one, the answer is standing: obligation → owner → evidence → last
+With one, the answer is standing: obligation -> owner -> evidence -> last
 assessed. It also ends the quieter failure: obligations nobody owns
 (the funding-agreement clause everyone assumes someone else reads). For a
 health service this is the NSQHS/aged-care standards backbone; for anyone

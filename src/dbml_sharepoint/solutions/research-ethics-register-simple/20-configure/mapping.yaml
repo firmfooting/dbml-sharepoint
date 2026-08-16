@@ -233,7 +233,7 @@ column_formatting:
       guard: { field: ProjectStage, not: [Completed, Discontinued] }
 
 # Every lens on this list shows the same identifying columns and the same
-# gate trio before its own payload, so both are declared once (§1.9: a set
+# gate trio before its own payload, so both are declared once (section 1.9: a set
 # earns its place at three or more repetitions; `identity` is used by all six
 # views and `gates` by five).
 field_sets:
@@ -455,7 +455,7 @@ views:
 # descriptions on the Edit form. Section field lists are authored with
 # INTERNAL names; the build rewrites them to display titles.
 #
-# The body spends TWO CONSECUTIVE SECTIONS on the Act beat, which §1.2 permits
+# The body spends TWO CONSECUTIVE SECTIONS on the Act beat, which section 1.2 permits
 # and this register depends on: "Ethics decision" and "Site authorisation" are
 # two headings, two reference numbers and two sets of dates. Merging them into
 # one "Approvals" block would be the collapse the whole template exists to
@@ -588,7 +588,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
 # starts "[DEMO] ", the marker rollback.js trusts to delete demo-only lists
-# without its non-empty refusal. Dates are today±N so the rolling views land
+# without its non-empty refusal. Dates are today+/-N so the rolling views land
 # correctly on whatever day the demo runs, and "@me" is whoever pastes the
 # script.
 #

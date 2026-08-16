@@ -141,7 +141,7 @@ column_formatting:
         map: { Routine: neutral, Priority: warning, Emergency: severe }
 
 # The intake spine every lens repeats: who asked, for what, when. Five
-# views share it, above §1.9's three-repetition threshold.
+# views share it, above section 1.9's three-repetition threshold.
 field_sets:
   ChangeRequest:
     intake: [Title, ChangeType, RequestedBy, RequestedDate]
@@ -363,7 +363,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # queue and SLA surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
 # impact and urgency band renders, and the decision log holds one change

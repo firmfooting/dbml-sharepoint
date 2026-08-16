@@ -417,7 +417,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # cadence-derived surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: one risk per rating band (the Extreme one
 # drives the row wash, the red score bar, Levels Above Target 3, an OVERDUE

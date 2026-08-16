@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = vehicle-log`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -82,8 +82,8 @@ site that already holds real trips.
 - [ ] **My trips** shows only your own trips, and shows a colleague only
       theirs. It uses SharePoint's own current-user filter: one view for
       everybody, not one per driver.
-- [ ] Test trip: OdoStart `45210`, OdoEnd `45274` → **Trip km = 64**, drawn
-      as a bar against a 200 km scale. Swap them → **−64**, and in the **By
+- [ ] Test trip: OdoStart `45210`, OdoEnd `45274` -> **Trip km = 64**, drawn
+      as a bar against a 200 km scale. Swap them -> **-64**, and in the **By
       vehicle** view the whole row washes dusty rose. That wash is the one
       row-level signal this template gets, and it is on that view because
       that is where odometer continuity is read.

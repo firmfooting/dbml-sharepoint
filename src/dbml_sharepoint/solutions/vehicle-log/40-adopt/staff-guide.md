@@ -5,7 +5,7 @@ That's the whole deal, and the form is built around it.*
 
 ## Taking a car
 
-1. Scan the QR on the key tag (or open **VE_Trip** → **New**).
+1. Scan the QR on the key tag (or open **VE_Trip** -> **New**).
 2. **The trip**: pick the **vehicle**; you're the driver by default.
    **Trip type**, and **Purpose**: destination and business reason,
    "Warragul clinic, equipment delivery". This line is the
@@ -23,7 +23,7 @@ yet. It appears when you come back.
 The list opens on **Out now**: every trip with no return recorded, which
 is also the fastest way to find yours. Open it: **Odometer End** from the
 odometer, **Returned At** = now. Kilometres calculate themselves. Fuel
-added, damage spotted, warning lights → **Notes**. The next driver reads
+added, damage spotted, warning lights -> **Notes**. The next driver reads
 it, and so does the workshop.
 
 The list won't let you save a returned trip without the closing odometer.

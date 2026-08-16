@@ -151,7 +151,7 @@ column_formatting:
       map: { "Out": low, "Returned": good }
 
 # The identifying spine each list's views open with. Three of the four
-# lists have three or more views sharing one, which is §1.9's threshold;
+# lists have three or more views sharing one, which is section 1.9's threshold;
 # Key has two and names its columns directly.
 field_sets:
   CodeEvent:
@@ -249,7 +249,7 @@ views:
     # the honest substitution. 30-deploy/deploy.md says so.
     #
     # THE ROW WASH LIVES HERE, and it is this list's one row-level signal
-    # (§1.6). An Emergency message still pending relay at 2 a.m. is the
+    # (section 1.6). An Emergency message still pending relay at 2 a.m. is the
     # drop-everything row. The formatter reads [$Urgency], so Urgency must
     # stay in this view's `fields`: a view formatter can only see the
     # columns its own view displays. It compares with `==` because Urgency
@@ -394,7 +394,7 @@ views:
     # quarterly catalogue audit's working surface: pick the key, expand it,
     # read its whole history. A per-key FILTER is not buildable (SharePoint
     # has no per-parent view) and grouping is the idiom that replaces it
-    # (§2.4), one view rather than one per key.
+    # (section 2.4), one view rather than one per key.
     - title: "By key"
       fields: ["@identity", Notes]
       group_by: { field: Key, collapsed: true }

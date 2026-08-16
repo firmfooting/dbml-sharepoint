@@ -109,7 +109,7 @@ field_sets:
 views:
   Meeting:
     # A ROLLING NINETY DAYS, not "this quarter". CAML has no calendar
-    # predicate (today±N is what exists) and the two differ on the first
+    # predicate (today+/-N is what exists) and the two differ on the first
     # day of a quarter, which is exactly when someone assembling a
     # committee pack will notice. The title says "Recent" rather than
     # naming a period, so it cannot lie about which.
@@ -319,7 +319,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today±N so the
+# demo-only lists without its non-empty refusal. Dates are today+/-N so the
 # date-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
 #

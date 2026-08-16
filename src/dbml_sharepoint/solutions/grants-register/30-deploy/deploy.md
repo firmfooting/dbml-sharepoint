@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = grants-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -15,7 +15,7 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
       `mapping.yaml`, so a renamed member strands old rows *and* silently
       loses its colour.
 - [ ] **Decide your obligation horizon before first deploy.** The *Due 90
-      days* view filters `DueDate ≤ today+90`. Change the `today+90` in
+      days* view filters `DueDate <= today+90`. Change the `today+90` in
       `mapping.yaml` now if your sweep runs on a different rhythm. A view
       title and a filter that disagree is worse than either.
 - [ ] You know who forms **GR Grants Coordinators**.
@@ -79,7 +79,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       its worst state; nothing else on either list competes with it.
 - [ ] Create a test submission; add an obligation against it (the
       Submission lookup offers it; DueDate required).
-- [ ] List Settings → Indexed columns shows `Outcome`, `Funder` and
+- [ ] List Settings -> Indexed columns shows `Outcome`, `Funder` and
       `DueDate` on Submission, and `Submission`, `AcqStatus` and `DueDate`
       on Acquittal. The build manifest lists the same six.
 - [ ] The Submission New form shows **The bid**, **Submission and

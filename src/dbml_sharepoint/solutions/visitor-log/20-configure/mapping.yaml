@@ -90,10 +90,10 @@ display_names:
 # `low` treatment, and a filled cell renders as the plain local time they
 # left. Documented sp-field-severity classes only; no hexes.
 #
-# Deliberately NOT declared: a row-level wash (§1.6). The worst state here
+# Deliberately NOT declared: a row-level wash (section 1.6). The worst state here
 # is "signed in yesterday, still shown as on site", and that state already
 # has a whole view of its own; a wash would be a second signal for a
-# condition the filter has already isolated, which is the noise §1.6
+# condition the filter has already isolated, which is the noise section 1.6
 # exists to prevent.
 column_formatting:
   Visit:
@@ -251,7 +251,7 @@ column_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today±N so the
+# demo-only lists without its non-empty refusal. Dates are today+/-N so the
 # muster surfaces land correctly whenever the demo runs; "@me" is the
 # pasting operator. Coverage: three people still on site (one of them
 # signed in yesterday, which is what "Never signed out" exists for), a

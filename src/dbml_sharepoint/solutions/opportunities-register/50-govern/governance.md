@@ -73,7 +73,7 @@ retain sealed columns, exact deployment reconciliation and list-deletion
 protection. See Microsoft's [list introduction](https://support.microsoft.com/en-us/sharepoint/lists/get-started-with-sharepoint/introduction-to-lists)
 and [permission-level reference](https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels).
 
-Before real submitters are added, configure List settings → Advanced settings →
+Before real submitters are added, configure List settings -> Advanced settings ->
 Item-level Permissions so submitters read only items they created. The deployer
 cannot configure or assess this setting. The two-account isolation test in the
 deployment guide is therefore a mandatory go-live and post-change control.
@@ -144,14 +144,14 @@ business-case or change process when warranted.
 
 For routine non-clinical ordering only:
 
-`Priority Score = Benefit Potential (1–4) × Time Criticality (1–4)`
+`Priority Score = Benefit Potential (1-4) x Time Criticality (1-4)`
 
 | Score | Cue |
 | ---: | --- |
-| 1–4 | Routine |
-| 5–8 | Consider |
-| 9–12 | Prioritise |
-| 13–16 | Prompt decision |
+| 1-4 | Routine |
+| 5-8 | Consider |
+| 9-12 | Prioritise |
+| 13-16 | Prompt decision |
 
 The score does not measure clinical risk, consequence, equity, cultural safety,
 service continuity, statutory duty or executive authority. When one applies,

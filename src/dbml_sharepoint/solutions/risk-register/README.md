@@ -1,8 +1,8 @@
 # Risk register
 
-A single-list organisational risk register with a self-rating 5×5 matrix:
+A single-list organisational risk register with a self-rating 5x5 matrix:
 pick **Likelihood** and **Consequence**, and SharePoint calculates
-**ResidualRiskRating** (Low/Medium/High/Extreme) and a 1–25 **RiskScore**.
+**ResidualRiskRating** (Low/Medium/High/Extreme) and a 1-25 **RiskScore**.
 There is nowhere to type a rating that disagrees with the matrix, because
 the rating is never typed at all. One list: `RR_Risk`.
 

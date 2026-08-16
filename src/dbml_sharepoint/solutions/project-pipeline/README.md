@@ -2,7 +2,7 @@
 
 One funnel for every project idea, from suggestion to decision to delivery.
 One list: `PP_Proposal`, with stage gates as statuses and a **calculated
-priority score** (benefit × feasibility, 1–9) that makes ranking a sort
+priority score** (benefit x feasibility, 1-9) that makes ranking a sort
 instead of a shouting match.
 
 **The value case.** Without an intake, projects start three ways: loudly,
@@ -39,7 +39,7 @@ formulas cannot read.
 | 5 | `50-govern/` | Gate authority, scoring honesty, portfolio review |
 
 **Customisation points:** `CostBand` thresholds; the score is deliberately
-simple (3×3). Resist adding weights until you've run the simple version
+simple (3x3). Resist adding weights until you've run the simple version
 for two quarters and can say what it got wrong. If you rename a `Stage`
 member, re-read every `where:` in `mapping.yaml`: five views filter on
 stage names, and a renamed member empties a view without failing the build.

@@ -85,7 +85,7 @@ That's an item-level setting, not a level. Your options:
    strongest evidential integrity; corrections go through handlers.
 2. Site owners may enable the list's *item-level permissions* setting
    ("Create items and edit items that were created by the user") manually
-   in List settings → Advanced. Reporters can then amend their own reports.
+   in List settings -> Advanced. Reporters can then amend their own reports.
    Deliberately not automated: it changes evidential meaning, so it should
    be an explicit governance decision recorded here.
 

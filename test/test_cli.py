@@ -234,10 +234,12 @@ def test_help_text_is_ascii() -> None:
 #: written; `cli`, `wizard` and `catalogue` are the terminal surface itself.
 #:
 #: Deliberately EXCLUDES the generators and `bundle`. Those write artifacts
-#: through `write_artifact`, which is UTF-8 by contract -- `reportgen` alone
-#: holds 49 non-ASCII literals, and they are correct. The rule is about bytes
-#: that go to a console, not about prose in general; comments and docstrings
-#: are excluded below for the same reason.
+#: through `write_artifact`, which is UTF-8 by contract, so nothing about a
+#: console makes a non-ASCII literal there unsafe. `test_shipped_text_is_ascii`
+#: bans it anyway, across the whole package, for the reason given in that file.
+#: The rule THIS list draws is about bytes that go to a console, not about
+#: prose in general; comments and docstrings are excluded below for the same
+#: reason.
 _CONSOLE_BOUND = ("analysis", "model", "cli.py", "wizard.py", "catalogue.py")
 
 
@@ -260,9 +262,10 @@ def test_messages_bound_for_a_console_are_ascii() -> None:
     wrong, and a literal escape sequence in the middle of it is noise at
     exactly the wrong moment.
 
-    Comments and docstrings are excluded: they are read in an editor and
-    never encoded to a console, so the house style of em-dashes in prose is
-    untouched -- 374 of them survive in `src/`.
+    Comments and docstrings are excluded here because they are read in an
+    editor and never encoded to a console. The em-dash and shipped-text gates
+    read whole files, and MEASURED 2026-08-16 `src/` holds neither an em dash
+    nor any other non-ASCII character.
     """
     import ast
 

@@ -102,7 +102,7 @@ column_formatting:
     ReviewDate: { style: overdue-date, guard: { field: Status, not: [Retired] } }
 
 # The identifying spine every lens repeats. Five views share it, which is
-# above §1.9's three-repetition threshold; below that the indirection costs
+# above section 1.9's three-repetition threshold; below that the indirection costs
 # more than it saves.
 field_sets:
   Measure:
@@ -256,7 +256,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # review-cadence surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
 # status band renders, and the review date appears both overdue (red) and

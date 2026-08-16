@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = compliance-obligations`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -21,7 +21,7 @@ follow.
       renamed member silently loses its colour as well as stranding old
       rows.
 - [ ] **Decide your review horizon before first deploy.** The *Reviews
-      due* view filters `ReviewDate ≤ today+60`. Change the `today+60` in
+      due* view filters `ReviewDate <= today+60`. Change the `today+60` in
       `mapping.yaml` now if your cycle differs. A view title and a filter
       that disagree is worse than either.
 - [ ] You know who forms **CO Compliance Coordinators**.
@@ -84,7 +84,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       calendar-period predicate, so a period-boundary reading has to come
       from your own reporting; the two differ at every boundary and anyone
       reconciling a committee pack will notice.
-- [ ] List Settings → Indexed columns shows `ComplianceStatus`,
+- [ ] List Settings -> Indexed columns shows `ComplianceStatus`,
       `SourceType`, `ReviewDate` and `Owner`. The build manifest lists the
       same four under **indexed columns**.
 - [ ] The New form shows **The duty**, **Assessment and evidence**,

@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = raci-matrix`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## The three lists
@@ -143,7 +143,7 @@ exist.
       If you seeded, none of the eleven is empty. The generated **All
       Items** recovery view is hidden from the modern view bar on all
       three lists, because each has an authored default.
-- [ ] List Settings → Indexed columns shows `ReviewStatus`, `Criticality`,
+- [ ] List Settings -> Indexed columns shows `ReviewStatus`, `Criticality`,
       `Accountable` and `Domain` on Activity; `PartyKind` and `Status` on
       Party; `Activity`, `Party` and `Involvement` on Involvement. The
       build manifest lists the same nine under **indexed columns**.
@@ -171,9 +171,9 @@ exist.
       keeping whatever was typed. SharePoint offers no mechanism to clear
       a hidden field, so the value survives the field being hidden.
 - [ ] `ConfirmationDue` spot-checks, on a saved test activity:
-      - Statutory, confirmed today → due in **6 months**.
-      - High → **12 months**. Routine → **24 months**.
-      - Set `ReviewStatus` to **Retired** → the cell goes **blank**. A
+      - Statutory, confirmed today -> due in **6 months**.
+      - High -> **12 months**. Routine -> **24 months**.
+      - Set `ReviewStatus` to **Retired** -> the cell goes **blank**. A
         retired activity is not waiting on anybody.
       - A due date in the past renders with the severe treatment and a
         warning icon; set that row to Retired and it goes plain.

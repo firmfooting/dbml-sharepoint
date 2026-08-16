@@ -172,7 +172,7 @@ views:
       group_by: { field: Severity, collapsed: true }
       sort:
         - { field: ReportedDate, direction: asc }
-      # ONE row-level signal, reserved for Critical (§1.6). An open
+      # ONE row-level signal, reserved for Critical (section 1.6). An open
       # Critical incident is the drop-everything row and it has no view of
       # its own, so the wash is where it earns its place, the same shape
       # as risk-register's Extreme wash, for the same reason.

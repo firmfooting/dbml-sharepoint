@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = risk-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -73,14 +73,14 @@ site that already holds real risks.
       delete **Open by score**, **Reviews due**, **Tolerance expiring** and
       **Closed risks** after confirming the short replacements. This clean-cut
       template does not adopt or delete those legacy views.
-- [ ] List Settings → Indexed columns shows `Status`, `Category`,
+- [ ] List Settings -> Indexed columns shows `Status`, `Category`,
       `RiskResponse`, `ToleranceEndDate` and `LastReviewedDate`. The build
       manifest lists the same five under **indexed columns**.
 - [ ] Matrix spot-checks on a test risk:
-      - Rare + Minor → **Low / 1**
-      - Unlikely + Substantial → **Medium / 11**
-      - Very Likely + Business Critical → **Extreme / 24**
-      - Clear Likelihood → `ResidualRiskRating` and `RiskScore` both go
+      - Rare + Minor -> **Low / 1**
+      - Unlikely + Substantial -> **Medium / 11**
+      - Very Likely + Business Critical -> **Extreme / 24**
+      - Clear Likelihood -> `ResidualRiskRating` and `RiskScore` both go
         **blank** (unrated is visible, not defaulted).
 - [ ] The New form shows **Describe the risk**, **Assess the risk**,
       **Response and controls** and **Governance**, each holding the fields
