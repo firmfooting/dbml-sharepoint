@@ -52,7 +52,7 @@ Owner/admin console. A successful deployment ends with
 The deployer can reconcile permission levels and ACLs, but it cannot configure
 or verify several Advanced settings. On the new list:
 
-1. Open **List settings → Advanced settings**.
+1. Open **List settings -> Advanced settings**.
 2. Set **Attachments to list items** to **Disabled**.
 3. Leave **Allow comments on list items** set to **Yes**. Comments are the
    clarification channel; they are not a place for identifying or sensitive
@@ -156,10 +156,10 @@ starts `[DEMO]`; delete the rows before go-live.
 
 ### Score and presentation
 
-- [ ] Limited + Flexible → **1 / Routine**.
-- [ ] Material + Within 3 months → **6 / Consider**.
-- [ ] Major + Within 3 months → **9 / Prioritise**.
-- [ ] System-wide + Time-sensitive → **16 / Prompt decision**.
+- [ ] Limited + Flexible -> **1 / Routine**.
+- [ ] Material + Within 3 months -> **6 / Consider**.
+- [ ] Major + Within 3 months -> **9 / Prioritise**.
+- [ ] System-wide + Time-sensitive -> **16 / Prompt decision**.
 - [ ] Choosing any Safety, equity or authority override blanks Priority Score
       and shows **Use existing priority**.
 - [ ] The **Decisions** row wash uses tenant `themeLighter` styling for Prompt

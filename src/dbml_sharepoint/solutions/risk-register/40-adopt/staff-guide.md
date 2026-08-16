@@ -7,10 +7,10 @@
 A risk is an **uncertain future event**, not a problem you already have
 (that's an issue) and not a worry ("budget" is a topic, not a risk).
 
-The pattern: **cause → event → consequence**. "Because we depend on a
+The pattern: **cause -> event -> consequence**. "Because we depend on a
 single supplier (cause), the supplier could fail mid-contract (event),
 halting service for weeks (consequence)." Put the event in **Title**; put
-the full cause → event → consequence story in **Detail**.
+the full cause -> event -> consequence story in **Detail**.
 
 ## Raising a risk
 

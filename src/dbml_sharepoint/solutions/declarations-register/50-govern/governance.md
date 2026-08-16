@@ -29,7 +29,7 @@ else's ladder means nothing.
 | Estimated value | Rule |
 | --- | --- |
 | Token (under $50) | Declare; may retain unless from a current tenderer |
-| $50 – $150 | Declare; manager decides retain/surrender |
+| $50 - $150 | Declare; manager decides retain/surrender |
 | Over $150 | Declare; integrity owner decides; default surrender |
 | Any value from a current tenderer/regulated party | Declare; default decline |
 

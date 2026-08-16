@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = process-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -79,10 +79,10 @@ site that already holds a real inventory.
 - [ ] **By function** groups by `Function`, collapsed: the workshop and
       review unit.
 - [ ] Score spot-checks on a test process:
-      - High criticality + Severe pain → **DigitisationPriority = 9**
-      - Medium + Moderate → **4**
-      - Low + Minor → **1**
-      - Clear Criticality → score goes **blank**, and the bar disappears
+      - High criticality + Severe pain -> **DigitisationPriority = 9**
+      - Medium + Moderate -> **4**
+      - Low + Minor -> **1**
+      - Clear Criticality -> score goes **blank**, and the bar disappears
         rather than rendering at zero length.
 - [ ] The score bar's fill comes from `Pain level`, not from the score: a
       severely painful process is red whatever its criticality drags the
@@ -95,7 +95,7 @@ site that already holds a real inventory.
       That is the guard: a digitised process and one ruled out are both
       settled, and a date that keeps shouting after the decision trains
       people to ignore the colour.
-- [ ] List Settings → Indexed columns shows `Function`,
+- [ ] List Settings -> Indexed columns shows `Function`,
       `DigitisationStatus` and `CurrentState`. The build manifest lists
       the same three. SharePoint cannot index the calculated
       `DigitisationPriority`, so the four views that sort by it are not

@@ -30,8 +30,8 @@ don't fit a boolean, maintain them here and review annually:
 
 ## Escalation
 
-Expired **mandatory** coverage: coordinator → line manager on day 1;
-compliance owner → responsible executive at day 14; the register row's
+Expired **mandatory** coverage: coordinator -> line manager on day 1;
+compliance owner -> responsible executive at day 14; the register row's
 Notes record the trail. (Whether lapsed coverage restricts duties is an HR
 policy call; record the decision, don't improvise it.)
 

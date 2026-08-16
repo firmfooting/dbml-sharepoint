@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = measures-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -77,7 +77,7 @@ site that already holds real measures.
       overdue formatting working: a retired measure's review date is
       history, and a date that keeps shouting after retirement trains
       people to ignore the colour.
-- [ ] List Settings → Indexed columns shows `Status`, `MeasureArea` and
+- [ ] List Settings -> Indexed columns shows `Status`, `MeasureArea` and
       `Frequency`. The build manifest lists the same three.
 - [ ] The New form shows four sections in order: **Name the measure**,
       **Define it**, **Report it**, **Govern it**. Each holds the fields

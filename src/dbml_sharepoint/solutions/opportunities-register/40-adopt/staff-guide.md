@@ -24,13 +24,13 @@ clarifications under the same no-identifiers rule.
 
 ## Project teams: submit in about a minute
 
-Open `OR_Opportunity` → **New** and complete five required controls:
+Open `OR_Opportunity` -> **New** and complete five required controls:
 
 1. **Safety and privacy check**: choose the safe-to-record option only when the
    required urgent/sensitive pathway has been used and the content is safe for
    this register. The other option deliberately refuses save.
-2. **Problem or opportunity**: one specific line, such as “Reduce repeated
-   interpreter-booking checks”, not “Interpreter issue”.
+2. **Problem or opportunity**: one specific line, such as "Reduce repeated
+   interpreter-booking checks", not "Interpreter issue".
 3. **Problem Statement**: in two to four sentences say what happens, who is
    affected and why it matters. Describe the problem, not a preferred system.
 4. **Service or facility area**: choose the best first routing destination,
@@ -93,7 +93,7 @@ For `Assess here`, gather just enough evidence to decide the next destination:
 - **Safety, equity or authority override**: use the existing authorised
   priority whenever one applies.
 
-The routine score is Benefit Potential × Time Criticality. It ranks a
+The routine score is Benefit Potential x Time Criticality. It ranks a
 conversation only. Any override blanks the number and shows **Use existing
 priority**; follow the organisation's clinical, risk, equity, continuity or
 delegation framework instead.

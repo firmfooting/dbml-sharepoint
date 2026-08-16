@@ -5,7 +5,7 @@
 An inventory of how the organisation actually runs: every business process,
 who owns it, how it's currently done (paper? email? spreadsheet? a real
 system?), how much it hurts, and a **calculated digitisation-priority
-score** (criticality × pain, 1–9) that turns "we should digitise things"
+score** (criticality x pain, 1-9) that turns "we should digitise things"
 into a ranked worklist. One list: `PR_BusinessProcess`.
 
 **The value case.** Digitisation programmes fail at step zero: nobody knows

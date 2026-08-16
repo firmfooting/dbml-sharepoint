@@ -2,14 +2,14 @@
 
 ## Coordinator (usually HR): when a hire is confirmed
 
-1. **OB_Starter** → **New**. *The hire*: name, role, department, and
+1. **OB_Starter** -> **New**. *The hire*: name, role, department, and
    anything unusual (part-time, remote, special equipment) in Notes: the
    functions read it. *Start and ownership*: start date and manager.
    *Progress*: Status stays **Preparing**.
 2. Create the task rows from the standard set (`50-govern`), one per task,
    each tagged with its **Function** and a **due date relative to the start
-   date** (account creation: start−3 days; payroll: start−5; induction
-   booking: start+2 …).
+   date** (account creation: start-3 days; payroll: start-5; induction
+   booking: start+2 ...).
 3. That's it: each function now sees its own queue.
 
 Your weekly list is *Starting soon*: everyone Preparing with a start date
@@ -49,7 +49,7 @@ sure the desk, laptop and payroll are there when you do it.
 ## When the starter starts
 
 Coordinator flips the Starter to **Started**; after the last post-start task
-lands, **Complete**. A withdrawn hire → **Withdrawn**, remaining tasks
+lands, **Complete**. A withdrawn hire -> **Withdrawn**, remaining tasks
 **Not applicable** with a reason in Notes (see governance for the
 data-handling step).
 

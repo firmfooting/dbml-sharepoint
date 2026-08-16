@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = delegations-register`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -31,7 +31,7 @@ follow.
       (`10-design/schema.dbml`). It is the grouping level of the default
       view, so its members become that view's headings.
 - [ ] **Decide your review horizon before first deploy.** The *Reviews
-      due* view filters `ReviewDate ≤ today+90`. Change the `today+90` in
+      due* view filters `ReviewDate <= today+90`. Change the `today+90` in
       `mapping.yaml` now if your governance calendar differs.
 - [ ] You know who forms **DG Governance Coordinators**.
 - [ ] The header shows `Delegation: <title>` on a saved row and
@@ -91,7 +91,7 @@ approved.
       which is where the supersession trail lives.
 - [ ] The instrument link in the form header opens **your** instrument,
       not a placeholder. Check this on the deployed form, not in the JSON.
-- [ ] List Settings → Indexed columns shows `DelegationArea`, `Status` and
+- [ ] List Settings -> Indexed columns shows `DelegationArea`, `Status` and
       `RoleHolder`. The build manifest lists the same three under
       **indexed columns**.
 - [ ] The New form shows **The authority**, **Limit and conditions** and

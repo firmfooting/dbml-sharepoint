@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = switchboard-log`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -83,7 +83,7 @@ site that already holds real switchboard records.
         which turns an Emergency row dusty rose. Confirm the wash before
         you rely on the board.
       - **"Overnight report: TakenAt = last 24h"**. CAML has no
-        rolling-hours predicate. **Last 24 hours** filters `TakenAt ≥
+        rolling-hours predicate. **Last 24 hours** filters `TakenAt >=
         today-1`, which is midnight yesterday, so it shows the last one
         to two days depending on when it is opened. That is right for a
         morning handover and wrong for an exact 24-hour count.
@@ -96,8 +96,8 @@ site that already holds real switchboard records.
         drill coverage and a flat list cannot show a *gap*: a code type
         with no group is a code type nobody has drilled), **Relay times**
         and **Out since before today**.
-- [ ] Duration spot-check: code Announced `03:20`, All-clear `03:47` →
-      **Duration Minutes = 27**. Message Taken `02:00`, Relayed `02:12` →
+- [ ] Duration spot-check: code Announced `03:20`, All-clear `03:47` ->
+      **Duration Minutes = 27**. Message Taken `02:00`, Relayed `02:12` ->
       **Minutes To Relay = 12**, drawn as a bar coloured from that
       message's **Urgency** rather than from the number.
 - [ ] **A code with no All Clear At renders the word "Running" in red,

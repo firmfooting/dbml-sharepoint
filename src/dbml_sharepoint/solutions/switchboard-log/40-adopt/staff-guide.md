@@ -9,7 +9,7 @@ During a code your job is the code: announce, page, connect. The log
 fits into the gaps, and the form is built for exactly that:
 
 1. The moment the announcement is made (or immediately after):
-   **SB_CodeEvent** → New: code type, location, **Announced At = now**.
+   **SB_CodeEvent** -> New: code type, location, **Announced At = now**.
    Two fields and save. *All Clear At* and *Event Notes* are not on the
    New form, because you do not have them yet.
 2. At stand-down: open the row, add **All Clear At** (duration calculates
@@ -28,7 +28,7 @@ somebody to look.
 
 ## Messages: read back, then relay-then-record
 
-1. Taking the call, **SB_MessageLog** → New: caller, callback number,
+1. Taking the call, **SB_MessageLog** -> New: caller, callback number,
    who it's for (role first), the message. **Read it back to the caller**
    before saving; the read-back is the accuracy control.
 2. Set **Urgency** honestly: *Emergency* interrupts whatever you're doing;
@@ -52,7 +52,7 @@ rows first.
 
 ## Keys: no movement without a row
 
-- Issuing, **SB_KeyMovement** → New: the key, **who** (name AND
+- Issuing, **SB_KeyMovement** -> New: the key, **who** (name AND
   role/company; sight ID for anyone you don't recognise), check the key's
   **Restrictions** first. Issued At = now, Status **Out**. *Returned At*
   is not on the New form.

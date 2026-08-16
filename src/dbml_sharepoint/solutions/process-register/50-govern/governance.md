@@ -34,8 +34,8 @@ bypassed is **In progress** at best.
 ## Programme cadence
 
 - **Fortnightly** (programme owner): the worklist. Top-scored unstarted
-  rows get an explicit decision: start (small → improvement-register or a
-  template deployment; large → project-pipeline), defer, or
+  rows get an explicit decision: start (small -> improvement-register or a
+  template deployment; large -> project-pipeline), defer, or
   **Not worth digitising** with a reason. Deciding *not* to digitise is
   legitimate output; silence isn't.
 - **Quarterly**: dashboard to the executive, counts by status, movement,

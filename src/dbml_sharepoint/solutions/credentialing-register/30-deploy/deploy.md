@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = credentialing-register`. Run order: **assess** the target site
-(paste `build/assess.js.txt`, read-only) → **review**
-`build/deploy-manifest.md` (must show 0 validation errors) → **paste**
-`build/deploy.js.txt` from a Site Owner's console → **verify** against the
+(paste `build/assess.js.txt`, read-only) -> **review**
+`build/deploy-manifest.md` (must show 0 validation errors) -> **paste**
+`build/deploy.js.txt` from a Site Owner's console -> **verify** against the
 checklist below. Template-specific notes follow.
 
 ## Before you build

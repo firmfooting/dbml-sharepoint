@@ -3,7 +3,7 @@
 *Theme: process digitisation & improvement.*
 
 A continuous-improvement log with test-before-adopt discipline: every
-improvement idea moves Idea → Planned → Testing → **Adopted** (or
+improvement idea moves Idea -> Planned -> Testing -> **Adopted** (or
 **Abandoned**, honourably), with before/after measures recorded so
 "improved" is a number, not a feeling. One list: `CI_Improvement`.
 

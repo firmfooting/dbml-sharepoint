@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = routine-checks`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -79,7 +79,7 @@ site that already holds real check history.
       - **"Today"** specified `CheckedAt = today`. That filter returns
         nothing on a datetime column: CAML's `<Today/>` is midnight, so an
         equality test matches only a check stamped at exactly 00:00. It
-        ships filtering `CheckedAt ≥ today`, which is the same day's
+        ships filtering `CheckedAt >= today`, which is the same day's
         checks.
       - A fourth view, **Escalated**, was added. Governance's weekly review
         asks whether escalated entries reached their escalation point, and

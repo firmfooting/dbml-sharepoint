@@ -2,8 +2,8 @@
 
 ## Checking your authority (ten seconds, before you sign)
 
-Open **DG_Delegation** → the **By role** view → find your role in the
-group list → expand it. That's what you may approve, to what limit, under
+Open **DG_Delegation** -> the **By role** view -> find your role in the
+group list -> expand it. That's what you may approve, to what limit, under
 what conditions. Before signing anything you haven't signed before (a
 contract, a hire, an invoice above your usual) the check is ten seconds
 and the alternative is an unauthorised approval with your name on it.

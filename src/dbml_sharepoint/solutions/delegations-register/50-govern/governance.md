@@ -22,7 +22,7 @@ register never "clarifies" authority on its own.
 
 1. The delegating authority approves an instrument change (new version).
 2. Coordinators update the register the same week: changed rows edited
-   with the new clause wording and ApprovedDate; removed authorities →
+   with the new clause wording and ApprovedDate; removed authorities ->
    Status **Superseded** with the supersession noted; new authorities
    added. **The list now refuses to save a Superseded row with an empty
    `Notes`**. Step 2 is the one step of this workflow that is enforced

@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = audit-actions`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -12,13 +12,13 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 - [ ] `AU_` prefix free on the target site.
 - [ ] `AuditType`/`FindingRating` enums match your assurance framework
       (many audit firms rate findings themselves; mirror their scale).
-      **`FindingRating` is now colour-mapped**, Low → Critical, using the
+      **`FindingRating` is now colour-mapped**, Low -> Critical, using the
       same four tokens as the risk register's rating columns; a renamed
       member strands old rows *and* silently loses its colour. If your
       scale has a different number of bands, edit the map in
       `mapping.yaml` at the same time as the enum.
 - [ ] **Decide your closure-report horizon before first deploy.** The
-      *Closed, last 90 days* view filters `ClosedDate ≥ today-90`. If your
+      *Closed, last 90 days* view filters `ClosedDate >= today-90`. If your
       committee cycle is not quarterly, change the `today-90` in
       `mapping.yaml` now.
 - [ ] You know who forms **AU Audit Coordinators**.
@@ -92,12 +92,12 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       rating sort because it looks like one. Severity is carried by the
       colours on the `FindingRating` column instead. If you need a true
       rating sort, the workaround is to number the choice members
-      (`1 Low`, `2 Moderate`, …) in `10-design/schema.dbml` **before first
+      (`1 Low`, `2 Moderate`, ...) in `10-design/schema.dbml` **before first
       deploy**. Renaming them afterwards strands existing rows.
 - [ ] `DaysLate` renders as a bar whose **fill colour comes from
       `FindingRating`**, so a forty-day-late Critical and a forty-day-late
       Low read differently at the same bar length.
-- [ ] List Settings → Indexed columns shows `AuditType` and `ReportDate`
+- [ ] List Settings -> Indexed columns shows `AuditType` and `ReportDate`
       on Audit, and `Status`, `Audit`, `Owner`, `DueDate` and
       `FindingRating` on Recommendation. The build manifest lists the same
       seven.
@@ -142,12 +142,12 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       guards against negative ranges by returning 0, so a recommendation
       closed "next month" would report as closed **on time**, silently, on
       the exact number the audit committee reads.
-- [ ] Hidden ≠ inaccessible. Confirm a hidden column still holds its value:
+- [ ] Hidden != inaccessible. Confirm a hidden column still holds its value:
       the reporting bundle's data dictionary lists all three, and a view
       can show them. `form_visibility` governs forms only.
-- [ ] DaysLate spot-checks: Due `2026-07-01` + Closed `2026-07-10` → **9**;
-      Closed `2026-06-28` (early) → **0**; add RevisedDue `2026-07-15`,
-      Closed `2026-07-20` → **5**.
+- [ ] DaysLate spot-checks: Due `2026-07-01` + Closed `2026-07-10` -> **9**;
+      Closed `2026-06-28` (early) -> **0**; add RevisedDue `2026-07-15`,
+      Closed `2026-07-20` -> **5**.
 - [ ] Ordinary Members: read-only.
 - [ ] **Load the backlog**: every open recommendation from existing audits
       goes in now. A partial register is worse than none, because it looks

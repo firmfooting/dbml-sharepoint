@@ -4,7 +4,7 @@
 
 Got an idea that needs more than your own team's Tuesday afternoon?
 
-1. **PP_Proposal** → **New**. The form asks for **The idea** and, if you
+1. **PP_Proposal** -> **New**. The form asks for **The idea** and, if you
    already know them, the **Scoping** ratings. It does not ask you to name
    a sponsor, and it does not show you the decision fields. Those arrive
    when there is something to record.
@@ -30,7 +30,7 @@ question (not the project, the question). Together you set:
   definitions: the score computes itself, and gaming it is self-defeating
   because everyone can see the inputs;
 - **CostBand**: order of magnitude, not a quote;
-- then Stage → **Ready for decision**.
+- then Stage -> **Ready for decision**.
 
 The list will refuse that last step until Benefit, Feasibility and Cost
 Band are all set. An unscored proposal cannot be ranked, so it would sit at
@@ -50,7 +50,7 @@ without the date.
 
 ## Delivery
 
-Approved work moves **In delivery** → **Delivered**. The **Delivered date**
+Approved work moves **In delivery** -> **Delivered**. The **Delivered date**
 appears when you set that stage, and the save is refused without it. The
 pipeline doesn't replace project management. It replaces the mystery of
 what was ever agreed and why.

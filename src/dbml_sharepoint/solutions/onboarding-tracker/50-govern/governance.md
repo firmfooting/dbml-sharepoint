@@ -13,13 +13,13 @@
 
 | Function | Task | Due |
 | --- | --- | --- |
-| HR | Contract signed & filed | start − 10 |
-| HR | Payroll & super forms to Finance | start − 7 |
-| Finance / payroll | Payroll setup complete | start − 3 |
-| IT | Account created, licences assigned | start − 3 |
-| IT | Laptop/phone ordered and imaged | start − 3 |
-| Facilities | Desk, access pass, parking | start − 2 |
-| Manager | First-week plan and buddy assigned | start − 2 |
+| HR | Contract signed & filed | start - 10 |
+| HR | Payroll & super forms to Finance | start - 7 |
+| Finance / payroll | Payroll setup complete | start - 3 |
+| IT | Account created, licences assigned | start - 3 |
+| IT | Laptop/phone ordered and imaged | start - 3 |
+| Facilities | Desk, access pass, parking | start - 2 |
+| Manager | First-week plan and buddy assigned | start - 2 |
 | HR | Induction booked | start + 2 |
 | Manager | Week-one check-in done | start + 5 |
 | HR | Probation checkpoint scheduled | start + 10 |

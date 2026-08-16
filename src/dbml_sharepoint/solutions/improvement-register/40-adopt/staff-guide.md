@@ -5,7 +5,7 @@
 Something in your work is slower, clunkier or riskier than it should be,
 and you can see a better way?
 
-1. **CI_Improvement** → **New**. The form asks for **The idea** and the
+1. **CI_Improvement** -> **New**. The form asks for **The idea** and the
    three fields of **Plan the test**, and nothing else. Test notes, the
    after-measure and the outcome date only appear once there is something
    to put in them.
@@ -27,11 +27,11 @@ and you can see a better way?
 - **Testing**: try it; log what happens in **TestNotes** (dated, newest
   first). Keep collecting the measure.
 - **Study honestly**: did the number move the way the prediction said?
-  - Yes → **Adopted**: **Measure after** and **Adopted date** appear on the
+  - Yes -> **Adopted**: **Measure after** and **Adopted date** appear on the
     form as you set the stage, and the list refuses to save without both.
     Then make the new way the standard way. That step is the actual
     improvement (see governance for what adoption requires).
-  - No → **Abandoned**: record what was learned, and the **Adopted date**
+  - No -> **Abandoned**: record what was learned, and the **Adopted date**
     doubles as the abandon-decision date. An abandoned test with a lesson
     costs a fortnight; an unexamined rollout costs a year.
 

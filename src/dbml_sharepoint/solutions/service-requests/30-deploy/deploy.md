@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = service-requests`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -70,7 +70,7 @@ site that already holds real requests.
       because this template has an authored default.
 - [ ] **What replaced the old recommended-views table**, since two rows of
       it could not be built as written:
-      - The literal `*(one per category)* …` row is **not** shipped as one
+      - The literal `*(one per category)* ...` row is **not** shipped as one
         view per category. A static view cannot be generated per enum
         member, and hand-building five of them means rebuilding them every
         time the catalogue changes. It ships as **Open by category** (one
@@ -87,7 +87,7 @@ site that already holds real requests.
         shows an overall one. A mean rather than a sum, because adding up
         day-counts answers nothing. "How long does this team take" is the
         question the report exists for.
-- [ ] `Requested 2026-07-01` + `Completed 2026-07-04` →
+- [ ] `Requested 2026-07-01` + `Completed 2026-07-04` ->
       **Days To Complete = 3**, drawn as a bar against a 30-day scale and
       coloured from that request's **Priority**, not from its own value.
 - [ ] The New form shows five sections: **Describe the request**,

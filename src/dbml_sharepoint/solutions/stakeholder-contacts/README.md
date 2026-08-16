@@ -1,7 +1,7 @@
 # Stakeholder contacts
 
 A shared organisational memory of who you deal with and what was said.
-Three lists in a chain: `SC_Organisation` → `SC_Contact` →
+Three lists in a chain: `SC_Organisation` -> `SC_Contact` ->
 `SC_Interaction` (every meeting, call or email note linked to its contact).
 
 **The value case.** When the relationship lives in one person's inbox, it

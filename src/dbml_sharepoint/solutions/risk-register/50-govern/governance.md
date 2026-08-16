@@ -31,7 +31,7 @@ carries an edit path, which reads as though it should and does not.
 These two columns look similar and answer different questions.
 
 - **Status** is **lifecycle**: is this risk currently being worked?
-  `Provisional` → `Open` → `Closed`. Nothing in the schema stops a value
+  `Provisional` -> `Open` -> `Closed`. Nothing in the schema stops a value
   moving backwards, but the intended flow is that single pass. Treat a
   Closed risk reopened, or an Open risk reverted to Provisional, as
   something worth asking about.

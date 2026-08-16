@@ -3,14 +3,14 @@
 *The register is built in workshops, not by decree. This guide is for the
 facilitator and every team that owns processes.*
 
-## The inventory workshop (60–90 minutes per function)
+## The inventory workshop (60-90 minutes per function)
 
 Get the team that actually runs the work in a room with the register open:
 
 1. **List the processes** first, no detail: "what are the things this team
    does repeatedly that involve a form, an approval, a register, or a
    handover?" Titles go in as you talk, verb first ("Approve staff
-   travel"). Expect 10–25 per function; if you have 60, you're listing
+   travel"). Expect 10-25 per function; if you have 60, you're listing
    tasks, not processes. Merge up.
 2. **Second pass, per process** (3 minutes each, timeboxed):
    - **Owner**: one name. "The team" is not an owner.

@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = declarations-register`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
-accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -24,7 +24,7 @@ follow.
       ships with (token under $50, manager decides to $150, integrity owner
       above that). A bar scaled to somebody else's ladder means nothing.
 - [ ] **Decide your review horizon before first deploy.** The *Reviews
-      due* view on `DR_Interest` filters `ReviewDate ≤ today+30`, matching
+      due* view on `DR_Interest` filters `ReviewDate <= today+30`, matching
       the monthly cadence in governance. Change the `today+30` in
       `mapping.yaml` now if yours differs.
 - [ ] The headers show `Interest: <title>` and `Offer: <title>` on saved
@@ -90,7 +90,7 @@ list, which is worse here than almost anywhere else in the library.
 - [ ] **Pending decisions** has **no** date window, deliberately. A
       pending decision from fourteen months ago is worse than one from last
       week, not less relevant.
-- [ ] List Settings → Indexed columns shows `Status`, `DeclaredBy` and
+- [ ] List Settings -> Indexed columns shows `Status`, `DeclaredBy` and
       `ReviewDate` on Interest, and `Decision`, `OfferedTo` and
       `OfferedDate` on GiftBenefit. The build manifest lists the same six.
 - [ ] **As an ordinary Member, this is the test that matters.** You can

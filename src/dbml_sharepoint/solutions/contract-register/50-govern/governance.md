@@ -14,7 +14,7 @@
 - **Monthly**: register owner reviews the *Expiring 90 days* and
   *Auto-renewals* views. Both deploy with the list, so there is nothing to
   build first. Every row expiring inside its notice period gets a renewal
-  decision recorded (Status → In renewal, or an exit plan). Note the
+  decision recorded (Status -> In renewal, or an exit plan). Note the
   ninety days is a **rolling** window, not a calendar quarter: CAML has no
   calendar-period predicate, so a quarter-boundary reading has to come from
   your own reporting.
@@ -84,5 +84,5 @@ site's audience.
 - **Retention**: exited contracts stay in the register (the row is metadata,
   not the record); the signed document's retention follows your records
   schedule in its own system.
-- **Decommissioning**: export to Excel first (list → Export); never run the
+- **Decommissioning**: export to Excel first (list -> Export); never run the
   generated `rollback.js.txt` against a register containing real rows.

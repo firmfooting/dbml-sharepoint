@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = change-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console → **verify**
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console -> **verify**
 against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -16,7 +16,7 @@ against the checklist below. Template-specific notes follow.
       something.
 - [ ] The SLA numbers in that table match the **21-day** full bar on
       `DaysToDecision` in `mapping.yaml`. It is set from the slowest
-      authority level (15 business days ≈ three calendar weeks); if your
+      authority level (15 business days ~ three calendar weeks); if your
       slowest SLA is different, change `max:` before first deploy or the
       bar reads against a line nobody agreed.
 - [ ] The header shows `Change: <title>` on a saved row and `New change`
@@ -59,7 +59,7 @@ site that already holds real requests.
 ## After the paste: verification checklist
 
 - [ ] `CH_ChangeRequest` exists; custom level **CH Submit Only** exists
-      (Site settings → Permission levels).
+      (Site settings -> Permission levels).
 - [ ] All five declared views appear: **In flight** (the default),
       **Triage queue**, **Awaiting decision**, **Approved, not yet
       implemented**, **Decision log**. If you seeded, none of them is
@@ -76,9 +76,9 @@ site that already holds real requests.
       (one day) and the Routine rejection a long grey one (twenty-one
       days), the same column saying two different things about the same
       number, which is the point.
-- [ ] List Settings → Indexed columns shows `Status`, `ChangeType`,
+- [ ] List Settings -> Indexed columns shows `Status`, `ChangeType`,
       `Impact` and `RequestedDate`. The build manifest lists the same four.
-- [ ] RequestedDate `2026-07-01` + DecisionDate `2026-07-10` →
+- [ ] RequestedDate `2026-07-01` + DecisionDate `2026-07-10` ->
       **DaysToDecision = 9**.
 - [ ] The New form shows **Describe the change**, **Triage** and
       **Decision and implementation**, each holding the fields named in
