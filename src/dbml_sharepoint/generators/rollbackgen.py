@@ -1,6 +1,7 @@
 # src/dbml_sharepoint/generators/rollbackgen.py
 """Render rollback.js."""
 
+from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema
@@ -19,9 +20,16 @@ def generate_rollback_js(
     generated_at: str,
 ) -> str:
     env = script_env()
+    # Each entry carries the marker its list must show before rollback will
+    # delete it. Built from the same helpers the deploy stamps with, so the
+    # two cannot disagree about what this family's marker says.
+    family = family_for(schema)
     # Children before parents: reverse of the deploy creation order.
     target_lists = [
-        bundle.mapping.prefix + name
+        {
+            "title": bundle.mapping.prefix + name,
+            "expected_marker": marker_for(family, name),
+        }
         for name in reversed(
             site_tables_in_order(schema, bundle.mapping.entities, site_role),
         )
