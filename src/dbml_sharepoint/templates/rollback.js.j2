@@ -159,10 +159,41 @@
     return r.ok;
   }
 
-  for (const name of TARGET_LISTS) {
+  // Read the live Description and answer whether THIS family provisioned the
+  // list. Read at delete time, never captured earlier: a marker recorded when
+  // the script was generated says what was true then, not what is true now.
+  async function carriesOurMarker(name, expectedMarker) {
+    if (typeof expectedMarker !== 'string' || expectedMarker === '') return null;
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=Description`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const description = (j && j.d && typeof j.d.Description === 'string') ? j.d.Description : '';
+    return description.indexOf(expectedMarker) !== -1;
+  }
+
+  for (const target of TARGET_LISTS) {
+    const name = target.title;
     try {
       const count = await itemCount(name);
       if (count === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
+      // The deploy refuses to adopt an object it did not provision; rollback
+      // must refuse to delete one, or the gate exists on the way in and not
+      // on the way out (helm/helm#31333, which shipped that asymmetry from
+      // 2020 to 2026). A title collision is enough to reach it, and the
+      // list-name prefix is optional.
+      const ours = await carriesOurMarker(name, target.expected_marker);
+      if (ours === null) {
+        summary.skipped.push({ list: name, reason: 'provenance-unreadable' });
+        log('WARN', `'${name}': could not read its Description to confirm this family provisioned it; skipping rather than deleting.`);
+        continue;
+      }
+      if (!ours) {
+        summary.skipped.push({ list: name, reason: 'not-ours' });
+        log('WARN', `'${name}': exists but carries no '${target.expected_marker}' marker, so it was not provisioned by this family. Skipping; nothing has been deleted. Rename it, or delete it by hand if you are certain.`);
+        continue;
+      }
       if (count > 0) {
         if (await allItemsAreDemo(name, count)) {
           log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked, demo-only content; recycling the demo rows, then deleting the list.`);

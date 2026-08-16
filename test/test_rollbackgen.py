@@ -4,6 +4,7 @@ from typing import Any
 
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
@@ -104,7 +105,7 @@ def test_rollback_refreshes_digest_per_delete() -> None:
     js = generate_rollback_js(
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
-    loop_idx = js.index("for (const name of TARGET_LISTS)")
+    loop_idx = js.index("for (const target of TARGET_LISTS)")
     # The digest is fetched within the loop body, not only before it.
     assert "const digest = await getDigest();" in js[loop_idx:]
 
@@ -145,7 +146,9 @@ def test_rollback_order_is_reverse_of_deploy_order() -> None:
     m = re.search(r'TARGET_LISTS\s*=\s*(\[.*?\]);', rollback_js, re.DOTALL)
     assert m, "TARGET_LISTS not found in rollback.js"
     import json
-    rollback_order: list[str] = json.loads(m.group(1))
+    # Entries carry the marker each list must show before deletion, so the
+    # order under test is the titles.
+    rollback_order: list[str] = [e["title"] for e in json.loads(m.group(1))]
 
     assert deploy_order, "No lists found in deploy.js"
     assert rollback_order, "TARGET_LISTS is empty in rollback.js"
@@ -175,7 +178,7 @@ def test_rollback_unlocks_deletion_blocked_lists_before_delete() -> None:
 
     # Ordering inside the loop: non-empty confirmation, then unlock probe,
     # then the DELETE verb.
-    loop_idx = js.index("for (const name of TARGET_LISTS)")
+    loop_idx = js.index("for (const target of TARGET_LISTS)")
     confirm_idx = js.index("DELETE NON-EMPTY", loop_idx)
     unlock_idx = js.index("await readAllowDeletion(name)", loop_idx)
     delete_idx = js.index("'X-HTTP-Method': 'DELETE'", loop_idx)
@@ -322,3 +325,64 @@ def test_rollback_rides_shared_transport() -> None:
     assert "const spHeaders = (digest, extra = {})" in js
     assert "const spError = (text)" in js
     assert "await fetch(apiUrl" not in js
+
+
+def test_rollback_carries_the_marker_each_list_must_show() -> None:
+    """Rollback deleted by title alone, so a site holding a list whose title
+    matched a declared one lost it whether or not this tool created it.
+
+    The markers are built from the same helpers the deploy stamps with, so
+    the two cannot disagree about what this family's marker says.
+    """
+    schema, bundle, release = _load_fixtures()
+
+    js = generate_rollback_js(
+        schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
+    )
+
+    family = family_for(schema)
+    for entity in ("Project", "Task"):
+        assert marker_for(family, entity) in js, (
+            f"rollback carries no expected marker for {entity}, so it cannot "
+            f"tell this family's list from anyone else's"
+        )
+
+
+def test_rollback_reads_the_description_at_delete_time() -> None:
+    """The marker must be re-read from the live site, not trusted from
+    generation time.
+
+    helm/helm#31333 is the precedent: Helm built its delete list from the
+    stored manifest and deleted resources whose ownership had since changed.
+    """
+    schema, bundle, release = _load_fixtures()
+
+    js = generate_rollback_js(
+        schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
+    )
+
+    assert "$select=Description" in js, (
+        "rollback never reads a live Description, so it cannot verify "
+        "ownership at the moment of the delete"
+    )
+    probe = js.index("$select=Description")
+    delete = js.index("'X-HTTP-Method': 'DELETE'")
+    assert probe < delete, "the ownership probe must precede the delete"
+
+
+def test_rollback_skips_a_list_that_is_not_ours() -> None:
+    """The refusal has to be a skip that says why, not a silent continue,
+    and it must not fall through to the delete."""
+    schema, bundle, release = _load_fixtures()
+
+    js = generate_rollback_js(
+        schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
+    )
+
+    assert "'not-ours'" in js
+    assert "'provenance-unreadable'" in js
+    # An unreadable Description must skip rather than assume ownership.
+    unreadable = js.index("'provenance-unreadable'")
+    not_ours = js.index("'not-ours'")
+    delete = js.index("'X-HTTP-Method': 'DELETE'")
+    assert unreadable < delete and not_ours < delete
