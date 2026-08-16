@@ -31,7 +31,12 @@ from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
 )
-from dbml_sharepoint.extension import SiteContext, resolve_extension
+from dbml_sharepoint.extension import (
+    BaseExtension,
+    SiteContext,
+    UnknownExtensionError,
+    resolve_extension,
+)
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import (
@@ -362,6 +367,35 @@ def _load_config(
     except _CONFIG_ERRORS as exc:
         _config_error("release", release, exc)
     return parsed_schema, bundle, release_obj
+
+
+def _resolve_extension(
+    extension: str | None, bundle: MappingBundle, mapping: Path,
+) -> BaseExtension:
+    """Resolve the extension name, reporting an unknown one as a message.
+
+    `resolve_extension` raises `ValueError`, which `_CONFIG_ERRORS` already
+    covers, but every call sat one line outside `_load_config`'s boundary,
+    so a typo in `--extension` or in a mapping's `extension:` key reached
+    the operator as a rich traceback rather than as the refusal the CLI
+    prints for any other bad input. The wrapper lives here rather than
+    inside `_load_config` because that helper is about reading the three
+    config files, and an extension name is not one of them.
+    """
+    try:
+        return resolve_extension(extension or bundle.mapping.extension)
+    except UnknownExtensionError as exc:
+        # Only the unknown name. A broken plugin, whose entry-point load or
+        # constructor raises, keeps its traceback rather than being reported
+        # as a typo in the operator's own mapping.
+        # No `--extension` means the name came from the mapping, so name that file.
+        _config_error("extension", None if extension else mapping, exc)
+
+
+#: Inputs a wizard must not offer a default for. Being wrong about a target
+#: means a bundle armed for someone else's tenant, with only the wrong-site
+#: guard between that and a mispaste, which is why `--site-url` is required.
+NO_SAFE_DEFAULT: Final = frozenset({"site_url"})
 
 
 def validate_site_url(site_url: str) -> str:
@@ -714,7 +748,7 @@ def execute_build(
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")
-    ext = resolve_extension(extension or bundle.mapping.extension)
+    ext = _resolve_extension(extension, bundle, mapping)
 
     if ext.requires_project_cli:
         typer.echo(
@@ -921,7 +955,7 @@ def validate(
     schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
     mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
     parsed_schema, bundle, _ = _load_config(schema, mapping, None)
-    ext = resolve_extension(extension or bundle.mapping.extension)
+    ext = _resolve_extension(extension, bundle, mapping)
     _require_known_site_role(bundle, site_role)
 
     findings = validate_all(parsed_schema, bundle, ext)

@@ -1606,6 +1606,60 @@ def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) 
     assert "not defined in." not in output, output
 
 
+@pytest.mark.parametrize("command", ["build", "validate"])
+def test_an_unknown_extension_is_a_message_not_a_traceback(
+    command: str, tmp_path: Path,
+) -> None:
+    """`resolve_extension` was called one line after `_load_config` returned,
+    outside its boundary, so an unknown name reached the operator as a rich
+    traceback while every other bad input printed one sentence. Both commands
+    taking `--extension` are covered, and the exit code alone cannot see the
+    defect because the traceback exited 1 as well.
+    """
+    args = [
+        command,
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--extension", "nope",
+    ]
+    if command == "build":
+        args += [
+            "--release", str(FIXTURES / "release.yaml"),
+            "--site-url", "https://example.sharepoint.com/sites/test",
+            "--out", str(tmp_path / "build"),
+        ]
+    result = _cli(*args)
+    output = result.stdout + result.stderr
+    # 1, not merely non-zero: the documented table in cli.md gives 1 to
+    # "the build refused" and reserves 2 for the usage errors typer raises
+    # before the pipeline runs.
+    assert result.returncode == 1, output
+    assert "Traceback" not in output, output
+    assert "ValueError" not in output, output
+    # The sentence that already named the unknown extension survives.
+    assert "Unknown extension 'nope'" in output, output
+    assert "installed" in output, output
+    # One line for the operator, not a stack.
+    assert len([ln for ln in output.splitlines() if ln.strip()]) <= 2, output
+
+
+def test_an_unknown_extension_in_the_mapping_names_the_file(tmp_path: Path) -> None:
+    """A misspelled `extension:` key reaches the same call as the flag, and
+    with no flag to blame the message has to point at the file to edit."""
+    mapping = write_mapping(tmp_path, with_tail(entities("Project"), "extension: nope\n"))
+    result = _cli(
+        "validate",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1, output
+    assert "Traceback" not in output, output
+    assert "ValueError" not in output, output
+    assert mapping.name in output, output
+    assert "Unknown extension 'nope'" in output, output
+
+
 def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
     """`report` does not validate, so the generators meet a bad schema first.
 

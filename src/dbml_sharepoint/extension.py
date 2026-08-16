@@ -96,6 +96,15 @@ class NullExtension(BaseExtension):
     name: ClassVar[str] = "null"
 
 
+class UnknownExtensionError(ValueError):
+    """The requested extension name is not installed.
+
+    Named so the CLI can report a typo as configuration while a broken
+    plugin, whose entry-point load or constructor raises, still reaches
+    the operator as a traceback naming the plugin.
+    """
+
+
 def resolve_extension(name: str | None) -> BaseExtension:
     """Resolve by entry-point name; None/'null' -> NullExtension.
     Raises ValueError listing installed extensions when the name is unknown."""
@@ -106,4 +115,6 @@ def resolve_extension(name: str | None) -> BaseExtension:
         if ep.name == name:
             return ep.load()()  # type: ignore[no-any-return]
     installed = sorted(ep.name for ep in eps)
-    raise ValueError(f"Unknown extension {name!r}; installed: {installed or 'none'}")
+    raise UnknownExtensionError(
+        f"Unknown extension {name!r}; installed: {installed or 'none'}"
+    )

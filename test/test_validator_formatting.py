@@ -1,11 +1,14 @@
 """Validator: column formatting."""
-from _findings import by_severity, messages, only
+from pathlib import Path
+
+from _findings import by_severity, messages, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import person as make_person
 from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 from _validator_helpers import _project_errors, _project_inputs
 
@@ -68,6 +71,74 @@ def test_column_formatting_validation() -> None:
         "Project": {"Status": {"elmType": "div", "txtContent": "[$SortOrder]"}},
     })
     assert ok == []
+
+def test_misspelled_column_under_a_pill_style_reports_only_the_misspelling(
+    tmp_path: Path,
+) -> None:
+    """A `pill` has no calculated form, so `calculated_type_for_style` is
+    None for it, and a column absent from the DBML has type None too. The
+    two used to compare equal and raise STYLE_REQUIRES_CALCULATED reading
+    "pill on None requires calculated: true", naming a type that does not
+    exist and prescribing a key `_pill` refuses at load time.
+
+    The positive half is asserted with the negative: without it this passes
+    if the style-spec loop stops running altogether.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Owner nvarchar
+            }
+        """,
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Ownr: { style: pill, map: { Open: good } }
+        """),
+    )
+    findings = validate_against_mapping(schema, bundle)
+    misspelled = only(findings, FindingCode.FORMATTER_COLUMN_NOT_RENDERED)
+    assert misspelled.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Ownr",
+    )
+    none_of(findings, FindingCode.STYLE_REQUIRES_CALCULATED)
+    none_of(findings, FindingCode.STYLE_CALCULATED_TYPE_MISMATCH)
+
+def test_severity_on_a_calculated_text_column_still_requires_decoding(
+    tmp_path: Path,
+) -> None:
+    """The other side of the guard above: the rule must still fire where it
+    should, or the repair has disabled it and the suite cannot tell."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Band calculated_text
+            }
+        """,
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                Band: "=IF([Title]='','Low','High')"
+            column_formatting:
+              Risk:
+                Band: { style: severity, map: { Low: good, High: severe } }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.STYLE_REQUIRES_CALCULATED,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Band",
+    )
+    assert "calculated: true" in finding.message
 
 def test_view_formatting_field_refs_validated() -> None:
     errors = _project_errors(views={"Project": [ViewDef(
