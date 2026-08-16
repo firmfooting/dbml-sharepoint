@@ -34,7 +34,7 @@ Every change must leave all of these green:
 
 ```bash
 uv run pytest                               # full suite, incl. the semantic Jinja template lint
-uv run ruff check src test website/scripts  # lint
+uv run ruff check src test website/scripts scripts  # lint
 uv run mypy                                 # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2  # markdown style; config in .markdownlint-cli2.yaml

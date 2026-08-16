@@ -44,7 +44,7 @@ hooks run, so a hook can never disagree with CI.
 
 ```bash
 uv run pytest
-uv run ruff check src test website/scripts
+uv run ruff check src test website/scripts scripts
 uv run mypy
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2

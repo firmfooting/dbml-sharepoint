@@ -33,7 +33,10 @@ from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
     LIST_VIEW_THRESHOLD,
     MAX_DISPLAY_TITLE,
+    MAX_GROUP_DESCRIPTION,
+    MAX_INTERNAL_NAME,
     MAX_LIST_INDEXES,
+    MAX_ROLE_DEFINITION_DESCRIPTION,
     MAX_VALIDATION_FORMULA,
     MAX_VALIDATION_MESSAGE,
     MAX_VIEW_ROW_LIMIT,
@@ -303,7 +306,8 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.CROSS_SITE_GENERATED_NAME_TOO_LONG: (
         "A cross-site column's generated `Abbreviation` or `SiteUrl` "
-        "field exceeds SharePoint's 32-character internal-name limit."
+        f"field exceeds SharePoint's {MAX_INTERNAL_NAME}-character "
+        "internal-name limit."
     ),
     FindingCode.CROSS_SITE_UNKNOWN_COLUMN: (
         "A `cross_site_reference_columns:` entry names a column the "
@@ -475,7 +479,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "auto-accept, or drop it."
     ),
     FindingCode.GROUP_DESCRIPTION_TOO_LONG: (
-        "A `groups:` entry's description is longer than 512 characters. "
+        f"A `groups:` entry's description is longer than "
+        f"{MAX_GROUP_DESCRIPTION} characters. "
         "MEASURED 2026-08-13 against a live tenant: SharePoint answers a "
         "longer one with HTTP 500 and the message \"The parameter "
         "Description cannot be null or bigger than 512 characters.\" It "
@@ -846,7 +851,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "entity does not render."
     ),
     FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG: (
-        "A `permission_levels:` entry's description is longer than 512 "
+        f"A `permission_levels:` entry's description is longer than "
+        f"{MAX_ROLE_DEFINITION_DESCRIPTION} "
         "characters. MEASURED 2026-08-14 against a live tenant: SharePoint "
         "answers a longer one with HTTP 500 and the message \"The parameter "
         "Description cannot be bigger than 512 characters.\" It REFUSES "
