@@ -28,6 +28,14 @@ from dbml_sharepoint.analysis import limits
 #: Words that turn a number in a message into a claim about a ceiling.
 _CEILING_WORDS = ("limit", "max", "chars", "characters", "ceiling")
 
+#: A dated measurement keeps its numbers. `finding_help.py` quotes SharePoint's
+#: own refusal verbatim beside a MEASURED date, and interpolating a constant
+#: into a quoted observation would falsify it. Same exemption, and same
+#: spelling, as `test_family_count_prose.py`.
+_DATED_MEASUREMENT = re.compile(
+    r"(?:RE-)?MEASURED.{0,40}?\d{4}-\d{2}-\d{2}", re.IGNORECASE,
+)
+
 #: The string each typemap predicate owns, and the function that owns it.
 #: Keyed by function name so moving a predicate keeps it exempt and copying
 #: its body does not.
@@ -99,13 +107,16 @@ def _string_parts(node: ast.expr) -> str:
 def _states_value(text: str, value: int) -> bool:
     """Whether `text` contains `value` as a standalone number.
 
-    A hyphen or a slash on either side excludes it, so a date or a version
-    number does not match: "Measured 2026-07-31" is not a claim about a
-    31-character ceiling. A value that ends a sentence still counts, since
-    excluding the character after it is what made two earlier attempts at this
-    scan report zero.
+    A separator excludes the value only when digits sit on the far side of
+    it, so "Measured 2026-07-31" is not a claim about a 31-character
+    ceiling while "32-character limit" still is. Excluding every
+    hyphen-adjacent number, which an earlier version did, hid that second
+    wording. A value ending a sentence counts, since excluding the
+    character after it made two earlier attempts report zero.
     """
-    return re.search(rf"(?<![\d\-/]){value}(?![\d\-/])", text) is not None
+    return re.search(
+        rf"(?<!\d)(?<!\d[-/.]){value}(?!\d)(?![-/.]\d)", text,
+    ) is not None
 
 
 def _offending_literals(path: Path, values: set[int]) -> list[str]:
@@ -134,24 +145,58 @@ def _offending_literals(path: Path, values: set[int]) -> list[str]:
     return offenders
 
 
-def _offending_messages(path: Path, values: set[int]) -> list[str]:
-    """Messages stating a limit value instead of interpolating it.
+def _docstrings(tree: ast.AST) -> set[int]:
+    """The id() of every docstring node, which this gate does not scan.
 
-    Keyword arguments as well as positional ones, since `Finding(code,
-    message=f"... limit is 32")` is the same defect written differently.
+    A docstring is read in an editor and never shown to an operator, so a
+    limit named in one is prose rather than a second copy. `test_cli.py`
+    excludes them from its console-encoding gate for the same reason.
     """
-    offenders: list[str] = []
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if not isinstance(node, ast.Call):
+    holders = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    found: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, holders) or not node.body:
             continue
-        arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
-        text = " ".join(_string_parts(argument) for argument in arguments)
+        first = node.body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            found.add(id(first.value))
+    return found
+
+
+def _offending_messages(path: Path, values: set[int]) -> list[str]:
+    """Any string stating a limit value instead of interpolating it.
+
+    Every string constant, not only a call argument. `finding_help.py`
+    holds its entries as dictionary values, so a call-argument scan let
+    `dbml-sharepoint explain` tell an operator a hardcoded ceiling.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    skip = _docstrings(tree)
+    # An f-string's own parts, so one wrapped message is not reported twice
+    # and its text is searched whole. A MEASURED marker and the number it
+    # records often sit in different physical strings of one expression.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            skip.update(id(part) for part in node.values)
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant | ast.JoinedStr):
+            continue
+        if id(node) in skip:
+            continue
+        text = _string_parts(node)
+        if _DATED_MEASUREMENT.search(text):
+            continue
         if not any(word in text.lower() for word in _CEILING_WORDS):
             continue
         for value in values:
             if _states_value(text, value):
                 offenders.append(
-                    f"{path.name}:{node.lineno}: message states {value} "
+                    f"{path.name}:{node.lineno}: text states {value} "
                     f"instead of interpolating the constant"
                 )
                 break

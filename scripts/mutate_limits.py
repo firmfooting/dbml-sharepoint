@@ -217,7 +217,16 @@ def _sweep(names: list[str], source: str, declarations: dict[str, int]) -> list[
     for name in names:
         for delta in (+1, -1):
             mutated, old, new = _mutate(source, name, declarations[name], delta)
-            LIMITS.write_bytes(mutated.encode("utf-8"))
+            payload = mutated.encode("utf-8")
+            LIMITS.write_bytes(payload)
+            # Read back before running, the same rule the restore follows. A
+            # short or stale write would make the suite answer about source
+            # nobody chose, and that reads as an ordinary verdict.
+            if LIMITS.read_bytes() != payload:
+                raise SystemExit(
+                    f"{LIMITS} does not hold the {name} {delta:+d} mutant after "
+                    f"writing it, so the run below would prove nothing"
+                )
             killed = _suite_kills_it()
             verdict = "killed" if killed else "SURVIVED"
             print(f"{name}: {old} -> {new} ({delta:+d}): {verdict}")
