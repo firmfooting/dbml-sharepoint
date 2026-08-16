@@ -1,8 +1,14 @@
 # test/test_styles.py
+import ast
+import copy
+import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from dbml_sharepoint.analysis import styles
 from dbml_sharepoint.analysis.styles import TOKENS, StyleToken, expand_style, parse_theme
 
 
@@ -179,6 +185,15 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
       "color_by": {"field": "R", "map": {"A": "shiny"}}}, "unknown token"),
     ({"style": "trend"}, "requires 'against'"),
     ({"style": "overdue-date", "guard": {"not": ["X"]}}, "guard requires 'field'"),
+    # A numeric field emitted `[$42]`, which resolves to no column: SharePoint
+    # accepts the formatter and renders nothing.
+    ({"style": "overdue-date", "guard": {"field": 42, "not": ["X"]}},
+     "guard requires 'field'"),
+    ({"style": "overdue-date", "guard": {"field": ""}}, "guard requires 'field'"),
+    # A string is iterable, so `not: "Done"` compared against 'D', 'o', 'n', 'e'.
+    ({"style": "overdue-date", "guard": {"field": "Status", "not": "Done"}},
+     "'not' must be a list"),
+    ({"style": "overdue-date", "guard": ["Status"]}, "guard must be a mapping"),
 ])
 def test_invalid_specs_fail_closed_with_context(spec: dict[str, Any], fragment: str) -> None:
     with pytest.raises(ValueError) as err:
@@ -246,3 +261,147 @@ def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, Any], key: 
     remove."""
     with pytest.raises(ValueError, match=key):
         expand_style(spec, "column_formatting.T.C")
+
+
+#: A SharePoint internal name. Anything else inside `[$...]` resolves to no
+#: column, which SharePoint accepts and renders as nothing.
+_INTERNAL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FIELD_REF = re.compile(r"\[\$([^\]]*)\]")
+
+
+def _field_refs(formatter: dict[str, Any]) -> list[str]:
+    """Every column this formatter references, as it appears in the JSON."""
+    refs: list[str] = _FIELD_REF.findall(json.dumps(formatter))
+    return refs
+
+
+#: The expander behind each `style:` name, so the accepted keys can be read out
+#: of the source instead of restated here and left to rot.
+_STYLE_EXPANDERS = {
+    "_severity": "severity",
+    "_pill": "pill",
+    "_data_bar": "data-bar",
+    "_trend": "trend",
+    "_overdue_date": "overdue-date",
+}
+
+
+def _accepted_keys() -> dict[str, dict[tuple[str, ...], set[str]]]:
+    """Every key each style accepts, per nested mapping, read from the
+    `_reject_unknown_keys` calls in `analysis/styles.py`.
+
+    Derived rather than listed so a key added to a style cannot escape the
+    corpus below by nobody remembering to add it here.
+    """
+    tree = ast.parse(Path(styles.__file__).read_text(encoding="utf-8"))
+    found: dict[str, dict[tuple[str, ...], set[str]]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name not in _STYLE_EXPANDERS:
+            continue
+        per_path: dict[tuple[str, ...], set[str]] = {}
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            if not isinstance(call.func, ast.Name):
+                continue
+            if call.func.id != "_reject_unknown_keys":
+                continue
+            path: tuple[str, ...] = ()
+            context_arg = call.args[2]
+            if isinstance(context_arg, ast.JoinedStr):
+                # f"{context}.color_by" names the nested mapping it guards.
+                suffix = "".join(
+                    str(part.value)
+                    for part in context_arg.values
+                    if isinstance(part, ast.Constant)
+                )
+                path = tuple(suffix.strip(".").split("."))
+            per_path[path] = set(ast.literal_eval(call.args[1])) - {"style"}
+        found[_STYLE_EXPANDERS[node.name]] = per_path
+    return found
+
+
+#: One legitimate spec per style, the base every hostile substitution mutates.
+#: Each carries its style's nested mapping so the nested keys get mutated too.
+_LEGITIMATE_SPECS: dict[str, dict[str, Any]] = {
+    "severity": {"style": "severity", "map": {"Open": "low", "Closed": "good"}},
+    "pill": {"style": "pill", "map": {"Open": "low"}},
+    "data-bar": {"style": "data-bar", "max": 25,
+                 "color_by": {"field": "Rating", "map": {"Low": "good"}}},
+    "trend": {"style": "trend", "against": "Target"},
+    "overdue-date": {"style": "overdue-date",
+                     "guard": {"field": "Status", "not": ["Closed"]}},
+}
+
+#: What a hand-written mapping.yaml plausibly holds where a column name belongs.
+_HOSTILE_VALUES: tuple[Any, ...] = (
+    42, 0, True, None, "", " ", "Two Words", "Bad]Name", "@currentField",
+    ["Closed"], {"field": "Status"},
+)
+
+
+def _hostile_corpus() -> list[tuple[str, dict[str, Any]]]:
+    """Each legitimate spec, plus one copy per accepted key per hostile value."""
+    accepted = _accepted_keys()
+    corpus: list[tuple[str, dict[str, Any]]] = []
+    for style_name, base in _LEGITIMATE_SPECS.items():
+        corpus.append((style_name, copy.deepcopy(base)))
+        for path, keys in accepted[style_name].items():
+            for key in sorted(keys):
+                for hostile in _HOSTILE_VALUES:
+                    spec = copy.deepcopy(base)
+                    target: Any = spec
+                    for step in path:
+                        # KeyError here means the base spec stopped carrying
+                        # the nested mapping, so its keys were never mutated.
+                        target = target[step]
+                    target[key] = hostile
+                    corpus.append((style_name, spec))
+    return corpus
+
+
+def test_the_hostile_corpus_covers_every_style_and_key() -> None:
+    """The invariant below is only worth its runtime if the corpus is."""
+    accepted = _accepted_keys()
+    assert set(accepted) == set(styles._STYLES)
+    assert set(_LEGITIMATE_SPECS) == set(styles._STYLES)
+    # The two styles with a nested mapping guard a second key set inside it.
+    assert accepted["data-bar"][("color_by",)] == {"field", "map", "calculated"}
+    assert accepted["overdue-date"][("guard",)] == {"field", "not"}
+    expected = len(_LEGITIMATE_SPECS) + sum(
+        len(keys) * len(_HOSTILE_VALUES)
+        for per_path in accepted.values()
+        for keys in per_path.values()
+    )
+    assert len(_hostile_corpus()) == expected > len(_LEGITIMATE_SPECS)
+
+
+def test_no_style_spec_can_emit_a_malformed_field_reference() -> None:
+    """Every `[$...]` a style emits must name a column, whatever produced it.
+
+    `overdue-date` took its guard field on truthiness alone, so `field: 42`
+    emitted `[$42]`: a formatter that saves, reads back byte-identical, and
+    colours nothing. The oracle needs no knowledge of which key was wrong,
+    which is why `trend`'s legitimate `against: 42` passes it. That emits a
+    bare numeric literal and never a reference.
+    """
+    refs_seen = 0
+    for style_name, spec in _hostile_corpus():
+        try:
+            formatter = expand_style(spec, "column_formatting.T.C")
+        except ValueError:
+            continue
+        for ref in _field_refs(formatter):
+            refs_seen += 1
+            assert _INTERNAL_NAME.match(ref), (
+                f"{style_name} accepted {spec!r} and referenced [${ref}]"
+            )
+    assert refs_seen > 0, "the corpus emitted no field references at all"
+
+
+def test_trend_still_accepts_a_number_to_compare_against() -> None:
+    """The invariant is about references, not types: a numeric `against` is
+    documented and emits a bare literal, so it must not be caught by it."""
+    out = expand_style({"style": "trend", "against": 42}, "ctx")
+    assert "@currentField > 42" in out["children"][0]["attributes"]["class"]
+    assert _field_refs(out) == []
