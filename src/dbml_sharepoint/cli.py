@@ -364,6 +364,12 @@ def _load_config(
     return parsed_schema, bundle, release_obj
 
 
+#: Inputs a wizard must not offer a default for. Being wrong about a target
+#: means a bundle armed for someone else's tenant, with only the wrong-site
+#: guard between that and a mispaste, which is why `--site-url` is required.
+NO_SAFE_DEFAULT: Final = frozenset({"site_url"})
+
+
 def validate_site_url(site_url: str) -> str:
     """Reject a malformed or non-https ``--site-url``, and return it cleaned.
 

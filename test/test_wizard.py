@@ -6,6 +6,7 @@ than `Prompt.ask` keeps the real prompt objects -- including their default
 handling and their validation of a `choices=` answer -- under test.
 """
 
+import ast
 import hashlib
 import io
 import shutil
@@ -25,7 +26,7 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
-from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED
+from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
@@ -2806,3 +2807,137 @@ def test_a_preserved_reader_round_trips_through_the_parser(reader: str) -> None:
 
     settings, _digest = read_env_file(path)
     assert settings["DBMLSP_ENTERPRISE_READER"] == reader
+
+
+def _asked_and_defaulted(source: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Every `_ask_<name>` in `source`, and those offering a `default=`.
+
+    Returned as a pair so a caller can prove the walk found anything at all.
+    Any `.ask(...)` counts, not only `Prompt.ask`, because a question moved
+    to `Confirm` would carry the same defaulting hazard.
+    """
+    asked: set[str] = set()
+    defaulted: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if not node.name.startswith("_ask_"):
+            continue
+        name = node.name.removeprefix("_ask_")
+        asked.add(name)
+        for call in ast.walk(node):
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "ask"
+                and any(keyword.arg == "default" for keyword in call.keywords)
+            ):
+                defaulted.add(name)
+    return frozenset(asked), frozenset(defaulted)
+
+
+def test_no_wizard_default_for_a_named_input() -> None:
+    """No `_ask_<name>` may offer a default for an input `cli` names unsafe.
+
+    `--site-url` is a required option because being wrong about a target
+    arms a bundle against someone else's tenant, and the wizard expressed
+    the opposite by passing `default=`. Nothing connected the two, and the
+    shipped default PASSED `validate_site_url`, so Enter produced a real
+    bundle for `contoso.sharepoint.com`. This reads `NO_SAFE_DEFAULT` from
+    `cli` rather than restating it, because two copies of the policy can
+    disagree and that disagreement is the defect.
+
+    rich returns a default from `PromptBase.__call__` before the calling
+    code runs, so a sentinel default cannot be inspected at runtime and
+    only the source can be asked.
+    """
+    source = Path(wizard.__file__).read_text(encoding="utf-8")
+    asked, defaulted = _asked_and_defaulted(source)
+
+    # Anti-vacuity: a renamed function must fail this gate, not pass it by
+    # leaving the walk with nothing to inspect.
+    unfound = NO_SAFE_DEFAULT - asked
+    assert not unfound, f"no `_ask_` function in wizard.py answers: {sorted(unfound)}"
+
+    offending = sorted(defaulted & NO_SAFE_DEFAULT)
+    assert not offending, (
+        f"these wizard prompts offer a default for an input cli.NO_SAFE_DEFAULT "
+        f"forbids one for: {offending}"
+    )
+
+
+def test_the_default_gate_reports_a_defaulted_prompt_and_only_that() -> None:
+    """The gate's proof, over a seeded fixture rather than a live edit.
+
+    A gate that never fires is worth nothing, and running it only against a
+    fixed `wizard.py` cannot tell a working walk from a broken one.
+    """
+    with_default = (
+        "def _ask_site_url(console):\n"
+        '    return Prompt.ask("x", default="https://contoso.sharepoint.com/sites/x")\n'
+    )
+    without_default = (
+        "def _ask_site_url(console):\n"
+        '    return Prompt.ask("x")\n'
+    )
+
+    assert _asked_and_defaulted(with_default) == (
+        frozenset({"site_url"}), frozenset({"site_url"}),
+    )
+    assert _asked_and_defaulted(without_default) == (
+        frozenset({"site_url"}), frozenset(),
+    )
+    # And a renamed function leaves NOTHING for the gate to check, which is
+    # the case the anti-vacuity assertion exists to catch.
+    renamed = with_default.replace("_ask_site_url", "_ask_target")
+    asked, _defaulted = _asked_and_defaulted(renamed)
+    assert not NO_SAFE_DEFAULT & asked
+
+
+def test_the_site_url_prompt_has_no_default_answer(tmp_path: Path) -> None:
+    """Enter at the site-URL prompt must re-ask, not answer for the operator.
+
+    Scripts an empty answer and then a real one. While `_ask_site_url`
+    carried `default="https://contoso.sharepoint.com/sites/example"`, the
+    empty answer WAS the accepted answer: rich returned the default, it
+    passed `validate_site_url`, and the wizard went on to scaffold and offer
+    to build against a tenant nobody had named. Here the empty answer is
+    refused and the second answer is the one that lands.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "risk-register",
+        "y",   # prefix gate
+        "RR_",
+        str(destination),
+        "",    # Enter: no longer an answer
+        "https://contoso.sharepoint.com/sites/ops",
+        "n",   # build
+        "y",   # confirm
+    ])
+
+    assert wizard.run_wizard(console) == 0
+
+    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
+    assert "--site-url https://contoso.sharepoint.com/sites/ops" in deploy_md
+    assert "sites/example" not in deploy_md
+
+
+def test_the_built_bundle_carries_the_answered_site_url(tmp_path: Path) -> None:
+    """The answer has to reach the emitted JS, not only the copied docs.
+
+    `test_the_chosen_site_url_reaches_the_copied_documentation` covers the
+    markdown; nothing covered the build, which is the artefact that gets
+    pasted into a privileged console.
+    """
+    destination = tmp_path / "proj"
+    site_url = "https://contoso.sharepoint.com/sites/ops"
+    console = ScriptedConsole(
+        _answers(destination, site_url=site_url, build="y", seed="n"),
+    )
+
+    assert wizard.run_wizard(console) == 0
+
+    deploy_js = (destination / "build" / "deploy.js.txt").read_text(encoding="utf-8")
+    assert site_url in deploy_js
+    assert "sites/example" not in deploy_js
