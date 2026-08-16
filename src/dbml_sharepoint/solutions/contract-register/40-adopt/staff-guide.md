@@ -34,7 +34,7 @@ redeploy puts the declared name back.
    itself), then **Renewal type**. That one matters most: choose
    **Auto-renews** and the form will not let you save without **Notice
    period days**, because that number is the only thing that prevents a
-   surprise renewal. Choose *Fixed term — no renewal* and the notice field
+   surprise renewal. Choose *Fixed term, no renewal* and the notice field
    disappears entirely. There is nothing to give notice of.
 4. **Ownership**: **Owner** (the accountable person, not necessarily you),
    **Status**, and **Document URL**: a link to the signed contract where it
