@@ -156,6 +156,18 @@ def _offending_lines(
     ]
 
 
+def _offending_name(relative: str) -> list[str]:
+    """The path itself, which hatchling keeps as the wheel member name.
+
+    A helper so the proof below runs this check rather than a copy of it.
+    """
+    found = sorted({c for c in relative if not c.isascii()})
+    if not found:
+        return []
+    named = ", ".join(f"U+{ord(c):04X}" for c in found)
+    return [f"{relative}: non-ASCII in the filename ({named})"]
+
+
 def _em_dash(line: str) -> str:
     """The report prints this label, so it is returned instead of a bool."""
     return "em dash" if EM_DASH in line else ""
@@ -219,11 +231,14 @@ def test_shipped_text_is_ascii() -> None:
         f"only {len(shipped)} shipped files scanned, so this pins nothing"
     )
 
-    offenders = [
-        line
-        for path in shipped
-        for line in _offending_lines(path, _relative(path), _non_ascii)
-    ]
+    offenders = []
+    for path in shipped:
+        relative = _relative(path)
+        # The name as well as the contents, because hatchling keeps the path
+        # as the wheel member name.
+        offenders.extend(_offending_name(relative))
+        offenders.extend(_offending_lines(path, relative, _non_ascii))
+
     assert not offenders, (
         "Shipped text contains non-ASCII characters. Replace each with its "
         "ASCII spelling; `catalogue._TERMINAL_SPELLINGS` is the table:\n"
@@ -297,3 +312,20 @@ def test_the_scan_reports_a_unicode_line_separator(
     found = _offending_lines(seeded, "guide.md", _non_ascii)
     assert found, f"U+{codepoint:04X} was consumed as a line break, not reported"
     assert f"U+{codepoint:04X}" in found[0]
+
+
+def test_a_non_ascii_filename_is_reported(tmp_path: Path) -> None:
+    """The wheel member name is part of what ships, not only its bytes.
+
+    A file whose contents are clean still breaks the wheel-wide guarantee
+    if its path is not, because hatchling keeps the path as the member name.
+    Built with chr() so this file stays ASCII and its own gate scans it.
+    """
+    named = tmp_path / ("caf" + chr(0x00E9) + ".py")
+    named.write_text("# entirely ascii contents\n", encoding="utf-8", newline="\n")
+
+    relative = named.name
+    assert _offending_lines(named, relative, _non_ascii) == [], (
+        "the contents are clean, so only the name can be the offender"
+    )
+    assert _offending_name(relative) == [f"{relative}: non-ASCII in the filename (U+00E9)"]
