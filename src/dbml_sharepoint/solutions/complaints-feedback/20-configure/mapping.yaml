@@ -169,7 +169,7 @@ column_formatting:
         map: { "Standard": good, "Serious": warning, "Critical": severe }
 
 # The identifying spine every working view opens with. Four of the five
-# views below use it, past §1.9's three-repetition threshold.
+# views below use it, past section 1.9's three-repetition threshold.
 field_sets:
   Feedback:
     identity: [Title, FeedbackType, Severity, ReceivedDate, Handler, Status]

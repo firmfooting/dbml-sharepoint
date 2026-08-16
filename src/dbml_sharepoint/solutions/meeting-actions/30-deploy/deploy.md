@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = meeting-actions`. Run order: **assess** the target site (paste
-`build/assess.js.txt`, read-only) → **review** `build/deploy-manifest.md` (must
-show 0 validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+`build/assess.js.txt`, read-only) -> **review** `build/deploy-manifest.md` (must
+show 0 validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -114,7 +114,7 @@ demo-marked as demo-only content.
   lookup already knows.
 
 - **A "Recent" meetings view is a rolling ninety days, not "this
-  quarter".** CAML has no calendar predicate: `today±N` is what exists,
+  quarter".** CAML has no calendar predicate: `today+/-N` is what exists,
   and the two differ on the first day of a quarter, which is exactly when
   someone assembling a committee pack notices. The view is titled
   *Recent* rather than named for a period, so it cannot lie about which.

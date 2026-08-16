@@ -224,3 +224,20 @@ def test_every_catalogue_entry_is_ascii() -> None:
         if not (value := getattr(solution, field)).isascii()
     ]
     assert not offenders, f"catalogue text a terminal may not encode: {offenders}"
+
+
+def test_clean_folds_typography_a_console_cannot_encode() -> None:
+    """The only observer of `_TERMINAL_SPELLINGS` now that shipped text is ASCII.
+
+    Every README used to carry typographic punctuation, so the fold was
+    exercised by real data and the tests above passed because it worked.
+    `test_shipped_text_is_ascii` removed that data, and emptying the table
+    then left the whole of this module green.
+    """
+    # Built with chr() so this file needs no exemption from the ASCII rule,
+    # which is how _TERMINAL_SPELLINGS itself is written.
+    messy = (
+        "**Risk 5" + chr(0x00D7) + "5** " + chr(0x2014)
+        + " owner " + chr(0x2192) + " review" + chr(0x2026)
+    )
+    assert catalogue._clean(messy) == "Risk 5x5 -- owner -> review..."

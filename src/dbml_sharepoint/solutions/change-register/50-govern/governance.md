@@ -21,7 +21,7 @@
 Edit to your delegations. The register records it, this table
 legitimises it.
 
-| Impact | Decided by | SLA (request → decision) |
+| Impact | Decided by | SLA (request -> decision) |
 | --- | --- | --- |
 | High | Executive owner of the affected area | 15 business days |
 | Medium | Department manager | 10 business days |

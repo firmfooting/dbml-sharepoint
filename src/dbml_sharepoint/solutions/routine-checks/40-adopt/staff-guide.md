@@ -2,7 +2,7 @@
 
 ## Doing a check (60 seconds, at the checkpoint)
 
-1. Scan the QR / open **RC_CheckEntry** → **New** (the link is where the
+1. Scan the QR / open **RC_CheckEntry** -> **New** (the link is where the
    paper sheet used to be).
 2. **The check**: pick the **Checkpoint**, confirm **Checked At** (now,
    see the golden rule).

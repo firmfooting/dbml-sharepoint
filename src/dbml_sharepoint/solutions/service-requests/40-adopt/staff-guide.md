@@ -4,7 +4,7 @@
 
 Need something fixed, moved, supplied or set up?
 
-1. **SR_Request** → **New**.
+1. **SR_Request** -> **New**.
 2. **Describe the request**: **Title**: what and where ("Meeting room 2
    screen not detecting laptops"). **Category** picks whose queue it lands
    in. **Location** precisely (the fixer shouldn't need to phone you to

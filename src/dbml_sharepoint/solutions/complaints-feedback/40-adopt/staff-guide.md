@@ -5,7 +5,7 @@
 Someone gives you a complaint, compliment or suggestion, in person, by
 phone, however:
 
-1. **CF_Feedback** → **New**.
+1. **CF_Feedback** -> **New**.
 2. **What was raised**: **Title**, neutral and factual: "Complaint -
    waiting time at reception, 14 July". No names in the title. Then
    **Type**, **Channel**, **Received date**, and **Detail**: what they

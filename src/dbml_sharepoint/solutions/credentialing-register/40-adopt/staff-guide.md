@@ -46,7 +46,7 @@ enforcing it, done weekly rather than per-save.
 
 1. **Registrations expiring** (90 days): notify practitioner + manager;
    on renewal, sight the new registration, update expiry, link evidence.
-2. **Expiring credentials** (90 days): same rhythm. Anything past expiry →
+2. **Expiring credentials** (90 days): same rhythm. Anything past expiry ->
    Status **Expired** immediately, and escalate per governance. An
    expired registration is a stop-work conversation, not a reminder email.
    An Expired credential's whole row washes red in the practitioner's own

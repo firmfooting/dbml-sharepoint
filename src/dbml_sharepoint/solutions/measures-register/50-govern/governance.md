@@ -11,7 +11,7 @@
 ## Definition change control
 
 1. Proposed change goes to the custodians with the reason.
-2. If approved: Notes gets a dated entry (old wording → new wording → why),
+2. If approved: Notes gets a dated entry (old wording -> new wording -> why),
    `ReviewDate` resets, and **every forum in ReportedTo is notified that
    the series breaks** at the change date.
 3. Material changes (different denominator, different anchor) are a new
@@ -29,7 +29,7 @@ questions of every Active measure:
 2. Does anyone still receive it? (Check ReportedTo against real agendas.)
 3. Would its owner notice if it stopped being produced?
 
-Three noes = **Retired**. Expect to retire 10–20% annually; a catalogue
+Three noes = **Retired**. Expect to retire 10-20% annually; a catalogue
 that only grows is a reporting burden compounding. Retirement is recorded,
 not deleted: retired definitions are needed to read old reports.
 

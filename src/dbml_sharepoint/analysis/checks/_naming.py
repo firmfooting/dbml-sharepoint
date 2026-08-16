@@ -181,7 +181,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at_column,
                     ))
             elif not any(c.name == "Title" for c in target_table.columns):
-                # No display_column and no Title → the lookup renders blank.
+                # No display_column and no Title -> the lookup renders blank.
                 findings.append(Finding(
                     FindingCode.LOOKUP_WOULD_RENDER_BLANK,
                     f"{table.name}.{col.name}: lookup target "

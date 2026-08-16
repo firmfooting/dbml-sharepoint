@@ -3,9 +3,9 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = research-ethics-register-simple`. Run order: **assess** the target
 site (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE
-or an accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
-console → **verify** against the checklist below. Template-specific notes
+or an accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
+validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
+console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 ## Before you build
@@ -37,7 +37,7 @@ follow.
       readiness formula, so a rename here costs a colour and nothing else.
       See the LNR note in `50-govern/governance.md` before renaming it.
 - [ ] **Decide your reporting horizon before first deploy.** The *Reports
-      due soon* view filters `NextReportDue ≤ today+60`. Change the `today+60`
+      due soon* view filters `NextReportDue <= today+60`. Change the `today+60`
       in `mapping.yaml` now if your cycle differs. A view title and a filter
       that disagree is worse than either. The title is deliberately silent
       about the number so that changing it does not leave a title lying.
@@ -138,7 +138,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       own status column: an approval expiring under a project that is still
       running must keep shouting even after somebody has flipped Ethics
       Status to *Expired*.
-- [ ] List Settings → Indexed columns shows exactly four: `Ethics Status`,
+- [ ] List Settings -> Indexed columns shows exactly four: `Ethics Status`,
       `Site Authorisation Status`, `Project Stage` and `Next Report Due`.
       The build manifest lists the same four. Every declared view filters on
       one of them, including the OR in *Response required*: an OR is only

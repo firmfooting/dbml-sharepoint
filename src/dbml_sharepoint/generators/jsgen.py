@@ -901,7 +901,7 @@ def _field_body(
         case "Lookup":
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
-            # Membership → DisplayName) renders that instead. A bare "Title"
+            # Membership -> DisplayName) renders that instead. A bare "Title"
             # shows blank on lists that never populate Title.
             #
             # `display_column_for` rather than the rule spelled out again:

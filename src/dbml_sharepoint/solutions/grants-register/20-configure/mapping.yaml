@@ -149,7 +149,7 @@ column_formatting:
       guard: { field: AcqStatus, not: ["Submitted", "Accepted by funder"] }
 
 # Every lens on each list shows the same identifying columns before its own
-# payload, so each spine is declared once (§1.9).
+# payload, so each spine is declared once (section 1.9).
 field_sets:
   Submission:
     identity: [Title, Funder, GrantOwner, Outcome]
@@ -234,7 +234,7 @@ views:
     # and a default view that hides the worst rows on the list is the
     # opposite of what a default is for.
     #
-    # This list's ONE row-level signal (§1.6) lives here. It reads
+    # This list's ONE row-level signal (section 1.6) lives here. It reads
     # AcqStatus, so that column must stay in this view's `fields`; view
     # formatting can only read columns the view displays, and dropping it
     # would stop the wash firing with a clean build. It compares with `==`
@@ -430,7 +430,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # deadline surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator; { demo_ref: key } resolves to the Id of the submission
 # created under that key.

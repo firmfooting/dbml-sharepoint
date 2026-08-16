@@ -14,7 +14,7 @@ The register lives or dies on obligation *size*:
   can't name the evidence in one sentence, split it; if ten rows share one
   owner and one evidence link, merge them.
 
-Expect 10–40 rows per major instrument, not 3 and not 300.
+Expect 10-40 rows per major instrument, not 3 and not 300.
 
 ## The five views
 

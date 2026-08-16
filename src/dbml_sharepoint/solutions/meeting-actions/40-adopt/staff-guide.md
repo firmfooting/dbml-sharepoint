@@ -4,13 +4,13 @@
 
 During or straight after each meeting:
 
-1. **MA_Meeting** → **New**. *The meeting*: "Forum, date" title, type,
+1. **MA_Meeting** -> **New**. *The meeting*: "Forum, date" title, type,
    date, chair. *The record*: link the minutes doc if you keep one.
    (30 seconds.)
-2. For each decision made: **MA_Decision** → **New**, pick the meeting,
+2. For each decision made: **MA_Decision** -> **New**, pick the meeting,
    state the decision *as a decision*, "We will X from Y", with just
    enough in *Why* that nobody has to relitigate it in six months.
-3. For each action: **MA_ActionItem** → **New**, pick the meeting, a verb
+3. For each action: **MA_ActionItem** -> **New**, pick the meeting, a verb
    for a title, then *Owner and date*: **one owner** (never "team"), a
    real due date. Both are required; the form will not let you skip
    either, which is the point.
@@ -28,7 +28,7 @@ teams find the three lists *replace* long-form minutes for routine meetings.
 - Can't deliver by the due date? Change the date and say why in Notes.
   A moved date with a reason beats a silently overdue action. Until you
   do, the date is red with a warning icon everywhere it appears.
-- An action that no longer makes sense → **Dropped** with a note. Nothing
+- An action that no longer makes sense -> **Dropped** with a note. Nothing
   refuses that save, deliberately: dropping honestly is already better
   than leaving it Open forever, and the form is not going to make the
   honest move the harder one.

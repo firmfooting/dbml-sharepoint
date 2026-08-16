@@ -227,7 +227,7 @@ views:
     # piece of equipment, described as the service history an auditor
     # reads. A static view cannot filter to one parent: building it meant
     # hard-coding one item into a filter that rots, or one view per item.
-    # Per §2.4 of the family standard it ships as ONE view grouped on the
+    # Per section 2.4 of the family standard it ships as ONE view grouped on the
     # Equipment lookup, collapsed, and it is the DEFAULT, because
     # 50-govern/governance.md names accreditors and insurers as this
     # view's audience and their first click should not be a view picker.

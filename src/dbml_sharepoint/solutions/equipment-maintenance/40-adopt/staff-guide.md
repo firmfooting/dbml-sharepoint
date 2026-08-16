@@ -18,7 +18,7 @@ cupboard for the next person.
 
 Every time work is done on an item (by you or a contractor):
 
-1. **Record the event**: `EM_MaintenanceEvent` → New: what, when, who,
+1. **Record the event**: `EM_MaintenanceEvent` -> New: what, when, who,
    **Result**, and the **Evidence URL** (service report / test certificate
    filed in the records system first, then linked).
 2. **Reschedule the item**: open the equipment row and set **Next Due
@@ -66,8 +66,8 @@ their system" is not your register; your obligations don't outsource.
 
 ### New and retiring equipment
 
-New maintained item → register it with frequency and first Next Due Date
-before first use. Retired → Status **Retired**; history stays (it's the
+New maintained item -> register it with frequency and first Next Due Date
+before first use. Retired -> Status **Retired**; history stays (it's the
 evidence trail), tag never reused. Retiring an item is also what stops its
 due date shouting: the overdue colouring is guarded on Retired and on
 nothing else.

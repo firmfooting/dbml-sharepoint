@@ -13,7 +13,7 @@ Wraps pydbml and post-processes its output into a stable in-memory schema
 model the rest of the deployer works against.
 
 The supported DBML subset is documented in
-docs/design/requirements/dbml-sharepoint-requirements.md §5.
+docs/design/requirements/dbml-sharepoint-requirements.md section 5.
 
 ### `Reference`
 

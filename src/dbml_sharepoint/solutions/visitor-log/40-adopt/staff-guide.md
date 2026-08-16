@@ -2,7 +2,7 @@
 
 ## Signing someone in (reception or the host, 30 seconds)
 
-1. **VI_Visit** → **New** (or the visitor uses the kiosk tablet).
+1. **VI_Visit** -> **New** (or the visitor uses the kiosk tablet).
 2. **Who is visiting**: name, organisation, **type**, purpose.
 3. **On site**: **host** (the staff member responsible for them),
    location, **Signed In At** = now, badge ref if you issue them.

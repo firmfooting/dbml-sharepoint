@@ -10,7 +10,7 @@
 
 ## Adding an asset (when new kit arrives)
 
-1. **AS_Asset** → **New**.
+1. **AS_Asset** -> **New**.
 2. **What it is**: **Title**: what it is, plainly. **Asset tag**: the
    sticker/serial physically on the item. The register refuses
    duplicates. **Category**, and anything the next holder should know in

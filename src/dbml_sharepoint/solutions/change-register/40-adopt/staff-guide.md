@@ -2,7 +2,7 @@
 
 ## Requesting a change (everyone, 5 minutes)
 
-1. **CH_ChangeRequest** → **New**. The form asks for two things and no
+1. **CH_ChangeRequest** -> **New**. The form asks for two things and no
    more: **Describe the change**, and one field of **Triage**.
 2. **Title**: the change in one line, outcome first: "Move invoice
    approvals from paper to Teams", not "Problem with invoices".
@@ -19,14 +19,14 @@
    baseline the decision refers to. Extra information: send it to a change
    manager to append.
 
-You can read everything, so watch your request move: Submitted → Under
-review → a decision, with the reasoning in **Decision notes**.
+You can read everything, so watch your request move: Submitted -> Under
+review -> a decision, with the reasoning in **Decision notes**.
 
 ## Running the register (change managers)
 
 1. **Triage queue** daily: read it, set **Impact** honestly against the
    governance definitions, set the **Approver** from the authority table,
-   Status → **Under review**. The request then moves into **Awaiting
+   Status -> **Under review**. The request then moves into **Awaiting
    decision**, grouped by approver, which is the list you chase from.
 2. Chase decisions; when made, set Status to **Approved** or **Rejected**.
    **Decision date** and **Decision notes** appear on the form as you do

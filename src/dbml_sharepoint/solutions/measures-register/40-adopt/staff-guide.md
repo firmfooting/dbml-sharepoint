@@ -23,7 +23,7 @@ absence has made two reasonable people compute different numbers:
 
 The form asks in four sections, in this order.
 
-1. **MR_Measure** → **New** (custodians create; owners draft with them).
+1. **MR_Measure** -> **New** (custodians create; owners draft with them).
 2. **Name the measure**: name it as it will appear on the report,
    including the unit: "Complaints acknowledged within 2 days (%)". Pick
    the **Measure Area** from the ones already in use ("The catalogue"

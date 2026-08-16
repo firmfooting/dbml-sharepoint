@@ -520,8 +520,8 @@ TODAY_SENTINEL = re.compile(r"^today(?:([+-])(\d+))?$")
 # The current-INSTANT sentinel, for a datetime column that must be compared
 # to the moment rather than to the day.
 #
-# NO OFFSET FORM, deliberately, and that is not an oversight. `today±N` has
-# a verified rendering on both targets; `now±N` does not. NOW()+1 in a
+# NO OFFSET FORM, deliberately, and that is not an oversight. `today+/-N` has
+# a verified rendering on both targets; `now+/-N` does not. NOW()+1 in a
 # validation formula and <Today OffsetDays> combined with IncludeTimeValue
 # are each plausible and each unobserved, and this project's rule is that
 # unverified is treated as unknown. Bare `now` is what the probe on

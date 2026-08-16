@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = stakeholder-contacts`. Run order: **assess** the target site
-(paste `build/assess.js.txt`, read-only) → **review**
-`build/deploy-manifest.md` (must show 0 validation errors) → **paste**
-`build/deploy.js.txt` from a Site Owner's console → **verify** against the
+(paste `build/assess.js.txt`, read-only) -> **review**
+`build/deploy-manifest.md` (must show 0 validation errors) -> **paste**
+`build/deploy.js.txt` from a Site Owner's console -> **verify** against the
 checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -91,12 +91,12 @@ real contacts.
 - [ ] Log an interaction dated tomorrow. Refused, with a message saying
       this list is a record rather than a calendar. That is the **only**
       save rule on this template. See below.
-- [ ] Create a test organisation → a test contact in it (Organisation
-      lookup offers it) → a test interaction with them (Contact lookup
+- [ ] Create a test organisation -> a test contact in it (Organisation
+      lookup offers it) -> a test interaction with them (Contact lookup
       offers them).
 - [ ] `Contact.IsActive` defaults to **Yes**.
 - [ ] Any Member can create all three.
-- [ ] Delete the test rows (interaction → contact → organisation).
+- [ ] Delete the test rows (interaction -> contact -> organisation).
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
       this list"; a display-name rename is still possible. It is
@@ -115,7 +115,7 @@ real contacts.
 - **"Recent activity" is a rolling ninety days**, not a calendar period.
   The published row had no filter at all, which on a register anyone has
   actually used means every interaction ever. CAML has no calendar
-  predicate (`today±N` is what exists), so the view is titled *Recent*
+  predicate (`today+/-N` is what exists), so the view is titled *Recent*
   rather than named for a period, and cannot lie about which. Nothing is
   lost: *By contact* carries no filter.
 

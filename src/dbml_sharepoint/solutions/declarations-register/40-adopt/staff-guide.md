@@ -11,7 +11,7 @@ duties. Appearance is the test, not your own confidence in your integrity.
 New role on a board? Partner's business tenders to us? Relative in your
 reporting line? Declare it.
 
-1. **DR_Interest** → **New**.
+1. **DR_Interest** -> **New**.
 2. **Title**: the interest in one neutral line.
 3. **Type**, **Declared date** (today), and **Detail**: the facts of the
    interest and where it could touch your role. Don't self-assess. That's
@@ -33,7 +33,7 @@ dinner, tickets, travel? **Declare it whether you accepted or not** (yes,
 declined offers too; patterns of offers are exactly what the register
 exists to see).
 
-1. **DR_GiftBenefit** → **New**: what, who offered it, when, estimated
+1. **DR_GiftBenefit** -> **New**: what, who offered it, when, estimated
    value, context. **Decision** and **Decided by** are not on the New
    form. You don't decide your own gift, and the form doesn't let you
    pretend otherwise.

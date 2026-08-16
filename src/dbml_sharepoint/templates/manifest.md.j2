@@ -43,7 +43,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    `{{ site_url }}/_layouts/15/settings.aspx`
    (modern pages may not expose `_spPageContextInfo`, which the script's
    wrong-site safety check requires; it aborts anywhere but the target site).
-4. **Open the browser console** (F12 → Console). If the browser blocks the
+4. **Open the browser console** (F12 -> Console). If the browser blocks the
    paste, type `allow pasting` and press Enter first.
 5. **Paste the entire contents of `deploy.js.txt`** and press Enter. (If a run
    feels slow, flip `const DEBUG = false` to `true` near the top of the
@@ -51,7 +51,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    per-phase seconds table prints before DONE. No rebuild needed.)
 6. **Watch the `[SP-DEPLOY]` log lines.** The script runs read-only preflights
    (permissions, existing-schema shapes), then Phase {{ phase_num['security'] }} permission levels and
-   groups, then lists → columns → lookups → indexes → ACLs → seeds, and prints
+   groups, then lists -> columns -> lookups -> indexes -> ACLs -> seeds, and prints
    a summary object: `listsCreated`, `columnsCreated`, `columnsSkipped`,
    `errors`. Success is `errors: []`.
 7. **On any `[ERROR]`**, stop and read it; the script fails closed rather
@@ -80,7 +80,7 @@ Operator self-enrolment: for the groups flagged below, the script adds YOU
 group's list grants, and you are removed automatically at the end of the run
 (on success or abort). If you were already a member, your membership is left
 untouched. If an unexpected crash strands the enrolment, remove yourself in
-**Site permissions → Groups**.
+**Site permissions -> Groups**.
 {% endif %}
 {% set reader_groups = schema_json.groups | selectattr("enroll_enterprise_reader") | list %}
 {% set reader_group_names = reader_groups | map(attribute="name") | join(", ") %}
@@ -95,7 +95,7 @@ account to **{{ reader_group_names }}**, a group granted the built-in **Read** a
 nothing more. It is NOT like the operator self-enrolment above: that one exists
 only to let this run write and removes itself at the end of the run, whereas a
 reporting account has to keep reading between runs, so nothing removes this one.
-Remove it by hand in **Site permissions → Groups** when the account no longer
+Remove it by hand in **Site permissions -> Groups** when the account no longer
 needs access.
 
 **Check that group's membership before you paste.** Phase {{ phase_num['reader_enrolment'] }} enrols nobody and
@@ -104,7 +104,7 @@ other than `{{ enterprise_reader }}`; it names each one and removes none, becaus
 second holder of **Read** on
 {% if reader_excluded_lists %}all but {{ reader_excluded_lists | join(", ") }}
 {% else %}every list here{% endif %} is your decision, not the script's.
-If that stops you: remove them in **Site permissions → Groups** and paste again,
+If that stops you: remove them in **Site permissions -> Groups** and paste again,
 or rebuild without `--enterprise-reader`, which leaves the membership untouched
 and still deploys the group and its grant. `{{ enterprise_reader }}` already being a
 member is fine; a repeat paste of this bundle is a no-op there.
@@ -126,7 +126,7 @@ holds the built-in **Read**, so anyone in it can read
 {{ "does" if reader_excluded_lists | length == 1 else "do" }} not grant it;
 an override may leave the group out deliberately, so this is reported rather
 than refused{% else %}every list this bundle provisions{% endif %}.
-Check **Site permissions → Groups** if you need to know.
+Check **Site permissions -> Groups** if you need to know.
 {% endif %}
 
 ## Summary

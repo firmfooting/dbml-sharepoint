@@ -7,7 +7,7 @@ volunteers interact with you, not with the list.*
 
 The form has four sections and they run in the order the work happens.
 
-1. **VL_Volunteer** → **New** at first contact. *Who they are*: name,
+1. **VL_Volunteer** -> **New** at first contact. *Who they are*: name,
    intended role, team, an emergency contact. *Coordination*: yourself as
    Coordinator. *In the programme*: Status **Applying**: it is already
    the default, and while it stands the **Start Date** field is not on the
@@ -17,9 +17,9 @@ The form has four sections and they run in the order the work happens.
    the register holds dates and numbers; the sighted documents are handled
    per your privacy procedure (most programmes record-and-return rather
    than copy).
-3. Induction done → **Induction Date**. The form refuses a date in the
+3. Induction done -> **Induction Date**. The form refuses a date in the
    future, with a message saying so.
-4. Everything required in place → Status **Active**. The **Start Date**
+4. Everything required in place -> Status **Active**. The **Start Date**
    field appears the moment you do, and the form will not save an Active
    volunteer without both a start date and an induction date. **Not
    before**: Applying volunteers don't start, however lovely they are;
@@ -53,9 +53,9 @@ volunteer will read it; under privacy law, they may.
 
 ## Breaks and exits
 
-- Extended break → **Inactive** (checks keep being swept if they intend
+- Extended break -> **Inactive** (checks keep being swept if they intend
   to return).
-- Leaving → **Exited**; see governance for what gets trimmed and when.
+- Leaving -> **Exited**; see governance for what gets trimmed and when.
 
 Both land in the *Inactive and exited* view, which is where the annual
 retention trim is worked from. An Exited volunteer's expiry dates stop

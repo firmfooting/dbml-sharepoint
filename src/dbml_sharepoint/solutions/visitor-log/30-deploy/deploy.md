@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = visitor-log`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -66,7 +66,7 @@ site that already holds real visits.
 - [ ] Two of the four views are substitutions for what this template's old
       recommended-views table promised, and the difference is worth
       knowing:
-      - **Signed in today** filters `SignedInAt ≥ today`, not `= today`.
+      - **Signed in today** filters `SignedInAt >= today`, not `= today`.
         CAML's `<Today/>` is midnight, so an equality test on a *datetime*
         column matches only a sign-in stamped at exactly 00:00. The
         promised view would have been permanently empty.
@@ -74,7 +74,7 @@ site that already holds real visits.
         "before midnight this morning" rather than "more than 24 hours
         ago". Someone who signed in at 23:50 last night appears in it at
         00:01, which is what a morning tidy-up wants.
-- [ ] List Settings → Indexed columns shows `SignedInAt`, `VisitorType`
+- [ ] List Settings -> Indexed columns shows `SignedInAt`, `VisitorType`
       and `VisitLocation`. The build manifest lists the same three.
 - [ ] The New form shows three sections: **Who is visiting**, **On site**
       and **Induction**, each holding the fields named in

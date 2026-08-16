@@ -3,8 +3,8 @@
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = asset-register`. Run order: **assess** the target site (paste
 `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
-DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
+DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0 validation
+errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -74,7 +74,7 @@ site that already holds real assets.
       demo locations are already there; delete them once your real ones
       are in.)
 - [ ] Create a test asset: unique `AssetTag` enforced (try a duplicate,
-      rejected); Purchase `2026-01-01` + Warranty `2028-01-01` →
+      rejected); Purchase `2026-01-01` + Warranty `2028-01-01` ->
       **Warranty Months = 24**, drawn as a bar against a 60-month scale.
 - [ ] Set a `Warranty Expiry` in the past on an item that is **In
       service**: the date turns red with a warning icon. Set the same

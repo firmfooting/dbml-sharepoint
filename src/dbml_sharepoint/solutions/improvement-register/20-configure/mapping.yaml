@@ -114,7 +114,7 @@ column_formatting:
     DaysIdeaToOutcome: { style: data-bar, max: 180, calculated: true }
 
 # The identifying spine every lens repeats. Five views share it, above
-# §1.9's three-repetition threshold.
+# section 1.9's three-repetition threshold.
 field_sets:
   Improvement:
     identity: [Title, Source, Owner, Stage]
@@ -164,7 +164,7 @@ views:
         SourceRef: 180
         RaisedDate: 160
         MeasureBefore: 180
-    # §2.5: CAML has no calendar-quarter predicate, so the published
+    # Section 2.5: CAML has no calendar-quarter predicate, so the published
     # "Adopted this quarter" ships as a ROLLING NINETY DAYS. The two differ
     # on the first day of a quarter, and someone reconciling a committee
     # pack will notice, so say so before they do.
@@ -323,7 +323,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # rolling adoption window lands on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every stage
 # colour renders, five of the seven sources are represented so "By source"

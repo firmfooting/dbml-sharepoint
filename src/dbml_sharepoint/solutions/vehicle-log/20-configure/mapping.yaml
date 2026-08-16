@@ -176,13 +176,13 @@ views:
     # vehicle. A static view cannot do that: SharePoint has no per-parent
     # filter, so following the table meant either hard-coding one vehicle
     # into a filter that rots the moment the fleet changes, or building one
-    # view per car. Per §2.4 of the family standard this ships as ONE view
+    # view per car. Per section 2.4 of the family standard this ships as ONE view
     # grouped on the Vehicle lookup, collapsed, which is the real
     # SharePoint idiom, stays correct as vehicles are added, and gives the
     # continuous log book the old row was actually asking for.
     #
     # THE ROW WASH LIVES HERE, and this is the one list-level signal this
-    # template gets (§1.6). A negative Trip km means a mis-read odometer,
+    # template gets (section 1.6). A negative Trip km means a mis-read odometer,
     # which is the single worst state in a log book whose whole value is
     # odometer continuity, and this is the view where continuity is read,
     # one vehicle's trips in a row. The formatter reads [$TripKm], so

@@ -160,7 +160,7 @@ column_formatting:
     # decision, and that is what the "Pending decisions" view is for.
 
 # Every lens on each list shows the same identifying columns before its own
-# payload, so each spine is declared once (§1.9).
+# payload, so each spine is declared once (section 1.9).
 field_sets:
   Interest:
     identity: [Title, InterestType, DeclaredBy, Status, DeclaredDate]
@@ -338,7 +338,7 @@ views:
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 #
-# Deliberately NOT declared on either list: a row-level formatter. §1.6
+# Deliberately NOT declared on either list: a row-level formatter. Section 1.6
 # allows at most one per list and only where a single worst state exists.
 # Neither list has one: an overdue review already escalates in its own
 # cell, and the worst gift row is a compound of value, offeror and
@@ -449,7 +449,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # review and disclosure surfaces land on whatever day the demo runs; "@me"
 # is the pasting operator.
 #

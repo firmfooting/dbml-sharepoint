@@ -279,7 +279,7 @@ list_validation:
     message: "Ending a recommendation needs the Closed Date it was verified or accepted on, for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/governance.md)."
 
 # All five Recommendation lenses show the same six identifying columns
-# before their own payload, so the spine is declared once (§1.9). AU_Audit
+# before their own payload, so the spine is declared once (section 1.9). AU_Audit
 # has two views and gets no set. Below the three-repetition bar, the
 # indirection costs more than it saves.
 field_sets:
@@ -448,7 +448,7 @@ views:
 # calculated column always resolves empty in a form header, silently. It
 # reaches the form through its own column_formatting, in that section.
 #
-# Also deliberately NOT declared: a row-level formatter. §1.6 allows one
+# Also deliberately NOT declared: a row-level formatter. Section 1.6 allows one
 # per list, for a single worst state. The worst row here is an overdue
 # Critical (a compound of two columns, not one) and both already
 # escalate in their own cells on every view that shows them. A wash would
@@ -463,7 +463,7 @@ form_formatting:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # overdue and closure surfaces land on whatever day the demo runs; "@me" is
 # the pasting operator; { demo_ref: key } resolves to the Id of the audit
 # created under that key.

@@ -56,7 +56,7 @@ verify SharePoint's Advanced settings. On **`SE_ServiceEvent`** and
 **`SE_FollowUp`** (not on `SE_ServiceIssue`, which contributors cannot reach
 at all):
 
-1. Open **List settings → Advanced settings**.
+1. Open **List settings -> Advanced settings**.
 2. Leave **Read access** on **Read all items**. This register does *not* use
    read-own item-level filtering, and turning it on would break it: it filters
    Curators too, and the **Needs review** queue is by construction made of
