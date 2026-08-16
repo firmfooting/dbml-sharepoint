@@ -9,8 +9,8 @@ covered by it, and they are the ones that reach a live site.
 Nothing in the build can see one. An em dash in a list description saves,
 reads back byte-identical, passes every deploy phase, and renders on an
 operator's screen looking like the tool wrote it that way. The same is true of
-every other non-ASCII character, which is why the second gate covers the whole
-shipped surface rather than one codepoint.
+every other non-ASCII character, which is why the second gate covers every
+codepoint in the shipped surface.
 
 Each gate records its own sweep. MEASURED 2026-08-16: the em-dash sweep
 removed 60 from 20 files across 8 solution families, which was the
@@ -34,8 +34,8 @@ from typing import Any
 import pytest
 from _paths import REPO_ROOT
 
-#: An escape rather than the character, so this file is scanned like any
-#: other rather than needing an exemption from itself.
+#: Written as an escape so this file stays ASCII and its own gates scan it
+#: like any other file, with no exemption.
 EM_DASH = "\u2014"
 
 #: Suffixes carrying text a human wrote or a human reads. A binary file has
@@ -108,7 +108,7 @@ def _shipped_roots() -> tuple[str, ...]:
 
 
 def _shipped_files(roots: tuple[str, ...]) -> list[Path]:
-    """Every tracked file under a shipped root, not a suffix subset of them.
+    """Every tracked file under a shipped root, whatever its extension.
 
     `SCANNED` lists the suffixes the em-dash gate reads. Reusing it here would
     silently drop whatever extension ships next.
@@ -144,7 +144,7 @@ def _offending_lines(
 
 
 def _em_dash(line: str) -> str:
-    """A label rather than a bool, because it carries into the report."""
+    """Returns the label itself, because it is what the report prints."""
     return "em dash" if EM_DASH in line else ""
 
 
@@ -155,7 +155,7 @@ def _non_ascii(line: str) -> str:
 
 
 def test_no_tracked_file_contains_an_em_dash() -> None:
-    """The failure names every site, so the fix is a list rather than a hunt."""
+    """The failure names every offending file and line."""
     scanned = _tracked_text()
     # Without this the gate passes on an empty list, which is how a path
     # filter that stops matching goes unnoticed.
@@ -175,7 +175,7 @@ def test_no_tracked_file_contains_an_em_dash() -> None:
 
 
 def test_the_gate_would_catch_a_reintroduced_em_dash(tmp_path: Path) -> None:
-    """Proof the scan bites, independent of the repository being clean.
+    """Proof the scan reports a seeded em dash, independent of a clean tree.
 
     The gate above passes today by finding nothing, which is the same
     observable result as a scan that reads no files or matches no character.
@@ -198,8 +198,8 @@ def test_shipped_text_is_ascii() -> None:
     """Every character the wheel ships is ASCII.
 
     `U+2192` fails to encode on cp1252, cp850 and cp437 alike, so no single
-    code page is the constraint. The boundary is what ships, which is decided
-    once in packaging rather than per file by each contributor.
+    code page is the constraint. Packaging decides what ships, so no
+    contributor has to judge the boundary file by file.
     """
     shipped = _shipped_files(_shipped_roots())
     assert len(shipped) > 100, (
@@ -219,7 +219,7 @@ def test_shipped_text_is_ascii() -> None:
 
 
 def test_the_shipped_roots_come_from_packaging() -> None:
-    """The gate's file set is derived from pyproject rather than duplicated.
+    """The gate's file set is derived from pyproject, not copied from it.
 
     Asserted against an invented config, because asserting the real values
     passes just as well against a hard-coded pair.
@@ -231,7 +231,8 @@ def test_the_shipped_roots_come_from_packaging() -> None:
         }}}}},
     })
     assert invented == ("src/one", "src/two", "DESCRIPTION.rst")
-    # And what the real file says today, so a packaging move is loud.
+    # And what the real file says today, so moving either key fails here
+    # instead of silently narrowing what the gate scans.
     assert _shipped_roots() == ("src/dbml_sharepoint", "README.md")
 
 
