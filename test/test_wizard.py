@@ -2723,8 +2723,8 @@ def test_a_declined_reader_is_not_preserved_for_the_rebuild(
 
     Copying the source unchanged left the suggestion in the project, so a
     later rebuild enrolled an account the Review panel had just reported
-    as nobody. Enrolment is PERMANENT and survives a rollback, so the
-    wizard must not leave that behind.
+    as nobody. Enrolment survives a rollback, so the wizard must not leave
+    that behind.
     """
     _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
     captured = _capture_build(monkeypatch)

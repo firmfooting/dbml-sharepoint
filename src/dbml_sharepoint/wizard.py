@@ -811,10 +811,9 @@ def _env_text_for_answer(text: str, reader: str | None) -> str:
 def _env_value_literal(value: str) -> str:
     """`value` written so `read_env_file` reads it back unchanged.
 
-    `validate_enterprise_reader` accepts a leading `'` or `"`, which the
-    parser would read as an opening quote and then refuse for never being
-    closed. Wrapping in the OTHER quote round-trips, because `_unquote`
-    strips exactly one outer pair.
+    `validate_enterprise_reader` accepts a leading quote, which the parser
+    would read as an opening quote and refuse for never closing. Wrapping in
+    the other quote round-trips, because `_unquote` strips one outer pair.
     """
     if value[:1] in ("'", '"'):
         return f'"{value}"' if value[0] == "'" else f"'{value}'"
@@ -822,20 +821,15 @@ def _env_value_literal(value: str) -> str:
 
 
 def _preserve_env_file(answers: Answers) -> None:
-    """Copy the consulted `dbml-sharepoint.env` into the new project, with
-    the reader line rewritten to the answer actually given.
+    """Copy the consulted `dbml-sharepoint.env` into the project, with the
+    reader line rewritten to the answer given.
 
-    The wizard reads it from the CURRENT directory, but every documented
-    rebuild changes into the project first, so without a copy the rebuild
-    drops the reader the first build enrolled.
+    A documented rebuild runs from inside the project, so without a copy it
+    drops the reader the first build enrolled. Copying it verbatim is worse:
+    an operator who declined the suggestion would get a rebuild that
+    permanently enrolled it, and enrolment survives a rollback.
 
-    Copying it UNCHANGED is worse than not copying at all. An operator who
-    declined the file's suggestion, or replaced it, would get a rebuild
-    that read the original and PERMANENTLY enrolled the account the Review
-    panel had just told them was not being used. Enrolment survives a
-    rollback, so that is not recoverable from the bundle.
-
-    Never overwrites: a template that ships its own defaults keeps them.
+    Never overwrites, so a template shipping its own defaults keeps them.
     """
     if answers.env_file is None:
         return
@@ -853,9 +847,9 @@ def _preserve_env_file(answers: Answers) -> None:
 def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
     """Read the copy back and confirm it says what the operator answered.
 
-    `AGENTS.md`: anything that writes must read back and verify. The file
-    is only useful if `build` can parse it, and an unparseable one would
-    surface as a failed rebuild long after the wizard reported success.
+    `AGENTS.md` requires anything that writes to read back and verify, and
+    an unparseable file here would surface only as a failed rebuild, long
+    after the wizard reported success.
     """
     try:
         settings, _digest = read_env_file(destination)
