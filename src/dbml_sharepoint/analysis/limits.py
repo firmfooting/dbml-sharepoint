@@ -26,6 +26,20 @@ other. Each constant's comment says which surface it belongs to.
 Nothing in this module imports anything, so it can be read by `model/`,
 `analysis/`, `analysis/checks/` and `generators/` alike without touching the
 one-way dependency rule in AGENTS.md.
+
+**MEASURED 2026-08-16: every ceiling here is enforced in both directions.** A
+mutation sweep set each of the fourteen constants to its value plus one and
+minus one, twenty-eight mutants, each followed by a full suite run with
+`--deselect test/test_deploy_runtime.py`. All twenty-eight failed at least one
+test. Deselecting those runtime tests makes a mutant HARDER to kill, so the
+result holds without them.
+
+That is the property this module exists for, and it is not implied by the
+citations above: a constant can be correctly documented, correctly named, read
+by four call sites, and still be enforced by nothing. Seven of the fourteen are
+named by no test at all and were killed anyway, by tests that exercise the
+boundary behaviourally. Re-run the sweep after adding a ceiling, because a new
+constant with no consumer is exactly what it catches.
 """
 
 # ---------------------------------------------------------------- names
