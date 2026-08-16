@@ -1865,7 +1865,7 @@ def test_a_permission_level_description_at_the_ceiling_is_accepted() -> None:
 
 def test_a_permission_level_description_that_leaves_no_room_for_the_marker_is_refused() -> None:
     """The composed string is what SharePoint sees, so the budget is what matters."""
-    budget = level_description_budget("risk-register")
+    budget = level_description_budget("risk-register", "XX Level")
     only(
         _level_findings("XX Level", description="d" * (budget + 1)),
         FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER,
@@ -1873,7 +1873,7 @@ def test_a_permission_level_description_that_leaves_no_room_for_the_marker_is_re
 
 
 def test_a_permission_level_description_exactly_at_the_budget_is_accepted() -> None:
-    budget = level_description_budget("risk-register")
+    budget = level_description_budget("risk-register", "XX Level")
     findings = _level_findings("XX Level", description="d" * budget)
     none_of(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER)
     none_of(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG)
@@ -1898,7 +1898,7 @@ def _level_findings(name: str, *, description: str = "test") -> list[Finding]:
 
     The schema's `Project` resolves to the `risk-register` family (see
     `list_description.normalise_family`: underscores fold to hyphens), so a
-    test can compare against `level_description_budget("risk-register")`.
+    test can compare against `level_description_budget("risk-register", "XX Level")`.
     """
     return validate_against_mapping(
         make_schema(make_table("Risk"), project_name="risk_register"),

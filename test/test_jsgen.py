@@ -6,6 +6,7 @@ from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -746,14 +747,16 @@ def test_every_emitted_group_description_carries_the_marker() -> None:
 def test_the_shared_group_marker_names_no_family() -> None:
     schema_json = _schema_json_for_risk_register()
     shared = next(g for g in schema_json["groups"] if g["name"] == "dbml Enterprise Readers")
-    assert shared["description"].endswith("Provisioned by dbml-sharepoint.")
+    assert shared["description"].endswith(
+        "Provisioned by dbml-sharepoint for group dbml Enterprise Readers."
+    )
 
 
 def test_a_family_group_marker_names_its_family() -> None:
     schema_json = _schema_json_for_risk_register()
     owned = next(g for g in schema_json["groups"] if g["name"] == "RR Risk Managers")
     assert owned["description"].endswith(
-        "Provisioned by dbml-sharepoint from risk-register.",
+        "Provisioned by dbml-sharepoint from risk-register for group RR Risk Managers.",
     )
 
 
@@ -775,7 +778,7 @@ def test_every_emitted_level_description_carries_the_marker() -> None:
     assert levels, "fixture declares no permission levels; the assertion would be vacuous"
     for lvl in levels:
         assert lvl["description"].endswith(
-            "Provisioned by dbml-sharepoint from change-register.",
+            "Provisioned by dbml-sharepoint from change-register for level " + lvl["name"] + ".",
         ), lvl["name"]
 
 
@@ -786,7 +789,7 @@ def test_each_level_carries_its_own_expected_marker() -> None:
     levels = schema_json["permission_levels"]
     assert levels, "fixture declares no permission levels; the assertion would be vacuous"
     for lvl in levels:
-        assert lvl["expected_marker"] == marker_for_level("change-register")
+        assert lvl["expected_marker"] == marker_for_level("change-register", lvl["name"])
 
 
 def test_deploy_js_phase1_reliability_hardening() -> None:
@@ -3244,7 +3247,7 @@ def test_the_list_description_carries_the_note_then_the_marker() -> None:
     desc = list_description("Scheduled checks and their ranges.",
                             family="routine-checks", entity="CheckPoint")
     assert desc.startswith("Scheduled checks and their ranges.")
-    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks for list CheckPoint.")
 
 
 def test_a_note_without_a_marker_is_never_emitted() -> None:
@@ -3264,7 +3267,7 @@ def test_the_marker_is_never_truncated_away() -> None:
     """
     desc = list_description("x" * 400, family="routine-checks", entity="CheckPoint")
     assert len(desc) <= 255
-    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks for list CheckPoint.")
 
 
 def test_the_marker_survives_a_note_that_lands_exactly_on_the_budget() -> None:
@@ -3280,7 +3283,7 @@ def test_the_marker_survives_a_note_that_lands_exactly_on_the_budget() -> None:
     `test_validator_core` pins the reserve itself.
     """
     budget = note_budget("routine-checks", "CheckPoint")
-    marker = "Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+    marker = "Provisioned by dbml-sharepoint from routine-checks for list CheckPoint."
     full = DESCRIPTION_LIMIT - MARKER_GROWTH_RESERVE
 
     exact = list_description("y" * budget, family="routine-checks", entity="CheckPoint")
@@ -3316,7 +3319,7 @@ def test_the_emitted_list_description_names_the_family_from_the_dbml_project(
     schema_json = build_schema_json(schema, bundle, "default")
 
     assert schema_json["lists"][0]["description"] == (
-        "Scheduled checks. Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+        "Scheduled checks. Provisioned by dbml-sharepoint from routine-checks for list CheckPoint."
     )
 
 
@@ -3345,7 +3348,7 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
     schema_json = build_schema_json(schema, bundle, "default")
 
     assert schema_json["lists"][0]["description"] == (
-        f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY}/Risk."
+        f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY} for list Risk."
     )
 
 
@@ -3367,9 +3370,10 @@ def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
 
     WHAT THE TWO FAMILIES ARE, measured rather than described from the
     arithmetic that predates `MARKER_GROWTH_RESERVE`. A marker is
-    `len(family) + len(entity) + 38` characters, so at combined lengths of 216
-    and 217 it is 254 and 255 -- the second is the LONGEST marker that fits in
-    the 255-character Description, and 218 would be the first that does not.
+    `len(family) + len(entity) + EMPTY` characters, where EMPTY is the marker
+    with both fields blank, so at combined lengths of `254 - EMPTY` and
+    `255 - EMPTY` it is 254 and 255 -- the second is the LONGEST marker that fits in
+    the 255-character Description, and one more would be the first that does not.
     Both are far past the point where `note_budget` clamps: with the reserve
     taken off, it reaches zero at a combined length of 184 and would be -32
     and -33 here if it did not clamp.
@@ -3382,9 +3386,12 @@ def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
     these two back on either side of that edge.
     """
     entity = "e" * 10
+    # Derived, not restated: the grammar has changed once and a hard-coded
+    # length silently stopped describing the boundary it names.
+    empty = provenance.empty_marker_length(kind=provenance.LIST_KIND, family="")
 
     # Marker 254 characters, one to spare. Reserve-less budget exactly 0.
-    family_zero = "f" * (216 - len(entity))
+    family_zero = "f" * (254 - empty - len(entity))
     zero = list_description("some note", family=family_zero, entity=entity)
     assert zero == marker_for(family_zero, entity)
     assert len(zero) == 254
@@ -3392,7 +3399,7 @@ def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
 
     # Marker exactly 255, the longest that fits. Reserve-less budget -1, which
     # is the case a negative slice inverts.
-    family_negative = "f" * (217 - len(entity))
+    family_negative = "f" * (255 - empty - len(entity))
     negative = list_description("some note", family=family_negative, entity=entity)
     assert negative == marker_for(family_negative, entity)
     assert len(negative) == 255

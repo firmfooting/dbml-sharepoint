@@ -53,7 +53,7 @@ A probe that moves one number has no authority over the other, which is why
 rather than a reuse of `MAX_GROUP_DESCRIPTION`.
 """
 
-from dbml_sharepoint.analysis.group_description import FAMILY_MARKER_TEMPLATE
+from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 
 #: Characters held back from every description's budget, on top of the marker.
@@ -66,15 +66,26 @@ from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 #: not a reuse of it, for the reason that constant's own comment gives:
 #: sharing one reserve would tie a future change to one marker to re-editing
 #: descriptions that belong to the other surface.
-LEVEL_MARKER_GROWTH_RESERVE = 32
+#: 11 of the original 32 were spent when the marker gained the object's
+#: own name (#241). The budget still shrinks by the level name's own
+#: length, because the marker genuinely grew by that much; the reserve
+#: covers only the fixed part. MEASURED: every shipped description
+#: still fits, which `test_template_standard.py` holds.
+LEVEL_MARKER_GROWTH_RESERVE = 21
 
 
-def marker_for_level(family: str) -> str:
-    """The exact marker for one permission level. The single spelling authority."""
-    return FAMILY_MARKER_TEMPLATE.format(family=family)
+def marker_for_level(family: str, level_name: str) -> str:
+    """The exact marker for one permission level.
+
+    Carries the level's own name so a description copied between two levels
+    of one family no longer satisfies the second level's gate.
+    """
+    return provenance.marker_for_object(
+        kind=provenance.LEVEL_KIND, name=level_name, family=family,
+    )
 
 
-def level_description_budget(family: str) -> int:
+def level_description_budget(family: str, level_name: str) -> int:
     """How many characters a declared description may use before the marker will not fit.
 
     One character comes off for the separating space. `LEVEL_MARKER_GROWTH_RESERVE`
@@ -86,14 +97,14 @@ def level_description_budget(family: str) -> int:
     nothing", it is "keep everything but the last five characters", so the
     backstop below would return a string LONGER than the ceiling.
     """
-    marker = marker_for_level(family)
+    marker = marker_for_level(family, level_name)
     return max(
         0,
         MAX_ROLE_DEFINITION_DESCRIPTION - len(marker) - 1 - LEVEL_MARKER_GROWTH_RESERVE,
     )
 
 
-def level_description(declared: str, *, family: str) -> str:
+def level_description(declared: str, *, family: str, level_name: str) -> str:
     """Declared text then marker, within the budget, with the MARKER never truncated.
 
     Truncating the declared text loses a sentence a human wrote. Truncating
@@ -106,9 +117,9 @@ def level_description(declared: str, *, family: str) -> str:
     Appending first and clamping the result cuts the tail, and the tail is
     the marker.
     """
-    marker = marker_for_level(family)
+    marker = marker_for_level(family, level_name)
     text = (declared or "").strip()
-    budget = level_description_budget(family)
+    budget = level_description_budget(family, level_name)
     if not text or budget == 0:
         return marker
     return f"{text[:budget].rstrip()} {marker}"
