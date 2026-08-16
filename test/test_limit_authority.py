@@ -1,19 +1,24 @@
-"""Gates holding consumers to the named home of a fact.
+"""Gates holding consumers to the module that declares a fact.
 
-`limits.py` and `typemap.py` each give a fact one home. Neither had anything
-holding a consumer to it, and three failure modes followed: a literal that
-bypasses the home, prose that restates the value, and a constant whose value
-changes nothing observable.
+`limits.py` and `typemap.py` each declare a fact once. Neither had anything
+holding a consumer to that declaration, and three failure modes followed: a
+literal that bypasses it, prose that restates the value, and a constant whose
+value changes nothing observable.
 
 `_structure.py:507` was all three at once. It compared against a bare 32 and
 wrote "SP internal-name limit is 32." in its message, while `MAX_INTERNAL_NAME`
 was read only by `validator.py`. Setting the constant to 33 made the two
 enforcement sites disagree and no test saw it, which is the surviving mutant
 recorded in the `limits.py` docstring.
+
+These gates read `limits.py` as it stands on disk, so `scripts/mutate_limits.py`
+deselects this module. Under a mutant they search for the mutated number, and a
+kill would say nothing about whether anything enforces it.
 """
 
 import ast
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 from _paths import PACKAGE, TEST_DIR
@@ -40,7 +45,7 @@ _PREDICATE_OWNERS = {
 #: MEASURED before the #259 sweep: this same list was used to predict which
 #: constants would survive mutation. Four of the seven were killed by tests
 #: that exercise the boundary without naming the constant, and two constants
-#: absent from it survived. Naming is a floor, not proof of enforcement.
+#: absent from it survived.
 NOT_YET_PINNED = frozenset({
     "LIST_VIEW_THRESHOLD",
     "MAX_DISPLAY_TITLE",
@@ -70,7 +75,7 @@ def _limit_names() -> list[str]:
 
 
 def _src_modules() -> list[Path]:
-    """Every package module except the home itself."""
+    """Every package module except `limits.py` itself."""
     return [p for p in sorted(PACKAGE.rglob("*.py")) if p.name != "limits.py"]
 
 
@@ -92,8 +97,15 @@ def _string_parts(node: ast.expr) -> str:
 
 
 def _states_value(text: str, value: int) -> bool:
-    """Whether `text` contains `value` as a standalone number."""
-    return re.search(rf"(?<!\d){value}(?!\d)", text) is not None
+    """Whether `text` contains `value` as a standalone number.
+
+    A hyphen or a slash on either side excludes it, so a date or a version
+    number does not match: "Measured 2026-07-31" is not a claim about a
+    31-character ceiling. A value that ends a sentence still counts, since
+    excluding the character after it is what made two earlier attempts at this
+    scan report zero.
+    """
+    return re.search(rf"(?<![\d\-/]){value}(?![\d\-/])", text) is not None
 
 
 def _offending_literals(path: Path, values: set[int]) -> list[str]:
@@ -123,17 +135,20 @@ def _offending_literals(path: Path, values: set[int]) -> list[str]:
 
 
 def _offending_messages(path: Path, values: set[int]) -> list[str]:
-    """Messages stating a limit value instead of interpolating it."""
+    """Messages stating a limit value instead of interpolating it.
+
+    Keyword arguments as well as positional ones, since `Finding(code,
+    message=f"... limit is 32")` is the same defect written differently.
+    """
     offenders: list[str] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if not isinstance(node, ast.Call):
             continue
-        text = " ".join(_string_parts(arg) for arg in node.args)
+        arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
+        text = " ".join(_string_parts(argument) for argument in arguments)
         if not any(word in text.lower() for word in _CEILING_WORDS):
             continue
         for value in values:
-            # Digit boundaries only. A lookahead excluding "." made a value
-            # ending a sentence invisible, and the scan reported zero twice.
             if _states_value(text, value):
                 offenders.append(
                     f"{path.name}:{node.lineno}: message states {value} "
@@ -143,34 +158,64 @@ def _offending_messages(path: Path, values: set[int]) -> list[str]:
     return offenders
 
 
+def _comparisons(node: ast.AST, enclosing: str | None) -> Iterator[tuple[ast.Compare, str | None]]:
+    """Every comparison in the tree, paired with the function enclosing it.
+
+    A comparison at module level or in a class body has no enclosing function,
+    and the innermost function wins, so a nested one is reported once under its
+    own name rather than once per function it sits inside.
+    """
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+            yield from _comparisons(child, child.name)
+            continue
+        if isinstance(child, ast.Compare):
+            yield child, enclosing
+        yield from _comparisons(child, enclosing)
+
+
+def _string_literals(node: ast.expr) -> list[tuple[str, int]]:
+    """A bare string operand, or the strings inside an inline set, tuple or list.
+
+    Each paired with its own line number, so a collection written across
+    several lines reports the one the offending string sits on.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [(node.value, node.lineno)]
+    if isinstance(node, ast.Set | ast.Tuple | ast.List):
+        return [found for element in node.elts for found in _string_literals(element)]
+    return []
+
+
 def _offending_vocabulary(path: Path) -> list[str]:
     """Comparisons against a type string a predicate already owns."""
     offenders: list[str] = []
-    for func in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        for node in ast.walk(func):
-            if not isinstance(node, ast.Compare):
-                continue
-            for side in [node.left, *node.comparators]:
-                if not isinstance(side, ast.Constant) or not isinstance(side.value, str):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node, enclosing in _comparisons(tree, None):
+        for side in [node.left, *node.comparators]:
+            for text, lineno in _string_literals(side):
+                owner = _PREDICATE_OWNERS.get(text)
+                if owner is None or owner == enclosing:
                     continue
-                owner = _PREDICATE_OWNERS.get(side.value)
-                if owner is None or owner == func.name:
-                    continue
+                where = enclosing or "code outside any function"
                 offenders.append(
-                    f"{path.name}:{side.lineno}: {func.name} compares against "
-                    f"{side.value!r}; call {owner}() instead"
+                    f"{path.name}:{lineno}: {where} compares against "
+                    f"{text!r}; call {owner}() instead"
                 )
     return offenders
 
 
 def test_no_comparison_uses_a_bare_limit_value() -> None:
-    """A ceiling enforced by a literal is a second copy of the number."""
+    """Every package module, scanned for a comparison against a bare limit value.
+
+    A ceiling enforced by a literal is a second copy of the number, and the two
+    copies drift.
+    """
     modules = _src_modules()
     assert len(modules) > 30, f"only {len(modules)} modules scanned, so this pins nothing"
 
     values = _limit_values()
+    assert values, "no limits were found, so this pins nothing"
     offenders = [
         line for path in modules for line in _offending_literals(path, values)
     ]
@@ -181,11 +226,16 @@ def test_no_comparison_uses_a_bare_limit_value() -> None:
 
 
 def test_no_message_states_a_limit_value() -> None:
-    """The sentence an operator reads and the check must be one number."""
+    """Every package module, scanned for a message quoting a limit value.
+
+    The sentence an operator reads and the check that refuses the save must
+    quote the same number, which they do by interpolating the constant.
+    """
     modules = _src_modules()
     assert len(modules) > 30, f"only {len(modules)} modules scanned, so this pins nothing"
 
     values = _limit_values()
+    assert values, "no limits were found, so this pins nothing"
     offenders = [
         line for path in modules for line in _offending_messages(path, values)
     ]
@@ -196,7 +246,7 @@ def test_no_message_states_a_limit_value() -> None:
 
 
 def test_a_hex_literal_of_the_same_value_is_not_reported(tmp_path: Path) -> None:
-    """`0x20` and `32` are one value and two facts.
+    """A seeded `0x20` is not reported, and a seeded `32` on the next line is.
 
     Without the spelling test this gate reports the permission bitmasks, a
     shift and a control-character test, none of which is a ceiling.
@@ -231,8 +281,50 @@ def test_a_wrapped_message_ending_in_a_value_is_reported(tmp_path: Path) -> None
     assert len(found) == 1, found
 
 
+def test_a_date_in_a_message_is_not_read_as_a_limit_value(tmp_path: Path) -> None:
+    """A seeded date is not reported for the number inside it, and a sentence is.
+
+    `_views.py:366` quotes "Measured 2026-07-31" in a join finding. With a
+    digit-only boundary, a sweep that set MAX_INTERNAL_NAME to 31 made this
+    gate report that line, so the mutant read as killed by a scan that was only
+    finding the value the sweep had just written.
+
+    The second half also pins the keyword form, because `message=` is the same
+    defect as a positional argument.
+    """
+    dated = tmp_path / "dated.py"
+    dated.write_text(
+        'Finding(\n'
+        '    CODE,\n'
+        '    f"against a measured ceiling of {n}. "\n'
+        '    f"That ceiling held on the tenant measured 2026-07-31.",\n'
+        ')\n',
+        encoding="utf-8", newline="\n",
+    )
+    assert _offending_messages(dated, {31}) == []
+
+    stated = tmp_path / "stated.py"
+    stated.write_text(
+        'Finding(CODE, message="SP internal-name limit is 31.")\n',
+        encoding="utf-8", newline="\n",
+    )
+    assert len(_offending_messages(stated, {31})) == 1
+
+
 def test_no_module_bypasses_a_predicate_it_owns() -> None:
-    """Closes #251. A hand-rolled comparison is where a vocabulary diverges."""
+    """Every package module, scanned for a comparison against a string typemap owns.
+
+    Closes #251. A hand-rolled `t == "boolean"` keeps answering the old way
+    once typemap learns an alias for `boolean`, so the two answers to "is this
+    a boolean column" disagree with nothing to report it.
+
+    `test_no_module_outside_typemap_compares_a_column_type_to_a_literal` in
+    test_typemap.py already forbids comparing a column type to a string literal
+    outside typemap. This adds to that rather than replacing it: it fires
+    whether or not the other operand looks like a column type, and it scans
+    inside `typemap.py`, where only the predicate that owns a string may
+    spell it.
+    """
     modules = _src_modules()
     assert len(modules) > 30, f"only {len(modules)} modules scanned, so this pins nothing"
 
@@ -245,7 +337,7 @@ def test_no_module_bypasses_a_predicate_it_owns() -> None:
 def test_the_predicate_body_is_the_one_place_the_string_may_appear(
     tmp_path: Path,
 ) -> None:
-    """The exemption is the rule, not a loophole.
+    """The exemption lets `is_boolean` spell "boolean" and lets nothing else.
 
     A gate without it reports the four predicate definitions themselves.
     """
@@ -263,8 +355,38 @@ def test_the_predicate_body_is_the_one_place_the_string_may_appear(
     assert "other" in found[0]
 
 
+def test_the_vocabulary_gate_reads_collections_and_code_outside_a_function(
+    tmp_path: Path,
+) -> None:
+    """The three shapes a function-body scan of bare constants missed.
+
+    A comparison at module level, one in a class body, and a string inside an
+    inline set. The nested function is here to prove it is reported once, under
+    its own name, rather than once per function it sits inside.
+    """
+    seeded = tmp_path / "m.py"
+    seeded.write_text(
+        'FLAG = t == "boolean"\n'
+        'class C:\n'
+        '    OWNED = t == "hyperlink"\n'
+        'def outer(t):\n'
+        '    def inner(t):\n'
+        '        return t in {"person", "text"}\n'
+        '    return inner\n',
+        encoding="utf-8", newline="\n",
+    )
+
+    found = _offending_vocabulary(seeded)
+    assert len(found) == 3, found
+    assert sum("inner" in line for line in found) == 1, found
+    assert sum("outside any function" in line for line in found) == 2, found
+
+
 def test_every_limit_is_named_by_a_test_or_ratcheted() -> None:
-    """A new ceiling with no test at all is what this catches."""
+    """The test corpus, searched for the name of every constant `limits.py` declares.
+
+    A ceiling that no test so much as names is one nobody has tried to enforce.
+    """
     corpus = "\n".join(
         p.read_text(encoding="utf-8")
         for p in sorted(TEST_DIR.rglob("test_*.py"))
@@ -274,7 +396,10 @@ def test_every_limit_is_named_by_a_test_or_ratcheted() -> None:
 
     names = _limit_names()
     assert names, "no limits were found, so this pins nothing"
-    unnamed = {name for name in names if name not in corpus}
+    # Word boundaries: LIST_VIEW_THRESHOLD is a substring of
+    # LIST_VIEW_THRESHOLD_FALLBACK_ROWS, and a substring match would read a
+    # test naming only the longer one as pinning both.
+    unnamed = {name for name in names if re.search(rf"\b{name}\b", corpus) is None}
 
     assert unnamed <= NOT_YET_PINNED, (
         "A limit is named by no test and is not on the ratchet: "
