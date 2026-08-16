@@ -2726,7 +2726,15 @@ def test_a_declined_reader_is_not_preserved_for_the_rebuild(
     as nobody. Enrolment survives a rollback, so the wizard must not leave
     that behind.
     """
+    # A comment as well as the reader, so the copy is written either way and
+    # the assertion below always runs. With only the reader line, declining
+    # leaves nothing to write and the check silently never fires.
     _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    seeded = tmp_path / ENV_FILENAME
+    seeded.write_text(
+        "# team defaults\n" + seeded.read_text(encoding="utf-8"),
+        encoding="utf-8", newline="\n",
+    )
     captured = _capture_build(monkeypatch)
     destination = tmp_path / "proj"
     console = ScriptedConsole(
@@ -2735,9 +2743,12 @@ def test_a_declined_reader_is_not_preserved_for_the_rebuild(
 
     assert wizard.run_wizard(console) == 0
     assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+
     copied = destination / ENV_FILENAME
-    if copied.exists():
-        assert "svc-reporting@example.org" not in copied.read_text(encoding="utf-8")
+    assert copied.is_file(), "the copy was not written, so nothing was checked"
+    text = copied.read_text(encoding="utf-8")
+    assert "# team defaults" in text, "the copy lost a line it does not own"
+    assert "svc-reporting@example.org" not in text
 
 
 def test_a_replaced_reader_is_preserved_instead_of_the_suggestion(
