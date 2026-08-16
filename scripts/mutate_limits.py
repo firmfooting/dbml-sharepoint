@@ -11,29 +11,38 @@ with a recorded reason it is not.
     uv run python scripts/mutate_limits.py --base-ref origin/main
     uv run python scripts/mutate_limits.py --constant MAX_DISPLAY_TITLE
 
-MEASURED 2026-08-16, and the reason `_DESELECTS` deselects two currency tests.
-A page generated from `limits.py` carries the values verbatim, so its currency
-test regenerates the page from the mutated source and fails on every mutant
-whether or not a behavioural consumer exists. Both directions of each pair
-below were run:
+`_DESELECTS` decides whether the result means anything, and it drops four
+tests for two different reasons.
+
+Three of them read the mutated source rather than any behaviour. Two generated
+pages carry these values verbatim, so their currency tests regenerate from the
+mutant and fail on it whether or not a rule enforces the ceiling, and
+`test_limit_authority.py` scans the package for whatever number `limits.py`
+currently holds. MEASURED 2026-08-16, both directions of each pair:
 
     MAX_FIELD_DESCRIPTION  survives, and reports killed with the API-docs
                            deselect removed
     MAX_VIEW_ROW_LIMIT     survives, and reports killed with the findings
                            deselect removed
+    MAX_INTERNAL_NAME      at 31, the message gate matched the 31 inside
+                           "Measured 2026-07-31" in a `_views.py` finding
     MAX_DISPLAY_TITLE      killed, with every deselect in place
 
-A kill for the first two is the wrong answer, and leaving the API-docs test in
-is how the first run of the #259 sweep reported 28 kills and established
+A kill for the first three is the wrong answer, and leaving the API-docs test
+in is how the first run of the #259 sweep reported 28 kills and established
 nothing. The findings page is the same defect found here rather than in #259:
 `finding_help.py` interpolates seven constants into its prose, so that sweep's
 recorded kills for INDEX_WARN_AT, LIST_VIEW_THRESHOLD, MAX_LIST_INDEXES,
 MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE and MAX_VIEW_ROW_LIMIT are not
 evidence of enforcement. MAX_DISPLAY_TITLE is the seventh and is killed by its
 own boundary tests, so its result stands.
+
+The fourth is dropped for its runtime alone. Dropping tests makes a mutant
+harder to kill, so it can hide a kill but cannot manufacture one.
 """
 
 import argparse
+import ast
 import re
 import subprocess
 import sys
@@ -43,25 +52,25 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LIMITS = REPO_ROOT / "src" / "dbml_sharepoint" / "analysis" / "limits.py"
 LIMITS_REL = "src/dbml_sharepoint/analysis/limits.py"
 
-#: The tests the sweep runs without, which are not all the same kind of thing.
+#: Tests dropped from the sweep. The first three read the mutated source, and
+#: the fourth is dropped for its runtime; the module docstring holds the
+#: measurement behind each.
 _DESELECTS = (
-    # THE POINT OF THE RUN. This test regenerates the API page from the mutated
-    # source and fails on every mutant, so leaving it in reports a kill for a
-    # ceiling nothing enforces. See the measurement in the module docstring.
+    # Regenerates the API page from the mutated source, so it fails on every
+    # mutant and reports a kill for a ceiling nothing enforces.
     "test/test_template_lint.py::test_generated_api_docs_are_current",
-    # The same defect on a second generated page. `finding_help.py` interpolates
-    # seven of these constants into its prose, so this test fails on any mutant
-    # of those seven whether or not a rule enforces them. MEASURED 2026-08-16:
-    # with this line absent, MAX_VIEW_ROW_LIMIT reports killed in both
-    # directions, and with it present it survives in both.
+    # The same defect on a second generated page, because `finding_help.py`
+    # interpolates seven of these constants into its prose.
     "test/test_finding_help.py::test_generated_findings_page_is_current",
-    # Different reason, and safe: this is only about the 180-second runtime
-    # timeout. Dropping tests makes a mutant HARDER to kill, so it can hide a
-    # kill but it cannot manufacture one.
+    # Reads `limits.py` as it stands, so under a mutant it hunts the value the
+    # sweep just wrote and its verdict is not evidence of enforcement.
+    "test/test_limit_authority.py",
+    # Dropped only for its 180-second runtime timeout.
     "test/test_deploy_runtime.py",
 )
 
-#: A ceiling declaration, which is one name and one integer on one line.
+#: A ceiling declaration the sweep can rewrite, which is one name and one
+#: integer on one line. `_integer_constants` fails the run on any other shape.
 _DECLARATION = re.compile(r"^(?P<name>[A-Z][A-Z0-9_]*)(?P<gap>\s*=\s*)(?P<value>[0-9_]+)\s*$")
 
 #: pytest's exit code for "tests ran and something failed", which is the only
@@ -69,11 +78,26 @@ _DECLARATION = re.compile(r"^(?P<name>[A-Z][A-Z0-9_]*)(?P<gap>\s*=\s*)(?P<value>
 _TESTS_FAILED = 1
 
 
+def _ascii(text: str) -> str:
+    """Text a cp1252 console can print, so a diagnostic cannot raise on its way out."""
+    return text.encode("ascii", "replace").decode("ascii")
+
+
 def _git(*args: str) -> str:
-    """Run git in the repository and return its stdout."""
-    done = subprocess.run(
-        ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
-    )
+    """Run git in the repository and return its stdout.
+
+    A base ref that does not resolve is the likeliest operator error here, so
+    it exits with git's own message rather than a traceback.
+    """
+    try:
+        done = subprocess.run(
+            ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as failure:
+        stderr = _ascii(failure.stderr or "").strip()
+        raise SystemExit(
+            f"git {' '.join(args)} exited {failure.returncode}: {stderr}"
+        ) from failure
     return done.stdout
 
 
@@ -84,6 +108,34 @@ def _declarations(source: str) -> dict[str, int]:
         match = _DECLARATION.match(line)
         if match is not None:
             found[match.group("name")] = number
+    return found
+
+
+def _integer_constants(source: str) -> set[str]:
+    """Every uppercase integer constant `limits.py` really defines, read from its AST.
+
+    The independent list `_declarations` is checked against, so a declaration
+    the line regex cannot rewrite (`MAX_X: Final = 32`, or a trailing comment)
+    fails the run instead of going unswept while the job reports success.
+    """
+    found: set[str] = set()
+    for statement in ast.parse(source).body:
+        targets: list[ast.expr]
+        value: ast.expr | None
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        if not isinstance(value, ast.Constant):
+            continue
+        if not isinstance(value.value, int) or isinstance(value.value, bool):
+            continue
+        found.update(
+            target.id for target in targets
+            if isinstance(target, ast.Name) and target.id.isupper()
+        )
     return found
 
 
@@ -122,11 +174,26 @@ def _mutate(source: str, name: str, line_number: int, delta: int) -> tuple[str, 
     return mutated, old, new
 
 
+def _restore(original: bytes) -> None:
+    """Write the original bytes back, then read them again to prove it took.
+
+    Bytes rather than text, so a checkout with any line ending is returned
+    exactly as it was found. The `finally` that calls this covers a failing
+    sweep and a Ctrl-C; SIGTERM is the one case it does not, and that leaves
+    the last mutant on disk.
+    """
+    LIMITS.write_bytes(original)
+    if LIMITS.read_bytes() != original:
+        raise SystemExit(
+            f"{LIMITS_REL} does not match what was read; restore it by hand before committing"
+        )
+
+
 def _suite_kills_it() -> bool:
     """Whether the suite fails against whatever is currently on disk."""
-    # No `-x`. Under xdist it aborts the session, so a killed mutant exits 2
-    # (interrupted), which a collection error exits with too. Whole runs cost
-    # about 40 seconds and keep the verdict to pytest's own exit codes.
+    # There is no `-x` because under xdist it aborts the session, so a killed
+    # mutant exits 2 and so does a collection error. A whole run costs about 40
+    # seconds and keeps the verdict to pytest's own exit codes.
     done = subprocess.run(
         [
             sys.executable, "-m", "pytest", "-q",
@@ -135,13 +202,12 @@ def _suite_kills_it() -> bool:
         cwd=REPO_ROOT, capture_output=True, text=True, check=False,
     )
     if done.returncode not in (0, _TESTS_FAILED):
-        # A collection or usage error is non-zero and is NOT a kill. Reporting
-        # it as one would turn a broken run into a clean bill of health.
+        # A collection or usage error is non-zero and is not a kill, so the run
+        # stops here rather than reporting a broken suite as an enforced ceiling.
         tail = "\n".join((done.stdout + done.stderr).splitlines()[-20:])
-        # Forced to ASCII: a Windows console is cp1252 and would turn a
-        # diagnostic into a UnicodeEncodeError from somewhere else entirely.
-        tail = tail.encode("ascii", "replace").decode("ascii")
-        raise SystemExit(f"pytest exited {done.returncode}, which is not a verdict:\n{tail}")
+        raise SystemExit(
+            f"pytest exited {done.returncode}, which is not a verdict:\n{_ascii(tail)}"
+        )
     return done.returncode == _TESTS_FAILED
 
 
@@ -151,7 +217,7 @@ def _sweep(names: list[str], source: str, declarations: dict[str, int]) -> list[
     for name in names:
         for delta in (+1, -1):
             mutated, old, new = _mutate(source, name, declarations[name], delta)
-            LIMITS.write_text(mutated, encoding="utf-8", newline="\n")
+            LIMITS.write_bytes(mutated.encode("utf-8"))
             killed = _suite_kills_it()
             verdict = "killed" if killed else "SURVIVED"
             print(f"{name}: {old} -> {new} ({delta:+d}): {verdict}")
@@ -172,10 +238,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    source = LIMITS.read_text(encoding="utf-8")
+    original = LIMITS.read_bytes()
+    source = original.decode("utf-8")
     declarations = _declarations(source)
     if not declarations:
         raise SystemExit(f"no ceilings found in {LIMITS_REL}, so this sweep proves nothing")
+    unswept = sorted(_integer_constants(source) - set(declarations))
+    if unswept:
+        raise SystemExit(
+            f"{LIMITS_REL} declares these in a shape this sweep cannot rewrite, so it "
+            f"would skip them and still report success: {', '.join(unswept)}"
+        )
 
     if args.constants:
         unknown = sorted(set(args.constants) - set(declarations))
@@ -193,9 +266,8 @@ def main() -> int:
     try:
         survivors = _sweep(names, source, declarations)
     finally:
-        # Restore from the bytes read at the start. NEVER `git checkout --`,
-        # which has wiped uncommitted work in this repository.
-        LIMITS.write_text(source, encoding="utf-8", newline="\n")
+        # NEVER `git checkout --`, which has wiped uncommitted work in this repository.
+        _restore(original)
 
     if survivors:
         print()
