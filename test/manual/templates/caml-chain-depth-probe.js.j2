@@ -87,7 +87,7 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: RUN 3 on 2026-08-17 ANSWERED THE QUESTION, and the answer is that
+ * STATUS: COMPLETE, over five runs on 2026-08-17. RUN 3 ANSWERED THE DEPTH QUESTION, and the answer is that
  * the machine surfaces are fine and the human one is not.
  *
  * With one row per member, so that a chain over K members must return exactly
@@ -123,46 +123,54 @@
  * the bulk-operation cap, and nothing about how many predicates a view may
  * hold, so the ten is undocumented.
  *
- * WHAT THE EDITOR REFUSES, measured 2026-08-17 over E1-E4, P1, P2 and W2,
- * plus the live "Tolerance due" view an operator reported. Seven shapes:
+ * WHAT THE EDITOR REFUSES, and it is settled. Ten shapes measured on
+ * 2026-08-17, plus the live "Tolerance due" view an operator reported:
  *
- *   E1  Or[Or[Or[..]]] left fold, 12          EDITABLE
- *   E2  And[And[..]] left fold, 12            EDITABLE
- *   E4  Or[chain11, IsNull]                   EDITABLE
- *   P1  Or[ And[Eq,Eq], Eq ]                  EDITABLE
- *   W2  And[ Or[chain12], IsNotNull(ID) ]     EDITABLE
- *   E3  And[ Eq, Or[Eq,Eq] ]                  COMPLEX, refused
- *   P2  And[ Eq, Or[Eq,Eq] ] over 2 members   COMPLEX, refused
- *       "Tolerance due": And[ And[..], Or[..] ]   COMPLEX, refused
+ *   EDITABLE                                        right child
+ *   E1  Or[Or[Or[..]]] left fold, 12                 leaf
+ *   E2  And[And[..]] left fold, 12                   leaf
+ *   E4  Or[chain11, IsNull]                          leaf
+ *   P1  Or[ And[Eq,Eq], Eq ]                         leaf
+ *   W2  And[ Or[chain12], IsNotNull(ID) ]            leaf
  *
- * The first reading, that a MIXED tree is refused, does not survive P1 and
- * W2: both mix And with Or and both are editable. What separates the two
- * groups is WHERE the non-leaf sits. Every editable shape has a leaf in the
- * right child; every refused one has a group there.
+ *   REFUSED, "complex filter which cannot be edited here"
+ *   E3  And[ Eq, Or[Eq,Eq] ]                         GROUP
+ *   P2  And[ Eq, Or[Eq,Eq] ] over 2 members          GROUP
+ *   W4  And[ IsNotNull(ID), Or[chain12] ]            GROUP
+ *       "Tolerance due": And[ And[..], Or[..] ]      GROUP
  *
- * That is what a flat left-to-right condition list can express. It can build
- * ((A and B) or C), grouping as it goes, and it has nowhere to put the
- * brackets in A and (B or C), which defers. So the rule is not "two
- * connectives appear", it is "a non-leaf in the RIGHT child position".
+ * A NON-LEAF IN THE RIGHT CHILD IS THE TRIGGER. Nothing else separates the
+ * two columns: not length, not which connectives appear, not the presence of
+ * an IsNull or a date sentinel. P1 and W2 both mix And with Or and both are
+ * editable, which is what killed the earlier "a mixed tree is refused"
+ * reading.
  *
- * This matters to the tool directly, because `_combine` in
- * analysis/conditions.py LEFT-folds. Its natural output is exactly the
- * editable, truncatable shape, and protection would mean deliberately
- * putting the group on the right. W3 and W4 test that with the cheapest
- * possible swap: the same two predicates as W1 and W2, exchanged.
+ * W2 AND W4 ARE THE ISOLATION, and they are as clean as this gets. Same two
+ * predicates, same twelve rows returned (W1 and W3 both measured that), only
+ * the association swapped, and opposite editability. Position is the whole of
+ * it.
  *
- * THE DOCUMENTED MECHANISM IS A DEAD END, and worse than that. R1: the
- * editable view and the refused view BOTH read ReadOnlyView=false, so the
- * property is not the flag behind the refusal and nothing server-side
- * records it. R2 is the finding: a MERGE setting ReadOnlyView:true was
- * ACCEPTED with HTTP 204 and read back FALSE. A documented property takes a
- * write, answers success, and silently discards it. Anything that ever sets
- * it and trusts the status has to read it back, which is this repository's
- * standing rule arriving on a new surface.
+ * That is exactly what a flat left-to-right condition list can express. It
+ * builds ((A and B) or C) as it goes and has nowhere to put the brackets in
+ * A and (B or C), which defers.
  *
- * W1 did establish that IsNotNull(ID) is inert: the wrapped chain returned
- * the same twelve rows as the bare one. So the conjunct costs nothing
- * semantically, and only its POSITION is in question.
+ * WHAT IT MEANS FOR THIS TOOL. `_combine` in analysis/conditions.py
+ * LEFT-folds, so its natural output is the editable, truncatable shape.
+ * "Tolerance due" is protected today only because its neq wrapper happens to
+ * land on the right. Emitting the group on the right instead is an
+ * associativity choice and needs no extra predicate for any filter with two
+ * or more clauses. #267 carries that work.
+ *
+ * THE DOCUMENTED MECHANISM IS A DEAD END, and R2 is worth keeping on its own
+ * account. R1: the editable view and the refused view BOTH read
+ * ReadOnlyView=false, so the property is not the flag behind the refusal and
+ * nothing server-side records the state. Protection cannot be verified by
+ * reading anything back; it can only be looked at. R2: a MERGE setting
+ * ReadOnlyView:true was ACCEPTED with HTTP 204 and read back FALSE. A
+ * property Microsoft documents takes a write, answers success, and silently
+ * discards it. Anything that ever sets a view property and trusts the status
+ * has to read it back. Same shape as the Indexed finding on
+ * native-index-probe.js, on a different property.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
