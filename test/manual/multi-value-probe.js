@@ -172,6 +172,18 @@
  *       other CAML negative, it does not drop nulls.
  *   C10 <Or><Neq><IsNull> returned the same rows as C9 alone, so the
  *       deployer's existing neq wrapper composes but is redundant here.
+ *   C14 was added AFTER run 3 and is unanswered. C8 stored ONE <Eq>. But
+ *       <Includes> returned nothing, so this grammar has no set operator and
+ *       tells authors to build one from all_of/any_of instead. CAML's And and
+ *       Or are strictly binary (documented on both Learn pages), so any_of
+ *       over K members emits a left-folded tree K-1 deep and nothing measures
+ *       how deep that may go. Learn asserts "the server supports unlimited
+ *       complicated queries", which is a claim about a server rather than
+ *       about what a view save does to the XML on the way past. C14 stores a
+ *       compound predicate, reads the XML back, and replays what SharePoint
+ *       STORED rather than what was sent. The depth ceiling is a separate
+ *       question needing a wider enum than this fixture's five members.
+ *
  *   C11 through C13 were added AFTER run 3 and are unanswered. An operator
  *       building filters by hand in the list UI found that `and` and `or`
  *       chain over this column, and that an "is equal to" with an empty value
@@ -269,6 +281,10 @@
   expect('C8', 'the winning predicate survives being STORED as a view ViewQuery (manual: look)');
   expect('C9', 'CAML <Neq> "View" returns which rows');
   expect('C10', 'CAML <Or><Neq><IsNull> "View" -- the deployer\'s own neq wrapper -- returns which rows');
+  expect('C11', 'CAML <And> over two membership tests: does it mean "contains BOTH"?');
+  expect('C12', 'CAML <Or> over two membership tests: does it mean "contains EITHER"?');
+  expect('C13', 'CAML <Eq> against an EMPTY value: is it itself a null test?');
+  expect('C14', 'a chained any_of predicate survives being STORED as a view ViewQuery');
   expect('V1', 'a ValidationFormula may reference a MultiChoice column');
   expect('F1', 'a calculated column formula may reference a MultiChoice column');
   expect('X1', 'the severity formatter this repo generates, on an array (manual: look)');
@@ -995,6 +1011,72 @@
         + 'That is itself the finding: the condition grammar would have no membership operator to render.',
       );
     }
+
+    // === C14: does a CHAINED predicate survive storage? ====================
+    // C8 stored ONE <Eq>. But <Includes> returned nothing here, so this
+    // grammar has no set operator and tells authors to build one out of
+    // all_of/any_of instead -- the refusal message says so in as many words.
+    // CAML's And and Or are strictly binary (documented), so any_of over K
+    // members emits a left-folded tree K-1 deep, and NOTHING measures how
+    // deep that may go. Learn asserts "the server supports unlimited
+    // complicated queries" on both the And and the Or pages, which is a claim
+    // about a server, not about what SharePoint Online's view save does to
+    // the XML on the way past.
+    //
+    // That is the risk worth asking about, and it is not the depth ceiling.
+    // A view rewritten on save into something that still parses and returns
+    // the wrong rows is silent, and it is exactly what datetime-sentinel-
+    // probe.js caught in the other direction. So: store a COMPOUND predicate,
+    // read the XML back, and replay what SharePoint stored rather than what
+    // was sent. If the two disagree about rows, storage changed the meaning.
+    //
+    // The depth CEILING needs a wider enum than this fixture's five members
+    // (four is the deepest honest chain here, nowhere near any plausible
+    // limit) and is tracked separately. This row asks the cheap half.
+    const CHAIN_VIEW = 'Probe chained membership';
+    // Padded with two members no row holds, so the expected rows are C1's and
+    // only the DEPTH differs. A chain that changes the answer changes it
+    // because it is a chain, not because the predicate means something else.
+    const chainWhere = `<Or><Or><Eq>${ref}${textValue('View')}</Eq>`
+      + `<Eq>${ref}${textValue('Delete')}</Eq></Or>`
+      + `<Eq>${ref}${textValue('PermissionChange')}</Eq></Or>`;
+    const chainSent = await camlRows(chainWhere);
+    const chainView = await post(`${listPath}/views`, {
+      __metadata: { type: 'SP.View' },
+      Title: CHAIN_VIEW,
+      ViewQuery: `<Where>${chainWhere}</Where>`,
+      RowLimit: 50,
+    });
+    const chainViews = chainView.ok
+      ? await get(`${listPath}/views?$select=Title,ViewQuery`)
+      : null;
+    const chainStored = (chainViews?.d?.results || []).find((v) => v.Title === CHAIN_VIEW);
+    // Replay what was STORED, not what was sent. Same helper, so a difference
+    // in rows can only come from a difference in the XML.
+    const chainReplay = chainStored
+      ? await camlRows(String(chainStored.ViewQuery).replace(/^<Where>|<\/Where>$/g, ''))
+      : null;
+    const sameRows = chainSent.ok && chainReplay?.ok
+      && JSON.stringify(chainSent.titles) === JSON.stringify(chainReplay.titles);
+    record(
+      'C14',
+      'a chained any_of predicate survives being STORED as a view ViewQuery',
+      !chainView.ok || !chainStored
+        ? 'NOT ESTABLISHED'
+        : (camlFixtureUsable ? (sameRows ? 'SURVIVED' : 'CHANGED') : 'NOT ESTABLISHED'),
+      !chainView.ok || !chainStored
+        ? `the view could not be created or read back: ${chainView.ok
+          ? 'not found after create'
+          : `HTTP ${chainView.status} ${chainView.error}`}. Nothing is established about chaining.`
+        : `sent ${show(chainWhere)} and got ${show(chainSent.titles)}; SharePoint stored `
+          + `${show(chainStored.ViewQuery)} which replays to ${show(chainReplay?.titles)}. `
+          + (sameRows
+            ? 'Same rows, so a two-deep chain survives storage and all_of/any_of is safe to render at this '
+              + 'depth. It says NOTHING about greater depths; that needs a wider enum.'
+            : 'DIFFERENT rows. Storage changed what the predicate means, so the grammar must refuse '
+              + 'chained membership on a multi-value column rather than emit a view that quietly '
+              + 'answers a different question.'),
+    );
 
     // === V1: validation formula operand ====================================
     // mapping.md already records that validation formulas refuse Lookup and
