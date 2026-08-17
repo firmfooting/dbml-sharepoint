@@ -120,25 +120,74 @@
  *   does clean up; it refuses to touch a list of that title that this probe
  *   cannot prove it created.
  *
- * STATUS: RUN ON A LIVE SITE 2026-08-10, NOT YET CLEANLY. Every run so far
- * has found a defect in this file rather than delivering a full sheet, and
- * each lesson is encoded at the line it applies to rather than here:
+ * STATUS: COMPLETE. Run 3 on 2026-08-17 delivered Q0=BUILT with no NOT
+ * ESTABLISHED rows and both manual rows looked at, which is the bar this
+ * file set for itself. Each lesson is encoded at the line it applies to
+ * rather than here:
  *
- *   run 1  answered fifteen of seventeen rows. M5 reported WRITE REFUSED
- *          because the readback selected no `Id`, so the re-write went to
- *          `items(undefined)`, a probe bug that reads in the transcript
- *          exactly like SharePoint refusing the re-write. It also
+ *   run 1  2026-08-10. Answered fifteen of seventeen rows. M5 reported WRITE
+ *          REFUSED because the readback selected no `Id`, so the re-write
+ *          went to `items(undefined)`, a probe bug that reads in the
+ *          transcript exactly like SharePoint refusing the re-write. It also
  *          established that <NotIncludes> returned no rows and that <Eq>
  *          behaves as "includes" rather than whole-set equality, which left
  *          negation with no working predicate and is why C9 and C10 exist.
- *   run 2  could not answer X1 at all: a POST to /fields does not put the
- *          column on the default view, so there was no Evt column to look
- *          at. Both fields are now added to the default view explicitly.
+ *   run 2  2026-08-10. Could not answer X1 at all: a POST to /fields does not
+ *          put the column on the default view, so there was no Evt column to
+ *          look at. Both fields are now added to the default view explicitly.
+ *   run 3  2026-08-17. Clean sheet. Verdicts below.
  *
- * So: every row below is still a question, not a finding. Nothing here has
- * been promoted into the type map, the condition grammar or a capability
- * specification, and nothing should be until a run completes with Q0=BUILT
- * and no NOT ESTABLISHED rows.
+ * WHAT RUN 3 MEASURED, in the order the rows appear:
+ *
+ *   M1  a MultiChoice is created by the deployer's existing plain POST to
+ *       /fields (HTTP 201). No AddFieldAsXml, so the create path needs no
+ *       new machinery, which was the main re-scope risk.
+ *   M2  reads back TypeAsString="MultiChoice", FieldTypeKind=15, Choices as
+ *       a Collection(Edm.String).
+ *   M3  the item write shape is collection-metadata,
+ *       {__metadata: {type: 'Collection(Edm.String)'}, results: [...]}. It
+ *       was the first shape tried and no other was needed.
+ *   M4  an EMPTY multi-value column reads back as `null`, not as an empty
+ *       array. Anything comparing or seeding one must handle null.
+ *   M5  member order SURVIVES a round trip: ["Edit","View"] was written and
+ *       read back in that order. So the reconciler's order-sensitive
+ *       comparison is safe and needs no set-comparison change.
+ *   I1  Indexed:true is REFUSED loudly ("This column type is not supported
+ *       for indexing"). Its control I1C set the same property on the
+ *       single-value Choice and it STUCK, so the refusal is a measurement
+ *       rather than a probe that cannot see an index. That control is the
+ *       one native-index-probe.js failed on 2026-07-30.
+ *   I2  EnforceUniqueValues is REFUSED both alone and alongside Indexed.
+ *   C1  <Eq> against a bare member behaves as INCLUDES: "View" returned both
+ *       the {View} row and the {View,Edit} row.
+ *   C2  <Eq> against a ";#"-delimited string matches the WHOLE SET literally:
+ *       "View;#Edit" returned only {View,Edit}. One operator, two semantics,
+ *       selected by whether the operand contains ";#".
+ *   C3  <Contains> works, though Learn documents it for Text/Note only.
+ *   C4  <Includes> returns NOTHING. It is documented for multi-value Lookup
+ *       and does not serve MultiChoice.
+ *   C5  <NotIncludes> returns NOTHING, for the same reason.
+ *   C6  <IsNull> returns the empty row, C7 <IsNotNull> the other three.
+ *   C9  <Neq> "View" returned {Edit,Export} AND the empty row. Unlike every
+ *       other CAML negative, it does not drop nulls.
+ *   C10 <Or><Neq><IsNull> returned the same rows as C9 alone, so the
+ *       deployer's existing neq wrapper composes but is redundant here.
+ *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
+ *       read it back unrewritten and the stored view lists exactly the two
+ *       rows C1 predicted.
+ *   V1  a ValidationFormula referencing the column is REFUSED (HTTP 500).
+ *   F1  a calculated-column formula referencing it is REFUSED (HTTP 500).
+ *   X1  the severity formatter this repository generates does NOT render an
+ *       unstyled cell, which is what the specification predicted. Every
+ *       branch of its ==-against-a-quoted-string chain is false, including
+ *       on a single-member set, so every row falls through to the else and
+ *       renders a flat grey ms-bgColor-neutralLight chip. The empty row is
+ *       the exception: `@currentField == ''` is TRUE for it, so display:none
+ *       fires and it renders nothing. A uniform grey chip reads as an
+ *       assessed neutral verdict rather than as a broken cell, so it is the
+ *       worse of the two failures and the refusal must say so. The
+ *       formatter was read back and compared deep-equal before looking, so
+ *       this is the repository's own formatter and not some other one.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
