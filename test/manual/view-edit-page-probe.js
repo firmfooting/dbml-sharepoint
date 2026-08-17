@@ -6,9 +6,33 @@
  * removed by re-pasting with CLEANUP_LIST set.
  *
  * ANSWERED, over two runs on 2026-08-17. Yes: a view is protected when its
- * edit page returns HTTP 200, carries a sentinel, and does not carry
- * name="FieldPicker1". Re-run it when SharePoint changes that page, because
- * the check it supports is built on markup Microsoft documents nowhere.
+ * edit page returns HTTP 200 from the endpoint asked for, carries a sentinel,
+ * and does not carry name="FieldPicker1". Re-run it when SharePoint changes
+ * that page, because the check it supports is built on markup Microsoft
+ * documents nowhere.
+ *
+ * THREE ROWS ARE STILL OPEN, added after run 2 in response to review, and one
+ * of them matters more than the answered ones. S2, Q1 and C6 have never been
+ * run. A third paste answers all three and costs one small list.
+ *
+ *   S2 IS THE ONE #267 RESTS ON. S1 cannot establish that the tautology is a
+ *      tautology, and it was over-claiming when it said it could. Conjoined
+ *      behind Eq(alpha) the left side already restricts to R1, so a group that
+ *      wrongly excluded R2 or R3 returns the same single row and S1 still
+ *      reports INERT. The partition is only visible when the group is asked ON
+ *      ITS OWN. caml-chain-depth-probe.js T1 has exactly the same blind spot,
+ *      for the same reason.
+ *   Q1 reads the stored ViewQuery back. A view found by title is not proof it
+ *      holds the tree that was sent, and SharePoint rewriting a filter on save
+ *      is the behaviour this whole line of work is about.
+ *   C6 asks a page that is not the editor whether it reads as protected. C5
+ *      only ever showed a sentinel present on three pages that rendered, which
+ *      is not the claim the guard depends on.
+ *
+ * Runs 1 and 2 remain valid for what they measured. S1 and F1 have since been
+ * tightened as well: S1 now requires both queries to hit the control row
+ * rather than merely agreeing with each other, and F1 now separates a redirect
+ * and a transient failure from a refusal.
  *
  * WHY THIS EXISTS. #267 emits every view's filter in a shape the filter editor
  * refuses to open, because an editor that opens a filter of more than ten
@@ -145,8 +169,8 @@
  * rely on.
  *
  * RUN 2, 2026-08-17, revision aa5eaae6, same site, after the candidate rows
- * were added. Seventeen questions, SEVENTEEN answered, and the predicate is
- * settled:
+ * were added. Seventeen questions, SEVENTEEN answered. The predicate is
+ * settled, subject to the three rows added after this run:
  *
  *     A view is PROTECTED when its edit page comes back HTTP 200, carries a
  *     sentinel, and does NOT carry name="FieldPicker1".
@@ -394,7 +418,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 34c56e41. Quote this when reporting results.');
+  log('INFO', 'probe revision 512aeeb7. Quote this when reporting results.');
 
   // Set to the list named at the end of a previous run to drain and remove it.
   // The probe leaves its list behind so P1 and P2 can be looked at, and a
@@ -404,7 +428,8 @@
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
-  const LIST = `dbmlsp Probe ViewEdit ${RUN}`;
+  const LIST_PREFIX = 'dbmlsp Probe ViewEdit ';
+  const LIST = `${LIST_PREFIX}${RUN}`;
   const COL = 'Tag';
 
   // How many differing tokens to print per row. The pages are around half a
@@ -451,6 +476,8 @@
 
   expect('Q0', 'the fixture actually built');
   expect('S1', 'does the guarded filter return the same rows as the plain one?');
+  expect('S2', 'CONTROL: does the tautology ALONE return every row?');
+  expect('Q1', 'did the guarded tree survive being STORED as a ViewQuery?');
   expect('F1', 'can the view edit page be fetched for both views?');
   expect('F8', 'CONTROL: is one page the same across two fetches?');
   expect('F2', 'do the English refusal markers appear on the shape #267 emits?');
@@ -464,6 +491,7 @@
   expect('C3', 'is the predicate the same across a second fetch of all three pages?');
   expect('C4', 'how many condition slots does the editor markup carry?');
   expect('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?');
+  expect('C6', 'CONTROL: does a page that is NOT the editor read as protected?');
   expect('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
   expect('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
 
@@ -479,6 +507,15 @@
   }
 
   if (CLEANUP_LIST) {
+    // Refuse a title this probe could not have created. The run-unique name
+    // protects the RUN; it does nothing for a cleanup pasted later against a
+    // mistyped or stale title, which would drain up to 5000 items from
+    // somebody's list and recycle it.
+    if (!CLEANUP_LIST.startsWith(LIST_PREFIX)) {
+      log('FAIL', `CLEANUP_LIST '${CLEANUP_LIST}' does not start with '${LIST_PREFIX}', so this probe `
+        + 'did not create it. Nothing was touched.');
+      return;
+    }
     const path = `web/lists/getbytitle('${CLEANUP_LIST}')`;
     const found = await spGet(path);
     if (!found.ok) {
@@ -546,16 +583,23 @@
   // Read the fixture back rather than trusting the writes.
   const seeded = await spGet(`${listPath}/items?$select=Title,${COL}&$orderby=Id&$top=100`);
   const seenRows = (!readFailed(seeded) && seeded.body.value) || [];
-  const seenTitles = seenRows.map((r) => r.Title).sort();
-  const wantTitles = ROWS.map((r) => r.Title).sort();
+  // Compare the PAIRS, not the titles. An item POST that succeeds while
+  // dropping Tag leaves both filters returning nothing, and S1 would then
+  // report INERT from two empty results, which is the premise failing rather
+  // than the question being answered.
+  const asPairs = (rows) => rows
+    .map((r) => `${r.Title}=${r[COL] === null || r[COL] === undefined ? '<null>' : r[COL]}`)
+    .sort();
+  const seenPairs = asPairs(seenRows);
+  const wantPairs = asPairs(ROWS);
   const fixtureOk = seedErrors.length === 0
-    && JSON.stringify(seenTitles) === JSON.stringify(wantTitles);
+    && JSON.stringify(seenPairs) === JSON.stringify(wantPairs);
   record('Q0', 'the fixture actually built',
     fixtureOk ? 'BUILT' : 'NOT ESTABLISHED',
     `rows=${seenRows.length}/${ROWS.length}; seed errors=${JSON.stringify(seedErrors)}; `
-    + `tags=${JSON.stringify(seenRows.map((r) => r[COL]))}. Exactly one row holds 'alpha', so both `
-    + 'filtered views below must return exactly that row and any other count is the fixture, not the '
-    + 'question.');
+    + `read back ${JSON.stringify(seenPairs)} against ${JSON.stringify(wantPairs)}. Exactly one row `
+    + "holds 'alpha', so both filtered views below must return exactly that row and any other count "
+    + 'is the fixture, not the question.');
   if (!fixtureOk) {
     await abandon('the fixture did not build');
     return;
@@ -587,19 +631,52 @@
   const plainRows = await camlRows(PLAIN_WHERE);
   const guardedRows = await camlRows(GUARDED_WHERE);
   const bothQueried = plainRows.ok && guardedRows.ok;
-  const sameMeaning = bothQueried
-    && JSON.stringify(plainRows.titles) === JSON.stringify(guardedRows.titles);
+  // Equality between the two is NOT enough. If GetItems ignored both filters,
+  // or answered both with the same wrong rows, equality holds and the
+  // tautology is crowned inert on the strength of a surface that is not
+  // filtering at all. Both must also hit the control row the fixture
+  // guarantees.
+  const CONTROL = ['R1'];
+  const hitsControl = bothQueried
+    && JSON.stringify(plainRows.titles) === JSON.stringify(CONTROL)
+    && JSON.stringify(guardedRows.titles) === JSON.stringify(CONTROL);
+  const sameMeaning = hitsControl;
   record('S1', 'does the guarded filter return the same rows as the plain one?',
     !bothQueried ? 'NOT ESTABLISHED' : (sameMeaning ? 'INERT' : 'NOT INERT'),
     !bothQueried
       ? `plain: ${plainRows.error || 'ok'}; guarded: ${guardedRows.error || 'ok'}. Both are needed.`
-      : `plain -> ${JSON.stringify(plainRows.titles)}, guarded -> ${JSON.stringify(guardedRows.titles)}. `
+      : `plain -> ${JSON.stringify(plainRows.titles)}, guarded -> ${JSON.stringify(guardedRows.titles)}, `
+        + `control ${JSON.stringify(CONTROL)}. `
         + (sameMeaning
           ? 'The tautology changes nothing on this fixture, so the two views mean the same thing and any '
             + 'difference between their pages is about editability. This re-measures T1 rather than citing '
             + 'it, on the exact tree #267 emits.'
-          : 'The tautology CHANGED the result, so #267 must not emit it and every row below is comparing '
-            + 'two different questions. Report this one first.'));
+          : 'The two do not BOTH return the control row, so either the tautology changed the result or '
+            + 'the query surface is not filtering. Either way every row below is comparing two different '
+            + 'questions. Report this one first.'));
+
+
+  // ---- S2: the tautology has to be a tautology --------------------------
+  // S1 cannot see this. Conjoined behind Eq(alpha) the left side already
+  // restricts to R1, so a tautology that wrongly excluded R2 or R3 would give
+  // exactly the same answer and S1 would still say INERT. The partition is
+  // only visible when the group is asked ON ITS OWN, where it must return
+  // EVERY row.
+  const tautRows = await camlRows(TAUTOLOGY);
+  const allTitles = ROWS.map((r) => r.Title).sort();
+  const partitions = tautRows.ok
+    && JSON.stringify(tautRows.titles) === JSON.stringify(allTitles);
+  record('S2', 'CONTROL: does the tautology ALONE return every row?',
+    !tautRows.ok ? 'NOT ESTABLISHED' : (partitions ? 'PARTITIONS' : 'DOES NOT PARTITION'),
+    !tautRows.ok
+      ? `${tautRows.error}`
+      : `${JSON.stringify(tautRows.titles)} against every row ${JSON.stringify(allTitles)}. `
+        + (partitions
+          ? 'IsNotNull(ID) and IsNull(ID) cover every row, so conjoining the group cannot remove one. This '
+            + 'is the claim #267 rests on and S1 is structurally unable to make it.'
+          : 'The group does NOT cover every row, so conjoining it would silently drop rows from any filter '
+            + 'it is added to. #267 must not emit it. S1 can still read INERT here, which is exactly why '
+            + 'this row exists.'));
 
   // ---- The three views --------------------------------------------------
   const makeView = async (title, where) => {
@@ -616,6 +693,35 @@
     const v = await makeView(title, where);
     if (!v.ok) viewErrors.push(`${title}: HTTP ${v.status} ${v.text.slice(0, 120)}`);
   }
+
+
+  // ---- Q1: read the stored ViewQuery back --------------------------------
+  // Finding a view by title says a view exists, not that it holds the tree
+  // that was sent. SharePoint rewriting a filter on save is the behaviour this
+  // whole line of work is about, so taking the POST's 200 as proof of the
+  // stored shape would be assuming the thing under investigation.
+  const stored = await spGet(`${listPath}/views?$select=Title,ViewQuery`);
+  const storedBy = (title) => ((!readFailed(stored) && stored.body.value) || [])
+    .find((v) => v.Title === title)?.ViewQuery ?? null;
+  const norm = (s) => (s || '').replace(/\s+/g, '');
+  const storedPlain = storedBy('Plain');
+  const storedGuarded = storedBy('Guarded');
+  const plainHeld = norm(storedPlain) === norm(`<Where>${PLAIN_WHERE}</Where>`);
+  const guardedHeld = norm(storedGuarded) === norm(`<Where>${GUARDED_WHERE}</Where>`);
+  const treesHeld = plainHeld && guardedHeld;
+  record('Q1', 'did the guarded tree survive being STORED as a ViewQuery?',
+    (storedPlain === null || storedGuarded === null) ? 'NOT ESTABLISHED'
+      : (treesHeld ? 'SURVIVED' : 'REWRITTEN'),
+    (storedPlain === null || storedGuarded === null)
+      ? `Plain=${JSON.stringify(storedPlain)}, Guarded=${JSON.stringify(storedGuarded)}. One of the views `
+        + 'could not be read back, so nothing below knows which tree it is looking at.'
+      : `stored Plain: ${storedPlain}. stored Guarded: ${storedGuarded}. `
+        + (treesHeld
+          ? 'Both match what was sent, ignoring whitespace, so the pages below belong to the trees under '
+            + 'test.'
+          : 'SharePoint stored something OTHER than what was sent. Every page comparison below, and any '
+            + 'manual look at P1 or P2, is then about a tree nobody chose. Report this before anything '
+            + 'else.'));
 
   const listMeta = await spGet(`${listPath}?$select=Id`);
   const listGuid = (!readFailed(listMeta) && listMeta.body.Id) || null;
@@ -636,11 +742,16 @@
     try {
       const res = await fetch(url, { credentials: 'same-origin' });
       const text = await res.text();
-      return { ok: res.ok, status: res.status, length: text.length, text,
+      // A redirect to a login or to the modern settings surface answers 200,
+      // so res.ok alone would hand the wrong HTML to every row below. The
+      // page is only usable if the response came from the endpoint asked for.
+      const landed = !res.redirected && res.url.includes('ViewEdit.aspx');
+      return { ok: res.ok && landed, httpOk: res.ok, landed,
+        status: res.status, length: text.length, text,
         redirected: res.redirected, finalUrl: res.url, error: null };
     } catch (err) {
-      return { ok: false, status: 0, length: 0, text: '', redirected: false,
-        finalUrl: null, error: String(err) };
+      return { ok: false, httpOk: false, landed: false, status: 0, length: 0,
+        text: '', redirected: false, finalUrl: null, error: String(err) };
     }
   };
 
@@ -648,8 +759,20 @@
   const pagePlain = haveIds ? await fetchEditPage(plainView.Id) : null;
   const pageGuarded = haveIds ? await fetchEditPage(guardedView.Id) : null;
   const bothFetched = !!pagePlain?.ok && !!pageGuarded?.ok;
+  // A throttle, an auth failure or a network error is not the endpoint
+  // saying no, and recording it as REFUSED would preserve a transient as
+  // evidence that this approach is closed. isRefusal draws that line for the
+  // REST helpers already; the same line applies to a page fetch.
+  const pageOutcome = () => {
+    if (bothFetched) return 'FETCHED';
+    for (const page of [pagePlain, pageGuarded]) {
+      if (page && page.httpOk && !page.landed) return 'REDIRECTED';
+    }
+    const refused = [pagePlain, pageGuarded].some((p) => p && isRefusal(p.status));
+    return refused ? 'REFUSED' : 'NOT ESTABLISHED (transient)';
+  };
   record('F1', 'can the view edit page be fetched for both views?',
-    !haveIds ? 'NOT ESTABLISHED' : (bothFetched ? 'FETCHED' : 'REFUSED'),
+    !haveIds ? 'NOT ESTABLISHED' : pageOutcome(),
     !haveIds
       ? `list id=${listGuid}, Plain=${plainView?.Id || null}, Guarded=${guardedView?.Id || null}. `
         + `View creation errors: ${JSON.stringify(viewErrors)}.`
@@ -659,8 +782,9 @@
         + `Guarded: HTTP ${pageGuarded.status}, ${pageGuarded.length} chars`
         + `${pageGuarded.redirected ? `, REDIRECTED to ${pageGuarded.finalUrl}` : ''}`
         + `${pageGuarded.error ? `, threw ${pageGuarded.error}` : ''}. `
-        + 'A redirect to a login or to the modern settings surface means the classic page is not what an '
-        + 'authenticated fetch gets, and this whole approach closes here rather than at F3.');
+        + 'A REDIRECTED outcome means the classic page is not what an authenticated fetch gets and the '
+        + 'approach closes here rather than at F3. A transient failure is held OPEN rather than recorded '
+        + 'as a refusal, because a throttle is not the endpoint saying no.');
 
   // ---- F8: is a page even deterministic? --------------------------------
   // Runs before the diffs it validates. Two fetches of the SAME page, so any
@@ -769,19 +893,26 @@
   const langAttr = bothFetched
     ? (pagePlain.text.match(/<html[^>]*\blang="([^"]{2,12})"/i) || [])[1] || null
     : null;
-  const cultureReadable = !!ctxCulture || !!ctxLanguage || !!langAttr;
+  // The html lang follows the WEB's regional setting; the UI culture is the
+  // user's and is what decides which language those display strings arrive
+  // in. Run 1 measured them disagreeing, en-AU against en-US, so accepting
+  // the attribute as a fallback would authorise the language branch on the
+  // wrong surface. It is reported, never relied on.
+  const cultureReadable = !!ctxCulture || !!ctxLanguage;
   record('F6', 'can the tenant UI culture be read, so non-English can be told apart?',
     !cultureReadable ? 'NOT ESTABLISHED' : 'READABLE',
     `_spPageContextInfo.currentUICultureName=${JSON.stringify(ctxCulture)}, `
-    + `currentLanguage=${JSON.stringify(ctxLanguage)}, <html lang>=${JSON.stringify(langAttr)}. `
+    + `currentLanguage=${JSON.stringify(ctxLanguage)}. OBSERVED ONLY, not part of the verdict: `
+    + `<html lang>=${JSON.stringify(langAttr)}. `
     + (cultureReadable
       ? 'So a deploy can tell an unverifiable tenant from a failed protection: a non-English culture warns, '
         + 'and English with no marker is a FAILURE rather than a warning. Both readings need a second '
         + 'observation on a non-English tenant before the branch is trusted, and there is no such tenant '
         + 'here, so what this row establishes is only that the value EXISTS.'
-      : 'Nothing exposes the culture, so "marker absent" cannot be attributed and every unprotected view '
-        + 'would be excused as a language difference. The warning would then hide the defect it was meant '
-        + 'to report.'));
+      : 'No UI-culture surface is readable, so "marker absent" cannot be attributed and every unprotected '
+        + 'view would be excused as a language difference. The warning would then hide the defect it was '
+        + 'meant to report. An <html lang> present here does not rescue it: that is the web\'s region, '
+        + 'not the language the strings come back in.'));
 
   // ---- F7: the negative control -----------------------------------------
   // An unfiltered view is editable. Any predicate that calls it protected
@@ -905,11 +1036,41 @@
       ? 'all three pages are needed.'
       : `present on all three: ${JSON.stringify(onAll)}; of candidates ${JSON.stringify(SENTINELS)}. `
         + (onAll.length
-          ? 'So a check can require the sentinel BEFORE believing the control is absent. Without it, a '
-            + 'login redirect, an error page or a truncated response all read as protected, and the deploy '
-            + 'reports success for a view it never saw.'
+          ? 'So a check can require the sentinel BEFORE believing the control is absent. What this row '
+            + 'shows is only that the sentinel is PRESENT on three pages that rendered; that it is absent '
+            + 'from a page that did not is a separate claim, and C6 is where it gets tested.'
           : 'NOTHING is on all three pages, so absence of the control cannot be distinguished from absence '
             + 'of the page. The predicate must not be built until a sentinel is found.'));
+
+
+  // ---- C6: the way an absence test fails --------------------------------
+  // C5 shows a sentinel on three pages that all rendered. It cannot show the
+  // sentinel is ABSENT from a page that did not, which is the claim the guard
+  // actually depends on. So ask for a view that does not exist and report what
+  // comes back: if that response carries a sentinel and no FieldPicker1, the
+  // guard classifies a non-page as a protected view.
+  const BOGUS_VIEW = '00000000-0000-0000-0000-000000000001';
+  const bogus = haveIds ? await fetchEditPage(BOGUS_VIEW) : null;
+  const bogusSentinels = bogus ? SENTINELS.filter((s) => bogus.text.includes(s)) : [];
+  const bogusNames = bogus && bogus.text ? attrValues(bogus.text, 'name') : new Set();
+  const bogusHasControl = bogusNames.has(CANDIDATES[0]);
+  // The guard as it would be written, run against a page that is not the one
+  // asked for. It must NOT come out protected.
+  const bogusReadsProtected = !!bogus && bogus.ok
+    && bogusSentinels.length > 0 && !bogusHasControl;
+  record('C6', 'CONTROL: does a page that is NOT the editor read as protected?',
+    !bogus ? 'NOT ESTABLISHED' : (bogusReadsProtected ? 'FALSE POSITIVE' : 'REJECTED'),
+    !bogus
+      ? 'the list ids were not available, so no bogus request was made.'
+      : `HTTP ${bogus.status}, landed=${bogus.landed}, ${bogus.length} chars; sentinels present `
+        + `${JSON.stringify(bogusSentinels)}; ${CANDIDATES[0]} present=${bogusHasControl}. `
+        + (bogusReadsProtected
+          ? 'The guard would call this protected. It is not a view at all. The sentinel is too weak, or the '
+            + 'landed check is not being applied, and the check must not ship in this form.'
+          : 'The guard rejects it, so a request that does not reach the editor cannot be mistaken for a '
+            + 'protected view. This is one shape of failure, not all of them: a response truncated after '
+            + 'the sentinel and before the controls is still unmeasured, and a length or completeness test '
+            + 'is what would close that.'));
 
   // ---- P1, P2: the ground truth ------------------------------------------
   record('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
