@@ -118,36 +118,46 @@
  * the bulk-operation cap, and nothing about how many predicates a view may
  * hold, so the ten is undocumented.
  *
- * E1 THROUGH E4 ANSWERED IT on 2026-08-17, and the trigger is isolated.
+ * WHAT THE EDITOR REFUSES, measured 2026-08-17 over E1-E4, P1, P2 and W2,
+ * plus the live "Tolerance due" view an operator reported. Seven shapes:
  *
- *   E1  flat Or chain of 12          12 rows   EDITABLE
- *   E2  flat And chain of 12          1 row    EDITABLE
- *   E3  And[Eq, Or[Eq,Eq]]            0 rows   COMPLEX FILTER, refused
- *   E4  flat Or chain of 12 + IsNull 12 rows   EDITABLE
+ *   E1  Or[Or[Or[..]]] left fold, 12          EDITABLE
+ *   E2  And[And[..]] left fold, 12            EDITABLE
+ *   E4  Or[chain11, IsNull]                   EDITABLE
+ *   P1  Or[ And[Eq,Eq], Eq ]                  EDITABLE
+ *   W2  And[ Or[chain12], IsNotNull(ID) ]     EDITABLE
+ *   E3  And[ Eq, Or[Eq,Eq] ]                  COMPLEX, refused
+ *   P2  And[ Eq, Or[Eq,Eq] ] over 2 members   COMPLEX, refused
+ *       "Tolerance due": And[ And[..], Or[..] ]   COMPLEX, refused
  *
- * A HOMOGENEOUS tree is editable, and therefore truncatable, whatever its
- * length and whichever operator it uses. A MIXED tree, an Or nested inside an
- * And, is refused by the editor and therefore cannot be truncated by a save.
+ * The first reading, that a MIXED tree is refused, does not survive P1 and
+ * W2: both mix And with Or and both are editable. What separates the two
+ * groups is WHERE the non-leaf sits. Every editable shape has a leaf in the
+ * right child; every refused one has a group there.
  *
- * The three confounded variables are separated. E4 adds an IsNull to a flat
- * chain and it stays editable, so the IsNull is NOT the trigger. E3 is mixed
- * with no IsNull and no date sentinel and it IS refused, so neither of those
- * is needed. Nesting is the whole of it.
+ * That is what a flat left-to-right condition list can express. It can build
+ * ((A and B) or C), grouping as it goes, and it has nowhere to put the
+ * brackets in A and (B or C), which defers. So the rule is not "two
+ * connectives appear", it is "a non-leaf in the RIGHT child position".
  *
- * Every row count is also right, which is what says the fixture behaved
- * rather than the editor merely disagreeing with it: E1 returns the 12 rows
- * holding its 12 members; E2 conjoins one Eq with eleven Neq and returns the
- * single row holding M01; E3 asks for a row holding M01 AND one of two other
- * members, and no row here holds two, so zero is correct; E4 adds the empty
- * row to eleven.
+ * This matters to the tool directly, because `_combine` in
+ * analysis/conditions.py LEFT-folds. Its natural output is exactly the
+ * editable, truncatable shape, and protection would mean deliberately
+ * putting the group on the right. W3 and W4 test that with the cheapest
+ * possible swap: the same two predicates as W1 and W2, exchanged.
  *
- * WHAT THIS DOES NOT ESTABLISH. That a mixed tree can be manufactured for a
- * filter that does not naturally contain one. The risk register's "Tolerance
- * due" is mixed because a `neq` renders as <Or><IsNull><Neq></Or> inside an
- * enclosing <And>, so any filter carrying a negative is already protected. A
- * pure any_of chain has no such nesting, and giving it one means adding a
- * predicate that changes nothing, which is a construct nobody has measured
- * here. That is the next question, not a conclusion of this one.
+ * THE DOCUMENTED MECHANISM IS A DEAD END, and worse than that. R1: the
+ * editable view and the refused view BOTH read ReadOnlyView=false, so the
+ * property is not the flag behind the refusal and nothing server-side
+ * records it. R2 is the finding: a MERGE setting ReadOnlyView:true was
+ * ACCEPTED with HTTP 204 and read back FALSE. A documented property takes a
+ * write, answers success, and silently discards it. Anything that ever sets
+ * it and trusts the status has to read it back, which is this repository's
+ * standing rule arriving on a new surface.
+ *
+ * W1 did establish that IsNotNull(ID) is inert: the wrapped chain returned
+ * the same twelve rows as the bare one. So the conjunct costs nothing
+ * semantically, and only its POSITION is in question.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
@@ -364,7 +374,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision a2b16a75. Quote this when reporting results.');
+  log('INFO', 'probe revision db97fcc3. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -454,6 +464,8 @@
   expect('R3', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)');
   expect('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?');
   expect('W2', 'is that wrapped view refused by the editor? (manual: look)');
+  expect('W3', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?');
+  expect('W4', 'is the FLIPPED wrapper refused by the editor? (manual: look)');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -1039,6 +1051,12 @@
   // what this file exists to replace, so W1 COMPARES its rows against the
   // twelve a bare chain returns rather than asserting the conjunct is inert.
   const wrapped = `<And>${chainOf(12)}<IsNotNull><FieldRef Name="ID"/></IsNotNull></And>`;
+  // W3/W4 flip it. P1 and W2 both put the GROUP in the left child and both
+  // stayed editable; E3, P2 and the live "Tolerance due" all put it in the
+  // right child and all were refused. So position, not mixedness, is the
+  // candidate rule, and this is the cheapest test of it: the same two
+  // predicates, the same rows, swapped.
+  const flipped = `<And><IsNotNull><FieldRef Name="ID"/></IsNotNull>${chainOf(12)}</And>`;
   const wRows = await camlRows(wrapped);
   const wSame = wRows.ok && same(wRows.titles, expectedFor(12));
   record('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?',
@@ -1051,12 +1069,25 @@
           : `Got ${JSON.stringify(wRows.titles)}. The conjunct is NOT inert, so this wrapper would change `
             + 'what a filter means and must not be emitted.'));
 
+  const fRows = await camlRows(flipped);
+  const fSame = fRows.ok && same(fRows.titles, expectedFor(12));
+  record('W3', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?',
+    !fRows.ok ? 'QUERY REFUSED' : (fSame ? 'SAME ROWS' : 'DIFFERENT ROWS'),
+    !fRows.ok
+      ? `${fRows.error}`
+      : `${fRows.titles.length} row(s) against 12. `
+        + (fSame
+          ? 'Semantically identical to W1, so if W4 is refused where W2 was not, POSITION is the trigger and '
+          + 'the tool can protect a filter by emitting the group on the right.'
+          : `Got ${JSON.stringify(fRows.titles)}, so flipping changed the meaning and this is not a free swap.`));
+
   const shapedMore = [
     ['P1', 'Or[And[Eq,Eq], Eq], the MIRROR of E3',
       `<Or><And>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</And>${eq(DISCRIMINATORS[2])}</Or>`],
     ['P2', 'the SMALLEST mixed tree, over 2 members',
       `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</Or></And>`],
-    ['W2', 'the manufactured wrapper from W1', wrapped],
+    ['W2', 'the manufactured wrapper from W1, group on the LEFT', wrapped],
+    ['W4', 'the wrapper FLIPPED, group on the RIGHT', flipped],
   ];
   for (const [id, label, where] of shapedMore) {
     const title = `Shape ${id}`;
