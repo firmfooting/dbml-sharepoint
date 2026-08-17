@@ -82,13 +82,14 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: the depth and editability questions are ANSWERED, over six runs on
- * 2026-08-17. Four rows are still open: T1, T2, G1 and G2.
+ * STATUS: COMPLETE, over seven runs on 2026-08-17. Every question this probe
+ * registers has been answered.
  *
  * Run 3 answered the depth question: the machine surfaces evaluate a
  * 40-disjunct chain correctly and the filter editor does not.
  *
- * RUN 6 DIED BEFORE T1, T2, G1 AND G2, and how it died is worth keeping.
+ * RUN 6 DIED BEFORE T1, T2, G1 AND G2, and how it died is worth keeping even
+ * though run 7 answered them.
  * Revision cc1a18b1 named `guarded` in the shape list that builds the
  * editability views, several hundred lines above the const that declares it,
  * so the run threw a temporal dead zone ReferenceError after every expensive
@@ -163,12 +164,50 @@
  * builds ((A and B) or C) as it goes and has nowhere to put the brackets in
  * A and (B or C), which defers.
  *
+ * A MANUFACTURED GROUP PROTECTS A FILTER THAT HAS NOTHING TO GROUP, measured
+ * by T1 and T2 on 2026-08-17. This is the row that decides how far protection
+ * can reach, because of what the shipped templates actually contain: of 192
+ * filtered views, 138 carry ONE clause and 50 carry two. A single clause
+ * renders as a bare leaf with no And/Or at all, and two leaves render as
+ * And[leaf, leaf]. Neither has a group to put on the right, so an
+ * associativity change alone protects 4 of the 192.
+ *
+ * The tautology Or[IsNotNull(ID), IsNull(ID)] closes that gap. T1: conjoined
+ * on the right of a single Eq it returned exactly the 1 row the bare Eq
+ * returns, so it changes no result. T2: the editor REFUSED that view with
+ * "complex filter which cannot be edited here", so it does trigger the
+ * refusal. Both halves hold, and every view can be protected rather than
+ * only the four with a group of their own.
+ *
+ * The tautology is not free of assumptions and the one it rests on is ID.
+ * Every list item has one, so IsNotNull(ID) and IsNull(ID) partition the
+ * rows; T1's fixture includes an empty row precisely so a partition that
+ * missed it would show up as a row count.
+ *
  * WHAT IT MEANS FOR THIS TOOL. `_combine` in analysis/conditions.py
  * LEFT-folds, so its natural output is the editable, truncatable shape.
  * "Tolerance due" is protected today only because its neq wrapper happens to
  * land on the right. Emitting the group on the right instead is an
  * associativity choice and needs no extra predicate for any filter with two
  * or more clauses. #267 carries that work.
+ *
+ * A DEPLOY CAN READ THE PROTECTED STATE BACK, but not yet on a predicate it
+ * should trust. G1: /_layouts/15/ViewEdit.aspx answers HTTP 200 to a
+ * same-origin fetch from the deploy's own console, so the page is reachable.
+ * G2: the editable view's page is 501,520 chars and the refused view's is
+ * 459,104, and the refusal text is SERVED IN THE HTML rather than rendered by
+ * script, so it can be seen by a fetch at all.
+ *
+ * WHAT G2 DOES NOT SETTLE is which string to test on, and the candidates it
+ * measured rule themselves out. `complex filter` and `cannot be edited` are
+ * English display text, so a French tenant would read as unprotected.
+ * `ViewFilter` appears on BOTH pages. `FilterOnFieldName`, `onetidFilter` and
+ * `FilterOpt` appear on NEITHER. So no measured marker is both
+ * discriminating and language-independent, and the 42KB the refused page is
+ * missing has not been characterised. A verify step built on the English
+ * string would pass in this tenant and fail silently in another, which is the
+ * failure class this repository exists to close, so it must not be built on
+ * one. #267 carries the follow-up.
  *
  * THE DOCUMENTED MECHANISM IS A DEAD END, and R2 is worth keeping on its own
  * account. R1: the editable view and the refused view BOTH read
@@ -396,7 +435,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision d8748ce6. Quote this when reporting results.');
+  log('INFO', 'probe revision 0c75cad7. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -1119,12 +1158,15 @@
   //
   // The candidate is a TAUTOLOGY: Or[IsNotNull(ID), IsNull(ID)]. Every row is
   // one or the other, so conjoining it should change no result, and it is a
-  // group, so on the right it should trigger the refusal. Both halves of that
-  // sentence say "should", which is why this row exists rather than a commit.
+  // group, so on the right it should trigger the refusal. Both halves said
+  // "should" when these rows were written, which is why they were written as
+  // rows rather than as a commit. Run 7 on 2026-08-17 answered both: T1 INERT,
+  // T2 refused. Keep measuring them anyway, because the emitted shape now
+  // depends on both holding and neither is documented.
   //
   // T1 asks the semantic half against the strictest case, a single-clause
   // filter, where any drift is visible immediately. W1 and W3 measured
-  // IsNotNull(ID) inert in a conjunction; NOBODY has measured this Or.
+  // IsNotNull(ID) inert in a conjunction; this Or is a different question.
   const tautology = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
     + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
   const guarded = `<And>${eq(DISCRIMINATORS[0])}${tautology}</And>`;
