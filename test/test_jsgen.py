@@ -895,6 +895,27 @@ def test_mutable_list_and_field_shape_is_reconciled_and_read_back() -> None:
     assert js.index("phase-2-schema-errors") < js.index(f"Starting Phase {pn('indexes')}")
 
 
+def _call_count(js: str, name: str) -> int:
+    """Occurrences of `name(` in the emitted script, less its one declaration."""
+    declarations = js.count(f"function {name}(")
+    assert declarations == 1, f"{name} is not declared exactly once"
+    return js.count(f"{name}(") - declarations
+
+
+def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> None:
+    """The count is the only attribution available, and it has to hold.
+
+    `assertListImmutableShape` emits the same message from all four of its sites,
+    so no error text distinguishes them. A site switched from the wrapper to the
+    collector stops throwing, and two of these sites verify a read-back: one that
+    stops throwing is indistinguishable from one that passed.
+    """
+    js = _generate_simple_js()
+
+    assert _call_count(js, "assertFieldImmutableShape") == 3
+    assert _call_count(js, "assertListImmutableShape") == 4
+
+
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
     """Choice adoption cannot silently accept extra/reordered free-form values."""
     from dbml_sharepoint.generators.jsgen import build_schema_json

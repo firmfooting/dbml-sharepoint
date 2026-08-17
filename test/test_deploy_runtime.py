@@ -1165,6 +1165,49 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
     assert seal_writes[-1] is True, f"the aborted run left Note unsealed: {seal_writes}"
 
 
+_TWO_WRONG_PROPERTIES_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    // One adopted column wrong in two immutable properties at once. `fieldShape`
+    // derives TypeAsString from FieldTypeKind, so both are set afterwards.
+    const wrongNote = fieldShape('APP_Escalation', 'Note', {
+      FieldTypeKind: 2, Required: false, Description: 'stale description', MaxLength: 255,
+    });
+    wrongNote.Sealed = true;
+    wrongNote.TypeAsString = 'Note';
+    created['APP_Escalation Note'] = wrongNote;
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_with_multiple_immutable_mismatches_reports_all_of_them(
+    tmp_path: Path,
+) -> None:
+    """Reporting the first mismatch sends an operator round the loop once per fault.
+
+    This column is wrong in both TypeAsString and Sealed, and the mapping declares
+    no seal, so both are real. One error naming both is what makes the abort
+    describe the column rather than the first thing checked about it.
+    """
+    js = _declared_deploy_js(tmp_path, "")
+    script = _TWO_WRONG_PROPERTIES_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    both = (
+        "Existing field 'APP_Escalation.Note' has immutable TypeAsString 'Note'; "
+        "expected 'Text' "
+        "Existing field 'APP_Escalation.Note' is sealed; expected an unsealed declared field"
+    )
+    reported = [err["error"] for err in summary["errors"] if err.get("column") == "Note"]
+    assert reported == [both]
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """The end-to-end guard, and the one that gives the others their value.
