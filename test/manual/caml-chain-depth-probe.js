@@ -34,22 +34,34 @@
  * of those rows measures rather than adding to them.
  *
  * THE DESIGN, and the one thing worth understanding before reading a result.
- * Every chain at every depth is padded with members that NO row holds, so the
- * expected answer is identical at depth 1 and at depth 40: the rows holding
- * the single real member. Depth is therefore the only variable, and a change
- * in the answer can only be attributed to depth. Asserting the padding
- * members are absent would be asserting over what is observed; they are
- * seeded absent instead, and Q0 reports what was actually stored.
+ * Member Mnn is held by exactly ONE row, Rnn. A chain over M01..MK therefore
+ * has to return EXACTLY K rows, one per disjunct. The COUNT is the
+ * measurement.
+ *
+ * That is a correction, and the reason it matters is worth stating. Run 2
+ * held the answer CONSTANT instead: it chained one member every row held,
+ * padded with members no row held, and expected the same two rows at every
+ * depth. Every depth returned them, and it read as "depth does not matter".
+ * It was not evidence of that. The discriminating member sat in position one,
+ * so a SharePoint that evaluated only the first disjunct, or the first ten,
+ * would have produced an identical sheet. The negative controls did not close
+ * it either, because a padding-only chain returns nothing whether it is
+ * evaluated fully or cut short. Every green row in run 2 was equally
+ * consistent with truncation at 10, which is what the operator then saw in
+ * the browser.
+ *
+ * A count cannot be satisfied that way. A chain cut at ten returns ten rows,
+ * says so, and names which disjuncts survived.
  *
  * THE CONTROL IS D01. One disjunct is no chain at all, so if D01 does not
- * return the two control rows then the fixture, not the depth, is the
- * finding, and every row below it is void. It says so itself rather than
- * leaving a reader to notice.
+ * return exactly one row then the fixture, not the depth, is the finding, and
+ * every row below it is void.
  *
- * THE NEGATIVE CONTROLS ARE N1 AND N2. A chain of padding ONLY must return
- * nothing, shallow and deep. Without them "returns the control rows" is
- * consistent with a query that returns everything, and a chain that
- * degenerates into matching every row is one of the ways this can fail.
+ * THE NEGATIVE CONTROLS ARE N1 AND N2. A chain over members NO row holds
+ * must return nothing, shallow and deep. They rule out a chain that has
+ * degenerated into matching everything. They cannot rule out truncation,
+ * which is what the count is for, and run 2 is the record of what happens
+ * when a probe leans on them for that.
  *
  * WHAT A FAILURE LOOKS LIKE, since none of them is an HTTP error. A
  * truncated tree, a flattened tree, and a tree that matches everything all
@@ -70,27 +82,23 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: RUN 2 on 2026-08-17 answered all 25 automated rows. Run 1 aborted
- * at bootstrap and answered nothing; its cause was this file, not the tenant,
- * and it is recorded at the create call it applies to.
+ * STATUS: RUN 2 on 2026-08-17 answered all 25 automated rows and its answer
+ * must be DISCARDED. Not because the tenant misbehaved, but because the
+ * fixture could not have detected the thing the probe was for. See THE DESIGN
+ * above: the discriminating member sat in position one, so truncation at any
+ * depth would have produced the same sheet. An operator opening the deepest
+ * view then counted TEN filter elements against forty stored, which is the
+ * reading run 2 was blind to and could not have excluded.
  *
- * RUN 2 RESULT, and the reason U1 and U2 now exist. Both measured surfaces
- * agreed at every depth from 1 to 40 disjuncts. The ad-hoc CamlQuery returned
- * exactly the control rows each time; the stored ViewQuery came back
- * structurally identical with its full <Or> count intact (39 sent, 39
- * stored, at a 2,871-character where clause) and replayed to the same rows.
- * Both negative controls returned nothing, shallow and deep, so the positive
- * rows are real matches rather than a chain that had degenerated into
- * matching everything. The write shape was bare-array and the CamlQuery
- * payload typed, both asked rather than assumed.
+ * What run 2 does still establish, because these did not depend on the
+ * discriminator's position: a 40-disjunct chain is ACCEPTED by both surfaces.
+ * The ad-hoc query ran at a 2,871-character where clause without refusal, and
+ * the stored ViewQuery came back structurally identical with 39 of 39 <Or>
+ * intact. So SharePoint stores and parses the tree. Whether it EVALUATES all
+ * of it was never asked, and that is now the question.
  *
- * THEN AN OPERATOR OPENED THE DEEPEST VIEW IN A BROWSER AND COUNTED TEN
- * FILTER ELEMENTS. Forty are stored. Nothing this probe measured could have
- * seen that: the D rows ask GetItems, the V rows replay the stored XML
- * through GetItems, and neither is the page a person looks at or the editor
- * they save from. So the honest reading of run 2 is narrower than it looks.
- * A chain of 40 is safe to WRITE and safe to QUERY, and what a human sees is
- * a third surface that was never asked about. U1 and U2 ask it.
+ * Run 1 aborted at bootstrap and answered nothing; its cause was this file
+ * and is recorded at the create call it applies to.
  *
  * Microsoft documents no ceiling on view filter conditions. The Learn
  * boundaries pages carry the list view threshold, the lookup threshold and
@@ -98,7 +106,7 @@
  * hold. The ten is undocumented, which is why it has to be characterised
  * rather than looked up.
  *
- * U1 and U2 are still questions.
+ * Every row below is a question again.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
@@ -315,7 +323,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision d5a0bc6e. Quote this when reporting results.');
+  log('INFO', 'probe revision 436c3444. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -330,50 +338,66 @@
   const LIST = `dbmlsp Probe Chain ${RUN}`;
   const COL = 'Chain';
 
-  // 48 members: one that the control rows hold, one second real member so the
-  // fixture is not "everything or nothing", and 46 that no row holds and that
-  // exist only to make a chain longer.
+  // ONE ROW PER MEMBER. This is the whole design and run 2 got it wrong.
+  //
+  // Run 2 chained the one member every row held FIRST, then padded with
+  // members no row held. Every depth returned the same two rows, and that
+  // read as "depth does not matter". It is not evidence of that. If
+  // SharePoint had evaluated only the first disjunct, or the first ten, the
+  // answer would have been identical, because the discriminating member was
+  // in position one. The negative controls did not rescue it either: a
+  // padding-only chain returns nothing whether it is evaluated fully or
+  // truncated. Every green row in run 2 was equally consistent with
+  // truncation at 10, which is exactly what the operator then saw in the UI.
+  //
+  // So the discriminator is spread across the chain instead. Member Mnn is
+  // held by exactly one row, Rnn, and a chain over M01..MK must return
+  // EXACTLY K rows. The COUNT is the measurement, and it cannot be satisfied
+  // by a truncated evaluation: a chain cut at ten returns ten rows, names the
+  // depth it was cut at, and says which disjuncts survived.
+  //
+  // 48 members: 40 that a row holds, and 8 that no row holds, kept for the
+  // negative controls.
   const MEMBERS = Array.from({ length: 48 }, (_, i) => `M${String(i + 1).padStart(2, '0')}`);
-  const REAL = MEMBERS[0];            // M01, held by the two control rows
-  const SECOND = MEMBERS[1];          // M02, held by two rows, never chained
-  const PADDING = MEMBERS.slice(2);   // M03.. , held by NOTHING
+  const DISCRIMINATORS = MEMBERS.slice(0, 40);   // M01..M40, one row each
+  const PADDING = MEMBERS.slice(40);             // M41..M48, held by NOTHING
 
-  // The rows every depth is judged against. Titles carry their own set so a
-  // transcript is readable without cross-referencing this block.
+  // One row per discriminator, plus an empty row so the null behaviour is
+  // still visible. Titles are zero-padded so a sorted list reads in order.
   const ROWS = [
-    { title: `R1 {${REAL}}`, set: [REAL] },
-    { title: `R2 {${REAL},${SECOND}}`, set: [REAL, SECOND] },
-    { title: `R3 {${SECOND}}`, set: [SECOND] },
-    { title: `R4 {}`, set: [] },
+    ...DISCRIMINATORS.map((m) => ({ title: `R${m.slice(1)} {${m}}`, set: [m] })),
+    { title: 'R00 {}', set: [] },
   ];
-  // Rows holding REAL, which is what every padded chain must return.
-  const CONTROL_ROWS = ROWS.filter((r) => r.set.includes(REAL)).map((r) => r.title).sort();
+  const titleFor = (m) => `R${m.slice(1)} {${m}}`;
+  // What a chain of K disjuncts must return: exactly the K rows holding the K
+  // members it names. A shortfall is truncation and names where.
+  const expectedFor = (k) => DISCRIMINATORS.slice(0, k).map(titleFor).sort();
 
   const DEPTHS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 40];
 
   expect('Q0', 'the fixture actually built: a 48-member MultiChoice and four rows with the sets asked for');
-  expect('D01', 'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns the control rows (CONTROL: no chain at all)');
-  expect('D02', 'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns the control rows');
-  expect('D03', 'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns the control rows');
-  expect('D04', 'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns the control rows');
-  expect('D06', 'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns the control rows');
-  expect('D08', 'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns the control rows');
-  expect('D12', 'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns the control rows');
-  expect('D16', 'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns the control rows');
-  expect('D24', 'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns the control rows');
-  expect('D32', 'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns the control rows');
-  expect('D40', 'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns the control rows');
-  expect('V01', 'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to the same rows');
-  expect('V02', 'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to the same rows');
-  expect('V03', 'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to the same rows');
-  expect('V04', 'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to the same rows');
-  expect('V06', 'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to the same rows');
-  expect('V08', 'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to the same rows');
-  expect('V12', 'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to the same rows');
-  expect('V16', 'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to the same rows');
-  expect('V24', 'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to the same rows');
-  expect('V32', 'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to the same rows');
-  expect('V40', 'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to the same rows');
+  expect('D01', 'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns all 1 rows, one per disjunct (CONTROL: no chain at all)');
+  expect('D02', 'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns all 2 rows, one per disjunct');
+  expect('D03', 'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns all 3 rows, one per disjunct');
+  expect('D04', 'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns all 4 rows, one per disjunct');
+  expect('D06', 'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns all 6 rows, one per disjunct');
+  expect('D08', 'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns all 8 rows, one per disjunct');
+  expect('D12', 'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns all 12 rows, one per disjunct');
+  expect('D16', 'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns all 16 rows, one per disjunct');
+  expect('D24', 'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns all 24 rows, one per disjunct');
+  expect('D32', 'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns all 32 rows, one per disjunct');
+  expect('D40', 'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns all 40 rows, one per disjunct');
+  expect('V01', 'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to all 1 rows');
+  expect('V02', 'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to all 2 rows');
+  expect('V03', 'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to all 3 rows');
+  expect('V04', 'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to all 4 rows');
+  expect('V06', 'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to all 6 rows');
+  expect('V08', 'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to all 8 rows');
+  expect('V12', 'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to all 12 rows');
+  expect('V16', 'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to all 16 rows');
+  expect('V24', 'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to all 24 rows');
+  expect('V32', 'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to all 32 rows');
+  expect('V40', 'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to all 40 rows');
   expect('N1', 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
   expect('N2', 'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
   expect('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)');
@@ -549,7 +573,8 @@
     `write shape=${writeShape || 'none accepted'}; rows=${seenRows.length}/${ROWS.length}; `
     + `mismatched=${JSON.stringify(mismatched)}; padding members found on a row=${JSON.stringify(paddingSeen)}; `
     + `seed errors=${JSON.stringify(seedErrors)}. Every depth below is judged against `
-    + `${JSON.stringify(CONTROL_ROWS)}, which is the rows holding ${REAL}.`);
+    + `one row per member. A chain of K disjuncts must return exactly K rows, so the COUNT is `
+    + `the measurement and a shortfall names where evaluation stopped.`);
 
   // ---- The chains --------------------------------------------------------
   const ref = `<FieldRef Name="${COL}"/>`;
@@ -557,9 +582,13 @@
   // Left fold, matching `_combine` in analysis/conditions.py exactly. A probe
   // folding right would measure a tree this tool never emits.
   const chain = (members) => members.slice(1).reduce((acc, m) => `<Or>${acc}${eq(m)}</Or>`, eq(members[0]));
-  // K disjuncts: the real member, then padding. Depth 1 is a bare <Eq>.
-  const chainOf = (k) => chain([REAL, ...PADDING.slice(0, k - 1)]);
-  const paddingChainOf = (k) => chain(PADDING.slice(0, k));
+  // K disjuncts over the FIRST K discriminators, each held by its own row.
+  // Depth 1 is a bare <Eq>.
+  const chainOf = (k) => chain(DISCRIMINATORS.slice(0, k));
+  // Padding only, so nothing can match however much of it is evaluated.
+  const paddingChainOf = (k) => chain(
+    Array.from({ length: k }, (_, i) => PADDING[i % PADDING.length]),
+  );
 
   // GetItems' payload shape is asked the same way the write shape was.
   let queryShape = null;
@@ -599,13 +628,17 @@
           + 'It bounds the depth without anybody having to notice a wrong answer, which is the good way '
           + 'for this to fail.' };
     }
-    const ok = same(got.titles, CONTROL_ROWS);
+    const want = expectedFor(k);
+    const ok = same(got.titles, want);
     if (!ok) anyDisagreement = true;
     return {
-      outcome: ok ? 'RETURNED THE CONTROL ROWS' : 'DIFFERENT ROWS',
-      evidence: `${k} disjunct(s), where clause ${where.length} chars -> ${JSON.stringify(got.titles)}`
-        + (ok ? '' : `, expected ${JSON.stringify(CONTROL_ROWS)}. Depth is the only variable between this row `
-          + 'and the ones that agreed, so this is where the chain stopped meaning what it says.'),
+      outcome: ok ? `RETURNED ALL ${k}` : `RETURNED ${got.titles.length} OF ${k}`,
+      evidence: `${k} disjunct(s), where clause ${where.length} chars -> ${got.titles.length} row(s)`
+        + (ok
+          ? ', one per disjunct, so every disjunct was evaluated.'
+          : `, expected ${k}. Got ${JSON.stringify(got.titles)}. Each disjunct names a member exactly one `
+            + 'row holds, so a shortfall is evaluation stopping early and the rows returned say which '
+            + 'disjuncts survived.'),
     };
   };
 
@@ -652,7 +685,7 @@
       return { outcome: 'NOT ESTABLISHED',
         evidence: `${k} disjunct(s): stored XML could not be replayed: ${replay.error}` };
     }
-    const ok = same(replay.titles, CONTROL_ROWS);
+    const ok = same(replay.titles, expectedFor(k));
     if (!ok) anyDisagreement = true;
     return {
       outcome: ok ? (identical ? 'SURVIVED BYTE-IDENTICAL' : 'SURVIVED, REWRITTEN') : 'DIFFERENT ROWS',
@@ -661,141 +694,143 @@
         + (orsSent === orsStored ? '' : ' -- THE TREE CHANGED SHAPE, which is flattening or truncation')
         + `; ${identical ? 'structurally identical' : 'REWRITTEN on save'}; the stored XML replays to `
         + `${JSON.stringify(replay.titles)}`
-        + (ok ? '.' : `, expected ${JSON.stringify(CONTROL_ROWS)}. The save changed what the predicate means, `
-          + 'which is the failure this probe exists to catch: it parses, it answers 200, and it is wrong.'),
+        + (ok
+          ? ` (${replay.titles.length} of ${k}, one per disjunct).`
+          : ` -- ${replay.titles.length} row(s), expected ${k}. The save changed what the predicate means, `
+            + 'which is the failure this probe exists to catch: it parses, it answers 200, and it is wrong.'),
     };
   };
 
   {
     const r = await adHoc(1);
     record('D01',
-      'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns the control rows (CONTROL)',
+      'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns all 1 rows, one per disjunct (CONTROL)',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(2);
     record('D02',
-      'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns all 2 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(3);
     record('D03',
-      'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns all 3 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(4);
     record('D04',
-      'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns all 4 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(6);
     record('D06',
-      'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns all 6 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(8);
     record('D08',
-      'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns all 8 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(12);
     record('D12',
-      'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns all 12 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(16);
     record('D16',
-      'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns all 16 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(24);
     record('D24',
-      'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns all 24 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(32);
     record('D32',
-      'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns all 32 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(40);
     record('D40',
-      'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns the control rows',
+      'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns all 40 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(1);
     record('V01',
-      'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to all 1 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(2);
     record('V02',
-      'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to all 2 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(3);
     record('V03',
-      'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to all 3 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(4);
     record('V04',
-      'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to all 4 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(6);
     record('V06',
-      'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to all 6 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(8);
     record('V08',
-      'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to all 8 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(12);
     record('V12',
-      'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to all 12 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(16);
     record('V16',
-      'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to all 16 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(24);
     record('V24',
-      'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to all 24 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(32);
     record('V32',
-      'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to all 32 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(40);
     record('V40',
-      'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to the same rows',
+      'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to all 40 rows',
       r.outcome, r.evidence);
   }
 
@@ -809,7 +844,8 @@
     record(id, question, empty ? 'RETURNED NOTHING' : 'RETURNED ROWS',
       `${k} padding disjunct(s), none held by any row -> ${JSON.stringify(got.titles)}`
       + (empty
-        ? '. So "returns the control rows" above is a real match and not a chain that matches everything.'
+        ? '. So the positive rows above are real matches and not a chain that matches everything. This does '
+          + 'NOT speak to truncation; the row counts do.'
         : '. A chain of members NO row holds returned rows, so every positive row above is void: they are '
           + 'consistent with a query that matches everything.'));
   };
@@ -847,7 +883,8 @@
     deepestUrl ? 'MANUAL' : 'NOT ESTABLISHED',
     deepestUrl
       ? `OPEN ${window.location.origin}${deepestUrl} and report which rows it LISTS. `
-        + `${JSON.stringify(CONTROL_ROWS)} means the rendered page agrees with both measured surfaces. `
+        + `It must list ${DEPTHS[DEPTHS.length - 1]} rows, one per disjunct, to agree with both measured `
+        + 'surfaces. Count them. '
         + 'Anything else means the page disagrees with the stored query, and the grammar must bound the '
         + 'chain however well GetItems behaved.'
       : `the view '${deepestView}' could not be found, so there is nothing to open.`);
