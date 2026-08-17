@@ -33,17 +33,6 @@ the other, which is why both were measured.
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 
-#: Re-exported so existing importers of `group_description.MARKER_PREFIX`
-#: keep working. `provenance.MARKER_PREFIX` is the single owner of the text;
-#: see that module for why three surfaces must share one spelling.
-#:
-#: Both shapes below build on it, but the deploy no longer tests this prefix
-#: on its own: `_security_principals.js.j2` compares the exact marker one
-#: group is expected to carry, from `marker_for_group`, so a group another
-#: family stamped cannot satisfy this family's adoption test. Changing this
-#: string still changes what every already-deployed group is recognised by,
-#: so it is not a cosmetic edit.
-MARKER_PREFIX = provenance.MARKER_PREFIX
 
 #: The marker for a group this tool names for itself.
 #: Built per group, because the marker names the group it belongs to.
@@ -56,7 +45,7 @@ def shared_marker_for(group_name: str) -> str:
     )
 
 #: The marker for a group the deploying organisation owns.
-FAMILY_MARKER_TEMPLATE = MARKER_PREFIX + " from {family} for group {name}."
+FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {name}."
 
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.

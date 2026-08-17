@@ -1,6 +1,6 @@
 ---
 title: demogen
-sidebar_position: 19
+sidebar_position: 22
 ---
 
 # `dbml_sharepoint.generators.demogen`
@@ -27,6 +27,6 @@ DEMO_TITLE_PREFIX = '[DEMO] '
 ### `generate_demo_js`
 
 ```python
-def generate_demo_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str) -> str
+def generate_demo_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str) -> str
 ```
 

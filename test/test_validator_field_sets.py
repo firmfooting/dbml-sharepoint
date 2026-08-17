@@ -17,7 +17,7 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     DemoItem,
     EntityKind,
     EntityMapping,

@@ -93,14 +93,24 @@ def test_every_code_is_screaming_snake_case() -> None:
         assert code.value == code.name.lower()
 
 
-def test_validator_still_exports_finding_and_severity() -> None:
+def test_the_finding_vocabulary_has_one_home() -> None:
     """`extension.py` documents `Finding` as the reporting type and
-    `manifestgen` consumes it. Extension authors import it from `validator`.
+    `manifestgen` consumes it. Both now name `findings.py`, which defines it.
+
+    `validator.py` re-exported the five names until #168 and no longer does.
+    This asserts the absence, because a re-export that comes back is
+    invisible: every consumer keeps working, and the cycle it forces
+    reappears as a deferred import somewhere else. `Severity` is the one of
+    the five validator has no use of its own for, so it is the one that can be asserted absent;
+    the other four are still in its namespace because its own rules
+    construct them. mypy covers the other direction, refusing any module that
+    imports the vocabulary through validator rather than from here.
     """
     from dbml_sharepoint.analysis import findings, validator
 
-    assert validator.Finding is findings.Finding
-    assert validator.Severity is findings.Severity
+    for name in ("Finding", "FindingCode", "Location", "Section", "Severity"):
+        assert hasattr(findings, name), name
+    assert not hasattr(validator, "Severity")
 
 
 #: Modules that still construct findings with no `location=`, with the issue

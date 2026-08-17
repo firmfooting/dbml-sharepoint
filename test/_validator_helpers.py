@@ -30,11 +30,9 @@ from _model import bundle as _object_bundle
 from _model import schema as _object_schema
 from _model import table as _object_table
 
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate_against_mapping,
-)
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import (
     EnumDef,
     Schema,

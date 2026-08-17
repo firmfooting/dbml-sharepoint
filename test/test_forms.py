@@ -16,7 +16,7 @@ from _packs import blocks, entities, write_mapping
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.forms import compose_visibility, validate_form_visibility
 from dbml_sharepoint.model.conditions import Condition, parse_condition
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
     FormVisibility,

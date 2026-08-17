@@ -24,12 +24,12 @@ from dbml_sharepoint.generators.reportgen import (
     generate_sql_views,
 )
 from dbml_sharepoint.model.conditions import Group, Leaf
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
     FormVisibility,
     MappingBundle,
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import Column, Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release

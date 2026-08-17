@@ -1,6 +1,6 @@
 ---
 title: phases
-sidebar_position: 11
+sidebar_position: 14
 ---
 
 # `dbml_sharepoint.analysis.phases`

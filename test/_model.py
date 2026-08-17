@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, TypedDict, Unpack
 
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     CrossSiteRef,
     DemoItem,

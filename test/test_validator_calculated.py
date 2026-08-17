@@ -16,12 +16,8 @@ from dbml_sharepoint.analysis.validator import (
     validate,
     validate_against_mapping,
 )
-from dbml_sharepoint.model.mapping_loader import (
-    CrossSiteRef,
-    EntityMapping,
-    MappingBundle,
-    load_mapping,
-)
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import (
     Schema,
     TableIndex,

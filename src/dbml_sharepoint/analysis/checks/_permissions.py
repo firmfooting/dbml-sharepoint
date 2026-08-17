@@ -1,8 +1,8 @@
 # src/dbml_sharepoint/analysis/checks/_permissions.py
 """Permission levels, groups, and per-list policies."""
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.group_description import description_budget, marker_for_group
 from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
@@ -11,20 +11,17 @@ from dbml_sharepoint.analysis.limits import (
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.permissions import (
     ASSIGNABLE_BUILT_IN_LEVELS,
+    ASSOCIATED_GROUP_ALIASES,
     BASE_PERMISSIONS,
     BUILT_IN_LEVELS,
+    BUILTIN_SP_GROUPS,
     DERIVED_BUILT_IN_LEVELS,
 )
 from dbml_sharepoint.analysis.role_definition_description import (
     level_description_budget,
     marker_for_level,
 )
-from dbml_sharepoint.analysis.validator import (
-    _ASSOCIATED_GROUP_ALIASES,
-    _BUILTIN_SP_GROUPS,
-    Finding,
-)
-from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, PermissionsConfig
+from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, PermissionsConfig
 
 # These messages spell the level or group name with `!r`, so the quotes are
 # inside the bracket -- `permission_levels['Reader']`. A Location holding
@@ -280,7 +277,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
         for grp in perms.groups:
             owner_ok = (
-                grp.owner_group in _BUILTIN_SP_GROUPS
+                grp.owner_group in BUILTIN_SP_GROUPS
                 or grp.owner_group in custom_group_names
             )
             if not owner_ok:
@@ -294,7 +291,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Collect all valid level names (built-in + declared custom).
         all_level_names = ASSIGNABLE_BUILT_IN_LEVELS | set(seen_level_names.values())
         # Collect all valid group names (declared custom + built-in SP groups).
-        all_group_names = custom_group_names | _BUILTIN_SP_GROUPS
+        all_group_names = custom_group_names | BUILTIN_SP_GROUPS
 
         def _check_policy_assignments(
             policy: ListPermissionPolicy, ctx: str, at: Location,
@@ -333,7 +330,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 principal = assignment.principal
                 if principal.kind != "group":
                     continue
-                suggested_kind = _ASSOCIATED_GROUP_ALIASES.get(
+                suggested_kind = ASSOCIATED_GROUP_ALIASES.get(
                     (principal.name or "").casefold(),
                 )
                 if suggested_kind is not None:

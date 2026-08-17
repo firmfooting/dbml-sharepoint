@@ -23,7 +23,7 @@ from _model import table as make_table
 
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import build_schema_json
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,

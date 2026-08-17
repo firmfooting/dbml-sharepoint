@@ -8,7 +8,7 @@ from _model import table as make_table
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
-from dbml_sharepoint.model.mapping_loader import DemoItem, MappingBundle
+from dbml_sharepoint.model.mapping_types import DemoItem, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import load_release
 
@@ -167,7 +167,7 @@ def test_a_hyperlink_demo_value_may_carry_its_own_description() -> None:
 
 
 def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
-    """The validator gates what may be DECLARED, the condition renderers
+    """The demo check gates what may be DECLARED, the condition renderers
     decide what it becomes in CAML, and the demo planner decides what it
     becomes in a seeded row. Three readers of one authored value.
 
@@ -176,14 +176,16 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     the same shape as any two readers disagreeing about one declaration.
     Comments asserted the agreement; this asserts it.
     """
-    from dbml_sharepoint.analysis import validator
+    from dbml_sharepoint.analysis.checks import _demo
     from dbml_sharepoint.analysis.conditions import _TODAY
     from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
     from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
 
     assert _TODAY is TODAY_SENTINEL
     assert _TODAY_OFFSET is TODAY_SENTINEL
-    assert validator._TODAY_SENTINEL is TODAY_SENTINEL
+    # Through `vars`, not attribute access: mypy refuses to reach a name
+    # through a module that only imported it, which is the question here.
+    assert vars(_demo)["TODAY_SENTINEL"] is TODAY_SENTINEL
 
 
 def test_the_today_sentinel_accepts_exactly_the_documented_forms() -> None:

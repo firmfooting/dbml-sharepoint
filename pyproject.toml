@@ -87,13 +87,15 @@ select = [
   "UP", "W",
 ]
 ignore = [
-  # 69 sites, and roughly 100 of the 126 `Any` uses in src/ sit on a genuine
-  # YAML, JSON, Jinja-context or untyped-dependency boundary -- `raw` straight
-  # off `yaml.safe_load` is honestly Any. The rest of ANN is at zero and IS
-  # enforced, so every signature stays annotated; only the `Any` itself is
-  # allowed. The one cluster worth revisiting is extension.py, where
-  # `bundle: Any, schema: Any` erase two types this package defines -- that is
-  # a decision about the public plugin surface, not a lint sweep.
+  # MEASURED 2026-08-17: 58 sites across the linted roots, most of them on a
+  # genuine YAML, JSON, Jinja-context or untyped-dependency boundary -- `raw`
+  # straight off `yaml.safe_load` is honestly Any. The rest of ANN is at zero
+  # and IS enforced, so every signature stays annotated; only the `Any` itself
+  # is allowed. The cluster this comment used to single out, `bundle: Any,
+  # schema: Any` across extension.py's hooks, is closed: those hooks now name
+  # the types this package defines, and `test_public_api.py` gates them,
+  # because `Any` satisfies the protocol in both directions and conformance
+  # tests cannot see it come back.
   "ANN401",
   "B008",  # typer.Option in defaults is the framework idiom
   "C408",  # dict(key=...) literals are deliberate where used
@@ -133,8 +135,10 @@ max-complexity = 72
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,
 # 67 of them in test_jsgen.py -- a mechanical cleanup tracked in #172, not a
-# gate. PLC0415 IS enforced in src/, where the eight remaining sites are
-# documented cycle-breakers carrying a `noqa` and a reason.
+# gate. PLC0415 IS enforced in src/, where the nine remaining sites each carry
+# a `noqa` and a reason: four in `wizard.py` break a genuine cycle with `cli.py`
+# (#171), and five in `bundle.py` keep that module importable for its packaging
+# helpers without pulling in the whole generation stack.
 "test/**" = ["S101", "PLC0415"]
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print

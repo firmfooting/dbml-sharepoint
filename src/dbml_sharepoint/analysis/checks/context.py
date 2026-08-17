@@ -1,4 +1,4 @@
-# src/dbml_sharepoint/analysis/checks/_context.py
+# src/dbml_sharepoint/analysis/checks/context.py
 """Derived lookups shared by every mapping check.
 
 Each check family needs the same handful of indexes over the schema and the
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 
 

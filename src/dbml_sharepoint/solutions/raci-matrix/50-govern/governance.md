@@ -173,8 +173,9 @@ recording.
 
 This **cannot** be enforced at save. `Contact` is a person column, and
 SharePoint validation formulas refuse person operands entirely
-(`analysis/conditions.py:332` is where the build refuses to write such a
-rule rather than emitting one that silently never fires). There is no
+(`_FORBIDDEN_OPERAND_TYPES` in `analysis/conditions.py` is where the build
+refuses to write such a rule rather than emitting one that silently never
+fires). There is no
 conditional form of it either: "required unless PartyKind is Forum" is
 the same refusal for the same reason.
 

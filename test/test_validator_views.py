@@ -19,7 +19,7 @@ from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
 from dbml_sharepoint.model.conditions import Group, Leaf
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     CrossSiteRef,
     DemoItem,

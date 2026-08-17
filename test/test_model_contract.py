@@ -40,7 +40,7 @@ from _packs import entities as yaml_entities
 from hypothesis import given
 from hypothesis import strategies as st
 
-from dbml_sharepoint.model.mapping_loader import Mapping
+from dbml_sharepoint.model.mapping_types import Mapping
 
 
 def test_builders_and_loader_agree_on_a_representative_document(

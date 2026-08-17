@@ -1,6 +1,6 @@
 ---
 title: manifestgen
-sidebar_position: 20
+sidebar_position: 23
 ---
 
 # `dbml_sharepoint.generators.manifestgen`
@@ -12,7 +12,7 @@ Render deploy-manifest.md.
 ### `generate_manifest`
 
 ```python
-def generate_manifest(*, schema_json: dict[str, typing.Any], findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model._mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> str
+def generate_manifest(*, schema_json: dict[str, typing.Any], findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> str
 ```
 
 Render the deploy manifest for ONE build.

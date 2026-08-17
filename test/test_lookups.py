@@ -14,7 +14,7 @@ from dbml_sharepoint.analysis.lookups import (
     lookup_display_columns,
     lookup_target_entities,
 )
-from dbml_sharepoint.model.mapping_loader import EntityMapping
+from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import Schema, Table
 
 

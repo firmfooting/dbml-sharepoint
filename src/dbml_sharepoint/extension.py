@@ -1,13 +1,18 @@
 # src/dbml_sharepoint/extension.py
 """The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.
-Validation issues are reported with the validator Finding type."""
+Validation issues are reported with `analysis.findings.Finding`."""
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import typer
+
+from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Column, Schema, Table
+from dbml_sharepoint.model.release import Release
 
 
 @dataclass
@@ -17,7 +22,7 @@ class SiteContext:
     extension's own CLI entry point (e.g. {"org_unit": "QSC"})."""
     site_url: str
     site_role: str
-    release: Any                          # release.Release | None
+    release: Release | None
     output_dir: Path
     extension_args: dict[str, Any] = field(default_factory=dict)
 
@@ -43,17 +48,21 @@ class DeploymentExtension(Protocol):
     requires_project_cli: ClassVar[bool]
     """True when the generic build command lacks required project inputs."""
 
-    def extra_validators(self, bundle: Any, schema: Any) -> list[Any]: ...
+    def extra_validators(
+        self, bundle: MappingBundle, schema: Schema,
+    ) -> list[Finding]: ...
 
     def expand_column(
-        self, table: Any, column: Any, bundle: Any,
+        self, table: Table, column: Column, bundle: MappingBundle,
     ) -> list[dict[str, Any]] | None: ...
 
     def seed_lists(
-        self, bundle: Any, schema: Any, site_context: SiteContext,
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
     ) -> dict[str, dict[str, Any]]: ...
 
-    def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras: ...
+    def manifest_extras(
+        self, bundle: MappingBundle, schema: Schema,
+    ) -> ManifestExtras: ...
 
     def cli_subcommands(self, app: typer.Typer) -> None: ...
 
@@ -69,21 +78,25 @@ class BaseExtension:
     # evidence that the generic CLI can supply its required context.
     requires_project_cli: ClassVar[bool] = False
 
-    def extra_validators(self, bundle: Any, schema: Any) -> list[Any]:
-        return []                         # validator Findings; non-empty errors abort the build
+    def extra_validators(
+        self, bundle: MappingBundle, schema: Schema,
+    ) -> list[Finding]:
+        return []                         # non-empty errors abort the build
 
     def expand_column(
-        self, table: Any, column: Any, bundle: Any,
+        self, table: Table, column: Column, bundle: MappingBundle,
     ) -> list[dict[str, Any]] | None:
         return None                       # None = defer to core's default field emission
 
     def seed_lists(
-        self, bundle: Any, schema: Any, site_context: SiteContext,
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
     ) -> dict[str, dict[str, Any]]:
         # SP list title -> field dict, embedded in the deploy script seed
         return {}
 
-    def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras:
+    def manifest_extras(
+        self, bundle: MappingBundle, schema: Schema,
+    ) -> ManifestExtras:
         return ManifestExtras()
 
     def cli_subcommands(self, app: typer.Typer) -> None:
