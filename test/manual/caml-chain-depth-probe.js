@@ -383,7 +383,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision d0dff7ef. Quote this when reporting results.');
+  log('INFO', 'probe revision 4187c511. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -475,6 +475,8 @@
   expect('W2', 'is that wrapped view refused by the editor? (manual: look)');
   expect('W3', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?');
   expect('W4', 'is the FLIPPED wrapper refused by the editor? (manual: look)');
+  expect('G1', 'can the view-edit page be fetched at all from a console?');
+  expect('G2', 'does that page differ between an editable and a refused view?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -1114,6 +1116,93 @@
           + '"filter pane" or "complex filter".'
         : `the view could not be created: HTTP ${v.status} ${(v.text || '').slice(0, 120)}`);
   }
+
+  // === G1, G2: could a DEPLOY verify protection by reading a page? =======
+  // R1 established that no view property records the protected state, so a
+  // deploy can emit the protecting shape and has nothing to read back. That
+  // is a standing weakness: this repository's rule is that anything which
+  // writes must read back and verify, and here there is nothing to read.
+  //
+  // The idea under test is to read the EDIT PAGE instead of a property. The
+  // deploy already runs in an authenticated browser, so it can fetch
+  // /_layouts/15/ViewEdit.aspx for a view and look at what came back. If an
+  // editable view and a refused one produce measurably different pages, a
+  // deploy could confirm protection instead of assuming it.
+  //
+  // NOTHING IS SEARCHED FOR BY GUESS. The obvious version of this, grepping
+  // for "complex filter", is a trap twice over: the string is localised, so a
+  // non-English tenant would read as unprotected, and it may be rendered by
+  // script rather than served in the HTML, in which case a fetch never sees
+  // it whatever the view's state. So G2 fetches BOTH pages and reports what
+  // actually differs, including several candidate markers reported as
+  // present-or-absent rather than asserted. Pinning one is the next
+  // revision's job, on evidence.
+  //
+  // G1 is the precondition and is worth its own row: a page that 403s, or
+  // that answers with a login redirect, or that renders the whole settings
+  // surface client-side, ends this idea before G2 means anything.
+  const listMeta = await spGet(`${listPath}?$select=Id`);
+  const listGuid = (!readFailed(listMeta) && listMeta.body.Id) || null;
+  const viewIds = await spGet(`${listPath}/views?$select=Id,Title`);
+  const viewIdOf = (title) => ((!readFailed(viewIds) && viewIds.body.value) || [])
+    .find((v) => v.Title === title)?.Id || null;
+
+  // A raw page fetch, not an _api call, so the harness helpers do not apply.
+  // same-origin credentials so it carries the operator's session.
+  const fetchEditPage = async (viewId) => {
+    const url = `${WEB}/_layouts/15/ViewEdit.aspx?List=${encodeURIComponent(`{${listGuid}}`)}`
+      + `&View=${encodeURIComponent(`{${viewId}}`)}`;
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const text = await res.text();
+      return { ok: res.ok, status: res.status, url, length: text.length, text,
+        redirected: res.redirected, finalUrl: res.url };
+    } catch (err) {
+      return { ok: false, status: 0, url, length: 0, text: '', error: String(err) };
+    }
+  };
+
+  const editableId = viewIdOf('Shape E1');
+  const refusedId = viewIdOf('Shape W4');
+  const pageA = listGuid && editableId ? await fetchEditPage(editableId) : null;
+  const pageB = listGuid && refusedId ? await fetchEditPage(refusedId) : null;
+
+  record('G1', 'can the view-edit page be fetched at all from a console?',
+    !listGuid || !editableId ? 'NOT ESTABLISHED' : (pageA.ok ? 'FETCHED' : 'REFUSED'),
+    !listGuid || !editableId
+      ? `list id=${listGuid}, 'Shape E1' view id=${editableId}. Without both there is no page to ask for.`
+      : `HTTP ${pageA.status}, ${pageA.length} chars${pageA.redirected ? `, REDIRECTED to ${pageA.finalUrl}` : ''}`
+        + `${pageA.error ? `, threw ${pageA.error}` : ''}. A redirect to a login or to the modern settings `
+        + 'surface means the classic page is not what an authenticated fetch gets, and this avenue closes '
+        + 'here rather than at G2.');
+
+  // Candidates only. Each is REPORTED for both pages, never asserted, and the
+  // English display strings are included precisely so the transcript records
+  // whether they are served in the HTML at all.
+  const MARKERS = [
+    'complex filter', 'cannot be edited', 'CannotEditFilter',
+    'FilterOnFieldName', 'onetidFilter', 'ViewFilter', 'FilterOpt',
+  ];
+  const markerReport = (page) => (page && page.ok
+    ? MARKERS.filter((m) => page.text.includes(m)).join(', ') || '(none of the candidates)'
+    : 'page not fetched');
+  const bothFetched = !!pageA?.ok && !!pageB?.ok;
+  const differs = bothFetched
+    && (pageA.length !== pageB.length || markerReport(pageA) !== markerReport(pageB));
+  record('G2', 'does that page differ between an editable and a refused view?',
+    !bothFetched ? 'NOT ESTABLISHED' : (differs ? 'DIFFERS' : 'INDISTINGUISHABLE'),
+    !bothFetched
+      ? `editable page ok=${!!pageA?.ok}, refused page ok=${!!pageB?.ok}. Both are needed to compare.`
+      : `EDITABLE 'Shape E1': ${pageA.length} chars, markers present: ${markerReport(pageA)}. `
+        + `REFUSED 'Shape W4': ${pageB.length} chars, markers present: ${markerReport(pageB)}. `
+        + (differs
+          ? 'They differ, so a deploy could in principle read this page back and confirm protection. Which '
+            + 'marker to test on is NOT settled by this row: a length difference alone is not a predicate, '
+            + 'and any English string here is localised. Pin one on this evidence, then re-run to confirm '
+            + 'it holds.'
+          : 'Identical length and identical candidate markers, so a page fetch cannot distinguish the two '
+            + 'states and this avenue is closed. Protection would remain unverifiable, which is worth '
+            + 'recording at the emission site rather than rediscovering.'));
 
   // === U1 and U2: the third surface ======================================
   // Run 1 measured two surfaces and both agreed to 40. An operator then
