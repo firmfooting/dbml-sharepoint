@@ -87,20 +87,33 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: RUN 2 on 2026-08-17 answered all 25 automated rows and its answer
- * must be DISCARDED. Not because the tenant misbehaved, but because the
- * fixture could not have detected the thing the probe was for. See THE DESIGN
- * above: the discriminating member sat in position one, so truncation at any
- * depth would have produced the same sheet. An operator opening the deepest
- * view then counted TEN filter elements against forty stored, which is the
- * reading run 2 was blind to and could not have excluded.
+ * STATUS: RUN 3 on 2026-08-17 ANSWERED THE QUESTION, and the answer is that
+ * the machine surfaces are fine and the human one is not.
  *
- * What run 2 does still establish, because these did not depend on the
- * discriminator's position: a 40-disjunct chain is ACCEPTED by both surfaces.
- * The ad-hoc query ran at a 2,871-character where clause without refusal, and
- * the stored ViewQuery came back structurally identical with 39 of 39 <Or>
- * intact. So SharePoint stores and parses the tree. Whether it EVALUATES all
- * of it was never asked, and that is now the question.
+ * With one row per member, so that a chain over K members must return exactly
+ * K rows, every depth from 1 to 40 returned ALL K. The ad-hoc query at a
+ * 2,871-character where clause returned 40 of 40; the stored ViewQuery came
+ * back structurally identical, 39 of 39 <Or> intact, and replayed to all 40.
+ * Both negative controls returned nothing. So SharePoint stores, parses AND
+ * FULLY EVALUATES a 40-disjunct chain. There is no query-side ceiling here.
+ *
+ * U1: the RENDERED view listed all 40 rows. The page agrees with both machine
+ * surfaces.
+ *
+ * U2 IS THE DEFECT, and it is confirmed. The filter editor displayed TEN
+ * conditions of the forty stored. Saving the view settings WITHOUT CHANGING
+ * ANYTHING rewrote the filter to those ten: the view now lists R01 through
+ * R10. So a deployed filter of more than ten conditions is destroyed by an
+ * operator opening its settings and pressing Save. It keeps parsing, keeps
+ * answering, and returns the wrong rows from that moment on, through a
+ * surface no build and no deploy can see.
+ *
+ * The ceiling is therefore not on what may be WRITTEN. It is on what survives
+ * being LOOKED AT, and ten is where it sits.
+ *
+ * Run 2 asked the same questions with the discriminator in position one, so
+ * truncation and full evaluation produced identical sheets. Its result was
+ * withdrawn; see THE DESIGN above.
  *
  * Run 1 aborted at bootstrap and answered nothing; its cause was this file
  * and is recorded at the create call it applies to.
@@ -108,10 +121,14 @@
  * Microsoft documents no ceiling on view filter conditions. The Learn
  * boundaries pages carry the list view threshold, the lookup threshold and
  * the bulk-operation cap, and nothing about how many predicates a view may
- * hold. The ten is undocumented, which is why it has to be characterised
- * rather than looked up.
+ * hold, so the ten is undocumented.
  *
- * Every row below is a question again.
+ * E1 THROUGH E4 ARE THE OPEN QUESTIONS NOW, and they are about a possible
+ * defence rather than the defect. A view this tool already deploys shows
+ * "This view has a complex filter which cannot be edited here" and therefore
+ * cannot be truncated by a save. If the shape that triggers that refusal can
+ * be identified, the tool can emit it deliberately. See E1..E4 for why it is
+ * not yet identified.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
@@ -197,6 +214,10 @@
   expect('N2', 'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
   expect('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)');
   expect('U2', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)');
+  expect('E1', 'EDITABILITY: a flat Or chain of 12, the shape that truncates (manual: look)');
+  expect('E2', 'EDITABILITY: a flat And chain of 12, homogeneous like E1 (manual: look)');
+  expect('E3', 'EDITABILITY: And[Eq, Or[Eq,Eq]], a MIXED tree with no IsNull (manual: look)');
+  expect('E4', 'EDITABILITY: a flat Or chain of 12 carrying one IsNull (manual: look)');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -534,6 +555,58 @@
 
   report();
   log('INFO', `write shape=${writeShape}, CamlQuery payload shape=${queryShape}. Both were asked, not assumed.`);
+  // === E1..E4: what makes a filter UNEDITABLE, and therefore SAFE =========
+  // An operator reported that a view this tool already deploys (the risk
+  // register's "Tolerance due") shows "This view has a complex filter which
+  // cannot be edited here" instead of a filter pane. That view cannot be
+  // truncated by a save, because the editor will not open it. If the shape
+  // that triggers it can be identified, the tool can emit it deliberately and
+  // a deployed filter becomes safe from the U2 defect.
+  //
+  // Two live data points, and they do not isolate a cause. "Tolerance due"
+  // renders And[ And[Eq,Leq], Or[IsNull,Neq] ]: a MIXED tree, and it also
+  // happens to carry an IsNull and a Today offset. The 40-chain here is a
+  // homogeneous Or fold, is editable, and truncates. Mixedness, the IsNull
+  // and the date sentinel are all still confounded.
+  //
+  // So one variable at a time. E1 is the known-truncating baseline. E2 keeps
+  // it homogeneous and swaps the operator. E3 makes it mixed with NO IsNull
+  // and no date. E4 keeps it flat and adds only an IsNull. Whichever pair
+  // differs names the trigger.
+  //
+  // NOTHING is emitted on the strength of this until it is measured. A tool
+  // that deliberately makes a view uneditable is trading an operator's
+  // ability to adjust a filter for protection against silent truncation, and
+  // that trade should be made against an observation rather than a guess.
+  const shaped = [
+    ['E1', 'flat Or chain of 12, the shape that truncates', chainOf(12)],
+    ['E2', 'flat And chain of 12, homogeneous like E1',
+      DISCRIMINATORS.slice(1, 13).reduce(
+        (acc, m) => `<And>${acc}<Neq>${ref}<Value Type="Text">${m}</Value></Neq></And>`,
+        eq(DISCRIMINATORS[0]))],
+    ['E3', 'And[Eq, Or[Eq,Eq]], MIXED with no IsNull',
+      `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[1])}${eq(DISCRIMINATORS[2])}</Or></And>`],
+    ['E4', 'flat Or chain of 12 carrying one IsNull',
+      `<Or>${chainOf(11)}<IsNull>${ref}</IsNull></Or>`],
+  ];
+  for (const [id, label, where] of shaped) {
+    const title = `Shape ${id}`;
+    const d = await getDigest();
+    const v = await spPost(`${listPath}/views`, {
+      Title: title, ViewQuery: `<Where>${where}</Where>`, RowLimit: 100,
+    }, d);
+    const list = await spGet(`${listPath}/views?$select=Title,ServerRelativeUrl`);
+    const url = ((!readFailed(list) && list.body.value) || [])
+      .find((x) => x.Title === title)?.ServerRelativeUrl || null;
+    record(id, `EDITABILITY: ${label} (manual: look)`,
+      v.ok && url ? 'MANUAL' : 'NOT ESTABLISHED',
+      v.ok && url
+        ? `OPEN ${window.location.origin}${url}, then its view settings, and report ONE of: `
+          + '"filter pane" (editable, so truncatable) or "complex filter" (refused, so protected). '
+          + `The query is ${where.length} chars.`
+        : `the view could not be created: HTTP ${v.status} ${v.text?.slice(0, 120)}`);
+  }
+
   // === U1 and U2: the third surface ======================================
   // Run 1 measured two surfaces and both agreed to 40. An operator then
   // opened the deepest view in the browser and counted TEN filter elements
