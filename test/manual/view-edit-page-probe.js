@@ -22,7 +22,9 @@
  * G1 and G2 found the one surface that does record it. The view edit page
  * answers HTTP 200 to a same-origin fetch, and the refusal is served in the
  * HTML rather than painted by script, so a fetch can see it. What G2 could not
- * supply is a marker worth testing on, and its six candidates all failed:
+ * supply is a marker worth testing on, and its six candidates all failed.
+ * Run 1 of this probe found one; the table below is why it had to be looked
+ * for structurally rather than guessed at again:
  *
  *     complex filter      refused page only     English display text
  *     cannot be edited    refused page only     English display text
@@ -74,6 +76,68 @@
  * S1 is the third dependency. The two compared views must mean the same thing,
  * or their pages differ for a reason that has nothing to do with editability.
  * It re-measures T1's inertness on this fixture rather than citing it.
+ *
+ * RUN 1, 2026-08-17, revision 18f01ef7, one Team Site. Twelve questions,
+ * TWELVE answered. P1 editable and P2 "complex filter", so the two pages
+ * being compared really are an editable one and a refused one, and S1 INERT,
+ * so they mean the same thing. The comparison is valid and what follows is
+ * about the pages rather than about the filters.
+ *
+ * F5 IS THE RESULT. Thirty `name` attributes are on the editable page and
+ * NONE are on the refused one:
+ *
+ *     FieldPicker1..FieldPicker10        10
+ *     OperatorPicker1..OperatorPicker10  10
+ *     NextIsAnd1..NextIsAnd9              9
+ *     IsThereAQuery                       1
+ *
+ * These are ASP.NET form control names, not display text, so they do not move
+ * with the tenant's language. The predicate is therefore ABSENCE: the filter
+ * editor's controls are missing from a refused page, and that is what a deploy
+ * can test for. C1 to C3 pin two of them and try to break the result.
+ *
+ * F4 CLOSES THE OTHER DIRECTION. Exactly one id is on the refused page and not
+ * the editable one, `CssLink-cbec9c00...`, and F8 shows CssLink ids differing
+ * between two fetches of the SAME page. It is noise. So there is no positive
+ * marker unique to the refused page, and any check has to be built on what is
+ * missing rather than on what is added.
+ *
+ * F8 BOUNDS THE NOISE rather than just reporting it. Two fetches of one page
+ * differed by one character and by one CssLink-<guid> token each way, and
+ * nothing else. So the id and name sets are otherwise reproducible, and the
+ * only tokens that move are ones no predicate would use. C3 re-asks this of
+ * the predicate itself, which is the version that matters.
+ *
+ * F7 IS THE CONTROL THAT MATTERS MOST. The unfiltered view's page carries the
+ * same 139 ids the refused page lacks, so it reads as UNPROTECTED. Without
+ * that, an absence test would have been detecting "this view has a filter"
+ * and would have reported every plain list view as protected.
+ *
+ * F2: `complex filter` and `cannot be edited` discriminate on And[leaf,
+ * tautology], the tree #267 emits, and not only on the chain G2 measured.
+ * They stay unusable as a predicate on their own, being English.
+ *
+ * F6: `currentUICultureName` is "en-US", `currentLanguage` is 1033, and the
+ * page's `<html lang>` is "en-AU". THE TWO DISAGREE, which is the useful part.
+ * The UI culture is the user's and governs which language those display
+ * strings come back in; the html lang follows the web's regional setting and
+ * does not. A check that read the html attribute would be reading the wrong
+ * one, and on this tenant it would have been wrong about the region while
+ * still landing on English by luck.
+ *
+ * TEN SLOTS, AND WHERE THE CEILING COMES FROM. The editable page carries
+ * exactly ten FieldPicker and ten OperatorPicker controls. U2 established the
+ * ten-condition ceiling by an operator counting rows in the editor and
+ * watching a save truncate a forty-condition filter to ten. The same ten is
+ * sitting in the markup, so the ceiling is a property of the page rather than
+ * of one observation, and C4 reads it out on any tenant without a person
+ * looking.
+ *
+ * STILL OPEN: whether the absence predicate holds on a non-English tenant.
+ * F6 establishes only that the culture value EXISTS. There is no non-English
+ * tenant to hand, and the whole point of an absence test on a control NAME is
+ * that it should not care, so this is a claim to confirm rather than one to
+ * rely on.
  *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
@@ -283,7 +347,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 18f01ef7. Quote this when reporting results.');
+  log('INFO', 'probe revision aa5eaae6. Quote this when reporting results.');
 
   // Set to the list named at the end of a previous run to drain and remove it.
   // The probe leaves its list behind so P1 and P2 can be looked at, and a
@@ -303,6 +367,23 @@
   const CAP = 40;
 
   const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+
+  // Pinned from run 1, where F5 reported thirty `name` attributes on the
+  // editable page and NONE on the refused one. Form control names, not
+  // display text, so they do not move with the tenant's language.
+  //
+  // Two of them, because one is a single point of failure. If a SharePoint
+  // update renames one control the other still answers, and C1 disagreeing
+  // with C2 is itself the signal that the markup has moved.
+  const CANDIDATES = ['FieldPicker1', 'OperatorPicker1'];
+
+  // The predicate is ABSENCE, which fails dangerously on its own: a page
+  // that did not render, an error page, or a truncated response all lack
+  // the control and would read as protected. A sentinel present on EVERY
+  // page, editable or not, is what separates "the editor is not here" from
+  // "nothing is here". Reported rather than assumed, because a sentinel
+  // that turns out to be conditional would silently disarm the guard.
+  const SENTINELS = ['ViewFilter', 'ViewEdit', 'ctl00'];
 
   const eq = (v) => `<Eq><FieldRef Name="${COL}"/><Value Type="Text">${v}</Value></Eq>`;
 
@@ -331,6 +412,11 @@
   expect('F5', 'which name attributes differ between the two pages?');
   expect('F6', 'can the tenant UI culture be read, so non-English can be told apart?');
   expect('F7', 'CONTROL: how does a view with NO filter compare?');
+  expect('C1', 'is the pinned control name absent from the refused page and present on both others?');
+  expect('C2', 'does the second candidate agree with the first?');
+  expect('C3', 'is the predicate the same across a second fetch of all three pages?');
+  expect('C4', 'how many condition slots does the editor markup carry?');
+  expect('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?');
   expect('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
   expect('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
 
@@ -665,6 +751,118 @@
         + `ids it has that the refused page does not: ${show(minus(attrValues(pageUnfiltered.text, 'id'), idsGuarded))}. `
         + 'It must read as UNPROTECTED under whatever predicate is chosen. If it looks like the refused '
         + 'page, the predicate is detecting something other than the refusal.');
+
+  // ---- C1..C5: pin the candidate and try to break it ---------------------
+  // F3 to F5 are discovery and report everything. These five take the one
+  // candidate that survived and ask whether it behaves like a predicate.
+  const namesUnfiltered = unfOk ? attrValues(pageUnfiltered.text, 'name') : null;
+  const threePages = bothFetched && unfOk;
+
+  // The predicate under test, stated as the three-way it has to satisfy: the
+  // control is on the editable page, on the unfiltered page, and NOT on the
+  // refused one. Two-way agreement is not enough. A control absent from the
+  // unfiltered page too would mean the test detects "has a filter" rather than
+  // "is protected", and would report every plain list view as protected.
+  const verdictFor = (name) => {
+    if (!threePages) return null;
+    const onEditable = namesPlain.has(name);
+    const onRefused = namesGuarded.has(name);
+    const onUnfiltered = namesUnfiltered.has(name);
+    return { name, onEditable, onRefused, onUnfiltered,
+      usable: onEditable && onUnfiltered && !onRefused };
+  };
+  const v1 = verdictFor(CANDIDATES[0]);
+  const v2 = verdictFor(CANDIDATES[1]);
+  const describe = (v) => (v
+    ? `${v.name}: editable=${v.onEditable}, unfiltered=${v.onUnfiltered}, refused=${v.onRefused}`
+    : 'not measured');
+
+  record('C1', 'is the pinned control name absent from the refused page and present on both others?',
+    !threePages ? 'NOT ESTABLISHED' : (v1.usable ? 'USABLE' : 'NOT USABLE'),
+    !threePages
+      ? 'all three pages are needed: the predicate is a three-way, not a comparison of two.'
+      : `${describe(v1)}. `
+        + (v1.usable
+          ? 'So `name="' + v1.name + '" is absent` distinguishes a protected view from both an editable '
+            + 'filtered view and an unfiltered one, without reading any display text. Pair it with C5\'s '
+            + 'sentinel before it is used, because absence alone cannot tell a protected page from a page '
+            + 'that never arrived.'
+          : 'It does not satisfy the three-way, so it is not the predicate. C2 may still be.'));
+
+  record('C2', 'does the second candidate agree with the first?',
+    !threePages ? 'NOT ESTABLISHED' : ((v1.usable === v2.usable) ? 'AGREE' : 'DISAGREE'),
+    !threePages
+      ? 'all three pages are needed.'
+      : `${describe(v2)}. `
+        + ((v1.usable === v2.usable)
+          ? 'Both candidates give the same verdict, so the result does not rest on one control name '
+            + 'surviving a SharePoint update.'
+          : 'The two candidates DISAGREE, which means the markup has moved or one of them is conditional. '
+            + 'Neither should be used until this is understood.'));
+
+  // Run 1 measured the id set varying between two fetches of the same page,
+  // by exactly one CssLink-<guid> token each way. That is noise, but it means
+  // "stable" cannot be assumed for the tokens a predicate would read.
+  const refetchNames = async (view) => {
+    const page = await fetchEditPage(view.Id);
+    return page.ok ? attrValues(page.text, 'name') : null;
+  };
+  const again = threePages
+    ? {
+      plain: await refetchNames(plainView),
+      guarded: await refetchNames(guardedView),
+      unfiltered: await refetchNames(unfilteredView),
+    }
+    : null;
+  const stableFor = (name) => (again && again.plain && again.guarded && again.unfiltered
+    ? again.plain.has(name) && again.unfiltered.has(name) && !again.guarded.has(name)
+    : null);
+  const s1 = stableFor(CANDIDATES[0]);
+  const s2 = stableFor(CANDIDATES[1]);
+  const replayed = s1 !== null && s2 !== null;
+  record('C3', 'is the predicate the same across a second fetch of all three pages?',
+    !replayed ? 'NOT ESTABLISHED' : ((s1 === (v1 && v1.usable) && s2 === (v2 && v2.usable)) ? 'STABLE' : 'VARIES'),
+    !replayed
+      ? 'one of the three pages did not come back on the second fetch, so there is no replay to compare.'
+      : `second fetch: ${CANDIDATES[0]} usable=${s1}, ${CANDIDATES[1]} usable=${s2}; `
+        + `first fetch: ${v1.usable}, ${v2.usable}. `
+        + ((s1 === v1.usable && s2 === v2.usable)
+          ? 'Two observations agree, which is the minimum before anything relies on this.'
+          : 'The verdict CHANGED between two fetches of the same three pages, so it is not a predicate at '
+            + 'all and no amount of tenant-side care would make it one.'));
+
+  // Independent of the predicate, and worth its own row. U2 established the
+  // ten-condition ceiling by an operator counting rows in the editor. The
+  // editor's own markup should carry that number, which makes it measurable on
+  // any tenant instead of by eye.
+  const slotCount = (names, prefix) => [...names].filter((n) => new RegExp(`^${prefix}\\d+$`).test(n)).length;
+  const fieldSlots = bothFetched ? slotCount(namesPlain, 'FieldPicker') : null;
+  const opSlots = bothFetched ? slotCount(namesPlain, 'OperatorPicker') : null;
+  record('C4', 'how many condition slots does the editor markup carry?',
+    !bothFetched ? 'NOT ESTABLISHED' : `${fieldSlots} SLOTS`,
+    !bothFetched
+      ? 'the editable page is needed.'
+      : `FieldPicker1..n = ${fieldSlots}, OperatorPicker1..n = ${opSlots}. `
+        + 'U2 established the ceiling by an operator counting conditions in the editor and watching a save '
+        + 'truncate to that number. This is the same number read out of the markup, so it can be measured '
+        + 'on any tenant without a person looking. If it matches, the ceiling is a property of the page '
+        + 'rather than of one observation.');
+
+  const onAll = threePages
+    ? SENTINELS.filter((s) => pagePlain.text.includes(s)
+      && pageGuarded.text.includes(s) && pageUnfiltered.text.includes(s))
+    : [];
+  record('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?',
+    !threePages ? 'NOT ESTABLISHED' : (onAll.length ? 'FOUND' : 'NONE'),
+    !threePages
+      ? 'all three pages are needed.'
+      : `present on all three: ${JSON.stringify(onAll)}; of candidates ${JSON.stringify(SENTINELS)}. `
+        + (onAll.length
+          ? 'So a check can require the sentinel BEFORE believing the control is absent. Without it, a '
+            + 'login redirect, an error page or a truncated response all read as protected, and the deploy '
+            + 'reports success for a view it never saw.'
+          : 'NOTHING is on all three pages, so absence of the control cannot be distinguished from absence '
+            + 'of the page. The predicate must not be built until a sentinel is found.'));
 
   // ---- P1, P2: the ground truth ------------------------------------------
   record('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
