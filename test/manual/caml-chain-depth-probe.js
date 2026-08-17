@@ -82,9 +82,34 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: COMPLETE, over five runs on 2026-08-17. Run 3 answered the depth
- * question: the machine surfaces evaluate a 40-disjunct chain correctly and
- * the filter editor does not.
+ * STATUS: seven runs on 2026-08-17 answered every question this probe then
+ * asked. TWO ROWS ADDED AFTER RUN 7 ARE OPEN, T3 and T4, and T3 is the one
+ * that matters.
+ *
+ * T1 CANNOT ESTABLISH WHAT IT WAS WRITTEN TO CLAIM. Conjoined behind
+ * Eq(M01) the left side already restricts to R01, so a group that wrongly
+ * excluded R07 or the empty row returns the same single row and T1 still
+ * reads INERT. Its evidence said the empty row would catch that, and the
+ * empty row cannot: the Eq excludes it either way. T3 asks the group ON ITS
+ * OWN, where the partition is the row count, and that is the claim #267
+ * rests on. T4 reads the stored ViewQuery back before an operator is sent to
+ * look at T2, because a view found by title is not proof of the tree it
+ * holds and rewriting on save is what this probe characterises.
+ *
+ * Run 3 answered the depth question: the machine surfaces evaluate a
+ * 40-disjunct chain correctly and the filter editor does not.
+ *
+ * RUN 6 DIED BEFORE T1, T2, G1 AND G2, and how it died is worth keeping even
+ * though run 7 answered them.
+ * Revision cc1a18b1 named `guarded` in the shape list that builds the
+ * editability views, several hundred lines above the const that declares it,
+ * so the run threw a temporal dead zone ReferenceError after every expensive
+ * row had already been paid for. `node --check` passes on that file: the
+ * reference is legal syntax and only fails when it executes. A probe that
+ * declares its inputs beside the rows that consume them cannot make this
+ * mistake, which is why T1 now measures immediately before the list that
+ * uses its result. The registered questions are what saved the run from
+ * reading as a pass: all four reported NOT ESTABLISHED rather than nothing.
  *
  * With one row per member, so that a chain over K members must return exactly
  * K rows, every depth from 1 to 40 returned ALL K. The ad-hoc query at a
@@ -150,12 +175,50 @@
  * builds ((A and B) or C) as it goes and has nowhere to put the brackets in
  * A and (B or C), which defers.
  *
+ * A MANUFACTURED GROUP PROTECTS A FILTER THAT HAS NOTHING TO GROUP, measured
+ * by T1 and T2 on 2026-08-17. This is the row that decides how far protection
+ * can reach, because of what the shipped templates actually contain: of 192
+ * filtered views, 138 carry ONE clause and 50 carry two. A single clause
+ * renders as a bare leaf with no And/Or at all, and two leaves render as
+ * And[leaf, leaf]. Neither has a group to put on the right, so an
+ * associativity change alone protects 4 of the 192.
+ *
+ * The tautology Or[IsNotNull(ID), IsNull(ID)] closes that gap. T1: conjoined
+ * on the right of a single Eq it returned exactly the 1 row the bare Eq
+ * returns, so it changes no result. T2: the editor REFUSED that view with
+ * "complex filter which cannot be edited here", so it does trigger the
+ * refusal. Both halves hold, and every view can be protected rather than
+ * only the four with a group of their own.
+ *
+ * The tautology is not free of assumptions and the one it rests on is ID.
+ * Every list item has one, so IsNotNull(ID) and IsNull(ID) partition the
+ * rows; T1's fixture includes an empty row precisely so a partition that
+ * missed it would show up as a row count.
+ *
  * WHAT IT MEANS FOR THIS TOOL. `_combine` in analysis/conditions.py
  * LEFT-folds, so its natural output is the editable, truncatable shape.
  * "Tolerance due" is protected today only because its neq wrapper happens to
  * land on the right. Emitting the group on the right instead is an
  * associativity choice and needs no extra predicate for any filter with two
  * or more clauses. #267 carries that work.
+ *
+ * A DEPLOY CAN READ THE PROTECTED STATE BACK, but not yet on a predicate it
+ * should trust. G1: /_layouts/15/ViewEdit.aspx answers HTTP 200 to a
+ * same-origin fetch from the deploy's own console, so the page is reachable.
+ * G2: the editable view's page is 501,520 chars and the refused view's is
+ * 459,104, and the refusal text is SERVED IN THE HTML rather than rendered by
+ * script, so it can be seen by a fetch at all.
+ *
+ * WHAT G2 DOES NOT SETTLE is which string to test on, and the candidates it
+ * measured rule themselves out. `complex filter` and `cannot be edited` are
+ * English display text, so a French tenant would read as unprotected.
+ * `ViewFilter` appears on BOTH pages. `FilterOnFieldName`, `onetidFilter` and
+ * `FilterOpt` appear on NEITHER. So no measured marker is both
+ * discriminating and language-independent, and the 42KB the refused page is
+ * missing has not been characterised. A verify step built on the English
+ * string would pass in this tenant and fail silently in another, which is the
+ * failure class this repository exists to close, so it must not be built on
+ * one. #267 carries the follow-up.
  *
  * THE DOCUMENTED MECHANISM IS A DEAD END, and R2 is worth keeping on its own
  * account. R1: the editable view and the refused view BOTH read
@@ -383,7 +446,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 4187c511. Quote this when reporting results.');
+  log('INFO', 'probe revision 95b87a8e. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -395,7 +458,8 @@
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
-  const LIST = `dbmlsp Probe Chain ${RUN}`;
+  const LIST_PREFIX = 'dbmlsp Probe Chain ';
+  const LIST = `${LIST_PREFIX}${RUN}`;
   const COL = 'Chain';
 
   // ONE ROW PER MEMBER. This is the whole design and run 2 got it wrong.
@@ -477,6 +541,10 @@
   expect('W4', 'is the FLIPPED wrapper refused by the editor? (manual: look)');
   expect('G1', 'can the view-edit page be fetched at all from a console?');
   expect('G2', 'does that page differ between an editable and a refused view?');
+  expect('T3', 'CONTROL: does the tautology ALONE return every row?');
+  expect('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?');
+  expect('T2', 'does that tautology group protect a SINGLE-clause filter? (manual: look)');
+  expect('T4', 'did the guarded tree survive being STORED, before anyone looks at it?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -489,6 +557,14 @@
   }
 
   if (CLEANUP_LIST) {
+    // Refuse a title this probe could not have created. The run-unique name
+    // protects the run and does nothing for a cleanup pasted later against a
+    // mistyped title, which would drain up to 5000 items and recycle it.
+    if (!CLEANUP_LIST.startsWith(LIST_PREFIX)) {
+      log('FAIL', `CLEANUP_LIST '${CLEANUP_LIST}' does not start with '${LIST_PREFIX}', so this probe `
+        + 'did not create it. Nothing was touched.');
+      return;
+    }
     const path = `web/lists/getbytitle('${CLEANUP_LIST}')`;
     const found = await spGet(path);
     if (!found.ok) {
@@ -1092,6 +1168,55 @@
           + 'the tool can protect a filter by emitting the group on the right.'
           : `Got ${JSON.stringify(fRows.titles)}, so flipping changed the meaning and this is not a free swap.`));
 
+  // === T1, T2, T3, T4: can a filter with NOTHING to group be protected? ==
+  // Of 192 shipped filtered views, 138 carry one clause and 50 carry two, and
+  // neither shape has a group to move, so associativity alone protects 4.
+  // Protecting the rest needs a group manufactured out of nothing.
+  //
+  // The candidate is Or[IsNotNull(ID), IsNull(ID)], which every row should
+  // satisfy. T3 asks whether it really partitions, T1 whether it is inert
+  // behind an Eq, T2 whether it protects, T4 whether it survived storage.
+  // Run 7 answered T1 and T2 on 2026-08-17; the emitted shape depends on all
+  // four and none of it is documented, so all four keep running.
+  const tautology = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
+    + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
+  const guarded = `<And>${eq(DISCRIMINATORS[0])}${tautology}</And>`;
+
+  // T3 before T1, because T1 cannot make this claim and was written as
+  // though it could. Conjoined behind Eq(M01) the left side already
+  // restricts to R01, so a group that wrongly excluded R07 or the empty row
+  // returns the same single row and T1 still reads INERT. Asking the group
+  // ON ITS OWN is the only place the partition is visible: it must return
+  // every seeded row, the empty one included.
+  const allRows = await camlRows(tautology);
+  const everyTitle = ROWS.map((r) => r.title).sort();
+  const partitions = allRows.ok && same(allRows.titles, everyTitle);
+  record('T3', 'CONTROL: does the tautology ALONE return every row?',
+    !allRows.ok ? 'NOT ESTABLISHED' : (partitions ? 'PARTITIONS' : 'DOES NOT PARTITION'),
+    !allRows.ok
+      ? `${allRows.error}`
+      : `${allRows.titles.length} of ${everyTitle.length} row(s). `
+        + (partitions
+          ? 'IsNotNull(ID) and IsNull(ID) cover every row including R00, so conjoining the group cannot '
+            + 'remove one. This is the claim #267 rests on, and T1 is structurally unable to make it.'
+          : `Missing ${JSON.stringify(everyTitle.filter((x) => !allRows.titles.includes(x)))}. The group `
+            + 'does NOT cover every row, so conjoining it would silently drop rows from any filter it is '
+            + 'added to, and #267 must not emit it. T1 can still read INERT here, which is why this row '
+            + 'exists.'));
+
+  const tRows = await camlRows(guarded);
+  const tSame = tRows.ok && same(tRows.titles, expectedFor(1));
+  record('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?',
+    !tRows.ok ? 'QUERY REFUSED' : (tSame ? 'INERT' : 'NOT INERT'),
+    !tRows.ok
+      ? `${tRows.error}`
+      : `${tRows.titles.length} row(s) against the 1 a bare Eq returns: ${JSON.stringify(tRows.titles)}. `
+        + (tSame
+          ? 'The tautology changes nothing HERE, which is weaker than it reads: the left Eq already '
+            + 'restricts to R01, so this row cannot see a group that wrongly excluded any other row. T3 '
+            + 'is the row that can. Whether it PROTECTS is T2.'
+          : 'It changed the result even against the one row the Eq admits, so it must not be emitted.'));
+
   const shapedMore = [
     ['P1', 'Or[And[Eq,Eq], Eq], the MIRROR of E3',
       `<Or><And>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</And>${eq(DISCRIMINATORS[2])}</Or>`],
@@ -1100,6 +1225,18 @@
     ['W2', 'the manufactured wrapper from W1, group on the LEFT', wrapped],
     ['W4', 'the wrapper FLIPPED, group on the RIGHT', flipped],
   ];
+  // T2 is only worth looking at if T1 measured the group INERT. A view
+  // built on a group that changes the rows would answer a different
+  // question and read as a success.
+  if (tSame) {
+    shapedMore.push(
+      ['T2', 'a SINGLE clause guarded by a tautology group on the right', guarded]);
+  } else {
+    record('T2', 'does that tautology group protect a SINGLE-clause filter? (manual: look)',
+      'NOT ESTABLISHED',
+      'T1 did not measure the tautology inert, so there is nothing to look at: a view built on a '
+      + 'group that changes the rows would be reporting on a different filter.');
+  }
   for (const [id, label, where] of shapedMore) {
     const title = `Shape ${id}`;
     const d = await getDigest();
@@ -1118,29 +1255,18 @@
   }
 
   // === G1, G2: could a DEPLOY verify protection by reading a page? =======
-  // R1 established that no view property records the protected state, so a
-  // deploy can emit the protecting shape and has nothing to read back. That
-  // is a standing weakness: this repository's rule is that anything which
-  // writes must read back and verify, and here there is nothing to read.
+  // R1 left the deploy emitting a protection with no property to read back.
+  // The idea here is to read the EDIT PAGE instead, which the deploy's own
+  // authenticated browser can already fetch.
   //
-  // The idea under test is to read the EDIT PAGE instead of a property. The
-  // deploy already runs in an authenticated browser, so it can fetch
-  // /_layouts/15/ViewEdit.aspx for a view and look at what came back. If an
-  // editable view and a refused one produce measurably different pages, a
-  // deploy could confirm protection instead of assuming it.
+  // Nothing is searched for by guess. Grepping "complex filter" fails twice
+  // over: the string is localised, and it may be script-rendered rather than
+  // served. So G2 fetches both pages and reports what actually differs, with
+  // the markers included as observations rather than assertions.
   //
-  // NOTHING IS SEARCHED FOR BY GUESS. The obvious version of this, grepping
-  // for "complex filter", is a trap twice over: the string is localised, so a
-  // non-English tenant would read as unprotected, and it may be rendered by
-  // script rather than served in the HTML, in which case a fetch never sees
-  // it whatever the view's state. So G2 fetches BOTH pages and reports what
-  // actually differs, including several candidate markers reported as
-  // present-or-absent rather than asserted. Pinning one is the next
-  // revision's job, on evidence.
-  //
-  // G1 is the precondition and is worth its own row: a page that 403s, or
-  // that answers with a login redirect, or that renders the whole settings
-  // surface client-side, ends this idea before G2 means anything.
+  // G1 is separate because a 403, a login redirect, or a fully client-side
+  // settings surface each end the idea before G2 means anything.
+  // view-edit-page-probe.js took this further and pinned the marker.
   const listMeta = await spGet(`${listPath}?$select=Id`);
   const listGuid = (!readFailed(listMeta) && listMeta.body.Id) || null;
   const viewIds = await spGet(`${listPath}/views?$select=Id,Title`);
@@ -1203,6 +1329,28 @@
           : 'Identical length and identical candidate markers, so a page fetch cannot distinguish the two '
             + 'states and this avenue is closed. Protection would remain unverifiable, which is worth '
             + 'recording at the emission site rather than rediscovering.'));
+
+
+  // T4 before the manual look. A view found by title is not proof it holds the
+  // tree that was sent, and a filter being rewritten on save is the behaviour
+  // this probe exists to characterise, so taking the POST's 200 as proof would
+  // assume the thing under investigation.
+  const storedViews = await spGet(`${listPath}/views?$select=Title,ViewQuery`);
+  const storedFor = (title) => ((!readFailed(storedViews) && storedViews.body.value) || [])
+    .find((v) => v.Title === title)?.ViewQuery ?? null;
+  const normalise = (s) => (s || '').replace(/\s+/g, '');
+  const storedT2 = storedFor('Shape T2');
+  const t2Held = storedT2 !== null
+    && normalise(storedT2) === normalise(`<Where>${guarded}</Where>`);
+  record('T4', 'did the guarded tree survive being STORED, before anyone looks at it?',
+    storedT2 === null ? 'NOT ESTABLISHED' : (t2Held ? 'SURVIVED' : 'REWRITTEN'),
+    storedT2 === null
+      ? 'the Shape T2 view could not be read back, so nobody knows which tree the manual look is about.'
+      : `stored: ${storedT2}. `
+        + (t2Held
+          ? 'Matches what was sent, ignoring whitespace, so T2 is a verdict on the tree #267 emits.'
+          : 'SharePoint stored something OTHER than what was sent, so T2 would be a verdict on a tree '
+            + 'nobody chose. Report this before T2.'));
 
   // === U1 and U2: the third surface ======================================
   // Run 1 measured two surfaces and both agreed to 40. An operator then
