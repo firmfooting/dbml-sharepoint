@@ -181,13 +181,25 @@
     return [titleField, ...list.fields_phase1, ...deferred];
   }
 
-  function assertListImmutableShape(list, actual) {
+  // One entry per mismatched property. The throwing wrapper below keeps every
+  // caller's semantics; only the read-only preflight will read the list.
+  function immutableListMismatches(list, actual) {
+    const mismatches = [];
     if (actual.BaseTemplate !== list.base_template) {
-      throw new Error(
-        `Existing '${list.title}' has BaseTemplate ${actual.BaseTemplate}; expected ${list.base_template} for declared kind '${list.kind}'. `
-        + 'SharePoint list/library templates are immutable; provision a clean object or perform an explicit migration.',
-      );
+      mismatches.push({
+        property: 'BaseTemplate',
+        declared: list.base_template,
+        actual: actual.BaseTemplate,
+        message: `Existing '${list.title}' has BaseTemplate ${actual.BaseTemplate}; expected ${list.base_template} for declared kind '${list.kind}'. `
+          + 'SharePoint list/library templates are immutable; provision a clean object or perform an explicit migration.',
+      });
     }
+    return mismatches;
+  }
+
+  function assertListImmutableShape(list, actual) {
+    const mismatches = immutableListMismatches(list, actual);
+    if (mismatches.length > 0) throw new Error(mismatches.map(m => m.message).join(' '));
   }
 
   function desiredListSettings(list) {
