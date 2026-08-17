@@ -46,7 +46,7 @@ from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_
 
 if TYPE_CHECKING:
     from dbml_sharepoint.extension import DeploymentExtension, SiteContext
-    from dbml_sharepoint.model.mapping_loader import MappingBundle
+    from dbml_sharepoint.model.mapping_types import MappingBundle
     from dbml_sharepoint.model.parser import Schema
     from dbml_sharepoint.model.release import Release
 

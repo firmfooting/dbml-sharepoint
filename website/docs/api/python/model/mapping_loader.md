@@ -28,7 +28,7 @@ KNOWN_SECTIONS = frozenset({'calculated_formulas', 'column_formatting', 'column_
 ### `load_mapping`
 
 ```python
-def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model._mapping_types.MappingBundle
+def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_types.MappingBundle
 ```
 
 Load the mapping YAML and the referenced configs into a single bundle.

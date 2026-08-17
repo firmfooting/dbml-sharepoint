@@ -49,7 +49,7 @@ that silently dropped the field would have rendered too, which is how the earlie
 LOOPRJ question misled. So a lookup showing five of its target's fields costs
 ONE, not six. NOTHING IN THIS MODULE EXCLUDES THEM, because this tool cannot
 declare such a projection at all: there is no `projected_fields` or equivalent
-key in `_mapping_types.py` or `mapping_loader.py`. That is also why the fact is
+key in `mapping_types.py` or `mapping_loader.py`. That is also why the fact is
 recorded HERE rather than in a test, since there is no way to write one. If
 projections ever become declarable, this paragraph is what a test hangs off.
 
@@ -68,9 +68,9 @@ from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES
+from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
-from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
-from dbml_sharepoint.model.mapping_loader import EntityMapping
+from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import Table
 
 # Measured: 12 rendered, 13 refused. Above this a view is blank at any list size.
@@ -144,28 +144,28 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
 def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[str]:
     """Every column the generated `All Items` view renders, before hiding.
 
-    `_rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
+    `rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
     `{"Title"}` union is not redundant padding: a DBML table need not declare
     its own `Title` column at all, because SharePoint's base-template `Title` exists
     on every list regardless, and `jsgen.py` writes it into `All Items`
     literally (see that file's `title_patch` branch), never through
-    `_rendered_columns`, which only sees columns `table.columns` actually
-    lists. An entity that DOES declare `Title` masks this: `_rendered_columns`
+    `rendered_columns`, which only sees columns `table.columns` actually
+    lists. An entity that DOES declare `Title` masks this: `rendered_columns`
     already contains it with no union applied, which is exactly what let this
     union go silently unread by one of its two former call sites. See
-    `test/test_validator.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
+    `test/test_validator_joins.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
     for the fixture shaped to catch that.
 
     ONE place this set is written down, on purpose: `all_items_joining_fields`
     below and `_views.py`'s entity loop both call this rather than each
     carrying their own copy of the same three-term union. Two copies of an
     identical-looking expression is how a dropped term goes unnoticed.
-    The two used to be `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS`
+    The two used to be `rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS`
     written out twice, and dropping the term from either one alone left the
     other's callers unaffected, which is what the test above exists to catch
     now that there is only one copy for it to catch a drift in.
     """
-    return _rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
+    return rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
 
 
 def all_items_joining_fields(

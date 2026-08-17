@@ -6,13 +6,10 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _validator_helpers import _project_errors
 
-from dbml_sharepoint.analysis.findings import FindingCode
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate_against_mapping,
-)
+from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
     DemoItem,
@@ -231,7 +228,7 @@ def test_a_lookup_targets_display_column_counts_as_an_index() -> None:
         make_table("FollowUp", column("Event", "int", ref="Event.Id")),
     )
     bundle = make_bundle(entities=["Event", "FollowUp"])
-    from dbml_sharepoint.analysis.checks._context import ValidationContext
+    from dbml_sharepoint.analysis.checks.context import ValidationContext
 
     vc = ValidationContext.build(schema, bundle)
     assert "Title" in vc.effective_indexes("Event")
@@ -266,7 +263,7 @@ def test_a_cross_site_only_target_spends_no_index() -> None:
     """A cross-site ref becomes a Choice + URL pair on the SOURCE list. Nothing
     enumerates FlowRunLog, so it has no picker. Charging it an index would spend
     one of its twenty on a query that never happens."""
-    from dbml_sharepoint.analysis.checks._context import ValidationContext
+    from dbml_sharepoint.analysis.checks.context import ValidationContext
 
     schema, bundle = _cross_site_only_target(calculated=False)
     vc = ValidationContext.build(schema, bundle)
@@ -286,7 +283,7 @@ def test_a_target_of_both_ref_kinds_keeps_its_index() -> None:
     """Per-pair, not per-entity. Excluding every entity NAMED in
     cross_site_reference_columns would strip the index off a list whose picker is
     real, which is the same defect pointing the other way."""
-    from dbml_sharepoint.analysis.checks._context import ValidationContext
+    from dbml_sharepoint.analysis.checks.context import ValidationContext
 
     schema = make_schema(
         make_table("FlowRunLog", column("Title")),
@@ -318,7 +315,7 @@ def test_a_calculated_display_column_does_not_count_as_an_index() -> None:
             ),
         },
     )
-    from dbml_sharepoint.analysis.checks._context import ValidationContext
+    from dbml_sharepoint.analysis.checks.context import ValidationContext
 
     vc = ValidationContext.build(schema, bundle)
     assert "Label" not in vc.effective_indexes("Event")

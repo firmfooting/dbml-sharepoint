@@ -15,12 +15,12 @@ from _model import schema as make_schema
 from _model import table as make_table
 
 from dbml_sharepoint.analysis import provenance
-from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
-from dbml_sharepoint.analysis.validator import Finding, validate_against_mapping
-from dbml_sharepoint.model._mapping_types import (
+from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.model.mapping_types import (
     CustomPermissionLevel,
     PermissionsConfig,
 )

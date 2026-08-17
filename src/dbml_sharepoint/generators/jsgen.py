@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from dbml_sharepoint.analysis.column_refs import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.analysis.conditions import (
     SYSTEM_COLUMN_TYPES,
     effective_column_types,
@@ -36,11 +37,10 @@ from dbml_sharepoint.analysis.typemap import (
     format_description,
     map_column,
 )
-from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntityMapping,
     EntitySection,
@@ -372,7 +372,7 @@ def build_schema_json(
         for table in schema.tables
     }
     # The picker's index. Deployed here so it actually exists; counted against
-    # the 20-index ceiling in analysis.checks._context, from this same
+    # the 20-index ceiling in analysis.checks.context, from this same
     # derivation, so the validator and the deployer cannot disagree about it.
     # cross_site_keys goes in because those columns are Choice + URL pairs, not
     # Lookups: nothing enumerates the far list, so an Indexed=true MERGE on it
@@ -634,7 +634,7 @@ def build_schema_json(
             #
             # The validator counts this same view, but from its OWN derivation
             # (analysis/joins.py::all_items_joining_fields, called from the
-            # entity loop at analysis/checks/_views.py:815), NOT this code.
+            # entity loop in analysis/checks/_views.py::check), NOT this code.
             # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
             # hide_from_all_items are all genuinely shared via
             # analysis/joins.py; the actual FIELD LIST this block builds is

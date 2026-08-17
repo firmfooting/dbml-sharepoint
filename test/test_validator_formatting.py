@@ -18,12 +18,8 @@ from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
 from dbml_sharepoint.model.conditions import Condition, parse_condition
-from dbml_sharepoint.model.mapping_loader import (
-    FormFormatting,
-    ListValidation,
-    ViewDef,
-    load_mapping,
-)
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import FormFormatting, ListValidation, ViewDef
 from dbml_sharepoint.model.parser import (
     Column,
     Table,
@@ -34,7 +30,7 @@ from dbml_sharepoint.model.parser import (
 
 
 def test_formatter_field_refs_walks_nested_structures() -> None:
-    from dbml_sharepoint.analysis.validator import formatter_field_refs
+    from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 
     refs = formatter_field_refs({
         "elmType": "div",
@@ -259,7 +255,7 @@ def test_today_offset_valid_on_calculated_date() -> None:
 def test_watched_list_column_must_exist() -> None:
     """watched_lists is validated nowhere: a misspelled column simply
     never fires the status capture it was declared for."""
-    from dbml_sharepoint.model.mapping_loader import WatchedList
+    from dbml_sharepoint.model.mapping_types import WatchedList
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -274,7 +270,7 @@ def test_polymorphic_pattern_columns_must_exist() -> None:
     """The manifest surfaces these so downstream flows validate the logical
     FK. A misspelled field or discriminator publishes a contract against a
     column that does not exist."""
-    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+    from dbml_sharepoint.model.mapping_types import PolymorphicPattern
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -289,7 +285,7 @@ def test_polymorphic_pattern_columns_must_exist() -> None:
     assert any("NoSuchType" in m for m in named), named
 
 def test_watched_list_entity_must_exist() -> None:
-    from dbml_sharepoint.model.mapping_loader import WatchedList
+    from dbml_sharepoint.model.mapping_types import WatchedList
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -301,7 +297,7 @@ def test_watched_list_entity_must_exist() -> None:
     assert "Tsak" in f.message
 
 def test_polymorphic_pattern_entity_must_exist() -> None:
-    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+    from dbml_sharepoint.model.mapping_types import PolymorphicPattern
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")

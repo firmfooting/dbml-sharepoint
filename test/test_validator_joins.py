@@ -8,12 +8,9 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _packs import blocks, entities, pack, with_tail
 
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate_against_mapping,
-)
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     EntityKind,
     EntityMapping,
@@ -202,7 +199,7 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none() -> None:
 def test_a_real_ref_column_costs_a_join() -> None:
     """The control for the cross-site test below. The schema is identical; the
     view must name the expanded pair rather than the column, because a cross-site
-    column never exists under its own name (validator.py:145-147). The COUNT is
+    column never exists under its own name (see `rendered_columns`). The COUNT is
     what is being compared: 13 here, 12 there."""
     twelve = [f"P{n}" for n in range(1, 13)]
     schema, bundle = _join_inputs(
@@ -377,14 +374,15 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling() -> None:
 def test_a_document_library_gets_no_all_items_join_finding() -> None:
     """The `kind == "DocumentLibrary"` half of the loop guard, PAIRED.
 
-    `jsgen.py:597` builds `All Items` only when the kind is not
-    `DocumentLibrary`, so counting one here would refuse a schema over a view
+    `jsgen.py` builds `All Items` only under its `entity.kind !=
+    "DocumentLibrary"` guard, so counting one here would refuse a schema over a view
     the generator never creates, the exact validator/generator disagreement
     this module exists to avoid. Deleting the clause must turn a test red, and
     only the pair does that: the count alone proves nothing, because the same
     13 columns are what the List case is asserted on.
 
-    `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
+    `kind: DocumentLibrary` is separately a `DOCUMENT_LIBRARY_UNSUPPORTED` error
+    from `_structure.py`,
     so this build is already red for another reason. That is not a licence to
     skip the guard. It is why the guard is easy to delete unnoticed."""
     schema, bundle = _join_inputs(_persons(13), kind="DocumentLibrary")
@@ -493,7 +491,7 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo() -> None:
 
     NOTE on what this test can and cannot pin, recorded here because it is
     not obvious from the assertions alone. `_join_inputs` declares `Title`
-    as a real DBML column on `Project`, so `_rendered_columns` alone already
+    as a real DBML column on `Project`, so `rendered_columns` alone already
     puts 'Title' in `rendered`. The explicit `| {"Title"}` union inside
     `analysis/joins.py::all_items_rendered` is redundant for THIS fixture
     and this test cannot observe it being dropped. That is by design, not
@@ -514,7 +512,7 @@ def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch() ->
     SharePoint's base-template `Title` exists on every provisioned list
     regardless of whether the schema names it. So 'Title' reaches
     `all_items_rendered`'s result ONLY through its `| {"Title"}` union.
-    `_rendered_columns` alone has nothing to contribute for a column that
+    `rendered_columns` alone has nothing to contribute for a column that
     is not in `table.columns`. `hide_from_all_items: [Title]` must still be
     refused for costing no join, not reported as an unrecognised column."""
     schema = make_schema(make_table("Project", column("Notes")))

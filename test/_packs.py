@@ -48,7 +48,8 @@ import re
 from pathlib import Path
 from textwrap import dedent
 
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 #: Every schema in the suite starts with this and no test is about it.

@@ -7,7 +7,8 @@ from _paths import FIXTURES
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
 

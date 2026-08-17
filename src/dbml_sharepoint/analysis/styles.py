@@ -96,9 +96,11 @@ def _fail(context: str, message: str) -> ValueError:
 
 # SP resolves `[$Name]` against a column's INTERNAL name; anything else
 # resolves to no column and renders as nothing. Same character class
-# `validator._FORMATTER_FIELD_REF` extracts, copied rather than imported
-# because validator -> mapping_loader -> styles would be a cycle. Measured not
-# stronger than what we ship: all 634 declared column names match it.
+# `column_refs._FORMATTER_FIELD_REF` extracts, still written out rather than
+# imported because the two have diverged: that one extracts, this one
+# validates with `fullmatch`, and merging them is a separate judgment.
+# Measured not stronger than what we ship: all 634 declared column names
+# match it.
 #: Matched with `fullmatch`. Anchored with `$`, a name ending in a newline
 #: was accepted and emitted a reference the validator then read as valid.
 _INTERNAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

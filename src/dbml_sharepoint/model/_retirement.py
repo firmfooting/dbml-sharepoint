@@ -13,7 +13,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys
-from dbml_sharepoint.model._mapping_types import (
+from dbml_sharepoint.model.mapping_types import (
     RETIRED_SUFFIX,
     EntitySection,
     FormFormatting,

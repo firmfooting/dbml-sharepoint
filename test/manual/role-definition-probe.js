@@ -1,9 +1,10 @@
 /**
  * dbml-sharepoint PROBE: WHAT A CUSTOM PERMISSION LEVEL DOES ON THE WAY BACK
  *
- * WHY THIS EXISTS. `templates/deploy/_security_principals.js.j2:12-74` probes
- * for a role definition by name, and when one already exists it MERGEs the
- * declared `Description` and `BasePermissions` onto it. It checks
+ * WHY THIS EXISTS. `templates/deploy/_security_principals.js.j2` probes for a
+ * role definition by name in `probeLevelExistence`, and when one already
+ * exists `applyLevelDecision` MERGEs the declared `Description` and
+ * `BasePermissions` onto it. It checks
  * `mergeResp.ok` and logs "declared permissions reconciled". It never reads
  * one field back, and it never asks where that level came from.
  *
@@ -398,7 +399,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision ee032152. Quote this when reporting results.');
+  log('INFO', 'probe revision 318023f3. Quote this when reporting results.');
 
   // Run-unique, and that is a safety property rather than tidiness. A fixed
   // name plus a pre-emptive delete destroys somebody else's level on the one

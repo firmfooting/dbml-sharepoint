@@ -5,7 +5,6 @@ import pytest
 from dbml_sharepoint.analysis.group_description import (
     FAMILY_MARKER_TEMPLATE,
     GROUP_MARKER_GROWTH_RESERVE,
-    MARKER_PREFIX,
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
     group_description,
@@ -13,6 +12,7 @@ from dbml_sharepoint.analysis.group_description import (
     shared_marker_for,
 )
 from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
+from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 
 
 def test_a_tool_owned_group_gets_a_family_less_marker_naming_itself() -> None:

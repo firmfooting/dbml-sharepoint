@@ -1,6 +1,6 @@
 ---
 title: extension
-sidebar_position: 24
+sidebar_position: 27
 ---
 
 # `dbml_sharepoint.extension`
@@ -9,7 +9,7 @@ sidebar_position: 24
 
 The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.
-Validation issues are reported with the validator Finding type.
+Validation issues are reported with `analysis.findings.Finding`.
 
 ### `SiteContext`
 
@@ -18,7 +18,7 @@ Validation issues are reported with the validator Finding type.
 class SiteContext:
     site_url: str
     site_role: str
-    release: Any
+    release: dbml_sharepoint.model.release.Release | None
     output_dir: Path
     extension_args: dict[str, typing.Any] = field(default_factory=dict)
 ```
@@ -53,25 +53,25 @@ def cli_subcommands(self, app: typer.main.Typer) -> None
 #### `DeploymentExtension.expand_column`
 
 ```python
-def expand_column(self, table: Any, column: Any, bundle: Any) -> list[dict[str, Any]] | None
+def expand_column(self, table: dbml_sharepoint.model.parser.Table, column: dbml_sharepoint.model.parser.Column, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dict[str, Any]] | None
 ```
 
 #### `DeploymentExtension.extra_validators`
 
 ```python
-def extra_validators(self, bundle: Any, schema: Any) -> list[typing.Any]
+def extra_validators(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 #### `DeploymentExtension.manifest_extras`
 
 ```python
-def manifest_extras(self, bundle: Any, schema: Any) -> dbml_sharepoint.extension.ManifestExtras
+def manifest_extras(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.extension.ManifestExtras
 ```
 
 #### `DeploymentExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: Any, schema: Any, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
+def seed_lists(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
 ```
 
 ### `BaseExtension`
@@ -91,25 +91,25 @@ Must never alter core command signatures.
 #### `BaseExtension.expand_column`
 
 ```python
-def expand_column(self, table: Any, column: Any, bundle: Any) -> list[dict[str, Any]] | None
+def expand_column(self, table: dbml_sharepoint.model.parser.Table, column: dbml_sharepoint.model.parser.Column, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dict[str, Any]] | None
 ```
 
 #### `BaseExtension.extra_validators`
 
 ```python
-def extra_validators(self, bundle: Any, schema: Any) -> list[typing.Any]
+def extra_validators(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 #### `BaseExtension.manifest_extras`
 
 ```python
-def manifest_extras(self, bundle: Any, schema: Any) -> dbml_sharepoint.extension.ManifestExtras
+def manifest_extras(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.extension.ManifestExtras
 ```
 
 #### `BaseExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: Any, schema: Any, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
+def seed_lists(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
 ```
 
 ### `NullExtension`

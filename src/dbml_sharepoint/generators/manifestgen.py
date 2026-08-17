@@ -5,13 +5,13 @@ import json
 from typing import Any
 
 from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
-from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 

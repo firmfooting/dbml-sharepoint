@@ -1,6 +1,6 @@
 ---
 title: typemap
-sidebar_position: 10
+sidebar_position: 13
 ---
 
 # `dbml_sharepoint.analysis.typemap`

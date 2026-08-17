@@ -19,7 +19,7 @@ from _model import table as make_table
 from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
@@ -37,14 +37,10 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate,
-    validate_against_mapping,
-    validate_all,
-)
+from dbml_sharepoint.analysis.validator import validate, validate_against_mapping, validate_all
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
     EntityMapping,
@@ -55,7 +51,6 @@ from dbml_sharepoint.model.mapping_loader import (
     RetentionPolicy,
     RoleAssignment,
     SiteGroup,
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import (
     EnumDef,

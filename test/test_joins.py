@@ -14,11 +14,7 @@ from dbml_sharepoint.analysis.joins import (
     joining_fields,
 )
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
-from dbml_sharepoint.model.mapping_loader import (
-    CrossSiteRef,
-    EntityMapping,
-    MappingBundle,
-)
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Table
 
 

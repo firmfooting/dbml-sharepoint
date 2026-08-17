@@ -229,7 +229,8 @@ def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.A
 
 
 def test_list_titles_are_the_prefix_concatenated() -> None:
-    """What jsgen.py:380 and four other generators actually do."""
+    """What `jsgen.py`'s `bundle.mapping.prefix + table_name` and four other
+    generators actually do."""
     assert _choice("ACME_", lists=("Risk", "Control")).list_titles(
         "default",
     ) == ("ACME_Risk", "ACME_Control")
