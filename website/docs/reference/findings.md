@@ -63,7 +63,7 @@ dbml-sharepoint explain unknown_column_type
 | `condition_measure_not_applicable` | error | `measure: length` was applied to a column that is not text. |
 | `condition_measure_unknown` | error | A `measure` other than `length` was declared. |
 | `condition_measure_unrenderable` | error | The target cannot express a measure at all. CAML has no LEN, and list formatting's `length()` does not measure a string. |
-| `condition_needle_empty` | error | A substring operator was given an empty needle, which cannot discriminate. |
+| `condition_needle_empty` | error | A substring or membership operator was given an empty value, which cannot discriminate. `contains` matches every value that way, and `includes` on a multi-value column matches none, leaving a view that is empty forever. |
 | `condition_negation_unrenderable` | error | Negating the rule, as `none_of` does, produces an operator the target cannot express. |
 | `condition_negative_text_operator_unrenderable` | error | CAML has no `<Not>`, `<NotContains>` or `<NotBeginsWith>`, so a view filter cannot say "does not contain". |
 | `condition_now_on_a_date_column` | error | The `now` sentinel needs a datetime column; a date column has no time of day. |

@@ -1426,6 +1426,45 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
         to_caml(condition, types)
 
 
+def test_an_empty_member_name_is_refused_on_a_multi_value_column() -> None:
+    """`includes ''` built clean, deployed, and showed an empty view forever.
+
+    `_TEXT_OPS` carries `contains` and `begins_with` and NOT the membership
+    operators, so nothing refused this. It reached `to_caml` and rendered
+    `<Eq>` against an empty value, which multi-value-probe.js C13 measured on
+    2026-08-17 as matching NO rows on a MultiChoice.
+
+    That measurement is why this is a defect rather than a tidiness rule, and
+    why it reads differently from its text-operator sibling: an empty needle
+    under `contains` matches EVERY value, which is useless but visible, while
+    this matches none and looks like a view nobody has filled in yet. It is
+    the same shape as #161, where a misspelled member also produced a view
+    that is empty forever.
+
+    Both polarities, because `not_includes` renders the same empty operand
+    into the negative wrapper.
+    """
+    types = {"Evt": "audit_event[]"}
+
+    for op in ("includes", "not_includes"):
+        condition = parse_condition({"field": "Evt", "op": op, "value": ""}, "w")
+
+        assert only(
+            _findings(condition, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
+        ).severity == "error"
+        # The renderer refuses too, so reporting nothing would be a traceback
+        # at generation rather than a permissive build.
+        with pytest.raises(ValueError, match="needs a member name"):
+            to_caml(condition, types)
+
+    # The rule is about the empty VALUE, not about the operator: a real member
+    # renders. Without this the test would pass just as well against a rule
+    # that refused every `includes`.
+    named = parse_condition({"field": "Evt", "op": "includes", "value": "View"}, "w")
+    assert _findings(named, types=types) == []
+    assert "View" in to_caml(named, types)
+
+
 def test_one_bad_operand_under_none_of_is_one_finding_not_two() -> None:
     """Both passes see the same empty needle, at two polarities.
 
