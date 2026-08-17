@@ -27,8 +27,11 @@ def test_the_immutable_field_properties_are_the_ones_read_for_every_field() -> N
 
 
 def test_the_immutable_lookup_properties_are_separate_because_the_probe_is() -> None:
-    """A non-lookup field's shape carries neither, so folding them in would
-    describe a shape that is never read."""
+    """Kept separate because only a lookup field's shape carries them.
+
+    A non-lookup field's shape carries neither, so folding them into the field
+    set would describe a shape that is never read.
+    """
     assert IMMUTABLE_LOOKUP_PROPERTIES == ("LookupList", "LookupField")
 
 
@@ -58,16 +61,28 @@ def _function_body(source: str, name: str) -> str:
     start = source.index(f"function {name}")
     body = source[start:]
     end = body.index("\n  }")
-    assert end > 0, name
     return body[:end]
 
 
 def _compared_properties(source: str, name: str) -> set[str]:
-    return set(re.findall(r"actual\.([A-Za-z]+)", _function_body(source, name)))
+    """The properties the named assertion reads in guard position.
+
+    The lookbehind drops `${actual.X}` interpolations, so naming a property in an
+    error message does not count as comparing it. This pins which properties are
+    still compared, and nothing more: changing a `!==` to `===` leaves the
+    property in guard position and this test green. The golden fixture and review
+    cover whether a comparison is correct.
+    """
+    return set(re.findall(r"(?<!\$\{)actual\.([A-Za-z]+)", _function_body(source, name)))
 
 
 def test_the_field_assertions_and_the_vocabulary_cover_the_same_properties() -> None:
-    """Both directions: an unenforced record entry, and an unrecorded refusal."""
+    """The assertion and the vocabulary have to name the same properties.
+
+    A name listed here that the assertion no longer guards means the deploy quietly
+    stopped refusing it. A property the assertion guards that is missing from the
+    vocabulary means this set no longer describes what the deploy does.
+    """
     compared = _compared_properties(_deploy_js(), "assertFieldImmutableShape")
     assert compared == set(IMMUTABLE_FIELD_PROPERTIES) | set(IMMUTABLE_LOOKUP_PROPERTIES)
 
@@ -78,7 +93,13 @@ def test_the_list_assertion_and_the_vocabulary_cover_the_same_properties() -> No
 
 
 def test_every_field_property_is_in_the_select_it_is_read_with() -> None:
-    """A property no probe selects would compare against undefined and pass."""
+    """A cheaper and earlier signal than the run-time abort that covers the same gap.
+
+    `_shape_probes.js.j2` type-checks every one of these properties and throws
+    'shape probe returned an invalid response', so dropping one from the select
+    fails loudly on a live site rather than passing. This test says so at build
+    time, and it still holds if those run-time validators are ever weakened.
+    """
     probe = PROBES.read_text(encoding="utf-8")
     select = re.search(r"const _FIELD_SHAPE_SELECT = \[(.*?)\]", probe, re.DOTALL)
     assert select is not None
