@@ -1,0 +1,690 @@
+/**
+ * dbml-sharepoint PROBE: CAN A DEPLOY SEE THAT A VIEW IS PROTECTED?
+ *
+ * #269. Writes a small list, three rows and three views, then reads two
+ * SharePoint pages. Everything it creates is named after this run and is
+ * removed by re-pasting with CLEANUP_LIST set.
+ *
+ * WHY THIS EXISTS. #267 emits every view's filter in a shape the filter editor
+ * refuses to open, because an editor that opens a filter of more than ten
+ * conditions rewrites it to ten on save, silently and permanently. The shape
+ * was measured on 2026-08-17 by caml-chain-depth-probe.js: a group in the
+ * RIGHT child position is refused, and the tautology Or[IsNotNull(ID),
+ * IsNull(ID)] both changes no rows (T1) and triggers the refusal (T2).
+ *
+ * The problem is that nothing can confirm it took. R1 measured
+ * SP.View.ReadOnlyView reading false on an editable view and on a refused one
+ * alike, and R2 measured a MERGE setting it true being accepted with HTTP 204
+ * and read back false. No server-side property records the state. So the
+ * deploy writes a protection it cannot verify, against this repository's rule
+ * that anything which writes must read back and verify.
+ *
+ * G1 and G2 found the one surface that does record it. The view edit page
+ * answers HTTP 200 to a same-origin fetch, and the refusal is served in the
+ * HTML rather than painted by script, so a fetch can see it. What G2 could not
+ * supply is a marker worth testing on, and its six candidates all failed:
+ *
+ *     complex filter      refused page only     English display text
+ *     cannot be edited    refused page only     English display text
+ *     ViewFilter          BOTH pages            does not discriminate
+ *     FilterOnFieldName   NEITHER page
+ *     onetidFilter        NEITHER page
+ *     FilterOpt           NEITHER page
+ *
+ * THE DECISION THIS PROBE SERVES, taken 2026-08-17: ship English-only, and
+ * where the marker is absent, warn that protection could not be verified
+ * rather than failing the deploy. The view is still emitted protected; it is
+ * the confirmation that is unavailable.
+ *
+ * THAT DECISION HAS A HOLE, AND F6 IS HOW IT GETS CLOSED. "Marker absent" is
+ * also what a genuinely UNPROTECTED view looks like. If the emitted shape ever
+ * stops triggering the refusal, through a SharePoint change or a regression in
+ * how conditions are folded, every view reports "could not verify" and the
+ * deploy stays quiet, with the real defect hidden inside the excuse. Reading
+ * the tenant's own culture separates the two cases: not English means cannot
+ * verify, English plus no marker means the protection did not take, and that
+ * one is a failure. F6 asks whether the culture is readable at all.
+ *
+ * THE SHAPE UNDER TEST IS THE ONE #267 WILL EMIT, which is not the shape G2
+ * measured. G2 compared a bare chain of twelve against And[IsNotNull(ID),
+ * Or[chain12]]. What #267 emits for the 138 single-clause views is
+ * And[leaf, tautology], a different tree, and a marker that appears for one
+ * shape has not been shown to appear for the other. F2 re-asks it here.
+ *
+ * WHAT IS OBSERVED AND WHAT IS DEPENDED ON. F3 to F5 REPORT what differs
+ * between the two pages. They assert no particular id, because the point is to
+ * find one rather than to confirm a guess, and a probe that asserted its guess
+ * would answer NOT ESTABLISHED the moment the guess was wrong and look
+ * identical to the page being unreadable. P1 and P2 are the ground truth the
+ * whole comparison rests on: an operator looks at both views and says which is
+ * which. Without them a difference between two pages is just a difference.
+ *
+ * TWO CONTROLS, and neither is optional.
+ *
+ *   F8 asks whether a page is even deterministic. SharePoint pages carry
+ *   request ids, tokens and timestamps. If two fetches of the SAME page differ,
+ *   then a difference between two different pages proves nothing, and F3 to F5
+ *   are noise being read as signal. It runs before them for that reason.
+ *
+ *   F7 fetches the edit page of a view with NO filter at all. An unfiltered
+ *   view is editable, so whatever predicate comes out of this must classify it
+ *   as unprotected. A predicate that calls it protected would report success
+ *   for every view the tool never filtered.
+ *
+ * S1 is the third dependency. The two compared views must mean the same thing,
+ * or their pages differ for a reason that has nothing to do with editability.
+ * It re-measures T1's inertness on this fixture rather than citing it.
+ *
+ * HOW TO RUN
+ *   1. Open the target site as somebody who can create a list.
+ *   2. Open a browser console on any page of that site.
+ *   3. Set CONFIRMED = true and ALLOW_WRITES = true, then paste this file.
+ *   4. Answer P1 and P2 by opening the two views named in their evidence and
+ *      looking at the filter section of each view's settings.
+ *   5. Copy the whole results block back verbatim.
+ *   6. Re-paste with CLEANUP_LIST set to the list named at the end.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+  };
+  const record = (id, question, outcome, evidence) => {
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, { question, outcome, evidence });
+    } else {
+      RESULTS.push({ id, question, outcome, evidence });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // PREFIX match, not equality. Outcomes carry their reason:
+    // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
+    // one of those as ANSWERED. A results block would then read "47 answered,
+    // 0 NOT established" with unresolved rows visible one screen above it,
+    // which is the summary lying by omission: the exact failure expect() was
+    // added to prevent, reintroduced at the other end of the same function.
+    const open = RESULTS.filter(
+      (r) => r.outcome.startsWith('NOT ESTABLISHED') || r.outcome.startsWith('SHORT'),
+    ).length;
+    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  // Printed before any gate: a stale clipboard and a fix that did not
+  // work produce identical transcripts otherwise.
+  log('INFO', 'probe revision 18f01ef7. Quote this when reporting results.');
+
+  // Set to the list named at the end of a previous run to drain and remove it.
+  // The probe leaves its list behind so P1 and P2 can be looked at, and a
+  // list with three views on it needs a way to be undone that is not deleting
+  // things by hand from Site contents.
+  const CLEANUP_LIST = '';
+
+  // Run-unique so the probe never touches a list it did not create.
+  const RUN = `${Date.now().toString(36)}`.slice(-6);
+  const LIST = `dbmlsp Probe ViewEdit ${RUN}`;
+  const COL = 'Tag';
+
+  // How many differing tokens to print per row. The pages are around half a
+  // megabyte each and an uncapped symmetric difference would bury the result.
+  // The COUNT is always reported, so a truncated list still says how much it
+  // is showing of how many.
+  const CAP = 40;
+
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+
+  const eq = (v) => `<Eq><FieldRef Name="${COL}"/><Value Type="Text">${v}</Value></Eq>`;
+
+  // The exact construct #267 emits. Every item has an ID, so the two halves
+  // partition the rows and the conjunct changes nothing; it is a group, so on
+  // the right it triggers the refusal. Both halves were measured by
+  // caml-chain-depth-probe.js T1 and T2, and S1 re-measures the first here.
+  const TAUTOLOGY = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
+    + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
+  const PLAIN_WHERE = eq('alpha');
+  const GUARDED_WHERE = `<And>${eq('alpha')}${TAUTOLOGY}</And>`;
+
+  const ROWS = [
+    { Title: 'R1', [COL]: 'alpha' },
+    { Title: 'R2', [COL]: 'beta' },
+    { Title: 'R3', [COL]: 'gamma' },
+  ];
+
+  expect('Q0', 'the fixture actually built');
+  expect('S1', 'does the guarded filter return the same rows as the plain one?');
+  expect('F1', 'can the view edit page be fetched for both views?');
+  expect('F8', 'CONTROL: is one page the same across two fetches?');
+  expect('F2', 'do the English refusal markers appear on the shape #267 emits?');
+  expect('F3', 'which id attributes are on the EDITABLE page and not the refused one?');
+  expect('F4', 'which id attributes are on the REFUSED page and not the editable one?');
+  expect('F5', 'which name attributes differ between the two pages?');
+  expect('F6', 'can the tenant UI culture be read, so non-English can be told apart?');
+  expect('F7', 'CONTROL: how does a view with NO filter compare?');
+  expect('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
+  expect('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
+
+  if (!CONFIRMED || !ALLOW_WRITES) {
+    log('INFO', 'PLAN. Nothing has been touched.');
+    log('INFO', `This probe would create the custom list '${LIST}' with a Text column`);
+    log('INFO', `'${COL}', seed ${ROWS.length} rows, create three views (one unfiltered, one`);
+    log('INFO', 'with a plain filter, one with that filter guarded by a tautology group),');
+    log('INFO', 'then fetch each view\'s edit page and report what differs between them.');
+    log('INFO', 'Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
+    report();
+    return;
+  }
+
+  if (CLEANUP_LIST) {
+    const path = `web/lists/getbytitle('${CLEANUP_LIST}')`;
+    const found = await spGet(path);
+    if (!found.ok) {
+      log('INFO', `CLEANUP_LIST: no list named '${CLEANUP_LIST}'. Nothing to do.`);
+      return;
+    }
+    const items = await spGet(`${path}/items?$select=Id&$top=5000`);
+    const rows = (!readFailed(items) && items.body.value) || [];
+    for (const row of rows) {
+      const d = await getDigest();
+      await spPost(`${path}/items(${row.Id})`, {}, d,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    const d2 = await getDigest();
+    const gone = await spPost(`${path}/recycle`, {}, d2);
+    log('INFO', gone.ok
+      ? `Drained ${rows.length} row(s) and recycled '${CLEANUP_LIST}'. Its views went with it.`
+      : `Drained ${rows.length} row(s) but recycle failed: HTTP ${gone.status} ${gone.text.slice(0, 160)}`);
+    return;
+  }
+
+  // ---- Fixture ----------------------------------------------------------
+  let digest = await getDigest();
+  const made = await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100, AllowContentTypes: false, ContentTypesEnabled: false,
+  }, digest);
+  if (!made.ok) {
+    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+      `the list could not be created: HTTP ${made.status} ${made.text.slice(0, 200)}. `
+      + 'Nothing was created, so there is nothing to clean up.');
+    report();
+    return;
+  }
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+
+  // A list that exists but has no usable column would answer every later
+  // question with an empty view, so give up here rather than measuring one.
+  const abandon = async (why) => {
+    log('FAIL', `ABANDONING: ${why}.`);
+    log('INFO', `Re-paste with CLEANUP_LIST = '${LIST}' to remove what was created.`);
+    report();
+  };
+
+  // The `__metadata` type and the verbose Content-Type are both required.
+  // caml-chain-depth-probe.js run 1 aborted with "The property 'Choices' does
+  // not exist on type 'SP.Field'" for sending one without the other.
+  digest = await getDigest();
+  const field = await spPost(`${listPath}/fields`, {
+    __metadata: { type: 'SP.FieldText' }, Title: COL, FieldTypeKind: 2, MaxLength: 64,
+  }, digest, VERBOSE);
+  if (!field.ok) {
+    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+      `the Text column could not be created: HTTP ${field.status} ${field.text.slice(0, 200)}.`);
+    await abandon('the column could not be created');
+    return;
+  }
+
+  const seedErrors = [];
+  for (const row of ROWS) {
+    digest = await getDigest();
+    const wrote = await spPost(`${listPath}/items`, row, digest);
+    if (!wrote.ok) seedErrors.push(`${row.Title}: HTTP ${wrote.status} ${wrote.text.slice(0, 120)}`);
+  }
+
+  // Read the fixture back rather than trusting the writes.
+  const seeded = await spGet(`${listPath}/items?$select=Title,${COL}&$orderby=Id&$top=100`);
+  const seenRows = (!readFailed(seeded) && seeded.body.value) || [];
+  const seenTitles = seenRows.map((r) => r.Title).sort();
+  const wantTitles = ROWS.map((r) => r.Title).sort();
+  const fixtureOk = seedErrors.length === 0
+    && JSON.stringify(seenTitles) === JSON.stringify(wantTitles);
+  record('Q0', 'the fixture actually built',
+    fixtureOk ? 'BUILT' : 'NOT ESTABLISHED',
+    `rows=${seenRows.length}/${ROWS.length}; seed errors=${JSON.stringify(seedErrors)}; `
+    + `tags=${JSON.stringify(seenRows.map((r) => r[COL]))}. Exactly one row holds 'alpha', so both `
+    + 'filtered views below must return exactly that row and any other count is the fixture, not the '
+    + 'question.');
+  if (!fixtureOk) {
+    await abandon('the fixture did not build');
+    return;
+  }
+
+  // ---- S1: the two views must MEAN the same thing -----------------------
+  // Without this the pages differ for a reason that has nothing to do with
+  // editability, and F3 to F5 attribute it to the wrong cause.
+  let queryShape = null;
+  const camlRows = async (where) => {
+    const viewXml = `<View><Query><Where>${where}</Where></Query><RowLimit>100</RowLimit></View>`;
+    const shapes = [
+      ['typed', { query: { __metadata: { type: 'SP.CamlQuery' }, ViewXml: viewXml } }, VERBOSE],
+      ['bare', { query: { ViewXml: viewXml } }, {}],
+    ];
+    for (const [name, payload, headers] of shapes) {
+      if (queryShape && queryShape !== name) continue;
+      digest = await getDigest();
+      const got = await spPost(`${listPath}/GetItems?$select=Title`, payload, digest, headers);
+      if (got.ok) {
+        queryShape = name;
+        return { ok: true, titles: (got.body?.value || []).map((i) => i.Title).sort(), error: null };
+      }
+      if (queryShape) return { ok: false, titles: null, error: `HTTP ${got.status} ${got.text.slice(0, 160)}` };
+    }
+    return { ok: false, titles: null, error: 'both CamlQuery payload shapes were refused' };
+  };
+
+  const plainRows = await camlRows(PLAIN_WHERE);
+  const guardedRows = await camlRows(GUARDED_WHERE);
+  const bothQueried = plainRows.ok && guardedRows.ok;
+  const sameMeaning = bothQueried
+    && JSON.stringify(plainRows.titles) === JSON.stringify(guardedRows.titles);
+  record('S1', 'does the guarded filter return the same rows as the plain one?',
+    !bothQueried ? 'NOT ESTABLISHED' : (sameMeaning ? 'INERT' : 'NOT INERT'),
+    !bothQueried
+      ? `plain: ${plainRows.error || 'ok'}; guarded: ${guardedRows.error || 'ok'}. Both are needed.`
+      : `plain -> ${JSON.stringify(plainRows.titles)}, guarded -> ${JSON.stringify(guardedRows.titles)}. `
+        + (sameMeaning
+          ? 'The tautology changes nothing on this fixture, so the two views mean the same thing and any '
+            + 'difference between their pages is about editability. This re-measures T1 rather than citing '
+            + 'it, on the exact tree #267 emits.'
+          : 'The tautology CHANGED the result, so #267 must not emit it and every row below is comparing '
+            + 'two different questions. Report this one first.'));
+
+  // ---- The three views --------------------------------------------------
+  const makeView = async (title, where) => {
+    const d = await getDigest();
+    const payload = { Title: title, RowLimit: 100 };
+    if (where) payload.ViewQuery = `<Where>${where}</Where>`;
+    const v = await spPost(`${listPath}/views`, payload, d);
+    return { ok: v.ok, status: v.status, text: v.text };
+  };
+  const viewErrors = [];
+  for (const [title, where] of [
+    ['Plain', PLAIN_WHERE], ['Guarded', GUARDED_WHERE], ['Unfiltered', null],
+  ]) {
+    const v = await makeView(title, where);
+    if (!v.ok) viewErrors.push(`${title}: HTTP ${v.status} ${v.text.slice(0, 120)}`);
+  }
+
+  const listMeta = await spGet(`${listPath}?$select=Id`);
+  const listGuid = (!readFailed(listMeta) && listMeta.body.Id) || null;
+  const viewList = await spGet(`${listPath}/views?$select=Id,Title,ServerRelativeUrl`);
+  const views = (!readFailed(viewList) && viewList.body.value) || [];
+  const viewBy = (t) => views.find((v) => v.Title === t) || null;
+  const plainView = viewBy('Plain');
+  const guardedView = viewBy('Guarded');
+  const unfilteredView = viewBy('Unfiltered');
+
+  // ---- F1: is the page reachable at all? --------------------------------
+  // A raw page fetch, not an _api call, so the harness helpers do not apply.
+  // same-origin credentials so it carries the operator's session, which is
+  // what a deploy running in the operator's browser would also have.
+  const fetchEditPage = async (viewId) => {
+    const url = `${WEB}/_layouts/15/ViewEdit.aspx?List=${encodeURIComponent(`{${listGuid}}`)}`
+      + `&View=${encodeURIComponent(`{${viewId}}`)}`;
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const text = await res.text();
+      return { ok: res.ok, status: res.status, length: text.length, text,
+        redirected: res.redirected, finalUrl: res.url, error: null };
+    } catch (err) {
+      return { ok: false, status: 0, length: 0, text: '', redirected: false,
+        finalUrl: null, error: String(err) };
+    }
+  };
+
+  const haveIds = !!listGuid && !!plainView && !!guardedView;
+  const pagePlain = haveIds ? await fetchEditPage(plainView.Id) : null;
+  const pageGuarded = haveIds ? await fetchEditPage(guardedView.Id) : null;
+  const bothFetched = !!pagePlain?.ok && !!pageGuarded?.ok;
+  record('F1', 'can the view edit page be fetched for both views?',
+    !haveIds ? 'NOT ESTABLISHED' : (bothFetched ? 'FETCHED' : 'REFUSED'),
+    !haveIds
+      ? `list id=${listGuid}, Plain=${plainView?.Id || null}, Guarded=${guardedView?.Id || null}. `
+        + `View creation errors: ${JSON.stringify(viewErrors)}.`
+      : `Plain: HTTP ${pagePlain.status}, ${pagePlain.length} chars`
+        + `${pagePlain.redirected ? `, REDIRECTED to ${pagePlain.finalUrl}` : ''}`
+        + `${pagePlain.error ? `, threw ${pagePlain.error}` : ''}. `
+        + `Guarded: HTTP ${pageGuarded.status}, ${pageGuarded.length} chars`
+        + `${pageGuarded.redirected ? `, REDIRECTED to ${pageGuarded.finalUrl}` : ''}`
+        + `${pageGuarded.error ? `, threw ${pageGuarded.error}` : ''}. `
+        + 'A redirect to a login or to the modern settings surface means the classic page is not what an '
+        + 'authenticated fetch gets, and this whole approach closes here rather than at F3.');
+
+  // ---- F8: is a page even deterministic? --------------------------------
+  // Runs before the diffs it validates. Two fetches of the SAME page, so any
+  // difference is markup that varies per request rather than per view.
+  const pagePlainAgain = bothFetched ? await fetchEditPage(plainView.Id) : null;
+  const attrValues = (text, attr) => {
+    const out = new Set();
+    for (const m of text.matchAll(new RegExp(`\\b${attr}="([^"]{1,120})"`, 'g'))) out.add(m[1]);
+    return out;
+  };
+  // Any token carrying one of these differs between the two pages by
+  // construction, because they are different views on the same list. Left in,
+  // they would fill the symmetric difference with noise that means nothing.
+  const guidBits = [listGuid, plainView?.Id, guardedView?.Id, unfilteredView?.Id]
+    .filter(Boolean)
+    .flatMap((g) => [String(g).toLowerCase(), String(g).replace(/-/g, '').toLowerCase()]);
+  const isNoise = (tok) => guidBits.some((g) => tok.toLowerCase().includes(g));
+  const minus = (a, b) => [...a].filter((x) => !b.has(x) && !isNoise(x)).sort();
+  const show = (list) => `${list.length} token(s)`
+    + (list.length ? `, showing ${Math.min(list.length, CAP)}: ${JSON.stringify(list.slice(0, CAP))}` : '');
+
+  const replayOk = !!pagePlainAgain?.ok;
+  const idsPlain = bothFetched ? attrValues(pagePlain.text, 'id') : new Set();
+  const idsPlain2 = replayOk ? attrValues(pagePlainAgain.text, 'id') : new Set();
+  const driftA = replayOk ? minus(idsPlain, idsPlain2) : [];
+  const driftB = replayOk ? minus(idsPlain2, idsPlain) : [];
+  const stable = replayOk && driftA.length === 0 && driftB.length === 0;
+  record('F8', 'CONTROL: is one page the same across two fetches?',
+    !replayOk ? 'NOT ESTABLISHED' : (stable ? 'STABLE' : 'VARIES'),
+    !replayOk
+      ? 'the second fetch of the plain view\'s page did not succeed, so nothing below has a control.'
+      : `lengths ${pagePlain.length} then ${pagePlainAgain.length}. ids only in the first: ${show(driftA)}. `
+        + `ids only in the second: ${show(driftB)}. `
+        + (stable
+          ? 'The id set is reproducible, so a difference between two DIFFERENT pages is attributable to '
+            + 'the pages rather than to the request.'
+          : 'The id set VARIES between fetches of the same page, so those ids cannot carry a predicate and '
+            + 'F3 and F4 must be read as including this much noise. Any candidate marker has to be checked '
+            + 'against this list first.'));
+
+  // ---- F2: the English markers, on the shape #267 emits ------------------
+  // G2 measured And[IsNotNull(ID), Or[chain12]]. #267 emits And[leaf,
+  // tautology] for the 138 single-clause views, which is a different tree.
+  const MARKERS = ['complex filter', 'cannot be edited', 'CannotEditFilter', 'ViewFilter'];
+  const markersOn = (page) => (page && page.ok
+    ? MARKERS.filter((m) => page.text.includes(m))
+    : null);
+  const mPlain = markersOn(pagePlain);
+  const mGuarded = markersOn(pageGuarded);
+  const discriminating = bothFetched
+    ? MARKERS.filter((m) => mGuarded.includes(m) && !mPlain.includes(m))
+    : [];
+  record('F2', 'do the English refusal markers appear on the shape #267 emits?',
+    !bothFetched ? 'NOT ESTABLISHED' : (discriminating.length ? 'PRESENT' : 'ABSENT'),
+    !bothFetched
+      ? 'both pages are needed to say whether a marker discriminates.'
+      : `editable page carries ${JSON.stringify(mPlain)}; guarded page carries ${JSON.stringify(mGuarded)}; `
+        + `discriminating: ${JSON.stringify(discriminating)}. `
+        + (discriminating.length
+          ? 'So the refusal is visible for the tree #267 actually emits, not only for the chain G2 measured. '
+            + 'These are still English display strings and cannot be the whole predicate; F6 is what makes '
+            + 'them safe to use.'
+          : 'NOTHING discriminates. Either this tree is not refused, which contradicts T2 and P2 will say '
+            + 'so, or the refusal is expressed differently for it. Read P2 before concluding either.'));
+
+  // ---- F3, F4, F5: what actually differs --------------------------------
+  // Reported, never asserted. The point is to find a candidate, and a probe
+  // that asserted one would answer NOT ESTABLISHED whenever the guess was
+  // wrong, which is indistinguishable from the page being unreadable.
+  const idsGuarded = bothFetched ? attrValues(pageGuarded.text, 'id') : new Set();
+  const onlyEditable = bothFetched ? minus(idsPlain, idsGuarded) : [];
+  const onlyRefused = bothFetched ? minus(idsGuarded, idsPlain) : [];
+  record('F3', 'which id attributes are on the EDITABLE page and not the refused one?',
+    !bothFetched ? 'NOT ESTABLISHED' : (onlyEditable.length ? 'FOUND' : 'NONE'),
+    !bothFetched
+      ? 'both pages are needed.'
+      : `${show(onlyEditable)}. These are the most promising direction: the refused page is the SMALLER of `
+        + `the two (${pageGuarded.length} against ${pagePlain.length} chars), so what is missing from it is `
+        + 'the filter editor itself. A predicate reading "this control is ABSENT, therefore protected" is '
+        + 'language-independent in a way the refusal sentence is not. Pick one, then confirm it over a '
+        + 'second run before anything relies on it.');
+  record('F4', 'which id attributes are on the REFUSED page and not the editable one?',
+    !bothFetched ? 'NOT ESTABLISHED' : (onlyRefused.length ? 'FOUND' : 'NONE'),
+    !bothFetched
+      ? 'both pages are needed.'
+      : `${show(onlyRefused)}. A container holding the refusal message would show up here, and its id would `
+        + 'be a positive test that is not English text.');
+
+  const namesPlain = bothFetched ? attrValues(pagePlain.text, 'name') : new Set();
+  const namesGuarded = bothFetched ? attrValues(pageGuarded.text, 'name') : new Set();
+  record('F5', 'which name attributes differ between the two pages?',
+    !bothFetched ? 'NOT ESTABLISHED' : 'REPORTED',
+    !bothFetched
+      ? 'both pages are needed.'
+      : `only on editable: ${show(minus(namesPlain, namesGuarded))}. `
+        + `only on refused: ${show(minus(namesGuarded, namesPlain))}. `
+        + 'Form control names survive markup changes better than generated ids do, so a candidate here is '
+        + 'worth more than one from F3.');
+
+  // ---- F6: can non-English be told apart from a failure? ----------------
+  // The decision is to ship English-only and warn when the marker is absent.
+  // That warning is only honest if "not English" can be distinguished from
+  // "the protection did not take", which look identical at the marker.
+  const ctxCulture = pageCtx.currentUICultureName || null;
+  const ctxLanguage = pageCtx.currentLanguage || null;
+  const langAttr = bothFetched
+    ? (pagePlain.text.match(/<html[^>]*\blang="([^"]{2,12})"/i) || [])[1] || null
+    : null;
+  const cultureReadable = !!ctxCulture || !!ctxLanguage || !!langAttr;
+  record('F6', 'can the tenant UI culture be read, so non-English can be told apart?',
+    !cultureReadable ? 'NOT ESTABLISHED' : 'READABLE',
+    `_spPageContextInfo.currentUICultureName=${JSON.stringify(ctxCulture)}, `
+    + `currentLanguage=${JSON.stringify(ctxLanguage)}, <html lang>=${JSON.stringify(langAttr)}. `
+    + (cultureReadable
+      ? 'So a deploy can tell an unverifiable tenant from a failed protection: a non-English culture warns, '
+        + 'and English with no marker is a FAILURE rather than a warning. Both readings need a second '
+        + 'observation on a non-English tenant before the branch is trusted, and there is no such tenant '
+        + 'here, so what this row establishes is only that the value EXISTS.'
+      : 'Nothing exposes the culture, so "marker absent" cannot be attributed and every unprotected view '
+        + 'would be excused as a language difference. The warning would then hide the defect it was meant '
+        + 'to report.'));
+
+  // ---- F7: the negative control -----------------------------------------
+  // An unfiltered view is editable. Any predicate that calls it protected
+  // would report success for every view this tool never filtered.
+  const pageUnfiltered = (haveIds && unfilteredView)
+    ? await fetchEditPage(unfilteredView.Id) : null;
+  const unfOk = !!pageUnfiltered?.ok;
+  record('F7', 'CONTROL: how does a view with NO filter compare?',
+    !unfOk ? 'NOT ESTABLISHED' : 'REPORTED',
+    !unfOk
+      ? `the unfiltered view's page was not fetched (view=${unfilteredView?.Id || null}).`
+      : `${pageUnfiltered.length} chars against ${pagePlain.length} editable and ${pageGuarded.length} `
+        + `refused. markers: ${JSON.stringify(markersOn(pageUnfiltered))}. `
+        + `ids it has that the refused page does not: ${show(minus(attrValues(pageUnfiltered.text, 'id'), idsGuarded))}. `
+        + 'It must read as UNPROTECTED under whatever predicate is chosen. If it looks like the refused '
+        + 'page, the predicate is detecting something other than the refusal.');
+
+  // ---- P1, P2: the ground truth ------------------------------------------
+  record('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
+    plainView ? 'MANUAL' : 'NOT ESTABLISHED',
+    plainView
+      ? `OPEN ${window.location.origin}${plainView.ServerRelativeUrl}, then its view settings, and report `
+        + 'ONE of: "filter pane" (editable) or "complex filter" (refused). This is expected to be editable, '
+        + 'and if it is not then the comparison has no editable side and every row above is measuring two '
+        + 'refused pages.'
+      : 'the Plain view was not created, so there is nothing to open.');
+  record('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)',
+    guardedView ? 'MANUAL' : 'NOT ESTABLISHED',
+    guardedView
+      ? `OPEN ${window.location.origin}${guardedView.ServerRelativeUrl}, then its view settings, and report `
+        + 'ONE of: "filter pane" or "complex filter". THIS IS THE ROW EVERYTHING ELSE RESTS ON. If it opens '
+        + 'the filter pane then the tautology does not protect this tree, F2 to F5 are comparing two '
+        + 'editable pages, and #267 must not emit this shape.'
+      : 'the Guarded view was not created, so there is nothing to open.');
+
+  report();
+  log('INFO', `KEEPING '${LIST}' so P1 and P2 can be looked at.`);
+  log('INFO', `When finished, re-paste this file with CLEANUP_LIST = '${LIST}' to drain and remove it.`);
+})();
