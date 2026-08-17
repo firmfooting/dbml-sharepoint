@@ -242,6 +242,13 @@
   expect('E2', 'EDITABILITY: a flat And chain of 12, homogeneous like E1 (manual: look)');
   expect('E3', 'EDITABILITY: And[Eq, Or[Eq,Eq]], a MIXED tree with no IsNull (manual: look)');
   expect('E4', 'EDITABILITY: a flat Or chain of 12 carrying one IsNull (manual: look)');
+  expect('P1', 'EDITABILITY: Or[And[Eq,Eq], Eq], the MIRROR of E3 (manual: look)');
+  expect('P2', 'EDITABILITY: the SMALLEST mixed tree, over 2 members (manual: look)');
+  expect('R1', 'does SP.View.ReadOnlyView report the complex-filter state?');
+  expect('R2', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?');
+  expect('R3', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)');
+  expect('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?');
+  expect('W2', 'is that wrapped view refused by the editor? (manual: look)');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -629,6 +636,122 @@
           + '"filter pane" (editable, so truncatable) or "complex filter" (refused, so protected). '
           + `The query is ${where.length} chars.`
         : `the view could not be created: HTTP ${v.status} ${v.text?.slice(0, 120)}`);
+  }
+
+  // === R1..R3: is there a SUPPORTED way to protect a view? ===============
+  // E3 established that a mixed tree is refused by the editor, which protects
+  // it. That is a side effect of a UI limitation, not a mechanism, and
+  // building on it means depending on SharePoint continuing to be unable to
+  // render something. Ask first whether a real mechanism exists.
+  //
+  // `SP.View.ReadOnlyView` is documented, and documented GET-ONLY:
+  //   https://learn.microsoft.com/dotnet/api/microsoft.sharepoint.client.view.readonlyview
+  // The signature is `public bool ReadOnlyView { get; }` with no setter. R1
+  // asks what it REPORTS, because if it already differs between an editable
+  // view and a complex-filter one then it is the flag behind the refusal and
+  // a deploy could read it back to CONFIRM protection. R2 asks whether REST
+  // accepts a write anyway: CSOM exposing no setter is not proof the REST
+  // endpoint refuses one.
+  //
+  // R2's READBACK is the whole answer, not its status code. Accepted-but-did-
+  // not-stick is the shape that matters here, because a property that takes a
+  // 204 and reads back false would let a build report a view as protected
+  // when it is not, which is worse than having no mechanism at all.
+  const viewFlags = await spGet(`${listPath}/views?$select=Title,ReadOnlyView`);
+  const flagOf = (title) => ((!readFailed(viewFlags) && viewFlags.body.value) || [])
+    .find((v) => v.Title === title)?.ReadOnlyView;
+  record('R1', 'does SP.View.ReadOnlyView report the complex-filter state?',
+    readFailed(viewFlags) ? 'NOT ESTABLISHED' : 'READ',
+    readFailed(viewFlags)
+      ? `the views could not be read with ReadOnlyView selected: HTTP ${viewFlags.status}. That is itself `
+        + 'informative: the property may not be exposed over REST at all.'
+      : `Shape E1 (editable) reads ReadOnlyView=${flagOf('Shape E1')}; Shape E3 (complex filter) reads `
+        + `${flagOf('Shape E3')}. If these DIFFER the property is the flag behind the refusal, and a deploy `
+        + 'could read it back to confirm a view is protected. If both are false the refusal is a UI '
+        + 'judgement with no server-side flag, and nothing can verify protection except looking.');
+
+  const roTitle = 'Shape R2 readonly';
+  let roDigest = await getDigest();
+  const roMade = await spPost(`${listPath}/views`, {
+    Title: roTitle, ViewQuery: `<Where>${chainOf(3)}</Where>`, RowLimit: 100,
+  }, roDigest);
+  roDigest = await getDigest();
+  const roSet = roMade.ok
+    ? await spPost(`${listPath}/views/getbytitle('${roTitle}')`,
+      { __metadata: { type: 'SP.View' }, ReadOnlyView: true }, roDigest,
+      { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' })
+    : null;
+  const roBack = roMade.ok
+    ? await spGet(`${listPath}/views/getbytitle('${roTitle}')?$select=ReadOnlyView`)
+    : null;
+  const roStuck = !!roBack && !readFailed(roBack) && roBack.body.ReadOnlyView === true;
+  record('R2', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?',
+    !roMade.ok
+      ? 'NOT ESTABLISHED'
+      : (roSet.ok ? (roStuck ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK') : 'REFUSED'),
+    !roMade.ok
+      ? `the view could not be created: HTTP ${roMade.status} ${roMade.text.slice(0, 160)}`
+      : `MERGE ReadOnlyView:true -> HTTP ${roSet.status}${roSet.ok ? '' : ` ${roSet.text.slice(0, 160)}`}; `
+        + `readback ReadOnlyView=${readFailed(roBack) ? 'UNREADABLE' : roBack.body.ReadOnlyView}. `
+        + 'REFUSED is a clean answer and closes this avenue. ACCEPTED AND STUCK is the prize. ACCEPTED BUT '
+        + 'DID NOT STICK is the dangerous one: a build could then call a view protected on a 204 alone.');
+  record('R3', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)',
+    roStuck ? 'MANUAL' : 'NOT REACHED',
+    roStuck
+      ? `ReadOnlyView stuck on '${roTitle}'. Open it and its view settings and report whether the filter `
+        + 'pane appears. A property that reads back true while the pane still edits is worse than nothing, '
+        + 'because it looks like protection.'
+      : 'ReadOnlyView did not stick, so there is nothing to look at. R2 carries the answer.');
+
+  // === P1, P2, W1, W2: pinning the trigger, and manufacturing it =========
+  // P1 mirrors E3. If Or[And[..],..] is ALSO refused then the trigger is any
+  // change of connective; if it is editable, the refusal is specific to an Or
+  // inside an And and the rule is narrower than E3 alone suggests.
+  //
+  // P2 asks for the SMALLEST mixed tree. A rule the tool has to satisfy on
+  // every emitted view wants its cheapest form, not its most elaborate.
+  //
+  // W1 and W2 are the manufactured wrapper. A pure any_of chain has no
+  // natural nesting, so protecting it means adding a conjunct that changes
+  // nothing. `IsNotNull(ID)` should hold for every row INCLUDING the empty
+  // one, because ID is the identity column and always present. "Should" is
+  // what this file exists to replace, so W1 COMPARES its rows against the
+  // twelve a bare chain returns rather than asserting the conjunct is inert.
+  const wrapped = `<And>${chainOf(12)}<IsNotNull><FieldRef Name="ID"/></IsNotNull></And>`;
+  const wRows = await camlRows(wrapped);
+  const wSame = wRows.ok && same(wRows.titles, expectedFor(12));
+  record('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?',
+    !wRows.ok ? 'QUERY REFUSED' : (wSame ? 'SAME ROWS' : 'DIFFERENT ROWS'),
+    !wRows.ok
+      ? `${wRows.error}`
+      : `${wRows.titles.length} row(s) against the 12 a bare chain of 12 returns. `
+        + (wSame
+          ? 'So the conjunct is inert on this fixture and the wrapper costs nothing semantically.'
+          : `Got ${JSON.stringify(wRows.titles)}. The conjunct is NOT inert, so this wrapper would change `
+            + 'what a filter means and must not be emitted.'));
+
+  const shapedMore = [
+    ['P1', 'Or[And[Eq,Eq], Eq], the MIRROR of E3',
+      `<Or><And>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</And>${eq(DISCRIMINATORS[2])}</Or>`],
+    ['P2', 'the SMALLEST mixed tree, over 2 members',
+      `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</Or></And>`],
+    ['W2', 'the manufactured wrapper from W1', wrapped],
+  ];
+  for (const [id, label, where] of shapedMore) {
+    const title = `Shape ${id}`;
+    const d = await getDigest();
+    const v = await spPost(`${listPath}/views`, {
+      Title: title, ViewQuery: `<Where>${where}</Where>`, RowLimit: 100,
+    }, d);
+    const listing = await spGet(`${listPath}/views?$select=Title,ServerRelativeUrl`);
+    const url = ((!readFailed(listing) && listing.body.value) || [])
+      .find((x) => x.Title === title)?.ServerRelativeUrl || null;
+    record(id, `EDITABILITY: ${label} (manual: look)`,
+      v.ok && url ? 'MANUAL' : 'NOT ESTABLISHED',
+      v.ok && url
+        ? `OPEN ${window.location.origin}${url}, then its view settings, and report ONE of: `
+          + '"filter pane" or "complex filter".'
+        : `the view could not be created: HTTP ${v.status} ${(v.text || '').slice(0, 120)}`);
   }
 
   // === U1 and U2: the third surface ======================================
