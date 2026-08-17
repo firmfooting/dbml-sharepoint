@@ -87,9 +87,22 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: COMPLETE, over five runs on 2026-08-17. Run 3 answered the depth
- * question: the machine surfaces evaluate a 40-disjunct chain correctly and
- * the filter editor does not.
+ * STATUS: the depth and editability questions are ANSWERED, over six runs on
+ * 2026-08-17. Four rows are still open: T1, T2, G1 and G2.
+ *
+ * Run 3 answered the depth question: the machine surfaces evaluate a
+ * 40-disjunct chain correctly and the filter editor does not.
+ *
+ * RUN 6 DIED BEFORE T1, T2, G1 AND G2, and how it died is worth keeping.
+ * Revision cc1a18b1 named `guarded` in the shape list that builds the
+ * editability views, several hundred lines above the const that declares it,
+ * so the run threw a temporal dead zone ReferenceError after every expensive
+ * row had already been paid for. `node --check` passes on that file: the
+ * reference is legal syntax and only fails when it executes. A probe that
+ * declares its inputs beside the rows that consume them cannot make this
+ * mistake, which is why T1 now measures immediately before the list that
+ * uses its result. The registered questions are what saved the run from
+ * reading as a pass: all four reported NOT ESTABLISHED rather than nothing.
  *
  * With one row per member, so that a chain over K members must return exactly
  * K rows, every depth from 1 to 40 returned ALL K. The ad-hoc query at a
@@ -773,6 +786,40 @@
           + 'the tool can protect a filter by emitting the group on the right.'
           : `Got ${JSON.stringify(fRows.titles)}, so flipping changed the meaning and this is not a free swap.`));
 
+  // === T1, T2: can a filter with NOTHING to group be protected? ==========
+  // T1 measures here; T2's view is built with the other shapes below, and
+  // only if T1 answers INERT.
+  // Measured against the shipped templates: of 192 filtered views, 138 carry
+  // ONE clause and 50 carry two. A single clause renders as a bare leaf with
+  // no And/Or at all, and two leaves render as And[leaf, leaf]. Neither can
+  // put a group in the right child however it is folded, so the associativity
+  // change that protects a 3-clause filter reaches 4 of 192 views. Protecting
+  // the rest needs a group manufactured out of nothing.
+  //
+  // The candidate is a TAUTOLOGY: Or[IsNotNull(ID), IsNull(ID)]. Every row is
+  // one or the other, so conjoining it should change no result, and it is a
+  // group, so on the right it should trigger the refusal. Both halves of that
+  // sentence say "should", which is why this row exists rather than a commit.
+  //
+  // T1 asks the semantic half against the strictest case, a single-clause
+  // filter, where any drift is visible immediately. W1 and W3 measured
+  // IsNotNull(ID) inert in a conjunction; NOBODY has measured this Or.
+  const tautology = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
+    + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
+  const guarded = `<And>${eq(DISCRIMINATORS[0])}${tautology}</And>`;
+  const tRows = await camlRows(guarded);
+  const tSame = tRows.ok && same(tRows.titles, expectedFor(1));
+  record('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?',
+    !tRows.ok ? 'QUERY REFUSED' : (tSame ? 'INERT' : 'NOT INERT'),
+    !tRows.ok
+      ? `${tRows.error}`
+      : `${tRows.titles.length} row(s) against the 1 a bare Eq returns: ${JSON.stringify(tRows.titles)}. `
+        + (tSame
+          ? 'The tautology changes nothing, so it is safe to conjoin. Whether it PROTECTS is T2.'
+          : 'It changed the result, so it is not a tautology here and must not be emitted. Note the empty '
+            + 'row in particular: if it is missing, IsNotNull/IsNull do not partition the rows the way this '
+            + 'assumed.'));
+
   const shapedMore = [
     ['P1', 'Or[And[Eq,Eq], Eq], the MIRROR of E3',
       `<Or><And>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</And>${eq(DISCRIMINATORS[2])}</Or>`],
@@ -780,8 +827,19 @@
       `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</Or></And>`],
     ['W2', 'the manufactured wrapper from W1, group on the LEFT', wrapped],
     ['W4', 'the wrapper FLIPPED, group on the RIGHT', flipped],
-    ['T2', 'a SINGLE clause guarded by a tautology group on the right', guarded],
   ];
+  // T2 is only worth looking at if T1 measured the group INERT. A view
+  // built on a group that changes the rows would answer a different
+  // question and read as a success.
+  if (tSame) {
+    shapedMore.push(
+      ['T2', 'a SINGLE clause guarded by a tautology group on the right', guarded]);
+  } else {
+    record('T2', 'does that tautology group protect a SINGLE-clause filter? (manual: look)',
+      'NOT ESTABLISHED',
+      'T1 did not measure the tautology inert, so there is nothing to look at: a view built on a '
+      + 'group that changes the rows would be reporting on a different filter.');
+  }
   for (const [id, label, where] of shapedMore) {
     const title = `Shape ${id}`;
     const d = await getDigest();
@@ -885,38 +943,6 @@
           : 'Identical length and identical candidate markers, so a page fetch cannot distinguish the two '
             + 'states and this avenue is closed. Protection would remain unverifiable, which is worth '
             + 'recording at the emission site rather than rediscovering.'));
-
-  // === T1, T2: can a filter with NOTHING to group be protected? ==========
-  // Measured against the shipped templates: of 192 filtered views, 138 carry
-  // ONE clause and 50 carry two. A single clause renders as a bare leaf with
-  // no And/Or at all, and two leaves render as And[leaf, leaf]. Neither can
-  // put a group in the right child however it is folded, so the associativity
-  // change that protects a 3-clause filter reaches 4 of 192 views. Protecting
-  // the rest needs a group manufactured out of nothing.
-  //
-  // The candidate is a TAUTOLOGY: Or[IsNotNull(ID), IsNull(ID)]. Every row is
-  // one or the other, so conjoining it should change no result, and it is a
-  // group, so on the right it should trigger the refusal. Both halves of that
-  // sentence say "should", which is why this row exists rather than a commit.
-  //
-  // T1 asks the semantic half against the strictest case, a single-clause
-  // filter, where any drift is visible immediately. W1 and W3 measured
-  // IsNotNull(ID) inert in a conjunction; NOBODY has measured this Or.
-  const tautology = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
-    + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
-  const guarded = `<And>${eq(DISCRIMINATORS[0])}${tautology}</And>`;
-  const tRows = await camlRows(guarded);
-  const tSame = tRows.ok && same(tRows.titles, expectedFor(1));
-  record('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?',
-    !tRows.ok ? 'QUERY REFUSED' : (tSame ? 'INERT' : 'NOT INERT'),
-    !tRows.ok
-      ? `${tRows.error}`
-      : `${tRows.titles.length} row(s) against the 1 a bare Eq returns: ${JSON.stringify(tRows.titles)}. `
-        + (tSame
-          ? 'The tautology changes nothing, so it is safe to conjoin. Whether it PROTECTS is T2.'
-          : 'It changed the result, so it is not a tautology here and must not be emitted. Note the empty '
-            + 'row in particular: if it is missing, IsNotNull/IsNull do not partition the rows the way this '
-            + 'assumed.'));
 
   // === U1 and U2: the third surface ======================================
   // Run 1 measured two surfaces and both agreed to 40. An operator then
