@@ -441,17 +441,18 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason:
-    // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
-    // one of those as ANSWERED. A results block would then read "47 answered,
-    // 0 NOT established" with unresolved rows visible one screen above it,
-    // which is the summary lying by omission: the exact failure expect() was
-    // added to prevent, reintroduced at the other end of the same function.
-    const open = RESULTS.filter(
-      (r) => r.outcome.startsWith('NOT ESTABLISHED') || r.outcome.startsWith('SHORT'),
+    // Prefix matching keeps qualified unresolved outcomes from counting as answers.
+    // MANUAL and NOT REACHED stay open until a person records the observation.
+    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
+    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
+    const open = RESULTS.filter(isOpen).length;
+    const waiting = RESULTS.filter(
+      (r) => r.outcome.startsWith('MANUAL') || r.outcome.startsWith('NOT REACHED'),
     ).length;
-    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
+    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');
     }
@@ -459,7 +460,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision b15302b7. Quote this when reporting results.');
+  log('INFO', 'probe revision ab5ec91d. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -643,6 +644,10 @@
     report();
   };
 
+  // Everything from here runs inside a try, so the result table prints even
+  // when a later row throws. Run 6 died on a ReferenceError several hundred
+  // lines in and the operator would otherwise have received no table at all.
+  try {
   // ---- Bootstrap ---------------------------------------------------------
   let digest = await getDigest();
   const made = await spPost('web/lists', {
@@ -1411,13 +1416,16 @@
   // nothing to look at once the list is gone. Earlier revisions recycled on a
   // clean run, which would have destroyed the evidence for the one surface
   // this probe cannot reach on its own.
-  // The summary prints HERE, after every row. It used to print immediately
-  // after the depth rows, so runs 7 and 8 reported 19 and 21 questions NOT
-  // ESTABLISHED that the log above had already answered, T3 among them.
-  report();
   log('INFO', `KEEPING '${LIST}' so U1 and U2 can be looked at.`);
   if (anyDisagreement) {
     log('INFO', 'At least one depth disagreed as well, so this run is worth opening either way.');
   }
   log('INFO', `When finished, re-paste this file with CLEANUP_LIST = '${LIST}' to drain and remove it.`);
+  } catch (err) {
+    log('FAIL', `The run threw and stopped here: ${err && err.message}`);
+    log('FAIL', 'Every row below it is unasked, and the table says so.');
+  } finally {
+    // After every row, and reached however the run ended.
+    report();
+  }
 })();

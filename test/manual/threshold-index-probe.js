@@ -495,17 +495,18 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason:
-    // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
-    // one of those as ANSWERED. A results block would then read "47 answered,
-    // 0 NOT established" with unresolved rows visible one screen above it,
-    // which is the summary lying by omission: the exact failure expect() was
-    // added to prevent, reintroduced at the other end of the same function.
-    const open = RESULTS.filter(
-      (r) => r.outcome.startsWith('NOT ESTABLISHED') || r.outcome.startsWith('SHORT'),
+    // Prefix matching keeps qualified unresolved outcomes from counting as answers.
+    // MANUAL and NOT REACHED stay open until a person records the observation.
+    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
+    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
+    const open = RESULTS.filter(isOpen).length;
+    const waiting = RESULTS.filter(
+      (r) => r.outcome.startsWith('MANUAL') || r.outcome.startsWith('NOT REACHED'),
     ).length;
-    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
+    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');
     }
@@ -517,7 +518,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision 673ac1a0. Quote this when reporting results.');
+  log('INFO', 'probe revision e03bf100. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
