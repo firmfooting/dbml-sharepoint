@@ -743,6 +743,25 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             f"'is_null'/'is_not_null' to test for a blank column",
             at,
         )
+    if leaf.op in _MEMBERSHIP_OPS and leaf.value == "":
+        # Same code as the text operators above, deliberately different
+        # reasoning, and the difference is the whole point. An empty needle
+        # matches EVERY value under `contains`; measured on a live tenant on
+        # 2026-08-17 (multi-value-probe.js C13), CAML <Eq> against an empty
+        # value on a MultiChoice matches NONE. So this one is not merely
+        # undiscriminating, it renders a view that is empty forever, builds
+        # clean and deploys clean. `_TEXT_OPS` does not cover `includes`, so
+        # nothing refused this until C13 said what the empty case does.
+        raise _reject(
+            FindingCode.CONDITION_NEEDLE_EMPTY,
+            target,
+            f"operator {leaf.op!r} needs a member name. Measured on 2026-08-17: "
+            f"CAML renders this as <Eq> against an empty value, which matches NO "
+            f"rows at all on a multi-value column, so this would build, deploy "
+            f"and show an empty view forever. Name a member, or use "
+            f"'is_null'/'is_not_null' to test for a blank column",
+            at,
+        )
     if leaf.op in ("in", "not_in") and not leaf.value:
         raise _reject(
             FindingCode.CONDITION_SET_EMPTY,

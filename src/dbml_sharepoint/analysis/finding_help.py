@@ -188,8 +188,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "show/hide."
     ),
     FindingCode.CONDITION_NEEDLE_EMPTY: (
-        "A substring operator was given an empty needle, which cannot "
-        "discriminate."
+        "A substring or membership operator was given an empty value, which "
+        "cannot discriminate. `contains` matches every value that way, and "
+        "`includes` on a multi-value column matches none, leaving a view "
+        "that is empty forever."
     ),
     FindingCode.CONDITION_NEGATION_UNRENDERABLE: (
         "Negating the rule, as `none_of` does, produces an operator the "

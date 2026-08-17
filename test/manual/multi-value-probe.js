@@ -120,25 +120,108 @@
  *   does clean up; it refuses to touch a list of that title that this probe
  *   cannot prove it created.
  *
- * STATUS: RUN ON A LIVE SITE 2026-08-10, NOT YET CLEANLY. Every run so far
- * has found a defect in this file rather than delivering a full sheet, and
- * each lesson is encoded at the line it applies to rather than here:
+ * STATUS: COMPLETE. Run 3 on 2026-08-17 delivered Q0=BUILT with no NOT
+ * ESTABLISHED rows and both manual rows looked at, which is the bar this
+ * file set for itself. Each lesson is encoded at the line it applies to
+ * rather than here:
  *
- *   run 1  answered fifteen of seventeen rows. M5 reported WRITE REFUSED
- *          because the readback selected no `Id`, so the re-write went to
- *          `items(undefined)`, a probe bug that reads in the transcript
- *          exactly like SharePoint refusing the re-write. It also
+ *   run 1  2026-08-10. Answered fifteen of seventeen rows. M5 reported WRITE
+ *          REFUSED because the readback selected no `Id`, so the re-write
+ *          went to `items(undefined)`, a probe bug that reads in the
+ *          transcript exactly like SharePoint refusing the re-write. It also
  *          established that <NotIncludes> returned no rows and that <Eq>
  *          behaves as "includes" rather than whole-set equality, which left
  *          negation with no working predicate and is why C9 and C10 exist.
- *   run 2  could not answer X1 at all: a POST to /fields does not put the
- *          column on the default view, so there was no Evt column to look
- *          at. Both fields are now added to the default view explicitly.
+ *   run 2  2026-08-10. Could not answer X1 at all: a POST to /fields does not
+ *          put the column on the default view, so there was no Evt column to
+ *          look at. Both fields are now added to the default view explicitly.
+ *   run 3  2026-08-17. Clean sheet. Verdicts below.
  *
- * So: every row below is still a question, not a finding. Nothing here has
- * been promoted into the type map, the condition grammar or a capability
- * specification, and nothing should be until a run completes with Q0=BUILT
- * and no NOT ESTABLISHED rows.
+ * WHAT RUN 3 MEASURED, in the order the rows appear:
+ *
+ *   M1  a MultiChoice is created by the deployer's existing plain POST to
+ *       /fields (HTTP 201). No AddFieldAsXml, so the create path needs no
+ *       new machinery, which was the main re-scope risk.
+ *   M2  reads back TypeAsString="MultiChoice", FieldTypeKind=15, Choices as
+ *       a Collection(Edm.String).
+ *   M3  the item write shape is collection-metadata,
+ *       {__metadata: {type: 'Collection(Edm.String)'}, results: [...]}. It
+ *       was the first shape tried and no other was needed.
+ *   M4  an EMPTY multi-value column reads back as `null`, not as an empty
+ *       array. Anything comparing or seeding one must handle null.
+ *   M5  an ITEM's member order survives a round trip: ["Edit","View"] was
+ *       written and read back in that order. This is NOT evidence about the
+ *       reconciler, which compares the FIELD's `Choices` collection, a
+ *       different surface that nothing here mutates. Whether creating or
+ *       updating `Choices` preserves its order is UNMEASURED, and
+ *       `sameDerivedValue` compares it index by index, so a later enum
+ *       reorder could still produce permanent drift.
+ *   I1  Indexed:true is REFUSED loudly ("This column type is not supported
+ *       for indexing"). Its control I1C set the same property on the
+ *       single-value Choice and it STUCK, so the refusal is a measurement
+ *       rather than a probe that cannot see an index. That control is the
+ *       one native-index-probe.js failed on 2026-07-30.
+ *   I2  EnforceUniqueValues is REFUSED both alone and alongside Indexed.
+ *   C1  <Eq> against a bare member behaves as INCLUDES: "View" returned both
+ *       the {View} row and the {View,Edit} row.
+ *   C2  <Eq> against a ";#"-delimited string matched the whole set: "View;#Edit"
+ *       returned only {View,Edit}. One operator, two semantics, selected by
+ *       whether the operand contains ";#". Whether the comparison is literal
+ *       or normalises the set first is NOT established: nobody sent
+ *       "Edit;#View", and the two readings are indistinguishable from this
+ *       one query. `analysis/conditions.py` already records that correctly.
+ *   C3  <Contains> works, though Learn documents it for Text/Note only.
+ *   C4  <Includes> returns NOTHING. It is documented for multi-value Lookup
+ *       and does not serve MultiChoice.
+ *   C5  <NotIncludes> returns NOTHING, for the same reason.
+ *   C6  <IsNull> returns the empty row, C7 <IsNotNull> the other three.
+ *   C9  <Neq> "View" returned {Edit,Export} AND the empty row. Unlike every
+ *       other CAML negative, it does not drop nulls.
+ *   C10 <Or><Neq><IsNull> returned the same rows as C9 alone, so the
+ *       deployer's existing neq wrapper composes but is redundant here.
+ *   C11 And over two membership tests returned only the row holding BOTH
+ *       members, so `all_of` over `includes` means "contains both".
+ *   C12 Or returned every row holding either, so `any_of` means "contains
+ *       either". Together these are why the grammar's advice to combine with
+ *       all_of/any_of composes the way an author would read it.
+ *   C13 an EMPTY-valued <Eq> returned NOTHING, so it is not a null test. The
+ *       UI pane's "is equal to" with a blank box must be rewriting itself to
+ *       <IsNull>. This produced a shipped fix: `includes ''` rendered exactly
+ *       this predicate, was refused by nothing, and would have built,
+ *       deployed and shown an empty view forever.
+ *   C14 stored a two-deep chain and got the same rows back, which is NOT
+ *       evidence that the chain survived. Its padding members are held by no
+ *       row, so dropping an arm during storage would leave the result
+ *       identical. The row reports NOT ESTABLISHED and says why.
+ *       test/manual/caml-chain-depth-probe.js settled the question with a
+ *       fixture that can detect it: one row per member, so the COUNT is the
+ *       measurement. No query-side ceiling at 40 disjuncts, and a filter
+ *       editor that truncates at ten.
+ *
+ *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
+ *       read it back unrewritten and the stored view lists exactly the two
+ *       rows C1 predicted.
+ *       Confirmed a third way after the run, by building the same filter in
+ *       the list UI's filter pane against a DIFFERENT member: "equals
+ *       Export" listed only {Edit,Export}, and "is not equal to Export"
+ *       listed {View}, {View,Edit} and the empty row. Membership and the
+ *       null-including negation therefore hold across REST GetItems, a
+ *       stored ViewQuery and the UI pane, which are three separate places a
+ *       predicate has to work and this repository does not assume one
+ *       proves another.
+ *   V1  a ValidationFormula referencing the column is REFUSED (HTTP 500).
+ *   F1  a calculated-column formula referencing it is REFUSED (HTTP 500).
+ *   X1  the severity formatter this repository generates does NOT render an
+ *       unstyled cell, which is what the specification predicted. Every
+ *       branch of its ==-against-a-quoted-string chain is false, including
+ *       on a single-member set, so every row falls through to the else and
+ *       renders a flat grey ms-bgColor-neutralLight chip. The empty row is
+ *       the exception: `@currentField == ''` is TRUE for it, so display:none
+ *       fires and it renders nothing. A uniform grey chip reads as an
+ *       assessed neutral verdict rather than as a broken cell, so it is the
+ *       worse of the two failures and the refusal must say so. The
+ *       formatter was read back and compared deep-equal before looking, so
+ *       this is the repository's own formatter and not some other one.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -200,6 +283,10 @@
   expect('C8', 'the winning predicate survives being STORED as a view ViewQuery (manual: look)');
   expect('C9', 'CAML <Neq> "View" returns which rows');
   expect('C10', 'CAML <Or><Neq><IsNull> "View" -- the deployer\'s own neq wrapper -- returns which rows');
+  expect('C11', 'CAML <And> over two membership tests: does it mean "contains BOTH"?');
+  expect('C12', 'CAML <Or> over two membership tests: does it mean "contains EITHER"?');
+  expect('C13', 'CAML <Eq> against an EMPTY value: is it itself a null test?');
+  expect('C14', 'a chained any_of predicate survives being STORED as a view ViewQuery');
   expect('V1', 'a ValidationFormula may reference a MultiChoice column');
   expect('F1', 'a calculated column formula may reference a MultiChoice column');
   expect('X1', 'the severity formatter this repo generates, on an array (manual: look)');
@@ -806,6 +893,35 @@
         `<Or><Neq>${ref}${textValue('View')}</Neq><IsNull>${ref}</IsNull></Or>`,
         'R3+R4 is what the deployer\'s existing `neq` wrapper is for -- it exists so a null row is not silently '
         + 'dropped by a negative. Anything else means the wrapper does not compose with a multi-value column'],
+      // C11..C13 added after run 3, from an operator building filters by hand
+      // in the list UI. Run 3 asked only about SINGLE predicates, so nothing
+      // here was measured, and the UI pane cannot answer them either: it does
+      // not show the CAML it generates, so "it worked in the pane" leaves the
+      // emitted spelling unknown. These ask in the one place the answer is
+      // usable, which is the XML the deployer would have to write.
+      //
+      // C11 and C12 are the interesting pair BECAUSE Eq means "includes"
+      // here. Composition over a set is not the same question as composition
+      // over a scalar, and a grammar that offers `and` on a multi-value
+      // column without measuring it would be guessing which of the two it is.
+      ['C11', 'And[Eq "View", Eq "Edit"]',
+        `<And><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Edit')}</Eq></And>`,
+        'R2 only means And over two membership tests is "contains BOTH", which is the useful reading and the '
+        + 'one the grammar would expose. Nothing means SharePoint cannot conjoin two predicates over the same '
+        + 'multi-value column at all, and `and` must be refused on one'],
+      ['C12', 'Or[Eq "View", Eq "Export"]',
+        `<Or><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Export')}</Eq></Or>`,
+        'R1+R2+R3 means Or is "contains EITHER". Anything narrower means Or does not distribute over membership '
+        + 'the way it does over a scalar equality, and the grammar must say so rather than emit it'],
+      // The operator reported that an "is equal to" with the value box left
+      // EMPTY returns the empty row, i.e. it behaves as a null test. That is
+      // the same ROWS as C6, but not necessarily the same PREDICATE: the pane
+      // may have rewritten it to <IsNull/>. Which one it is decides what the
+      // renderer must emit for `col eq ''`, so it is asked directly here.
+      ['C13', 'Eq "" (empty value)', `<Eq>${ref}${textValue('')}</Eq>`,
+        'R4 means an empty-valued Eq is itself a null test on this type, so `col eq \'\'` may render literally. '
+        + 'Nothing means only <IsNull> tests null and the renderer must translate, which is what the UI pane '
+        + 'appears to do. Either way C6 remains the operator the grammar should emit'],
     ];
     const camlRows = async (where) => {
       const r = await post(`${listPath}/GetItems?$select=Title`, {
@@ -817,6 +933,13 @@
       if (!r.ok) return { ok: false, error: `HTTP ${r.status} ${r.error}`, titles: null };
       return { ok: true, error: null, titles: (r.d?.results || []).map((i) => i.Title).sort() };
     };
+    // Only a SINGLE predicate may be the membership winner. A compound can
+    // reach the same two rows by FAILING: if <And> ignored its second arm,
+    // C11 would return exactly R1+R2 and be crowned, C8 would then store a
+    // broken compound, and the verdict line would report it as
+    // caml_membership. C1 wins first in practice; this makes that structural
+    // rather than a consequence of array order.
+    const MEMBERSHIP_CANDIDATES = new Set(['C1', 'C2', 'C3', 'C4', 'C5']);
     let membershipWinner = null;
     for (const [id, label, where, meaning] of predicates) {
       const got = await camlRows(where);
@@ -835,7 +958,7 @@
       // Remember whichever membership predicate returned BOTH View-bearing
       // rows, for the stored-view confirmation in C8. Observed, not asserted:
       // if none does, C8 records that there was nothing to confirm.
-      if (!membershipWinner && got.ok
+      if (!membershipWinner && got.ok && MEMBERSHIP_CANDIDATES.has(id)
           && got.titles.length === 2
           && got.titles.includes(ROWS[0].title) && got.titles.includes(ROWS[1].title)) {
         membershipWinner = { id, label, where };
@@ -897,6 +1020,82 @@
         + 'That is itself the finding: the condition grammar would have no membership operator to render.',
       );
     }
+
+    // === C14: does a CHAINED predicate survive storage? ====================
+    // C8 stored ONE <Eq>. But <Includes> returned nothing here, so this
+    // grammar has no set operator and tells authors to build one out of
+    // all_of/any_of instead -- the refusal message says so in as many words.
+    // CAML's And and Or are strictly binary (documented), so any_of over K
+    // members emits a left-folded tree K-1 deep, and NOTHING measures how
+    // deep that may go. Learn asserts "the server supports unlimited
+    // complicated queries" on both the And and the Or pages, which is a claim
+    // about a server, not about what SharePoint Online's view save does to
+    // the XML on the way past.
+    //
+    // That is the risk worth asking about, and it is not the depth ceiling.
+    // A view rewritten on save into something that still parses and returns
+    // the wrong rows is silent, and it is exactly what datetime-sentinel-
+    // probe.js caught in the other direction. So: store a COMPOUND predicate,
+    // read the XML back, and replay what SharePoint stored rather than what
+    // was sent. If the two disagree about rows, storage changed the meaning.
+    //
+    // The depth CEILING needs a wider enum than this fixture's five members
+    // (four is the deepest honest chain here, nowhere near any plausible
+    // limit) and is tracked by #266. This row asks the cheap half.
+    const CHAIN_VIEW = 'Probe chained membership';
+    // Padded with two members no row holds, so the expected rows are C1's and
+    // only the DEPTH differs. A chain that changes the answer changes it
+    // because it is a chain, not because the predicate means something else.
+    const chainWhere = `<Or><Or><Eq>${ref}${textValue('View')}</Eq>`
+      + `<Eq>${ref}${textValue('Delete')}</Eq></Or>`
+      + `<Eq>${ref}${textValue('PermissionChange')}</Eq></Or>`;
+    const chainSent = await camlRows(chainWhere);
+    const chainView = await post(`${listPath}/views`, {
+      __metadata: { type: 'SP.View' },
+      Title: CHAIN_VIEW,
+      ViewQuery: `<Where>${chainWhere}</Where>`,
+      RowLimit: 50,
+    });
+    const chainViews = chainView.ok
+      ? await get(`${listPath}/views?$select=Title,ViewQuery`)
+      : null;
+    const chainStored = (chainViews?.d?.results || []).find((v) => v.Title === CHAIN_VIEW);
+    // Replay what was STORED, not what was sent. Same helper, so a difference
+    // in rows can only come from a difference in the XML.
+    const chainReplay = chainStored
+      ? await camlRows(String(chainStored.ViewQuery).replace(/^<Where>|<\/Where>$/g, ''))
+      : null;
+    // BOTH queries must have succeeded before either verdict is reachable. A
+    // refused or throttled request makes the row sets differ trivially, and
+    // reporting that as CHANGED would attribute an unreadable observation to a
+    // semantic rewrite and tell the grammar to refuse chaining.
+    const chainQueriesOk = chainSent.ok && !!chainReplay && chainReplay.ok;
+    const sameRows = chainQueriesOk
+      && JSON.stringify(chainSent.titles) === JSON.stringify(chainReplay.titles);
+    record(
+      'C14',
+      'a chained any_of predicate survives being STORED as a view ViewQuery',
+      !chainView.ok || !chainStored || !chainQueriesOk || !camlFixtureUsable
+        ? 'NOT ESTABLISHED'
+        : (sameRows ? 'NOT ESTABLISHED (arms not observable)' : 'CHANGED'),
+      !chainView.ok || !chainStored
+        ? `the view could not be created or read back: ${chainView.ok
+          ? 'not found after create'
+          : `HTTP ${chainView.status} ${chainView.error}`}. Nothing is established about chaining.`
+        : `sent ${show(chainWhere)} and got ${show(chainSent.titles)}; SharePoint stored `
+          + `${show(chainStored.ViewQuery)} which replays to ${show(chainReplay?.titles)}. `
+          + (sameRows
+            ? 'Same rows. That is WEAKER than it looks and the outcome says so. The padding members '
+              + 'Delete and PermissionChange are held by no row, so dropping either arm during storage '
+              + 'leaves the result identical: this row cannot tell a surviving chain from a truncated '
+              + 'one. It establishes only that the view stored and still answers. Nor does it speak to '
+              + 'all_of: only a nested Or was stored here. test/manual/caml-chain-depth-probe.js seeds '
+              + 'one row per member so the COUNT is the measurement, and it is what actually settled '
+              + 'this: no query-side ceiling to 40 disjuncts, and a filter editor that truncates at ten.'
+            : 'DIFFERENT rows. Storage changed what the predicate means, so the grammar must refuse '
+              + 'chained membership on a multi-value column rather than emit a view that quietly '
+              + 'answers a different question.'),
+    );
 
     // === V1: validation formula operand ====================================
     // mapping.md already records that validation formulas refuse Lookup and
