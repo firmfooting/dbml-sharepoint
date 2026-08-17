@@ -942,8 +942,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         at_hide = Location(
             Section.ENTITIES, entity=entity_name, sub="hide_from_all_items",
         )
-        # The kind guard mirrors generators/jsgen.py:597, which builds All Items
-        # for everything except a DocumentLibrary. Counting one here would
+        # The kind guard mirrors the `entity.kind != "DocumentLibrary"` guard in
+        # generators/jsgen.py, which builds All Items for everything except a
+        # DocumentLibrary. Counting one here would
         # refuse a schema over a view the generator never creates. An entity
         # with no table is already reported by _structure; a second message
         # would not help.
@@ -980,7 +981,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # left the other's callers unaffected, which is how that drift went
         # undetected; see `all_items_rendered`'s docstring in joins.py and
         # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
-        # test/test_validator.py.
+        # test/test_validator_joins.py.
         rendered = all_items_rendered(table, xcols)
         bearing = join_bearing_columns(table, xcols)
         shown_joins = all_items_joining_fields(table, entity, xcols)

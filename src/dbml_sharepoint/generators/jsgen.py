@@ -634,7 +634,7 @@ def build_schema_json(
             #
             # The validator counts this same view, but from its OWN derivation
             # (analysis/joins.py::all_items_joining_fields, called from the
-            # entity loop at analysis/checks/_views.py:815), NOT this code.
+            # entity loop in analysis/checks/_views.py::check), NOT this code.
             # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
             # hide_from_all_items are all genuinely shared via
             # analysis/joins.py; the actual FIELD LIST this block builds is

@@ -1,9 +1,9 @@
 # src/dbml_sharepoint/analysis/column_refs.py
 """Column names written inside a calculated formula or a formatter JSON.
 
-Read by four rule modules under `analysis/checks/` and by
-`generators/jsgen.py`, which orders Phase-1 field creation by a formula's
-references, so it lives outside both packages. It is not named
+Read by rule modules under `analysis/checks/` and by `generators/jsgen.py`,
+which orders Phase-1 field creation by a formula's references, so it lives
+outside both packages. It is not named
 `references.py`, because a ref in this codebase is already a DBML foreign
 key.
 

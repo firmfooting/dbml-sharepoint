@@ -1,6 +1,6 @@
 ---
 title: ordering
-sidebar_position: 11
+sidebar_position: 12
 ---
 
 # `dbml_sharepoint.analysis.ordering`

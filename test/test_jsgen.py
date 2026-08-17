@@ -3110,8 +3110,8 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
       the hidden-set subtraction does real work on both sides, and is not
       just exercised by the generator's own tests above.
     - `Notes`, a plain `nvarchar`.
-    - The auto-increment `Id`, which the validator drops at
-      validator.py:136-144 while SharePoint supplies `ID`.
+    - The auto-increment `Id`, which `analysis.rendered_columns.rendered_columns`
+      drops while SharePoint supplies `ID`.
 
     TWO assertions, not one, because a single hand-recomputed expectation
     re-types the validator's arithmetic instead of calling it, the exact
@@ -3165,7 +3165,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         """,
     )
     # A cross-site column needs an extension that expands it, or
-    # build_schema_json raises (jsgen.py:387-392). _CrossSiteExpansion is
+    # build_schema_json raises (jsgen.py:411-415). _CrossSiteExpansion is
     # already defined at test/test_jsgen.py:94.
     schema_json = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),

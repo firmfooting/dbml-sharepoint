@@ -130,7 +130,8 @@ DERIVED_BUILT_IN_LEVELS: frozenset[str] = frozenset({
 #: What a `list_permissions` assignment may name without declaring it.
 ASSIGNABLE_BUILT_IN_LEVELS: frozenset[str] = BUILT_IN_LEVELS - DERIVED_BUILT_IN_LEVELS
 
-# Built-in SP groups a declared group's owner_group may reference.
+# Built-in SP groups a group name may reference: an owner_group, or the
+# principal on a list_permissions assignment.
 BUILTIN_SP_GROUPS = frozenset({
     "Site Owners", "Site Members", "Site Visitors",
     "Owners", "Members", "Visitors",

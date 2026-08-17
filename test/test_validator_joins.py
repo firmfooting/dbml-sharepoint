@@ -199,7 +199,7 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none() -> None:
 def test_a_real_ref_column_costs_a_join() -> None:
     """The control for the cross-site test below. The schema is identical; the
     view must name the expanded pair rather than the column, because a cross-site
-    column never exists under its own name (validator.py:145-147). The COUNT is
+    column never exists under its own name (see `rendered_columns`). The COUNT is
     what is being compared: 13 here, 12 there."""
     twelve = [f"P{n}" for n in range(1, 13)]
     schema, bundle = _join_inputs(
@@ -374,14 +374,15 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling() -> None:
 def test_a_document_library_gets_no_all_items_join_finding() -> None:
     """The `kind == "DocumentLibrary"` half of the loop guard, PAIRED.
 
-    `jsgen.py:597` builds `All Items` only when the kind is not
-    `DocumentLibrary`, so counting one here would refuse a schema over a view
+    `jsgen.py` builds `All Items` only under its `entity.kind !=
+    "DocumentLibrary"` guard, so counting one here would refuse a schema over a view
     the generator never creates, the exact validator/generator disagreement
     this module exists to avoid. Deleting the clause must turn a test red, and
     only the pair does that: the count alone proves nothing, because the same
     13 columns are what the List case is asserted on.
 
-    `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
+    `kind: DocumentLibrary` is separately a `DOCUMENT_LIBRARY_UNSUPPORTED` error
+    from `_structure.py`,
     so this build is already red for another reason. That is not a licence to
     skip the guard. It is why the guard is easy to delete unnoticed."""
     schema, bundle = _join_inputs(_persons(13), kind="DocumentLibrary")

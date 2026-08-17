@@ -1,6 +1,6 @@
 ---
 title: limits
-sidebar_position: 10
+sidebar_position: 11
 ---
 
 # `dbml_sharepoint.analysis.limits`

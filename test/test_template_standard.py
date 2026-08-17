@@ -916,7 +916,7 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
     - the bug it aimed at is already caught statically and better. A map key
       that is not a member of the column's enum (the stale key a rename
       leaves behind, which is how these maps actually break) is a build
-      error today (analysis/checks/_formatting.py:103, and :120 for nested
+      error today (analysis/checks/_formatting.py:198, and :217 for nested
       color_by maps).
 
     Unexercised tokens are still PRINTED, so the information survives the

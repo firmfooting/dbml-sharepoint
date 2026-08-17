@@ -1,15 +1,17 @@
 # src/dbml_sharepoint/analysis/rendered_columns.py
 """Which columns a provisioned SharePoint list actually has.
 
-Seven modules read `rendered_columns`, and
-`analysis/joins.py` (which a generator may import, unlike `analysis/checks/`)
-is one of them, so this is a shared fact rather than a private helper of the
-orchestrator that happened to define it first. `checks/_views.py:965-988`
-records what a second copy of the same three-term union cost: a dropped term
-left the other spelling's callers unaffected and nothing compared them.
+Every check family reads `rendered_columns`, and so does `analysis/joins.py`
+(which a generator may import, unlike `analysis/checks/`), so this is a shared
+fact rather than a private helper of the orchestrator that happened to define
+it first. The comment above `rendered = all_items_rendered(...)` in
+`checks/_views.py` records what a second copy of the same three-term union
+cost: a dropped term left the other spelling's callers unaffected and nothing
+compared them.
 
-Nothing here may import from `analysis/checks/` or `analysis/validator.py`.
-Both import this, so an edge back would move the cycle rather than close it.
+Nothing here may import from `analysis/checks/`, which imports this, or from
+`analysis/validator.py`, which imports `analysis/checks/`. An edge back would
+move the cycle rather than close it.
 """
 
 from dbml_sharepoint.model.parser import Table
@@ -29,12 +31,11 @@ SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 # attached), and the system columns are not DBML columns, so they are
 # never in the field list at all. A declaration on any of them validated
 # clean, the manifest reported "(none declared)", and the deploy wrote
-# nothing: an asserted, validated, silently unenforced guarantee, which is
-# the worst shape a data-quality rule can take.
+# nothing: an asserted, validated, silently unenforced guarantee.
 #
 # Supporting Title properly means threading the formulas through the patch
-# path, a larger change than these sections warrant. Fail closed instead,
-# and say why.
+# path, a larger change than the calculated-formula and formatter sections
+# warrant. Fail closed instead, and say why.
 UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS
 
 
@@ -65,7 +66,8 @@ def rendered_columns(table: Table, cross_site_cols: set[str]) -> set[str]:
             # and Microsoft documents it nowhere; the 2026-07-30 native-index
             # probe found SP.Field.Indexed FALSE for ID on every list it read.
             # Nothing branches on the claim, which is why it was easy to leave
-            # standing unexamined. See analysis/checks/_views.py.
+            # standing unexamined. See the native-index comment in
+            # analysis/checks/_views.py.
             continue
         if col.name in cross_site_cols:
             rendered.add(col.name + "Abbreviation")

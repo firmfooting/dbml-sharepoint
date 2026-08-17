@@ -153,7 +153,7 @@ def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[s
     lists. An entity that DOES declare `Title` masks this: `rendered_columns`
     already contains it with no union applied, which is exactly what let this
     union go silently unread by one of its two former call sites. See
-    `test/test_validator.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
+    `test/test_validator_joins.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
     for the fixture shaped to catch that.
 
     ONE place this set is written down, on purpose: `all_items_joining_fields`

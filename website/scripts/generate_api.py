@@ -45,6 +45,7 @@ sys.path.insert(0, str(SRC))
 MODULES: list[tuple[str, str]] = [
     ("model.parser", "parse DBML into the in-memory schema"),
     ("model.mapping_loader", "load mapping.yaml and referenced config"),
+    ("model.mapping_types", "the mapping vocabulary an extension hook receives"),
     ("model.release", "load release.yaml provenance"),
     ("model.env_file", "parse dbml-sharepoint.env build defaults"),
     ("model.conditions", "the shared condition grammar's types and parser"),

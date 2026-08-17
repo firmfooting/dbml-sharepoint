@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/extension.py
 """The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.
-Validation issues are reported with the validator Finding type."""
+Validation issues are reported with `analysis.findings.Finding`."""
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path

@@ -1,6 +1,6 @@
 ---
 title: extension
-sidebar_position: 26
+sidebar_position: 27
 ---
 
 # `dbml_sharepoint.extension`
@@ -9,7 +9,7 @@ sidebar_position: 26
 
 The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.
-Validation issues are reported with the validator Finding type.
+Validation issues are reported with `analysis.findings.Finding`.
 
 ### `SiteContext`
 

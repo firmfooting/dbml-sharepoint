@@ -1,6 +1,6 @@
 ---
 title: rendered_columns
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # `dbml_sharepoint.analysis.rendered_columns`
@@ -9,15 +9,17 @@ sidebar_position: 8
 
 Which columns a provisioned SharePoint list actually has.
 
-Seven modules read `rendered_columns`, and
-`analysis/joins.py` (which a generator may import, unlike `analysis/checks/`)
-is one of them, so this is a shared fact rather than a private helper of the
-orchestrator that happened to define it first. `checks/_views.py:965-988`
-records what a second copy of the same three-term union cost: a dropped term
-left the other spelling's callers unaffected and nothing compared them.
+Every check family reads `rendered_columns`, and so does `analysis/joins.py`
+(which a generator may import, unlike `analysis/checks/`), so this is a shared
+fact rather than a private helper of the orchestrator that happened to define
+it first. The comment above `rendered = all_items_rendered(...)` in
+`checks/_views.py` records what a second copy of the same three-term union
+cost: a dropped term left the other spelling's callers unaffected and nothing
+compared them.
 
-Nothing here may import from `analysis/checks/` or `analysis/validator.py`.
-Both import this, so an edge back would move the cycle rather than close it.
+Nothing here may import from `analysis/checks/`, which imports this, or from
+`analysis/validator.py`, which imports `analysis/checks/`. An edge back would
+move the cycle rather than close it.
 
 ### `SYSTEM_COLUMNS`
 
