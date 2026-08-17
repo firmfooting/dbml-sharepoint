@@ -2,9 +2,14 @@
 /**
  * dbml-sharepoint PROBE: CAN A DEPLOY SEE THAT A VIEW IS PROTECTED?
  *
- * #269. Writes a small list, three rows and three views, then reads two
+ * #269. Writes a small list, three rows and three views, then reads three
  * SharePoint pages. Everything it creates is named after this run and is
  * removed by re-pasting with CLEANUP_LIST set.
+ *
+ * ANSWERED, over two runs on 2026-08-17. Yes: a view is protected when its
+ * edit page returns HTTP 200, carries a sentinel, and does not carry
+ * name="FieldPicker1". Re-run it when SharePoint changes that page, because
+ * the check it supports is built on markup Microsoft documents nowhere.
  *
  * WHY THIS EXISTS. #267 emits every view's filter in a shape the filter editor
  * refuses to open, because an editor that opens a filter of more than ten
@@ -139,6 +144,48 @@
  * tenant to hand, and the whole point of an absence test on a control NAME is
  * that it should not care, so this is a claim to confirm rather than one to
  * rely on.
+ *
+ * RUN 2, 2026-08-17, revision aa5eaae6, same site, after the candidate rows
+ * were added. Seventeen questions, SEVENTEEN answered, and the predicate is
+ * settled:
+ *
+ *     A view is PROTECTED when its edit page comes back HTTP 200, carries a
+ *     sentinel, and does NOT carry name="FieldPicker1".
+ *
+ * Every clause of that is measured and none of it reads display text.
+ *
+ *   C1 USABLE. FieldPicker1 is on the editable page, on the UNFILTERED page,
+ *      and absent from the refused one. The unfiltered page is the half that
+ *      matters: a control that merely tracked "this view has a filter" would
+ *      satisfy a two-page comparison and then report every plain list view as
+ *      protected.
+ *   C2 AGREE. OperatorPicker1 gives the same verdict, so the result does not
+ *      rest on one control name surviving a SharePoint update. They are
+ *      independent controls, and disagreement between them is the signal that
+ *      the markup has moved.
+ *   C3 STABLE. All three pages re-fetched, same verdict. Run 1 measured a
+ *      page differing from itself, so this is not a formality.
+ *   C5 FOUND. `ViewFilter`, `ViewEdit` and `ctl00` are all on all three
+ *      pages, so the check can require evidence the page ARRIVED before
+ *      believing something is missing from it. Without that, a login
+ *      redirect, an error page or a truncated response all lack FieldPicker1
+ *      and read as protected, and the deploy reports success for a view it
+ *      never saw.
+ *
+ * C1 IS ALSO EVIDENCE THE PAGE IS REFUSED, which is worth noticing because it
+ * makes the run self-checking. If the guarded view had been editable its page
+ * would carry FieldPicker1 and C1 would have answered NOT USABLE. So the two
+ * halves cannot both be wrong in the same direction. P1 and P2 were confirmed
+ * by an operator on run 1 against an identically constructed fixture; they
+ * were not re-observed on run 2's list.
+ *
+ * C4: TEN SLOTS, and this is the second observation the ceiling wanted. The
+ * editable page carries exactly ten FieldPicker and ten OperatorPicker
+ * controls, matching the ten U2 established by an operator counting rows and
+ * watching a save truncate forty conditions to that number. The editor has
+ * ten condition slots, which is the mechanism rather than a coincidence.
+ * Still ONE tenant: a second tenant, not a second run, is what would make ten
+ * a constant worth asserting in limits.py.
  *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
