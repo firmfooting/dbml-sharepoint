@@ -60,6 +60,21 @@
  * truncated tree, a flattened tree, and a tree that matches everything all
  * parse and all answer 200. Rows are compared, never status codes.
  *
+ * WHAT MULTI-VALUE-PROBE.JS ALREADY SETTLED, so this probe does not re-ask
+ * it. Run 4 on 2026-08-17 answered C11 through C14 against the five-member
+ * fixture: <And> over two membership tests means "contains BOTH", <Or> means
+ * "contains EITHER", and a two-deep Or chain SURVIVES being stored as a
+ * ViewQuery and replays to the same rows. So chaining works and composes as
+ * an author would read it. What is open is only how far it goes, which is why
+ * this probe starts where that one stopped.
+ *
+ * That run also measured the cosmetic rewriting this probe has to allow for:
+ * `<FieldRef Name="Evt"/>` was stored as `<FieldRef Name="Evt" />`. A raw
+ * string comparison would call every depth REWRITTEN, so whitespace is
+ * normalised and REWRITTEN is reserved for a tree that changed shape. The
+ * <Or> count is compared as well, because flattening and truncation both
+ * change it and both can leave the rows looking right at shallow depth.
+ *
  * STATUS: NEVER RUN. Every row below is a question.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
@@ -302,7 +317,20 @@
       return { outcome: 'NOT ESTABLISHED', evidence: `${k} disjunct(s): the view was created but could not be read back.` };
     }
     const storedXml = String(back.ViewQuery || '');
-    const identical = storedXml === `<Where>${where}</Where>`;
+    // SharePoint rewrites the XML COSMETICALLY on save, measured 2026-08-17
+    // by multi-value-probe.js C14: `<FieldRef Name="Evt"/>` came back as
+    // `<FieldRef Name="Evt" />`. A raw string comparison is therefore false
+    // on every row, and "REWRITTEN" would be printed for a run where nothing
+    // structural happened, which is a signal that has been spent before it is
+    // read. Whitespace is normalised so REWRITTEN means the tree changed.
+    const normXml = (x) => x.replace(/\s*\/>/g, '/>').replace(/>\s+</g, '><').trim();
+    const identical = normXml(storedXml) === normXml(`<Where>${where}</Where>`);
+    // The structural check that actually matters. Flattening and truncation
+    // are the two ways a deep tree can come back meaning something else, and
+    // both change how many <Or> elements survive. Counting them names the
+    // failure even on a row whose rows happen to still agree.
+    const orsSent = (where.match(/<Or>/g) || []).length;
+    const orsStored = (storedXml.match(/<Or>/g) || []).length;
     const replay = await camlRows(storedXml.replace(/^<Where>/, '').replace(/<\/Where>$/, ''));
     if (!replay.ok) {
       return { outcome: 'NOT ESTABLISHED',
@@ -312,8 +340,10 @@
     if (!ok) anyDisagreement = true;
     return {
       outcome: ok ? (identical ? 'SURVIVED BYTE-IDENTICAL' : 'SURVIVED, REWRITTEN') : 'DIFFERENT ROWS',
-      evidence: `${k} disjunct(s); sent ${where.length} chars, stored ${storedXml.length} chars, `
-        + `${identical ? 'byte-identical' : 'REWRITTEN on save'}; the stored XML replays to `
+      evidence: `${k} disjunct(s); sent ${where.length} chars with ${orsSent} <Or>, stored `
+        + `${storedXml.length} chars with ${orsStored} <Or>`
+        + (orsSent === orsStored ? '' : ' -- THE TREE CHANGED SHAPE, which is flattening or truncation')
+        + `; ${identical ? 'structurally identical' : 'REWRITTEN on save'}; the stored XML replays to `
         + `${JSON.stringify(replay.titles)}`
         + (ok ? '.' : `, expected ${JSON.stringify(CONTROL_ROWS)}. The save changed what the predicate means, `
           + 'which is the failure this probe exists to catch: it parses, it answers 200, and it is wrong.'),
