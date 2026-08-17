@@ -38,12 +38,12 @@
  * what C1 through C14 mean, and widening the enum would change what every one
  * of those rows measures rather than adding to them.
  *
- * THE DESIGN, and the one thing worth understanding before reading a result.
+ * THE DESIGN.
  * Member Mnn is held by exactly ONE row, Rnn. A chain over M01..MK therefore
  * has to return EXACTLY K rows, one per disjunct. The COUNT is the
  * measurement.
  *
- * That is a correction, and the reason it matters is worth stating. Run 2
+ * That is a correction. Run 2
  * held the answer CONSTANT instead: it chained one member every row held,
  * padded with members no row held, and expected the same two rows at every
  * depth. Every depth returned them, and it read as "depth does not matter".
@@ -72,13 +72,11 @@
  * truncated tree, a flattened tree, and a tree that matches everything all
  * parse and all answer 200. Rows are compared, never status codes.
  *
- * WHAT MULTI-VALUE-PROBE.JS ALREADY SETTLED, so this probe does not re-ask
- * it. Run 4 on 2026-08-17 answered C11 through C14 against the five-member
- * fixture: <And> over two membership tests means "contains BOTH", <Or> means
- * "contains EITHER", and a two-deep Or chain SURVIVES being stored as a
- * ViewQuery and replays to the same rows. So chaining works and composes as
- * an author would read it. What is open is only how far it goes, which is why
- * this probe starts where that one stopped.
+ * WHAT MULTI-VALUE-PROBE.JS SETTLED FIRST, so this probe does not re-ask it.
+ * Its C11 to C14 established that <And> over two membership tests means
+ * "contains BOTH", <Or> means "contains EITHER", and a two-deep Or chain
+ * survives storage. Chaining composes as an author would read it, so only
+ * how far it goes was left, which is where this probe starts.
  *
  * That run also measured the cosmetic rewriting this probe has to allow for:
  * `<FieldRef Name="Evt"/>` was stored as `<FieldRef Name="Evt" />`. A raw
@@ -87,8 +85,9 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: COMPLETE, over five runs on 2026-08-17. RUN 3 ANSWERED THE DEPTH QUESTION, and the answer is that
- * the machine surfaces are fine and the human one is not.
+ * STATUS: COMPLETE, over five runs on 2026-08-17. Run 3 answered the depth
+ * question: the machine surfaces evaluate a 40-disjunct chain correctly and
+ * the filter editor does not.
  *
  * With one row per member, so that a chain over K members must return exactly
  * K rows, every depth from 1 to 40 returned ALL K. The ad-hoc query at a
@@ -100,7 +99,7 @@
  * U1: the RENDERED view listed all 40 rows. The page agrees with both machine
  * surfaces.
  *
- * U2 IS THE DEFECT, and it is confirmed. The filter editor displayed TEN
+ * U2 is the defect. The filter editor displayed TEN
  * conditions of the forty stored. Saving the view settings WITHOUT CHANGING
  * ANYTHING rewrote the filter to those ten: the view now lists R01 through
  * R10. So a deployed filter of more than ten conditions is destroyed by an
@@ -108,8 +107,8 @@
  * answering, and returns the wrong rows from that moment on, through a
  * surface no build and no deploy can see.
  *
- * The ceiling is therefore not on what may be WRITTEN. It is on what survives
- * being LOOKED AT, and ten is where it sits.
+ * So the ceiling applies to what survives being looked at rather than to what
+ * may be written, and it sits at ten.
  *
  * Run 2 asked the same questions with the discriminator in position one, so
  * truncation and full evaluation produced identical sheets. Its result was
@@ -123,7 +122,7 @@
  * the bulk-operation cap, and nothing about how many predicates a view may
  * hold, so the ten is undocumented.
  *
- * WHAT THE EDITOR REFUSES, and it is settled. Ten shapes measured on
+ * WHAT THE EDITOR REFUSES. Ten shapes measured on
  * 2026-08-17, plus the live "Tolerance due" view an operator reported:
  *
  *   EDITABLE                                        right child

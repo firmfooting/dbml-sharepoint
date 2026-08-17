@@ -172,29 +172,20 @@
  *       other CAML negative, it does not drop nulls.
  *   C10 <Or><Neq><IsNull> returned the same rows as C9 alone, so the
  *       deployer's existing neq wrapper composes but is redundant here.
- *   C14 was added AFTER run 3 and is unanswered. C8 stored ONE <Eq>. But
- *       <Includes> returned nothing, so this grammar has no set operator and
- *       tells authors to build one from all_of/any_of instead. CAML's And and
- *       Or are strictly binary (documented on both Learn pages), so any_of
- *       over K members emits a left-folded tree K-1 deep and nothing measures
- *       how deep that may go. Learn asserts "the server supports unlimited
- *       complicated queries", which is a claim about a server rather than
- *       about what a view save does to the XML on the way past. C14 stores a
- *       compound predicate, reads the XML back, and replays what SharePoint
- *       STORED rather than what was sent. The depth ceiling needs a wider
- *       enum than this fixture's five members and is tracked by #266.
- *
- *   C11 through C13 were added AFTER run 3 and are unanswered. An operator
- *       building filters by hand in the list UI found that `and` and `or`
- *       chain over this column, and that an "is equal to" with an empty value
- *       box returns the empty row. Neither is established by that: the pane
- *       does not show the CAML it generates, so the emitted spelling is
- *       unknown, and composition over a SET is not the same question as
- *       composition over a scalar. C11 asks whether And over two membership
- *       tests means "contains both", C12 whether Or means "contains either",
- *       and C13 whether an empty-valued Eq is itself a null test or whether
- *       only <IsNull> is. Re-running answers all three against the same
- *       fixture.
+ *   C11 And over two membership tests returned only the row holding BOTH
+ *       members, so `all_of` over `includes` means "contains both".
+ *   C12 Or returned every row holding either, so `any_of` means "contains
+ *       either". Together these are why the grammar's advice to combine with
+ *       all_of/any_of composes the way an author would read it.
+ *   C13 an EMPTY-valued <Eq> returned NOTHING, so it is not a null test. The
+ *       UI pane's "is equal to" with a blank box must be rewriting itself to
+ *       <IsNull>. This produced a shipped fix: `includes ''` rendered exactly
+ *       this predicate, was refused by nothing, and would have built,
+ *       deployed and shown an empty view forever.
+ *   C14 a two-deep chain SURVIVES storage as a ViewQuery and replays to the
+ *       same rows. How much deeper it goes is measured by
+ *       test/manual/caml-chain-depth-probe.js, which found no query-side
+ *       ceiling at 40 and a filter EDITOR that truncates at ten.
  *
  *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
  *       read it back unrewritten and the stored view lists exactly the two
