@@ -3166,7 +3166,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     )
     # A cross-site column needs an extension that expands it, or
     # build_schema_json raises (jsgen.py:411-415). _CrossSiteExpansion is
-    # already defined at test/test_jsgen.py:94.
+    # already defined earlier in this module.
     schema_json = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),
     )

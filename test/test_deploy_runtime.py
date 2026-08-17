@@ -421,7 +421,8 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if (url.includes('/users')) {
         const name = groupNameOf(url);
         // INFERRED, NOT MEASURED: the parent by-name GET answers 404 for an
-        // absent group (_security_principals.js.j2:223, measured), but what
+        // absent group (measured; see surveyGroup in
+        // _security_principals.js.j2), but what
         // this /users sub-resource answers for an absent group has not been
         // probed. 404 is used because the parent does and because either
         // status fails the template closed; a future probe should confirm
@@ -442,8 +443,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('sitegroups/getbyname')) {
         const name = groupNameOf(url);
-        // MEASURED (_security_principals.js.j2:223): a by-name GET for a
-        // group that is not there answers 404. groupIsKnown is checked
+        // MEASURED (surveyGroup in _security_principals.js.j2): a by-name GET
+        // for a site group that is not there answers 404. The role-definition
+        // getbyname is NOT the same: that one answers 500 for an absent level,
+        // which is why the template probes levels by $filter instead.
+        // groupIsKnown is checked
         // before groupState(name), whose `||=` would otherwise auto-vivify
         // an absent name into "existing" the instant it is read.
         if (!groupIsKnown(name)) {

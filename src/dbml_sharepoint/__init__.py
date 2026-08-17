@@ -1,9 +1,17 @@
 """DBML -> SharePoint Online list provisioning via browser-console deploy.js.
 
 Every name an extension author needs is imported from the module that defines
-it, and this package re-exports nothing. An aggregator here would need an
-export list, or a redundant `import X as X`, to survive `mypy --strict`, and
-either gives a name a second home to be kept in step with the first.
+it, and no module here declares another module's name as its own. An
+aggregator would need an export list, or a redundant `import X as X`, to
+survive `mypy --strict`, and either gives a name a second home to be kept in
+step with the first.
+
+An old path such as `dbml_sharepoint.analysis.validator.Finding` does still
+resolve at RUNTIME: a normal `from x import Y` binds `Y` in the importing
+module and Python offers no way to unbind it. `mypy --strict` refuses it
+("does not explicitly export attribute", checked 2026-08-17), which is what
+makes the paths below the supported ones rather than merely the preferred
+ones.
 
 The paths below are the canonical ones. `test/test_public_api.py` imports each
 of them, so a name that moves fails there rather than in a reader's editor.

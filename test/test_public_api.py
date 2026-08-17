@@ -274,10 +274,18 @@ def _value_aliases(module: ast.Module, relative: str) -> list[str]:
 
 
 def re_export_offenders(source: str, relative: str) -> list[str]:
-    """Every second home for a name that `source` creates.
+    """Every second home for a name that `source` DECLARES.
 
     One helper, called by the gate and by its proofs alike. A proof that
     reimplements the scan passes while the real scan is broken.
+
+    A plain `from x import Y` is deliberately not counted, though it does bind
+    `Y` in this module's namespace and `analysis.validator.Finding` still
+    resolves at runtime because of it. Counting it would flag every ordinary
+    import in the package, and `mypy --strict` already refuses that path with
+    "does not explicitly export attribute". The three shapes below are the
+    ones where a module claims a name as its own, so they are the ones a type
+    checker honours and the ones this gate answers for.
     """
     module = ast.parse(source)
     defined = _defined_names(module)

@@ -102,7 +102,8 @@ Coverage is the alarm that matters: a delta means a converted payload exercises
 a different code path, so the input changed.
 
 **The expected figure is `3666 182 95%`, and it is now deterministic.** It was
-not, briefly: `conditions.py:713` (the "not a number" refusal) was reached
+not, briefly: the `CONDITION_VALUE_NOT_A_NUMBER` refusal in
+`analysis/conditions.py` was reached
 only when the property suite's permissive strategy happened to draw a `bool`,
 about one run in ten. That produced a phantom one-line delta with a 1-in-10
 false-positive rate, exactly where this document tells you to treat a delta as
