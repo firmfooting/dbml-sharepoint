@@ -70,20 +70,35 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: RUN 1 on 2026-08-17 (revision ad534845) ABORTED AT BOOTSTRAP and
- * answered nothing. It created the list, then the MultiChoice column was
- * refused HTTP 400 "The property 'Choices' does not exist on type
- * 'SP.Field'". The cause was this file, not the tenant: the create POST
- * carried no `__metadata` type and no verbose Content-Type, so SharePoint
- * typed the body as base `SP.Field`, which has no `Choices`. The shared
- * harness talks nometadata and multi-value-probe.js M1 talks verbose, and
- * that difference was named in the failure message rather than left to be
- * worked out, which is the only reason the run cost one paste instead of a
- * round trip. Both are fixed: the create shape is now M1's verbatim, and the
- * run recycles its own list when bootstrap fails rather than leaving it for
- * the next run to sit beside.
+ * STATUS: RUN 2 on 2026-08-17 answered all 25 automated rows. Run 1 aborted
+ * at bootstrap and answered nothing; its cause was this file, not the tenant,
+ * and it is recorded at the create call it applies to.
  *
- * Every row below is still a question.
+ * RUN 2 RESULT, and the reason U1 and U2 now exist. Both measured surfaces
+ * agreed at every depth from 1 to 40 disjuncts. The ad-hoc CamlQuery returned
+ * exactly the control rows each time; the stored ViewQuery came back
+ * structurally identical with its full <Or> count intact (39 sent, 39
+ * stored, at a 2,871-character where clause) and replayed to the same rows.
+ * Both negative controls returned nothing, shallow and deep, so the positive
+ * rows are real matches rather than a chain that had degenerated into
+ * matching everything. The write shape was bare-array and the CamlQuery
+ * payload typed, both asked rather than assumed.
+ *
+ * THEN AN OPERATOR OPENED THE DEEPEST VIEW IN A BROWSER AND COUNTED TEN
+ * FILTER ELEMENTS. Forty are stored. Nothing this probe measured could have
+ * seen that: the D rows ask GetItems, the V rows replay the stored XML
+ * through GetItems, and neither is the page a person looks at or the editor
+ * they save from. So the honest reading of run 2 is narrower than it looks.
+ * A chain of 40 is safe to WRITE and safe to QUERY, and what a human sees is
+ * a third surface that was never asked about. U1 and U2 ask it.
+ *
+ * Microsoft documents no ceiling on view filter conditions. The Learn
+ * boundaries pages carry the list view threshold, the lookup threshold and
+ * the bulk-operation cap, and nothing about how many predicates a view may
+ * hold. The ten is undocumented, which is why it has to be characterised
+ * rather than looked up.
+ *
+ * U1 and U2 are still questions.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
@@ -300,7 +315,15 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision a8c9276f. Quote this when reporting results.');
+  log('INFO', 'probe revision d5a0bc6e. Quote this when reporting results.');
+
+  // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
+  // The harness's own CLEANUP cannot serve here: it matches by name, and this
+  // probe's names are run-unique, so a re-run would look for a list it is
+  // about to create rather than the one left behind. A run that ends with
+  // rows and eleven views on the site needs a way to be undone that does not
+  // involve deleting things by hand from Site contents.
+  const CLEANUP_LIST = '';
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
@@ -353,6 +376,8 @@
   expect('V40', 'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to the same rows');
   expect('N1', 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
   expect('N2', 'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
+  expect('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)');
+  expect('U2', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -361,6 +386,28 @@
     log('INFO', `${DEPTHS.join(', ')} disjuncts as ad-hoc queries and again as stored views.`);
     log('INFO', 'Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
     report();
+    return;
+  }
+
+  if (CLEANUP_LIST) {
+    const path = `web/lists/getbytitle('${CLEANUP_LIST}')`;
+    const found = await spGet(path);
+    if (!found.ok) {
+      log('INFO', `CLEANUP_LIST: no list named '${CLEANUP_LIST}'. Nothing to do.`);
+      return;
+    }
+    const items = await spGet(`${path}/items?$select=Id&$top=5000`);
+    const rows = (!readFailed(items) && items.body.value) || [];
+    for (const row of rows) {
+      const d = await getDigest();
+      await spPost(`${path}/items(${row.Id})`, {}, d,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    const d2 = await getDigest();
+    const gone = await spPost(`${path}/recycle`, {}, d2);
+    log('INFO', gone.ok
+      ? `Drained ${rows.length} row(s) and recycled '${CLEANUP_LIST}'. Its views went with it.`
+      : `Drained ${rows.length} row(s) but recycle failed: HTTP ${gone.status} ${gone.text.slice(0, 160)}`);
     return;
   }
 
@@ -380,12 +427,31 @@
   // creating the list and creating the column and left the list behind; the
   // next run then creates a second one, and a site accumulates litter that
   // nobody can tell apart. Recycled rather than purged, so it is recoverable.
-  const abandon = async (why) => {
+  //
+  // ITEMS FIRST, then the list. Recycling takes the rows with it when it
+  // works, and the point is what happens when it does NOT: a locked or
+  // no-delete list left holding rows would have a previous run's data
+  // answering a later run's questions. This is the same order, and the same
+  // reason, as the shared harness's own resetList.
+  const drainAndRecycle = async () => {
+    const items = await spGet(`${listPath}/items?$select=Id&$top=5000`);
+    const rows = (!readFailed(items) && items.body.value) || [];
+    for (const row of rows) {
+      const d = await getDigest();
+      await spPost(`${listPath}/items(${row.Id})`, {}, d,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
     const d = await getDigest();
     const gone = await spPost(`${listPath}/recycle`, {}, d);
+    return { rows: rows.length, gone };
+  };
+
+  const abandon = async (why) => {
+    const { rows, gone } = await drainAndRecycle();
     log('INFO', gone.ok
-      ? `Recycled '${LIST}' because ${why}. Nothing is left behind.`
-      : `Could NOT recycle '${LIST}' after ${why}: HTTP ${gone.status}. Delete it by hand.`);
+      ? `Drained ${rows} row(s) and recycled '${LIST}' because ${why}. Nothing is left behind.`
+      : `Drained ${rows} row(s) but could NOT recycle '${LIST}' after ${why}: `
+        + `HTTP ${gone.status}. Delete it by hand.`);
     report();
   };
 
@@ -753,14 +819,55 @@
 
   report();
   log('INFO', `write shape=${writeShape}, CamlQuery payload shape=${queryShape}. Both were asked, not assumed.`);
+  // === U1 and U2: the third surface ======================================
+  // Run 1 measured two surfaces and both agreed to 40. An operator then
+  // opened the deepest view in the browser and counted TEN filter elements
+  // where the stored XML holds forty. Nothing above could have seen that:
+  // D-rows ask GetItems, V-rows replay the stored XML through GetItems, and
+  // neither is the page a person looks at or the editor they save from.
+  //
+  // Microsoft documents no ceiling on view filter conditions. The Learn
+  // boundaries pages carry the list view threshold, the lookup threshold and
+  // the bulk-operation cap, and nothing about how many predicates a view may
+  // hold, so the ten is undocumented and this is the only way to characterise
+  // it.
+  //
+  // U2 IS THE DANGEROUS HALF, and it is why this cannot be left as a
+  // curiosity. If the editor round-trips only what it displayed, then an
+  // operator who opens a deployed view and presses Save silently rewrites a
+  // forty-member filter into a ten-member one. The view keeps working, keeps
+  // parsing and answers 200, and returns different rows from that moment on.
+  // That is this repository's failure class arriving through a surface the
+  // deploy never touches.
+  const deepestView = `Chain ${String(DEPTHS[DEPTHS.length - 1]).padStart(2, '0')}`;
+  const viewMeta = await spGet(`${listPath}/views?$select=Title,ServerRelativeUrl`);
+  const deepestUrl = ((!readFailed(viewMeta) && viewMeta.body.value) || [])
+    .find((v) => v.Title === deepestView)?.ServerRelativeUrl || null;
+  record('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)',
+    deepestUrl ? 'MANUAL' : 'NOT ESTABLISHED',
+    deepestUrl
+      ? `OPEN ${window.location.origin}${deepestUrl} and report which rows it LISTS. `
+        + `${JSON.stringify(CONTROL_ROWS)} means the rendered page agrees with both measured surfaces. `
+        + 'Anything else means the page disagrees with the stored query, and the grammar must bound the '
+        + 'chain however well GetItems behaved.'
+      : `the view '${deepestView}' could not be found, so there is nothing to open.`);
+  record('U2', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)',
+    deepestUrl ? 'MANUAL' : 'NOT ESTABLISHED',
+    deepestUrl
+      ? `On that same view, open the filter editor and COUNT the conditions it shows against the `
+        + `${DEPTHS[DEPTHS.length - 1]} that were stored. Then, WITHOUT changing anything, press Save, and `
+        + `re-paste this file with CLEANUP_LIST empty to read the stored ViewQuery back. Report the <Or> `
+        + 'count before and after. A drop is the finding: it means the editor writes back only what it '
+        + 'rendered, so opening a deployed view is enough to change what it means.'
+      : `the view '${deepestView}' could not be found, so there is nothing to open.`);
+
+  // KEPT, always, because U1 and U2 are looked at by hand and there is
+  // nothing to look at once the list is gone. Earlier revisions recycled on a
+  // clean run, which would have destroyed the evidence for the one surface
+  // this probe cannot reach on its own.
+  log('INFO', `KEEPING '${LIST}' so U1 and U2 can be looked at.`);
   if (anyDisagreement) {
-    log('INFO', `KEEPING '${LIST}'. At least one depth disagreed, and that is the run worth opening by hand.`);
-    log('INFO', 'Delete it yourself when finished.');
-  } else {
-    digest = await getDigest();
-    const gone = await spPost(`${listPath}/recycle`, {}, digest);
-    log('INFO', gone.ok
-      ? `Recycled '${LIST}'. It is restorable from the site recycle bin.`
-      : `Could not recycle '${LIST}': HTTP ${gone.status}. Delete it by hand.`);
+    log('INFO', 'At least one depth disagreed as well, so this run is worth opening either way.');
   }
+  log('INFO', `When finished, re-paste this file with CLEANUP_LIST = '${LIST}' to drain and remove it.`);
 })();
