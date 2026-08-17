@@ -123,12 +123,36 @@
  * the bulk-operation cap, and nothing about how many predicates a view may
  * hold, so the ten is undocumented.
  *
- * E1 THROUGH E4 ARE THE OPEN QUESTIONS NOW, and they are about a possible
- * defence rather than the defect. A view this tool already deploys shows
- * "This view has a complex filter which cannot be edited here" and therefore
- * cannot be truncated by a save. If the shape that triggers that refusal can
- * be identified, the tool can emit it deliberately. See E1..E4 for why it is
- * not yet identified.
+ * E1 THROUGH E4 ANSWERED IT on 2026-08-17, and the trigger is isolated.
+ *
+ *   E1  flat Or chain of 12          12 rows   EDITABLE
+ *   E2  flat And chain of 12          1 row    EDITABLE
+ *   E3  And[Eq, Or[Eq,Eq]]            0 rows   COMPLEX FILTER, refused
+ *   E4  flat Or chain of 12 + IsNull 12 rows   EDITABLE
+ *
+ * A HOMOGENEOUS tree is editable, and therefore truncatable, whatever its
+ * length and whichever operator it uses. A MIXED tree, an Or nested inside an
+ * And, is refused by the editor and therefore cannot be truncated by a save.
+ *
+ * The three confounded variables are separated. E4 adds an IsNull to a flat
+ * chain and it stays editable, so the IsNull is NOT the trigger. E3 is mixed
+ * with no IsNull and no date sentinel and it IS refused, so neither of those
+ * is needed. Nesting is the whole of it.
+ *
+ * Every row count is also right, which is what says the fixture behaved
+ * rather than the editor merely disagreeing with it: E1 returns the 12 rows
+ * holding its 12 members; E2 conjoins one Eq with eleven Neq and returns the
+ * single row holding M01; E3 asks for a row holding M01 AND one of two other
+ * members, and no row here holds two, so zero is correct; E4 adds the empty
+ * row to eleven.
+ *
+ * WHAT THIS DOES NOT ESTABLISH. That a mixed tree can be manufactured for a
+ * filter that does not naturally contain one. The risk register's "Tolerance
+ * due" is mixed because a `neq` renders as <Or><IsNull><Neq></Or> inside an
+ * enclosing <And>, so any filter carrying a negative is already protected. A
+ * pure any_of chain has no such nesting, and giving it one means adding a
+ * predicate that changes nothing, which is a construct nobody has measured
+ * here. That is the next question, not a conclusion of this one.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
