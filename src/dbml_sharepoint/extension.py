@@ -12,6 +12,7 @@ import typer
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
+from dbml_sharepoint.model.release import Release
 
 
 @dataclass
@@ -21,7 +22,7 @@ class SiteContext:
     extension's own CLI entry point (e.g. {"org_unit": "QSC"})."""
     site_url: str
     site_role: str
-    release: Any                          # release.Release | None
+    release: Release | None
     output_dir: Path
     extension_args: dict[str, Any] = field(default_factory=dict)
 

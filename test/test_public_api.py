@@ -36,7 +36,12 @@ import pytest
 from _paths import PACKAGE
 
 import dbml_sharepoint
-from dbml_sharepoint.analysis.findings import Finding, FindingCode, Severity
+from dbml_sharepoint.analysis.findings import (
+    Finding,
+    FindingCode,
+    Location,
+    Severity,
+)
 from dbml_sharepoint.extension import (
     BaseExtension,
     DeploymentExtension,
@@ -55,6 +60,7 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
     ManifestExtras,
     Finding,
     FindingCode,
+    Location,
     Severity,
     MappingBundle,
     Schema,
@@ -89,7 +95,7 @@ DOCUMENTED_PATH = re.compile(
 #: The size of REQUIRED_SYMBOLS today. Written out rather than derived, so
 #: dropping a symbol from that tuple cannot quietly lower the floor as well.
 #: Never lowered to make a change pass.
-DOCUMENTED_MINIMUM = 11
+DOCUMENTED_MINIMUM = 12
 
 
 class UnreadableAllError(RuntimeError):
@@ -158,6 +164,23 @@ def _defined_names(module: ast.Module) -> set[str]:
     return names
 
 
+def _mutates_all(node: ast.stmt) -> bool:
+    """`__all__.append(...)` or `.extend(...)`, which read as exporting nothing.
+
+    Neither an assignment nor an augmented one, so the two checks around this
+    walked past both and the gate reported CLEAN, which is the state
+    `UnreadableAllError` exists to be distinguishable from.
+    """
+    if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+        return False
+    func = node.value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "__all__"
+    )
+
+
 def _declared_exports(module: ast.Module, relative: str) -> list[str]:
     """The entries of `__all__`, or an empty list where there is none.
 
@@ -172,6 +195,12 @@ def _declared_exports(module: ast.Module, relative: str) -> list[str]:
                 f"{relative}:{node.lineno}: `__all__` is extended in place. This "
                 "gate reads only a literal list or tuple of strings, so write "
                 "it as one."
+            )
+        if _mutates_all(node):
+            raise UnreadableAllError(
+                f"{relative}:{node.lineno}: `__all__` is mutated by a method "
+                "call. This gate reads only a literal list or tuple of "
+                "strings, so write it as one."
             )
         if isinstance(node, ast.Assign):
             targets = {name for target in node.targets for name in _target_names(target)}
@@ -331,7 +360,9 @@ def mentions_any(annotation: object) -> bool:
 
 
 def test_no_module_re_exports_another_module_s_name() -> None:
-    """One name, one home. The failure names every site.
+    """Each name must have exactly one importable home.
+
+    The failure names every site.
 
     A re-export is a second place the name has to be kept in step with, and
     the two drift silently: the alias keeps importing long after the original
@@ -482,8 +513,8 @@ def test_an_all_that_cannot_be_read_fails_closed(body: str, reason: str) -> None
 def test_a_readable_all_of_either_literal_form_is_evaluated() -> None:
     """A tuple is as readable as a list, so only the unreadable forms raise.
 
-    Refusing the tuple would be a gate that fails on correct code, which gets
-    turned off rather than satisfied.
+    A tuple is a literal this gate can read, so refusing it would fail on
+    correct code.
     """
     for literal in ('["Finding"]', '("Finding",)'):
         source = (

@@ -18,7 +18,7 @@ Validation issues are reported with the validator Finding type.
 class SiteContext:
     site_url: str
     site_role: str
-    release: Any
+    release: dbml_sharepoint.model.release.Release | None
     output_dir: Path
     extension_args: dict[str, typing.Any] = field(default_factory=dict)
 ```

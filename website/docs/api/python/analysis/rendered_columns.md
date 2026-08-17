@@ -9,7 +9,7 @@ sidebar_position: 8
 
 Which columns a provisioned SharePoint list actually has.
 
-Seven modules outside `validator.py` read `rendered_columns`, and
+Seven modules read `rendered_columns`, and
 `analysis/joins.py` (which a generator may import, unlike `analysis/checks/`)
 is one of them, so this is a shared fact rather than a private helper of the
 orchestrator that happened to define it first. `checks/_views.py:965-988`

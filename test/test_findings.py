@@ -98,12 +98,12 @@ def test_the_finding_vocabulary_has_one_home() -> None:
     `manifestgen` consumes it. Both now name `findings.py`, which defines it.
 
     `validator.py` re-exported the five names until #168 and no longer does.
-    The ABSENCE is what is asserted, because a re-export that creeps back is
+    This asserts the absence, because a re-export that comes back is
     invisible: every consumer keeps working, and the cycle it forces
     reappears as a deferred import somewhere else. `Severity` is the one of
-    the five validator has no use of its own for, so it is the honest probe;
+    the five validator has no use of its own for, so it is the one that can be asserted absent;
     the other four are still in its namespace because its own rules
-    construct them. mypy holds the other half, refusing any module that
+    construct them. mypy covers the other direction, refusing any module that
     imports the vocabulary through validator rather than from here.
     """
     from dbml_sharepoint.analysis import findings, validator

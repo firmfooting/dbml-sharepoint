@@ -9,12 +9,14 @@ sidebar_position: 9
 
 Column names written inside a calculated formula or a formatter JSON.
 
-Read by the validator and by `generators/jsgen.py`, which orders Phase-1
-field creation by a formula's references, so it lives outside both. Not
-named `references.py`: a ref in this codebase is already a DBML foreign key.
+Read by four rule modules under `analysis/checks/` and by
+`generators/jsgen.py`, which orders Phase-1 field creation by a formula's
+references, so it lives outside both packages. It is not named
+`references.py`, because a ref in this codebase is already a DBML foreign
+key.
 
 Nothing here may import from `analysis/checks/` or `analysis/validator.py`,
-or the cycle this module exists to close would move rather than shut.
+or the cycle this module exists to close would move rather than close.
 
 ### `FORMULA_COLUMN_REF`
 
