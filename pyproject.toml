@@ -87,13 +87,15 @@ select = [
   "UP", "W",
 ]
 ignore = [
-  # 69 sites, and roughly 100 of the 126 `Any` uses in src/ sit on a genuine
-  # YAML, JSON, Jinja-context or untyped-dependency boundary -- `raw` straight
-  # off `yaml.safe_load` is honestly Any. The rest of ANN is at zero and IS
-  # enforced, so every signature stays annotated; only the `Any` itself is
-  # allowed. The one cluster worth revisiting is extension.py, where
-  # `bundle: Any, schema: Any` erase two types this package defines -- that is
-  # a decision about the public plugin surface, not a lint sweep.
+  # MEASURED 2026-08-17: 58 sites across the linted roots, most of them on a
+  # genuine YAML, JSON, Jinja-context or untyped-dependency boundary -- `raw`
+  # straight off `yaml.safe_load` is honestly Any. The rest of ANN is at zero
+  # and IS enforced, so every signature stays annotated; only the `Any` itself
+  # is allowed. The cluster this comment used to single out, `bundle: Any,
+  # schema: Any` across extension.py's hooks, is closed: those hooks now name
+  # the types this package defines, and `test_public_api.py` gates them,
+  # because `Any` satisfies the protocol in both directions and conformance
+  # tests cannot see it come back.
   "ANN401",
   "B008",  # typer.Option in defaults is the framework idiom
   "C408",  # dict(key=...) literals are deliberate where used
