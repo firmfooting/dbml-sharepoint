@@ -3,6 +3,10 @@ from pathlib import Path
 
 import pytest
 import typer
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import schema as make_schema
+from _model import table as make_table
 
 from dbml_sharepoint.extension import (
     BaseExtension,
@@ -12,6 +16,11 @@ from dbml_sharepoint.extension import (
     SiteContext,
     resolve_extension,
 )
+from dbml_sharepoint.model.parser import Schema
+
+
+def _schema() -> Schema:
+    return make_schema(make_table("Risk", "Title"))
 
 
 def _site_context() -> SiteContext:
@@ -25,23 +34,32 @@ def _site_context() -> SiteContext:
 
 def test_null_extension_extra_validators_is_empty() -> None:
     ext = NullExtension()
-    assert ext.extra_validators(bundle="bundle", schema="schema") == []
+    assert ext.extra_validators(bundle=make_bundle(entities=["Risk"]), schema=_schema()) == []
 
 
 def test_null_extension_expand_column_defers() -> None:
     ext = NullExtension()
-    assert ext.expand_column(table="table", column="column", bundle="bundle") is None
+    result = ext.expand_column(
+        table=make_table("Risk", "Title"),
+        column=make_column("Title"),
+        bundle=make_bundle(entities=["Risk"]),
+    )
+    assert result is None
 
 
 def test_null_extension_seed_lists_is_empty_dict() -> None:
     ext = NullExtension()
-    result = ext.seed_lists(bundle="bundle", schema="schema", site_context=_site_context())
+    result = ext.seed_lists(
+        bundle=make_bundle(entities=["Risk"]),
+        schema=_schema(),
+        site_context=_site_context(),
+    )
     assert result == {}
 
 
 def test_null_extension_manifest_extras_is_empty() -> None:
     ext = NullExtension()
-    extras = ext.manifest_extras(bundle="bundle", schema="schema")
+    extras = ext.manifest_extras(bundle=make_bundle(entities=["Risk"]), schema=_schema())
     assert extras == ManifestExtras(sections={}, warnings=[])
 
 
@@ -59,10 +77,14 @@ def test_null_extension_name() -> None:
 def test_base_extension_hooks_match_null_defaults() -> None:
     # BaseExtension itself carries the same no-op defaults NullExtension inherits.
     ext = BaseExtension()
-    assert ext.extra_validators(bundle="b", schema="s") == []
-    assert ext.expand_column(table="t", column="c", bundle="b") is None
-    assert ext.seed_lists(bundle="b", schema="s", site_context=_site_context()) == {}
-    assert ext.manifest_extras(bundle="b", schema="s") == ManifestExtras()
+    bundle = make_bundle(entities=["Risk"])
+    schema = _schema()
+    assert ext.extra_validators(bundle=bundle, schema=schema) == []
+    assert ext.expand_column(
+        table=make_table("Risk", "Title"), column=make_column("Title"), bundle=bundle,
+    ) is None
+    assert ext.seed_lists(bundle=bundle, schema=schema, site_context=_site_context()) == {}
+    assert ext.manifest_extras(bundle=bundle, schema=schema) == ManifestExtras()
     ext.cli_subcommands(typer.Typer())  # -> None by protocol
     assert BaseExtension.name == "base"
 
