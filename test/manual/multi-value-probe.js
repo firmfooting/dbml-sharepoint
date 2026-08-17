@@ -175,6 +175,14 @@
  *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
  *       read it back unrewritten and the stored view lists exactly the two
  *       rows C1 predicted.
+ *       Confirmed a third way after the run, by building the same filter in
+ *       the list UI's filter pane against a DIFFERENT member: "equals
+ *       Export" listed only {Edit,Export}, and "is not equal to Export"
+ *       listed {View}, {View,Edit} and the empty row. Membership and the
+ *       null-including negation therefore hold across REST GetItems, a
+ *       stored ViewQuery and the UI pane, which are three separate places a
+ *       predicate has to work and this repository does not assume one
+ *       proves another.
  *   V1  a ValidationFormula referencing the column is REFUSED (HTTP 500).
  *   F1  a calculated-column formula referencing it is REFUSED (HTTP 500).
  *   X1  the severity formatter this repository generates does NOT render an
