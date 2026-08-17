@@ -218,6 +218,32 @@ def _redundant_aliases(module: ast.Module, relative: str) -> list[str]:
     return offenders
 
 
+def _value_aliases(module: ast.Module, relative: str) -> list[str]:
+    """`NAME = other.NAME`, the third way to give one name a second home.
+
+    Neither an `__all__` entry nor an import alias, so the two scans above
+    both miss it. `group_description.MARKER_PREFIX = provenance.MARKER_PREFIX`
+    was one, kept for "existing importers", which is the compatibility
+    argument this design rejects.
+    """
+    offenders: list[str] = []
+    for node in _module_level(module.body):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        value = node.value
+        if (
+            isinstance(target, ast.Name)
+            and isinstance(value, ast.Attribute)
+            and value.attr == target.id
+        ):
+            offenders.append(
+                f"{relative}:{node.lineno}: `{target.id}` aliases another "
+                "module's name, giving it a second home"
+            )
+    return offenders
+
+
 def re_export_offenders(source: str, relative: str) -> list[str]:
     """Every second home for a name that `source` creates.
 
@@ -232,6 +258,7 @@ def re_export_offenders(source: str, relative: str) -> list[str]:
         if name not in defined
     ]
     offenders.extend(_redundant_aliases(module, relative))
+    offenders.extend(_value_aliases(module, relative))
     return offenders
 
 

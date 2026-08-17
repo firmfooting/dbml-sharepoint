@@ -736,7 +736,7 @@ def _schema_json_for_risk_register() -> dict[str, Any]:
 
 def test_every_emitted_group_description_carries_the_marker() -> None:
     """#211: nothing on a group recorded that this tool made it."""
-    from dbml_sharepoint.analysis.group_description import MARKER_PREFIX
+    from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 
     schema_json = _schema_json_for_risk_register()
     groups = schema_json["groups"]
