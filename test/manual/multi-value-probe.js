@@ -181,8 +181,8 @@
  *       complicated queries", which is a claim about a server rather than
  *       about what a view save does to the XML on the way past. C14 stores a
  *       compound predicate, reads the XML back, and replays what SharePoint
- *       STORED rather than what was sent. The depth ceiling is a separate
- *       question needing a wider enum than this fixture's five members.
+ *       STORED rather than what was sent. The depth ceiling needs a wider
+ *       enum than this fixture's five members and is tracked by #266.
  *
  *   C11 through C13 were added AFTER run 3 and are unanswered. An operator
  *       building filters by hand in the list UI found that `and` and `or`
@@ -1032,7 +1032,7 @@
     //
     // The depth CEILING needs a wider enum than this fixture's five members
     // (four is the deepest honest chain here, nowhere near any plausible
-    // limit) and is tracked separately. This row asks the cheap half.
+    // limit) and is tracked by #266. This row asks the cheap half.
     const CHAIN_VIEW = 'Probe chained membership';
     // Padded with two members no row holds, so the expected rows are C1's and
     // only the DEPTH differs. A chain that changes the answer changes it
