@@ -172,6 +172,18 @@
  *       other CAML negative, it does not drop nulls.
  *   C10 <Or><Neq><IsNull> returned the same rows as C9 alone, so the
  *       deployer's existing neq wrapper composes but is redundant here.
+ *   C11 through C13 were added AFTER run 3 and are unanswered. An operator
+ *       building filters by hand in the list UI found that `and` and `or`
+ *       chain over this column, and that an "is equal to" with an empty value
+ *       box returns the empty row. Neither is established by that: the pane
+ *       does not show the CAML it generates, so the emitted spelling is
+ *       unknown, and composition over a SET is not the same question as
+ *       composition over a scalar. C11 asks whether And over two membership
+ *       tests means "contains both", C12 whether Or means "contains either",
+ *       and C13 whether an empty-valued Eq is itself a null test or whether
+ *       only <IsNull> is. Re-running answers all three against the same
+ *       fixture.
+ *
  *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
  *       read it back unrewritten and the stored view lists exactly the two
  *       rows C1 predicted.
@@ -863,6 +875,35 @@
         `<Or><Neq>${ref}${textValue('View')}</Neq><IsNull>${ref}</IsNull></Or>`,
         'R3+R4 is what the deployer\'s existing `neq` wrapper is for -- it exists so a null row is not silently '
         + 'dropped by a negative. Anything else means the wrapper does not compose with a multi-value column'],
+      // C11..C13 added after run 3, from an operator building filters by hand
+      // in the list UI. Run 3 asked only about SINGLE predicates, so nothing
+      // here was measured, and the UI pane cannot answer them either: it does
+      // not show the CAML it generates, so "it worked in the pane" leaves the
+      // emitted spelling unknown. These ask in the one place the answer is
+      // usable, which is the XML the deployer would have to write.
+      //
+      // C11 and C12 are the interesting pair BECAUSE Eq means "includes"
+      // here. Composition over a set is not the same question as composition
+      // over a scalar, and a grammar that offers `and` on a multi-value
+      // column without measuring it would be guessing which of the two it is.
+      ['C11', 'And[Eq "View", Eq "Edit"]',
+        `<And><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Edit')}</Eq></And>`,
+        'R2 only means And over two membership tests is "contains BOTH", which is the useful reading and the '
+        + 'one the grammar would expose. Nothing means SharePoint cannot conjoin two predicates over the same '
+        + 'multi-value column at all, and `and` must be refused on one'],
+      ['C12', 'Or[Eq "View", Eq "Export"]',
+        `<Or><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Export')}</Eq></Or>`,
+        'R1+R2+R3 means Or is "contains EITHER". Anything narrower means Or does not distribute over membership '
+        + 'the way it does over a scalar equality, and the grammar must say so rather than emit it'],
+      // The operator reported that an "is equal to" with the value box left
+      // EMPTY returns the empty row, i.e. it behaves as a null test. That is
+      // the same ROWS as C6, but not necessarily the same PREDICATE: the pane
+      // may have rewritten it to <IsNull/>. Which one it is decides what the
+      // renderer must emit for `col eq ''`, so it is asked directly here.
+      ['C13', 'Eq "" (empty value)', `<Eq>${ref}${textValue('')}</Eq>`,
+        'R4 means an empty-valued Eq is itself a null test on this type, so `col eq \'\'` may render literally. '
+        + 'Nothing means only <IsNull> tests null and the renderer must translate, which is what the UI pane '
+        + 'appears to do. Either way C6 remains the operator the grammar should emit'],
     ];
     const camlRows = async (where) => {
       const r = await post(`${listPath}/GetItems?$select=Title`, {
