@@ -1240,49 +1240,69 @@
     return targetDisplay.InternalName;
   }
 
-  async function assertFieldImmutableShape(listName, field, actual, targetGuid) {
+  async function immutableFieldMismatches(listName, field, actual, targetGuid) {
     const desired = declaredFieldState(listName, field);
+    const mismatches = [];
+    // checked:true means compared and differed; checked:false means it could not
+    // be compared, which the report must not present as a difference.
+    const mismatch = (property, declared, actualValue, message) => mismatches.push({
+      property, declared, actual: actualValue, message, checked: true,
+    });
+    const notChecked = (property, declared, message) => mismatches.push({
+      property, declared, actual: null, message, checked: false,
+    });
     if (actual.InternalName !== field.title) {
-      throw new Error(
-        `Existing field '${listName}.${field.title}' resolves to immutable InternalName '${actual.InternalName}'; expected '${field.title}'`,
-      );
+      mismatch('InternalName', field.title, actual.InternalName,
+        `Existing field '${listName}.${field.title}' resolves to immutable InternalName '${actual.InternalName}'; expected '${field.title}'`);
     }
     if (actual.TypeAsString !== desired.typeAsString) {
-      throw new Error(
-        `Existing field '${listName}.${field.title}' has immutable TypeAsString '${actual.TypeAsString}'; expected '${desired.typeAsString}'`,
-      );
+      mismatch('TypeAsString', desired.typeAsString, actual.TypeAsString,
+        `Existing field '${listName}.${field.title}' has immutable TypeAsString '${actual.TypeAsString}'; expected '${desired.typeAsString}'`);
     }
     // SP.FieldCalculated is intrinsically ReadOnlyField=true (users never
     // write it); on every other declared type read-only means an impostor.
     const expectReadOnly = desired.typeAsString === 'Calculated';
     if (actual.ReadOnlyField !== expectReadOnly) {
-      throw new Error(
-        `Existing field '${listName}.${field.title}' ReadOnlyField is ${actual.ReadOnlyField}; expected ${expectReadOnly} for declared type '${desired.typeAsString}'`,
-      );
+      mismatch('ReadOnlyField', expectReadOnly, actual.ReadOnlyField,
+        `Existing field '${listName}.${field.title}' ReadOnlyField is ${actual.ReadOnlyField}; expected ${expectReadOnly} for declared type '${desired.typeAsString}'`);
     }
     // Declared-seal fields are legitimately sealed between runs (the
     // maintenance unseal opens them for this run's writes; Phase 4.1
     // re-seals). Sealed WITHOUT a declaration still means an impostor.
     if (actual.Sealed && !field.seal) {
-      throw new Error(
-        `Existing field '${listName}.${field.title}' is sealed; expected an unsealed declared field`,
-      );
+      mismatch('Sealed', false, actual.Sealed,
+        `Existing field '${listName}.${field.title}' is sealed; expected an unsealed declared field`);
     }
-    if (field.target_list) {
-      if (!targetGuid) {
-        throw new Error(
-          `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`,
-        );
-      }
-      const expectedLookupField = await expectedLookupFieldInternalName(listName, field);
-      if (normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid)
-          || actual.LookupField !== expectedLookupField) {
-        throw new Error(
-          `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
-          + `expected list '${targetGuid}' field '${expectedLookupField}'. Lookup targets are immutable; recreate through an explicit migration.`,
-        );
-      }
+    if (!field.target_list) return mismatches;
+    if (!targetGuid) {
+      // No GUID means the target list was absent or unreadable. Resolving its
+      // display field would throw against a list nobody could read.
+      notChecked('LookupList', field.target_list,
+        `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
+      return mismatches;
     }
+    let expectedLookupField;
+    try {
+      expectedLookupField = await expectedLookupFieldInternalName(listName, field);
+    } catch (err) {
+      // Recorded, not propagated: a throw here would discard the mismatches
+      // already collected for this column. It also covers a probe failure, so
+      // it is not evidence that this property differs.
+      notChecked('LookupField', field.body.LookupField, err.message);
+      return mismatches;
+    }
+    if (normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid)
+        || actual.LookupField !== expectedLookupField) {
+      mismatch('LookupList', targetGuid, actual.LookupList,
+        `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
+        + `expected list '${targetGuid}' field '${expectedLookupField}'. Lookup targets are immutable; recreate through an explicit migration.`);
+    }
+    return mismatches;
+  }
+
+  async function assertFieldImmutableShape(listName, field, actual, targetGuid) {
+    const mismatches = await immutableFieldMismatches(listName, field, actual, targetGuid);
+    if (mismatches.length > 0) throw new Error(mismatches.map(m => m.message).join(' '));
   }
 
   // Declared form behaviour. Two properties, opposite round-trip
