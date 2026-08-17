@@ -68,10 +68,12 @@
  * parse and all answer 200. Rows are compared, never status codes.
  *
  * WHAT MULTI-VALUE-PROBE.JS SETTLED FIRST, so this probe does not re-ask it.
- * Its C11 to C14 established that <And> over two membership tests means
- * "contains BOTH", <Or> means "contains EITHER", and a two-deep Or chain
- * survives storage. Chaining composes as an author would read it, so only
- * how far it goes was left, which is where this probe starts.
+ * Its C11 and C12 established that <And> over two membership tests means
+ * "contains BOTH" and <Or> means "contains EITHER", so chaining composes as
+ * an author would read it. Its C14 tried to ask whether a stored chain
+ * survives and could not: its padding members are held by no row, so a
+ * dropped arm would look identical. That is the question this probe exists
+ * to answer, with a fixture that can detect it.
  *
  * That run also measured the cosmetic rewriting this probe has to allow for:
  * `<FieldRef Name="Evt"/>` was stored as `<FieldRef Name="Evt" />`. A raw
@@ -381,7 +383,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 697f8a5d. Quote this when reporting results.');
+  log('INFO', 'probe revision d0dff7ef. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this

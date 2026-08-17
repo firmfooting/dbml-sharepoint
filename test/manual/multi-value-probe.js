@@ -149,9 +149,13 @@
  *       was the first shape tried and no other was needed.
  *   M4  an EMPTY multi-value column reads back as `null`, not as an empty
  *       array. Anything comparing or seeding one must handle null.
- *   M5  member order SURVIVES a round trip: ["Edit","View"] was written and
- *       read back in that order. So the reconciler's order-sensitive
- *       comparison is safe and needs no set-comparison change.
+ *   M5  an ITEM's member order survives a round trip: ["Edit","View"] was
+ *       written and read back in that order. This is NOT evidence about the
+ *       reconciler, which compares the FIELD's `Choices` collection, a
+ *       different surface that nothing here mutates. Whether creating or
+ *       updating `Choices` preserves its order is UNMEASURED, and
+ *       `sameDerivedValue` compares it index by index, so a later enum
+ *       reorder could still produce permanent drift.
  *   I1  Indexed:true is REFUSED loudly ("This column type is not supported
  *       for indexing"). Its control I1C set the same property on the
  *       single-value Choice and it STUCK, so the refusal is a measurement
@@ -160,9 +164,12 @@
  *   I2  EnforceUniqueValues is REFUSED both alone and alongside Indexed.
  *   C1  <Eq> against a bare member behaves as INCLUDES: "View" returned both
  *       the {View} row and the {View,Edit} row.
- *   C2  <Eq> against a ";#"-delimited string matches the WHOLE SET literally:
- *       "View;#Edit" returned only {View,Edit}. One operator, two semantics,
- *       selected by whether the operand contains ";#".
+ *   C2  <Eq> against a ";#"-delimited string matched the whole set: "View;#Edit"
+ *       returned only {View,Edit}. One operator, two semantics, selected by
+ *       whether the operand contains ";#". Whether the comparison is literal
+ *       or normalises the set first is NOT established: nobody sent
+ *       "Edit;#View", and the two readings are indistinguishable from this
+ *       one query. `analysis/conditions.py` already records that correctly.
  *   C3  <Contains> works, though Learn documents it for Text/Note only.
  *   C4  <Includes> returns NOTHING. It is documented for multi-value Lookup
  *       and does not serve MultiChoice.
@@ -182,10 +189,14 @@
  *       <IsNull>. This produced a shipped fix: `includes ''` rendered exactly
  *       this predicate, was refused by nothing, and would have built,
  *       deployed and shown an empty view forever.
- *   C14 a two-deep chain SURVIVES storage as a ViewQuery and replays to the
- *       same rows. How much deeper it goes is measured by
- *       test/manual/caml-chain-depth-probe.js, which found no query-side
- *       ceiling at 40 and a filter EDITOR that truncates at ten.
+ *   C14 stored a two-deep chain and got the same rows back, which is NOT
+ *       evidence that the chain survived. Its padding members are held by no
+ *       row, so dropping an arm during storage would leave the result
+ *       identical. The row reports NOT ESTABLISHED and says why.
+ *       test/manual/caml-chain-depth-probe.js settled the question with a
+ *       fixture that can detect it: one row per member, so the COUNT is the
+ *       measurement. No query-side ceiling at 40 disjuncts, and a filter
+ *       editor that truncates at ten.
  *
  *   C8  the winning predicate SURVIVES storage as a ViewQuery. SharePoint
  *       read it back unrewritten and the stored view lists exactly the two
@@ -922,6 +933,13 @@
       if (!r.ok) return { ok: false, error: `HTTP ${r.status} ${r.error}`, titles: null };
       return { ok: true, error: null, titles: (r.d?.results || []).map((i) => i.Title).sort() };
     };
+    // Only a SINGLE predicate may be the membership winner. A compound can
+    // reach the same two rows by FAILING: if <And> ignored its second arm,
+    // C11 would return exactly R1+R2 and be crowned, C8 would then store a
+    // broken compound, and the verdict line would report it as
+    // caml_membership. C1 wins first in practice; this makes that structural
+    // rather than a consequence of array order.
+    const MEMBERSHIP_CANDIDATES = new Set(['C1', 'C2', 'C3', 'C4', 'C5']);
     let membershipWinner = null;
     for (const [id, label, where, meaning] of predicates) {
       const got = await camlRows(where);
@@ -940,7 +958,7 @@
       // Remember whichever membership predicate returned BOTH View-bearing
       // rows, for the stored-view confirmation in C8. Observed, not asserted:
       // if none does, C8 records that there was nothing to confirm.
-      if (!membershipWinner && got.ok
+      if (!membershipWinner && got.ok && MEMBERSHIP_CANDIDATES.has(id)
           && got.titles.length === 2
           && got.titles.includes(ROWS[0].title) && got.titles.includes(ROWS[1].title)) {
         membershipWinner = { id, label, where };
@@ -1047,14 +1065,19 @@
     const chainReplay = chainStored
       ? await camlRows(String(chainStored.ViewQuery).replace(/^<Where>|<\/Where>$/g, ''))
       : null;
-    const sameRows = chainSent.ok && chainReplay?.ok
+    // BOTH queries must have succeeded before either verdict is reachable. A
+    // refused or throttled request makes the row sets differ trivially, and
+    // reporting that as CHANGED would attribute an unreadable observation to a
+    // semantic rewrite and tell the grammar to refuse chaining.
+    const chainQueriesOk = chainSent.ok && !!chainReplay && chainReplay.ok;
+    const sameRows = chainQueriesOk
       && JSON.stringify(chainSent.titles) === JSON.stringify(chainReplay.titles);
     record(
       'C14',
       'a chained any_of predicate survives being STORED as a view ViewQuery',
-      !chainView.ok || !chainStored
+      !chainView.ok || !chainStored || !chainQueriesOk || !camlFixtureUsable
         ? 'NOT ESTABLISHED'
-        : (camlFixtureUsable ? (sameRows ? 'SURVIVED' : 'CHANGED') : 'NOT ESTABLISHED'),
+        : (sameRows ? 'NOT ESTABLISHED (arms not observable)' : 'CHANGED'),
       !chainView.ok || !chainStored
         ? `the view could not be created or read back: ${chainView.ok
           ? 'not found after create'
@@ -1062,8 +1085,13 @@
         : `sent ${show(chainWhere)} and got ${show(chainSent.titles)}; SharePoint stored `
           + `${show(chainStored.ViewQuery)} which replays to ${show(chainReplay?.titles)}. `
           + (sameRows
-            ? 'Same rows, so a two-deep chain survives storage and all_of/any_of is safe to render at this '
-              + 'depth. It says NOTHING about greater depths; that needs a wider enum.'
+            ? 'Same rows. That is WEAKER than it looks and the outcome says so. The padding members '
+              + 'Delete and PermissionChange are held by no row, so dropping either arm during storage '
+              + 'leaves the result identical: this row cannot tell a surviving chain from a truncated '
+              + 'one. It establishes only that the view stored and still answers. Nor does it speak to '
+              + 'all_of: only a nested Or was stored here. test/manual/caml-chain-depth-probe.js seeds '
+              + 'one row per member so the COUNT is the measurement, and it is what actually settled '
+              + 'this: no query-side ceiling to 40 disjuncts, and a filter editor that truncates at ten.'
             : 'DIFFERENT rows. Storage changed what the predicate means, so the grammar must refuse '
               + 'chained membership on a multi-value column rather than emit a view that quietly '
               + 'answers a different question.'),
