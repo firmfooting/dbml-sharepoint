@@ -70,7 +70,20 @@
  * <Or> count is compared as well, because flattening and truncation both
  * change it and both can leave the rows looking right at shallow depth.
  *
- * STATUS: NEVER RUN. Every row below is a question.
+ * STATUS: RUN 1 on 2026-08-17 (revision ad534845) ABORTED AT BOOTSTRAP and
+ * answered nothing. It created the list, then the MultiChoice column was
+ * refused HTTP 400 "The property 'Choices' does not exist on type
+ * 'SP.Field'". The cause was this file, not the tenant: the create POST
+ * carried no `__metadata` type and no verbose Content-Type, so SharePoint
+ * typed the body as base `SP.Field`, which has no `Choices`. The shared
+ * harness talks nometadata and multi-value-probe.js M1 talks verbose, and
+ * that difference was named in the failure message rather than left to be
+ * worked out, which is the only reason the run cost one paste instead of a
+ * round trip. Both are fixed: the create shape is now M1's verbatim, and the
+ * run recycles its own list when bootstrap fails rather than leaving it for
+ * the next run to sit beside.
+ *
+ * Every row below is still a question.
  *
  * WHAT IT TOUCHES. One custom list under a run-unique name it prints before
  * doing anything, one MultiChoice column on it, a handful of rows, and one
@@ -85,8 +98,9 @@
  *   4. Copy the whole results block back verbatim.
  *
  * WHEN FINISHED: the probe deletes the list it created, unless a depth
- * disagreed. If it aborted early, delete the list whose name it printed in
- * its first line.
+ * disagreed. It also deletes it when bootstrap fails, so an aborted run
+ * leaves nothing behind. If it aborts somewhere neither path covers, delete
+ * the list whose name it printed in its first line.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -286,7 +300,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision ad534845. Quote this when reporting results.');
+  log('INFO', 'probe revision a8c9276f. Quote this when reporting results.');
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
@@ -354,6 +368,27 @@
 
   const listPath = `web/lists/getbytitle('${LIST}')`;
 
+  // A payload carrying `__metadata` MUST also send a verbose Content-Type.
+  // `__metadata` is meaningless to a nometadata endpoint: SharePoint types
+  // the body as its BASE type and answers 400 for any property the base does
+  // not have. That is not a fact about the property, so a transcript reading
+  // "refused" there would be a false verdict. Accept stays nometadata, so
+  // responses keep the `body.value` form the rest of this file reads.
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+
+  // Bootstrap failed, so take the list with us. Run 1 aborted between
+  // creating the list and creating the column and left the list behind; the
+  // next run then creates a second one, and a site accumulates litter that
+  // nobody can tell apart. Recycled rather than purged, so it is recoverable.
+  const abandon = async (why) => {
+    const d = await getDigest();
+    const gone = await spPost(`${listPath}/recycle`, {}, d);
+    log('INFO', gone.ok
+      ? `Recycled '${LIST}' because ${why}. Nothing is left behind.`
+      : `Could NOT recycle '${LIST}' after ${why}: HTTP ${gone.status}. Delete it by hand.`);
+    report();
+  };
+
   // ---- Bootstrap ---------------------------------------------------------
   let digest = await getDigest();
   const made = await spPost('web/lists', {
@@ -361,21 +396,32 @@
   }, digest);
   if (!made.ok) {
     record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
-      `the list could not be created: HTTP ${made.status} ${made.text.slice(0, 200)}`);
+      `the list could not be created: HTTP ${made.status} ${made.text.slice(0, 200)}. `
+      + 'Nothing was created, so there is nothing to clean up.');
     report();
     return;
   }
 
+  // The `__metadata` type and the verbose Content-Type are BOTH required, and
+  // run 1 of this probe is why that is written down rather than assumed. Sent
+  // without them, SharePoint types the payload as base `SP.Field` and answers
+  // 400 "The property 'Choices' does not exist on type 'SP.Field'". The shape
+  // below is multi-value-probe.js M1's verbatim, which is known to work.
   digest = await getDigest();
   const field = await spPost(`${listPath}/fields`, {
-    FieldTypeKind: 15, Title: COL, Choices: { results: MEMBERS },
-  }, digest);
+    __metadata: { type: 'SP.FieldMultiChoice' },
+    FieldTypeKind: 15,
+    Title: COL,
+    Choices: { results: MEMBERS },
+    FillInChoice: false,
+  }, digest, VERBOSE);
   if (!field.ok) {
     record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
       `the MultiChoice column could not be created: HTTP ${field.status} ${field.text.slice(0, 200)}. `
-      + 'multi-value-probe.js M1 created one with a plain POST, so this is a difference worth explaining '
-      + 'before reading anything else: that probe used odata=verbose and this harness uses nometadata.');
-    report();
+      + 'This is multi-value-probe.js M1\'s exact create shape, which that probe measured as accepted on '
+      + '2026-08-17, so a refusal here is a difference between the two runs and not a fact about '
+      + 'MultiChoice.');
+    await abandon('the column could not be created');
     return;
   }
 
@@ -389,7 +435,6 @@
   // answers 400, which would read in a transcript as "SharePoint refused this
   // shape" when the probe had simply asked wrongly. Accept stays nometadata,
   // so responses keep the `body.value` form the rest of this file reads.
-  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
   const WRITE_SHAPES = [
     ['collection-metadata', (set) => ({ __metadata: { type: 'Collection(Edm.String)' }, results: set }), VERBOSE],
     ['bare-results', (set) => ({ results: set }), {}],
