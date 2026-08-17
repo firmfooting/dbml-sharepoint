@@ -275,7 +275,8 @@ def test_production_consumers_import_renderers_directly() -> None:
         "analysis/checks/_formatting.py": {"VALIDATION", "to_validation"},
         "analysis/checks/_retirement.py": {"VALIDATION", "to_validation"},
         "analysis/checks/_views.py": {"CAML", "normalise"},
-        "generators/jsgen.py": {"to_caml", "to_validation"},
+        # #267: views render through the guarded wrapper, not `to_caml`.
+        "generators/jsgen.py": {"to_caml_protected", "to_validation"},
     }
     for relative, names in expected.items():
         imports = _imports(PACKAGE / relative)
