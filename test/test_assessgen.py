@@ -971,20 +971,50 @@ def test_the_three_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> N
 _MAY_REPORT_UNDEFINED: frozenset[str] = frozenset()
 
 
+def _bare_list_object_harness() -> str:
+    """The harness above answering an existing list with its `Title` alone.
+
+    The default mock hands the collision probe a `BaseTemplate` and a
+    `Description`, so the gate below ran over the one payload whose properties
+    are all present and could not see the collision finding interpolate one
+    that was not.
+    """
+    bare = _ASSESS_HARNESS.replace(
+        "Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),",
+        "Title: title,",
+    )
+    assert bare != _ASSESS_HARNESS, "the list payload was not stripped"
+    assert "BaseTemplate" not in bare, "the mock still answers with one"
+    return bare
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_no_finding_reports_the_literal_word_undefined() -> None:
     """The mock answers 200 with no selected properties, which is the shape a
     real tenant produces when it does not carry one.
 
     Four findings printed `undefined` at operator level on every green run of
-    this suite before the guard existed, and nothing asserted on them.
+    this suite before the guard existed, and nothing asserted on them. A
+    fifth survived the first pass of this gate, because the only payload the
+    gate ran over was the one the mock fills in completely.
     """
-    summary = _run_assess(_declared_descriptions())
-    leaking = [
-        f["key"] for f in summary["findings"]
-        if "undefined" in f["detail"] and f["key"] not in _MAY_REPORT_UNDEFINED
-    ]
-    assert leaking == [], leaking
+    for label, harness in (
+        ("the default mock", _ASSESS_HARNESS),
+        ("a list object carrying only its Title", _bare_list_object_harness()),
+    ):
+        summary = _run_assess(_declared_descriptions(), harness=harness)
+        # Without this the run could reach no collision finding at all and
+        # still report nothing leaking.
+        assert [
+            f["key"] for f in summary["findings"] if f["key"].startswith("collision:")
+        ] == [f"collision:{title}" for title in _declared_descriptions()], (
+            label, summary["findings"],
+        )
+        leaking = [
+            f["key"] for f in summary["findings"]
+            if "undefined" in f["detail"] and f["key"] not in _MAY_REPORT_UNDEFINED
+        ]
+        assert leaking == [], (label, leaking)
 
 
 # A site answering 200 with a null payload for every call, which is what

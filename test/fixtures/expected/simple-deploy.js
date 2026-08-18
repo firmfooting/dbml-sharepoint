@@ -506,7 +506,7 @@
       if (!list.ok && list.status === 404) {
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
       } else if (list.ok) {
-        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}), a redeploy/reconcile target.`);
+        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}), a redeploy/reconcile target.`);
         markerFinding(title, list.d.Description);
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
