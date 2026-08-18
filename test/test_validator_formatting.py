@@ -222,6 +222,50 @@ def test_calculated_true_on_the_wrong_declared_type_still_mismatches(
     )
     assert "expects calculated_text, not calculated_number" in finding.message
 
+def test_a_trend_on_a_typeless_column_still_has_its_against_checked(
+    tmp_path: Path,
+) -> None:
+    """The guard skips two rules, not the column.
+
+    Skipping the column instead (`if target_type is None: continue`) reads as
+    the same repair and leaves the whole suite green, because the trend, guard
+    and color_by checks below it judge a DIFFERENT column, whose declared type
+    is beside the point. `UnitAbbreviation` is rendered by a cross-site
+    reference expansion and has no declared type, so it reaches the guard and
+    its `against` still has to be checked.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Unit {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Unit int [ref: > Unit.Id]
+            }
+        """,
+        mapping=blocks(entities("Unit", "Risk"), """
+            cross_site_reference_columns:
+              - { entity: Risk, column: Unit }
+            column_formatting:
+              Risk:
+                UnitAbbreviation: { style: trend, against: Baseline }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.TREND_AGAINST_NOT_RENDERED,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
+    )
+    assert "'Baseline'" in finding.message
+
+
 def test_view_formatting_field_refs_validated() -> None:
     errors = _project_errors(views={"Project": [ViewDef(
         title="V",
