@@ -597,7 +597,9 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
 
-    match = re.search(r"const TARGETS = (\{.*?\n  \});", js, re.DOTALL)
+    # `tojson(indent=2)` closes the object at column 0, so the terminator is
+    # `\n};`. Matching an indented one ran past TARGETS into the script body.
+    match = re.search(r"const TARGETS = (\{.*?\n\});", js, re.DOTALL)
     assert match, "could not find the emitted TARGETS declaration"
     probe = (
         f"const TARGETS = {match.group(1)};\n"
