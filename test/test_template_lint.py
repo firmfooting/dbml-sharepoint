@@ -48,6 +48,9 @@ KNOWN_CONTEXT = {
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
     # jsgen (deploy.js)
     "schema_json", "phases",
+    # The assessment's inputs, imported from assessgen so deploy.js and
+    # assess.js cannot disagree about the same site.
+    "assess_requirements", "assess_targets_data", "assess_not_assessable",
     # The single named account `build --enterprise-reader` enrols read-only,
     # or None to emit no enrolment code at all.
     "enterprise_reader",

@@ -458,9 +458,9 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR: (
         "A group declares both `enroll_enterprise_reader` and "
-        "`enroll_operator_during_deploy`. Phase 1.3 adds the pasting "
-        "operator to that group, so by Phase 1.4 the group holds somebody "
-        "other than the named reader, and 1.4 aborts the run when it "
+        "`enroll_operator_during_deploy`. Phase 1.4 adds the pasting "
+        "operator to that group, so by Phase 1.5 the group holds somebody "
+        "other than the named reader, and 1.5 aborts the run when it "
         "does. Every deploy of this mapping would fail, on a correct "
         "address, for a reason nothing in the mapping names. The "
         "combination has no legitimate use either: a reader group is "
@@ -486,7 +486,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "MEASURED 2026-08-13 against a live tenant: SharePoint answers a "
         "longer one with HTTP 500 and the message \"The parameter "
         "Description cannot be null or bigger than 512 characters.\" It "
-        "REFUSES rather than truncating, and it does so in deploy phase 1.2, "
+        "REFUSES rather than truncating, and it does so in deploy phase 1.3, "
         "part-way through writing site groups and before any list exists -- "
         "so the run stops against a half-provisioned site. Shorten the "
         "description. Note the same run found that a group description "
@@ -507,7 +507,7 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
         "A group declares both `enroll_enterprise_reader` and "
         "`allow_members_edit_membership: true`. The security phase applies "
-        "that setting before Phase 1.4 enrols the reader, so the enrolled "
+        "that setting before Phase 1.5 enrols the reader, so the enrolled "
         "account can then add principals to its own group -- and everything "
         "it adds inherits the group's `Read`. The exclusivity check reads "
         "membership at enrolment time and would find the named reader and "
@@ -534,8 +534,8 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY: (
         "A group declares both `enroll_enterprise_reader` and "
         "`require_empty_at_deploy`. These contradict across runs: the "
-        "reader is enrolled in Phase 1.4 and stays, so the next deploy "
-        "fails its own empty-group gate in Phase 1.2. Drop one."
+        "reader is enrolled in Phase 1.5 and stays, so the next deploy "
+        "fails its own empty-group gate in Phase 1.3. Drop one."
     ),
     FindingCode.ENTITY_HAS_NO_NOTE: (
         "A table has no `Note:`, so the list it provisions deploys with a "
@@ -858,7 +858,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "characters. MEASURED 2026-08-14 against a live tenant: SharePoint "
         "answers a longer one with HTTP 500 and the message \"The parameter "
         "Description cannot be bigger than 512 characters.\" It REFUSES "
-        "rather than truncating, and it does so in deploy phase 1.2 -- "
+        "rather than truncating, and it does so in deploy phase 1.3 -- "
         "part-way through writing permission levels and before any list "
         "exists -- so the run stops against a half-provisioned site. "
         "Shorten the description. `SP.RoleDefinition.Description` is a "

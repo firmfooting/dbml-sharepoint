@@ -1,4 +1,6 @@
 # test/test_jsgen.py
+import json
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -18,6 +20,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
+from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, MappingBundle
@@ -54,6 +57,46 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert f"Phase {pn('lookups')}" in js
     assert f"Phase {pn('indexes')}" in js
     assert "0.1.0-test" in js  # release tag rendered
+
+
+def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
+    """One spelling, or the two scripts disagree about the same site.
+
+    A re-derived copy in `jsgen` would emit the same key names, so this
+    compares the emitted values against the function both scripts import.
+    """
+    js = _generate_simple_js()
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    expected = assess_targets(schema, bundle, _FIXED_ARGS["site_role"])
+    # `tojson(indent=2)` indents the members but leaves the closing brace in
+    # column 0, so that is the terminator, not the assignment's indent.
+    match = re.search(r"const ASSESS_TARGETS = (\{.*?\n\});", js, re.DOTALL)
+    assert match is not None, "ASSESS_TARGETS is not emitted as an object literal"
+    # Round-trip the expectation too: `list_markers` holds tuples, which JSON
+    # has no way to distinguish from lists once emitted.
+    assert json.loads(match.group(1)) == json.loads(json.dumps(expected))
+    assert "const ASSESS_REQUIREMENTS = [" in js
+    assert "const ASSESS_NOT_ASSESSABLE = [" in js
+
+
+def test_the_assessment_runs_before_the_preflight_and_can_abort() -> None:
+    """A separate assess.js.txt only protects the operators who paste it.
+
+    Carrying the assessment inside deploy.js.txt is what makes it
+    unskippable, so both abort codes must appear before the preflight banner.
+    """
+    js = _generate_simple_js()
+    assert js.index(f"Starting Phase {pn('assess')}") < js.index(
+        f"Starting Phase {pn('preflight')}",
+    )
+    for code in ("assessment-blocked", "assessment-degraded-unacknowledged"):
+        assert js.index(code) < js.index(f"Starting Phase {pn('preflight')}"), code
+
+
+def test_the_acknowledgement_flag_defaults_to_refusing() -> None:
+    """An unedited paste must stop on a degraded site, as every probe does."""
+    assert "const ACKNOWLEDGE_DEGRADED = false;" in _generate_simple_js()
 
 
 def test_deploy_js_says_so_when_no_env_file_was_read() -> None:
@@ -1075,7 +1118,7 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
 
 
 def test_generated_js_contains_phase_0_and_phase_4() -> None:
-    """deploy.js must include Phase 1.2 (level/group creation) and Phase 4.2
+    """deploy.js must include Phase 1.3 (level/group creation) and Phase 4.2
     (break inheritance + role assignments) markers and SP REST calls (R6)."""
     js = _generate_simple_js()
 
@@ -1092,9 +1135,9 @@ def test_deploy_js_hardens_permission_and_role_checks() -> None:
     """Template hardening guards:
     - permission preflight demands ManagePermissions only when the schema has
       ACL work (needsPermissions), not unconditionally;
-    - Phase 1.2 role-definition / site-group existence probes surface non-404
+    - Phase 1.3 role-definition / site-group existence probes surface non-404
       responses as errors rather than treating them as "already exists";
-    - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.2 group
+    - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.3 group
       owner reads all validate the HTTP result (fetch does not throw on 4xx/5xx).
     """
     js = _generate_simple_js()
@@ -1126,7 +1169,7 @@ def test_deploy_js_reconciles_named_security_objects_and_fails_closed() -> None:
     """A matching name is not sufficient security evidence.
 
     Existing custom role definitions and groups must have their declared
-    permissions/membership controls reconciled. Any Phase 1.2 failure must stop
+    permissions/membership controls reconciled. Any Phase 1.3 failure must stop
     before list creation, and any later schema/ACL failure must stop before a
     seed row can make a partial deployment appear activated.
     """
@@ -1642,7 +1685,7 @@ def test_calculated_kind_wired_into_reconciliation_machinery() -> None:
 
 def test_permission_level_probe_uses_filter_not_getbyname() -> None:
     """SP's roledefinitions/getbyname returns HTTP 500 (not 404) for a missing
-    role definition, so a getbyname existence probe fails Phase 1.2 on every
+    role definition, so a getbyname existence probe fails Phase 1.3 on every
     clean site (first real-tenant paste). The probe must use the $filter form,
     which returns 200 + empty results when absent; getbyname remains only on
     the MERGE path for an existing level. Description is selected alongside
@@ -2616,7 +2659,7 @@ def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) ->
     """Sealed columns block UI schema edits even for site admins, the
     strongest defense available when team owners are unavoidably site
     collection admins (group-connected sites). Design: a maintenance unseal
-    after Phase 1.2 leaves every existing write path untouched, and Phase 4.1
+    after Phase 1.3 leaves every existing write path untouched, and Phase 4.1
     re-seals and verifies after all field writes (3/3b/3d) are done. The
     immutable-shape gate tolerates sealed only for declared-seal fields."""
     schema, bundle = _hardening_inputs(tmp_path)

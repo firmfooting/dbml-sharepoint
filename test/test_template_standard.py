@@ -1869,7 +1869,7 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     """The permission-level mirror of the group description sweep above.
 
     `SP.RoleDefinition.Description` refuses over 512 characters at deploy
-    phase 1.2, before any list exists (see `limits.MAX_ROLE_DEFINITION_DESCRIPTION`).
+    phase 1.3, before any list exists (see `limits.MAX_ROLE_DEFINITION_DESCRIPTION`).
     Nothing in the build guards a hand-written mapping against it, so the
     shipped catalogue is pinned here instead of left to review. The deploy
     appends a provenance marker to every level description it writes, so

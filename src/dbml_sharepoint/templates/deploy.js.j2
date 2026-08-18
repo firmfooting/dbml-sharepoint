@@ -9,8 +9,14 @@
 (async () => {
   const SITE_URL  = {{ site_url | tojson }};
   const SITE_ROLE = {{ site_role | tojson }};
+  // Set to true and paste again to deploy onto a site the assessment called
+  // DEGRADED. Defaults to refusing, like every probe's CONFIRMED flag.
+  const ACKNOWLEDGE_DEGRADED = false;
   const RELEASE_TAG = {{ release.release_tag | tojson }};
   const SCHEMA_VERSION = {{ release.schema_version | tojson }};
+  const ASSESS_REQUIREMENTS = {{ assess_requirements | tojson(indent=2) }};
+  const ASSESS_TARGETS = {{ assess_targets_data | tojson(indent=2) }};
+  const ASSESS_NOT_ASSESSABLE = {{ assess_not_assessable | tojson(indent=2) }};
 
   const log = (level, msg) => console.log(`[SP-DEPLOY] [${level}] ${msg}`);
   // Baked in at build time from the dbml-sharepoint.env this run read (or
@@ -48,6 +54,10 @@
 {% include "_http_write.js.j2" %}
 
 {% include "_digest_cached.js.j2" %}
+
+{# The same body assess.js runs, never a second copy: it needs
+   fetchWithRetry, apiUrl, odataName and getDigest, all declared above. #}
+{% include "_assess_body.js.j2" %}
 
 {% include "deploy/_shape_probes.js.j2" %}
 {% include "deploy/_helpers.js.j2" %}
@@ -116,7 +126,7 @@
   }
   // Every phase runs inside this try so that the finally below is reached
   // by EVERY exit: the normal `return summary` at the end of the last
-  // phase, the seven early returns that abort a broken run, and a throw
+  // phase, the early returns that abort a broken run, and a throw
   // nobody caught. Anything a run must hand back regardless of outcome
   // belongs in that finally and nowhere else; putting it on the success
   // path is how a failed run came to leave a Title unsealed. The phase

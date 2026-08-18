@@ -69,7 +69,7 @@ def _marker_over_ceiling(vc: ValidationContext) -> Iterator[Finding]:
 
     `level_description_budget` clamps at 0, so an empty declared description
     passes `len("") > budget` and generation emits a marker over the ceiling,
-    which SharePoint refuses part-way through phase 1.2.
+    which SharePoint refuses part-way through phase 1.3.
     """
     family = family_for(vc.schema)
     for entity_name in vc.bundle.mapping.entities:

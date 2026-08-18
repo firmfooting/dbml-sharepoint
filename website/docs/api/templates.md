@@ -45,7 +45,7 @@ DELETES every list declared by this schema at this site. Refuses non-empty lists
 
 ### `_assess_body.js.j2`
 
-Included by: `assess.js.j2`
+Included by: `assess.js.j2`, `deploy.js.j2`
 
 The whole assessment, taking its collaborators as an argument so the standalone script and the deploy can share it without a second copy.
 
@@ -86,6 +86,12 @@ Shared web-context resolution for every pasteable script. Expects a `log` functi
 *Phase 4.2 (PROTECTION): role inheritance and assignments*
 
 Phase body: break role inheritance and reconcile declared role assignments per list. 'configured' mode asserts the declared grants; 'exact' additionally removes undeclared direct grants (an allowlist). Principals resolve by name: site groups and the web's associated Owner/Member/Visitor groups; levels by role-definition name.
+
+### `deploy/_assess_gate.js.j2`
+
+*Phase 1.1 (PREPARE): site assessment*
+
+Runs the site assessment and refuses a verdict the operator has not accepted.
 
 ### `deploy/_field_defaults.js.j2`
 
@@ -131,25 +137,25 @@ Phase body: add the deferred lookup columns (self-references and members of refe
 
 ### `deploy/_maintenance_unseal.js.j2`
 
-*Phase 1.5 (PREPARE): maintenance unseal*
+*Phase 1.6 (PREPARE): maintenance unseal*
 
 Sealed columns reject UI schema edits even for site admins; the ONLY legitimate maintenance path is this script. Unseal declared fields so the run's write phases work unchanged; Phase 4.1 re-seals and verifies after every field write is done.
 
 ### `deploy/_operator_enrolment.js.j2`
 
-*Phase 1.3 (PREPARE): operator self-enrolment*
+*Phase 1.4 (PREPARE): operator self-enrolment*
 
 Some mappings route all list administration through an empty-by-default admin group (Owners hold only Contribute on the lists). Later phases (field reconciliation, indexes, ACL work) then need the operator to hold that group's grants, so the script enrols the operator for the duration of the run and removes them at the end. An operator who was ALREADY a member is left untouched. Only principals who can already manage the group (its Site-Owners owner) can benefit; this adds no new authority.
 
 ### `deploy/_preflight.js.j2`
 
-*Phase 1.1 (PREPARE): read-only preflight*
+*Phase 1.2 (PREPARE): read-only preflight*
 
-A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.2 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
+A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.3 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
 
 ### `deploy/_reader_enrolment.js.j2`
 
-*Phase 1.4 (PREPARE): enterprise reader enrolment*
+*Phase 1.5 (PREPARE): enterprise reader enrolment*
 
 Phase body: enrol the ONE account named by `build --enterprise-reader` into the mapping's `enroll_enterprise_reader` group, which holds Read. Emitted only when that flag was given, so an ordinary build carries no enrolment code at all. Unlike the operator's run-scoped enrolment, this membership is PERMANENT once the run reaches the end. If a later phase aborts, deploy.js.j2's finally removes the account this phase just enrolled -- a rollback of this run's own write, not a general reconciler for membership some earlier run may have left behind. Every resolution is refused unless it is a single user (PrincipalType strictly 1), does not match one of the three tenant-wide-claim needles at step 3, and matches the address the build asked for; the group must hold nobody but that account already (step 7); and the membership is then read back before the run is allowed to call it done. Those needles are NOT full coverage of the tenant-wide claims: they cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3 before treating this as a closed door -- it records which two, why the other two are deliberately not guessed, and which of the guards here the residual risk actually rests on.
 
@@ -161,7 +167,7 @@ Re-seal after every field write (1/2/3/3b/3d): sealed columns block UI schema ed
 
 ### `deploy/_security_principals.js.j2`
 
-*Phase 1.2 (PREPARE): permission levels and site groups*
+*Phase 1.3 (PREPARE): permission levels and site groups*
 
 Phase body: create/reconcile custom permission levels (base-permission bitmasks) and site groups (settings reconciled; owner corrected via a CSOM ProcessQuery where the REST surface cannot).
 
