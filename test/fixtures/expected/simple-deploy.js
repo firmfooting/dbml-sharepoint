@@ -1244,7 +1244,7 @@
     return targetDisplay.InternalName;
   }
 
-  async function immutableFieldMismatches(listName, field, actual, targetGuid) {
+  async function immutableFieldMismatches(listName, field, actual, targetGuid, targetState = null) {
     const desired = declaredFieldState(listName, field);
     const mismatches = [];
     // checked:true means compared and differed; checked:false means it could not
@@ -1279,12 +1279,18 @@
     }
     if (!field.target_list) return mismatches;
     if (!targetGuid) {
-      // No GUID means the target list was absent or unreadable. Resolving its
-      // display field would throw against a list nobody could read. Certain,
-      // not undetermined: adoption is impossible either way. Split this by
-      // target-list status once preflight can tell absent from unreadable.
-      mismatch('LookupList', field.target_list, actual.LookupList,
-        `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
+      // Absent is a certain refusal. Anything else means nobody resolved the
+      // target, and "does not exist" would point at the wrong list.
+      if (targetState == null || targetState === 'absent') {
+        mismatch('LookupList', field.target_list, actual.LookupList,
+          `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
+      } else if (targetState === 'unreadable') {
+        notChecked('LookupList', field.target_list,
+          `Existing lookup '${listName}.${field.title}' was not checked because declared target list '${field.target_list}' could not be read`);
+      } else {
+        notChecked('LookupList', field.target_list,
+          `Existing lookup '${listName}.${field.title}' was not checked because declared target list '${field.target_list}' resolved to no list identifier`);
+      }
       return mismatches;
     }
     // Compared before the display-field probe, so a wrong target list survives a
@@ -1716,19 +1722,22 @@
     async (list) => {
     for (const field of declaredFieldsForList(list)) {
       try {
-        const actual = await readFieldShape(
-          list.title,
-          field.title,
-          field,
-        );
+        const actual = await readFieldShape(list.title, field.title, field);
         if (!actual) continue;
         const targetGuid = field.target_list
           ? preflightListShapes[field.target_list]?.Id
           : null;
-        await assertFieldImmutableShape(list.title, field, actual, targetGuid);
-        // Force evaluation of every declared mutable expectation during the
-        // read-only preflight; Phase 2.1 performs and verifies any safe MERGE.
-        declaredFieldState(list.title, field);
+        const mismatches = await immutableFieldMismatches(
+          list.title, field, actual, targetGuid,
+          field.target_list ? listOutcomes[field.target_list] : null,
+        );
+        if (mismatches.length === 0) continue;
+        const message = [...new Set(mismatches.map(m => m.message))].join(' ');
+        log('ERROR', `Existing-schema field '${list.title}.${field.title}': ${message}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, column: field.title,
+          error: message, mismatches,
+        });
       } catch (err) {
         log('ERROR', `Existing-schema field '${list.title}.${field.title}': ${err.message}`);
         summary.errors.push({

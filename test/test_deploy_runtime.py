@@ -1366,6 +1366,52 @@ def test_a_list_with_a_wrong_template_still_reports_its_columns() -> None:
     assert [err.get("column") for err in task] == [None, "DueDate"], task
 
 
+# One list's metadata read fails outright, while a lookup in another list
+# targets it. 500 rather than 503: fetchWithRetry does not retry 500. The
+# adopted lookup column has to exist, because `_ADOPTED_HARNESS` answers every
+# field probe absent and the field wave skips a column it cannot read.
+_UNREADABLE_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
+      FieldTypeKind: 7, Title: 'Project', Required: true,
+      LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
+    });
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const readingProjectShape = u.includes("getbytitle('APP_Project')")
+        && u.includes('BaseTemplate');
+      if (!readingProjectShape) return _passThrough(url, opts);
+      const payload = { error: { message: { value: 'list metadata unavailable' } } };
+      return {
+        ok: false, status: 500,
+        headers: { get: () => null },
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_lookup_into_an_unreadable_list_is_not_checked_rather_than_missing() -> None:
+    """Saying "does not exist" about an unreadable list blames the wrong object.
+
+    The operator reads it as a schema error in the list holding the lookup and
+    goes looking there, when the fault is the target list nobody could read.
+    """
+    summary = _summary_of(_run_deploy(
+        _UNREADABLE_LOOKUP_TARGET_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    lookups = [
+        err["error"] for err in summary["errors"] if err.get("column") == "Project"
+    ]
+    assert lookups, summary["errors"]
+    assert "could not be read" in lookups[0], lookups
+    assert "does not yet exist" not in lookups[0], lookups
+
+
 # The collector's two collaborators. Stubbed because this test is about what the
 # collector RECORDS, not about how a declaration is read or a probe is answered.
 _COLLECTOR_STUBS = textwrap.dedent("""

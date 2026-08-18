@@ -929,11 +929,14 @@ def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> No
     to the collector stops throwing, and two of these sites verify a read-back:
     one that stops throwing is indistinguishable from one that passed.
 
-    The list count moved from four to three deliberately. Preflight's list lane
-    now calls `immutableListMismatches` directly, because a list whose own shape
-    is wrong still has columns worth reporting and a throw hid all of them. The
-    three remaining list sites and two of the three field sites are the five
-    write-region ones; the third field site is preflight, which still throws.
+    Both counts dropped by one deliberately, and 2 and 3 is now exactly the five
+    write-region sites. Preflight's two lanes call the collectors directly,
+    because a throw reported one property and hid the rest: a list whose own
+    shape is wrong still has columns worth reporting, and a column's other
+    mismatches are still worth reporting when its lookup target is unreadable.
+    Every remaining site is a write or a post-write read-back, where throwing is
+    the point. Lowering either number again means a write-region site stopped
+    throwing, which is the failure this test exists to catch.
 
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
@@ -941,7 +944,7 @@ def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> No
     """
     js = _generate_simple_js()
 
-    assert _call_count(js, "assertFieldImmutableShape") == 3
+    assert _call_count(js, "assertFieldImmutableShape") == 2
     assert _call_count(js, "assertListImmutableShape") == 3
 
 
