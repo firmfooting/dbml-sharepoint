@@ -87,7 +87,11 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue  # unknown entity already reported above
         xcols = cross_site_by_entity.get(entity_name, set())
         rendered = rendered_columns(spec_table, xcols) | {"Title"} | SYSTEM_COLUMNS
-        types_by_col = {col.name: col.type for col in spec_table.columns}
+        # Not the declared columns alone: the generator provisions the Title
+        # and the cross-site expansion pair too, and a style spec may name one.
+        types_by_col = effective_column_types(
+            {col.name: col.type for col in spec_table.columns}, xcols,
+        )
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             at = Location(
@@ -101,31 +105,35 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "overdue-date": "calculated_date",
             }.get(style_name)
             target_type = types_by_col.get(col_name)
-            # Both sides are None for a style with no calculated form (pill,
-            # trend) on a column absent from the DBML, and two Nones matching
-            # is not a match.
-            if (
-                calculated_type_for_style is not None
-                and target_type == calculated_type_for_style
-                and spec.get("calculated") is not True
-            ):
-                findings.append(Finding(
-                    FindingCode.STYLE_REQUIRES_CALCULATED,
-                    f"{ctx}: {style} on {target_type} requires calculated: true "
-                    "to decode SharePoint's typed formatter value.",
-                    location=at,
-                ))
-            elif (
-                spec.get("calculated") is True
-                and calculated_type_for_style is not None
-                and target_type != calculated_type_for_style
-            ):
-                findings.append(Finding(
-                    FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
-                    f"{ctx}: calculated: true on {style} expects "
-                    f"{calculated_type_for_style}, not {target_type}.",
-                    location=at,
-                ))
+            # Both rules interpolate the COLUMN's type, so one with no
+            # effective type would print "expects calculated_text, not None".
+            # This is a backstop for anything still unmodelled, not the
+            # cross-site case. The pair is guarded rather than the column
+            # skipped, because the trend, guard and color_by checks below
+            # judge OTHER columns.
+            if target_type is not None:
+                if (
+                    calculated_type_for_style is not None
+                    and target_type == calculated_type_for_style
+                    and spec.get("calculated") is not True
+                ):
+                    findings.append(Finding(
+                        FindingCode.STYLE_REQUIRES_CALCULATED,
+                        f"{ctx}: {style} on {target_type} requires calculated: true "
+                        "to decode SharePoint's typed formatter value.",
+                        location=at,
+                    ))
+                elif (
+                    spec.get("calculated") is True
+                    and calculated_type_for_style is not None
+                    and target_type != calculated_type_for_style
+                ):
+                    findings.append(Finding(
+                        FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
+                        f"{ctx}: calculated: true on {style} expects "
+                        f"{calculated_type_for_style}, not {target_type}.",
+                        location=at,
+                    ))
             if style in ("severity", "pill") and is_multi_value(
                 types_by_col.get(col_name, ""),
             ):

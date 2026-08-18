@@ -271,6 +271,9 @@
       findings.push({ tier, key, level, detail });
       log(level, `[T${tier}] ${key}: ${detail}`);
     };
+    // A property the site did not return is not a value. Printing it as one
+    // put the literal word `undefined` in operator-facing lines.
+    const reported = (v, fallback = '(not reported)') => (v == null ? fallback : v);
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
     async function probeGet(suffix) {
@@ -278,7 +281,12 @@
         const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!r.ok) return { ok: false, status: r.status };
         const j = await r.json();
-        return { ok: true, d: (j && j.d !== undefined) ? j.d : j };
+        const d = (j && j.d !== undefined) ? j.d : j;
+        // Every caller reads a property off `d`, so a 200 with a null body was
+        // an `ok` result that threw on the first read. Shape alone is judged,
+        // because the call sites take differing response shapes.
+        if (d === null || typeof d !== 'object') return { ok: false, error: 'non-object payload' };
+        return { ok: true, d };
       } catch (err) {
         return { ok: false, error: err.message };
       }
@@ -293,17 +301,23 @@
     {
       const web = await probeGet('web?$select=WebTemplate,Configuration,Language,UIVersion');
       if (web.ok) finding(1, 'web_template', 'INFO',
-        `Template ${web.d.WebTemplate}#${web.d.Configuration}, LCID ${web.d.Language}.`);
+        `Template ${reported(web.d.WebTemplate)}#${reported(web.d.Configuration)}, LCID ${reported(web.d.Language)}.`);
       else finding(1, 'web_template', 'INFO', `Could not read web template (HTTP ${web.status || web.error}).`);
     }
 
     // Site lock / read-only: a locked site blocks any deploy.
     {
       const site = await probeGet('site?$select=ReadOnly,LockIssue');
-      if (site.ok && (site.d.ReadOnly === true || site.d.LockIssue)) {
+      // A payload carrying neither property never said the site was unlocked,
+      // and reading it as writable passed a BLOCKED-level requirement unchecked.
+      const answered = site.ok && ('ReadOnly' in site.d || 'LockIssue' in site.d);
+      if (answered && (site.d.ReadOnly === true || site.d.LockIssue)) {
         finding(1, 'site_not_locked', 'BLOCKED', `Site is read-only/locked: ${site.d.LockIssue || 'ReadOnly'}.`);
-      } else if (site.ok) {
+      } else if (answered) {
         finding(1, 'site_not_locked', 'PASS', 'Site is writable (not locked).');
+      } else if (site.ok) {
+        finding(1, 'site_not_locked', 'NOT-ASSESSABLE',
+          'The site answered without ReadOnly or LockIssue, so whether it is locked is unknown.');
       } else {
         finding(1, 'site_not_locked', 'WARN', `Could not read lock state (HTTP ${site.status || site.error}).`);
       }
@@ -313,7 +327,7 @@
     try {
       const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
       const j = await r.json();
-      finding(1, 'platform_build', 'INFO', `SharePoint build ${j.d.GetContextWebInformation.LibraryVersion}.`);
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(j.d.GetContextWebInformation.LibraryVersion)}.`);
     } catch (err) {
       finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
     }
@@ -321,8 +335,11 @@
     // Effective permissions: decode the bits the deploy needs + NoScript.
     {
       const perms = await probeGet('web?$select=EffectiveBasePermissions');
-      if (perms.ok && perms.d.EffectiveBasePermissions) {
-        const low = Number(perms.d.EffectiveBasePermissions.Low || 0);
+      // The payload is tested apart from the transport: a 200 carrying no
+      // EffectiveBasePermissions took the same arm as a failed request.
+      const bits = perms.ok && perms.d ? perms.d.EffectiveBasePermissions : null;
+      if (bits) {
+        const low = Number(bits.Low || 0);
         const has = (bit) => (low & bit) === bit;
         finding(1, 'manage_lists_bit', has(0x800) ? 'PASS' : 'BLOCKED',
           has(0x800) ? 'Operator holds ManageLists.' : 'Operator LACKS ManageLists, so lists cannot be created.');
@@ -330,10 +347,17 @@
         const sca = cu.ok && cu.d.IsSiteAdmin === true;
         finding(1, 'manage_permissions_bit', (has(0x2000000) || sca) ? 'PASS' : 'BLOCKED',
           (has(0x2000000) || sca) ? 'Operator holds ManagePermissions (or is a site collection admin).' : 'Operator LACKS ManagePermissions, so ACL/group work cannot run.');
-        finding(1, 'noscript', has(0x40000) ? 'INFO' : 'INFO',
+        finding(1, 'noscript', 'INFO',
           has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
       } else {
-        finding(1, 'manage_lists_bit', 'WARN', `Could not read effective permissions (HTTP ${perms.status || perms.error}).`);
+        // One finding per key: the verdict loop skips a key it has no finding
+        // for, so naming one of them let the rest pass unchecked.
+        const why = perms.ok
+          ? 'the site answered without EffectiveBasePermissions'
+          : `HTTP ${perms.status || perms.error}`;
+        for (const key of ['manage_lists_bit', 'manage_permissions_bit', 'noscript']) {
+          finding(1, key, 'NOT-ASSESSABLE', `Could not read effective permissions (${why}); no check was made for this permission.`);
+        }
       }
     }
 
@@ -358,9 +382,14 @@
     // Regional settings & languages: locale drives date rendering.
     {
       const rs = await probeGet('web/regionalsettings?$select=LocaleId');
-      if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${rs.d.LocaleId}.`);
+      if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${reported(rs.d.LocaleId)}.`);
       const ml = await probeGet('web?$select=IsMultilingual,SupportedUILanguageIds');
-      if (ml.ok) finding(1, 'languages', 'INFO', `Multilingual ${ml.d.IsMultilingual}; UI languages ${(ml.d.SupportedUILanguageIds && ml.d.SupportedUILanguageIds.results) || []}.`);
+      if (ml.ok) {
+        // `${[]}` stringifies to nothing, so an unreported list read as a blank.
+        const uiLanguages = (ml.d.SupportedUILanguageIds && ml.d.SupportedUILanguageIds.results) || [];
+        finding(1, 'languages', 'INFO',
+          `Multilingual ${reported(ml.d.IsMultilingual)}; UI languages ${uiLanguages.length ? uiLanguages.join(', ') : '(none reported)'}.`);
+      }
     }
 
     // Group connection, storage, hub, recycle bin.
@@ -370,9 +399,15 @@
         finding(1, 'group_connected', 'INFO', 'Site is Microsoft 365 group-connected.');
       }
       const usage = await probeGet('site/usage');
-      if (usage.ok) finding(1, 'storage', 'INFO', `Storage used ${Math.round((usage.d.Storage || 0) / 1048576)} MB (${Math.round((usage.d.StoragePercentageUsed || 0) * 100)}% of quota).`);
+      if (usage.ok) {
+        // `|| 0` reported an unanswered quota as an empty site.
+        const measured = usage.d.Storage != null && usage.d.StoragePercentageUsed != null;
+        finding(1, 'storage', 'INFO', measured
+          ? `Storage used ${Math.round(usage.d.Storage / 1048576)} MB (${Math.round(usage.d.StoragePercentageUsed * 100)}% of quota).`
+          : 'site/usage did not report storage figures.');
+      }
       const hub = await probeGet('site?$select=IsHubSite,HubSiteId');
-      if (hub.ok) finding(1, 'hub', 'INFO', `Hub site ${hub.d.IsHubSite}; hub id ${hub.d.HubSiteId}.`);
+      if (hub.ok) finding(1, 'hub', 'INFO', `Hub site ${reported(hub.d.IsHubSite)}; hub id ${reported(hub.d.HubSiteId)}.`);
     }
 
     // Retention labels available to the site (the UI's own picker call).
@@ -380,8 +415,15 @@
       const u = encodeURIComponent(`${ORIGIN}${WEB}`);
       const tags = await probeGet(`SP.CompliancePolicy.SPPolicyStoreProxy.GetAvailableTagsForSite(siteUrl=@u)?@u='${u}'`);
       if (tags.ok) {
-        const names = ((tags.d && tags.d.results) || []).map(t => t.TagName).filter(Boolean);
-        finding(1, 'retention_labels', 'INFO', names.length ? `Available retention labels: ${names.join(', ')}.` : 'No retention labels available to this site.');
+        // A payload carrying no `results` is an unanswered question, not an
+        // answer of none.
+        const rows = tags.d && tags.d.results;
+        if (!Array.isArray(rows)) {
+          finding(1, 'retention_labels', 'INFO', 'Retention labels not reported by this site.');
+        } else {
+          const names = rows.map(t => t.TagName).filter(Boolean);
+          finding(1, 'retention_labels', 'INFO', names.length ? `Available retention labels: ${names.join(', ')}.` : 'No retention labels available to this site.');
+        }
       } else {
         finding(1, 'retention_labels', 'INFO', `Retention-label surface not available (HTTP ${tags.status || tags.error}).`);
       }
@@ -390,11 +432,17 @@
     // App catalog + SPFx footprint + search availability.
     {
       const cat = await probeGet('SP_TenantSettings_Current');
-      if (cat.ok) finding(1, 'app_catalog', 'INFO', cat.d.CorporateCatalogUrl ? `Tenant app catalog at ${cat.d.CorporateCatalogUrl}.` : 'No tenant app catalog configured.');
+      if (cat.ok) {
+        // A payload without the property never said there was no catalog.
+        const carried = cat.d != null && typeof cat.d === 'object' && 'CorporateCatalogUrl' in cat.d;
+        finding(1, 'app_catalog', 'INFO', !carried
+          ? 'Tenant app catalog not reported by this site.'
+          : (cat.d.CorporateCatalogUrl ? `Tenant app catalog at ${cat.d.CorporateCatalogUrl}.` : 'No tenant app catalog configured.'));
+      }
       const uca = await probeGet('web/UserCustomActions?$select=Name,Location,ClientSideComponentId');
       if (uca.ok && uca.d && Array.isArray(uca.d.results)) finding(1, 'custom_actions', 'INFO', `${uca.d.results.length} web custom action(s) / SPFx extension(s) registered.`);
       const search = await probeGet("search/query?querytext='test'&rowlimit=1");
-      finding(1, 'search', search.ok ? 'INFO' : 'INFO', search.ok ? 'Search service responds.' : `Search probe returned HTTP ${search.status || search.error}.`);
+      finding(1, 'search', 'INFO', search.ok ? 'Search service responds.' : `Search probe returned HTTP ${search.status || search.error}.`);
     }
 
     // ===================================================================
@@ -433,7 +481,16 @@
       const expected = LIST_MARKERS.get(title);
       if (!expected) return;
       const key = `provenance_marker:${title}`;
-      const held = description == null ? '' : String(description);
+      // A Description the probe did not report is not one that lost its marker.
+      // An empty string that WAS reported still warns, which is the drift this
+      // check exists for.
+      if (description == null) {
+        finding(2, key, 'NOT-ASSESSABLE',
+          `'${title}' exists, but its Description was not reported, so whether fleet `
+          + 'reporting can see it is unknown.');
+        return;
+      }
+      const held = String(description);
       if (held.includes(expected)) {
         finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
       } else {
@@ -451,7 +508,7 @@
       if (!list.ok && list.status === 404) {
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
       } else if (list.ok) {
-        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}), a redeploy/reconcile target.`);
+        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}), a redeploy/reconcile target.`);
         markerFinding(title, list.d.Description);
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
@@ -483,12 +540,17 @@
       // Intelligent-versioning trim: WARN if service-managed auto-trim governs.
       if (TARGETS.declares_versioning && probeList) {
         const vp = await probeGet(`web/lists/getbytitle('${odataName(probeList)}')?$expand=VersionPolicies&$select=VersionPolicies/DefaultTrimMode`);
-        if (vp.ok && vp.d.VersionPolicies && Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
-          finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
-        } else if (vp.ok) {
-          finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
-        } else {
+        // An unreported DefaultTrimMode is not a trim mode of none, and reading
+        // it as one passed this requirement having checked nothing.
+        if (!vp.ok) {
           finding(2, 'version_trim_mode', 'INFO', 'VersionPolicies surface not present on this tenant.');
+        } else if (!vp.d.VersionPolicies || vp.d.VersionPolicies.DefaultTrimMode == null) {
+          finding(2, 'version_trim_mode', 'NOT-ASSESSABLE',
+            'The list answered without VersionPolicies/DefaultTrimMode, so whether service-managed auto-trim overrides the declared MajorVersionLimit is unknown.');
+        } else if (Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
+          finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
+        } else {
+          finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
         }
       } else if (TARGETS.declares_versioning) {
         finding(2, 'version_trim_mode', 'INFO', 'No existing declared list to read version policy; checked at deploy time.');
@@ -535,16 +597,23 @@
     // ===================================================================
     const byKey = {};
     for (const f of findings) {
-      if (f.level === 'INFO' || f.level === 'NOT-ASSESSABLE') continue;
+      // NOT-ASSESSABLE is kept: dropping it let the loop below read a
+      // requirement nobody could check as a pass. Tier 3's shared key
+      // `not_assessable` is not a requirement key, so it is never read.
+      if (f.level === 'INFO') continue;
       byKey[f.key] = f;
     }
     let blocked = null;
     let warnings = 0;
+    let unassessed = null;
     for (const req of REQUIREMENTS) {
       const f = byKey[req.key];
       if (!f) continue;
       if (f.level === 'BLOCKED') { if (!blocked) blocked = req; }
       else if (f.level === 'WARN') warnings += 1;
+      // This is neither BLOCKED, since nothing says the requirement is unmet,
+      // nor a pass, since something the pack requires went unchecked.
+      else if (f.level === 'NOT-ASSESSABLE') { if (!unassessed) unassessed = req; }
     }
     const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';
     // The level comes from the caller: 'DONE' is deploy's terminal signal, so a
@@ -552,9 +621,13 @@
     if (blocked) {
       verdict = 'BLOCKED';
       log(verdictLevel, `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
-    } else if (warnings > 0) {
+    } else if (warnings > 0 || unassessed) {
       verdict = 'DEGRADED';
-      log(verdictLevel, `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);
+      const why = warnings > 0 ? `${warnings} warning(s)` : '';
+      const unchecked = unassessed
+        ? `${why ? ', ' : ''}${unassessed.key} could not be assessed`
+        : '';
+      log(verdictLevel, `${prefix} pack: DEGRADED (${why}${unchecked}). Deployable; review the findings above.`);
     } else {
       verdict = 'COMPATIBLE';
       log(verdictLevel, `${prefix} pack: COMPATIBLE. No blocking or degrading findings.`);
@@ -2144,9 +2217,13 @@
     return { ...summary, aborted: 'assessment-blocked' };
   }
   if (assessment.verdict === 'DEGRADED' && !ACKNOWLEDGE_DEGRADED) {
-    // BLOCKED as well as WARN: a blocking finding the pack does not require is
-    // shown to the operator here even though it does not gate the run.
-    for (const f of assessment.findings.filter(f => f.level === 'WARN' || f.level === 'BLOCKED')) {
+    // Every level the verdict degrades on, not WARN alone: NOT-ASSESSABLE
+    // degrades it too, and a site degrading only that way named nothing here.
+    // BLOCKED is included because a blocking finding the pack does not require
+    // is still worth reading, and Tier 3 is not, because it is the same list on
+    // every site and would bury the findings that are about this one.
+    const degrading = new Set(['WARN', 'BLOCKED', 'NOT-ASSESSABLE']);
+    for (const f of assessment.findings.filter(f => f.tier !== 3 && degrading.has(f.level))) {
       log('ERROR', `  ${f.key}: ${f.detail}`);
     }
     log('ERROR', 'The assessment found degrading conditions. Review them, set ACKNOWLEDGE_DEGRADED = true at the top of this script, and paste again.');
