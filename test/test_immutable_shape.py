@@ -65,15 +65,17 @@ def _function_body(source: str, name: str) -> str:
 
 
 def _compared_properties(source: str, name: str) -> set[str]:
-    """The properties the named assertion reads in guard position.
+    """The properties the named assertion reads outside its error messages.
 
-    The lookbehind drops `${actual.X}` interpolations, so naming a property in an
-    error message does not count as comparing it. This pins which properties are
+    Template literals are stripped whole rather than matched around, so a
+    property named only inside `${JSON.stringify(actual.X)}` or any other
+    message form does not count as compared. This pins which properties are
     still compared, and nothing more: changing a `!==` to `===` leaves the
-    property in guard position and this test green. The golden fixture and review
-    cover whether a comparison is correct.
+    property in guard position and this test green. The golden fixture and
+    review cover whether a comparison is correct.
     """
-    return set(re.findall(r"(?<!\$\{)actual\.([A-Za-z]+)", _function_body(source, name)))
+    body = re.sub(r"`[^`]*`", "``", _function_body(source, name), flags=re.DOTALL)
+    return set(re.findall(r"actual\.([A-Za-z]+)", body))
 
 
 def test_the_field_assertions_and_the_vocabulary_cover_the_same_properties() -> None:
