@@ -43,6 +43,12 @@ DELETES every list declared by this schema at this site. Refuses non-empty lists
 
 ## Shared partials
 
+### `_assess_body.js.j2`
+
+Included by: `assess.js.j2`
+
+The whole assessment, taking its collaborators as an argument so the standalone script and the deploy can share it without a second copy.
+
 ### `_digest_cached.js.j2`
 
 Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
