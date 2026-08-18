@@ -1517,7 +1517,7 @@ def test_a_reader_group_that_also_enrols_the_operator_is_refused() -> None:
     Phase 1.4 adds the pasting operator to a group flagged
     `enroll_operator_during_deploy`. Phase 1.5 aborts the run when the
     reader group holds any principal other than the named reader. Put both
-    flags on one group and 1.3 manufactures exactly what 1.4 refuses, so
+    flags on one group and 1.4 manufactures exactly what 1.5 refuses, so
     every deploy fails -- on a correct address, for a reason nothing in the
     mapping states.
 

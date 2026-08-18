@@ -66,9 +66,9 @@ def _without_assessment(js: str) -> str:
     valid, so the object literal that follows still parses.
     """
     stubbed = js.replace(
-        "  const assessment = await assessSite({",
-        "  const assessment = { findings: [], verdict: 'COMPATIBLE' };\n"
-        "  if (false) await assessSite({",
+        "    assessment = await assessSite({",
+        "    assessment = { findings: [], verdict: 'COMPATIBLE' };\n"
+        "    if (false) await assessSite({",
         1,
     )
     assert stubbed != js, "the assessment stub did not splice in"
@@ -423,8 +423,8 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           .map(([, v]) => v);
         return { d: { results: [titleField(listTitle), ...own] } };
       }
-      // Principals: enough shape to get PREPARE past 1.2/1.3 and reach the
-      // maintenance unseal at 1.4. Before this, the runtime test had never
+      // Principals: enough shape to get PREPARE past 1.3/1.4 and reach the
+      // maintenance unseal at 1.6. Before this, the runtime test had never
       // executed a phase beyond the read-only preflight.
       if (url.includes('AssociatedOwnerGroup') || url.includes('AssociatedMemberGroup')
           || url.includes('AssociatedVisitorGroup')) {
@@ -731,11 +731,88 @@ def _locked_harness() -> str:
     return locked
 
 
+def _list_only_harness(*, template_creatable: bool = True) -> str:
+    """`_HARNESS` with an operator who can manage lists but not ACLs.
+
+    Splices off the healthy site rather than a second copy of it, so what
+    this fixture changes is exactly what the tests using it are about: the
+    ManagePermissions bit, and no declared list already on the site.
+
+    `template_creatable` decides the verdict. True enumerates base template
+    100 and the pack comes out COMPATIBLE; False leaves `list_template_100`
+    warning, which is DEGRADED.
+    """
+    cleared = _HARNESS.replace(
+        "{ High: 4294967295, Low: 4294967295 }",
+        # Every right except ManagePermissions, which is Low bit 0x2000000.
+        "{ High: 4294967295, Low: (4294967295 & ~0x2000000) >>> 0 }",
+        1,
+    )
+    assert cleared != _HARNESS, "the ManagePermissions bit was not cleared"
+    stocked = cleared
+    if template_creatable:
+        stocked = cleared.replace(
+            "const body = (url) => {\n",
+            "const body = (url) => {\n"
+            "  if (url.includes('listtemplates')) {\n"
+            "    return { d: { results: [{ ListTemplateTypeKind: 100 }] } };\n"
+            "  }\n",
+            1,
+        )
+        assert stocked != cleared, "the list-template branch was not spliced in"
+    # A 404 on the declared list is a clean provision target, which passes the
+    # collision requirement and raises no provenance-marker finding.
+    absent = stocked.replace(
+        "  return {\n    ok: true, status: 200,\n",
+        "  if (/\\/lists\\/getbytitle\\('[^/]*'\\)$/.test(String(url).split('?')[0])) {\n"
+        "    const missing = { error: { message: { value: 'List not found' } } };\n"
+        "    return { ok: false, status: 404, headers: { get: () => null },\n"
+        "             json: async () => missing,\n"
+        "             text: async () => JSON.stringify(missing) };\n"
+        "  }\n"
+        "  return {\n    ok: true, status: 200,\n",
+        1,
+    )
+    assert absent != stocked, "the absent-list branch was not spliced in"
+    return absent
+
+
+def _list_only_deploy_js(tmp_path: Path) -> str:
+    """deploy.js for a pack that performs no ACL work of any kind.
+
+    `requires_manage_permissions` is false for it, so neither the deploy's own
+    preflight nor the assessment's requirement list asks for the bit.
+    """
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+        """,
+        mapping=entities("Risk"),
+    )
+    return generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
 def _run_deploy_with_assessment(
-    *, acknowledge: bool = False, harness: str = _HARNESS,
+    *, acknowledge: bool = False, harness: str = _HARNESS, js: str | None = None,
 ) -> str:
     """The Node transcript of a run whose assessment actually executes."""
-    js = _deploy_js_with_assessment()
+    js = _deploy_js_with_assessment() if js is None else js
     if acknowledge:
         js = js.replace(_ACK_FALSE, _ACK_TRUE, 1)
         assert _ACK_TRUE in js, "the acknowledgement flag was not flipped"
@@ -747,7 +824,7 @@ def _run_deploy_with_assessment(
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_degraded_site_stops_until_the_operator_acknowledges() -> None:
-    """One paste becomes two, and that cost is the point of the flag.
+    """Stopping costs the operator a second paste, and it is worth it.
 
     Print-and-proceed would turn a real finding into a log line, which is the
     failure this design exists to prevent.
@@ -778,10 +855,10 @@ def test_an_acknowledged_degraded_site_runs_on_past_the_gate() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_blocked_site_stops_even_when_degradation_is_acknowledged() -> None:
-    """The flag accepts degradation, never a block.
+    """An operator who sets the flag once leaves it set.
 
-    An operator who has set it once leaves it set, so a BLOCKED verdict it
-    could wave through would be waved through on every later paste.
+    A BLOCKED verdict the flag could wave through would therefore be waved
+    through on every later paste, against every later site.
     """
     output = _run_deploy_with_assessment(
         acknowledge=True, harness=_locked_harness(),
@@ -793,6 +870,78 @@ def test_a_blocked_site_stops_even_when_degradation_is_acknowledged() -> None:
         f for f in summary["assessment"]["findings"] if f["level"] == "BLOCKED"
     ]
     assert [f["key"] for f in blocking] == ["site_not_locked"], blocking
+    assert f"Starting Phase {pn('preflight')}" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_pack_needing_no_acl_work_deploys_without_manage_permissions(
+    tmp_path: Path,
+) -> None:
+    """The verdict decides, never the raw findings.
+
+    `_assess_body` raises `manage_permissions_bit` at BLOCKED for any operator
+    lacking the right, while the verdict counts only the keys THIS pack
+    requires, and a list-only pack requires none. assessgen, jsgen and
+    deploy.js's own preflight all admit that operator (see
+    `test_manage_permissions_agreement`), so a gate reading the findings
+    instead of the verdict refused a deployment the other three permit, and no
+    flag could override it.
+    """
+    output = _run_deploy_with_assessment(
+        js=_list_only_deploy_js(tmp_path), harness=_list_only_harness(),
+    )
+    summary = _summary_of(output)
+    assert summary["assessment"]["verdict"] == "COMPATIBLE"
+    # The finding is raised; acting on it is what must not happen. Asserted so
+    # a fixture that stopped producing it could not pass this vacuously.
+    blocking = [
+        f["key"] for f in summary["assessment"]["findings"]
+        if f["level"] == "BLOCKED"
+    ]
+    assert blocking == ["manage_permissions_bit"], blocking
+    assert summary.get("aborted") != "assessment-blocked", summary
+    assert f"Starting Phase {pn('preflight')}" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_degraded_stop_names_the_findings_it_does_not_gate_on(
+    tmp_path: Path,
+) -> None:
+    """A BLOCKED finding the pack does not require still has to be readable.
+
+    It no longer stops the run, so the list this stop prints is where an
+    operator meets it while deciding whether to acknowledge. Printing WARN
+    alone would hide the more serious of the two.
+    """
+    output = _run_deploy_with_assessment(
+        js=_list_only_deploy_js(tmp_path),
+        harness=_list_only_harness(template_creatable=False),
+    )
+    summary = _summary_of(output)
+    assert summary["assessment"]["verdict"] == "DEGRADED"
+    assert summary.get("aborted") == "assessment-degraded-unacknowledged", summary
+    printed = [ln for ln in output.splitlines() if "[ERROR]" in ln]
+    assert any("list_template_100" in ln for ln in printed), printed
+    assert any("manage_permissions_bit" in ln for ln in printed), printed
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throw_inside_the_assessment_still_names_the_abort() -> None:
+    """An unhandled rejection hands the operator nothing at all.
+
+    No `__RESULT__`, no abort code and no [ERROR] line, so a broken probe
+    looks exactly like a script that never ran. The run does fail closed
+    without writing, but every other phase abort returns a structured
+    summary and this one has to as well.
+    """
+    js = _deploy_js_with_assessment().replace(
+        '"base_templates"', '"base_templates_typo"', 1,
+    )
+    assert '"base_templates_typo"' in js, "the targets key was not renamed"
+    output = _run_deploy_with_assessment(js=js)
+    summary = _summary_of(output)
+    assert summary.get("aborted") == "assessment-failed", summary
+    assert "assess-targets-incomplete" in output
     assert f"Starting Phase {pn('preflight')}" not in output
 
 
@@ -869,20 +1018,21 @@ def test_the_adopted_run_reaches_the_write_phases() -> None:
 
     The original mock answered every field probe as absent and every list
     probe as malformed, so the run aborted in the read-only preflight: no
-    phase past 1.1 had ever executed in a test, which is how a bug in the
-    Phase 2.1 field reconcile shipped in a green suite. If a future change
-    quietly shortens this run, the coverage disappears silently, so the
-    reach is asserted rather than assumed."""
+    phase past the preflight had ever executed in a test, which is how a bug
+    in the list-creation field reconcile shipped in a green suite. If a
+    future change quietly shortens this run, the coverage disappears
+    silently, so the reach is asserted rather than assumed."""
     output = _run_deploy(
         _ADOPTED_HARNESS,
         "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
     )
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
-    # `unseal` by key, not by number: the enterprise-reader step renumbered
-    # it once already, and this test is about REACH, not about numbering
-    # (which test_phases pins).
-    for phase in ("1.1", "1.2", "1.3", pn("unseal"), "2.1"):
+    # By key, never by number: inserting a step renumbers every phase after
+    # it, and a literal then names a DIFFERENT phase while still passing.
+    # This test is about REACH; test_phases pins the numbering.
+    for phase in (pn("preflight"), pn("security"), pn("enrolment"),
+                  pn("unseal"), pn("lists")):
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
@@ -1181,8 +1331,8 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
 # The adopted site again, but every field CREATION is refused. STRUCTURE
 # then records an error per column and takes its early return, the
 # designed abort that skips ACL work on a broken schema. It also skips
-# PROTECTION, which is where a Title unsealed at 1.4 used to be handed
-# back. Only creation is refused: the 1.4 MERGE that unseals Title is a
+# PROTECTION, which is where a Title unsealed at 1.6 used to be handed
+# back. Only creation is refused: the 1.6 MERGE that unseals Title is a
 # write to an existing field and still succeeds.
 _ABORTING_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
     const _passThrough = globalThis.fetch;
@@ -1765,11 +1915,11 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """The end-to-end guard, and the one that gives the others their value.
 
     The original mock aborted in the read-only preflight, so no phase past
-    1.1 had ever executed in a test, which is how a bug in the Phase 2.1
-    field reconcile shipped in a green suite. This run adopts an existing
-    site, unseals, creates, reconciles declared formulas, seals and seeds,
-    and must finish with no errors and no abort. If a future change
-    shortens it, the coverage disappears silently unless this fails.
+    the preflight had ever executed in a test, which is how a bug in the
+    list-creation field reconcile shipped in a green suite. This run adopts
+    an existing site, unseals, creates, reconciles declared formulas, seals
+    and seeds, and must finish with no errors and no abort. If a future
+    change shortens it, the coverage disappears silently unless this fails.
     """
     js = _declared_deploy_js(
         tmp_path,
@@ -1793,7 +1943,11 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     assert summary.get("errors") == [], summary["errors"]
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
-    for phase in ("1.1", pn("unseal"), "2.1", "3.1", "4.1", "5.1"):
+    # By key, never by number. The stubbed assessment banner prints on every
+    # run, so a literal "1.1" here asserted nothing once the assessment took
+    # that number.
+    for phase in (pn("preflight"), pn("unseal"), pn("lists"), pn("views"),
+                  pn("seal"), pn("seeds")):
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
@@ -2238,7 +2392,7 @@ def _reader_harness(
             return respond({ d: null });
           }
           // The flagged group's own membership, keyed off the BY-ID form of
-          // the path so the 1.2 empty-group gate (which asks by name)
+          // the path so the 1.3 empty-group gate (which asks by name)
           // still reaches the adopted mock underneath and still sees empty.
           if (/sitegroups\(\d+\)\/users/.test(u)) {
             if (method === 'POST') {
@@ -2293,7 +2447,7 @@ def _run_reader_deploy(
     """Run the emitted deploy against the reader harness.
 
     Returns (summary, calls, output). The phase must actually have STARTED:
-    a refusal test would otherwise pass against a run that aborted in 1.2
+    a refusal test would otherwise pass against a run that aborted in 1.3
     and never reached the code under test at all.
     """
     script = _reader_harness(
@@ -2649,7 +2803,7 @@ def test_a_later_phase_failure_drains_the_reader_this_run_added() -> None:
     Plain `_run_reader_deploy` already aborts in Phase 2.1 on this fixture's
     Lookup column, for reasons that have nothing to do with the reader (the
     same fact `test_an_already_enrolled_reader_is_not_added_twice` notes
-    above) -- exactly the shape this test needs: a clean 1.4 followed by a
+    above) -- exactly the shape this test needs: a clean 1.5 followed by a
     dirty later phase, with no bespoke harness required to get there.
     """
     summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
@@ -3389,7 +3543,9 @@ def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails
 def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Every POST `_security_principals.js.j2` can issue: a permission-level
     create or MERGE, a site-group create or MERGE, or the CSOM ProcessQuery
-    owner correction. All three only ever fire from the apply loop."""
+    owner correction. The first two only ever fire from the apply loop; the
+    assessment's read-only ProcessQuery probe also matches, which is why the
+    tests below stub the assessment out rather than acknowledging it."""
     return [
         c for c in calls
         if c["method"] == "POST"

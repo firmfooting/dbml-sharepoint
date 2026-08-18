@@ -40,11 +40,13 @@ write machinery is auditable from the script text itself.
 Findings roll up per requirement key to a single line:
 
 - `COMPATIBLE`: no blocking or degrading findings.
-- `DEGRADED`: deployable, but WARN findings deserve review first. This
-  includes a provisioned list whose [provenance
-  marker](reporting.md#the-provenance-marker) has gone missing from its
-  Description, named in the finding. The list itself is fine, only
-  reporting is affected, so it does not block.
+- `DEGRADED`: `deploy.js.txt` refuses this site until the operator
+  reviews each WARN finding and sets `ACKNOWLEDGE_DEGRADED = true` near
+  the top of the script. This includes a provisioned list whose
+  [provenance marker](reporting.md#the-provenance-marker) has gone
+  missing from its Description, named in the finding. The list itself is
+  fine and only reporting is affected, which is why that finding degrades
+  rather than blocks.
 - `BLOCKED`: a named requirement fails (for example, missing permission
   bits or a locked site); resolve before deploying.
 

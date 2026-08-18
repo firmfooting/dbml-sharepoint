@@ -81,10 +81,10 @@ def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
 
 
 def test_the_assessment_runs_before_the_preflight_and_can_abort() -> None:
-    """A pre-check that has to be run first, by choice, depends on discipline.
+    """A separate assess.js.txt only protects the operators who paste it.
 
-    The owner reports not running it. Both abort codes must appear before the
-    preflight banner, or the gate is decorative.
+    Carrying the assessment inside deploy.js.txt is what makes it
+    unskippable, so both abort codes must appear before the preflight banner.
     """
     js = _generate_simple_js()
     assert js.index(f"Starting Phase {pn('assess')}") < js.index(
