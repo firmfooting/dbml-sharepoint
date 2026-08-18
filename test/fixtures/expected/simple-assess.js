@@ -271,10 +271,16 @@
     // Site lock / read-only: a locked site blocks any deploy.
     {
       const site = await probeGet('site?$select=ReadOnly,LockIssue');
-      if (site.ok && (site.d.ReadOnly === true || site.d.LockIssue)) {
+      // A payload carrying neither property never said the site was unlocked,
+      // and reading it as writable passed a BLOCKED-level requirement unchecked.
+      const answered = site.ok && ('ReadOnly' in site.d || 'LockIssue' in site.d);
+      if (answered && (site.d.ReadOnly === true || site.d.LockIssue)) {
         finding(1, 'site_not_locked', 'BLOCKED', `Site is read-only/locked: ${site.d.LockIssue || 'ReadOnly'}.`);
-      } else if (site.ok) {
+      } else if (answered) {
         finding(1, 'site_not_locked', 'PASS', 'Site is writable (not locked).');
+      } else if (site.ok) {
+        finding(1, 'site_not_locked', 'NOT-ASSESSABLE',
+          'The site answered without ReadOnly or LockIssue, so whether it is locked is unknown.');
       } else {
         finding(1, 'site_not_locked', 'WARN', `Could not read lock state (HTTP ${site.status || site.error}).`);
       }
@@ -314,7 +320,7 @@
           ? 'the site answered without EffectiveBasePermissions'
           : `HTTP ${perms.status || perms.error}`;
         for (const key of ['manage_lists_bit', 'manage_permissions_bit', 'noscript']) {
-          finding(1, key, 'NOT-ASSESSABLE', `Could not read effective permissions (${why}); nobody checked this right.`);
+          finding(1, key, 'NOT-ASSESSABLE', `Could not read effective permissions (${why}); no check was made for this permission.`);
         }
       }
     }
@@ -500,12 +506,17 @@
       // Intelligent-versioning trim: WARN if service-managed auto-trim governs.
       if (TARGETS.declares_versioning && probeList) {
         const vp = await probeGet(`web/lists/getbytitle('${odataName(probeList)}')?$expand=VersionPolicies&$select=VersionPolicies/DefaultTrimMode`);
-        if (vp.ok && vp.d.VersionPolicies && Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
-          finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
-        } else if (vp.ok) {
-          finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
-        } else {
+        // An unreported DefaultTrimMode is not a trim mode of none, and reading
+        // it as one passed this requirement having checked nothing.
+        if (!vp.ok) {
           finding(2, 'version_trim_mode', 'INFO', 'VersionPolicies surface not present on this tenant.');
+        } else if (!vp.d.VersionPolicies || vp.d.VersionPolicies.DefaultTrimMode == null) {
+          finding(2, 'version_trim_mode', 'NOT-ASSESSABLE',
+            'The list answered without VersionPolicies/DefaultTrimMode, so whether service-managed auto-trim overrides the declared MajorVersionLimit is unknown.');
+        } else if (Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
+          finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
+        } else {
+          finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
         }
       } else if (TARGETS.declares_versioning) {
         finding(2, 'version_trim_mode', 'INFO', 'No existing declared list to read version policy; checked at deploy time.');

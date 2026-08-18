@@ -714,7 +714,8 @@ def test_the_assessment_records_every_finding_in_order() -> None:
     assert recorded == (
         "1\tweb_template\tINFO\tTemplate (not reported)#(not reported), LCID "
         "(not reported).\n"
-        "1\tsite_not_locked\tPASS\tSite is writable (not locked).\n"
+        "1\tsite_not_locked\tNOT-ASSESSABLE\tThe site answered without ReadOnly or "
+        "LockIssue, so whether it is locked is unknown.\n"
         "1\tplatform_build\tINFO\tSharePoint build 16.0.0.0.\n"
         "1\tmanage_lists_bit\tPASS\tOperator holds ManageLists.\n"
         "1\tmanage_permissions_bit\tPASS\tOperator holds ManagePermissions (or is a site "
@@ -742,8 +743,9 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "marker.\n"
         "2\tcustom_formatter_surface\tPASS\tProperty surface present.\n"
         "2\tform_formatter_surface\tPASS\tProperty surface present.\n"
-        "2\tversion_trim_mode\tPASS\tNo service-managed auto-trim overriding declared version "
-        "limits.\n"
+        "2\tversion_trim_mode\tNOT-ASSESSABLE\tThe list answered without "
+        "VersionPolicies/DefaultTrimMode, so whether service-managed auto-trim overrides the "
+        "declared MajorVersionLimit is unknown.\n"
         "2\tprocess_query\tPASS\tCSOM ProcessQuery responds (group owner correction available).\n"
         "3\tnot_assessable\tNOT-ASSESSABLE\tPower Automate / Power Apps inventory (lives in "
         "Power Platform APIs, no SharePoint REST surface from site context)\n"
@@ -765,7 +767,9 @@ def test_the_assessment_records_every_finding_in_order() -> None:
     )
     # DEGRADED rather than COMPATIBLE because the mock answers
     # `web/listtemplates` with an empty result set, so `list_template_100`
-    # WARNs and the pack declares it a requirement.
+    # WARNs, and because two more required keys are answered by a payload
+    # carrying none of the properties they select. `_healthy_harness` is what
+    # answers all three.
     assert summary["verdict"] == "DEGRADED"
 
 
@@ -841,24 +845,51 @@ def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
     assert summary["verdict"] == "DEGRADED"
 
 
+#: The lock answer `_healthy_harness` splices in. Named once, because the
+#: harness that takes it out again must not drift from the one that puts it in.
+_LOCK_ANSWER = (
+    "  if (url.includes('ReadOnly')) {\n"
+    "    return { d: { ReadOnly: false, LockIssue: null } };\n"
+    "  }\n"
+)
+
+#: The version-policy answer `_healthy_harness` splices in, named for the same
+#: reason. It goes in ahead of the generic list payload rather than into
+#: `body`, because the probe reads the list object itself with an `$expand`.
+_VERSION_POLICY_ANSWER = (
+    "  if (u.includes('VersionPolicies')) {\n"
+    "    return respond(200, { d: { VersionPolicies: { DefaultTrimMode: 0 } } });\n"
+    "  }\n"
+)
+
+
 def _healthy_harness(base: str = _ASSESS_HARNESS) -> str:
-    """`base` with the one WARN the thin mock always raises answered away.
+    """`base` with every question the thin mock leaves unanswered answered.
 
     `web/listtemplates` replies `{d: {results: []}}` to everything it does not
-    name, so `list_template_100` warns on every harness in this module and
-    every verdict is DEGRADED regardless of what else the run found. Stocking
-    the enumeration is what makes a verdict readable.
+    name, and the site and version-policy probes are handed a payload carrying
+    none of the properties they selected. Three requirement keys therefore
+    degrade on every harness in this module, and every verdict is DEGRADED
+    regardless of what else the run found. Answering all three is what lets a
+    verdict here mean what the test using it says it means.
     """
     stocked = base.replace(
         "const body = (url) => {\n",
         "const body = (url) => {\n"
         "  if (url.includes('listtemplates')) {\n"
         "    return { d: { results: [{ ListTemplateTypeKind: 100 }] } };\n"
-        "  }\n",
+        "  }\n"
+        + _LOCK_ANSWER,
         1,
     )
     assert stocked != base, "the list-template branch was not spliced in"
-    return stocked
+    versioned = stocked.replace(
+        "  if (LIST_OBJECT.test(path)) {\n",
+        _VERSION_POLICY_ANSWER + "  if (LIST_OBJECT.test(path)) {\n",
+        1,
+    )
+    assert versioned != stocked, "the version-policy branch was not spliced in"
+    return versioned
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -920,6 +951,93 @@ def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
     assert not [
         f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
     ], summary["findings"]
+
+
+def _unreported_lock_state_harness() -> str:
+    """`_healthy_harness` with the site answering 200 and no lock properties.
+
+    The request succeeds, so `.ok` is true and only the payload says nothing.
+    That is the shape a site produces when it does not return the selected
+    properties, and it is not the same as a request that failed.
+    """
+    answered = _healthy_harness()
+    unreported = answered.replace(_LOCK_ANSWER, "", 1)
+    assert unreported != answered, "the lock answer was not removed"
+    return unreported
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_site_that_reports_no_lock_state_is_not_read_as_writable() -> None:
+    """`site_not_locked` is required at BLOCKED, so a PASS here is the
+    strongest claim the assessment makes, and it was being made on a payload
+    that carried neither `ReadOnly` nor `LockIssue`.
+
+    The positive half is asserted with the negative: a repair that silenced
+    the false PASS by never reporting the requirement at all would satisfy
+    the first assertion on its own.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["site_not_locked"].level_on_fail == "BLOCKED"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreported_lock_state_harness(),
+    )
+    assert [
+        f["level"] for f in summary["findings"] if f["key"] == "site_not_locked"
+    ] == ["NOT-ASSESSABLE"], summary["findings"]
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    # Nothing else degraded, so the verdict can only have come from this key.
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+    answered = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert [
+        f["level"] for f in answered["findings"] if f["key"] == "site_not_locked"
+    ] == ["PASS"], answered["findings"]
+
+
+def _unreported_version_policy_harness() -> str:
+    """`_healthy_harness` with the list answering without `VersionPolicies`.
+
+    The list object still answers 200, and the `$expand` the probe asked for
+    is simply not in the payload, which is what a tenant without the surface
+    returns through a request that did not fail.
+    """
+    answered = _healthy_harness()
+    unreported = answered.replace(_VERSION_POLICY_ANSWER, "", 1)
+    assert unreported != answered, "the version-policy answer was not removed"
+    return unreported
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_reports_no_trim_mode_is_not_read_as_untrimmed() -> None:
+    """An absent `DefaultTrimMode` is not a trim mode of none.
+
+    `version_trim_mode` is a requirement at WARN, and reading the absence as
+    a PASS told the operator that service-managed auto-trim does not override
+    the declared MajorVersionLimit, which nothing had checked.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["version_trim_mode"].level_on_fail == "WARN"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreported_version_policy_harness(),
+    )
+    assert [
+        f["level"] for f in summary["findings"] if f["key"] == "version_trim_mode"
+    ] == ["NOT-ASSESSABLE"], summary["findings"]
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+    answered = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert [
+        f["level"] for f in answered["findings"] if f["key"] == "version_trim_mode"
+    ] == ["PASS"], answered["findings"]
 
 
 def _reporting_variants_harness() -> str:

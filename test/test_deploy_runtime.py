@@ -731,6 +731,45 @@ def _locked_harness() -> str:
     return locked
 
 
+def _answers_the_lock_probe(base: str) -> str:
+    """`base` with the site answering the lock probe it selects two properties from.
+
+    `_HARNESS` replies `{d: {results: []}}` to everything it does not name, and
+    a payload carrying neither `ReadOnly` nor `LockIssue` is now reported as a
+    requirement nobody could assess rather than as a writable site. Any fixture
+    whose verdict is meant to come from something else has to answer it.
+    """
+    answered = base.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('ReadOnly')) {\n"
+        "    return { d: { ReadOnly: false, LockIssue: null } };\n"
+        "  }\n",
+        1,
+    )
+    assert answered != base, "the lock answer was not spliced in"
+    return answered
+
+
+def _template_stocked_harness() -> str:
+    """`_HARNESS` with the one WARN it otherwise always raises answered away.
+
+    `web/listtemplates` replies `{d: {results: []}}`, so `list_template_100`
+    warns on every run against this mock and no verdict taken from it can say
+    what caused the degradation.
+    """
+    stocked = _HARNESS.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('listtemplates')) {\n"
+        "    return { d: { results: [{ ListTemplateTypeKind: 100 }] } };\n"
+        "  }\n",
+        1,
+    )
+    assert stocked != _HARNESS, "the list-template branch was not spliced in"
+    return stocked
+
+
 def _list_only_harness(*, template_creatable: bool = True) -> str:
     """`_HARNESS` with an operator who can manage lists but not ACLs.
 
@@ -749,6 +788,7 @@ def _list_only_harness(*, template_creatable: bool = True) -> str:
         1,
     )
     assert cleared != _HARNESS, "the ManagePermissions bit was not cleared"
+    cleared = _answers_the_lock_probe(cleared)
     stocked = cleared
     if template_creatable:
         stocked = cleared.replace(
@@ -923,6 +963,40 @@ def test_the_degraded_stop_names_the_findings_it_does_not_gate_on(
     printed = [ln for ln in output.splitlines() if "[ERROR]" in ln]
     assert any("list_template_100" in ln for ln in printed), printed
     assert any("manage_permissions_bit" in ln for ln in printed), printed
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_degraded_stop_names_the_findings_nobody_could_assess() -> None:
+    """NOT-ASSESSABLE degrades the verdict, so the stop has to name it too.
+
+    Filtering the re-statement to WARN and BLOCKED left a site degrading only
+    this way printing the generic abort line and nothing else, which is the
+    state the re-statement exists to prevent. `_HARNESS` reaches it once its
+    one WARN is answered: three provenance markers, the lock state and the
+    version trim mode are all answered by payloads carrying none of the
+    properties they select.
+    """
+    output = _run_deploy_with_assessment(harness=_template_stocked_harness())
+    summary = _summary_of(output)
+    findings = summary["assessment"]["findings"]
+    assert summary["assessment"]["verdict"] == "DEGRADED"
+    assert summary.get("aborted") == "assessment-degraded-unacknowledged", summary
+    # Nothing WARNed or BLOCKED, so the verdict can only have come from the
+    # level this test is about.
+    assert not [
+        f for f in findings if f["level"] in {"WARN", "BLOCKED"}
+    ], findings
+    unassessed = [
+        f["key"] for f in findings
+        if f["level"] == "NOT-ASSESSABLE" and f["tier"] != 3
+    ]
+    assert unassessed, findings
+    printed = [ln for ln in output.splitlines() if "[ERROR]" in ln]
+    for key in unassessed:
+        assert any(key in ln for ln in printed), (key, printed)
+    # Tier 3 is the same list on every site, and re-stating it here would bury
+    # the findings that are about this one.
+    assert not [ln for ln in printed if "not_assessable:" in ln], printed
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
