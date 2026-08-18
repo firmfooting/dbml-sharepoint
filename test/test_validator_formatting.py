@@ -136,6 +136,92 @@ def test_severity_on_a_calculated_text_column_still_requires_decoding(
     )
     assert "calculated: true" in finding.message
 
+def test_a_cross_site_expansion_column_is_not_judged_against_a_type_it_has_none_of(
+    tmp_path: Path,
+) -> None:
+    """The same defect as two tests above, in the branch beside the one fixed.
+
+    `UnitAbbreviation` is rendered on the provisioned list (a cross-site
+    reference column expands into it), so it raises no
+    FORMATTER_COLUMN_NOT_RENDERED, and it is not a DBML column, so its type is
+    None. The guard tested that the STYLE had a calculated form and never that
+    the COLUMN had a type, so the run blocked at severity `error` with
+    "calculated: true on severity expects calculated_text, not None", naming a
+    column type that does not exist.
+
+    The positive half is asserted with the negative: without it this passes if
+    the style-spec loop stops running at all.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Unit {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Unit int [ref: > Unit.Id]
+            }
+        """,
+        mapping=blocks(entities("Unit", "Risk"), """
+            cross_site_reference_columns:
+              - { entity: Risk, column: Unit }
+            column_formatting:
+              Risk:
+                UnitAbbreviation:
+                  { style: severity, calculated: true, map: { A: good } }
+        """),
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.STYLE_CALCULATED_TYPE_MISMATCH)
+    none_of(findings, FindingCode.STYLE_REQUIRES_CALCULATED)
+    # The column is genuinely rendered, so nothing else should be complaining
+    # about it either. A run that reported it missing would satisfy the two
+    # lines above for the wrong reason.
+    none_of(findings, FindingCode.FORMATTER_COLUMN_NOT_RENDERED)
+
+
+def test_calculated_true_on_the_wrong_declared_type_still_mismatches(
+    tmp_path: Path,
+) -> None:
+    """The other side of the guard above.
+
+    A column that DOES declare a type and declares the wrong one is what
+    STYLE_CALCULATED_TYPE_MISMATCH exists for, and a fix that silenced the
+    false positive by silencing the rule would leave the suite unable to say
+    so.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Band calculated_number
+            }
+        """,
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                Band: "=IF([Title]='',1,2)"
+            column_formatting:
+              Risk:
+                Band:
+                  { style: severity, calculated: true, map: { Low: good } }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Band",
+    )
+    assert "expects calculated_text, not calculated_number" in finding.message
+
 def test_view_formatting_field_refs_validated() -> None:
     errors = _project_errors(views={"Project": [ViewDef(
         title="V",

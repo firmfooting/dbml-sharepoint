@@ -101,31 +101,38 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "overdue-date": "calculated_date",
             }.get(style_name)
             target_type = types_by_col.get(col_name)
-            # Both sides are None for a style with no calculated form (pill,
-            # trend) on a column absent from the DBML, and two Nones matching
-            # is not a match.
-            if (
-                calculated_type_for_style is not None
-                and target_type == calculated_type_for_style
-                and spec.get("calculated") is not True
-            ):
-                findings.append(Finding(
-                    FindingCode.STYLE_REQUIRES_CALCULATED,
-                    f"{ctx}: {style} on {target_type} requires calculated: true "
-                    "to decode SharePoint's typed formatter value.",
-                    location=at,
-                ))
-            elif (
-                spec.get("calculated") is True
-                and calculated_type_for_style is not None
-                and target_type != calculated_type_for_style
-            ):
-                findings.append(Finding(
-                    FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
-                    f"{ctx}: calculated: true on {style} expects "
-                    f"{calculated_type_for_style}, not {target_type}.",
-                    location=at,
-                ))
+            # Both of these judge the COLUMN's declared type and interpolate
+            # it, so a column that declares none (absent from the DBML, or a
+            # cross-site reference expansion, which is rendered without being
+            # a DBML column) gives them nothing to say. Each in turn tested
+            # only that the STYLE had a calculated form and printed
+            # "pill on None requires ..." and "expects calculated_text, not
+            # None", naming a column type that does not exist. Guarding the
+            # pair rather than skipping the column: the trend, guard and
+            # color_by checks below judge OTHER columns and still apply.
+            if target_type is not None:
+                if (
+                    calculated_type_for_style is not None
+                    and target_type == calculated_type_for_style
+                    and spec.get("calculated") is not True
+                ):
+                    findings.append(Finding(
+                        FindingCode.STYLE_REQUIRES_CALCULATED,
+                        f"{ctx}: {style} on {target_type} requires calculated: true "
+                        "to decode SharePoint's typed formatter value.",
+                        location=at,
+                    ))
+                elif (
+                    spec.get("calculated") is True
+                    and calculated_type_for_style is not None
+                    and target_type != calculated_type_for_style
+                ):
+                    findings.append(Finding(
+                        FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
+                        f"{ctx}: calculated: true on {style} expects "
+                        f"{calculated_type_for_style}, not {target_type}.",
+                        location=at,
+                    ))
             if style in ("severity", "pill") and is_multi_value(
                 types_by_col.get(col_name, ""),
             ):
