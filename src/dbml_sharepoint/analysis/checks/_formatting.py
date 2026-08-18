@@ -87,7 +87,11 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue  # unknown entity already reported above
         xcols = cross_site_by_entity.get(entity_name, set())
         rendered = rendered_columns(spec_table, xcols) | {"Title"} | SYSTEM_COLUMNS
-        types_by_col = {col.name: col.type for col in spec_table.columns}
+        # Not the declared columns alone: the generator provisions the Title
+        # and the cross-site expansion pair too, and a style spec may name one.
+        types_by_col = effective_column_types(
+            {col.name: col.type for col in spec_table.columns}, xcols,
+        )
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             at = Location(
@@ -101,10 +105,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "overdue-date": "calculated_date",
             }.get(style_name)
             target_type = types_by_col.get(col_name)
-            # Both rules interpolate the COLUMN's declared type, so a column
-            # that declares none printed "expects calculated_text, not None".
-            # The pair is guarded rather than the column skipped, because the
-            # trend, guard and color_by checks below judge OTHER columns.
+            # Both rules interpolate the COLUMN's type, so one with no
+            # effective type would print "expects calculated_text, not None".
+            # This is a backstop for anything still unmodelled, not the
+            # cross-site case. The pair is guarded rather than the column
+            # skipped, because the trend, guard and color_by checks below
+            # judge OTHER columns.
             if target_type is not None:
                 if (
                     calculated_type_for_style is not None

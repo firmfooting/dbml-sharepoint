@@ -136,23 +136,20 @@ def test_severity_on_a_calculated_text_column_still_requires_decoding(
     )
     assert "calculated: true" in finding.message
 
-def test_a_cross_site_expansion_column_is_not_judged_against_a_type_it_has_none_of(
+def test_a_cross_site_expansion_column_is_judged_on_its_generated_type(
     tmp_path: Path,
 ) -> None:
-    """STYLE_CALCULATED_TYPE_MISMATCH carried the same defect as its sibling.
+    """A column the generator provisions has a type, so the rule must judge it.
 
-    `test_misspelled_column_under_a_pill_style_reports_only_the_misspelling`
-    covers STYLE_REQUIRES_CALCULATED; this is the branch beside it.
-    `UnitAbbreviation` is rendered on the provisioned list (a cross-site
-    reference column expands into it), so it raises no
-    FORMATTER_COLUMN_NOT_RENDERED, and it is not a DBML column, so its type is
-    None. The guard tested that the STYLE had a calculated form and never that
-    the COLUMN had a type, so the run blocked at severity `error` with
-    "calculated: true on severity expects calculated_text, not None", naming a
-    column type that does not exist.
-
-    The positive half is asserted with the negative: without it this passes if
-    the style-spec loop stops running at all.
+    `UnitAbbreviation` is not a DBML column, so reading types off the declared
+    columns alone left it typeless and the run blocked at severity `error`
+    with "calculated: true on severity expects calculated_text, not None",
+    naming a column type that does not exist. Skipping it instead fails open:
+    the column really is provisioned, `calculated` really does switch severity
+    matching from equality to substring, so `calculated: true` on it is a real
+    declaration bug that would render wrong and report nothing.
+    `effective_column_types` models the expansion, which makes the column
+    nvarchar and the finding correct rather than absent.
     """
     schema, bundle = pack(
         tmp_path,
@@ -177,11 +174,16 @@ def test_a_cross_site_expansion_column_is_not_judged_against_a_type_it_has_none_
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    none_of(findings, FindingCode.STYLE_CALCULATED_TYPE_MISMATCH)
-    none_of(findings, FindingCode.STYLE_REQUIRES_CALCULATED)
+    finding = only(findings, FindingCode.STYLE_CALCULATED_TYPE_MISMATCH)
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
+    )
+    assert "expects calculated_text, not nvarchar" in finding.message
+    assert "None" not in finding.message
     # The column is genuinely rendered, so nothing else should be complaining
-    # about it either. A run that reported it missing would satisfy the two
-    # lines above for the wrong reason.
+    # about it. A run that reported it missing would satisfy the line above
+    # for the wrong reason.
     none_of(findings, FindingCode.FORMATTER_COLUMN_NOT_RENDERED)
 
 
@@ -224,17 +226,17 @@ def test_calculated_true_on_the_wrong_declared_type_still_mismatches(
     )
     assert "expects calculated_text, not calculated_number" in finding.message
 
-def test_a_trend_on_a_typeless_column_still_has_its_against_checked(
+def test_a_trend_on_a_generated_column_still_has_its_against_checked(
     tmp_path: Path,
 ) -> None:
-    """The guard skips two rules, not the column.
+    """The guard on the calculated pair skips two rules, not the column.
 
     Skipping the column instead (`if target_type is None: continue`) reads as
     the same repair and leaves the whole suite green, because the trend, guard
-    and color_by checks below it judge a DIFFERENT column, whose declared type
-    is beside the point. `UnitAbbreviation` is rendered by a cross-site
-    reference expansion and has no declared type, so it reaches the guard and
-    its `against` still has to be checked.
+    and color_by checks below it judge a DIFFERENT column, whose own type is
+    beside the point. This and the two tests under it hold that line for all
+    three, on a column the generator provisions rather than one the DBML
+    declares.
     """
     schema, bundle = pack(
         tmp_path,
@@ -266,6 +268,87 @@ def test_a_trend_on_a_typeless_column_still_has_its_against_checked(
         Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
     )
     assert "'Baseline'" in finding.message
+
+
+def test_an_overdue_guard_on_a_generated_column_is_still_checked(
+    tmp_path: Path,
+) -> None:
+    """The second of the three, on the same footing as the trend above."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Unit {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Unit int [ref: > Unit.Id]
+            }
+        """,
+        mapping=blocks(entities("Unit", "Risk"), """
+            cross_site_reference_columns:
+              - { entity: Risk, column: Unit }
+            column_formatting:
+              Risk:
+                UnitAbbreviation:
+                  { style: overdue-date, guard: { field: Stage, not: [Done] } }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
+    )
+    assert "'Stage'" in finding.message
+
+
+def test_a_color_by_map_on_a_generated_column_is_still_checked(
+    tmp_path: Path,
+) -> None:
+    """The third of the three. `color_by` names an enum column of its own, so
+    the type that decides this finding is never the styled column's."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Enum rating {
+              "Low"
+              "High"
+            }
+            Table Unit {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Rating rating
+              Unit int [ref: > Unit.Id]
+            }
+        """,
+        mapping=blocks(entities("Unit", "Risk"), """
+            cross_site_reference_columns:
+              - { entity: Risk, column: Unit }
+            column_formatting:
+              Risk:
+                UnitAbbreviation:
+                  { style: data-bar, max: 25,
+                    color_by: { field: Rating, map: { Bogus: good } } }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
+    )
+    assert "'Bogus'" in finding.message
 
 
 def test_view_formatting_field_refs_validated() -> None:
