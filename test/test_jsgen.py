@@ -853,6 +853,24 @@ def test_existing_schema_shape_preflight_is_fail_closed() -> None:
     assert js.index("existing-schema-shape-errors") < js.index(f"Starting Phase {pn('security')}")
 
 
+def test_the_delta_report_is_printed_before_the_abort_returns() -> None:
+    """A printer placed after the return prints nothing and stays green.
+
+    The abort still returns the same code and logs the same failure line, so
+    no other test moves when the report is emitted too late. Ordering is the
+    only assertion that catches it.
+    """
+    js = _generate_simple_js()
+
+    assert "aborted: 'existing-schema-shape-errors'" in js
+    assert (
+        "Existing-schema shape preflight failed; no deployment writes were attempted."
+    ) in js
+    assert js.index("Existing-schema shape delta:") < js.index(
+        "aborted: 'existing-schema-shape-errors'",
+    )
+
+
 def test_existing_lookup_shape_requires_exact_target_and_display_field() -> None:
     """An existing lookup cannot silently retain another list/field target."""
     js = _generate_simple_js()
@@ -924,10 +942,19 @@ def _call_count(js: str, name: str) -> int:
 def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> None:
     """The count is the only attribution available, and it has to hold.
 
-    `assertListImmutableShape` emits the same message from all four of its sites,
-    so no error text distinguishes them. A site switched from the wrapper to the
-    collector stops throwing, and two of these sites verify a read-back: one that
-    stops throwing is indistinguishable from one that passed.
+    `assertListImmutableShape` emits the same message from every one of its
+    sites, so no error text distinguishes them. A site switched from the wrapper
+    to the collector stops throwing, and two of these sites verify a read-back:
+    one that stops throwing is indistinguishable from one that passed.
+
+    Both counts dropped by one deliberately, and 2 and 3 is now exactly the five
+    write-region sites. Preflight's two lanes call the collectors directly,
+    because a throw reported one property and hid the rest: a list whose own
+    shape is wrong still has columns worth reporting, and a column's other
+    mismatches are still worth reporting when its lookup target is unreadable.
+    Every remaining site is a write or a post-write read-back, where throwing is
+    the point. Lowering either number again means a write-region site stopped
+    throwing, which is the failure this test exists to catch.
 
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
@@ -935,8 +962,8 @@ def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> No
     """
     js = _generate_simple_js()
 
-    assert _call_count(js, "assertFieldImmutableShape") == 3
-    assert _call_count(js, "assertListImmutableShape") == 4
+    assert _call_count(js, "assertFieldImmutableShape") == 2
+    assert _call_count(js, "assertListImmutableShape") == 3
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
