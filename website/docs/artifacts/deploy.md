@@ -16,11 +16,21 @@ when the structure changes; the groups are stable:
 
 | Group | Steps |
 | --- | --- |
-| PREPARE | read-only preflight · permission levels and site groups · operator self-enrolment · maintenance unseal |
+| PREPARE | site assessment · read-only preflight · permission levels and site groups · operator self-enrolment · maintenance unseal |
 | STRUCTURE | list creation · deferred lookups · indexed columns · field defaults |
 | PRESENTATION | views · form formatting |
 | PROTECTION | seal declared columns · role inheritance and assignments |
 | DATA | seed items (extension-provided) |
+
+The first phase, at the top of PREPARE, runs the same site assessment as
+`assess.js.txt` (see [assess.md](assess.md) for what it checks). A
+**BLOCKED** verdict aborts with `assessment-blocked` and cannot be
+overridden. A **DEGRADED** verdict aborts with
+`assessment-degraded-unacknowledged` unless the operator sets
+`const ACKNOWLEDGE_DEGRADED = true;` near the top of the script and pastes
+it again. `assess.js.txt` still ships unchanged alongside `deploy.js.txt`,
+so it can still be handed to somebody whose tenant you do not own, to
+check compatibility without provisioning anything.
 
 Each phase is fail-closed on its own: an error is tagged with its phase,
 recorded in the summary, and never silently swallowed. Later phases
