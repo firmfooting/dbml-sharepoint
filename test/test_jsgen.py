@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import EXPECTED, FIXTURES, SOLUTION_TEMPLATES, write_golden
 
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.list_description import (
@@ -29,8 +29,6 @@ from dbml_sharepoint.model.parser import (
     parse_dbml,
 )
 from dbml_sharepoint.model.release import load_release
-
-EXPECTED = FIXTURES / "expected"
 
 _FIXED_ARGS: dict[str, Any] = dict(
     site_url="https://example.sharepoint.com/sites/test",
@@ -3272,10 +3270,7 @@ if __name__ == "__main__":  # pragma: no cover
     # test_simple_deploy_js_matches_golden. Uses the SAME generator the test
     # does, so the two cannot drift.
     _target = EXPECTED / "simple-deploy.js"
-    # The newline argument is explicit because the default translates to CRLF
-    # on Windows, which .gitattributes then normalises away on commit -- so the
-    # file would read as modified locally while producing an empty diff.
-    _target.write_text(_generate_simple_js(), encoding="utf-8", newline="\n")
+    write_golden(_target, _generate_simple_js())
     print(f"wrote {_target}")  # noqa: T201
 
 

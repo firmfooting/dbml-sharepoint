@@ -10,7 +10,7 @@ from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
-from _paths import FIXTURES
+from _paths import EXPECTED, FIXTURES, write_golden
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.assessgen import (
@@ -212,6 +212,22 @@ def _assess_js() -> str:
     )
 
 
+def test_simple_assess_js_matches_golden() -> None:
+    """The only byte-level check on assess.js.j2.
+
+    Every other test here covers the generator's inputs or asserts that a
+    string is present in the output, so a probe could be dropped from a tier
+    and every gate would stay green.
+    """
+    golden_path = EXPECTED / "simple-assess.js"
+    assert golden_path.exists(), f"Golden file missing: {golden_path}"
+    expected = golden_path.read_text(encoding="utf-8")
+    assert _assess_js() == expected, (
+        "the emitted assess script changed. Review the diff, then regenerate "
+        "with `uv run python test/test_assessgen.py`."
+    )
+
+
 def test_assess_is_read_only() -> None:
     js = _assess_js()
     assert "'X-HTTP-Method'" not in js and '"X-HTTP-Method"' not in js
@@ -279,7 +295,9 @@ def test_assess_header_carries_full_provenance() -> None:
 # forever -- so it is asserted by executing the emitted script.
 
 
-def _declared_descriptions() -> dict[str, str]:
+def _declared_descriptions(
+    pack: tuple[Schema, MappingBundle] | None = None,
+) -> dict[str, str]:
     """List title -> the Description a real deploy leaves on that list.
 
     Read out of the DEPLOY generator, not out of assess's own `list_markers`.
@@ -287,8 +305,10 @@ def _declared_descriptions() -> dict[str, str]:
     quiet run agree with whatever assess happens to believe; taking it from
     `build_schema_json` is the point -- it is what the site actually holds
     after a deploy, so this pins assess against the deploy.
+
+    Defaults to the simple pack; `pack` reads another schema and mapping.
     """
-    schema, bundle = _simple()
+    schema, bundle = pack if pack is not None else _simple()
     schema_json = build_schema_json(schema, bundle, "default")
     return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
 
@@ -350,7 +370,11 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
     // What each declared list HOLDS in its Description before the run. A
     // title absent from this map is a list that does not exist, answered 404
     // exactly as SharePoint would. Rewritten by _run_assess.
-    const LIST_DESCRIPTIONS = {};
+    //
+    // A Map, for the same reason the emitted script uses one: an object
+    // literal drops a `__proto__` key, so the mock would answer 404 for the
+    // one list whose title this suite most needs to hold.
+    const LIST_DESCRIPTIONS = new Map([]);
     // The list title out of a URL, back in the spelling the declaration uses.
     // Non-greedy to the first `')`, then undo odataName's two encodings in
     // the order it applied them: percent first, apostrophe-doubling second.
@@ -391,11 +415,11 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
       const path = u.split('?')[0];
       if (LIST_OBJECT.test(path)) {
         const title = listOf(path);
-        if (!Object.prototype.hasOwnProperty.call(LIST_DESCRIPTIONS, title)) {
+        if (!LIST_DESCRIPTIONS.has(title)) {
           return respond(404, { error: { message: { value: `List '${title}' not found` } } });
         }
         return respond(200, { d: {
-          Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS[title],
+          Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),
         } });
       }
       return respond(200, body(u));
@@ -428,23 +452,49 @@ def test_the_assess_harness_matcher_separates_a_list_from_what_nests_under_it() 
     )
 
 
-def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
+def _locked_harness() -> str:
+    """Return the harness above with the same site answering as locked.
+
+    Only `site?$select=ReadOnly,LockIssue` carries `ReadOnly` in its URL, so
+    this one branch reaches the BLOCKED arm. The splice is asserted here
+    rather than at import, so a harness edit that breaks it fails the one test
+    that uses it instead of erasing the whole module from the run.
+    """
+    locked = _ASSESS_HARNESS.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('ReadOnly')) {\n"
+        "    return { d: { ReadOnly: true, LockIssue: 'Locked for migration' } };\n"
+        "  }\n",
+    )
+    assert locked != _ASSESS_HARNESS, "the locked branch was not spliced in"
+    return locked
+
+
+def _run_assess(
+    list_description: str | dict[str, str],
+    *,
+    harness: str = _ASSESS_HARNESS,
+    js: str | None = None,
+) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
     One string applies to every declared list; a mapping sets them per title.
-    Returns the summary the script resolves with.
+    `harness` swaps the mocked site for a variant, such as a locked one, and
+    `js` for a script generated from another pack. Returns the summary the
+    script resolves with.
     """
     held = (
         dict.fromkeys(_declared_descriptions(), list_description)
         if isinstance(list_description, str) else dict(list_description)
     )
-    js = _assess_js()
+    js = _assess_js() if js is None else js
     assert js.count("})();") == 1, "the IIFE terminator is no longer unique"
-    harness = _ASSESS_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = {};",
-        f"const LIST_DESCRIPTIONS = {json.dumps(held)};",
+    mocked = harness.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
     )
-    script = harness + "\n" + js.replace(
+    script = mocked + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(script)
@@ -548,8 +598,10 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     The prefix is empty because #190 made it optional, which is what lets a
     declared title be exactly `__proto__`.
 
-    Run under Node against the emitted bytes: the defect is in how
-    JavaScript reads the literal, so nothing asserted in Python can see it.
+    The WHOLE emitted script is run under Node, in both directions, rather
+    than a Python-side probe that re-spells how the script builds its lookup.
+    Re-spelling it covers only the emission side, and the same defect
+    reintroduced on the consumption side leaves such a probe green.
     """
     import _model
 
@@ -565,20 +617,130 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
         site_role="default", source_dbml="simple.dbml",
         generated_at="2026-05-04T00:00:00Z",
     )
+    declared = _declared_descriptions((schema, bundle))
+    assert list(declared) == ["__proto__"], declared
 
-    match = re.search(r"const TARGETS = (\{.*?\n  \});", js, re.DOTALL)
-    assert match, "could not find the emitted TARGETS declaration"
-    probe = (
-        f"const TARGETS = {match.group(1)};\n"
-        "const LIST_MARKERS = new Map(TARGETS.list_markers);\n"
-        "console.log('HAS:' + LIST_MARKERS.has('__proto__'));\n"
-        "console.log('GOT:' + typeof LIST_MARKERS.get('__proto__'));\n"
+    drifted = _run_assess({"__proto__": "an owner rewrote this"}, js=js)
+    assert [
+        (f["key"], f["level"])
+        for f in _marker_findings(drifted, levels={"WARN", "BLOCKED"})
+    ] == [("provenance_marker:__proto__", "WARN")], (
+        f"a list named __proto__ lost its marker and nothing said so: "
+        f"{drifted['findings']}"
     )
-    output = run_node(probe)
 
-    assert "HAS:true" in output, (
-        f"no marker survived emission for a list named __proto__:\n{output}"
+    marked = _run_assess(declared, js=js)
+    assert [
+        (f["key"], f["level"]) for f in _marker_findings(marked, levels={"PASS"})
+    ] == [("provenance_marker:__proto__", "PASS")], (
+        f"the marker check never ran for a list named __proto__: "
+        f"{marked['findings']}"
     )
-    assert "GOT:string" in output, (
-        f"the lookup returned something off Object.prototype:\n{output}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_assessment_records_every_finding_in_order() -> None:
+    """Every finding the run records, in order, with the detail it carries.
+
+    A sampled assertion cannot see a dropped probe, which is what moving the
+    whole body into a partial is most likely to introduce.
+
+    `detail` is projected as well as the triple. The Tier 3 entries all share
+    one key, so `(tier, key, level)` alone would pin their count and let a
+    reworded item through.
+
+    One tab-separated line per finding rather than a list of tuples: the
+    failure then reads as a line diff naming the probe that moved, instead of
+    a truncated dump of two thirty-four element lists.
+    """
+    summary = _run_assess(_declared_descriptions())
+    recorded = "".join(
+        f"{f['tier']}\t{f['key']}\t{f['level']}\t{f['detail']}\n"
+        for f in summary["findings"]
     )
+    # Emission order, not tier order: `list_template_100` is raised from inside
+    # the Tier 1 block of `_assess_body.js.j2` but carries tier 2.
+    assert recorded == (
+        "1\tweb_template\tINFO\tTemplate undefined#undefined, LCID undefined.\n"
+        "1\tsite_not_locked\tPASS\tSite is writable (not locked).\n"
+        "1\tplatform_build\tINFO\tSharePoint build 16.0.0.0.\n"
+        "1\tmanage_lists_bit\tPASS\tOperator holds ManageLists.\n"
+        "1\tmanage_permissions_bit\tPASS\tOperator holds ManagePermissions (or is a site "
+        "collection admin).\n"
+        "1\tnoscript\tINFO\tCustom scripting allowed (AddAndCustomizePages present).\n"
+        "2\tlist_template_100\tWARN\tBase template 100 not listed by web/listtemplates "
+        "(creation may still work).\n"
+        "1\tregional_settings\tINFO\tSite LocaleId undefined.\n"
+        "1\tlanguages\tINFO\tMultilingual undefined; UI languages .\n"
+        "1\tstorage\tINFO\tStorage used 0 MB (0% of quota).\n"
+        "1\thub\tINFO\tHub site undefined; hub id undefined.\n"
+        "1\tretention_labels\tINFO\tNo retention labels available to this site.\n"
+        "1\tapp_catalog\tINFO\tNo tenant app catalog configured.\n"
+        "1\tcustom_actions\tINFO\t0 web custom action(s) / SPFx extension(s) registered.\n"
+        "1\tsearch\tINFO\tSearch service responds.\n"
+        "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100), a "
+        "redeploy/reconcile target.\n"
+        "2\tprovenance_marker:APP_Project\tPASS\t'APP_Project' carries its provenance marker.\n"
+        "2\tcollision:APP_Task\tINFO\t'APP_Task' already exists (BaseTemplate 100), a "
+        "redeploy/reconcile target.\n"
+        "2\tprovenance_marker:APP_Task\tPASS\t'APP_Task' carries its provenance marker.\n"
+        "2\tcollision:APP_AppSettings\tINFO\t'APP_AppSettings' already exists (BaseTemplate "
+        "100), a redeploy/reconcile target.\n"
+        "2\tprovenance_marker:APP_AppSettings\tPASS\t'APP_AppSettings' carries its provenance "
+        "marker.\n"
+        "2\tcustom_formatter_surface\tPASS\tProperty surface present.\n"
+        "2\tform_formatter_surface\tPASS\tProperty surface present.\n"
+        "2\tversion_trim_mode\tPASS\tNo service-managed auto-trim overriding declared version "
+        "limits.\n"
+        "2\tprocess_query\tPASS\tCSOM ProcessQuery responds (group owner correction available).\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tPower Automate / Power Apps inventory (lives in "
+        "Power Platform APIs, no SharePoint REST surface from site context)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tAudit settings (SSOM-only; not exposed via CSOM/REST)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tInformation-barrier segments and mode (tenant-admin "
+        "only)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tAuthoritative tenant sharing capability and storage "
+        "quota ceilings (tenant-admin SiteProperties)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tRetention POLICY coverage of the site (only "
+        "inferable via the Preservation Hold Library signal)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tWebhook subscription enumeration (bound to the "
+        "creating app identity)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tEdit-form column-description suppression "
+        "(SharePoint platform behaviour)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\t[$Created] view-field resolution in formatters "
+        "(tenant/locale dependent)\n"
+        "3\tnot_assessable\tNOT-ASSESSABLE\tFormat-pane JSON display encoding (renders "
+        "identically either way)\n"
+    )
+    # DEGRADED rather than COMPATIBLE because the mock answers
+    # `web/listtemplates` with an empty result set, so `list_template_100`
+    # WARNs and the pack declares it a requirement.
+    assert summary["verdict"] == "DEGRADED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_locked_site_blocks_the_verdict() -> None:
+    """DEGRADED alone leaves the verdict arithmetic under-exercised.
+
+    BLOCKED has to win over the WARN the same run still raises.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_locked_harness())
+    assert summary["verdict"] == "BLOCKED"
+    assert [
+        (f["tier"], f["key"], f["detail"])
+        for f in summary["findings"] if f["level"] == "BLOCKED"
+    ] == [
+        (1, "site_not_locked", "Site is read-only/locked: Locked for migration."),
+    ]
+    # Pinned because a run that raised no warning at all would also be BLOCKED.
+    assert [f["level"] for f in summary["findings"] if f["key"] == "list_template_100"] == [
+        "WARN",
+    ]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Regenerate the golden. Deliberately not a pytest flag: see
+    # test_simple_assess_js_matches_golden. Uses the SAME renderer the test
+    # does, so the two cannot drift.
+    _target = EXPECTED / "simple-assess.js"
+    write_golden(_target, _assess_js())
+    print(f"wrote {_target}")  # noqa: T201
