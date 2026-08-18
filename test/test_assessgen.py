@@ -835,12 +835,91 @@ def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
         "undefined" in f["detail"]
         for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
     ), summary["findings"]
-    # KNOWN GAP, recorded rather than asserted away. The verdict loop skips
-    # NOT-ASSESSABLE, so this DEGRADED is the one `list_template_100` raises
-    # and nothing in the verdict reflects the unread permissions. Since #279
-    # the verdict gates the deploy, so closing it is a decision about what
-    # deploys and belongs with that change, not with this one.
+    # This harness also raises the `list_template_100` WARN, so the verdict
+    # here cannot separate the two causes. The healthy harness below is what
+    # measures the unread permissions on their own.
     assert summary["verdict"] == "DEGRADED"
+
+
+def _healthy_harness(base: str = _ASSESS_HARNESS) -> str:
+    """`base` with the one WARN the thin mock always raises answered away.
+
+    `web/listtemplates` replies `{d: {results: []}}` to everything it does not
+    name, so `list_template_100` warns on every harness in this module and
+    every verdict is DEGRADED regardless of what else the run found. Stocking
+    the enumeration is what makes a verdict readable.
+    """
+    stocked = base.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('listtemplates')) {\n"
+        "    return { d: { results: [{ ListTemplateTypeKind: 100 }] } };\n"
+        "  }\n",
+        1,
+    )
+    assert stocked != base, "the list-template branch was not spliced in"
+    return stocked
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_healthy_site_is_compatible() -> None:
+    """The control for the two tests below, and it earns its place twice.
+
+    Without it a DEGRADED there proves nothing, since every other harness in
+    this module is DEGRADED already. It also pins that the Tier 3 honesty
+    block, which is NOT-ASSESSABLE on every run, does not itself degrade: its
+    key `not_assessable` is not a requirement.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert summary["verdict"] == "COMPATIBLE", [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ]
+    assert any(f["key"] == "not_assessable" for f in summary["findings"]), (
+        "the Tier 3 block stopped emitting, so this control proves nothing"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_requirement_nobody_could_assess_degrades_the_verdict() -> None:
+    """A requirement nobody could check must not read as one that passed.
+
+    Emitting NOT-ASSESSABLE per key stopped the verdict loop skipping the key
+    entirely, and then the loop skipped the level instead: an otherwise
+    healthy site whose permissions could not be read came out COMPATIBLE,
+    which is weaker than the single WARN that preceded it. DEGRADED rather
+    than BLOCKED, because nothing here says the requirement is unmet.
+    """
+    schema, bundle = _simple()
+    required = {r.key for r in derive_requirements(schema, bundle, "default")}
+    assert "manage_lists_bit" in required
+
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_unreadable_permissions_harness()),
+    )
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    # Nothing WARNed, so the DEGRADED can only have come from the level this
+    # test is about.
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
+    """The second requirement key that reaches NOT-ASSESSABLE.
+
+    An unreported Description used to WARN falsely, which at least degraded.
+    Saying nobody could tell must not be the weaker answer of the two.
+    """
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_description_absent_harness()),
+    )
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
 
 
 def _reporting_variants_harness() -> str:

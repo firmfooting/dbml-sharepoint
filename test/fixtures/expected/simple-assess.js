@@ -552,16 +552,24 @@
     // ===================================================================
     const byKey = {};
     for (const f of findings) {
-      if (f.level === 'INFO' || f.level === 'NOT-ASSESSABLE') continue;
+      // NOT-ASSESSABLE is kept: dropping it here made a requirement nobody
+      // could check indistinguishable from one that was never declared, and
+      // the loop below then read it as a pass. Tier 3 shares the key
+      // `not_assessable`, which is not a requirement key, so it is never read.
+      if (f.level === 'INFO') continue;
       byKey[f.key] = f;
     }
     let blocked = null;
     let warnings = 0;
+    let unassessed = null;
     for (const req of REQUIREMENTS) {
       const f = byKey[req.key];
       if (!f) continue;
       if (f.level === 'BLOCKED') { if (!blocked) blocked = req; }
       else if (f.level === 'WARN') warnings += 1;
+      // Not BLOCKED, because nothing here says the requirement is unmet. Not a
+      // pass either, because something the pack requires went unchecked.
+      else if (f.level === 'NOT-ASSESSABLE') { if (!unassessed) unassessed = req; }
     }
     const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';
     // The level comes from the caller: 'DONE' is deploy's terminal signal, so a
@@ -569,9 +577,13 @@
     if (blocked) {
       verdict = 'BLOCKED';
       log(verdictLevel, `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
-    } else if (warnings > 0) {
+    } else if (warnings > 0 || unassessed) {
       verdict = 'DEGRADED';
-      log(verdictLevel, `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);
+      const why = warnings > 0 ? `${warnings} warning(s)` : '';
+      const unchecked = unassessed
+        ? `${why ? ', ' : ''}${unassessed.key} could not be assessed`
+        : '';
+      log(verdictLevel, `${prefix} pack: DEGRADED (${why}${unchecked}). Deployable; review the findings above.`);
     } else {
       verdict = 'COMPATIBLE';
       log(verdictLevel, `${prefix} pack: COMPATIBLE. No blocking or degrading findings.`);
