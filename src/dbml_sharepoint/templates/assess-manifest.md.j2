@@ -13,8 +13,10 @@ Enter. It is **read-only** and makes no changes. Read the final
 `[SP-ASSESS] [DONE]` line for the verdict:
 
 - **COMPATIBLE**: no blocking or degrading findings; deploy.
-- **DEGRADED (n warnings)**: deployable, but review each `WARN` finding
-  above the DONE line first.
+- **DEGRADED (n warnings)**: `deploy.js.txt` refuses this site unless you
+  review each `WARN` finding above the DONE line and set
+  `ACKNOWLEDGE_DEGRADED = true` near the top of the script, then paste it
+  again.
 - **BLOCKED (reason)**: a hard requirement is unmet; fix the site (or
   the operator's rights) before deploying.
 

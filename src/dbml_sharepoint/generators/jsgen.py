@@ -39,6 +39,14 @@ from dbml_sharepoint.analysis.typemap import (
 )
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators._indexes import deployable_index_columns
+
+# Imported, never re-derived: deploy.js and assess.js must probe the same site
+# for the same things, and a second spelling here would let them disagree.
+from dbml_sharepoint.generators.assessgen import (
+    NOT_ASSESSABLE,
+    assess_targets,
+    derive_requirements,
+)
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
@@ -127,6 +135,15 @@ def generate_deploy_js(
         # that matters is the transcript the operator pastes back, not the
         # file. It reads nothing from the tenant and must not imply it did.
         env_file_line=describe_env_provenance(env_provenance),
+        # The assessment's three inputs, built exactly as generate_assess_js
+        # builds them. `assess_targets_data` rather than `assess_targets` so
+        # the context name does not shadow the imported function.
+        assess_requirements=[
+            {"key": r.key, "description": r.description, "level_on_fail": r.level_on_fail}
+            for r in derive_requirements(schema, bundle, site_role)
+        ],
+        assess_targets_data=assess_targets(schema, bundle, site_role),
+        assess_not_assessable=list(NOT_ASSESSABLE),
     )
 
 

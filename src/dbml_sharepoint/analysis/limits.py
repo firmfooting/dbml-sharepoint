@@ -111,7 +111,7 @@ MAX_FIELD_DESCRIPTION = 255
 #:     "The parameter Description cannot be null or bigger than 512
 #:      characters."
 #:
-#: It REFUSES rather than truncating, and it refuses mid-deploy -- phase 1.2,
+#: It REFUSES rather than truncating, and it refuses mid-deploy -- phase 1.3,
 #: after lists may already have been created. That is why this is a build-time
 #: rule rather than something the deploy discovers.
 #:
@@ -139,7 +139,7 @@ MAX_GROUP_DESCRIPTION = 512
 #:
 #:     "The parameter Description cannot be bigger than 512 characters."
 #:
-#: It REFUSES rather than truncating, and it refuses at phase 1.2, part-way
+#: It REFUSES rather than truncating, and it refuses at phase 1.3, part-way
 #: through writing permission levels and before any list exists. That is why
 #: this is a build-time rule rather than something the deploy discovers.
 #:

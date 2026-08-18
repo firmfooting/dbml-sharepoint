@@ -126,7 +126,7 @@
  *
  * WHAT RUN 1 IMMEDIATELY PRODUCED, beyond the questions asked. Nothing in
  * the build guards this ceiling. A mapping declaring a level description
- * over 512 characters builds clean and fails at phase 1.2, after permission
+ * over 512 characters builds clean and fails at phase 1.3, after permission
  * levels have begun being written and before any list exists. The longest
  * description in the shipped catalogue is 166 characters, so no family is at
  * risk today, and that is luck rather than a guard. Filed as #227.
@@ -399,7 +399,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 318023f3. Quote this when reporting results.');
+  log('INFO', 'probe revision df28b095. Quote this when reporting results.');
 
   // Run-unique, and that is a safety property rather than tidiness. A fixed
   // name plus a pre-emptive delete destroys somebody else's level on the one

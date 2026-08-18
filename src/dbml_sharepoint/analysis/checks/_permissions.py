@@ -176,7 +176,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
 
         # permission_levels[*].description must fit SP.RoleDefinition.Description.
-        # The server refuses a longer one with HTTP 500, in phase 1.2 -- part-way
+        # The server refuses a longer one with HTTP 500, in phase 1.3 -- part-way
         # through writing permission levels and before any list exists. See
         # limits.MAX_ROLE_DEFINITION_DESCRIPTION for the live measurement behind
         # the number. The deploy appends a provenance marker to every level
@@ -224,7 +224,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             seen_group_names.setdefault(key, grp.name)
 
-            # The server refuses a longer one with HTTP 500, in phase 1.2 --
+            # The server refuses a longer one with HTTP 500, in phase 1.3 --
             # after lists may already exist. Caught here so an over-long
             # description is a build error rather than a half-provisioned
             # site. See limits.MAX_GROUP_DESCRIPTION for the live
@@ -383,8 +383,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
                     f"groups: {grp.name!r} declares both "
                     f"enroll_enterprise_reader and "
-                    f"enroll_operator_during_deploy. Phase 1.3 puts the "
-                    f"operator in the group, so Phase 1.4 finds a principal "
+                    f"enroll_operator_during_deploy. Phase 1.4 puts the "
+                    f"operator in the group, so Phase 1.5 finds a principal "
                     f"other than the named reader and aborts the run -- "
                     f"every run, on a correct address.",
                     location=_GROUPS,
@@ -396,7 +396,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"groups: {grp.name!r} declares both "
                     f"enroll_enterprise_reader and "
                     f"allow_members_edit_membership. The security phase "
-                    f"applies that setting before Phase 1.4 enrols the "
+                    f"applies that setting before Phase 1.5 enrols the "
                     f"reader, so the enrolled account can then add "
                     f"principals to its own group and pass on the group's "
                     f"Read. The one-account guard would hold for the length "
