@@ -309,7 +309,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision b1574d28. Quote this when reporting results.');
+  log('INFO', 'probe revision db1fb38f. Quote this when reporting results.');
 
   // RUN-UNIQUE, and that is a safety property rather than tidiness.
   //
@@ -538,7 +538,7 @@
     { Description: MARKER }, MARKER);
 
   // ---- G9: the flags through the RECONCILE path -------------------------
-  // G7 only proves the CREATE path. Phase 1.2's reconcile is the one that
+  // G7 only proves the CREATE path. Phase 1.3's reconcile is the one that
   // matters and the one nothing verifies: its whole purpose is that "a
   // pre-existing group with the right name but permissive flags must not be
   // accepted as compliant". Sending a value that is already correct would

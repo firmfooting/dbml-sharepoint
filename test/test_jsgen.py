@@ -1118,7 +1118,7 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
 
 
 def test_generated_js_contains_phase_0_and_phase_4() -> None:
-    """deploy.js must include Phase 1.2 (level/group creation) and Phase 4.2
+    """deploy.js must include Phase 1.3 (level/group creation) and Phase 4.2
     (break inheritance + role assignments) markers and SP REST calls (R6)."""
     js = _generate_simple_js()
 
@@ -1135,9 +1135,9 @@ def test_deploy_js_hardens_permission_and_role_checks() -> None:
     """Template hardening guards:
     - permission preflight demands ManagePermissions only when the schema has
       ACL work (needsPermissions), not unconditionally;
-    - Phase 1.2 role-definition / site-group existence probes surface non-404
+    - Phase 1.3 role-definition / site-group existence probes surface non-404
       responses as errors rather than treating them as "already exists";
-    - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.2 group
+    - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.3 group
       owner reads all validate the HTTP result (fetch does not throw on 4xx/5xx).
     """
     js = _generate_simple_js()
@@ -1169,7 +1169,7 @@ def test_deploy_js_reconciles_named_security_objects_and_fails_closed() -> None:
     """A matching name is not sufficient security evidence.
 
     Existing custom role definitions and groups must have their declared
-    permissions/membership controls reconciled. Any Phase 1.2 failure must stop
+    permissions/membership controls reconciled. Any Phase 1.3 failure must stop
     before list creation, and any later schema/ACL failure must stop before a
     seed row can make a partial deployment appear activated.
     """
@@ -1685,7 +1685,7 @@ def test_calculated_kind_wired_into_reconciliation_machinery() -> None:
 
 def test_permission_level_probe_uses_filter_not_getbyname() -> None:
     """SP's roledefinitions/getbyname returns HTTP 500 (not 404) for a missing
-    role definition, so a getbyname existence probe fails Phase 1.2 on every
+    role definition, so a getbyname existence probe fails Phase 1.3 on every
     clean site (first real-tenant paste). The probe must use the $filter form,
     which returns 200 + empty results when absent; getbyname remains only on
     the MERGE path for an existing level. Description is selected alongside
@@ -2659,7 +2659,7 @@ def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) ->
     """Sealed columns block UI schema edits even for site admins, the
     strongest defense available when team owners are unavoidably site
     collection admins (group-connected sites). Design: a maintenance unseal
-    after Phase 1.2 leaves every existing write path untouched, and Phase 4.1
+    after Phase 1.3 leaves every existing write path untouched, and Phase 4.1
     re-seals and verifies after all field writes (3/3b/3d) are done. The
     immutable-shape gate tolerates sealed only for declared-seal fields."""
     schema, bundle = _hardening_inputs(tmp_path)

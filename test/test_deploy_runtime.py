@@ -3403,7 +3403,7 @@ def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_apply_pass_takes_its_own_fresh_digest() -> None:
-    """digest0 is captured near the top of phase 1.2, before the whole
+    """digest0 is captured near the top of phase 1.3, before the whole
     survey (every level probe, the group enumeration, every adopt-path
     owner read and membership count) now runs ahead of it, where before this
     task the first write followed the fetch almost immediately. A create

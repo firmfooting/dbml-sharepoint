@@ -1500,8 +1500,8 @@ def _reader_findings(
 def test_a_reader_group_that_must_be_empty_is_refused() -> None:
     """The two flags contradict each other across runs.
 
-    `require_empty_at_deploy` is proved in Phase 1.2; the reader is enrolled
-    in Phase 1.4 and stays. So the run that enrols the reader succeeds and
+    `require_empty_at_deploy` is proved in Phase 1.3; the reader is enrolled
+    in Phase 1.5 and stays. So the run that enrols the reader succeeds and
     the NEXT one aborts on its own gate -- on a site nobody touched, which
     is the worst shape a failure can take.
     """
@@ -1514,8 +1514,8 @@ def test_a_reader_group_that_must_be_empty_is_refused() -> None:
 def test_a_reader_group_that_also_enrols_the_operator_is_refused() -> None:
     """The two enrolment flags on ONE group deadlock the deploy.
 
-    Phase 1.3 adds the pasting operator to a group flagged
-    `enroll_operator_during_deploy`. Phase 1.4 aborts the run when the
+    Phase 1.4 adds the pasting operator to a group flagged
+    `enroll_operator_during_deploy`. Phase 1.5 aborts the run when the
     reader group holds any principal other than the named reader. Put both
     flags on one group and 1.3 manufactures exactly what 1.4 refuses, so
     every deploy fails -- on a correct address, for a reason nothing in the
@@ -1614,7 +1614,7 @@ def test_a_reader_group_whose_members_may_edit_membership_is_refused() -> None:
     """The exclusivity guard would hold only until the deploy finished.
 
     The security phase reconciles `allow_members_edit_membership` BEFORE
-    Phase 1.4 enrols the reader, so the account the guard exists to isolate
+    Phase 1.5 enrols the reader, so the account the guard exists to isolate
     can then add principals to its own group. Every later addition inherits
     the group's Read, and nothing in a subsequent deploy notices: the
     exclusivity check reads membership at enrolment time, finds the named
@@ -1739,7 +1739,7 @@ def test_a_group_description_over_the_ceiling_is_refused() -> None:
     MEASURED 2026-08-13 by `test/manual/group-description-probe.js`: a
     description of 1018 characters came back HTTP 500, "The parameter
     Description cannot be null or bigger than 512 characters." SharePoint
-    does not truncate it -- it rejects the request, in phase 1.2, after
+    does not truncate it -- it rejects the request, in phase 1.3, after
     lists may already have been created.
 
     So the cost of not catching this at build time is a half-provisioned
@@ -1831,7 +1831,7 @@ def test_a_permission_level_description_over_the_ceiling_is_refused() -> None:
     MEASURED 2026-08-14 by `test/manual/role-definition-probe.js`, R4: a
     description of 1018 characters came back HTTP 500, "The parameter
     Description cannot be bigger than 512 characters." SharePoint does not
-    truncate it -- it rejects the request, in phase 1.2, part-way through
+    truncate it -- it rejects the request, in phase 1.3, part-way through
     writing permission levels and before any list exists.
     """
     finding = only(

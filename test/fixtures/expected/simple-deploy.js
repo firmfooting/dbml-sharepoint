@@ -2019,7 +2019,7 @@
   // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
   // (Previous check incorrectly tested High; ManageLists lives in Low.)
   // ManagePermissions is only demanded when the schema actually performs
-  // Phase 1.2/4 permission work, so an operator who can manage lists but not
+  // Phase 1.3/4 permission work, so an operator who can manage lists but not
   // ACLs is not rejected on a list-only deployment. SCHEMA.requires_manage_permissions
   // is computed once in Python (requires_manage_permissions in
   // analysis/permissions.py) and shared with assess.js's own preflight and
@@ -2144,7 +2144,7 @@
   markPhase('Phase 1.2: read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
-  // created from this schema. Validate every immutable identity before Phase 1.2
+  // created from this schema. Validate every immutable identity before Phase 1.3
   // performs its first write. Mutable declared settings are reconciled and
   // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
   // always requires an explicit migration.

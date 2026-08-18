@@ -151,7 +151,7 @@ Some mappings route all list administration through an empty-by-default admin gr
 
 *Phase 1.2 (PREPARE): read-only preflight*
 
-A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.2 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
+A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.3 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
 
 ### `deploy/_reader_enrolment.js.j2`
 

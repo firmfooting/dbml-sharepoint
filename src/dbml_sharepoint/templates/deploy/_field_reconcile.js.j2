@@ -712,7 +712,7 @@
   // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
   // (Previous check incorrectly tested High; ManageLists lives in Low.)
   // ManagePermissions is only demanded when the schema actually performs
-  // Phase 1.2/4 permission work, so an operator who can manage lists but not
+  // Phase 1.3/4 permission work, so an operator who can manage lists but not
   // ACLs is not rejected on a list-only deployment. SCHEMA.requires_manage_permissions
   // is computed once in Python (requires_manage_permissions in
   // analysis/permissions.py) and shared with assess.js's own preflight and
