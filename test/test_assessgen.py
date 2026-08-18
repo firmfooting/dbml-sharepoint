@@ -738,6 +738,67 @@ def test_a_locked_site_blocks_the_verdict() -> None:
     ]
 
 
+#: Findings whose detail may still interpolate a value the thin mock does not
+#: supply. A ratchet: entries come out, and one going in needs a reason in the
+#: pull request.
+_MAY_REPORT_UNDEFINED: frozenset[str] = frozenset()
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_finding_reports_the_literal_word_undefined() -> None:
+    """The mock answers 200 with no selected properties, which is the shape a
+    real tenant produces when it does not carry one.
+
+    Four findings printed `undefined` at operator level on every green run of
+    this suite before the guard existed, and nothing asserted on them.
+    """
+    summary = _run_assess(_declared_descriptions())
+    leaking = [
+        f["key"] for f in summary["findings"]
+        if "undefined" in f["detail"] and f["key"] not in _MAY_REPORT_UNDEFINED
+    ]
+    assert leaking == [], leaking
+
+
+# A site answering 200 with a null payload for every call, which is what
+# `probeGet` turns into `{ok: true, d: null}`. Nothing about the declared
+# lists is set up, because the first probe throws long before they are read.
+_NULL_BODY_HARNESS = textwrap.dedent(r"""
+    globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
+    globalThis._spPageContextInfo = {
+      webServerRelativeUrl: '/sites/test',
+      userLoginName: 'probe@example.com',
+      userId: 1,
+    };
+    // Unused here, and present because _run_assess rewrites this exact line.
+    const LIST_DESCRIPTIONS = new Map([]);
+    globalThis.fetch = async () => ({
+      ok: true, status: 200,
+      headers: { get: () => null },
+      json: async () => ({ d: null }),
+      text: async () => '{"d":null}',
+    });
+""")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Task 3 Step 3 of the absent-is-not-empty plan: probeGet still returns "
+        "{ok: true, d: null} for a 200 with a null body, and assess.js.j2 has no "
+        "try around assessSite, so the first `.d.X` throws and no verdict is reached."
+    ),
+)
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_null_payload_still_reaches_a_verdict() -> None:
+    """An operator who gets no verdict cannot tell a healthy site from an
+    unreadable one, and the standalone script has nothing that catches a
+    throw. A null body is the cheapest payload that produces one.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_NULL_BODY_HARNESS)
+    assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+
+
 if __name__ == "__main__":  # pragma: no cover
     # Regenerate the golden. Deliberately not a pytest flag: see
     # test_simple_assess_js_matches_golden. Uses the SAME renderer the test
