@@ -1061,7 +1061,7 @@
   }
 
   // One entry per mismatched property. The throwing wrapper below keeps every
-  // caller's semantics; only the read-only preflight will read the list.
+  // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {
     const mismatches = [];
     if (actual.BaseTemplate !== list.base_template) {
@@ -1071,6 +1071,8 @@
         actual: actual.BaseTemplate,
         message: `Existing '${list.title}' has BaseTemplate ${actual.BaseTemplate}; expected ${list.base_template} for declared kind '${list.kind}'. `
           + 'SharePoint list/library templates are immutable; provision a clean object or perform an explicit migration.',
+        // Same key the field entries carry, so one consumer filter fits both.
+        checked: true,
       });
     }
     return mismatches;
@@ -1078,7 +1080,9 @@
 
   function assertListImmutableShape(list, actual) {
     const mismatches = immutableListMismatches(list, actual);
-    if (mismatches.length > 0) throw new Error(mismatches.map(m => m.message).join(' '));
+    // De-duplicated: two properties of one lookup share a single message, and
+    // the joined text must stay what a single-property mismatch has always said.
+    if (mismatches.length > 0) throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
   }
 
   function desiredListSettings(list) {
@@ -1276,8 +1280,10 @@
     if (!field.target_list) return mismatches;
     if (!targetGuid) {
       // No GUID means the target list was absent or unreadable. Resolving its
-      // display field would throw against a list nobody could read.
-      notChecked('LookupList', field.target_list,
+      // display field would throw against a list nobody could read. Certain,
+      // not undetermined: adoption is impossible either way. Split this by
+      // target-list status once preflight can tell absent from unreadable.
+      mismatch('LookupList', field.target_list, actual.LookupList,
         `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
       return mismatches;
     }
@@ -1285,24 +1291,29 @@
     try {
       expectedLookupField = await expectedLookupFieldInternalName(listName, field);
     } catch (err) {
-      // Recorded, not propagated: a throw here would discard the mismatches
-      // already collected for this column. It also covers a probe failure, so
-      // it is not evidence that this property differs.
+      // Recorded, not propagated: a throw would discard this column's other mismatches.
       notChecked('LookupField', field.body.LookupField, err.message);
       return mismatches;
     }
-    if (normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid)
-        || actual.LookupField !== expectedLookupField) {
-      mismatch('LookupList', targetGuid, actual.LookupList,
-        `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
-        + `expected list '${targetGuid}' field '${expectedLookupField}'. Lookup targets are immutable; recreate through an explicit migration.`);
+    // One entry per differing property: a single entry hard-coded 'LookupList',
+    // so a column differing only in LookupField reported the wrong property and
+    // two GUIDs that normalizeGuid exists to call equal.
+    const listDiffers = normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid);
+    const fieldDiffers = actual.LookupField !== expectedLookupField;
+    if (listDiffers || fieldDiffers) {
+      const message = `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
+        + `expected list '${targetGuid}' field '${expectedLookupField}'. Lookup targets are immutable; recreate through an explicit migration.`;
+      if (listDiffers) mismatch('LookupList', targetGuid, actual.LookupList, message);
+      if (fieldDiffers) mismatch('LookupField', expectedLookupField, actual.LookupField, message);
     }
     return mismatches;
   }
 
   async function assertFieldImmutableShape(listName, field, actual, targetGuid) {
     const mismatches = await immutableFieldMismatches(listName, field, actual, targetGuid);
-    if (mismatches.length > 0) throw new Error(mismatches.map(m => m.message).join(' '));
+    // De-duplicated: the two lookup properties share one message, and the joined
+    // text must stay what a single-property mismatch has always said.
+    if (mismatches.length > 0) throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
   }
 
   // Declared form behaviour. Two properties, opposite round-trip

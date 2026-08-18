@@ -1208,6 +1208,173 @@ def test_a_column_with_multiple_immutable_mismatches_reports_all_of_them(
     assert reported == [both]
 
 
+# One adopted lookup column, correct in every property the collector can still
+# compare, whose TARGET list has lost the display field the lookup names. The
+# enumeration is what the non-fresh probe reads, so dropping Title from it is
+# what makes expectedLookupFieldInternalName throw.
+_UNRESOLVABLE_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS.replace(
+    "return { d: { results: [titleField(listTitle), ...own] } };",
+    "return { d: { results: listTitle === 'APP_Project'\n"
+    "          ? own : [titleField(listTitle), ...own] } };",
+) + textwrap.dedent(r"""
+    created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
+      FieldTypeKind: 7, Title: 'Project', Required: true,
+      LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
+    });
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_lookup_whose_target_display_field_cannot_be_resolved_is_refused() -> None:
+    """The catch around `expectedLookupFieldInternalName` records, it does not swallow.
+
+    That resolve throws for a target display field that does not exist and for a
+    probe that failed, and the collector catches it so the mismatches already
+    found for the column are not discarded. Deleting the `notChecked` call inside
+    the catch leaves an empty list, and the column is then adopted with a lookup
+    target nothing ever verified.
+    """
+    output = _run_deploy(
+        _UNRESOLVABLE_LOOKUP_TARGET_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    reported = [err["error"] for err in summary["errors"] if err.get("column") == "Project"]
+    assert reported == [
+        "Lookup 'APP_Task.Project' target display field 'APP_Project.Title' does not exist",
+    ]
+
+
+# One adopted list carrying the wrong BaseTemplate. Every other list keeps the
+# declared 100, so the abort has to name this one.
+_WRONG_BASE_TEMPLATE_HARNESS = _ADOPTED_HARNESS.replace(
+    "Title: 'adopted', BaseTemplate: 100, ContentTypesEnabled: false,",
+    "Title: 'adopted', BaseTemplate: listOf(url) === 'APP_Task' ? 101 : 100,\n"
+    "          ContentTypesEnabled: false,",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write() -> None:
+    """The list collector's only refusal, executed rather than read.
+
+    Four call sites go through `assertListImmutableShape`, one of them the
+    post-MERGE read-back, and no test ever ran it against a list that actually
+    differed: widening the wrapper to `mismatches.length > 99` left the suite
+    green. A wrong BaseTemplate means somebody else's list is about to be
+    treated as ours, and SharePoint offers no way to change it.
+    """
+    output = _run_deploy(
+        _WRONG_BASE_TEMPLATE_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    reported = [err["error"] for err in summary["errors"] if err.get("list") == "APP_Task"]
+    assert reported == [
+        (
+            "Existing 'APP_Task' has BaseTemplate 101; expected 100 for declared kind 'List'. "
+            "SharePoint list/library templates are immutable; provision a clean object "
+            "or perform an explicit migration."
+        ),
+    ]
+
+
+# The collector's two collaborators. Stubbed because this test is about what the
+# collector RECORDS, not about how a declaration is read or a probe is answered.
+_COLLECTOR_STUBS = textwrap.dedent("""
+    let TARGET_DISPLAY_FIELD = { InternalName: 'Title' };
+    const declaredFieldState = () => ({ typeAsString: 'Lookup' });
+    const readFieldShape = async () => TARGET_DISPLAY_FIELD;
+""")
+
+_COLLECTOR_SCENARIOS = textwrap.dedent("""
+    const GUID = '22222222-2222-2222-2222-222222222222';
+    const field = {
+      title: 'Project', seal: false, target_list: 'APP_Project',
+      body: { LookupField: 'Title', FieldTypeKind: 7 },
+    };
+    const actual = {
+      InternalName: 'Project', TypeAsString: 'Lookup', ReadOnlyField: false,
+      Sealed: false, LookupList: `{${GUID}}`, LookupField: 'Title',
+    };
+    (async () => {
+      const out = {};
+      out.absentTarget = await immutableFieldMismatches('APP_Task', field, actual, null);
+      TARGET_DISPLAY_FIELD = null;
+      out.probeThrew = await immutableFieldMismatches('APP_Task', field, actual, GUID);
+      TARGET_DISPLAY_FIELD = { InternalName: 'Title' };
+      out.displayFieldOnly = await immutableFieldMismatches(
+        'APP_Task', field, { ...actual, LookupField: 'Other' }, GUID);
+      console.log('__OUT__' + JSON.stringify(out));
+    })();
+""")
+
+
+def _lifted(script: str, header: str) -> str:
+    """A two-space-indented declaration lifted whole out of the emitted script.
+
+    The emitted functions sit at that indent inside the IIFE, so the first
+    `\\n  }` after the declaration is the function's own closing brace. Lifting
+    the shipped source rather than copying it: a copy keeps passing after the
+    real one changes.
+    """
+    start = script.index(header)
+    rest = script[start:]
+    end = rest.index("\n  }") + len("\n  }")
+    return rest[:end]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_field_collector_records_what_it_compared_and_what_it_could_not() -> None:
+    """`checked` separates "compared and differed" from "could not be compared".
+
+    An absent target list is the first kind: the declared list is not there,
+    adoption is impossible, and the refusal is certain. A target-display-field
+    probe that threw is the second: the property may well match, and a report
+    must not present it as a difference. Nothing asserted either value before.
+
+    Property attribution is pinned here too. One entry covered a two-property
+    condition and hard-coded 'LookupList', so a column differing only in
+    LookupField named the wrong property and carried two GUIDs differing only in
+    the normalisation `normalizeGuid` exists to erase.
+    """
+    script = _deploy_js()
+    program = "\n".join([
+        _COLLECTOR_STUBS,
+        next(ln for ln in script.splitlines() if "const normalizeGuid =" in ln),
+        _lifted(script, "async function expectedLookupFieldInternalName"),
+        _lifted(script, "async function immutableFieldMismatches"),
+        _COLLECTOR_SCENARIOS,
+    ])
+    output = _run(program)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
+    assert line is not None, f"the collector produced no output:\n{output[-3000:]}"
+    out = json.loads(line.removeprefix("__OUT__"))
+
+    assert [(m["property"], m["checked"]) for m in out["absentTarget"]] == [
+        ("LookupList", True),
+    ]
+    assert [(m["property"], m["checked"]) for m in out["probeThrew"]] == [
+        ("LookupField", False),
+    ]
+    assert out["probeThrew"][0]["actual"] is None
+    assert [(m["property"], m["checked"]) for m in out["displayFieldOnly"]] == [
+        ("LookupField", True),
+    ]
+    assert out["displayFieldOnly"][0]["declared"] == "Title"
+    assert out["displayFieldOnly"][0]["actual"] == "Other"
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """The end-to-end guard, and the one that gives the others their value.
