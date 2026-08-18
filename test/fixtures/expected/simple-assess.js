@@ -243,7 +243,13 @@
         const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!r.ok) return { ok: false, status: r.status };
         const j = await r.json();
-        return { ok: true, d: (j && j.d !== undefined) ? j.d : j };
+        const d = (j && j.d !== undefined) ? j.d : j;
+        // Every caller reads a property off `d`, so a 200 with a null body was
+        // an `ok` result that threw on the first read. Only the payload's
+        // shape is judged here: the call sites cover three response shapes and
+        // per-property validation against the $select would reject two.
+        if (d === null || typeof d !== 'object') return { ok: false, error: 'non-object payload' };
+        return { ok: true, d };
       } catch (err) {
         return { ok: false, error: err.message };
       }
@@ -574,11 +580,21 @@
     return { findings, verdict };
   }
 
-  const summary = await assessSite({
-    requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
-    log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
-    odataName, getDigest, verdictLevel: 'DONE',
-  });
+  let summary;
+  // The same guard the deploy gate has: a throw is a broken probe, not a
+  // verdict, and this script died with a stack trace and told the operator
+  // nothing. BLOCKED because a site nobody could read is not a site to deploy
+  // to, which is the call the deploy gate already makes.
+  try {
+    summary = await assessSite({
+      requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
+      log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
+      odataName, getDigest, verdictLevel: 'DONE',
+    });
+  } catch (err) {
+    log('ERROR', `The assessment could not run (${err.message}); nothing was assessed.`);
+    summary = { findings: [], verdict: 'BLOCKED', aborted: 'assessment-failed' };
+  }
   console.log(summary);
   return summary;
 })();

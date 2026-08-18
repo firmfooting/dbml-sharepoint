@@ -929,14 +929,6 @@ _NULL_BODY_HARNESS = textwrap.dedent(r"""
 """)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Task 3 Step 3 of the absent-is-not-empty plan: probeGet still returns "
-        "{ok: true, d: null} for a 200 with a null body, and assess.js.j2 has no "
-        "try around assessSite, so the first `.d.X` throws and no verdict is reached."
-    ),
-)
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_null_payload_still_reaches_a_verdict() -> None:
     """An operator who gets no verdict cannot tell a healthy site from an
@@ -945,6 +937,26 @@ def test_a_null_payload_still_reaches_a_verdict() -> None:
     """
     summary = _run_assess(_declared_descriptions(), harness=_NULL_BODY_HARNESS)
     assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+    # From `probeGet` refusing the payload, not from the `try` catching a
+    # throw. The `try` is the second guard and would satisfy the line above
+    # on its own, which would leave the first one untested.
+    assert summary.get("aborted") is None, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throw_inside_the_standalone_assessment_still_names_a_verdict() -> None:
+    """The second guard, exercised on its own.
+
+    `probeGet` cannot refuse every throw the body can raise, and this script
+    had nothing around `assessSite` at all: an operator got a stack trace and
+    no verdict, which reads exactly like a script that never ran. The deploy
+    gate has carried this guard since it was written.
+    """
+    js = _assess_js().replace('"base_templates"', '"base_templates_typo"', 1)
+    assert '"base_templates_typo"' in js, "the targets key was not renamed"
+    summary = _run_assess(_declared_descriptions(), js=js)
+    assert summary["verdict"] == "BLOCKED", summary
+    assert summary["aborted"] == "assessment-failed", summary
 
 
 if __name__ == "__main__":  # pragma: no cover

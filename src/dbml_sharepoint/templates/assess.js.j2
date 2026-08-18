@@ -26,11 +26,21 @@
 
 {% include "_assess_body.js.j2" %}
 
-  const summary = await assessSite({
-    requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
-    log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
-    odataName, getDigest, verdictLevel: 'DONE',
-  });
+  let summary;
+  // The same guard the deploy gate has: a throw is a broken probe, not a
+  // verdict, and this script died with a stack trace and told the operator
+  // nothing. BLOCKED because a site nobody could read is not a site to deploy
+  // to, which is the call the deploy gate already makes.
+  try {
+    summary = await assessSite({
+      requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
+      log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
+      odataName, getDigest, verdictLevel: 'DONE',
+    });
+  } catch (err) {
+    log('ERROR', `The assessment could not run (${err.message}); nothing was assessed.`);
+    summary = { findings: [], verdict: 'BLOCKED', aborted: 'assessment-failed' };
+  }
   console.log(summary);
   return summary;
 })();

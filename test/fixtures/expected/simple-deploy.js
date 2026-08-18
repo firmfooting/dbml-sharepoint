@@ -281,7 +281,13 @@
         const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!r.ok) return { ok: false, status: r.status };
         const j = await r.json();
-        return { ok: true, d: (j && j.d !== undefined) ? j.d : j };
+        const d = (j && j.d !== undefined) ? j.d : j;
+        // Every caller reads a property off `d`, so a 200 with a null body was
+        // an `ok` result that threw on the first read. Only the payload's
+        // shape is judged here: the call sites cover three response shapes and
+        // per-property validation against the $select would reject two.
+        if (d === null || typeof d !== 'object') return { ok: false, error: 'non-object payload' };
+        return { ok: true, d };
       } catch (err) {
         return { ok: false, error: err.message };
       }
