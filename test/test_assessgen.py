@@ -442,10 +442,27 @@ def test_the_assess_harness_matcher_separates_a_list_from_what_nests_under_it() 
     )
 
 
-def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
+# The same site, locked. Only `site?$select=ReadOnly,LockIssue` carries
+# `ReadOnly` in its URL, so this one branch reaches the BLOCKED arm.
+_LOCKED_HARNESS = _ASSESS_HARNESS.replace(
+    "const body = (url) => {\n",
+    "const body = (url) => {\n"
+    "      if (url.includes('ReadOnly')) {\n"
+    "        return { d: { ReadOnly: true, LockIssue: 'Locked for migration' } };\n"
+    "      }\n",
+)
+assert _LOCKED_HARNESS != _ASSESS_HARNESS, "the locked branch was not spliced in"
+
+
+def _run_assess(
+    list_description: str | dict[str, str],
+    *,
+    harness: str = _ASSESS_HARNESS,
+) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
     One string applies to every declared list; a mapping sets them per title.
+    `harness` swaps the mocked site for a variant, such as a locked one.
     Returns the summary the script resolves with.
     """
     held = (
@@ -454,7 +471,7 @@ def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
     )
     js = _assess_js()
     assert js.count("})();") == 1, "the IIFE terminator is no longer unique"
-    harness = _ASSESS_HARNESS.replace(
+    harness = harness.replace(
         "const LIST_DESCRIPTIONS = {};",
         f"const LIST_DESCRIPTIONS = {json.dumps(held)};",
     )
@@ -596,6 +613,107 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     assert "GOT:string" in output, (
         f"the lookup returned something off Object.prototype:\n{output}"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_assessment_records_every_finding_in_order() -> None:
+    """The behavioural baseline for extracting the body into a partial.
+
+    A sampled assertion cannot see a dropped probe, which is the defect a
+    two-hundred-and-ninety-line move is most likely to introduce.
+
+    `detail` is projected as well as the triple. The nine Tier 3 entries share
+    one key, so `(tier, key, level)` alone would pin their count and let a
+    reworded item through.
+    """
+    summary = _run_assess(_declared_descriptions())
+    # Emission order, not tier order: `list_template_100` is raised from inside
+    # the Tier 1 block (assess.js.j2:97-112) but carries tier 2.
+    assert [
+        (f["tier"], f["key"], f["level"], f["detail"]) for f in summary["findings"]
+    ] == [
+        (1, "web_template", "INFO", "Template undefined#undefined, LCID undefined."),
+        (1, "site_not_locked", "PASS", "Site is writable (not locked)."),
+        (1, "platform_build", "INFO", "SharePoint build 16.0.0.0."),
+        (1, "manage_lists_bit", "PASS", "Operator holds ManageLists."),
+        (1, "manage_permissions_bit", "PASS",
+         "Operator holds ManagePermissions (or is a site collection admin)."),
+        (1, "noscript", "INFO", "Custom scripting allowed (AddAndCustomizePages present)."),
+        (2, "list_template_100", "WARN",
+         "Base template 100 not listed by web/listtemplates (creation may still work)."),
+        (1, "regional_settings", "INFO", "Site LocaleId undefined."),
+        (1, "languages", "INFO", "Multilingual undefined; UI languages ."),
+        (1, "storage", "INFO", "Storage used 0 MB (0% of quota)."),
+        (1, "hub", "INFO", "Hub site undefined; hub id undefined."),
+        (1, "retention_labels", "INFO", "No retention labels available to this site."),
+        (1, "app_catalog", "INFO", "No tenant app catalog configured."),
+        (1, "custom_actions", "INFO", "0 web custom action(s) / SPFx extension(s) registered."),
+        (1, "search", "INFO", "Search service responds."),
+        (2, "collision:APP_Project", "INFO",
+         "'APP_Project' already exists (BaseTemplate 100), a redeploy/reconcile target."),
+        (2, "provenance_marker:APP_Project", "PASS",
+         "'APP_Project' carries its provenance marker."),
+        (2, "collision:APP_Task", "INFO",
+         "'APP_Task' already exists (BaseTemplate 100), a redeploy/reconcile target."),
+        (2, "provenance_marker:APP_Task", "PASS", "'APP_Task' carries its provenance marker."),
+        (2, "collision:APP_AppSettings", "INFO",
+         "'APP_AppSettings' already exists (BaseTemplate 100), a redeploy/reconcile target."),
+        (2, "provenance_marker:APP_AppSettings", "PASS",
+         "'APP_AppSettings' carries its provenance marker."),
+        (2, "custom_formatter_surface", "PASS", "Property surface present."),
+        (2, "form_formatter_surface", "PASS", "Property surface present."),
+        (2, "version_trim_mode", "PASS",
+         "No service-managed auto-trim overriding declared version limits."),
+        (2, "process_query", "PASS",
+         "CSOM ProcessQuery responds (group owner correction available)."),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         ("Power Automate / Power Apps inventory (lives in Power Platform APIs, no SharePoint "
+          "REST surface from site context)")),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "Audit settings (SSOM-only; not exposed via CSOM/REST)"),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "Information-barrier segments and mode (tenant-admin only)"),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         ("Authoritative tenant sharing capability and storage quota ceilings (tenant-admin "
+          "SiteProperties)")),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         ("Retention POLICY coverage of the site (only inferable via the Preservation Hold "
+          "Library signal)")),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "Webhook subscription enumeration (bound to the creating app identity)"),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "Edit-form column-description suppression (SharePoint platform behaviour)"),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "[$Created] view-field resolution in formatters (tenant/locale dependent)"),
+        (3, "not_assessable", "NOT-ASSESSABLE",
+         "Format-pane JSON display encoding (renders identically either way)"),
+    ]
+    # DEGRADED rather than COMPATIBLE because the mock answers
+    # `web/listtemplates` with an empty result set, so `list_template_100`
+    # WARNs and the pack declares it a requirement.
+    assert summary["verdict"] == "DEGRADED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_locked_site_blocks_the_verdict() -> None:
+    """DEGRADED alone leaves the verdict arithmetic under-exercised.
+
+    BLOCKED has to win over the WARN the same run still raises, and that
+    precedence is what decides whether a deploy is offered at all.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_LOCKED_HARNESS)
+    assert summary["verdict"] == "BLOCKED"
+    assert [
+        (f["tier"], f["key"], f["detail"])
+        for f in summary["findings"] if f["level"] == "BLOCKED"
+    ] == [
+        (1, "site_not_locked", "Site is read-only/locked: Locked for migration."),
+    ]
+    # The WARN the shipped harness verdicts on is still raised here, so BLOCKED
+    # is precedence rather than the absence of a warning.
+    assert [f["level"] for f in summary["findings"] if f["key"] == "list_template_100"] == [
+        "WARN",
+    ]
 
 
 if __name__ == "__main__":  # pragma: no cover
