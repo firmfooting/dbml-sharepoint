@@ -101,15 +101,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "overdue-date": "calculated_date",
             }.get(style_name)
             target_type = types_by_col.get(col_name)
-            # Both of these judge the COLUMN's declared type and interpolate
-            # it, so a column that declares none (absent from the DBML, or a
-            # cross-site reference expansion, which is rendered without being
-            # a DBML column) gives them nothing to say. Each in turn tested
-            # only that the STYLE had a calculated form and printed "expects
-            # calculated_text, not None", naming a column type that does not
-            # exist. Guarding the pair rather than skipping the column: the
-            # trend, guard and color_by checks below judge OTHER columns and
-            # still apply.
+            # Both rules interpolate the COLUMN's declared type, so a column
+            # that declares none printed "expects calculated_text, not None".
+            # The pair is guarded rather than the column skipped, because the
+            # trend, guard and color_by checks below judge OTHER columns.
             if target_type is not None:
                 if (
                     calculated_type_for_style is not None

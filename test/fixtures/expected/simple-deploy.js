@@ -272,7 +272,7 @@
       log(level, `[T${tier}] ${key}: ${detail}`);
     };
     // A property the site did not return is not a value. Printing it as one
-    // put the literal word `undefined` in four operator-facing lines.
+    // put the literal word `undefined` in operator-facing lines.
     const reported = (v, fallback = '(not reported)') => (v == null ? fallback : v);
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
@@ -283,9 +283,8 @@
         const j = await r.json();
         const d = (j && j.d !== undefined) ? j.d : j;
         // Every caller reads a property off `d`, so a 200 with a null body was
-        // an `ok` result that threw on the first read. Only the payload's
-        // shape is judged here: the call sites cover three response shapes and
-        // per-property validation against the $select would reject two.
+        // an `ok` result that threw on the first read. Shape alone is judged,
+        // because the call sites take differing response shapes.
         if (d === null || typeof d !== 'object') return { ok: false, error: 'non-object payload' };
         return { ok: true, d };
       } catch (err) {
@@ -351,9 +350,8 @@
         finding(1, 'noscript', 'INFO',
           has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
       } else {
-        // One finding per key, because one finding for three keys left the
-        // other two undeclared and the verdict loop skips a key it has no
-        // finding for, so a BLOCKED-level requirement passed unchecked.
+        // One finding per key: the verdict loop skips a key it has no finding
+        // for, so naming one of them let the rest pass unchecked.
         const why = perms.ok
           ? 'the site answered without EffectiveBasePermissions'
           : `HTTP ${perms.status || perms.error}`;
@@ -402,8 +400,7 @@
       }
       const usage = await probeGet('site/usage');
       if (usage.ok) {
-        // `|| 0` reported an unanswered quota as an empty site, which is a
-        // measurement the surface never made.
+        // `|| 0` reported an unanswered quota as an empty site.
         const measured = usage.d.Storage != null && usage.d.StoragePercentageUsed != null;
         finding(1, 'storage', 'INFO', measured
           ? `Storage used ${Math.round(usage.d.Storage / 1048576)} MB (${Math.round(usage.d.StoragePercentageUsed * 100)}% of quota).`
@@ -484,9 +481,8 @@
       const expected = LIST_MARKERS.get(title);
       if (!expected) return;
       const key = `provenance_marker:${title}`;
-      // A Description the probe did not report is not a Description that lost
-      // its marker. Read as an empty string it warned on every declared list.
-      // An empty string that WAS reported still warns: that is the drift this
+      // A Description the probe did not report is not one that lost its marker.
+      // An empty string that WAS reported still warns, which is the drift this
       // check exists for.
       if (description == null) {
         finding(2, key, 'NOT-ASSESSABLE',
@@ -601,10 +597,9 @@
     // ===================================================================
     const byKey = {};
     for (const f of findings) {
-      // NOT-ASSESSABLE is kept: dropping it here made a requirement nobody
-      // could check indistinguishable from one that was never declared, and
-      // the loop below then read it as a pass. Tier 3 shares the key
-      // `not_assessable`, which is not a requirement key, so it is never read.
+      // NOT-ASSESSABLE is kept: dropping it let the loop below read a
+      // requirement nobody could check as a pass. Tier 3's shared key
+      // `not_assessable` is not a requirement key, so it is never read.
       if (f.level === 'INFO') continue;
       byKey[f.key] = f;
     }
@@ -616,8 +611,8 @@
       if (!f) continue;
       if (f.level === 'BLOCKED') { if (!blocked) blocked = req; }
       else if (f.level === 'WARN') warnings += 1;
-      // Not BLOCKED, because nothing here says the requirement is unmet. Not a
-      // pass either, because something the pack requires went unchecked.
+      // This is neither BLOCKED, since nothing says the requirement is unmet,
+      // nor a pass, since something the pack requires went unchecked.
       else if (f.level === 'NOT-ASSESSABLE') { if (!unassessed) unassessed = req; }
     }
     const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';

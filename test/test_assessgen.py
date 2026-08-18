@@ -585,7 +585,7 @@ def test_assess_is_quiet_when_every_marker_is_present() -> None:
 
 
 def _description_absent_harness() -> str:
-    """The harness above answering the list object without a `Description`.
+    """`_ASSESS_HARNESS` answering the list object without a `Description`.
 
     The list still exists and still answers 200. Only the property the marker
     check reads is missing, which is the shape that made every declared list
@@ -601,7 +601,7 @@ def _description_absent_harness() -> str:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_unreported_description_is_not_a_lost_marker() -> None:
-    """The false WARN this raised was specific, actionable and wrong.
+    """An unreported Description used to raise a WARN that was simply wrong.
 
     It told an operator that fleet reporting could not see a list, for every
     declared list on the site, on the strength of a property the probe never
@@ -622,7 +622,7 @@ def test_an_unreported_description_is_not_a_lost_marker() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_description_reported_as_empty_still_loses_its_marker() -> None:
-    """The line between the two cases, pinned from the other side.
+    """A Description reported as empty sits on the other side of this line.
 
     A list whose Description SharePoint reported as empty has genuinely lost
     the marker, and a fix that treated absent and empty alike would silence
@@ -799,7 +799,7 @@ _PERMISSION_KEYS = ("manage_lists_bit", "manage_permissions_bit", "noscript")
 
 
 def _unreadable_permissions_harness() -> str:
-    """The harness above answering 200 with no `EffectiveBasePermissions`.
+    """`_ASSESS_HARNESS` answering 200 with no `EffectiveBasePermissions`.
 
     The request succeeds, so `.ok` is true and only the payload says nothing.
     That is the shape a site produces when it does not carry the property,
@@ -840,8 +840,8 @@ def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
         for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
     ), summary["findings"]
     # This harness also raises the `list_template_100` WARN, so the verdict
-    # here cannot separate the two causes. The healthy harness below is what
-    # measures the unread permissions on their own.
+    # here cannot separate the two causes. `_healthy_harness` is what measures
+    # the unread permissions on their own.
     assert summary["verdict"] == "DEGRADED"
 
 
@@ -869,9 +869,8 @@ def _healthy_harness(base: str = _ASSESS_HARNESS) -> str:
     `web/listtemplates` replies `{d: {results: []}}` to everything it does not
     name, and the site and version-policy probes are handed a payload carrying
     none of the properties they selected. Three requirement keys therefore
-    degrade on every harness in this module, and every verdict is DEGRADED
-    regardless of what else the run found. Answering all three is what lets a
-    verdict here mean what the test using it says it means.
+    degrade on every harness built from `_ASSESS_HARNESS`. A test whose verdict
+    is meant to come from something else has to answer all three first.
     """
     stocked = base.replace(
         "const body = (url) => {\n",
@@ -894,12 +893,13 @@ def _healthy_harness(base: str = _ASSESS_HARNESS) -> str:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_healthy_site_is_compatible() -> None:
-    """The control for the two tests below, and it earns its place twice.
+    """The control for every test that reads a DEGRADED off this harness.
 
-    Without it a DEGRADED there proves nothing, since every other harness in
-    this module is DEGRADED already. It also pins that the Tier 3 honesty
-    block, which is NOT-ASSESSABLE on every run, does not itself degrade: its
-    key `not_assessable` is not a requirement.
+    A DEGRADED there proves nothing unless a run answering every probe comes
+    out COMPATIBLE, and no other harness in this module does: they degrade, or
+    they block. It also pins that the Tier 3 honesty block, which is
+    NOT-ASSESSABLE on every run, does not itself degrade, since its key
+    `not_assessable` is not a requirement.
     """
     summary = _run_assess(_declared_descriptions(), harness=_healthy_harness())
     assert summary["verdict"] == "COMPATIBLE", [
@@ -938,10 +938,10 @@ def test_a_requirement_nobody_could_assess_degrades_the_verdict() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
-    """The second requirement key that reaches NOT-ASSESSABLE.
+    """Saying nobody could tell must not be weaker than the WARN it replaced.
 
-    An unreported Description used to WARN falsely, which at least degraded.
-    Saying nobody could tell must not be the weaker answer of the two.
+    An unreported Description used to WARN falsely, and a false WARN at least
+    degraded the verdict.
     """
     summary = _run_assess(
         _declared_descriptions(),
@@ -968,9 +968,10 @@ def _unreported_lock_state_harness() -> str:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_site_that_reports_no_lock_state_is_not_read_as_writable() -> None:
-    """`site_not_locked` is required at BLOCKED, so a PASS here is the
-    strongest claim the assessment makes, and it was being made on a payload
-    that carried neither `ReadOnly` nor `LockIssue`.
+    """A PASS here is the strongest claim the assessment makes.
+
+    `site_not_locked` is required at BLOCKED, and the claim was being made on a
+    payload that carried neither `ReadOnly` nor `LockIssue`.
 
     The positive half is asserted with the negative: a repair that silenced
     the false PASS by never reporting the requirement at all would satisfy
@@ -1041,23 +1042,20 @@ def test_a_list_that_reports_no_trim_mode_is_not_read_as_untrimmed() -> None:
 
 
 def _reporting_variants_harness() -> str:
-    """The harness above answering the three surfaces that carry a value.
+    """`_ASSESS_HARNESS` is made to answer the surfaces that carry a value.
 
-    The thin mock replies `{d: {results: []}}` to everything it does not
-    name, which reaches only one side of each of these three checks. Nothing
-    else in this suite makes them answer, and emitted JS has no reachability
-    gate, so an unfired branch here is invisible.
+    The thin mock replies `{d: {results: []}}` to everything it does not name,
+    which reaches only one side of each of these checks. Nothing else in this
+    suite makes them answer, and emitted JS has no reachability gate, so an
+    unfired branch here is invisible.
     """
     variants = _ASSESS_HARNESS.replace(
         "const body = (url) => {\n",
         "const body = (url) => {\n"
-        # No `results` key at all: the question was not answered.
         "  if (url.includes('GetAvailableTagsForSite')) { return { d: {} }; }\n"
-        # Both figures present, which is the only shape that is a measurement.
         "  if (url.includes('site/usage')) {\n"
         "    return { d: { Storage: 262144000, StoragePercentageUsed: 0.25 } };\n"
         "  }\n"
-        # Present and empty: the tenant answered, and the answer is none.
         "  if (url.includes('SP_TenantSettings_Current')) {\n"
         "    return { d: { CorporateCatalogUrl: '' } };\n"
         "  }\n",
@@ -1068,11 +1066,11 @@ def _reporting_variants_harness() -> str:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_the_three_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> None:
-    """Each of these separates "not reported" from "reported as none".
+def test_the_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> None:
+    """Each of these branches separates "not reported" from "reported as none".
 
-    The distinction is the whole point of the change that introduced them, and
-    the default harness reaches only the side that was already there.
+    That distinction is what the change introducing them was for, and the
+    default harness reaches only the side that was already there.
     """
     summary = _run_assess(
         _declared_descriptions(), harness=_reporting_variants_harness(),
@@ -1090,7 +1088,7 @@ _MAY_REPORT_UNDEFINED: frozenset[str] = frozenset()
 
 
 def _bare_list_object_harness() -> str:
-    """The harness above answering an existing list with its `Title` alone.
+    """`_ASSESS_HARNESS` answering an existing list with its `Title` alone.
 
     The default mock hands the collision probe a `BaseTemplate` and a
     `Description`, so the gate below ran over the one payload whose properties
@@ -1108,13 +1106,13 @@ def _bare_list_object_harness() -> str:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_no_finding_reports_the_literal_word_undefined() -> None:
-    """The mock answers 200 with no selected properties, which is the shape a
-    real tenant produces when it does not carry one.
+    """The mock answers 200 with no selected properties on purpose.
 
-    Four findings printed `undefined` at operator level on every green run of
-    this suite before the guard existed, and nothing asserted on them. A
-    fifth survived the first pass of this gate, because the only payload the
-    gate ran over was the one the mock fills in completely.
+    That is the shape a real tenant produces when it does not carry one.
+    Findings printed `undefined` at operator level on every green run of this
+    suite before the guard existed, and nothing asserted on them. One survived
+    the first pass of this gate, because the only payload the gate ran over was
+    the one the mock fills in completely.
     """
     for label, harness in (
         ("the default mock", _ASSESS_HARNESS),
@@ -1158,9 +1156,11 @@ _NULL_BODY_HARNESS = textwrap.dedent(r"""
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_null_payload_still_reaches_a_verdict() -> None:
-    """An operator who gets no verdict cannot tell a healthy site from an
-    unreadable one, and the standalone script has nothing that catches a
-    throw. A null body is the cheapest payload that produces one.
+    """A run that reaches no verdict tells the operator nothing.
+
+    An operator who gets none cannot tell a healthy site from an unreadable
+    one, and the standalone script has nothing that catches a throw. A null
+    body is the cheapest payload that produces one.
     """
     summary = _run_assess(_declared_descriptions(), harness=_NULL_BODY_HARNESS)
     assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
@@ -1172,7 +1172,7 @@ def test_a_null_payload_still_reaches_a_verdict() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_throw_inside_the_standalone_assessment_still_names_a_verdict() -> None:
-    """The second guard, exercised on its own.
+    """The second guard is exercised here on its own.
 
     `probeGet` cannot refuse every throw the body can raise, and this script
     had nothing around `assessSite` at all: an operator got a stack trace and

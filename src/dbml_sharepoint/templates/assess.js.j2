@@ -28,9 +28,8 @@
 
   let summary;
   // The same guard the deploy gate has: a throw is a broken probe, not a
-  // verdict, and this script died with a stack trace and told the operator
-  // nothing. BLOCKED because a site nobody could read is not a site to deploy
-  // to, which is the call the deploy gate already makes.
+  // verdict, and this script died with a stack trace instead. BLOCKED, because
+  // a site nobody could read is not a site to deploy to.
   try {
     summary = await assessSite({
       requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,

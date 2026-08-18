@@ -139,8 +139,10 @@ def test_severity_on_a_calculated_text_column_still_requires_decoding(
 def test_a_cross_site_expansion_column_is_not_judged_against_a_type_it_has_none_of(
     tmp_path: Path,
 ) -> None:
-    """The same defect as two tests above, in the branch beside the one fixed.
+    """STYLE_CALCULATED_TYPE_MISMATCH carried the same defect as its sibling.
 
+    `test_misspelled_column_under_a_pill_style_reports_only_the_misspelling`
+    covers STYLE_REQUIRES_CALCULATED; this is the branch beside it.
     `UnitAbbreviation` is rendered on the provisioned list (a cross-site
     reference column expands into it), so it raises no
     FORMATTER_COLUMN_NOT_RENDERED, and it is not a DBML column, so its type is
