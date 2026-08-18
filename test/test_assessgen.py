@@ -738,6 +738,103 @@ def test_a_locked_site_blocks_the_verdict() -> None:
     ]
 
 
+# The three permission keys one probe answers for. Named once, because the
+# defect this covers was exactly that two of them went unmentioned.
+_PERMISSION_KEYS = ("manage_lists_bit", "manage_permissions_bit", "noscript")
+
+
+def _unreadable_permissions_harness() -> str:
+    """The harness above answering 200 with no `EffectiveBasePermissions`.
+
+    The request succeeds, so `.ok` is true and only the payload says nothing.
+    That is the shape a site produces when it does not carry the property,
+    and it is not the same as a request that failed.
+    """
+    unreadable = _ASSESS_HARNESS.replace(
+        "{ d: { EffectiveBasePermissions: { High: 4294967295, Low: 4294967295 } } }",
+        "{ d: {} }",
+    )
+    assert unreadable != _ASSESS_HARNESS, "the permissions payload was not emptied"
+    return unreadable
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
+    """One finding for three keys let a BLOCKED requirement pass unchecked.
+
+    The `else` arm raised `manage_lists_bit` alone, so `manage_permissions_bit`
+    and `noscript` reached the verdict loop with no finding at all, and
+    `if (!f) continue;` treats a key nobody answered for as nothing to say.
+    This pack requires `manage_permissions_bit` at BLOCKED.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["manage_permissions_bit"].level_on_fail == "BLOCKED"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreadable_permissions_harness(),
+    )
+    spoken = {
+        f["key"]: f["level"] for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
+    }
+    assert spoken == dict.fromkeys(_PERMISSION_KEYS, "NOT-ASSESSABLE"), spoken
+    # The phantom status: `.ok` is true, so neither `status` nor `error` is set
+    # and the arm used to print `HTTP undefined` at operator level.
+    assert not any(
+        "undefined" in f["detail"]
+        for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
+    ), summary["findings"]
+    # KNOWN GAP, recorded rather than asserted away. The verdict loop skips
+    # NOT-ASSESSABLE, so this DEGRADED is the one `list_template_100` raises
+    # and nothing in the verdict reflects the unread permissions. Since #279
+    # the verdict gates the deploy, so closing it is a decision about what
+    # deploys and belongs with that change, not with this one.
+    assert summary["verdict"] == "DEGRADED"
+
+
+def _reporting_variants_harness() -> str:
+    """The harness above answering the three surfaces that carry a value.
+
+    The thin mock replies `{d: {results: []}}` to everything it does not
+    name, which reaches only one side of each of these three checks. Nothing
+    else in this suite makes them answer, and emitted JS has no reachability
+    gate, so an unfired branch here is invisible.
+    """
+    variants = _ASSESS_HARNESS.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        # No `results` key at all: the question was not answered.
+        "  if (url.includes('GetAvailableTagsForSite')) { return { d: {} }; }\n"
+        # Both figures present, which is the only shape that is a measurement.
+        "  if (url.includes('site/usage')) {\n"
+        "    return { d: { Storage: 262144000, StoragePercentageUsed: 0.25 } };\n"
+        "  }\n"
+        # Present and empty: the tenant answered, and the answer is none.
+        "  if (url.includes('SP_TenantSettings_Current')) {\n"
+        "    return { d: { CorporateCatalogUrl: '' } };\n"
+        "  }\n",
+        1,
+    )
+    assert variants != _ASSESS_HARNESS, "the reporting branches were not spliced in"
+    return variants
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_three_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> None:
+    """Each of these separates "not reported" from "reported as none".
+
+    The distinction is the whole point of the change that introduced them, and
+    the default harness reaches only the side that was already there.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_reporting_variants_harness(),
+    )
+    detail = {f["key"]: f["detail"] for f in summary["findings"]}
+    assert detail["retention_labels"] == "Retention labels not reported by this site."
+    assert detail["storage"] == "Storage used 250 MB (25% of quota)."
+    assert detail["app_catalog"] == "No tenant app catalog configured."
+
+
 #: Findings whose detail may still interpolate a value the thin mock does not
 #: supply. A ratchet: entries come out, and one going in needs a reason in the
 #: pull request.

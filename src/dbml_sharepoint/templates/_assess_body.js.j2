@@ -71,8 +71,11 @@
     // Effective permissions: decode the bits the deploy needs + NoScript.
     {
       const perms = await probeGet('web?$select=EffectiveBasePermissions');
-      if (perms.ok && perms.d.EffectiveBasePermissions) {
-        const low = Number(perms.d.EffectiveBasePermissions.Low || 0);
+      // The payload is tested apart from the transport: a 200 carrying no
+      // EffectiveBasePermissions took the same arm as a failed request.
+      const bits = perms.ok && perms.d ? perms.d.EffectiveBasePermissions : null;
+      if (bits) {
+        const low = Number(bits.Low || 0);
         const has = (bit) => (low & bit) === bit;
         finding(1, 'manage_lists_bit', has(0x800) ? 'PASS' : 'BLOCKED',
           has(0x800) ? 'Operator holds ManageLists.' : 'Operator LACKS ManageLists, so lists cannot be created.');
@@ -83,7 +86,15 @@
         finding(1, 'noscript', 'INFO',
           has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
       } else {
-        finding(1, 'manage_lists_bit', 'WARN', `Could not read effective permissions (HTTP ${perms.status || perms.error}).`);
+        // One finding per key, because one finding for three keys left the
+        // other two undeclared and the verdict loop skips a key it has no
+        // finding for, so a BLOCKED-level requirement passed unchecked.
+        const why = perms.ok
+          ? 'the site answered without EffectiveBasePermissions'
+          : `HTTP ${perms.status || perms.error}`;
+        for (const key of ['manage_lists_bit', 'manage_permissions_bit', 'noscript']) {
+          finding(1, key, 'NOT-ASSESSABLE', `Could not read effective permissions (${why}); nobody checked this right.`);
+        }
       }
     }
 
