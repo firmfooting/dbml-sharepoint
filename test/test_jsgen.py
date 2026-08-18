@@ -924,10 +924,16 @@ def _call_count(js: str, name: str) -> int:
 def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> None:
     """The count is the only attribution available, and it has to hold.
 
-    `assertListImmutableShape` emits the same message from all four of its sites,
-    so no error text distinguishes them. A site switched from the wrapper to the
-    collector stops throwing, and two of these sites verify a read-back: one that
-    stops throwing is indistinguishable from one that passed.
+    `assertListImmutableShape` emits the same message from every one of its
+    sites, so no error text distinguishes them. A site switched from the wrapper
+    to the collector stops throwing, and two of these sites verify a read-back:
+    one that stops throwing is indistinguishable from one that passed.
+
+    The list count moved from four to three deliberately. Preflight's list lane
+    now calls `immutableListMismatches` directly, because a list whose own shape
+    is wrong still has columns worth reporting and a throw hid all of them. The
+    three remaining list sites and two of the three field sites are the five
+    write-region ones; the third field site is preflight, which still throws.
 
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
@@ -936,7 +942,7 @@ def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> No
     js = _generate_simple_js()
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
-    assert _call_count(js, "assertListImmutableShape") == 4
+    assert _call_count(js, "assertListImmutableShape") == 3
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:

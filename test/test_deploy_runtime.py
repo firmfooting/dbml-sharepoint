@@ -666,6 +666,16 @@ def _run_deploy(harness: str, tail: str) -> str:
     return _run(script)
 
 
+def _summary_of(output: str) -> dict[str, Any]:
+    """The summary object deploy.js returned, out of the Node transcript."""
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
+    return summary
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_sealed_builtin_title_does_not_abort_every_list() -> None:
     """`assertFieldImmutableShape` throws when a field is sealed and
@@ -1313,7 +1323,10 @@ def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write()
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
     summary = json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
-    reported = [err["error"] for err in summary["errors"] if err.get("list") == "APP_Task"]
+    reported = [
+        err["error"] for err in summary["errors"]
+        if err.get("list") == "APP_Task" and not err.get("column")
+    ]
     assert reported == [
         (
             "Existing 'APP_Task' has BaseTemplate 101; expected 100 for declared kind 'List'. "
@@ -1321,6 +1334,36 @@ def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write()
             "or perform an explicit migration."
         ),
     ]
+
+
+# APP_Task gets the wrong template AND a column with the wrong type, so the
+# run has something to say about the list and about one of its columns. DueDate
+# because preflight probes declared columns only, and simple.dbml gives APP_Task
+# just Title, Project and DueDate.
+_WRONG_TEMPLATE_AND_COLUMN_HARNESS = _WRONG_BASE_TEMPLATE_HARNESS + textwrap.dedent(r"""
+    const wrongType = fieldShape('APP_Task', 'DueDate', {
+      FieldTypeKind: 4, Required: false, Description: '',
+    });
+    wrongType.TypeAsString = 'Text';
+    created['APP_Task DueDate'] = wrongType;
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_with_a_wrong_template_still_reports_its_columns() -> None:
+    """A list-level mismatch used to hide every column in that list.
+
+    `preflightListShapes` was assigned after the assert threw, and the field
+    wave filtered on it, so the operator saw one line, fixed it, re-pasted and
+    met the column mismatches on the next run.
+    """
+    summary = _summary_of(_run_deploy(
+        _WRONG_TEMPLATE_AND_COLUMN_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    task = [err for err in summary["errors"] if err.get("list") == "APP_Task"]
+    assert [err.get("column") for err in task] == [None, "DueDate"], task
 
 
 # The collector's two collaborators. Stubbed because this test is about what the

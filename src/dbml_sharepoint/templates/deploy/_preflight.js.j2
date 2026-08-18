@@ -13,18 +13,32 @@
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
   const preflightListShapes = {};
+  // Null-prototype, so a list titled 'constructor' or 'toString' cannot read
+  // truthy from Object.prototype without ever being assigned.
+  const listOutcomes = Object.create(null);
   await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
     try {
       const actual = await readListShape(list.title);
-      if (!actual) return;
-      assertListImmutableShape(list, actual);
+      if (!actual) { listOutcomes[list.title] = 'absent'; return; }
+      // Stored BEFORE the shape is judged: a list with a wrong BaseTemplate
+      // still resolves lookup GUIDs and its columns are still worth reporting.
+      preflightListShapes[list.title] = actual;
+      const mismatches = immutableListMismatches(list, actual);
+      listOutcomes[list.title] = mismatches.length > 0 ? 'mismatch' : 'ok';
+      if (mismatches.length > 0) {
+        const message = [...new Set(mismatches.map(m => m.message))].join(' ');
+        log('ERROR', `Existing-schema list '${list.title}': ${message}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, error: message, mismatches,
+        });
+      }
       // readListShape also fail-closes malformed or omitted mutable settings;
       // drift itself is safe to repair later and is reported for visibility.
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
-      preflightListShapes[list.title] = actual;
     } catch (err) {
+      listOutcomes[list.title] = 'unreadable';
       log('ERROR', `Existing-schema list '${list.title}': ${err.message}`);
       summary.errors.push({ phase: 'preflight', list: list.title, error: err.message });
     }
