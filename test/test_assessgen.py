@@ -584,6 +584,57 @@ def test_assess_is_quiet_when_every_marker_is_present() -> None:
         )
 
 
+def _description_absent_harness() -> str:
+    """`_ASSESS_HARNESS` answering the list object without a `Description`.
+
+    The list still exists and still answers 200. Only the property the marker
+    check reads is missing, which is the shape that made every declared list
+    look drifted.
+    """
+    absent = _ASSESS_HARNESS.replace(
+        " Description: LIST_DESCRIPTIONS.get(title),", "",
+    )
+    assert absent != _ASSESS_HARNESS, "the Description was not dropped"
+    assert "Description:" not in absent, "the mock still answers with one"
+    return absent
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreported_description_is_not_a_lost_marker() -> None:
+    """An unreported Description used to raise a WARN that was simply wrong.
+
+    It told an operator that fleet reporting could not see a list, for every
+    declared list on the site, on the strength of a property the probe never
+    reported. Since #279 the WARN degrades the verdict and stops the deploy.
+    """
+    titles = list(_declared_descriptions())
+    summary = _run_assess(
+        _declared_descriptions(), harness=_description_absent_harness(),
+    )
+    assert not _marker_findings(summary, levels={"WARN", "BLOCKED"}), summary["findings"]
+    # Silence has to come from saying nobody could tell, not from the check
+    # having been deleted: every declared list still gets its own finding.
+    unchecked = _marker_findings(summary, levels={"NOT-ASSESSABLE"})
+    assert len(unchecked) == len(titles), unchecked
+    for title in titles:
+        assert any(title in f["detail"] for f in unchecked), (title, unchecked)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_reported_as_empty_still_loses_its_marker() -> None:
+    """A Description reported as empty sits on the other side of this line.
+
+    A list whose Description SharePoint reported as empty has genuinely lost
+    the marker, and a fix that treated absent and empty alike would silence
+    the rule it was meant to leave alone.
+    """
+    summary = _run_assess("")
+    warned = _marker_findings(summary, levels={"WARN"})
+    assert {f["key"] for f in warned} == {
+        f"{_MARKER_KEY}{title}" for title in _declared_descriptions()
+    }, warned
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     """A title of `__proto__` used to make the marker check return silently.
@@ -661,8 +712,10 @@ def test_the_assessment_records_every_finding_in_order() -> None:
     # Emission order, not tier order: `list_template_100` is raised from inside
     # the Tier 1 block of `_assess_body.js.j2` but carries tier 2.
     assert recorded == (
-        "1\tweb_template\tINFO\tTemplate undefined#undefined, LCID undefined.\n"
-        "1\tsite_not_locked\tPASS\tSite is writable (not locked).\n"
+        "1\tweb_template\tINFO\tTemplate (not reported)#(not reported), LCID "
+        "(not reported).\n"
+        "1\tsite_not_locked\tNOT-ASSESSABLE\tThe site answered without ReadOnly or "
+        "LockIssue, so whether it is locked is unknown.\n"
         "1\tplatform_build\tINFO\tSharePoint build 16.0.0.0.\n"
         "1\tmanage_lists_bit\tPASS\tOperator holds ManageLists.\n"
         "1\tmanage_permissions_bit\tPASS\tOperator holds ManagePermissions (or is a site "
@@ -670,12 +723,12 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "1\tnoscript\tINFO\tCustom scripting allowed (AddAndCustomizePages present).\n"
         "2\tlist_template_100\tWARN\tBase template 100 not listed by web/listtemplates "
         "(creation may still work).\n"
-        "1\tregional_settings\tINFO\tSite LocaleId undefined.\n"
-        "1\tlanguages\tINFO\tMultilingual undefined; UI languages .\n"
-        "1\tstorage\tINFO\tStorage used 0 MB (0% of quota).\n"
-        "1\thub\tINFO\tHub site undefined; hub id undefined.\n"
+        "1\tregional_settings\tINFO\tSite LocaleId (not reported).\n"
+        "1\tlanguages\tINFO\tMultilingual (not reported); UI languages (none reported).\n"
+        "1\tstorage\tINFO\tsite/usage did not report storage figures.\n"
+        "1\thub\tINFO\tHub site (not reported); hub id (not reported).\n"
         "1\tretention_labels\tINFO\tNo retention labels available to this site.\n"
-        "1\tapp_catalog\tINFO\tNo tenant app catalog configured.\n"
+        "1\tapp_catalog\tINFO\tTenant app catalog not reported by this site.\n"
         "1\tcustom_actions\tINFO\t0 web custom action(s) / SPFx extension(s) registered.\n"
         "1\tsearch\tINFO\tSearch service responds.\n"
         "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100), a "
@@ -690,8 +743,9 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "marker.\n"
         "2\tcustom_formatter_surface\tPASS\tProperty surface present.\n"
         "2\tform_formatter_surface\tPASS\tProperty surface present.\n"
-        "2\tversion_trim_mode\tPASS\tNo service-managed auto-trim overriding declared version "
-        "limits.\n"
+        "2\tversion_trim_mode\tNOT-ASSESSABLE\tThe list answered without "
+        "VersionPolicies/DefaultTrimMode, so whether service-managed auto-trim overrides the "
+        "declared MajorVersionLimit is unknown.\n"
         "2\tprocess_query\tPASS\tCSOM ProcessQuery responds (group owner correction available).\n"
         "3\tnot_assessable\tNOT-ASSESSABLE\tPower Automate / Power Apps inventory (lives in "
         "Power Platform APIs, no SharePoint REST surface from site context)\n"
@@ -713,7 +767,9 @@ def test_the_assessment_records_every_finding_in_order() -> None:
     )
     # DEGRADED rather than COMPATIBLE because the mock answers
     # `web/listtemplates` with an empty result set, so `list_template_100`
-    # WARNs and the pack declares it a requirement.
+    # WARNs, and because two more required keys are answered by a payload
+    # carrying none of the properties they select. `_healthy_harness` is what
+    # answers all three.
     assert summary["verdict"] == "DEGRADED"
 
 
@@ -735,6 +791,399 @@ def test_a_locked_site_blocks_the_verdict() -> None:
     assert [f["level"] for f in summary["findings"] if f["key"] == "list_template_100"] == [
         "WARN",
     ]
+
+
+# The three permission keys one probe answers for. Named once, because the
+# defect this covers was exactly that two of them went unmentioned.
+_PERMISSION_KEYS = ("manage_lists_bit", "manage_permissions_bit", "noscript")
+
+
+def _unreadable_permissions_harness() -> str:
+    """`_ASSESS_HARNESS` answering 200 with no `EffectiveBasePermissions`.
+
+    The request succeeds, so `.ok` is true and only the payload says nothing.
+    That is the shape a site produces when it does not carry the property,
+    and it is not the same as a request that failed.
+    """
+    unreadable = _ASSESS_HARNESS.replace(
+        "{ d: { EffectiveBasePermissions: { High: 4294967295, Low: 4294967295 } } }",
+        "{ d: {} }",
+    )
+    assert unreadable != _ASSESS_HARNESS, "the permissions payload was not emptied"
+    return unreadable
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
+    """One finding for three keys let a BLOCKED requirement pass unchecked.
+
+    The `else` arm raised `manage_lists_bit` alone, so `manage_permissions_bit`
+    and `noscript` reached the verdict loop with no finding at all, and
+    `if (!f) continue;` treats a key nobody answered for as nothing to say.
+    This pack requires `manage_permissions_bit` at BLOCKED.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["manage_permissions_bit"].level_on_fail == "BLOCKED"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreadable_permissions_harness(),
+    )
+    spoken = {
+        f["key"]: f["level"] for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
+    }
+    assert spoken == dict.fromkeys(_PERMISSION_KEYS, "NOT-ASSESSABLE"), spoken
+    # The phantom status: `.ok` is true, so neither `status` nor `error` is set
+    # and the arm used to print `HTTP undefined` at operator level.
+    assert not any(
+        "undefined" in f["detail"]
+        for f in summary["findings"] if f["key"] in _PERMISSION_KEYS
+    ), summary["findings"]
+    # This harness also raises the `list_template_100` WARN, so the verdict
+    # here cannot separate the two causes. `_healthy_harness` is what measures
+    # the unread permissions on their own.
+    assert summary["verdict"] == "DEGRADED"
+
+
+#: The lock answer `_healthy_harness` splices in. Named once, because the
+#: harness that takes it out again must not drift from the one that puts it in.
+_LOCK_ANSWER = (
+    "  if (url.includes('ReadOnly')) {\n"
+    "    return { d: { ReadOnly: false, LockIssue: null } };\n"
+    "  }\n"
+)
+
+#: The version-policy answer `_healthy_harness` splices in, named for the same
+#: reason. It goes in ahead of the generic list payload rather than into
+#: `body`, because the probe reads the list object itself with an `$expand`.
+_VERSION_POLICY_ANSWER = (
+    "  if (u.includes('VersionPolicies')) {\n"
+    "    return respond(200, { d: { VersionPolicies: { DefaultTrimMode: 0 } } });\n"
+    "  }\n"
+)
+
+
+def _healthy_harness(base: str = _ASSESS_HARNESS) -> str:
+    """`base` with every question the thin mock leaves unanswered answered.
+
+    `web/listtemplates` replies `{d: {results: []}}` to everything it does not
+    name, and the site and version-policy probes are handed a payload carrying
+    none of the properties they selected. Three requirement keys therefore
+    degrade on every harness built from `_ASSESS_HARNESS`. A test whose verdict
+    is meant to come from something else has to answer all three first.
+    """
+    stocked = base.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('listtemplates')) {\n"
+        "    return { d: { results: [{ ListTemplateTypeKind: 100 }] } };\n"
+        "  }\n"
+        + _LOCK_ANSWER,
+        1,
+    )
+    assert stocked != base, "the list-template branch was not spliced in"
+    versioned = stocked.replace(
+        "  if (LIST_OBJECT.test(path)) {\n",
+        _VERSION_POLICY_ANSWER + "  if (LIST_OBJECT.test(path)) {\n",
+        1,
+    )
+    assert versioned != stocked, "the version-policy branch was not spliced in"
+    return versioned
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_healthy_site_is_compatible() -> None:
+    """The control for every test that reads a DEGRADED off this harness.
+
+    A DEGRADED there proves nothing unless a run answering every probe comes
+    out COMPATIBLE, and no other harness in this module does: they degrade, or
+    they block. It also pins that the Tier 3 honesty block, which is
+    NOT-ASSESSABLE on every run, does not itself degrade, since its key
+    `not_assessable` is not a requirement.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert summary["verdict"] == "COMPATIBLE", [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ]
+    assert any(f["key"] == "not_assessable" for f in summary["findings"]), (
+        "the Tier 3 block stopped emitting, so this control proves nothing"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_requirement_nobody_could_assess_degrades_the_verdict() -> None:
+    """A requirement nobody could check must not read as one that passed.
+
+    Emitting NOT-ASSESSABLE per key stopped the verdict loop skipping the key
+    entirely, and then the loop skipped the level instead: an otherwise
+    healthy site whose permissions could not be read came out COMPATIBLE,
+    which is weaker than the single WARN that preceded it. DEGRADED rather
+    than BLOCKED, because nothing here says the requirement is unmet.
+    """
+    schema, bundle = _simple()
+    required = {r.key for r in derive_requirements(schema, bundle, "default")}
+    assert "manage_lists_bit" in required
+
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_unreadable_permissions_harness()),
+    )
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    # Nothing WARNed, so the DEGRADED can only have come from the level this
+    # test is about.
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
+    """Saying nobody could tell must not be weaker than the WARN it replaced.
+
+    An unreported Description used to WARN falsely, and a false WARN at least
+    degraded the verdict.
+    """
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_description_absent_harness()),
+    )
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+
+def _unreported_lock_state_harness() -> str:
+    """`_healthy_harness` with the site answering 200 and no lock properties.
+
+    The request succeeds, so `.ok` is true and only the payload says nothing.
+    That is the shape a site produces when it does not return the selected
+    properties, and it is not the same as a request that failed.
+    """
+    answered = _healthy_harness()
+    unreported = answered.replace(_LOCK_ANSWER, "", 1)
+    assert unreported != answered, "the lock answer was not removed"
+    return unreported
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_site_that_reports_no_lock_state_is_not_read_as_writable() -> None:
+    """A PASS here is the strongest claim the assessment makes.
+
+    `site_not_locked` is required at BLOCKED, and the claim was being made on a
+    payload that carried neither `ReadOnly` nor `LockIssue`.
+
+    The positive half is asserted with the negative: a repair that silenced
+    the false PASS by never reporting the requirement at all would satisfy
+    the first assertion on its own.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["site_not_locked"].level_on_fail == "BLOCKED"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreported_lock_state_harness(),
+    )
+    assert [
+        f["level"] for f in summary["findings"] if f["key"] == "site_not_locked"
+    ] == ["NOT-ASSESSABLE"], summary["findings"]
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    # Nothing else degraded, so the verdict can only have come from this key.
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+    answered = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert [
+        f["level"] for f in answered["findings"] if f["key"] == "site_not_locked"
+    ] == ["PASS"], answered["findings"]
+
+
+def _unreported_version_policy_harness() -> str:
+    """`_healthy_harness` with the list answering without `VersionPolicies`.
+
+    The list object still answers 200, and the `$expand` the probe asked for
+    is simply not in the payload, which is what a tenant without the surface
+    returns through a request that did not fail.
+    """
+    answered = _healthy_harness()
+    unreported = answered.replace(_VERSION_POLICY_ANSWER, "", 1)
+    assert unreported != answered, "the version-policy answer was not removed"
+    return unreported
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_reports_no_trim_mode_is_not_read_as_untrimmed() -> None:
+    """An absent `DefaultTrimMode` is not a trim mode of none.
+
+    `version_trim_mode` is a requirement at WARN, and reading the absence as
+    a PASS told the operator that service-managed auto-trim does not override
+    the declared MajorVersionLimit, which nothing had checked.
+    """
+    schema, bundle = _simple()
+    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert required["version_trim_mode"].level_on_fail == "WARN"
+
+    summary = _run_assess(
+        _declared_descriptions(), harness=_unreported_version_policy_harness(),
+    )
+    assert [
+        f["level"] for f in summary["findings"] if f["key"] == "version_trim_mode"
+    ] == ["NOT-ASSESSABLE"], summary["findings"]
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+    answered = _run_assess(_declared_descriptions(), harness=_healthy_harness())
+    assert [
+        f["level"] for f in answered["findings"] if f["key"] == "version_trim_mode"
+    ] == ["PASS"], answered["findings"]
+
+
+def _reporting_variants_harness() -> str:
+    """`_ASSESS_HARNESS` is made to answer the surfaces that carry a value.
+
+    The thin mock replies `{d: {results: []}}` to everything it does not name,
+    which reaches only one side of each of these checks. Nothing else in this
+    suite makes them answer, and emitted JS has no reachability gate, so an
+    unfired branch here is invisible.
+    """
+    variants = _ASSESS_HARNESS.replace(
+        "const body = (url) => {\n",
+        "const body = (url) => {\n"
+        "  if (url.includes('GetAvailableTagsForSite')) { return { d: {} }; }\n"
+        "  if (url.includes('site/usage')) {\n"
+        "    return { d: { Storage: 262144000, StoragePercentageUsed: 0.25 } };\n"
+        "  }\n"
+        "  if (url.includes('SP_TenantSettings_Current')) {\n"
+        "    return { d: { CorporateCatalogUrl: '' } };\n"
+        "  }\n",
+        1,
+    )
+    assert variants != _ASSESS_HARNESS, "the reporting branches were not spliced in"
+    return variants
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> None:
+    """Each of these branches separates "not reported" from "reported as none".
+
+    That distinction is what the change introducing them was for, and the
+    default harness reaches only the side that was already there.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_reporting_variants_harness(),
+    )
+    detail = {f["key"]: f["detail"] for f in summary["findings"]}
+    assert detail["retention_labels"] == "Retention labels not reported by this site."
+    assert detail["storage"] == "Storage used 250 MB (25% of quota)."
+    assert detail["app_catalog"] == "No tenant app catalog configured."
+
+
+#: Findings whose detail may still interpolate a value the thin mock does not
+#: supply. A ratchet: entries come out, and one going in needs a reason in the
+#: pull request.
+_MAY_REPORT_UNDEFINED: frozenset[str] = frozenset()
+
+
+def _bare_list_object_harness() -> str:
+    """`_ASSESS_HARNESS` answering an existing list with its `Title` alone.
+
+    The default mock hands the collision probe a `BaseTemplate` and a
+    `Description`, so the gate below ran over the one payload whose properties
+    are all present and could not see the collision finding interpolate one
+    that was not.
+    """
+    bare = _ASSESS_HARNESS.replace(
+        "Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),",
+        "Title: title,",
+    )
+    assert bare != _ASSESS_HARNESS, "the list payload was not stripped"
+    assert "BaseTemplate" not in bare, "the mock still answers with one"
+    return bare
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_finding_reports_the_literal_word_undefined() -> None:
+    """The mock answers 200 with no selected properties on purpose.
+
+    That is the shape a real tenant produces when it does not carry one.
+    Findings printed `undefined` at operator level on every green run of this
+    suite before the guard existed, and nothing asserted on them. One survived
+    the first pass of this gate, because the only payload the gate ran over was
+    the one the mock fills in completely.
+    """
+    for label, harness in (
+        ("the default mock", _ASSESS_HARNESS),
+        ("a list object carrying only its Title", _bare_list_object_harness()),
+    ):
+        summary = _run_assess(_declared_descriptions(), harness=harness)
+        # Without this the run could reach no collision finding at all and
+        # still report nothing leaking.
+        assert [
+            f["key"] for f in summary["findings"] if f["key"].startswith("collision:")
+        ] == [f"collision:{title}" for title in _declared_descriptions()], (
+            label, summary["findings"],
+        )
+        leaking = [
+            f["key"] for f in summary["findings"]
+            if "undefined" in f["detail"] and f["key"] not in _MAY_REPORT_UNDEFINED
+        ]
+        assert leaking == [], (label, leaking)
+
+
+# A site answering 200 with a null payload for every call, which is what
+# `probeGet` turns into `{ok: true, d: null}`. Nothing about the declared
+# lists is set up, because the first probe throws long before they are read.
+_NULL_BODY_HARNESS = textwrap.dedent(r"""
+    globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
+    globalThis._spPageContextInfo = {
+      webServerRelativeUrl: '/sites/test',
+      userLoginName: 'probe@example.com',
+      userId: 1,
+    };
+    // Unused here, and present because _run_assess rewrites this exact line.
+    const LIST_DESCRIPTIONS = new Map([]);
+    globalThis.fetch = async () => ({
+      ok: true, status: 200,
+      headers: { get: () => null },
+      json: async () => ({ d: null }),
+      text: async () => '{"d":null}',
+    });
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_null_payload_still_reaches_a_verdict() -> None:
+    """A run that reaches no verdict tells the operator nothing.
+
+    An operator who gets none cannot tell a healthy site from an unreadable
+    one, and the standalone script has nothing that catches a throw. A null
+    body is the cheapest payload that produces one.
+    """
+    summary = _run_assess(_declared_descriptions(), harness=_NULL_BODY_HARNESS)
+    assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+    # From `probeGet` refusing the payload, not from the `try` catching a
+    # throw. The `try` is the second guard and would satisfy the line above
+    # on its own, which would leave the first one untested.
+    assert summary.get("aborted") is None, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throw_inside_the_standalone_assessment_still_names_a_verdict() -> None:
+    """The second guard is exercised here on its own.
+
+    `probeGet` cannot refuse every throw the body can raise, and this script
+    had nothing around `assessSite` at all: an operator got a stack trace and
+    no verdict, which reads exactly like a script that never ran. The deploy
+    gate has carried this guard since it was written.
+    """
+    js = _assess_js().replace('"base_templates"', '"base_templates_typo"', 1)
+    assert '"base_templates_typo"' in js, "the targets key was not renamed"
+    summary = _run_assess(_declared_descriptions(), js=js)
+    assert summary["verdict"] == "BLOCKED", summary
+    assert summary["aborted"] == "assessment-failed", summary
 
 
 if __name__ == "__main__":  # pragma: no cover

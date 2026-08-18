@@ -35,9 +35,10 @@ properties. An unsupported or unproven shape aborts for explicit migration.
 1. **Assess the site first**: paste `assess.js.txt` (read-only; it makes no
    changes) into the target site's browser console and read
    `assess-manifest.md`. The final `[SP-ASSESS] [DONE]` verdict must be
-   **COMPATIBLE**, or a **DEGRADED** whose warnings you have reviewed and
-   accepted. Resolve **BLOCKED** before going further. `deploy.js.txt` runs
-   this same assessment itself as its first phase and enforces the
+   **COMPATIBLE**, or a **DEGRADED** whose findings you have reviewed and
+   accepted, whether they warn or report that nobody could check the
+   requirement. Resolve **BLOCKED** before going further. `deploy.js.txt`
+   runs this same assessment itself as its first phase and enforces the
    verdict: **BLOCKED** aborts and cannot be overridden; **DEGRADED**
    aborts unless `const ACKNOWLEDGE_DEGRADED = true;` is set near the top
    of the script and it is pasted again.

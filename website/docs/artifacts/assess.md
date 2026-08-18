@@ -41,8 +41,10 @@ Findings roll up per requirement key to a single line:
 
 - `COMPATIBLE`: no blocking or degrading findings.
 - `DEGRADED`: `deploy.js.txt` refuses this site until the operator
-  reviews each WARN finding and sets `ACKNOWLEDGE_DEGRADED = true` near
-  the top of the script. This includes a provisioned list whose
+  reviews each `WARN` finding and sets `ACKNOWLEDGE_DEGRADED = true` near
+  the top of the script. A requirement reported `NOT-ASSESSABLE` degrades
+  the verdict too, because nobody could check it. This includes a
+  provisioned list whose
   [provenance marker](reporting.md#the-provenance-marker) has gone
   missing from its Description, named in the finding. The list itself is
   fine and only reporting is affected, which is why that finding degrades
