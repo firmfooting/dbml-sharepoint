@@ -957,7 +957,12 @@ def test_every_not_assessable_finding_survives_into_the_deploy_summary() -> None
 
     summary = _summary_of(_run_deploy_with_assessment())
     findings = summary["assessment"]["findings"]
-    unchecked = [f for f in findings if f["level"] == "NOT-ASSESSABLE"]
+    # Tier 3, because the level is no longer that block's alone: a probe that
+    # answered without the property it was asked for now says so at the same
+    # level, and this test is about the printed honesty block surviving.
+    unchecked = [
+        f for f in findings if f["level"] == "NOT-ASSESSABLE" and f["tier"] == 3
+    ]
     assert {f["detail"] for f in unchecked} == set(NOT_ASSESSABLE)
     assert len(unchecked) == len(NOT_ASSESSABLE), unchecked
     passed = {f["detail"] for f in findings if f["level"] == "PASS"}

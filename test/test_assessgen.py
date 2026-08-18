@@ -584,6 +584,57 @@ def test_assess_is_quiet_when_every_marker_is_present() -> None:
         )
 
 
+def _description_absent_harness() -> str:
+    """The harness above answering the list object without a `Description`.
+
+    The list still exists and still answers 200. Only the property the marker
+    check reads is missing, which is the shape that made every declared list
+    look drifted.
+    """
+    absent = _ASSESS_HARNESS.replace(
+        " Description: LIST_DESCRIPTIONS.get(title),", "",
+    )
+    assert absent != _ASSESS_HARNESS, "the Description was not dropped"
+    assert "Description:" not in absent, "the mock still answers with one"
+    return absent
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreported_description_is_not_a_lost_marker() -> None:
+    """The false WARN this raised was specific, actionable and wrong.
+
+    It told an operator that fleet reporting could not see a list, for every
+    declared list on the site, on the strength of a property the probe never
+    reported. Since #279 the WARN degrades the verdict and stops the deploy.
+    """
+    titles = list(_declared_descriptions())
+    summary = _run_assess(
+        _declared_descriptions(), harness=_description_absent_harness(),
+    )
+    assert not _marker_findings(summary, levels={"WARN", "BLOCKED"}), summary["findings"]
+    # Silence has to come from saying nobody could tell, not from the check
+    # having been deleted: every declared list still gets its own finding.
+    unchecked = _marker_findings(summary, levels={"NOT-ASSESSABLE"})
+    assert len(unchecked) == len(titles), unchecked
+    for title in titles:
+        assert any(title in f["detail"] for f in unchecked), (title, unchecked)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_reported_as_empty_still_loses_its_marker() -> None:
+    """The line between the two cases, pinned from the other side.
+
+    A list whose Description SharePoint reported as empty has genuinely lost
+    the marker, and a fix that treated absent and empty alike would silence
+    the rule it was meant to leave alone.
+    """
+    summary = _run_assess("")
+    warned = _marker_findings(summary, levels={"WARN"})
+    assert {f["key"] for f in warned} == {
+        f"{_MARKER_KEY}{title}" for title in _declared_descriptions()
+    }, warned
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     """A title of `__proto__` used to make the marker check return silently.

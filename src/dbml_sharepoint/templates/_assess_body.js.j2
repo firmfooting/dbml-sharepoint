@@ -219,7 +219,17 @@
       const expected = LIST_MARKERS.get(title);
       if (!expected) return;
       const key = `provenance_marker:${title}`;
-      const held = description == null ? '' : String(description);
+      // A Description the probe did not report is not a Description that lost
+      // its marker. Read as an empty string it warned on every declared list.
+      // An empty string that WAS reported still warns: that is the drift this
+      // check exists for.
+      if (description == null) {
+        finding(2, key, 'NOT-ASSESSABLE',
+          `'${title}' exists, but its Description was not reported, so whether fleet `
+          + 'reporting can see it is unknown.');
+        return;
+      }
+      const held = String(description);
       if (held.includes(expected)) {
         finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
       } else {
