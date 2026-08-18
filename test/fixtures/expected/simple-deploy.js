@@ -1065,7 +1065,9 @@
   function describeMismatch(m) {
     if (!m || !m.property) return String((m && m.message) || m);
     if (!m.checked) return `${m.property}: NOT CHECKED (${m.message})`;
-    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)}`;
+    // The message rides along: an absent lookup target compares a declared list
+    // TITLE against a readback GUID, which without it reads as a wrong value.
+    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)} (${m.message})`;
   }
 
   // One entry per mismatched property. The throwing wrapper below keeps every
@@ -1693,6 +1695,10 @@
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
   const preflightListShapes = {};
+  // Three outcomes: 'absent' (no such list), 'unreadable' (its probe failed),
+  // 'ok' (a shape was read, whether or not that shape matched). A fourth,
+  // 'mismatch', was removed: a mismatched list still has its shape stored, so
+  // neither consumer could ever tell it from 'ok'.
   // Null-prototype, so a list titled 'constructor' or 'toString' cannot read
   // truthy from Object.prototype without ever being assigned.
   const listOutcomes = Object.create(null);
@@ -1703,20 +1709,22 @@
       // Stored BEFORE the shape is judged: a list with a wrong BaseTemplate
       // still resolves lookup GUIDs and its columns are still worth reporting.
       preflightListShapes[list.title] = actual;
-      const mismatches = immutableListMismatches(list, actual);
-      listOutcomes[list.title] = mismatches.length > 0 ? 'mismatch' : 'ok';
-      if (mismatches.length > 0) {
-        const message = [...new Set(mismatches.map(m => m.message))].join(' ');
-        log('ERROR', `Existing-schema list '${list.title}': ${message}`);
-        summary.errors.push({
-          phase: 'preflight', list: list.title, error: message, mismatches,
-        });
-      }
+      listOutcomes[list.title] = 'ok';
       // readListShape also fail-closes malformed or omitted mutable settings;
       // drift itself is safe to repair later and is reported for visibility.
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
+      const mismatches = immutableListMismatches(list, actual);
+      if (mismatches.length === 0) return;
+      const message = [...new Set(mismatches.map(m => m.message))].join(' ');
+      log('ERROR', `Existing-schema list '${list.title}': ${message}`);
+      // Last statement in the try, as in the field lane below: anything that
+      // threw after this push would give one list a second entry, and the
+      // grouped report reads only the first.
+      summary.errors.push({
+        phase: 'preflight', list: list.title, error: message, mismatches,
+      });
     } catch (err) {
       listOutcomes[list.title] = 'unreadable';
       log('ERROR', `Existing-schema list '${list.title}': ${err.message}`);

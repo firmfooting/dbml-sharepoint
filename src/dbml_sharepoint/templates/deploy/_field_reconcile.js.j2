@@ -186,7 +186,9 @@
   function describeMismatch(m) {
     if (!m || !m.property) return String((m && m.message) || m);
     if (!m.checked) return `${m.property}: NOT CHECKED (${m.message})`;
-    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)}`;
+    // The message rides along: an absent lookup target compares a declared list
+    // TITLE against a readback GUID, which without it reads as a wrong value.
+    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)} (${m.message})`;
   }
 
   // One entry per mismatched property. The throwing wrapper below keeps every

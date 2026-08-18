@@ -1341,8 +1341,12 @@ def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write()
 # because preflight probes declared columns only, and simple.dbml gives APP_Task
 # just Title, Project and DueDate.
 _WRONG_TEMPLATE_AND_COLUMN_HARNESS = _WRONG_BASE_TEMPLATE_HARNESS + textwrap.dedent(r"""
+    // DisplayFormat because the declared DueDate owns it, so readFieldShape
+    // probes for it and throws when the body has none. Without it this column
+    // reached the report through the field lane's CATCH, which carries no
+    // mismatches, and immutableFieldMismatches never ran at all.
     const wrongType = fieldShape('APP_Task', 'DueDate', {
-      FieldTypeKind: 4, Required: false, Description: '',
+      FieldTypeKind: 4, Required: false, Description: '', DisplayFormat: 0,
     });
     wrongType.TypeAsString = 'Text';
     created['APP_Task DueDate'] = wrongType;
@@ -1356,6 +1360,11 @@ def test_a_list_with_a_wrong_template_still_reports_its_columns() -> None:
     `preflightListShapes` was assigned after the assert threw, and the field
     wave filtered on it, so the operator saw one line, fixed it, re-pasted and
     met the column mismatches on the next run.
+
+    The column entry has to carry a COLLECTED mismatch. A probe that threw
+    reaches the same report through the field lane's catch and is
+    indistinguishable by list and column name alone, so the compared property
+    is asserted here.
     """
     summary = _summary_of(_run_deploy(
         _WRONG_TEMPLATE_AND_COLUMN_HARNESS,
@@ -1364,6 +1373,11 @@ def test_a_list_with_a_wrong_template_still_reports_its_columns() -> None:
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     task = [err for err in summary["errors"] if err.get("list") == "APP_Task"]
     assert [err.get("column") for err in task] == [None, "DueDate"], task
+    due_date = task[1]
+    assert [
+        (m["property"], m["declared"], m["actual"], m["checked"])
+        for m in due_date.get("mismatches", [])
+    ] == [("TypeAsString", "DateTime", "Text", True)], due_date
 
 
 # One list's metadata read fails outright, while a lookup in another list
@@ -1428,6 +1442,12 @@ def test_the_abort_prints_the_delta_grouped_by_list_and_column() -> None:
     assert "  APP_Task" in output, output[-3000:]
     assert "    DueDate" in output, output[-3000:]
     assert "BaseTemplate: declared 100, readback 101" in output, output[-3000:]
+    # The compared-property line, not just the column heading. A column whose
+    # probe threw prints the same heading followed by NOT CHECKED, so this is
+    # the only part of the report that says a comparison actually happened.
+    assert (
+        'TypeAsString: declared "DateTime", readback "Text"' in output
+    ), output[-3000:]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1444,14 +1464,69 @@ def test_an_unreadable_list_reports_that_no_column_was_checked() -> None:
     assert "LookupList: NOT CHECKED" in output, output[-3000:]
 
 
+# The mirror of `_UNREADABLE_LOOKUP_TARGET_HARNESS`: the same adopted lookup,
+# but its target list is ABSENT rather than unreadable. 404 rather than 500,
+# because `readListShape` returns null only on 404 and throws on anything else,
+# and null is what records the 'absent' outcome.
+_ABSENT_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
+      FieldTypeKind: 7, Title: 'Project', Required: true,
+      LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
+    });
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const readingProjectShape = u.includes("getbytitle('APP_Project')")
+        && u.includes('BaseTemplate');
+      if (!readingProjectShape) return _passThrough(url, opts);
+      const payload = { error: { message: { value: 'list not found' } } };
+      return {
+        ok: false, status: 404,
+        headers: { get: () => null },
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_lookup_into_an_absent_list_is_a_certain_refusal() -> None:
+    """'absent' and 'ok' must not collapse into the same sentence.
+
+    An absent target list means adoption is impossible and the refusal is
+    certain, so the column is reported as compared. Every other reason
+    `targetGuid` is falsy means nobody resolved the target, which is reported
+    as not checked. Substituting 'ok' for the recorded 'absent' outcome
+    downgrades this certain refusal to "nobody looked", so both the sentence
+    and `checked` are pinned.
+    """
+    summary = _summary_of(_run_deploy(
+        _ABSENT_LOOKUP_TARGET_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    lookups = [err for err in summary["errors"] if err.get("column") == "Project"]
+    assert lookups, summary["errors"]
+    assert lookups[0]["error"] == (
+        "Existing lookup 'APP_Task.Project' cannot be adopted because declared "
+        "target list 'APP_Project' does not yet exist"
+    ), lookups
+    assert [
+        (m["property"], m["checked"]) for m in lookups[0].get("mismatches", [])
+    ] == [("LookupList", True)], lookups
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_list_that_does_not_exist_is_silent_in_preflight() -> None:
     """A first deploy has nothing to adopt, so preflight must say nothing.
 
     `_HARNESS` is the brand-new-site mock: its list enumeration is empty, so
     `readListShape` answers every declared list absent. What keeps an absent
-    list out of the field wave is the early return, not the recorded 'absent'
-    outcome: replacing that literal with 'ok' leaves the whole suite green.
+    list out of the field wave is the early return rather than the recorded
+    outcome, so this pins the silence rather than the literal. The literal
+    itself is pinned by
+    `test_a_lookup_into_an_absent_list_is_a_certain_refusal`.
     """
     summary = _summary_of(_run_deploy(
         _HARNESS,
