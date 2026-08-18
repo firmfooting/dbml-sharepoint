@@ -10,7 +10,7 @@ from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
-from _paths import FIXTURES
+from _paths import EXPECTED, FIXTURES
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.assessgen import (
@@ -209,6 +209,20 @@ def _assess_js() -> str:
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
         generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def test_simple_assess_js_matches_golden() -> None:
+    """assess.js.j2 has no other byte-level check.
+
+    The existing tests cover the generator's inputs and assert strings are
+    present in the output; none pins the emitted script, so a probe could be
+    dropped from a tier and every gate would stay green.
+    """
+    expected = (EXPECTED / "simple-assess.js").read_text(encoding="utf-8")
+    assert _assess_js() == expected, (
+        "assess.js.txt changed. Review the diff, then regenerate with "
+        "`uv run python test/test_assessgen.py`."
     )
 
 
@@ -582,3 +596,15 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     assert "GOT:string" in output, (
         f"the lookup returned something off Object.prototype:\n{output}"
     )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Regenerate the golden. Deliberately not a pytest flag: see
+    # test_simple_assess_js_matches_golden. Uses the SAME renderer the test
+    # does, so the two cannot drift.
+    _target = EXPECTED / "simple-assess.js"
+    # The newline argument is explicit because the default translates to CRLF
+    # on Windows, which .gitattributes then normalises away on commit -- so the
+    # file would read as modified locally while producing an empty diff.
+    _target.write_text(_assess_js(), encoding="utf-8", newline="\n")
+    print(f"wrote {_target}")  # noqa: T201

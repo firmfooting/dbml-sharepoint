@@ -34,6 +34,9 @@ REPO_ROOT = _repo_root()
 #: Test data committed beside the tests.
 FIXTURES = TEST_DIR / "fixtures"
 
+#: Committed golden files: the emitted scripts, byte for byte.
+EXPECTED = FIXTURES / "expected"
+
 #: Live-site probes. Their transcripts are gitignored; see test_probes.py.
 MANUAL = TEST_DIR / "manual"
 
