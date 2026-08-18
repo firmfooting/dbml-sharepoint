@@ -56,6 +56,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.limits", "the SharePoint ceilings, each named once"),
     ("analysis.ordering", "dependency ordering and site filtering"),
     ("analysis.typemap", "DBML types to SharePoint field descriptors"),
+    ("analysis.immutable_shape", "the properties a deploy refuses to change"),
     ("analysis.phases", "the deploy-phase manifest"),
     ("analysis.permissions", "SP base-permission bitmask helpers"),
     ("analysis.styles", "the fleet style standard"),
