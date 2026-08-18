@@ -55,8 +55,8 @@ def _deploy_js() -> str:
 def _function_body(source: str, name: str) -> str:
     """The body of a function declared at two-space indent.
 
-    Both asserts sit at that indent inside the IIFE, so the first `\\n  }`
-    after the declaration is the function's own closing brace.
+    The emitted functions sit at that indent inside the IIFE, so the first
+    `\\n  }` after the declaration is the function's own closing brace.
     """
     start = source.index(f"function {name}")
     body = source[start:]
@@ -65,7 +65,7 @@ def _function_body(source: str, name: str) -> str:
 
 
 def _compared_properties(source: str, name: str) -> set[str]:
-    """The properties the named assertion reads outside its error messages.
+    """The properties the named collector reads outside its error messages.
 
     Template literals are stripped whole rather than matched around, so a
     property named only inside `${JSON.stringify(actual.X)}` or any other
@@ -78,19 +78,19 @@ def _compared_properties(source: str, name: str) -> set[str]:
     return set(re.findall(r"actual\.([A-Za-z]+)", body))
 
 
-def test_the_field_assertions_and_the_vocabulary_cover_the_same_properties() -> None:
-    """The assertion and the vocabulary have to name the same properties.
+def test_the_field_collector_and_the_vocabulary_cover_the_same_properties() -> None:
+    """The collector and the vocabulary have to name the same properties.
 
-    A name listed here that the assertion no longer guards means the deploy quietly
-    stopped refusing it. A property the assertion guards that is missing from the
+    A name listed here that the collector no longer guards means the deploy quietly
+    stopped refusing it. A property the collector guards that is missing from the
     vocabulary means this set no longer describes what the deploy does.
     """
-    compared = _compared_properties(_deploy_js(), "assertFieldImmutableShape")
+    compared = _compared_properties(_deploy_js(), "immutableFieldMismatches")
     assert compared == set(IMMUTABLE_FIELD_PROPERTIES) | set(IMMUTABLE_LOOKUP_PROPERTIES)
 
 
-def test_the_list_assertion_and_the_vocabulary_cover_the_same_properties() -> None:
-    compared = _compared_properties(_deploy_js(), "assertListImmutableShape")
+def test_the_list_collector_and_the_vocabulary_cover_the_same_properties() -> None:
+    compared = _compared_properties(_deploy_js(), "immutableListMismatches")
     assert compared == set(IMMUTABLE_LIST_PROPERTIES)
 
 

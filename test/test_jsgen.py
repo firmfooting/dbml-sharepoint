@@ -895,6 +895,50 @@ def test_mutable_list_and_field_shape_is_reconciled_and_read_back() -> None:
     assert js.index("phase-2-schema-errors") < js.index(f"Starting Phase {pn('indexes')}")
 
 
+def _without_line_comments(js: str) -> str:
+    """The emitted script with its whole-line `//` comments removed.
+
+    Only lines whose first non-whitespace characters are `//` are dropped, so a
+    `//` inside a string literal or a URL can never truncate a line of code. A
+    trailing comment after code on the same line therefore still counts, which is
+    the one hole left in the counter below.
+    """
+    return "\n".join(
+        line for line in js.splitlines() if not line.lstrip().startswith("//")
+    )
+
+
+def _call_count(js: str, name: str) -> int:
+    """Occurrences of `name(` in the emitted code, less its one declaration.
+
+    Counted over `_without_line_comments`: a comment naming the function reads
+    as a call site, so a disarmed site could be replaced by a line of prose
+    mentioning it and the count would not move.
+    """
+    code = _without_line_comments(js)
+    declarations = code.count(f"function {name}(")
+    assert declarations == 1, f"{name} is not declared exactly once"
+    return code.count(f"{name}(") - declarations
+
+
+def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> None:
+    """The count is the only attribution available, and it has to hold.
+
+    `assertListImmutableShape` emits the same message from all four of its sites,
+    so no error text distinguishes them. A site switched from the wrapper to the
+    collector stops throwing, and two of these sites verify a read-back: one that
+    stops throwing is indistinguishable from one that passed.
+
+    Whole-line `//` comments are excluded from the count, so a disarmed site
+    cannot be papered over with a line of prose naming the function. A trailing
+    comment on a line of code is still counted, which is the remaining hole.
+    """
+    js = _generate_simple_js()
+
+    assert _call_count(js, "assertFieldImmutableShape") == 3
+    assert _call_count(js, "assertListImmutableShape") == 4
+
+
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
     """Choice adoption cannot silently accept extra/reordered free-form values."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
