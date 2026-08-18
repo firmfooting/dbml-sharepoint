@@ -28,7 +28,8 @@
 
   const summary = await assessSite({
     requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
-    log, web: WEB, fetchWithRetry, apiUrl, odataName, getDigest,
+    log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
+    odataName, getDigest, verdictLevel: 'DONE',
   });
   console.log(summary);
   return summary;

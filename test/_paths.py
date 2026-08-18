@@ -37,6 +37,13 @@ FIXTURES = TEST_DIR / "fixtures"
 #: Committed golden files: the emitted scripts, byte for byte.
 EXPECTED = FIXTURES / "expected"
 
+
+def write_golden(path: Path, text: str) -> None:
+    """Explicit newline: the default emits CRLF on Windows, so the file reads
+    as modified locally while producing an empty diff."""
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
 #: Live-site probes. Their transcripts are gitignored; see test_probes.py.
 MANUAL = TEST_DIR / "manual"
 

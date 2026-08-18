@@ -3,8 +3,15 @@
   // standalone script and the deploy can share it without a second copy.
   async function assessSite(ctx) {
     const { requirements: REQUIREMENTS, targets: TARGETS,
-            notAssessable: NOT_ASSESSABLE, log, web: WEB,
-            fetchWithRetry, apiUrl, odataName, getDigest } = ctx;
+            notAssessable: NOT_ASSESSABLE, log, web: WEB, origin: ORIGIN,
+            fetchWithRetry, apiUrl, odataName, getDigest, verdictLevel } = ctx;
+    // Fail closed on a caller-built targets: a missing key is a bare TypeError
+    // several probes in, and every one of these is read below.
+    const missingTargets = ['base_templates', 'list_titles', 'list_markers',
+      'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
+      'declares_form_formatting', 'declares_versioning', 'declares_groups',
+    ].filter((k) => !(k in (TARGETS || {})));
+    if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     const findings = [];
     let verdict = null;
     const finding = (tier, key, level, detail) => {
@@ -117,7 +124,7 @@
 
     // Retention labels available to the site (the UI's own picker call).
     {
-      const u = encodeURIComponent(`${window.location.origin}${WEB}`);
+      const u = encodeURIComponent(`${ORIGIN}${WEB}`);
       const tags = await probeGet(`SP.CompliancePolicy.SPPolicyStoreProxy.GetAvailableTagsForSite(siteUrl=@u)?@u='${u}'`);
       if (tags.ok) {
         const names = ((tags.d && tags.d.results) || []).map(t => t.TagName).filter(Boolean);
@@ -287,15 +294,17 @@
       else if (f.level === 'WARN') warnings += 1;
     }
     const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';
+    // The level comes from the caller: 'DONE' is deploy's terminal signal, so a
+    // deploy including this partial must not print it before it provisions.
     if (blocked) {
       verdict = 'BLOCKED';
-      log('DONE', `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
+      log(verdictLevel, `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
     } else if (warnings > 0) {
       verdict = 'DEGRADED';
-      log('DONE', `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);
+      log(verdictLevel, `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);
     } else {
       verdict = 'COMPATIBLE';
-      log('DONE', `${prefix} pack: COMPATIBLE. No blocking or degrading findings.`);
+      log(verdictLevel, `${prefix} pack: COMPATIBLE. No blocking or degrading findings.`);
     }
 
     return { findings, verdict };
