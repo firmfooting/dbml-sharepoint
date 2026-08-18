@@ -1060,6 +1060,16 @@
     return [titleField, ...list.fields_phase1, ...deferred];
   }
 
+  // A property that could not be compared is not a difference, and printing it
+  // as one sends the operator to fix a column nobody looked at.
+  function describeMismatch(m) {
+    if (!m || !m.property) return String((m && m.message) || m);
+    if (!m.checked) return `${m.property}: NOT CHECKED (${m.message})`;
+    // The message rides along: an absent lookup target compares a declared list
+    // TITLE against a readback GUID, which without it reads as a wrong value.
+    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)} (${m.message})`;
+  }
+
   // One entry per mismatched property. The throwing wrapper below keeps every
   // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {
@@ -1244,7 +1254,7 @@
     return targetDisplay.InternalName;
   }
 
-  async function immutableFieldMismatches(listName, field, actual, targetGuid) {
+  async function immutableFieldMismatches(listName, field, actual, targetGuid, targetState = null) {
     const desired = declaredFieldState(listName, field);
     const mismatches = [];
     // checked:true means compared and differed; checked:false means it could not
@@ -1279,12 +1289,18 @@
     }
     if (!field.target_list) return mismatches;
     if (!targetGuid) {
-      // No GUID means the target list was absent or unreadable. Resolving its
-      // display field would throw against a list nobody could read. Certain,
-      // not undetermined: adoption is impossible either way. Split this by
-      // target-list status once preflight can tell absent from unreadable.
-      mismatch('LookupList', field.target_list, actual.LookupList,
-        `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
+      // Absent is a certain refusal. Anything else means nobody resolved the
+      // target, and "does not exist" would point at the wrong list.
+      if (targetState == null || targetState === 'absent') {
+        mismatch('LookupList', field.target_list, actual.LookupList,
+          `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
+      } else if (targetState === 'unreadable') {
+        notChecked('LookupList', field.target_list,
+          `Existing lookup '${listName}.${field.title}' was not checked because declared target list '${field.target_list}' could not be read`);
+      } else {
+        notChecked('LookupList', field.target_list,
+          `Existing lookup '${listName}.${field.title}' was not checked because declared target list '${field.target_list}' resolved to no list identifier`);
+      }
       return mismatches;
     }
     // Compared before the display-field probe, so a wrong target list survives a
@@ -1679,18 +1695,38 @@
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
   const preflightListShapes = {};
+  // Three outcomes: 'absent' (no such list), 'unreadable' (its probe failed),
+  // 'ok' (a shape was read, whether or not that shape matched). A fourth,
+  // 'mismatch', was removed: a mismatched list still has its shape stored, so
+  // neither consumer could ever tell it from 'ok'.
+  // Null-prototype, so a list titled 'constructor' or 'toString' cannot read
+  // truthy from Object.prototype without ever being assigned.
+  const listOutcomes = Object.create(null);
   await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
     try {
       const actual = await readListShape(list.title);
-      if (!actual) return;
-      assertListImmutableShape(list, actual);
+      if (!actual) { listOutcomes[list.title] = 'absent'; return; }
+      // Stored BEFORE the shape is judged: a list with a wrong BaseTemplate
+      // still resolves lookup GUIDs and its columns are still worth reporting.
+      preflightListShapes[list.title] = actual;
+      listOutcomes[list.title] = 'ok';
       // readListShape also fail-closes malformed or omitted mutable settings;
       // drift itself is safe to repair later and is reported for visibility.
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
-      preflightListShapes[list.title] = actual;
+      const mismatches = immutableListMismatches(list, actual);
+      if (mismatches.length === 0) return;
+      const message = [...new Set(mismatches.map(m => m.message))].join(' ');
+      log('ERROR', `Existing-schema list '${list.title}': ${message}`);
+      // Last statement in the try, as in the field lane below: anything that
+      // threw after this push would give one list a second entry, and the
+      // grouped report reads only the first.
+      summary.errors.push({
+        phase: 'preflight', list: list.title, error: message, mismatches,
+      });
     } catch (err) {
+      listOutcomes[list.title] = 'unreadable';
       log('ERROR', `Existing-schema list '${list.title}': ${err.message}`);
       summary.errors.push({ phase: 'preflight', list: list.title, error: err.message });
     }
@@ -1702,19 +1738,22 @@
     async (list) => {
     for (const field of declaredFieldsForList(list)) {
       try {
-        const actual = await readFieldShape(
-          list.title,
-          field.title,
-          field,
-        );
+        const actual = await readFieldShape(list.title, field.title, field);
         if (!actual) continue;
         const targetGuid = field.target_list
           ? preflightListShapes[field.target_list]?.Id
           : null;
-        await assertFieldImmutableShape(list.title, field, actual, targetGuid);
-        // Force evaluation of every declared mutable expectation during the
-        // read-only preflight; Phase 2.1 performs and verifies any safe MERGE.
-        declaredFieldState(list.title, field);
+        const mismatches = await immutableFieldMismatches(
+          list.title, field, actual, targetGuid,
+          field.target_list ? listOutcomes[field.target_list] : null,
+        );
+        if (mismatches.length === 0) continue;
+        const message = [...new Set(mismatches.map(m => m.message))].join(' ');
+        log('ERROR', `Existing-schema field '${list.title}.${field.title}': ${message}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, column: field.title,
+          error: message, mismatches,
+        });
       } catch (err) {
         log('ERROR', `Existing-schema field '${list.title}.${field.title}': ${err.message}`);
         summary.errors.push({
@@ -1725,6 +1764,32 @@
   }, 4);
 
   if (summary.errors.length > 0) {
+    // Four lanes interleave their own ERROR lines, so the whole delta is
+    // regrouped here in declaration order and printed once.
+    const preflight = summary.errors.filter(e => e.phase === 'preflight');
+    log('ERROR', 'Existing-schema shape delta:');
+    for (const list of SCHEMA.lists) {
+      const own = preflight.find(e => e.list === list.title && !e.column);
+      const columns = preflight.filter(e => e.list === list.title && e.column);
+      if (!own && columns.length === 0) continue;
+      log('ERROR', `  ${list.title}`);
+      if (listOutcomes[list.title] === 'unreadable') {
+        log('ERROR', `    NOT CHECKED: ${own?.error ?? 'the list shape could not be read'}`);
+        log('ERROR', '    No column was checked, because the list shape could not be read.');
+        continue;
+      }
+      if (own) {
+        const entries = own.mismatches ?? [];
+        if (entries.length === 0) log('ERROR', `    ${own.error}`);
+        for (const m of entries) log('ERROR', `    ${describeMismatch(m)}`);
+      }
+      for (const column of columns) {
+        log('ERROR', `    ${column.column}`);
+        const entries = column.mismatches ?? [];
+        if (entries.length === 0) log('ERROR', `      NOT CHECKED: ${column.error}`);
+        for (const m of entries) log('ERROR', `      ${describeMismatch(m)}`);
+      }
+    }
     log('ERROR', 'Existing-schema shape preflight failed; no deployment writes were attempted.');
     return { ...summary, aborted: 'existing-schema-shape-errors' };
   }
