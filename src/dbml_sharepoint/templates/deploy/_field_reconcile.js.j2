@@ -181,6 +181,14 @@
     return [titleField, ...list.fields_phase1, ...deferred];
   }
 
+  // A property that could not be compared is not a difference, and printing it
+  // as one sends the operator to fix a column nobody looked at.
+  function describeMismatch(m) {
+    if (!m || !m.property) return String((m && m.message) || m);
+    if (!m.checked) return `${m.property}: NOT CHECKED (${m.message})`;
+    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)}`;
+  }
+
   // One entry per mismatched property. The throwing wrapper below keeps every
   // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {

@@ -1412,6 +1412,54 @@ def test_a_lookup_into_an_unreadable_list_is_not_checked_rather_than_missing() -
     assert "does not yet exist" not in lookups[0], lookups
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_abort_prints_the_delta_grouped_by_list_and_column() -> None:
+    """Four concurrent lanes interleave their own ERROR lines.
+
+    The grouped report is what an operator reads after the run stops, so it
+    has to name each property with both values rather than one joined
+    sentence per column.
+    """
+    output = _run_deploy(
+        _WRONG_TEMPLATE_AND_COLUMN_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    assert "Existing-schema shape delta:" in output, output[-3000:]
+    assert "  APP_Task" in output, output[-3000:]
+    assert "    DueDate" in output, output[-3000:]
+    assert "BaseTemplate: declared 100, readback 101" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_list_reports_that_no_column_was_checked() -> None:
+    """Reporting no column mismatches for a list nobody read is a false pass."""
+    output = _run_deploy(
+        _UNREADABLE_LOOKUP_TARGET_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    assert "No column was checked" in output, output[-3000:]
+    # Named per property, not just anywhere in the transcript: the printer's own
+    # unreadable-list line says NOT CHECKED too, and would satisfy a bare
+    # substring assertion while every uncompared property printed as a difference.
+    assert "LookupList: NOT CHECKED" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_does_not_exist_is_silent_in_preflight() -> None:
+    """A first deploy has nothing to adopt, so preflight must say nothing.
+
+    `_HARNESS` is the brand-new-site mock: its list enumeration is empty, so
+    `readListShape` answers every declared list absent. What keeps an absent
+    list out of the field wave is the early return, not the recorded 'absent'
+    outcome: replacing that literal with 'ok' leaves the whole suite green.
+    """
+    summary = _summary_of(_run_deploy(
+        _HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ))
+    assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == []
+
+
 # The collector's two collaborators. Stubbed because this test is about what the
 # collector RECORDS, not about how a declaration is read or a probe is answered.
 _COLLECTOR_STUBS = textwrap.dedent("""

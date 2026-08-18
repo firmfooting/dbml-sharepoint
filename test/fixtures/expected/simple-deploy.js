@@ -1060,6 +1060,14 @@
     return [titleField, ...list.fields_phase1, ...deferred];
   }
 
+  // A property that could not be compared is not a difference, and printing it
+  // as one sends the operator to fix a column nobody looked at.
+  function describeMismatch(m) {
+    if (!m || !m.property) return String((m && m.message) || m);
+    if (!m.checked) return `${m.property}: NOT CHECKED (${m.message})`;
+    return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)}`;
+  }
+
   // One entry per mismatched property. The throwing wrapper below keeps every
   // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {
@@ -1748,6 +1756,32 @@
   }, 4);
 
   if (summary.errors.length > 0) {
+    // Four lanes interleave their own ERROR lines, so the whole delta is
+    // regrouped here in declaration order and printed once.
+    const preflight = summary.errors.filter(e => e.phase === 'preflight');
+    log('ERROR', 'Existing-schema shape delta:');
+    for (const list of SCHEMA.lists) {
+      const own = preflight.find(e => e.list === list.title && !e.column);
+      const columns = preflight.filter(e => e.list === list.title && e.column);
+      if (!own && columns.length === 0) continue;
+      log('ERROR', `  ${list.title}`);
+      if (listOutcomes[list.title] === 'unreadable') {
+        log('ERROR', `    NOT CHECKED: ${own?.error ?? 'the list shape could not be read'}`);
+        log('ERROR', '    No column was checked, because the list shape could not be read.');
+        continue;
+      }
+      if (own) {
+        const entries = own.mismatches ?? [];
+        if (entries.length === 0) log('ERROR', `    ${own.error}`);
+        for (const m of entries) log('ERROR', `    ${describeMismatch(m)}`);
+      }
+      for (const column of columns) {
+        log('ERROR', `    ${column.column}`);
+        const entries = column.mismatches ?? [];
+        if (entries.length === 0) log('ERROR', `      NOT CHECKED: ${column.error}`);
+        for (const m of entries) log('ERROR', `      ${describeMismatch(m)}`);
+      }
+    }
     log('ERROR', 'Existing-schema shape preflight failed; no deployment writes were attempted.');
     return { ...summary, aborted: 'existing-schema-shape-errors' };
   }

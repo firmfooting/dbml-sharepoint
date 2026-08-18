@@ -853,6 +853,24 @@ def test_existing_schema_shape_preflight_is_fail_closed() -> None:
     assert js.index("existing-schema-shape-errors") < js.index(f"Starting Phase {pn('security')}")
 
 
+def test_the_delta_report_is_printed_before_the_abort_returns() -> None:
+    """A printer placed after the return prints nothing and stays green.
+
+    The abort still returns the same code and logs the same failure line, so
+    no other test moves when the report is emitted too late. Ordering is the
+    only assertion that catches it.
+    """
+    js = _generate_simple_js()
+
+    assert "aborted: 'existing-schema-shape-errors'" in js
+    assert (
+        "Existing-schema shape preflight failed; no deployment writes were attempted."
+    ) in js
+    assert js.index("Existing-schema shape delta:") < js.index(
+        "aborted: 'existing-schema-shape-errors'",
+    )
+
+
 def test_existing_lookup_shape_requires_exact_target_and_display_field() -> None:
     """An existing lookup cannot silently retain another list/field target."""
     js = _generate_simple_js()
