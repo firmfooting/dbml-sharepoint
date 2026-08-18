@@ -271,6 +271,9 @@
       findings.push({ tier, key, level, detail });
       log(level, `[T${tier}] ${key}: ${detail}`);
     };
+    // A property the site did not return is not a value. Printing it as one
+    // put the literal word `undefined` in four operator-facing lines.
+    const reported = (v, fallback = '(not reported)') => (v == null ? fallback : v);
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
     async function probeGet(suffix) {
@@ -293,7 +296,7 @@
     {
       const web = await probeGet('web?$select=WebTemplate,Configuration,Language,UIVersion');
       if (web.ok) finding(1, 'web_template', 'INFO',
-        `Template ${web.d.WebTemplate}#${web.d.Configuration}, LCID ${web.d.Language}.`);
+        `Template ${reported(web.d.WebTemplate)}#${reported(web.d.Configuration)}, LCID ${reported(web.d.Language)}.`);
       else finding(1, 'web_template', 'INFO', `Could not read web template (HTTP ${web.status || web.error}).`);
     }
 
@@ -313,7 +316,7 @@
     try {
       const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
       const j = await r.json();
-      finding(1, 'platform_build', 'INFO', `SharePoint build ${j.d.GetContextWebInformation.LibraryVersion}.`);
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(j.d.GetContextWebInformation.LibraryVersion)}.`);
     } catch (err) {
       finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
     }
@@ -330,7 +333,7 @@
         const sca = cu.ok && cu.d.IsSiteAdmin === true;
         finding(1, 'manage_permissions_bit', (has(0x2000000) || sca) ? 'PASS' : 'BLOCKED',
           (has(0x2000000) || sca) ? 'Operator holds ManagePermissions (or is a site collection admin).' : 'Operator LACKS ManagePermissions, so ACL/group work cannot run.');
-        finding(1, 'noscript', has(0x40000) ? 'INFO' : 'INFO',
+        finding(1, 'noscript', 'INFO',
           has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
       } else {
         finding(1, 'manage_lists_bit', 'WARN', `Could not read effective permissions (HTTP ${perms.status || perms.error}).`);
@@ -358,9 +361,14 @@
     // Regional settings & languages: locale drives date rendering.
     {
       const rs = await probeGet('web/regionalsettings?$select=LocaleId');
-      if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${rs.d.LocaleId}.`);
+      if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${reported(rs.d.LocaleId)}.`);
       const ml = await probeGet('web?$select=IsMultilingual,SupportedUILanguageIds');
-      if (ml.ok) finding(1, 'languages', 'INFO', `Multilingual ${ml.d.IsMultilingual}; UI languages ${(ml.d.SupportedUILanguageIds && ml.d.SupportedUILanguageIds.results) || []}.`);
+      if (ml.ok) {
+        // `${[]}` stringifies to nothing, so an unreported list read as a blank.
+        const uiLanguages = (ml.d.SupportedUILanguageIds && ml.d.SupportedUILanguageIds.results) || [];
+        finding(1, 'languages', 'INFO',
+          `Multilingual ${reported(ml.d.IsMultilingual)}; UI languages ${uiLanguages.length ? uiLanguages.join(', ') : '(none reported)'}.`);
+      }
     }
 
     // Group connection, storage, hub, recycle bin.
@@ -370,9 +378,16 @@
         finding(1, 'group_connected', 'INFO', 'Site is Microsoft 365 group-connected.');
       }
       const usage = await probeGet('site/usage');
-      if (usage.ok) finding(1, 'storage', 'INFO', `Storage used ${Math.round((usage.d.Storage || 0) / 1048576)} MB (${Math.round((usage.d.StoragePercentageUsed || 0) * 100)}% of quota).`);
+      if (usage.ok) {
+        // `|| 0` reported an unanswered quota as an empty site, which is a
+        // measurement the surface never made.
+        const measured = usage.d.Storage != null && usage.d.StoragePercentageUsed != null;
+        finding(1, 'storage', 'INFO', measured
+          ? `Storage used ${Math.round(usage.d.Storage / 1048576)} MB (${Math.round(usage.d.StoragePercentageUsed * 100)}% of quota).`
+          : 'site/usage did not report storage figures.');
+      }
       const hub = await probeGet('site?$select=IsHubSite,HubSiteId');
-      if (hub.ok) finding(1, 'hub', 'INFO', `Hub site ${hub.d.IsHubSite}; hub id ${hub.d.HubSiteId}.`);
+      if (hub.ok) finding(1, 'hub', 'INFO', `Hub site ${reported(hub.d.IsHubSite)}; hub id ${reported(hub.d.HubSiteId)}.`);
     }
 
     // Retention labels available to the site (the UI's own picker call).
@@ -380,8 +395,15 @@
       const u = encodeURIComponent(`${ORIGIN}${WEB}`);
       const tags = await probeGet(`SP.CompliancePolicy.SPPolicyStoreProxy.GetAvailableTagsForSite(siteUrl=@u)?@u='${u}'`);
       if (tags.ok) {
-        const names = ((tags.d && tags.d.results) || []).map(t => t.TagName).filter(Boolean);
-        finding(1, 'retention_labels', 'INFO', names.length ? `Available retention labels: ${names.join(', ')}.` : 'No retention labels available to this site.');
+        // A payload carrying no `results` is an unanswered question, not an
+        // answer of none.
+        const rows = tags.d && tags.d.results;
+        if (!Array.isArray(rows)) {
+          finding(1, 'retention_labels', 'INFO', 'Retention labels not reported by this site.');
+        } else {
+          const names = rows.map(t => t.TagName).filter(Boolean);
+          finding(1, 'retention_labels', 'INFO', names.length ? `Available retention labels: ${names.join(', ')}.` : 'No retention labels available to this site.');
+        }
       } else {
         finding(1, 'retention_labels', 'INFO', `Retention-label surface not available (HTTP ${tags.status || tags.error}).`);
       }
@@ -390,11 +412,17 @@
     // App catalog + SPFx footprint + search availability.
     {
       const cat = await probeGet('SP_TenantSettings_Current');
-      if (cat.ok) finding(1, 'app_catalog', 'INFO', cat.d.CorporateCatalogUrl ? `Tenant app catalog at ${cat.d.CorporateCatalogUrl}.` : 'No tenant app catalog configured.');
+      if (cat.ok) {
+        // A payload without the property never said there was no catalog.
+        const carried = cat.d != null && typeof cat.d === 'object' && 'CorporateCatalogUrl' in cat.d;
+        finding(1, 'app_catalog', 'INFO', !carried
+          ? 'Tenant app catalog not reported by this site.'
+          : (cat.d.CorporateCatalogUrl ? `Tenant app catalog at ${cat.d.CorporateCatalogUrl}.` : 'No tenant app catalog configured.'));
+      }
       const uca = await probeGet('web/UserCustomActions?$select=Name,Location,ClientSideComponentId');
       if (uca.ok && uca.d && Array.isArray(uca.d.results)) finding(1, 'custom_actions', 'INFO', `${uca.d.results.length} web custom action(s) / SPFx extension(s) registered.`);
       const search = await probeGet("search/query?querytext='test'&rowlimit=1");
-      finding(1, 'search', search.ok ? 'INFO' : 'INFO', search.ok ? 'Search service responds.' : `Search probe returned HTTP ${search.status || search.error}.`);
+      finding(1, 'search', 'INFO', search.ok ? 'Search service responds.' : `Search probe returned HTTP ${search.status || search.error}.`);
     }
 
     // ===================================================================

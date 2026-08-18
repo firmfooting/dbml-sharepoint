@@ -661,7 +661,8 @@ def test_the_assessment_records_every_finding_in_order() -> None:
     # Emission order, not tier order: `list_template_100` is raised from inside
     # the Tier 1 block of `_assess_body.js.j2` but carries tier 2.
     assert recorded == (
-        "1\tweb_template\tINFO\tTemplate undefined#undefined, LCID undefined.\n"
+        "1\tweb_template\tINFO\tTemplate (not reported)#(not reported), LCID "
+        "(not reported).\n"
         "1\tsite_not_locked\tPASS\tSite is writable (not locked).\n"
         "1\tplatform_build\tINFO\tSharePoint build 16.0.0.0.\n"
         "1\tmanage_lists_bit\tPASS\tOperator holds ManageLists.\n"
@@ -670,12 +671,12 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "1\tnoscript\tINFO\tCustom scripting allowed (AddAndCustomizePages present).\n"
         "2\tlist_template_100\tWARN\tBase template 100 not listed by web/listtemplates "
         "(creation may still work).\n"
-        "1\tregional_settings\tINFO\tSite LocaleId undefined.\n"
-        "1\tlanguages\tINFO\tMultilingual undefined; UI languages .\n"
-        "1\tstorage\tINFO\tStorage used 0 MB (0% of quota).\n"
-        "1\thub\tINFO\tHub site undefined; hub id undefined.\n"
+        "1\tregional_settings\tINFO\tSite LocaleId (not reported).\n"
+        "1\tlanguages\tINFO\tMultilingual (not reported); UI languages (none reported).\n"
+        "1\tstorage\tINFO\tsite/usage did not report storage figures.\n"
+        "1\thub\tINFO\tHub site (not reported); hub id (not reported).\n"
         "1\tretention_labels\tINFO\tNo retention labels available to this site.\n"
-        "1\tapp_catalog\tINFO\tNo tenant app catalog configured.\n"
+        "1\tapp_catalog\tINFO\tTenant app catalog not reported by this site.\n"
         "1\tcustom_actions\tINFO\t0 web custom action(s) / SPFx extension(s) registered.\n"
         "1\tsearch\tINFO\tSearch service responds.\n"
         "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100), a "
