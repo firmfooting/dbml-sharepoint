@@ -1,4 +1,6 @@
 # test/test_jsgen.py
+import json
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -18,6 +20,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
+from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, MappingBundle
@@ -54,6 +57,27 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert f"Phase {pn('lookups')}" in js
     assert f"Phase {pn('indexes')}" in js
     assert "0.1.0-test" in js  # release tag rendered
+
+
+def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
+    """One spelling, or the two scripts disagree about the same site.
+
+    A re-derived copy in `jsgen` would emit the same key names, so this
+    compares the emitted values against the function both scripts import.
+    """
+    js = _generate_simple_js()
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    expected = assess_targets(schema, bundle, _FIXED_ARGS["site_role"])
+    # `tojson(indent=2)` indents the members but leaves the closing brace in
+    # column 0, so that is the terminator, not the assignment's indent.
+    match = re.search(r"const ASSESS_TARGETS = (\{.*?\n\});", js, re.DOTALL)
+    assert match is not None, "ASSESS_TARGETS is not emitted as an object literal"
+    # Round-trip the expectation too: `list_markers` holds tuples, which JSON
+    # has no way to distinguish from lists once emitted.
+    assert json.loads(match.group(1)) == json.loads(json.dumps(expected))
+    assert "const ASSESS_REQUIREMENTS = [" in js
+    assert "const ASSESS_NOT_ASSESSABLE = [" in js
 
 
 def test_deploy_js_says_so_when_no_env_file_was_read() -> None:

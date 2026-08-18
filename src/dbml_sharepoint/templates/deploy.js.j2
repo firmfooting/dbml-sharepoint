@@ -11,6 +11,9 @@
   const SITE_ROLE = {{ site_role | tojson }};
   const RELEASE_TAG = {{ release.release_tag | tojson }};
   const SCHEMA_VERSION = {{ release.schema_version | tojson }};
+  const ASSESS_REQUIREMENTS = {{ assess_requirements | tojson(indent=2) }};
+  const ASSESS_TARGETS = {{ assess_targets_data | tojson(indent=2) }};
+  const ASSESS_NOT_ASSESSABLE = {{ assess_not_assessable | tojson(indent=2) }};
 
   const log = (level, msg) => console.log(`[SP-DEPLOY] [${level}] ${msg}`);
   // Baked in at build time from the dbml-sharepoint.env this run read (or
