@@ -1224,6 +1224,40 @@ _UNRESOLVABLE_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS.replace(
 """)
 
 
+# The same unresolvable target, but the existing lookup also points at the wrong
+# list. Both facts have to survive one run.
+_WRONG_LIST_AND_UNRESOLVABLE_HARNESS = _UNRESOLVABLE_LOOKUP_TARGET_HARNESS.replace(
+    "LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',",
+    "LookupList: '99999999-9999-9999-9999-999999999999', LookupField: 'Title',",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_wrong_target_list_survives_an_unresolvable_display_field() -> None:
+    """The display-field probe throwing must not hide the wrong target list.
+
+    Resolving the declared target ran before the list was compared, so its
+    throw returned early and the operator needed another deploy to learn the
+    lookup pointed at the wrong list at all.
+    """
+    output = _run_deploy(
+        _WRONG_LIST_AND_UNRESOLVABLE_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, output[-3000:]
+    summary = json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    entry = next(
+        (e for e in summary["errors"] if e.get("column") == "Project"), None,
+    )
+    assert entry is not None, summary["errors"]
+    assert "targets list" in entry["error"], entry
+    assert "target display field" in entry["error"], entry
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_lookup_whose_target_display_field_cannot_be_resolved_is_refused() -> None:
     """The catch around `expectedLookupFieldInternalName` records, it does not swallow.

@@ -408,18 +408,24 @@
         `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`);
       return mismatches;
     }
+    // Compared before the display-field probe, so a wrong target list survives a
+    // throw from resolving the declared target's display field.
+    const listDiffers = normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid);
     let expectedLookupField;
     try {
       expectedLookupField = await expectedLookupFieldInternalName(listName, field);
     } catch (err) {
       // Recorded, not propagated: a throw would discard this column's other mismatches.
+      if (listDiffers) {
+        mismatch('LookupList', targetGuid, actual.LookupList,
+          `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}'; expected '${targetGuid}'. Lookup targets are immutable; recreate through an explicit migration.`);
+      }
       notChecked('LookupField', field.body.LookupField, err.message);
       return mismatches;
     }
     // One entry per differing property: a single entry hard-coded 'LookupList',
     // so a column differing only in LookupField reported the wrong property and
     // two GUIDs that normalizeGuid exists to call equal.
-    const listDiffers = normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid);
     const fieldDiffers = actual.LookupField !== expectedLookupField;
     if (listDiffers || fieldDiffers) {
       const message = `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
