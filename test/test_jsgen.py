@@ -80,6 +80,25 @@ def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
     assert "const ASSESS_NOT_ASSESSABLE = [" in js
 
 
+def test_the_assessment_runs_before_the_preflight_and_can_abort() -> None:
+    """A pre-check that has to be run first, by choice, depends on discipline.
+
+    The owner reports not running it. Both abort codes must appear before the
+    preflight banner, or the gate is decorative.
+    """
+    js = _generate_simple_js()
+    assert js.index(f"Starting Phase {pn('assess')}") < js.index(
+        f"Starting Phase {pn('preflight')}",
+    )
+    for code in ("assessment-blocked", "assessment-degraded-unacknowledged"):
+        assert js.index(code) < js.index(f"Starting Phase {pn('preflight')}"), code
+
+
+def test_the_acknowledgement_flag_defaults_to_refusing() -> None:
+    """An unedited paste must stop on a degraded site, as every probe does."""
+    assert "const ACKNOWLEDGE_DEGRADED = false;" in _generate_simple_js()
+
+
 def test_deploy_js_says_so_when_no_env_file_was_read() -> None:
     """The default `env_provenance` must produce an explicit log() line, not
     silence a later regression could not tell apart from a feature that

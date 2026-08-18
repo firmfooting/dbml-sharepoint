@@ -31,7 +31,7 @@ PhaseStep(key: str, name: str, template: str)
 ### `DEPLOY_GROUPS`
 
 ```python
-DEPLOY_GROUPS = (('PREPARE', (PhaseStep(key='preflight', name='read-only preflight', template='deploy/_preflight.js.j2'), PhaseStep(key='security', name='permission levels and site groups', template='deploy/_security…
+DEPLOY_GROUPS = (('PREPARE', (PhaseStep(key='assess', name='site assessment', template='deploy/_assess_gate.js.j2'), PhaseStep(key='preflight', name='read-only preflight', template='deploy/_preflight.js.j2'), PhaseSt…
 ```
 
 ### `phases_context`

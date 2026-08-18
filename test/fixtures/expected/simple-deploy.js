@@ -14,6 +14,9 @@
 (async () => {
   const SITE_URL  = "https://example.sharepoint.com/sites/test";
   const SITE_ROLE = "default";
+  // Set to true and paste again to deploy onto a site the assessment called
+  // DEGRADED. Defaults to refusing, like every probe's CONFIRMED flag.
+  const ACKNOWLEDGE_DEGRADED = false;
   const RELEASE_TAG = "0.1.0-test";
   const SCHEMA_VERSION = "0.8";
   const ASSESS_REQUIREMENTS = [
@@ -247,6 +250,317 @@
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
     return cachedDigest;
+  }
+
+  // The whole assessment, taking its collaborators as an argument so the
+  // standalone script and the deploy can share it without a second copy.
+  async function assessSite(ctx) {
+    const { requirements: REQUIREMENTS, targets: TARGETS,
+            notAssessable: NOT_ASSESSABLE, log, web: WEB, origin: ORIGIN,
+            fetchWithRetry, apiUrl, odataName, getDigest, verdictLevel } = ctx;
+    // Fail closed on a caller-built targets: a missing key is a bare TypeError
+    // several probes in, and every one of these is read below.
+    const missingTargets = ['base_templates', 'list_titles', 'list_markers',
+      'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
+      'declares_form_formatting', 'declares_versioning', 'declares_groups',
+    ].filter((k) => !(k in (TARGETS || {})));
+    if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
+    const findings = [];
+    let verdict = null;
+    const finding = (tier, key, level, detail) => {
+      findings.push({ tier, key, level, detail });
+      log(level, `[T${tier}] ${key}: ${detail}`);
+    };
+
+    // Read-only GET helper: returns parsed .d (or the raw json) or null.
+    async function probeGet(suffix) {
+      try {
+        const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!r.ok) return { ok: false, status: r.status };
+        const j = await r.json();
+        return { ok: true, d: (j && j.d !== undefined) ? j.d : j };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
+    // ===================================================================
+    // Tier 1: always-run enumerations
+    // ===================================================================
+    log('INFO', 'Tier 1: site capability enumeration.');
+
+    // Site identity & provisioning template, the best single capability tell.
+    {
+      const web = await probeGet('web?$select=WebTemplate,Configuration,Language,UIVersion');
+      if (web.ok) finding(1, 'web_template', 'INFO',
+        `Template ${web.d.WebTemplate}#${web.d.Configuration}, LCID ${web.d.Language}.`);
+      else finding(1, 'web_template', 'INFO', `Could not read web template (HTTP ${web.status || web.error}).`);
+    }
+
+    // Site lock / read-only: a locked site blocks any deploy.
+    {
+      const site = await probeGet('site?$select=ReadOnly,LockIssue');
+      if (site.ok && (site.d.ReadOnly === true || site.d.LockIssue)) {
+        finding(1, 'site_not_locked', 'BLOCKED', `Site is read-only/locked: ${site.d.LockIssue || 'ReadOnly'}.`);
+      } else if (site.ok) {
+        finding(1, 'site_not_locked', 'PASS', 'Site is writable (not locked).');
+      } else {
+        finding(1, 'site_not_locked', 'WARN', `Could not read lock state (HTTP ${site.status || site.error}).`);
+      }
+    }
+
+    // Platform build fingerprint (from the digest response).
+    try {
+      const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
+      const j = await r.json();
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${j.d.GetContextWebInformation.LibraryVersion}.`);
+    } catch (err) {
+      finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
+    }
+
+    // Effective permissions: decode the bits the deploy needs + NoScript.
+    {
+      const perms = await probeGet('web?$select=EffectiveBasePermissions');
+      if (perms.ok && perms.d.EffectiveBasePermissions) {
+        const low = Number(perms.d.EffectiveBasePermissions.Low || 0);
+        const has = (bit) => (low & bit) === bit;
+        finding(1, 'manage_lists_bit', has(0x800) ? 'PASS' : 'BLOCKED',
+          has(0x800) ? 'Operator holds ManageLists.' : 'Operator LACKS ManageLists, so lists cannot be created.');
+        const cu = await probeGet('web/currentuser?$select=IsSiteAdmin');
+        const sca = cu.ok && cu.d.IsSiteAdmin === true;
+        finding(1, 'manage_permissions_bit', (has(0x2000000) || sca) ? 'PASS' : 'BLOCKED',
+          (has(0x2000000) || sca) ? 'Operator holds ManagePermissions (or is a site collection admin).' : 'Operator LACKS ManagePermissions, so ACL/group work cannot run.');
+        finding(1, 'noscript', has(0x40000) ? 'INFO' : 'INFO',
+          has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
+      } else {
+        finding(1, 'manage_lists_bit', 'WARN', `Could not read effective permissions (HTTP ${perms.status || perms.error}).`);
+      }
+    }
+
+    // Creatable list templates vs the base templates this pack declares.
+    {
+      const lt = await probeGet('web/listtemplates?$select=Name,ListTemplateTypeKind,Hidden');
+      const available = new Set();
+      if (lt.ok && lt.d && Array.isArray(lt.d.results)) {
+        for (const t of lt.d.results) available.add(Number(t.ListTemplateTypeKind));
+      }
+      for (const id of TARGETS.base_templates) {
+        // 100 (generic list) and 101 (document library) are universal in SPO;
+        // report PASS when present, WARN (not BLOCKED) when the enumeration
+        // simply did not list them, since creation may still succeed.
+        const key = `list_template_${id}`;
+        if (available.has(id)) finding(2, key, 'PASS', `Base template ${id} is creatable.`);
+        else if (lt.ok) finding(2, key, 'WARN', `Base template ${id} not listed by web/listtemplates (creation may still work).`);
+        else finding(2, key, 'WARN', `Could not enumerate list templates (HTTP ${lt.status || lt.error}).`);
+      }
+    }
+
+    // Regional settings & languages: locale drives date rendering.
+    {
+      const rs = await probeGet('web/regionalsettings?$select=LocaleId');
+      if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${rs.d.LocaleId}.`);
+      const ml = await probeGet('web?$select=IsMultilingual,SupportedUILanguageIds');
+      if (ml.ok) finding(1, 'languages', 'INFO', `Multilingual ${ml.d.IsMultilingual}; UI languages ${(ml.d.SupportedUILanguageIds && ml.d.SupportedUILanguageIds.results) || []}.`);
+    }
+
+    // Group connection, storage, hub, recycle bin.
+    {
+      const props = await probeGet('web/allproperties?$select=GroupId');
+      if (props.ok && props.d.GroupId && !/^0+(-0+)*$/.test(String(props.d.GroupId).replace(/[{}]/g, ''))) {
+        finding(1, 'group_connected', 'INFO', 'Site is Microsoft 365 group-connected.');
+      }
+      const usage = await probeGet('site/usage');
+      if (usage.ok) finding(1, 'storage', 'INFO', `Storage used ${Math.round((usage.d.Storage || 0) / 1048576)} MB (${Math.round((usage.d.StoragePercentageUsed || 0) * 100)}% of quota).`);
+      const hub = await probeGet('site?$select=IsHubSite,HubSiteId');
+      if (hub.ok) finding(1, 'hub', 'INFO', `Hub site ${hub.d.IsHubSite}; hub id ${hub.d.HubSiteId}.`);
+    }
+
+    // Retention labels available to the site (the UI's own picker call).
+    {
+      const u = encodeURIComponent(`${ORIGIN}${WEB}`);
+      const tags = await probeGet(`SP.CompliancePolicy.SPPolicyStoreProxy.GetAvailableTagsForSite(siteUrl=@u)?@u='${u}'`);
+      if (tags.ok) {
+        const names = ((tags.d && tags.d.results) || []).map(t => t.TagName).filter(Boolean);
+        finding(1, 'retention_labels', 'INFO', names.length ? `Available retention labels: ${names.join(', ')}.` : 'No retention labels available to this site.');
+      } else {
+        finding(1, 'retention_labels', 'INFO', `Retention-label surface not available (HTTP ${tags.status || tags.error}).`);
+      }
+    }
+
+    // App catalog + SPFx footprint + search availability.
+    {
+      const cat = await probeGet('SP_TenantSettings_Current');
+      if (cat.ok) finding(1, 'app_catalog', 'INFO', cat.d.CorporateCatalogUrl ? `Tenant app catalog at ${cat.d.CorporateCatalogUrl}.` : 'No tenant app catalog configured.');
+      const uca = await probeGet('web/UserCustomActions?$select=Name,Location,ClientSideComponentId');
+      if (uca.ok && uca.d && Array.isArray(uca.d.results)) finding(1, 'custom_actions', 'INFO', `${uca.d.results.length} web custom action(s) / SPFx extension(s) registered.`);
+      const search = await probeGet("search/query?querytext='test'&rowlimit=1");
+      finding(1, 'search', search.ok ? 'INFO' : 'INFO', search.ok ? 'Search service responds.' : `Search probe returned HTTP ${search.status || search.error}.`);
+    }
+
+    // ===================================================================
+    // Tier 2: pack-driven attempt-probes
+    // ===================================================================
+    log('INFO', 'Tier 2: pack-driven attempt-probes.');
+
+    // The provenance marker on an EXISTING declared list. Reported, never
+    // repaired: this script writes nothing, and that is its whole contract.
+    //
+    // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. deploy.js reconciles a drifted
+    // Description, but only at the NEXT run. In the gap, a list whose
+    // description an owner edited in list settings is absent from every fleet
+    // report: discovery enumerates `Description`, so that site contributes
+    // fewer rows, raises no error, and nothing knows how many there should have
+    // been. assess.js is what an operator runs before touching a site, so it is
+    // the only thing that can surface this between deploys.
+    //
+    // WARN, not BLOCKED: the list itself is fine and deploying over it is the
+    // repair. Only reporting is affected, which is what DEGRADED means here.
+    //
+    // SUBSTRING, not equality. The deploy compares the whole Description
+    // because it owns the note as well; this check owns only discoverability,
+    // and a list whose note was reworded but whose marker survives is still
+    // found by every report. Firing on that would be noise, and noise gets
+    // ignored.
+    //
+    // The expected text arrives in TARGETS from `analysis.list_description`
+    // and is never re-spelled here (see assess_targets' docstring).
+    //
+    // A Map, because an object literal drops a `__proto__` key and this check
+    // then returned silently on a list whose marker was missing.
+    const LIST_MARKERS = new Map(TARGETS.list_markers);
+    const markerFinding = (title, description) => {
+      if (!LIST_MARKERS.has(title)) return;
+      const expected = LIST_MARKERS.get(title);
+      if (!expected) return;
+      const key = `provenance_marker:${title}`;
+      const held = description == null ? '' : String(description);
+      if (held.includes(expected)) {
+        finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
+      } else {
+        finding(2, key, 'WARN',
+          `'${title}' exists but its Description no longer carries the provenance marker `
+          + `"${expected}". Fleet reporting cannot see '${title}' until a deploy restores it.`);
+      }
+    };
+
+    // Collision probe per declared list. Description rides along on a request
+    // already being made, so the marker check above costs no probe of its own.
+    for (const title of TARGETS.list_titles) {
+      const key = `collision:${title}`;
+      const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
+      if (!list.ok && list.status === 404) {
+        finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
+      } else if (list.ok) {
+        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}), a redeploy/reconcile target.`);
+        markerFinding(title, list.d.Description);
+      } else {
+        finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+      }
+    }
+
+    // Property-surface probes against the first EXISTING declared list, else
+    // the site's own lists: 200 PASS, non-200 WARN.
+    {
+      let probeList = null;
+      for (const title of TARGETS.list_titles) {
+        const l = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title`);
+        if (l.ok) { probeList = title; break; }
+      }
+      const surfaceProbe = async (key, present, suffixFor) => {
+        if (!present) return;
+        if (!probeList) { finding(2, key, 'INFO', 'No existing declared list to probe; surface will be exercised at deploy time.'); return; }
+        const r = await probeGet(suffixFor(probeList));
+        finding(2, key, r.ok ? 'PASS' : 'WARN', r.ok ? 'Property surface present.' : `Property surface differs (HTTP ${r.status || r.error}); deploy step may fail.`);
+      };
+      await surfaceProbe('sealed_surface', TARGETS.declares_seal,
+        (t) => `web/lists/getbytitle('${odataName(t)}')/fields?$select=Sealed&$top=1`);
+      await surfaceProbe('allow_deletion_surface', TARGETS.declares_prevent_deletion,
+        (t) => `web/lists/getbytitle('${odataName(t)}')?$select=AllowDeletion`);
+      await surfaceProbe('custom_formatter_surface', TARGETS.declares_column_formatting,
+        (t) => `web/lists/getbytitle('${odataName(t)}')/fields?$select=CustomFormatter&$top=1`);
+      await surfaceProbe('form_formatter_surface', TARGETS.declares_form_formatting,
+        (t) => `web/lists/getbytitle('${odataName(t)}')/contenttypes?$select=ClientFormCustomFormatter&$top=1`);
+      // Intelligent-versioning trim: WARN if service-managed auto-trim governs.
+      if (TARGETS.declares_versioning && probeList) {
+        const vp = await probeGet(`web/lists/getbytitle('${odataName(probeList)}')?$expand=VersionPolicies&$select=VersionPolicies/DefaultTrimMode`);
+        if (vp.ok && vp.d.VersionPolicies && Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
+          finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
+        } else if (vp.ok) {
+          finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
+        } else {
+          finding(2, 'version_trim_mode', 'INFO', 'VersionPolicies surface not present on this tenant.');
+        }
+      } else if (TARGETS.declares_versioning) {
+        finding(2, 'version_trim_mode', 'INFO', 'No existing declared list to read version policy; checked at deploy time.');
+      }
+    }
+
+    // CSOM ProcessQuery availability (read-only Current-Web-Title query),
+    // needed for group owner correction when the pack declares groups.
+    if (TARGETS.declares_groups) {
+      try {
+        const digest = await getDigest();
+        const body =
+          '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint-assess">'
+          + '<Actions><Query Id="1" ObjectPathId="0"><Query SelectAllProperties="false"><Properties><Property Name="Title" ScalarProperty="true" /></Properties></Query></Query></Actions>'
+          + '<ObjectPaths><Property Id="0" ParentId="-1" Name="Web" /><StaticProperty Id="-1" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" /></ObjectPaths>'
+          + '</Request>';
+        const r = await fetchWithRetry(apiUrl('ProcessQuery'), {
+          method: 'POST',
+          headers: { 'Accept': 'application/json;odata=verbose', 'Content-Type': 'text/xml', 'X-RequestDigest': digest },
+          body,
+        });
+        finding(2, 'process_query', r.ok ? 'PASS' : 'WARN', r.ok ? 'CSOM ProcessQuery responds (group owner correction available).' : `ProcessQuery returned HTTP ${r.status}; owner correction will be degraded.`);
+      } catch (err) {
+        finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); owner correction will be degraded.`);
+      }
+    }
+
+    // Applied sensitivity label + Preservation Hold Library signal (governance INFO).
+    {
+      const sl = await probeGet('site/SensitivityLabelInfo');
+      if (sl.ok && sl.d && sl.d.DisplayName) finding(2, 'sensitivity_label', 'INFO', `Site sensitivity label: ${sl.d.DisplayName}.`);
+      const phl = await probeGet("web/lists/getbytitle('Preservation Hold Library')?$select=Title");
+      if (phl.ok) finding(2, 'preservation_hold', 'INFO', 'Preservation Hold Library present; the site is under a retention policy or hold.');
+    }
+
+    // ===================================================================
+    // Tier 3: not assessable (printed honesty block)
+    // ===================================================================
+    log('INFO', 'Tier 3: not assessable from operator site context.');
+    for (const item of NOT_ASSESSABLE) finding(3, 'not_assessable', 'NOT-ASSESSABLE', item);
+
+    // ===================================================================
+    // Verdict: worst outcome over the pack's requirement keys.
+    // ===================================================================
+    const byKey = {};
+    for (const f of findings) {
+      if (f.level === 'INFO' || f.level === 'NOT-ASSESSABLE') continue;
+      byKey[f.key] = f;
+    }
+    let blocked = null;
+    let warnings = 0;
+    for (const req of REQUIREMENTS) {
+      const f = byKey[req.key];
+      if (!f) continue;
+      if (f.level === 'BLOCKED') { if (!blocked) blocked = req; }
+      else if (f.level === 'WARN') warnings += 1;
+    }
+    const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';
+    // The level comes from the caller: 'DONE' is deploy's terminal signal, so a
+    // deploy including this partial must not print it before it provisions.
+    if (blocked) {
+      verdict = 'BLOCKED';
+      log(verdictLevel, `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
+    } else if (warnings > 0) {
+      verdict = 'DEGRADED';
+      log(verdictLevel, `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);
+    } else {
+      verdict = 'COMPATIBLE';
+      log(verdictLevel, `${prefix} pack: COMPATIBLE. No blocking or degrading findings.`);
+    }
+
+    return { findings, verdict };
   }
 
   // SharePoint resolves a list title, a field name and a site group name
@@ -1795,15 +2109,46 @@
   // partials, and re-indenting them to sit under this try would bury the
   // change in whitespace.
   try {
-  markPhase('Phase 1.1: read-only preflight');
+  markPhase('Phase 1.1: site assessment');
+  // Runs the site assessment and refuses a verdict the operator has not accepted.
+  log('INFO', 'Group 1: PREPARE');
+  log('INFO', 'Starting Phase 1.1: site assessment.');
+  const assessment = await assessSite({
+    requirements: ASSESS_REQUIREMENTS, targets: ASSESS_TARGETS,
+    notAssessable: ASSESS_NOT_ASSESSABLE, log, web: WEB,
+    origin: window.location.origin, verdictLevel: 'INFO',
+    fetchWithRetry, apiUrl, odataName, getDigest,
+  });
+  // Its own key: summary.errors.length gates eight separate aborts, and a
+  // finding is not a deployment error.
+  summary.assessment = assessment;
+  // Every blocking finding, not the first: the verdict keeps only one
+  // requirement, and a site blocked three ways would otherwise name one.
+  const assessBlocking = assessment.findings.filter(f => f.level === 'BLOCKED');
+  // Also on assessBlocking.length: the verdict only scans REQUIREMENTS, so a
+  // pack can be DEGRADED while carrying a BLOCKED finding it does not require.
+  if (assessment.verdict === 'BLOCKED' || assessBlocking.length > 0) {
+    // Re-stated at ERROR because the body logged the verdict at INFO, and a
+    // console filtered to errors would show the abort with nothing naming it.
+    for (const f of assessBlocking) log('ERROR', `  ${f.key}: ${f.detail}`);
+    log('ERROR', 'The assessment found a blocking condition; no deployment writes were attempted.');
+    return { ...summary, aborted: 'assessment-blocked' };
+  }
+  if (assessment.verdict === 'DEGRADED' && !ACKNOWLEDGE_DEGRADED) {
+    for (const f of assessment.findings.filter(f => f.level === 'WARN')) {
+      log('ERROR', `  ${f.key}: ${f.detail}`);
+    }
+    log('ERROR', 'The assessment found degrading conditions. Review them, set ACKNOWLEDGE_DEGRADED = true at the top of this script, and paste again.');
+    return { ...summary, aborted: 'assessment-degraded-unacknowledged' };
+  }
+  markPhase('Phase 1.2: read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
   // created from this schema. Validate every immutable identity before Phase 1.2
   // performs its first write. Mutable declared settings are reconciled and
   // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
   // always requires an explicit migration.
-  log('INFO', 'Group 1: PREPARE');
-  log('INFO', 'Starting Phase 1.1: read-only preflight.');
+  log('INFO', 'Starting Phase 1.2: read-only preflight.');
   invalidateFieldShapes();  // probes reflect phase-start state
   // Read-only, so lanes are free of write races, but the field wave still
   // waits for ALL list shapes: lookup fields validate against their target
@@ -1908,9 +2253,9 @@
     return { ...summary, aborted: 'existing-schema-shape-errors' };
   }
 
-  markPhase('Phase 1.2: permission levels and site groups');
-  // === Phase 1.2: custom permission levels + site groups ===
-  log('INFO', 'Starting Phase 1.2: permission levels and site groups.');
+  markPhase('Phase 1.3: permission levels and site groups');
+  // === Phase 1.3: custom permission levels + site groups ===
+  log('INFO', 'Starting Phase 1.3: permission levels and site groups.');
   {
     let digest0 = await getDigest();
 
@@ -2160,8 +2505,8 @@
         if (decision.kind === 'refuse') throw new Error(decision.reason);
         decisions.push(decision);
       } catch (err) {
-        log('ERROR', `Phase 1.2 permission level '${lvl.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.2', permissionLevel: lvl.name, error: err.message });
+        log('ERROR', `Phase 1.3 permission level '${lvl.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.3', permissionLevel: lvl.name, error: err.message });
       }
     }
 
@@ -2607,8 +2952,8 @@
         if (decision.kind === 'refuse') throw new Error(decision.reason);
         decisions.push(decision);
       } catch (err) {
-        log('ERROR', `Phase 1.2 site group '${grp.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.2', group: grp.name, error: err.message });
+        log('ERROR', `Phase 1.3 site group '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.3', group: grp.name, error: err.message });
       }
     }
 
@@ -2621,7 +2966,7 @@
     // successfully, interleaved with the refusals that already printed.
     // This phase decides no list and no ACL, so neither appears here.
     if (decisions.length > 0) {
-      log('INFO', `Phase 1.2 decisions (nothing applied yet):`);
+      log('INFO', `Phase 1.3 decisions (nothing applied yet):`);
       for (const decision of decisions) {
         const label = decision.object === 'level' ? 'permission level' : 'site group';
         const verb = decision.kind === 'create' ? 'create' : 'adopt';
@@ -2663,11 +3008,11 @@
           // the loop, so one run's transcript names every blocker instead
           // of only the first.
           const label = decision.object === 'level' ? 'permission level' : 'site group';
-          log('ERROR', `Phase 1.2 ${label} '${decision.name}': ${err.message}`);
+          log('ERROR', `Phase 1.3 ${label} '${decision.name}': ${err.message}`);
           if (decision.object === 'level') {
-            summary.errors.push({ phase: '1.2', permissionLevel: decision.name, error: err.message });
+            summary.errors.push({ phase: '1.3', permissionLevel: decision.name, error: err.message });
           } else {
-            summary.errors.push({ phase: '1.2', group: decision.name, error: err.message });
+            summary.errors.push({ phase: '1.3', group: decision.name, error: err.message });
           }
         }
       }
@@ -2677,11 +3022,11 @@
   // Permission-level or group failures make every later ACL assertion
   // untrustworthy. Stop before creating content-bearing lists or seed rows.
   if (summary.errors.length > 0) {
-    log('ERROR', 'Phase 1.2 security reconciliation failed; aborting before list creation.');
+    log('ERROR', 'Phase 1.3 security reconciliation failed; aborting before list creation.');
     return { ...summary, aborted: 'phase-0-security-errors' };
   }
 
-  markPhase('Phase 1.3: operator self-enrolment');
+  markPhase('Phase 1.4: operator self-enrolment');
   // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
   // Some mappings route all list administration through an empty-by-default
   // admin group (Owners hold only Contribute on the lists). Later phases
@@ -2690,7 +3035,7 @@
   // of the run and removes them at the end. An operator who was ALREADY a
   // member is left untouched. Only principals who can already manage the
   // group (its Site-Owners owner) can benefit; this adds no new authority.
-  log('INFO', 'Starting Phase 1.3: operator self-enrolment.');
+  log('INFO', 'Starting Phase 1.4: operator self-enrolment.');
   {
     const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
     for (const grp of enrollGroups) {
@@ -2728,7 +3073,7 @@
         log('INFO', `Enrolled operator '${me.Title}' into '${grp.name}' for this run; removed automatically at the end.`);
       } catch (err) {
         log('ERROR', `Operator self-enrolment for '${grp.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.3', group: grp.name, error: err.message });
+        summary.errors.push({ phase: '1.4', group: grp.name, error: err.message });
       }
     }
   }
@@ -2736,14 +3081,14 @@
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-  markPhase('Phase 1.4: enterprise reader enrolment');
-  markPhase('Phase 1.5: maintenance unseal');
+  markPhase('Phase 1.5: enterprise reader enrolment');
+  markPhase('Phase 1.6: maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
   // legitimate maintenance path is this script. Unseal declared fields so
   // the run's write phases work unchanged; Phase 4.1 re-seals and
   // verifies after every field write is done.
-  log('INFO', 'Starting Phase 1.5: maintenance unseal.');
+  log('INFO', 'Starting Phase 1.6: maintenance unseal.');
   invalidateFieldShapes();  // probes reflect phase-start state
   {
     const sealDeclared = [];
@@ -2786,7 +3131,7 @@
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
-          summary.errors.push({ phase: '1.5', list: listTitle, column: columnTitle, error: err.message });
+          summary.errors.push({ phase: '1.6', list: listTitle, column: columnTitle, error: err.message });
         }
       }, 4);
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);

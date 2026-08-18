@@ -9,6 +9,9 @@
 (async () => {
   const SITE_URL  = {{ site_url | tojson }};
   const SITE_ROLE = {{ site_role | tojson }};
+  // Set to true and paste again to deploy onto a site the assessment called
+  // DEGRADED. Defaults to refusing, like every probe's CONFIRMED flag.
+  const ACKNOWLEDGE_DEGRADED = false;
   const RELEASE_TAG = {{ release.release_tag | tojson }};
   const SCHEMA_VERSION = {{ release.schema_version | tojson }};
   const ASSESS_REQUIREMENTS = {{ assess_requirements | tojson(indent=2) }};
@@ -51,6 +54,10 @@
 {% include "_http_write.js.j2" %}
 
 {% include "_digest_cached.js.j2" %}
+
+{# The same body assess.js runs, never a second copy: it needs
+   fetchWithRetry, apiUrl, odataName and getDigest, all declared above. #}
+{% include "_assess_body.js.j2" %}
 
 {% include "deploy/_shape_probes.js.j2" %}
 {% include "deploy/_helpers.js.j2" %}

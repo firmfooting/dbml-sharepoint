@@ -22,6 +22,9 @@ class PhaseStep:
 
 DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
     ("PREPARE", (
+        # First, because a site the pack cannot run on should be reported
+        # before anything reads its schema.
+        PhaseStep("assess", "site assessment", "deploy/_assess_gate.js.j2"),
         PhaseStep("preflight", "read-only preflight", "deploy/_preflight.js.j2"),
         PhaseStep("security", "permission levels and site groups",
                   "deploy/_security_principals.js.j2"),
