@@ -2,9 +2,9 @@
 """Mutate every ceiling a pull request changes, and fail on a survivor.
 
 A constant in `analysis/limits.py` can be read by nothing any test exercises,
-so moving it changes nothing observable and the suite stays green. The #259
-sweep measured that over the whole module: 8 of 28 mutants survived, five
-ceilings among them. This script runs the same experiment automatically over
+so moving it changes nothing observable and the suite stays green. The corrected
+#259 sweep measured that over the whole module: 13 of 28 mutants survived across
+eight ceilings. This script runs the same experiment automatically over
 whichever ceilings a branch touches, so a new one arrives either enforced or
 with a recorded reason it is not.
 
@@ -18,15 +18,16 @@ Three of them read the mutated source rather than any behaviour. Two generated
 pages carry these values verbatim, so their currency tests regenerate from the
 mutant and fail on it whether or not a rule enforces the ceiling, and
 `test_limit_authority.py` scans the package for whatever number `limits.py`
-currently holds. MEASURED 2026-08-16, both directions of each pair:
+currently holds. MEASURED 2026-08-16 before #260, both directions of each
+pair:
 
-    MAX_FIELD_DESCRIPTION  survives, and reports killed with the API-docs
+    MAX_FIELD_DESCRIPTION  survived, and reported killed with the API-docs
                            deselect removed
-    MAX_VIEW_ROW_LIMIT     survives, and reports killed with the findings
+    MAX_VIEW_ROW_LIMIT     survived, and reported killed with the findings
                            deselect removed
     MAX_INTERNAL_NAME      at 31, the message gate matched the 31 inside
                            "Measured 2026-07-31" in a `_views.py` finding
-    MAX_DISPLAY_TITLE      killed, with every deselect in place
+    MAX_DISPLAY_TITLE      was killed, with every deselect in place
 
 A kill for the first three is the wrong answer, and leaving the API-docs test
 in is how the first run of the #259 sweep reported 28 kills and established
