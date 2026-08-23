@@ -641,27 +641,24 @@ def test_an_illegal_character_in_a_column_name_is_an_error(illegal: str) -> None
 
 
 def test_a_column_name_at_the_limit_is_accepted() -> None:
-    """The boundary, from the constant rather than a literal 32.
-
-    A test written against a hard-coded length passes while disagreeing with
-    the rule it is meant to pin, the moment somebody changes the constant.
-    """
+    """The fixed validator contract, not the production constant."""
     findings = validate(make_schema(
-        make_table("Risk", make_column("A" * MAX_INTERNAL_NAME)),
+        make_table("Risk", make_column("A" * 32)),
     ))
 
     none_of(findings, FindingCode.COLUMN_NAME_TOO_LONG)
 
 
 def test_a_column_name_over_the_limit_is_an_error() -> None:
+    name = "A" * 33
     findings = validate(make_schema(
-        make_table("Risk", make_column("A" * (MAX_INTERNAL_NAME + 1))),
+        make_table("Risk", make_column(name)),
     ))
 
     finding = only(findings, FindingCode.COLUMN_NAME_TOO_LONG)
     assert finding.severity == "error"
     assert finding.location == Location(
-        Section.SCHEMA, entity="Risk", column="A" * (MAX_INTERNAL_NAME + 1),
+        Section.SCHEMA, entity="Risk", column=name,
     )
     # The limit is the one value the location cannot carry, and it is what the
     # author needs in order to shorten the name.
@@ -1509,8 +1506,9 @@ def test_a_cross_site_column_whose_generated_name_would_be_too_long_is_an_error(
 ) -> None:
     """A cross-site column expands to `<name>Abbreviation` and `<name>SiteUrl`
     at deploy time, so the DECLARED name can be legal while the generated one
-    is not -- which SharePoint would refuse at field creation."""
-    long_name = "A" * (MAX_INTERNAL_NAME - len("Abbreviation") + 1)
+    exceeds this repository's configured internal-name contract. #291 tracks
+    authority for the platform boundary separately."""
+    long_name = "A" * 21
     findings = validate_against_mapping(
         make_schema(make_table("Risk", make_ref(long_name, "Risk.Id"))),
         make_bundle(
@@ -1524,6 +1522,20 @@ def test_a_cross_site_column_whose_generated_name_would_be_too_long_is_an_error(
     finding = only(findings, FindingCode.CROSS_SITE_GENERATED_NAME_TOO_LONG)
     assert finding.severity == "error"
     assert "Abbreviation" in finding.message
+
+
+def test_a_cross_site_generated_name_at_the_internal_name_limit_is_accepted() -> None:
+    """Twenty declared characters plus `Abbreviation` is exactly 32."""
+    name = "A" * 20
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_ref(name, "Risk.Id"))),
+        make_bundle(
+            entities=["Risk"],
+            cross_site_reference_columns=[CrossSiteRef(entity="Risk", column=name)],
+        ),
+    )
+
+    none_of(findings, FindingCode.CROSS_SITE_GENERATED_NAME_TOO_LONG)
 
 
 def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
@@ -1961,17 +1973,17 @@ def test_a_permission_level_description_over_the_ceiling_is_refused() -> None:
 
 
 def test_a_permission_level_description_at_the_ceiling_is_accepted() -> None:
-    """The complement, and it pins the BOUNDARY rather than the direction.
+    """The complement, pinning the repository contract rather than its source.
 
-    The server's message says "bigger than 512", so 512 itself is legal
-    against the raw SharePoint ceiling. This test only pins
+    The contract interprets the server's named 512 ceiling as inclusive; #291
+    tracks direct accepted-side evidence. This test only pins
     `PERMISSION_LEVEL_DESCRIPTION_TOO_LONG`, the code that measures against
     that ceiling; a 512-character description leaves no room for the marker
     and does fire `PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER`
     deliberately, which is a different code checked elsewhere.
     """
     none_of(
-        _level_findings("XX Level", description="x" * MAX_ROLE_DEFINITION_DESCRIPTION),
+        _level_findings("XX Level", description="x" * 512),
         FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG,
     )
 
