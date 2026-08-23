@@ -28,6 +28,7 @@ renders the page from both, and a currency test keeps them in step -- the
 same arrangement `generate_api.py` already has for the API reference.
 """
 
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
@@ -380,8 +381,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "shown the demo."
     ),
     FindingCode.DEMO_TITLE_MISSING_MARKER: (
-        "A demo row's `Title` does not start with `[DEMO] `, the marker "
-        "the teardown trusts to tell demo rows from real records."
+        f"A demo row's `Title` does not start with `{DEMO_TITLE_PREFIX}`, the prefix "
+        "rollback currently requires for its automatic demo-list heuristic. "
+        "A Title prefix is not row provenance; see #293."
     ),
     FindingCode.DEMO_VALUE_ON_CALCULATED_COLUMN: (
         "A demo row writes a calculated column. Set its inputs instead."

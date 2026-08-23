@@ -249,8 +249,8 @@ One declared demo/sample row (mapping `demo_items:` section).
 ("@me" (deploying operator) on person columns, "today+N"/"today-N" on
 date columns, {demo_ref: key} on lookups) is resolved by the generated
 demo-data.js at RUN time; semantic rules live in the validator. Every
-Title must start with "[DEMO] ": that marker is what the teardown
-trusts to distinguish demo rows from real records.
+Title must start with the configured demo prefix. Rollback currently uses
+that prefix as a demo-list heuristic, not as row provenance; see #293.
 
 ### `FormFormatting`
 

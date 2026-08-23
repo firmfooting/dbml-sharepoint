@@ -42,6 +42,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 
 if TYPE_CHECKING:
@@ -144,7 +145,7 @@ _REPORTING_ROW: tuple[str, str] = (
 _DEMO_ROW: tuple[str, str] = (
     DEMO_SCRIPT,
     (f"Optional demo rows (built with --seed): paste AFTER {DEPLOY_SCRIPT}. "
-     "Every row is '[DEMO] '-marked; delete before active use."),
+     f"Every row is '{DEMO_TITLE_PREFIX}'-marked; delete before active use."),
 )
 
 

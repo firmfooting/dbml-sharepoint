@@ -5,6 +5,7 @@ import datetime as dt
 import re
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.typemap import (
@@ -85,12 +86,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             ctx = f"demo_items[{entity_name}].{row.key}"
             at = Location(Section.DEMO_ITEMS, entity=entity_name, sub=row.key)
             demo_title = row.values.get("Title")
-            if not isinstance(demo_title, str) or not demo_title.startswith("[DEMO] "):
+            if not isinstance(demo_title, str) or not demo_title.startswith(
+                DEMO_TITLE_PREFIX,
+            ):
                 findings.append(Finding(
                     FindingCode.DEMO_TITLE_MISSING_MARKER,
-                    f"{ctx}: Title must start with '[DEMO] ' -- the marker "
-                    f"the teardown trusts to tell demo rows from real "
-                    f"records.",
+                    f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the prefix "
+                    f"rollback currently requires for its automatic demo-list "
+                    f"heuristic. A Title prefix is not row provenance; see #293.",
                     location=at,
                 ))
             for col_name, value in row.values.items():
