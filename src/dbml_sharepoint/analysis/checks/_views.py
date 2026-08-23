@@ -642,12 +642,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 at_where = Location(
                     Section.VIEWS, entity=entity_name, view=view.title, sub="where",
                 )
-                # `condition_findings` rather than `validate_condition`: the
-                # latter returns MESSAGES, so all ~28 of the grammar's distinct
-                # rejections arrived here indistinguishable and had to share
-                # one code. This one returns them already classified, so a
-                # filter rejected for an unrenderable operator and one rejected
-                # for an unknown column are now different codes.
+                # The classified entry point keeps the grammar's distinct
+                # rejections as distinct finding codes and locations: an
+                # unrenderable operator is not flattened into the same result
+                # as an unknown column.
                 findings.extend(
                     condition_findings(
                         view.where,

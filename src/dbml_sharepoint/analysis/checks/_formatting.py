@@ -6,8 +6,8 @@ from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
+    condition_findings,
     to_validation,
-    validate_condition,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
@@ -409,24 +409,15 @@ def check(vc: ValidationContext) -> list[Finding]:
         types = effective_column_types(
             {c.name: c.type for c in rule_table.columns}, xcols,
         )
-        problems = validate_condition(
+        problems = condition_findings(
             rule.when,
             target=VALIDATION,
             rendered=rendered_columns(rule_table, xcols) | {"Title"},
             types=types,
             lookups={c.name for c in rule_table.columns if c.ref is not None},
-            context=f"{ctx}.when",
+            at=Location(Section.LIST_VALIDATION, entity=entity_name, sub="when"),
         )
-        findings.extend(
-            Finding(
-                FindingCode.INVALID_CONDITION,
-                message,
-                location=Location(
-                    Section.LIST_VALIDATION, entity=entity_name, sub="when",
-                ),
-            )
-            for message in problems
-        )
+        findings.extend(problems)
         if not problems:
             formula = f"={to_validation(rule.when, types)}"
             for internal in types:

@@ -55,6 +55,12 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "invalid_condition": (
+        "Retired 2026-08-23. It collapsed the condition grammar's distinct "
+        "rejections into one message-only code. List validation now reports "
+        "the same specific condition codes and leaf locations as the other "
+        "conditional surfaces."
+    ),
     "entity_note_may_not_round_trip": (
         "Retired 2026-08-14. It refused an ampersand, a line break or a run "
         "of spaces in a table note, because whether a list Description "
@@ -732,11 +738,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "SharePoint exposes none of them, so declare a bare column "
         "index."
     ),
-    FindingCode.INVALID_CONDITION: (
-        "The condition grammar rejected a declared `when:`. "
-        "`conditions.py` has 28 distinct reasons behind this and "
-        "reports them as prose."
-    ),
+
     FindingCode.JOIN_THRESHOLD_APPROACHED: (
         "A view renders join-bearing columns at that ceiling, which "
         "held on the tenant measured but may not travel."
