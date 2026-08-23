@@ -51,6 +51,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -614,17 +615,23 @@ def _ask_seed(console: Console) -> bool:
     template. Fixing it needs the multi-template selection that owns the
     question, so it is named here rather than guessed at.
 
-    The escape before [DEMO] is rich's documented way to mean a literal
+    The escape before the marker is rich's documented way to mean a literal
     bracket. MEASURED 2026-08-11: rich prints it identically with or without,
     because DEMO is not a style it knows. Kept anyway -- it is the documented
     spelling and costs one character -- but NOT because an unescaped one was
     seen to break.
+
+    The marker is interpolated without its trailing space, which the sentence
+    supplies: this names the marker mid-sentence rather than quoting the
+    string a Title is matched against.
     """
     guide = "30-deploy/deploy.md"
     _guidance(
         console,
-        r"Demo rows are titled \[DEMO] and rollback treats a list of them as "
-        "demo-only. Some families seed deliberately alarming data so a view "
+        rf"Demo rows are titled \{DEMO_TITLE_PREFIX.rstrip()} and rollback "
+        "currently uses that prefix as its automatic demo-list heuristic. "
+        "A Title prefix is not provenance (#293). Some families seed "
+        "deliberately alarming data so a view "
         f"renders at all -- read {guide} before seeding a site that already "
         "holds real data.",
     )

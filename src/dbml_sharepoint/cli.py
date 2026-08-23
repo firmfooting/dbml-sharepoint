@@ -14,6 +14,7 @@ import yaml
 from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint import __version__
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.validator import validate_all
@@ -522,7 +523,7 @@ def build(
         False,
         "--seed",
         help="Also emit demo-data.js.txt from the mapping's demo_items -- "
-        "'[DEMO] '-marked sample rows pasted after deploy.js.txt.",
+        f"'{DEMO_TITLE_PREFIX}'-marked sample rows pasted after deploy.js.txt.",
     ),
     enterprise_reader: str | None = typer.Option(
         None,

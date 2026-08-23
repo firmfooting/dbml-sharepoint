@@ -62,6 +62,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.styles", "the fleet style standard"),
     ("analysis.conditions", "condition normalisation, validation and rendering"),
     ("analysis.condition_description", "human-readable condition prose"),
+    ("analysis.demo_marker", "the demo-row Title-prefix contract"),
     ("analysis.forms", "composing declared form visibility"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
@@ -363,7 +364,13 @@ def template_contract(path: Path) -> str:
 
     block = _JS_BLOCK_COMMENT.match(text.lstrip())
     if block:
-        body = _JINJA_TAG.sub("", block.group(1))
+        from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
+
+        # Most Jinja tags are implementation detail and disappear from the
+        # contract page. This marker is operator-facing content inside the
+        # contract itself, so resolve it from the same owner as the template.
+        body = block.group(1).replace("{{ demo_title_prefix }}", DEMO_TITLE_PREFIX)
+        body = _JINJA_TAG.sub("", body)
         lines = [line.strip().lstrip("*").strip() for line in body.splitlines()]
         paragraphs: list[str] = []
         current: list[str] = []

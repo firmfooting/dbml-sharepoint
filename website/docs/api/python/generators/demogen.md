@@ -1,6 +1,6 @@
 ---
 title: demogen
-sidebar_position: 24
+sidebar_position: 25
 ---
 
 # `dbml_sharepoint.generators.demogen`
@@ -15,14 +15,8 @@ script knows whether to write a literal, resolve the deploying operator
 Id (lookups also take `<Name>Id`), or compute a run-time date from a
 `today+/-N` offset. Cadence-derived demo surfaces (Review due, overdue
 formatting, Tolerance due) must land on whatever day the demo runs.
-The '[DEMO] ' Title marker (validated mandatory) is the in-record notice
-and the teardown contract.
-
-### `DEMO_TITLE_PREFIX`
-
-```python
-DEMO_TITLE_PREFIX = '[DEMO] '
-```
+The Title marker (validated mandatory) is the in-record notice and the
+teardown contract; `analysis/demo_marker.py` declares it.
 
 ### `generate_demo_js`
 
