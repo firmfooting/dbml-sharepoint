@@ -47,10 +47,12 @@ from dbml_sharepoint.model.mapping_types import (
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
+    PolymorphicPattern,
     Principal,
     RetentionPolicy,
     RoleAssignment,
     SiteGroup,
+    WatchedList,
 )
 from dbml_sharepoint.model.parser import (
     EnumDef,
@@ -444,6 +446,102 @@ def test_every_schema_finding_opens_with_its_own_location_path() -> None:
             f"{finding.code}: message {finding.message!r} does not open with "
             f"its own location path {finding.location.path!r}"
         )
+
+
+def test_every_mapping_finding_carries_a_location() -> None:
+    """The other entry point, which is where almost every rule actually lives.
+
+    The sweep above covers `validate(schema)` and reaches the schema-only
+    rules. 132 call sites in this suite go through `validate_against_mapping`
+    instead, and nothing asserted anything about their locations, so
+    `checks/_structure.py` sat at 15 of 42 construction sites carrying one
+    while the suite stayed green.
+
+    ONLY THE PRESENCE HALF IS ASSERTED HERE, not the message prefix. The
+    prefix property is real for `validate`, whose messages are rendered from
+    `Location.path`; it has never held for the mapping checks, whose messages
+    name a path the mapping author typed (`Risk.indexes`, `cross_site
+    Risk.Region`) rather than the one `path` renders (`schema[Risk].indexes`).
+    Reworking 155 messages to match is a separate change, and asserting it
+    here would mean rewording every one of them in this one.
+
+    `test_findings.test_every_finding_site_carries_a_location` is the stronger,
+    static form of the same property: it proves no CONSTRUCTION SITE omits the
+    keyword, including sites no fixture reaches. This one catches what static
+    analysis cannot, which is a site passing a location that computes to None.
+    """
+    schema = make_schema(
+        make_table(
+            "Risk",
+            make_column("Title"),
+            make_column("Score", "calculated_number"),
+            make_column("Tally", "calculated_number"),
+            make_column("Tags", "status[]"),
+            make_column("Detail", "longtext"),
+            make_column("Region"),
+            make_ref("Owner", "Register.Id"),
+            indexes=["Tags", "Detail", "Score", "Region", "Region"],
+            note="The risk list.",
+        ),
+        make_table(
+            "Register",
+            make_column("Title"),
+            make_column("Label", "calculated_text"),
+            note="The register list.",
+        ),
+        make_table("Stray", make_column("Title"), note="Declared but unmapped."),
+        enums=[make_enum("status", "Open", "Closed")],
+    )
+    bundle = make_bundle(
+        entities={
+            "Risk": EntityMapping(
+                name="Risk", kind="List", base_template=100, site_role="default",
+            ),
+            "Register": EntityMapping(
+                name="Register", kind="List", base_template=100,
+                site_role="default", display_column="Label",
+            ),
+            "Ghost": EntityMapping(
+                name="Ghost", kind="List", base_template=101, site_role="default",
+                accept_unindexable_display_column=True,
+            ),
+        },
+        calculated_formulas={
+            "Risk": {
+                "Score": "=[Score] + [Detail] + [Tags] + [Nowhere]",
+                "Tally": "missing the equals sign",
+                "Title": "=1",
+            },
+            "Register": {"Label": "=[Title]"},
+        },
+        cross_site_reference_columns=[
+            CrossSiteRef(entity="Risk", column="Region"),
+            CrossSiteRef(entity="Risk", column="Absent"),
+            CrossSiteRef(entity="Nowhere", column="Title"),
+        ],
+        watched_lists=[WatchedList(entity="Nowhere", column="Title")],
+        polymorphic_patterns=[
+            PolymorphicPattern(list="Risk", field="Absent", discriminator="Title"),
+        ],
+        versioning_overrides={"Nowhere": {"enabled": False}},
+    )
+
+    findings = validate_against_mapping(schema, bundle)
+
+    # Guards on the fixture, not on the rule. A mapping that stopped tripping
+    # things would satisfy the loop below with nothing checked, and a count
+    # alone would not notice one rule firing repeatedly in place of many.
+    codes = {f.code for f in findings}
+    assert len(findings) >= 20, findings
+    assert len(codes) >= 15, sorted(codes)
+
+    missing = sorted({
+        f"{f.code} ({f.message[:60]})" for f in findings if f.location is None
+    })
+    assert not missing, (
+        f"{len(missing)} finding(s) from validate_against_mapping carry no "
+        f"location: " + ", ".join(missing)
+    )
 
 
 def test_a_duplicate_table_name_is_an_error() -> None:

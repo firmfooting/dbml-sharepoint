@@ -58,6 +58,32 @@ def test_the_budget_reserves_room_for_the_marker_to_grow() -> None:
     )
 
 
+#: The reserve, written out rather than imported. See the test below for why.
+_PINNED_LEVEL_RESERVE = 21
+
+
+def test_a_description_the_budget_accepts_survives_the_marker_growing() -> None:
+    """The permission-level mirror of the group assertion.
+
+    `test_group_description` carries the argument: every other test of this
+    constant derives its expectation from the constant, so all of them stay
+    green with the reserve at zero.
+
+    Its own assertion rather than one parametrised over both surfaces, because
+    the two reserves are separate constants against separately measured
+    ceilings, which is the coupling both modules' comments argue against.
+    """
+    family, level_name = "risk-register", "Risk Contributor"
+    marker = marker_for_level(family, level_name)
+    accepted = "z" * level_description_budget(family, level_name)
+    grown = marker + "v" * _PINNED_LEVEL_RESERVE
+    assert len(f"{accepted} {grown}") <= MAX_ROLE_DEFINITION_DESCRIPTION, (
+        f"a description of {len(accepted)} characters is accepted today but "
+        f"would not fit beside a marker {_PINNED_LEVEL_RESERVE} characters "
+        f"longer, so the reserve no longer holds back what it claims to."
+    )
+
+
 def test_an_absurd_family_name_yields_a_zero_budget_not_a_negative_one() -> None:
     """A negative budget makes note[:budget] keep everything but the last N chars."""
     absurd = "f" * MAX_ROLE_DEFINITION_DESCRIPTION
