@@ -116,11 +116,8 @@ def test_the_finding_vocabulary_has_one_home() -> None:
 #: Modules that still construct findings with no `location=`, with the issue
 #: that closes them. A RATCHET, exactly like `_reachability.NOT_YET_REACHED`:
 #: a name comes out when the module is converted and one going back in needs a
-#: reason in the pull request. `analysis/validator.py` left it with #99's first
-#: pass; `_structure.py` holds 25 sites whose "path" is often a derived name
-#: rather than a declared one, so it may need a `Section`/`Location` member
-#: that does not exist yet.
-_LOCATION_INCOMPLETE = frozenset({"_structure.py"})  # 25 sites, #99
+#: reason in the pull request. Empty after #253 completed `_structure.py`.
+_LOCATION_INCOMPLETE: frozenset[str] = frozenset()
 
 
 def test_every_finding_site_carries_a_location() -> None:

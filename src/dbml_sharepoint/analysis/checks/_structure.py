@@ -395,6 +395,9 @@ def _display_column(
                 f"list view threshold\" while views carry on working "
                 f"normally. If this list will stay small, set "
                 f"accept_unindexable_display_column: true on the entity.",
+                location=Location(
+                    Section.ENTITIES, entity=entity_name, sub="display_column",
+                ),
             ))
     elif entity.accept_unindexable_display_column:
         # Reaching here means NOT (target AND calculated), which is three
@@ -413,6 +416,10 @@ def _display_column(
             f"{entity_name}: accept_unindexable_display_column is set, but "
             + " and ".join(reasons)
             + ". Remove it -- there is nothing to accept.",
+            location=Location(
+                Section.ENTITIES, entity=entity_name,
+                sub="accept_unindexable_display_column",
+            ),
         ))
     return findings + _display_column_index(
         vc, entity_name, display, is_calculated, lookup_targets,
@@ -466,6 +473,9 @@ def _display_column_index(
             f"automatically because this list is a lookup target, so "
             f"the deploy would create that index on a field that does "
             f"not exist.",
+            location=Location(
+                Section.ENTITIES, entity=entity_name, sub="display_column",
+            ),
         ))
     display_column = declared_names.get(display)
     unindexable = (
@@ -482,6 +492,9 @@ def _display_column_index(
             f"working past {LIST_VIEW_THRESHOLD:,} items, and the deploy sets "
             f"Indexed=true, reads it back and fails when it did not "
             f"stick. Name an indexable column as display_column.",
+            location=Location(
+                Section.ENTITIES, entity=entity_name, sub="display_column",
+            ),
         ))
     return findings
 
@@ -495,6 +508,7 @@ def _mapping_and_schema_agree(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 FindingCode.ENTITY_NOT_IN_SCHEMA,
                 f"Mapping references unknown entity: {entity_name}",
+                location=Location(Section.ENTITIES, entity=entity_name),
             ))
 
     # ...and every schema table must have a mapping entry (opposite direction).
@@ -506,6 +520,7 @@ def _mapping_and_schema_agree(vc: ValidationContext) -> list[Finding]:
                 FindingCode.UNMAPPED_SCHEMA_TABLE,
                 f"Schema table {table.name} has no mapping entry in "
                 "sharepoint-mapping.yaml (would be omitted from the deploy plan).",
+                location=Location(Section.SCHEMA, entity=table.name),
             ))
     return findings
 
@@ -543,6 +558,10 @@ def _cross_site_references(vc: ValidationContext) -> list[Finding]:
                     "be unique. Its logical DBML column is replaced by generated "
                     "Abbreviation and SiteUrl fields, so the column-level unique "
                     "constraint would not be deployed.",
+                    location=Location(
+                        Section.CROSS_SITE_REFERENCE_COLUMNS,
+                        entity=xref.entity, column=xref.column,
+                    ),
                 ))
             findings += _cross_site_generated_names(xref, table)
     return findings
@@ -564,6 +583,10 @@ def _cross_site_generated_names(xref: CrossSiteRef, table: Table) -> list[Findin
                 f"cross_site {xref.entity}.{xref.column}: generated "
                 f"name '{generated}' is {len(generated)} chars; "
                 f"SP internal-name limit is {MAX_INTERNAL_NAME}.",
+                location=Location(
+                    Section.CROSS_SITE_REFERENCE_COLUMNS,
+                    entity=xref.entity, column=xref.column, sub=generated,
+                ),
             ))
         if any(col.name == generated and col.name != xref.column for col in table.columns):
             findings.append(Finding(
@@ -571,6 +594,10 @@ def _cross_site_generated_names(xref: CrossSiteRef, table: Table) -> list[Findin
                 f"cross_site {xref.entity}.{xref.column}: generated field "
                 f"{generated!r} collides with the declared DBML column "
                 f"{xref.entity}.{generated}.",
+                location=Location(
+                    Section.CROSS_SITE_REFERENCE_COLUMNS,
+                    entity=xref.entity, column=xref.column, sub=generated,
+                ),
             ))
     return findings
 
@@ -611,6 +638,10 @@ def _index_declarations(entity_name: str, table: Table) -> list[Finding]:
                 FindingCode.COMPOSITE_INDEX_UNSUPPORTED,
                 f"{ctx}: composite index {index.columns!r} is unsupported; "
                 "SharePoint deployment supports one column per DBML index.",
+                location=Location(
+                    Section.SCHEMA, entity=entity_name,
+                    sub=f"indexes[{position}]",
+                ),
             ))
             continue
         settings = {
@@ -627,6 +658,10 @@ def _index_declarations(entity_name: str, table: Table) -> list[Finding]:
                 f"{ctx}: DBML index settings {configured!r} are unsupported by "
                 "SharePoint. Declare a bare column index; use the column's "
                 "[unique] setting when uniqueness is required.",
+                location=Location(
+                    Section.SCHEMA, entity=entity_name,
+                    sub=f"indexes[{position}]",
+                ),
             ))
     return findings
 
@@ -640,6 +675,9 @@ def _duplicate_indexes(
         findings.append(Finding(
             FindingCode.DUPLICATE_INDEX_TARGET,
             f"{entity_name}.indexes: duplicate index target {duplicate!r}.",
+            location=Location(
+                Section.SCHEMA, entity=entity_name, column=duplicate, sub="index",
+            ),
         ))
     # Unique fields carry an implicit SharePoint index and count toward
     # the same per-list ceiling as explicit declarations.
@@ -649,6 +687,9 @@ def _duplicate_indexes(
             FindingCode.INDEX_DUPLICATES_UNIQUE_COLUMN,
             f"{entity_name}.indexes: {duplicate!r} is already indexed by "
             "its column [unique] setting; remove the redundant indexes entry.",
+            location=Location(
+                Section.SCHEMA, entity=entity_name, column=duplicate, sub="index",
+            ),
         ))
     return findings
 
@@ -688,6 +729,7 @@ def _index_ceiling(vc: ValidationContext, entity_name: str) -> list[Finding]:
             f"{len(declared)} declared in indexes {{ }}"
             + "".join(f", plus {item}" for item in extra)
             + ".",
+            location=Location(Section.SCHEMA, entity=entity_name, sub="indexes"),
         )]
     if len(effective_indexes) >= INDEX_WARN_AT:
         # Why the warning band exists at all (the count this build can see
@@ -701,6 +743,7 @@ def _index_ceiling(vc: ValidationContext, entity_name: str) -> list[Finding]:
             f"creates indexes by itself -- opening a sorted view on an "
             f"unindexed column adds one -- and those are invisible to this "
             f"build, so leave headroom.",
+            location=Location(Section.SCHEMA, entity=entity_name, sub="indexes"),
         )]
     return []
 
@@ -725,6 +768,9 @@ def _indexable_columns(
                 FindingCode.INDEX_COLUMN_NOT_RENDERED,
                 f"{entity_name}.indexes: {col_name!r} is not a "
                 f"rendered column of {entity_name}{hint}.",
+                location=Location(
+                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                ),
             ))
             continue
         column = columns_by_name.get(col_name)
@@ -754,6 +800,9 @@ def _indexable_columns(
                 f"indexes {{ }}, or declare it as a single-value "
                 f"{element_type(column.type)!r} column, which can carry "
                 f"an index.",
+                location=Location(
+                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                ),
             ))
         elif unindexable is not None:
             findings.append(Finding(
@@ -761,6 +810,9 @@ def _indexable_columns(
                 f"{entity_name}.indexes: {col_name!r} is a "
                 f"{unindexable} column, which SharePoint "
                 f"cannot index.",
+                location=Location(
+                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                ),
             ))
     return findings
 
@@ -919,6 +971,9 @@ def _calculated_formula(
             f"{table.name}.{col.name}: calculated column has no "
             f"formula -- add calculated_formulas.{table.name}."
             f"{col.name} to the mapping.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         )]
     findings: list[Finding] = []
     if not formula.startswith("="):
@@ -926,6 +981,9 @@ def _calculated_formula(
             FindingCode.CALCULATED_FORMULA_MISSING_EQUALS,
             f"{table.name}.{col.name}: calculated formula must start "
             f"with '='.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         ))
     if len(formula) > MAX_CALCULATED_FORMULA:
         findings.append(Finding(
@@ -933,6 +991,9 @@ def _calculated_formula(
             f"{table.name}.{col.name}: calculated formula is "
             f"{len(formula)} chars; SharePoint's limit is "
             f"{MAX_CALCULATED_FORMULA}.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         ))
     # SharePoint resolves [Column] references when the field is
     # CREATED and rejects the POST (HTTP 500, "The formula refers to
@@ -944,6 +1005,9 @@ def _calculated_formula(
             FindingCode.CALCULATED_FORMULA_SELF_REFERENCE,
             f"{table.name}.{col.name}: calculated formula references "
             f"itself.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         ))
     for ref in sorted(refs - rendered):
         findings.append(Finding(
@@ -952,6 +1016,9 @@ def _calculated_formula(
             f"[{ref}], which is not a rendered column of "
             f"{table.name} -- SharePoint would reject the field "
             f"creation at deploy time.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         ))
     findings += _formula_operands(table, col, refs & rendered, columns_by_name)
     # A DEFERRED lookup exists by the end of the deploy but not when
@@ -970,6 +1037,9 @@ def _calculated_formula(
             f"target is created later (a self-reference or a "
             f"circular one). The calculated field is created in "
             f"Phase 1, so the column does not exist yet.",
+            location=Location(
+                Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
+            ),
         ))
     return findings
 
@@ -1017,6 +1087,10 @@ def _formula_operands(
                 f"supported operand type instead "
                 f"({_SUPPORTED_CALCULATED_OPERANDS}), or drop the "
                 f"formula.",
+                location=Location(
+                    Section.CALCULATED_FORMULAS,
+                    entity=table.name, column=col.name,
+                ),
             ))
             continue
         forbidden_kind = (
@@ -1037,6 +1111,10 @@ def _formula_operands(
             f"have written to the site. Compute from a supported "
             f"operand type instead ({_SUPPORTED_CALCULATED_OPERANDS}), "
             f"or drop the formula.",
+            location=Location(
+                Section.CALCULATED_FORMULAS,
+                entity=table.name, column=col.name,
+            ),
         ))
     return findings
 
@@ -1107,5 +1185,9 @@ def _calculated_column_indexes(vc: ValidationContext) -> list[Finding]:
                     f"{table.name}.indexes: {col_name!r} is a "
                     f"calculated column -- SharePoint cannot index calculated "
                     f"columns.",
+                    location=Location(
+                        Section.SCHEMA,
+                        entity=table.name, column=col_name, sub="index",
+                    ),
                 ))
     return findings
