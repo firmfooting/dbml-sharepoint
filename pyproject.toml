@@ -123,14 +123,14 @@ ban-relative-imports = "all"
 # NOT_YET_REACHED: set ABOVE today's worst so it blocks nothing now, and
 # lowered as the offenders are split. Never raised to make a build pass.
 #
-# 72 is `analysis/checks/_structure.py::check`. The other two over 40 are
-# `_views.py::check` (58) and `_formatting.py::check` (48); #168 decomposes
-# all three, and each PR that lands should bring this number down with it.
+# 66 leaves six points above today's worst, `_views.py::check` at 60.
+# `_structure.py::check` fell from 72 to 1 after its helpers were extracted (#254).
+# `_formatting.py::check` is 49 and `_retirement.py::check` is 40.
 #
 # Deliberately NOT the default of 10. That flags 25 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
-max-complexity = 72
+max-complexity = 66
 
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,
