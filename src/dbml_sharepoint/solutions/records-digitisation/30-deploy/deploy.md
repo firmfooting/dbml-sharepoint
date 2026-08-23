@@ -25,18 +25,11 @@ follow.
       reach the verdict, and that is deliberate rather than lax: see the
       permissions section below.
 - [ ] `destination_verdict` members match the vocabulary your program will
-      defend. These are what every operational view filters on and what the
-      colour map keys on, so a renamed member has to be renamed in three
-      places or in none: the enum, the colour map in `mapping.yaml`, and the
-      `where` clauses of the *Cannot keep a record here* and *Not yet
-      assessed* views.
+      defend. Rename a member in four places or not at all: the enum, colour
+      map, view filters and `list_validation`. Update any matching demo row.
 - [ ] **The three multi-value member lists name your environment, not a
-      generic one.** `disposal_suspension_trigger` should list the grounds
-      your jurisdiction actually recognises; `audit_event` should list the
-      events your platforms can plausibly log; `export_method` should name
-      the routes your vendors actually offer. These are the columns that make
-      the register comparable across platforms, and a member nobody will ever
-      tick is a member that makes the picker longer for nothing.
+      generic one.** Update the enum and every matching `demo_items` value
+      together; the validator checks demo rows even when `--seed` is absent.
 - [ ] **Decide the member lists before the first paste, not after.** This
       tool does not change a column's type on an already-deployed list, and
       removing a Choice member that rows already hold leaves those rows
@@ -73,7 +66,8 @@ creates six platforms covering every view and every colour map, including
 the one everybody recognises: a clinical governance **shared drive** that
 answers No to all six questions, holds an **empty** set of export routes and
 comes back *Not a destination*. It is the row that washes pink in the
-default view, and the row the *No bulk export route* view is built to find.
+default view, and the row the *No self-service bulk export route* view is
+built to find.
 
 No demo row names a commercial product, and that is a rule rather than
 house style. A shipped row attaching *"no bulk export, verdict: not a
@@ -91,9 +85,9 @@ demo-only content.
 - [ ] `RD_Platform` exists; `Platform`, `Business domain`, `Lifecycle
       status`, all six capability answers, `Destination verdict` and
       `Follow-up required` are required.
-- [ ] All five declared views appear: **Platforms in service** (the
+- [ ] All five declared views appear: **Current platform inventory** (the
       default), **Not yet assessed**, **Cannot keep a record here**,
-      **Follow-up required** and **No bulk export route**. If you seeded,
+      **Follow-up required** and **No self-service bulk export route**. If you seeded,
       none of them is empty. The generated **All Items** recovery view is
       hidden from the modern view bar because this template has an authored
       default.
@@ -114,14 +108,15 @@ demo-only content.
       grey chip everywhere - which reads as *measured and unremarkable*
       rather than as *not rendered*. If you add one anyway, this is what you
       will get.
-- [ ] **The multi-value view really filters.** *No bulk export route* shows
+- [ ] **The multi-value view really filters.** *No self-service bulk export
+      route* shows
       the shared drive (whose export routes are empty) and the platforms
       that offer only vendor-run or manual routes, and it does **not** show
       the electronic medical record. `not_includes` returns the rows without
       the member **and** the empty rows, which is what is wanted here: a
       platform with no route at all is the worst case, not an omission.
 - [ ] **The row wash fires exactly once.** Only the shared drive is washed,
-      and only in *Platforms in service*: a view formatter can read only the
+      and only in *Current platform inventory*: a view formatter can read only the
       columns its view displays, and `Destination verdict` and `Lifecycle
       status` are both in that view's fields. Drop either from `fields` and
       the wash stops firing with a clean build and no error anywhere.
@@ -135,16 +130,23 @@ demo-only content.
       because the action is single-line: a validation formula cannot
       reference a multi-line column at all, so a `longtext` action would have
       made the rule impossible rather than merely unenforced.
+- [ ] Select **Suitable with named configuration** or **Interim only - export
+      with metadata proven** without
+      follow-up. The save is refused until the box is ticked and the action is
+      named. Select any assessed verdict without `Assessment date`; it is also
+      refused. **Not assessed** remains the undated starting state.
+- [ ] Set lifecycle to **Decommissioning** with any other verdict. The save is
+      refused until the verdict is **Not a destination**.
 - [ ] **`Assessment date` refuses a future date**, with its own message. It
       is a per-column rule rather than a list one precisely so it keeps that
       message; the list has only one `ValidationMessage` to spend.
 - [ ] List Settings -> Indexed columns shows exactly four: `Lifecycle
       status`, `Destination verdict`, `Business domain` and `Follow-up
       required`. The build manifest lists the same four. Every declared view
-      filters on one of them, *No bulk export route* included: SharePoint
-      refuses an index on a multi-value column outright, so that view is
-      paired with `Lifecycle status`, and an AND is served past the list view
-      threshold when any single condition is indexed.
+      filters on one of them. *No self-service bulk export route* is paired
+      with `Lifecycle status` to suppress the build warning, not to claim an
+      unmeasured threshold guarantee. Confirm the one-row-per-platform
+      inventory remains below the governance trigger.
 - [ ] As an ordinary Member: read-only.
 - [ ] Populate **RD Records Digitisation Program**; delete the demo rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
@@ -155,8 +157,10 @@ demo-only content.
 ## The permissions, and what they are not
 
 One Contribute group holds custodians and assessors together. It looks like
-the wrong shape and it is the only honest one: SharePoint has **no
-field-level permissions**. `list_permissions` is list-scoped, and a form
+the wrong shape and it is the only honest one: [Microsoft's permission
+hierarchy](https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels#overview-and-permissions-inheritance)
+ends at a list item and defines no field scope. `list_permissions` is
+list-scoped, and a form
 visibility rule evaluates against the item's own field values, never against
 the signed-in user. So a second, assessor-only group would create two groups
 and control nothing - anybody with Contribute can switch to *All Items* and

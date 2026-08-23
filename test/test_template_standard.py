@@ -507,16 +507,9 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "State the input": "Identify",
         "How they are involved": "Act",
     },
-    # Two consecutive Assess sections, which §1.2 permits and this form
-    # depends on. "Can it keep a record" is the six capability questions a
-    # custodian answers from memory before the assessment interview; "Evidence
-    # and method" is the three multi-value lists that qualify them, filled in
-    # with the assessor and in front of the platform. One heading over all
-    # nine is a wall of fields in front of somebody answering six questions.
-    #
-    # System holds the assessment provenance rather than a calculated column,
-    # and that is the beat it belongs to: who reached the verdict and when is
-    # what makes the row auditable, and it is the last thing anybody types.
+    # Consecutive Assess sections are permitted by §1.2.
+    # "Can it keep a record" holds capability questions; "Evidence and method" qualifies them.
+    # System holds the assessment provenance typed after the verdict.
     ("records-digitisation", "Platform"): {
         "The platform": "Identify",
         "Can it keep a record": "Assess",

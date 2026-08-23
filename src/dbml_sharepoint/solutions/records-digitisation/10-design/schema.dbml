@@ -133,7 +133,7 @@ Enum audit_event {
 // not equivalent: a vendor-run extract is a purchase order and a lead time,
 // self-service is a Tuesday afternoon, and "one item at a time" is not an
 // export route at all for a collection of any size. An empty set is the
-// finding, and the "No bulk export route" view is built on it.
+// finding, and the "No self-service bulk export route" view is built on it.
 Enum export_method {
   "Vendor-run bulk extract"
   "Self-service bulk export"
@@ -171,7 +171,7 @@ Table Platform {
   DestinationVerdict          destination_verdict          [not null, default: 'Not assessed', note: 'The assessor answer, typed by a person. Nothing computes it: recording that the answers say no and the risk is accepted with named configuration is the whole job']
   VerdictBasis                longtext                     [note: 'Why the verdict is what it is, in a few sentences: what was demonstrated, what was taken on trust, and what has to be configured. Categories of record only, never examples, and no patient or client identifiers']
   FollowUpRequired            boolean                      [not null, default: false, note: 'Whether anything has to happen before this verdict can be relied on. The one Yes/No column here, because the assessor is the person who would know']
-  FollowUpAction              nvarchar                     [note: 'The single next action, in one line, with who owns it. If it needs a paragraph it needs a project, and the project belongs somewhere else']
+  FollowUpAction              nvarchar                     [note: 'The single next action, in one line, with who owns it. If it needs a paragraph it needs a project, and the project belongs somewhere else. Categories, never examples, and no patient or client identifiers']
 
   // --- Assessment provenance -----------------------------------------------
   // Without these the register is hearsay: a verdict with no author and no

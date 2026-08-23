@@ -44,11 +44,10 @@ calculated_formulas: {}
 # program alike, and a register only the program can see is a register that
 # gets re-answered from memory.
 #
-# ONE GROUP, NOT TWO, and 50-govern/governance.md says plainly why: field-level
-# permissions do not exist here. A second, assessor-only group would buy
-# nothing, because list permissions are list-scoped and anybody with Contribute
-# can switch to All Items and type in any column. Splitting the groups would
-# LOOK like a control and be none.
+# One group is honest because a second assessor group would not create a field scope.
+# Microsoft documents permission scopes through list items, not fields:
+# https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels#overview-and-permissions-inheritance
+# Anybody with Contribute can switch to All Items and type in any column.
 groups:
   - name: "RD Records Digitisation Program"
     description: "Assess platforms against the records requirements, record custodian answers and reach the destination verdict."
@@ -238,7 +237,7 @@ views:
     # register that only ever grows stays usable, and the whole capability set
     # is on screen at once because comparing platforms across one question is
     # the thing a spreadsheet does badly and this does well.
-    - title: "Platforms in service"
+    - title: "Current platform inventory"
       default: true
       fields: ["@identity", "@capability", DestinationVerdict,
                FollowUpRequired, AssessmentDate]
@@ -276,7 +275,7 @@ views:
     # THE WORKLIST. Everything the program has not got to yet, oldest name
     # first so the queue is stable between visits.
     - title: "Not yet assessed"
-      fields: ["@identity", DestinationVerdict, PlatformCustodian]
+      fields: ["@identity", DestinationVerdict]
       where:
         - { field: DestinationVerdict, op: eq, value: "Not assessed" }
         - { field: LifecycleStatus, op: not_in, value: ["Retired"] }
@@ -288,16 +287,14 @@ views:
         PlatformCustodian: 180
         LifecycleStatus: 160
         DestinationVerdict: 280
-    # THE ANSWER THE PROGRAM ACTUALLY NEEDS. Both members mean the same thing
-    # operationally: records put here now will have to be moved, or will be
-    # lost. The two are kept apart because the remedy differs - one needs a
-    # different destination and the other needs somebody to run the export.
+    # THE ANSWER THE PROGRAM ACTUALLY NEEDS. Every member means records cannot be filed here yet.
     - title: "Cannot keep a record here"
       fields: ["@identity", "@capability", DestinationVerdict, ExportMethods,
                VerdictBasis]
       where:
         - { field: DestinationVerdict, op: in,
             value: ["Not a destination",
+                    "Suitable with named configuration",
                     "Interim only - export with metadata proven"] }
         - { field: LifecycleStatus, op: not_in, value: ["Retired"] }
       sort:
@@ -339,6 +336,8 @@ views:
     # platforms have no self-service way to get the records out" is a question
     # about a SET, and it cannot be asked of a prose column at all.
     #
+    # The title names the one self-service route this predicate actually tests.
+    #
     # `not_includes` renders <Or><IsNull/><Neq/></Or>, measured 2026-08-10:
     # the rows without the member AND the empty rows. That is what is wanted
     # here - a platform with no export route at all is the worst case, not an
@@ -349,10 +348,14 @@ views:
     # a multi-value column outright, so a view filtering only on one warns
     # `multi_value_filtered_view_unindexable` with NO remedy available: the
     # generic advice ("index the filtered column") would send an author
-    # straight into a build error. Lifecycle Status is indexed and an AND
-    # narrows on any one indexed condition, so this filter is served past the
-    # list view threshold and the warning does not fire.
-    - title: "No bulk export route"
+    # straight into a build error. Lifecycle Status is indexed, so the warning
+    # does not fire.
+    # Source: https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+    # Live control: test/manual/multi-value-probe.js I1/I1C, 2026-08-17.
+    #
+    # The paired index suppresses the warning but does not prove this nonselective view past the threshold.
+    # This family relies on the bounded inventory contract in 50-govern/governance.md.
+    - title: "No self-service bulk export route"
       fields: ["@identity", ExportMethods, ExportWithMetadata,
                DestinationVerdict]
       where:
@@ -394,6 +397,7 @@ form_formatting:
 # the failure is the invisible kind: the formula stays syntactically valid, so
 # it saves, the read-back compares equal, the deploy phase passes, and the form
 # simply never reacts.
+# Source: https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide
 form_visibility:
   Platform:
     columns:
@@ -414,10 +418,7 @@ form_visibility:
 # message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 #
-# The date is OPTIONAL, and the register's normal starting state is a platform
-# with a custodian, six Unknowns and no assessment at all. So the rule carries
-# the blank arm explicitly: what is enforced is "if there is a date, it is not
-# in the future", not "there is a date".
+# The column rule permits blank but refuses future dates; the list rule decides when a date is required.
 column_validation:
   Platform:
     columns:
@@ -432,12 +433,7 @@ column_validation:
 # Written as an implication: `if A then B` is `any_of[not A, B]`, which is why
 # it starts with the case the rule does not apply to.
 #
-# A BOOLEAN AND A TEXT COLUMN IN ONE RULE, which is legal and which no other
-# shipped family does. It was built and verified rather than assumed: the
-# boolean renders as the literal FALSE (validation formulas take TRUE/FALSE,
-# not 1/0) and the text arm renders NOT(ISBLANK(...)). The combination is
-# `=OR([FollowUpRequired]=FALSE,NOT(ISBLANK([FollowUpAction])))`, which is in
-# `build/deploy-manifest.md` on every build of this family.
+# The emitted manifest pins this scalar boolean, choice, text and date formula.
 #
 # IT ONLY WORKS BECAUSE FollowUpAction IS `nvarchar`. A validation formula
 # cannot reference a multi-line column at all - SharePoint refuses the rule
@@ -446,17 +442,32 @@ column_validation:
 # the good reason as well as the enforced one: an action that needs a paragraph
 # needs a project, and the project belongs somewhere else.
 #
-# NOTHING ABOUT THE VERDICT ITSELF is enforceable. VerdictBasis is `longtext`
-# for the same rule, and every capability answer is free to be Unknown under a
-# confident verdict. Those are governance checks in 50-govern/governance.md
-# rather than silent gaps.
+# SharePoint provides one list formula, so these three implications share one message.
+# Obligation-bearing verdicts require a named follow-up, and assessed verdicts require a date.
+# VerdictBasis remains a governance check because SharePoint validation cannot reference longtext.
 list_validation:
   Platform:
     when:
-      any_of:
-        - { field: FollowUpRequired, op: eq, value: false }
-        - { field: FollowUpAction, op: is_not_null }
-    message: "Follow-up required is ticked, so say what the follow-up is. One line, with who owns it. If it needs a paragraph it needs a project, and this register is not where the project lives."
+      all_of:
+        # A ticked follow-up must name the action.
+        - any_of:
+            - { field: FollowUpRequired, op: eq, value: false }
+            - { field: FollowUpAction, op: is_not_null }
+        # Obligation-bearing verdicts must tick follow-up; the first arm then requires its action.
+        - any_of:
+            - { field: DestinationVerdict, op: not_in,
+                value: ["Suitable with named configuration",
+                        "Interim only - export with metadata proven"] }
+            - { field: FollowUpRequired, op: eq, value: true }
+        # An assessed verdict must be dated; the column rule keeps it out of the future.
+        - any_of:
+            - { field: DestinationVerdict, op: eq, value: "Not assessed" }
+            - { field: AssessmentDate, op: is_not_null }
+        # A platform being decommissioned is never a destination.
+        - any_of:
+            - { field: LifecycleStatus, op: not_in, value: ["Decommissioning"] }
+            - { field: DestinationVerdict, op: eq, value: "Not a destination" }
+    message: "Check the lifecycle, verdict, follow-up and date. A verdict of Suitable with named configuration or Interim only - export with metadata proven is conditional on work somebody still has to do, so it needs Follow-up required ticked. A ticked follow-up needs the action named, in one line, with who owns it. Any verdict other than Not assessed needs the date it was reached on. A platform in Decommissioning must be Not a destination."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
 # starts "[DEMO] ", the marker rollback.js trusts to delete demo-only lists
@@ -473,8 +484,8 @@ list_validation:
 #
 # ONE OF THEM IS DELIBERATELY BAD: the clinical governance shared drive
 # answers No or Unknown to everything, holds an EMPTY set of export routes,
-# and is the row the "No bulk export route" view is built to surface. It is
-# also the row people recognise, which is the point.
+# and is the row the "No self-service bulk export route" view is built to
+# surface. It is also the row people recognise, which is the point.
 demo_items:
   Platform:
     # The good case. Manages its own retention and disposal, which is the first
@@ -528,9 +539,9 @@ demo_items:
         AssessedBy: "@me"
         AssessmentDate: "today-20"
     # THE ROW THE TEMPLATE EXISTS FOR. Everybody has one of these. Export
-    # Routes is deliberately EMPTY, which is what the "No bulk export route"
-    # view is built on and what makes `not_includes` visibly do its job: an
-    # empty set matches it.
+    # Routes is deliberately EMPTY, which is what the "No self-service bulk
+    # export route" view is built on and what makes `not_includes` visibly do
+    # its job: an empty set matches it.
     - key: platform-shared-drive
       values:
         Title: "[DEMO] Shared drive - clinical governance"
@@ -556,6 +567,8 @@ demo_items:
     # records and their metadata can be got out intact, so it is a staging
     # point rather than a home. Fills "Cannot keep a record here" beside the
     # shared drive, for a completely different reason.
+    #
+    # Interim use owes the export action this demo row names.
     - key: platform-rostering
       values:
         Title: "[DEMO] Rostering and time capture system"
@@ -573,7 +586,8 @@ demo_items:
         ExportMethods: ["Vendor-run bulk extract", "Documented API extract"]
         DestinationVerdict: "Interim only - export with metadata proven"
         VerdictBasis: "Demo row. Nothing here manages retention, but a vendor extract was run in front of the assessor and the records came out with their metadata and their original dates. Records may sit here while they are current and must be extracted to the corporate destination before the platform is renewed."
-        FollowUpRequired: false
+        FollowUpRequired: true
+        FollowUpAction: "Book the vendor extract to the corporate destination before contract renewal; owner is the platform custodian."
         AssessedBy: "@me"
         AssessmentDate: "today-60"
     # Not looked at yet, which is the honest state of most of a real

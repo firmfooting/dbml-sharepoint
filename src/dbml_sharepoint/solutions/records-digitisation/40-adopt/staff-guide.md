@@ -141,15 +141,15 @@ redo.
 
 ## Reading the views
 
-- **Platforms in service** - the default. All six answers side by side.
+- **Current platform inventory** - the default. All six answers side by side.
   A pink row is a live platform that cannot keep a record.
 - **Not yet assessed** - the worklist.
-- **Cannot keep a record here** - the answer the program acts on. Two
-  verdicts sit here for different reasons: one needs a different
-  destination, the other needs somebody to actually run the export.
+- **Cannot keep a record here** - the answer the program acts on. Three
+  verdicts sit here for different reasons: one needs a different destination,
+  one needs named configuration, and one needs somebody to run the export.
 - **Follow-up required** - what is owed, oldest first.
-- **No bulk export route** - platforms with no self-service way to get the
-  records out, including the ones with no route at all.
+- **No self-service bulk export route** - platforms with no self-service way
+  to get the records out, including the ones with no route at all.
 
 ## What NOT to do
 

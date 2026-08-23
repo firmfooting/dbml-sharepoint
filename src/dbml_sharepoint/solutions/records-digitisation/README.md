@@ -69,10 +69,10 @@ cannot carry a default, cannot be unique, cannot be coloured, cannot be read
 by any formula or by conditional show/hide, and a view may only ask
 `includes`, `not_includes`, `is_null` or `is_not_null` of it.
 
-**Five declared views**, deployed with the paste: *Platforms in service*
+**Five declared views**, deployed with the paste: *Current platform inventory*
 (the default, with the whole capability set on screen at once), *Not yet
-assessed*, *Cannot keep a record here*, *Follow-up required*, and *No bulk
-export route*, which is the one built on a multi-value filter.
+assessed*, *Cannot keep a record here*, *Follow-up required*, and *No
+self-service bulk export route*, which is built on a multi-value filter.
 
 **One row-level signal.** A platform that is live and cannot keep a record
 washes pink in the default view. That is the state the whole program exists
@@ -82,10 +82,11 @@ unsuitable on the way out is the expected case, not a finding, and washing
 it would train people to ignore the colour.
 
 **Four indexes**, declared in `schema.dbml`: `LifecycleStatus`,
-`DestinationVerdict`, `BusinessDomain` and `FollowUpRequired`. Every declared
-filter is served past the list view threshold, including the multi-value one:
-SharePoint cannot index a multi-value column at all, so that view is paired
-with `LifecycleStatus`, and an AND narrows on any single indexed condition.
+`DestinationVerdict`, `BusinessDomain` and `FollowUpRequired`. SharePoint
+cannot index the multi-value export column, so pairing that view with
+`LifecycleStatus` suppresses the build warning but does not prove the
+nonselective filter past the list view threshold. This family relies on a
+bounded one-row-per-platform inventory, with the trigger in `50-govern/`.
 
 **One save rule and one form rule, and they agree.** `FollowUpAction` is off
 the form entirely until `FollowUpRequired` is ticked, which is the same
@@ -104,9 +105,10 @@ save while naming a field the author cannot see.
 
 **Read `50-govern/governance.md` before rolling this out.** It carries the
 one thing an adopter must not discover late: the assessor section is a
-convention and a form gate, **not a permission control**. SharePoint has no
-field-level permissions, so anybody with Contribute on this list can switch
-to *All Items* and type in it.
+convention and a form gate, **not a permission control**. [Microsoft's
+permission hierarchy](https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels#overview-and-permissions-inheritance)
+ends at a list item and defines no field scope, so anybody with Contribute on
+this list can switch to *All Items* and type in it.
 
 **Customisation points:** the `business_domain` and `destination_verdict`
 enums; the members of the three multi-value lists, which should name the
