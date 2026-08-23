@@ -35,10 +35,10 @@ Nothing in this module imports anything, so it can be read by `model/`,
 `analysis/`, `analysis/checks/` and `generators/` alike without touching the
 one-way dependency rule in AGENTS.md.
 
-**MEASURED 2026-08-16: 13 of 28 mutants survive. Eight ceilings are not fully
-enforced.** A sweep set each constant to its value plus one and minus one,
-twenty-eight mutants, each followed by a full suite run. Survivors, tracked in
-issue #260:
+**MEASURED 2026-08-16: 13 of 28 mutants survived.** The baseline moved each
+of fourteen constants one above and one below its declared value, running the
+suite after every change. The corrected sweep found eight ceilings that were
+not fully enforced, tracked in issue #260:
 
     MAX_FIELD_DESCRIPTION              both directions
     MAX_TEXT_FIELD_LENGTH              both directions
@@ -49,24 +49,35 @@ issue #260:
     MAX_ROLE_DEFINITION_DESCRIPTION    lowering it only
     MAX_VALIDATION_FORMULA             lowering it only
 
-A survivor does not mean the constant is unused. `MAX_FIELD_DESCRIPTION` is
-read by `typemap.py:571` and truncates a description; nothing exercises the
-boundary, so the number can move without any test noticing.
+A survivor did not mean the constant was unused. `MAX_FIELD_DESCRIPTION` was
+read by `typemap.py` and truncated a description; the suite simply did not
+exercise the boundary, so the number could move without any test noticing.
 
-**Run the sweep with three deselects.** `scripts/mutate_limits.py` carries them
+**MEASURED 2026-08-23 after #260: all 16 plus-one and minus-one mutants across
+those eight ceilings were killed.** The boundary tests use fixed repository
+contract literals on the input and expected-output side rather than deriving
+their oracle from the constant being mutated. That distinction proves the
+named ceiling cannot move silently; authority for the value remains the
+separate evidence question tracked in #291 wherever no source or direct
+boundary probe is yet recorded beside the constant.
+
+**Run the sweep with four deselects.** `scripts/mutate_limits.py` carries them
 and is the supported way to run it.
 
     --deselect test/test_deploy_runtime.py
     --deselect test/test_template_lint.py::test_generated_api_docs_are_current
     --deselect test/test_finding_help.py::test_generated_findings_page_is_current
+    --deselect test/test_limit_authority.py
 
-The rule behind the last two: a test that regenerates a DESCRIPTION of the
-source and compares it cannot be evidence about behaviour, because it fails on
-every mutant whether or not a consumer reads the constant. The API reference
-and the findings page both quote these values verbatim. A test that compares
-EMITTED PRODUCT is different and stays in: `test_jsgen`'s golden kills
-`LIST_VIEW_THRESHOLD` because that constant reaches deploy.js, and the same
-5000 written as `MAX_VIEW_ROW_LIMIT` survives because it does not.
+The rule behind the last three: a test that reads the mutated SOURCE is not
+evidence about behaviour. The API reference and findings page regenerate
+prose from the mutant, while `test_limit_authority.py` scans for whichever
+name and number the mutant currently exposes. Each can fail whether or not a
+consumer enforces the ceiling. A test that compares operator-facing output or
+another emitted product can be evidence when its expectation is independent
+of the mutant. The baseline sweep killed `LIST_VIEW_THRESHOLD` through fixed
+validator-message assertions while `MAX_VIEW_ROW_LIMIT`, the same number on a
+different surface, survived until its own boundary tests were added.
 
 This took three runs to get right. The first left both currency tests in and
 reported 28 kills. The second removed one and reported 8 survivors. Both were

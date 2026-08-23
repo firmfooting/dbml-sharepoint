@@ -40,8 +40,9 @@ MEASURED, NOT ASSUMED. `test/manual/role-definition-probe.js` ran 2026-08-14,
 revisions `709c2549` and `4dd7de1c`, against a live tenant:
 `SP.RoleDefinition.Description` round-trips byte-identically through both the
 create path and the MERGE path, a partial MERGE leaves the rest of the
-bitmap untouched, empty is accepted, and 512 characters is REFUSED with an
-HTTP 500 rather than truncated.
+bitmap untouched, empty is accepted, and a 1,018-character description is
+REFUSED with HTTP 500 rather than truncated. The server named the boundary in
+its response: "The parameter Description cannot be bigger than 512 characters."
 
 THE CEILING MATCHING A GROUP'S IS TWO FACTS, NOT ONE. `MAX_GROUP_DESCRIPTION`
 and `MAX_ROLE_DEFINITION_DESCRIPTION` are both 512, but that is two separately

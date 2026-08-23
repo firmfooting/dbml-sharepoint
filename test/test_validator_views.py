@@ -158,6 +158,7 @@ def test_view_condition_value_pairing() -> None:
     assert "'eq'" in absent.message
 
 def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
+    """Pin LIST_VIEW_THRESHOLD_FALLBACK_ROWS in the operator-facing warning."""
     schema, bundle = _project_inputs(
         views={
             "Project": [
@@ -184,6 +185,7 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
     # author cannot act on without.
     assert "DueDate" in finding.message and "Status" in finding.message
     assert "5,000" in finding.message
+    assert "newest 1,250 items, or none" in finding.message
     # One indexed condition suffices and its position is irrelevant. Measured
     # at 6,000 items, both orderings of a degenerate AND served. Selectivity is
     # the caveat that survives, so the message must still carry one.
@@ -924,7 +926,7 @@ def test_a_list_validation_formula_at_the_documented_limit_is_accepted() -> None
     """
     errors = _project_errors(
         list_validation={
-            "Project": _list_validation_rendering_to(MAX_VALIDATION_FORMULA),
+            "Project": _list_validation_rendering_to(1023),
         },
     )
     none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
@@ -937,11 +939,47 @@ def test_a_list_validation_formula_one_over_the_documented_limit_is_an_error() -
     been refused when the deploy wrote the list."""
     errors = _project_errors(
         list_validation={
-            "Project": _list_validation_rendering_to(MAX_VALIDATION_FORMULA + 1),
+            "Project": _list_validation_rendering_to(1024),
         },
     )
     finding = only(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
     assert str(MAX_VALIDATION_FORMULA) in finding.message
+
+
+def test_validation_message_at_the_documented_limit_is_accepted() -> None:
+    """Pin the accepted side of MAX_VALIDATION_MESSAGE."""
+    when = Group("all_of", (Leaf(field="Status", op="eq", value="Open"),))
+    message = "x" * 1024
+    errors = _project_errors(
+        list_validation={
+            "Project": ListValidation(when=when, message=message),
+        },
+        column_validation={
+            "Project": EntitySection(columns={
+                "Status": ColumnValidation(when=when, message=message),
+            }),
+        },
+    )
+    none_of(errors, FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG)
+    none_of(errors, FindingCode.VALIDATION_MESSAGE_TOO_LONG)
+
+
+def test_validation_message_one_over_the_documented_limit_is_an_error() -> None:
+    """Pin the refused side of MAX_VALIDATION_MESSAGE."""
+    when = Group("all_of", (Leaf(field="Status", op="eq", value="Open"),))
+    message = "x" * 1025
+    errors = _project_errors(
+        list_validation={
+            "Project": ListValidation(when=when, message=message),
+        },
+        column_validation={
+            "Project": EntitySection(columns={
+                "Status": ColumnValidation(when=when, message=message),
+            }),
+        },
+    )
+    only(errors, FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG)
+    only(errors, FindingCode.VALIDATION_MESSAGE_TOO_LONG)
 
 
 def test_view_today_sentinel_only_on_date_columns() -> None:
@@ -1007,9 +1045,18 @@ def test_all_items_title_is_reserved_for_the_generated_unfiltered_view() -> None
     finding = only(errors, FindingCode.ALL_ITEMS_VIEW_DECLARED)
     assert finding.location == Location(Section.VIEWS, entity="Project")
 
-def test_view_row_limit_range() -> None:
+def test_view_row_limit_at_the_configured_ceiling_is_accepted() -> None:
+    """Pin the accepted side of MAX_VIEW_ROW_LIMIT."""
     errors = _project_errors(
-        views={"Project": [ViewDef(title="V", fields=["Title"], row_limit=9000)]},
+        views={"Project": [ViewDef(title="V", fields=["Title"], row_limit=5000)]},
+    )
+    none_of(errors, FindingCode.ROW_LIMIT_OUT_OF_RANGE)
+
+
+def test_view_row_limit_one_over_the_configured_ceiling_is_an_error() -> None:
+    """Pin the refused side of MAX_VIEW_ROW_LIMIT."""
+    errors = _project_errors(
+        views={"Project": [ViewDef(title="V", fields=["Title"], row_limit=5001)]},
     )
     finding = only(errors, FindingCode.ROW_LIMIT_OUT_OF_RANGE)
     assert finding.location == Location(Section.VIEWS, entity="Project", view="V")

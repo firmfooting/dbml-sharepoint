@@ -18,6 +18,7 @@ from dbml_sharepoint.analysis.typemap import (
     FieldKind,
     choice_enum_for,
     describe_unknown_type,
+    format_description,
     is_boolean,
     is_hyperlink,
     is_legacy_choice,
@@ -62,10 +63,18 @@ def test_int_plain_is_number() -> None:
 
 
 def test_nvarchar_is_text() -> None:
+    """Pin MAX_TEXT_FIELD_LENGTH without deriving the oracle from it."""
     col = Column(name="Title", type="nvarchar", required=True)
     field = map_column(col, ENUM_NAMES)
     assert field.kind == "Text"
     assert field.required is True
+    assert field.max_length == 255
+
+
+def test_field_description_boundary_is_inclusive() -> None:
+    """Pin MAX_FIELD_DESCRIPTION without deriving the oracle from it."""
+    assert format_description("x" * 255) == "x" * 255
+    assert format_description("x" * 256) == "x" * 252 + "..."
 
 
 def test_longtext_is_plain_multiline_note() -> None:
