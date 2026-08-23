@@ -17,11 +17,11 @@
   // error.message.value; fall back to (bounded) raw text. A bare HTTP
   // status left a blocked run undiagnosable (live finding 2026-07-24).
   const spError = (text) => {
+    let message = text;
     try {
-      return JSON.parse(text)?.error?.message?.value || String(text).slice(0, 300);
-    } catch {
-      return String(text).slice(0, 300);
-    }
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
   };
 
   // Retry-After-aware fetch. Honour the server's Retry-After (seconds),

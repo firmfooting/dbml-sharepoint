@@ -1,17 +1,55 @@
-{# Shared cached request digest. Expects apiUrl to be defined. The digest
-   is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use
-   for lifetime safety and the cache refreshes 60s before expiry, the same
-   safety as per-call contextinfo POSTs at ~one POST per run. #}
+{# Shared cached request digest. Expects apiUrl, fetchWithRetry and spError
+   to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min);
+   callers fetch per use for lifetime safety and the cache refreshes 60s
+   before expiry, the same safety as per-call contextinfo POSTs at ~one POST
+   per run. #}
   let cachedDigest = null;
   let digestExpiresAt = 0;
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function getContextWebInformation() {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    let r;
+    try {
+      r = await fetchWithRetry(apiUrl('contextinfo'), {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
+      throw failed(`no response (${bounded(err)})`);
+    }
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
-    const r = await fetchWithRetry(apiUrl('contextinfo'), {
-      method: 'POST',
-      headers: { 'Accept': 'application/json;odata=verbose' },
-    });
-    const j = await r.json();
-    const info = j.d.GetContextWebInformation;
+    let info;
+    try {
+      info = await getContextWebInformation();
+    } catch (err) {
+      const failure = err instanceof Error ? err : new Error(String(err));
+      failure.digestFailure = true;
+      throw failure;
+    }
     cachedDigest = info.FormDigestValue;
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;

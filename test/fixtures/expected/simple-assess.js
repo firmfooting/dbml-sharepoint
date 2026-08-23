@@ -170,11 +170,11 @@
   // error.message.value; fall back to (bounded) raw text. A bare HTTP
   // status left a blocked run undiagnosable (live finding 2026-07-24).
   const spError = (text) => {
+    let message = text;
     try {
-      return JSON.parse(text)?.error?.message?.value || String(text).slice(0, 300);
-    } catch {
-      return String(text).slice(0, 300);
-    }
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
   };
 
   // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
@@ -200,14 +200,51 @@
 
   let cachedDigest = null;
   let digestExpiresAt = 0;
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function getContextWebInformation() {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    let r;
+    try {
+      r = await fetchWithRetry(apiUrl('contextinfo'), {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
+      throw failed(`no response (${bounded(err)})`);
+    }
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
-    const r = await fetchWithRetry(apiUrl('contextinfo'), {
-      method: 'POST',
-      headers: { 'Accept': 'application/json;odata=verbose' },
-    });
-    const j = await r.json();
-    const info = j.d.GetContextWebInformation;
+    let info;
+    try {
+      info = await getContextWebInformation();
+    } catch (err) {
+      const failure = err instanceof Error ? err : new Error(String(err));
+      failure.digestFailure = true;
+      throw failure;
+    }
     cachedDigest = info.FormDigestValue;
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
@@ -219,7 +256,8 @@
   async function assessSite(ctx) {
     const { requirements: REQUIREMENTS, targets: TARGETS,
             notAssessable: NOT_ASSESSABLE, log, web: WEB, origin: ORIGIN,
-            fetchWithRetry, apiUrl, odataName, getDigest, verdictLevel } = ctx;
+            fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
+            verdictLevel } = ctx;
     // Fail closed on a caller-built targets: a missing key is a bare TypeError
     // several probes in, and every one of these is read below.
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
@@ -227,6 +265,11 @@
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
+    // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
+    const missingCollaborators = ['log', 'fetchWithRetry', 'apiUrl', 'odataName',
+      'getDigest', 'getContextWebInformation',
+    ].filter((k) => typeof ctx[k] !== 'function');
+    if (missingCollaborators.length) throw new Error(`assess-context-incomplete: ctx is missing ${missingCollaborators.join(', ')}`);
     const findings = [];
     let verdict = null;
     const finding = (tier, key, level, detail) => {
@@ -285,11 +328,10 @@
       }
     }
 
-    // Platform build fingerprint (from the digest response).
+    // Platform build fingerprint, through the shared helper: a second parse here reproduced #282 in both assess paths.
     try {
-      const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
-      const j = await r.json();
-      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(j.d.GetContextWebInformation.LibraryVersion)}.`);
+      const info = await getContextWebInformation();
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(info.LibraryVersion)}.`);
     } catch (err) {
       finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
     }
@@ -606,7 +648,7 @@
     summary = await assessSite({
       requirements: REQUIREMENTS, targets: TARGETS, notAssessable: NOT_ASSESSABLE,
       log, web: WEB, origin: window.location.origin, fetchWithRetry, apiUrl,
-      odataName, getDigest, verdictLevel: 'DONE',
+      odataName, getDigest, getContextWebInformation, verdictLevel: 'DONE',
     });
   } catch (err) {
     log('ERROR', `The assessment could not run (${err.message}); nothing was assessed.`);
