@@ -364,8 +364,8 @@ list_validation:
     message: "This proposal cannot be saved yet. Check all three: Ready for decision needs Benefit, Feasibility and Cost Band; anything past the gate needs a Decision Date; and Delivered needs a Delivered Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # funnel lands on whatever day the demo runs; "@me" is the pasting operator.
 # Coverage: every declared view returns rows, every benefit, feasibility
 # and cost band renders, and one row is deliberately left at Idea with

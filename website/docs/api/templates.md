@@ -23,7 +23,7 @@ Probes the site's capabilities against this pack's requirements and prints a COM
 
 dbml-sharepoint DEMO DATA script (built with --seed).
 
-Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared demo/sample rows. Every Title starts with '[DEMO] ' (visible in every view and form, and the prefix rollback.js.txt currently uses as a heuristic), and each row's text identifies it as demonstration data to delete before active use. Re-pasting is safe: rows that already exist (matched by Title) are skipped, never duplicated. rollback.js.txt deletes lists whose items are ALL prefixed rows without the non-empty refusal prompt. A Title prefix is not row provenance; see issue #293 before relying on that shortcut.
+Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared demo/sample rows. Every Title starts with '[DEMO] ' (visible in every view and form), and each row's text identifies it as demonstration data to delete before active use. Re-pasting is safe: rows that already exist (matched by Title) are skipped, never duplicated. rollback.js.txt confirms every list before delete; the Title prefix is a visible notice, not deletion authority.
 
 ### `deploy.js.j2`
 
@@ -39,7 +39,7 @@ The operator-facing deploy manifest: supported mode, step-by-step run instructio
 
 dbml-sharepoint ROLLBACK script.
 
-DELETES every list declared by this schema at this site. Refuses non-empty lists unless the user types DELETE NON-EMPTY at the second prompt. Deletion-blocked lists (AllowDeletion = false) are unlocked per list after confirmation and re-locked if their delete fails.
+DELETES every list declared by this schema at this site. Refuses EVERY list unless the user types DELETE NON-EMPTY for that list and any items present. Deletion-blocked lists (AllowDeletion = false) are unlocked per list after confirmation and re-locked if their delete fails.
 
 ## Shared partials
 

@@ -362,8 +362,8 @@ list_validation:
     message: "This change cannot be saved yet. A decided change (Approved, Rejected, Implemented or Closed) needs a Decision Date, and an Implemented change needs an Implemented Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # queue and SLA surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
 # impact and urgency band renders, and the decision log holds one change

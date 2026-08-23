@@ -7,8 +7,8 @@ script knows whether to write a literal, resolve the deploying operator
 Id (lookups also take `<Name>Id`), or compute a run-time date from a
 `today+/-N` offset. Cadence-derived demo surfaces (Review due, overdue
 formatting, Tolerance due) must land on whatever day the demo runs.
-The Title marker (validated mandatory) is the in-record notice and the
-teardown contract; `analysis/demo_marker.py` declares it.
+The Title prefix (validated mandatory) is the visible in-record sample-data
+notice; `analysis/demo_marker.py` declares it.
 """
 
 from typing import Any

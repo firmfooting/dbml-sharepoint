@@ -42,8 +42,8 @@ def test_rollback_includes_typed_confirmation_and_target_lists() -> None:
     assert "site leaf" in js.lower()
 
 
-def test_rollback_prompts_per_non_empty_list() -> None:
-    """A6: each non-empty list requires its own DELETE NON-EMPTY confirmation.
+def test_rollback_prompts_per_list() -> None:
+    """A6: each list requires its own DELETE NON-EMPTY confirmation.
     The old single global `allowNonEmpty` latch (one confirmation authorised
     deleting EVERY remaining non-empty list) is removed, a coarse blast radius
     for a live site."""
@@ -237,43 +237,49 @@ def test_rollback_header_carries_full_provenance() -> None:
     assert "Generated at: 2026-05-04T00:00:00Z" in js
 
 
-def test_rollback_demo_aware_non_empty_gate() -> None:
-    """Demo cycle contract: a list whose items are ALL '[DEMO] '-prefixed
-    deletes without the DELETE NON-EMPTY prompt (deploy, demonstrate,
-    delete); any unmarked item keeps the per-list refusal, and unreadable
-    or >100-item lists are treated as real."""
+def test_rollback_has_no_automatic_demo_prefix_bypass() -> None:
+    """#293: the teardown reads no Title prefix at all.
+
+    A list whose items were all '[DEMO] '-prefixed used to delete with no
+    confirmation. `Title` is user-editable, so a real record carrying the
+    prefix reached that path, and no live-site evidence distinguishes the
+    two. The prefix is a visible sample-data notice now, nothing more, and
+    every list takes the same prompt.
+    """
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
-    assert "const DEMO_PREFIX = '[DEMO] ';" in js
-    assert "allItemsAreDemo" in js
-    assert "count > 100" in js
-    assert "row.Title.startsWith(DEMO_PREFIX)" in js
-    # The refusal prompt survives for real content.
+    assert "const DEMO_PREFIX" not in js
+    assert "allItemsAreDemo" not in js
+    assert "row.Title.startsWith(DEMO_PREFIX)" not in js
+    assert "if (count > 100) return false" not in js
+    assert "web/lists?$select=Title,ItemCount&$top=5000" in js
+    assert "j.d.__next" in js
+    assert "list enumeration exceeded 100 pages" in js
+    assert "const discovered = Object.create(null);" in js
+    # The one per-list gate every target now takes.
     assert "DELETE NON-EMPTY" in js
+    assert js.count("prompt(") == 2  # site leaf, then the per-list refusal
 
 
 def test_rollback_recycles_items_before_list_delete() -> None:
     """Live findings 2026-07-24 (two teardowns): retention refuses to
     delete a list that still CONTAINS items, while an emptied list deletes
-    fine. Demo-only lists recycle their rows automatically (marker
-    re-checked per row, fail closed); the DELETE NON-EMPTY override path
-    recycles EVERY item. The operator just authorised deleting the list
-    with its contents, and emptying first is what makes the delete
-    succeed. recycle(), never a permanent DELETE."""
+    fine. Recycling is reached only after DELETE NON-EMPTY, and it then
+    takes EVERY item: the operator just authorised deleting the list with
+    its contents, and emptying first is what makes the delete succeed.
+    recycle(), never a permanent DELETE."""
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
-    assert "async function recycleItems(name, requireDemoMarker)" in js
+    assert "async function recycleItems(name)" in js
     assert "/recycle()" in js
-    assert "unmarked item" in js
-    # Demo path: marker-enforced. Override path: everything, post-consent.
-    assert "await recycleItems(name, true);" in js
-    assert "await recycleItems(name, false);" in js
+    # One call site, and it is downstream of this list's confirmation.
+    assert js.count("await recycleItems(name);") == 1
     override_idx = js.index("DELETE NON-EMPTY to delete THIS list")
-    assert js.index("await recycleItems(name, false);") > override_idx
+    assert js.index("await recycleItems(name);") > override_idx
 
 
 def test_rollback_surfaces_server_error_detail() -> None:

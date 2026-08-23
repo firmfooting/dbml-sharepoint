@@ -628,10 +628,10 @@ def _ask_seed(console: Console) -> bool:
     guide = "30-deploy/deploy.md"
     _guidance(
         console,
-        rf"Demo rows are titled \{DEMO_TITLE_PREFIX.rstrip()} and rollback "
-        "currently uses that prefix as its automatic demo-list heuristic. "
-        "A Title prefix is not provenance (#293). Some families seed "
-        "deliberately alarming data so a view "
+        rf"Demo rows are titled \{DEMO_TITLE_PREFIX.rstrip()} so they stay "
+        "visible as sample data in every view. Rollback requires per-list "
+        "confirmation before every delete. Some families seed deliberately "
+        "alarming data so a view "
         f"renders at all -- read {guide} before seeding a site that already "
         "holds real data.",
     )

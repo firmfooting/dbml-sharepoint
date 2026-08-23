@@ -268,8 +268,8 @@ column_validation:
         message: "An interaction cannot have happened in the future. Log meetings, calls and emails after they happen; this list is a record, not a calendar."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # window-derived views land correctly on whatever day the demo runs.
 #
 # PRIVACY POSTURE, seriously applied. 50-govern/governance.md calls this

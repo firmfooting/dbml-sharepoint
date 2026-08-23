@@ -320,8 +320,8 @@ list_validation:
     message: "An active checkpoint needs its acceptable range written out - every entry is judged against those words."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Checkpoints are created
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Checkpoints are created
 # first and the entries reference them by demo key. Coverage: one entry per
 # Result, including the escalated cold-chain breach that is the reason this
 # template exists, and a retired checkpoint so the Active filter has both

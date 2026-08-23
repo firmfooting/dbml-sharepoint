@@ -392,8 +392,8 @@ list_validation:
     message: "An action marked Done needs a Done Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Incidents are created
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Incidents are created
 # first and the actions reference them by demo key. Coverage: one incident
 # per Status and one per Severity (including the open Critical one that
 # drives the row wash) and one action per Status, including an overdue one

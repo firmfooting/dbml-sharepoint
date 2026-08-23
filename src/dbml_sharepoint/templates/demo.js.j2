@@ -5,12 +5,11 @@
  *
  * Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared
  * demo/sample rows. Every Title starts with '{{ demo_title_prefix }}' (visible in every
- * view and form, and the prefix rollback.js.txt currently uses as a heuristic), and each row's text
+ * view and form), and each row's text
  * identifies it as demonstration data to delete before active use.
  * Re-pasting is safe: rows that already exist (matched by Title) are
- * skipped, never duplicated. rollback.js.txt deletes lists whose items are ALL
- * prefixed rows without the non-empty refusal prompt. A Title prefix is not
- * row provenance; see issue #293 before relying on that shortcut.
+ * skipped, never duplicated. rollback.js.txt confirms every list before delete;
+ * the Title prefix is a visible notice, not deletion authority.
  */
 (async () => {
   const SITE_URL  = {{ site_url | tojson }};
@@ -152,7 +151,7 @@
   }
 
   log('DONE', `Demo data complete. Created ${summary.created.length}, skipped ${summary.skipped.length} existing, errors ${summary.errors.length}.`);
-  log('INFO', 'Every demo row is prefixed "{{ demo_title_prefix }}". Delete before active use; rollback.js.txt currently treats an all-prefixed list as demo-only, but a Title prefix is not provenance (#293).');
+  log('INFO', 'Every demo row is prefixed "{{ demo_title_prefix }}". Delete before active use; rollback.js.txt confirms every list before delete.');
   console.log(summary);
   return summary;
 })();

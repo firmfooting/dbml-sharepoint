@@ -381,9 +381,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "shown the demo."
     ),
     FindingCode.DEMO_TITLE_MISSING_MARKER: (
-        f"A demo row's `Title` does not start with `{DEMO_TITLE_PREFIX}`, the prefix "
-        "rollback currently requires for its automatic demo-list heuristic. "
-        "A Title prefix is not row provenance; see #293."
+        f"A demo row's `Title` does not start with `{DEMO_TITLE_PREFIX}`, the "
+        "visible notice used to identify declared sample data. Rollback requires "
+        "per-list confirmation before every delete."
     ),
     FindingCode.DEMO_VALUE_ON_CALCULATED_COLUMN: (
         "A demo row writes a calculated column. Set its inputs instead."

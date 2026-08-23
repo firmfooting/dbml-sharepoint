@@ -470,8 +470,8 @@ list_validation:
     message: "Check the lifecycle, verdict, follow-up and date. A verdict of Suitable with named configuration or Interim only - export with metadata proven is conditional on work somebody still has to do, so it needs Follow-up required ticked. A ticked follow-up needs the action named, in one line, with who owns it. Any verdict other than Not assessed needs the date it was reached on. A platform in Decommissioning must be Not a destination."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
-# starts "[DEMO] ", the marker rollback.js trusts to delete demo-only lists
-# without its non-empty refusal. Dates are today+/-N so the rolling views land
+# starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the rolling views land
 # correctly on whatever day the demo runs, and "@me" is whoever pastes the
 # script.
 #

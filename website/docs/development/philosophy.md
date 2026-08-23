@@ -110,5 +110,6 @@ across platforms.
 
 Anything bounded says so: paging loops have safety stops, truncation is
 logged, "not assessable" is printed rather than implied as covered, and
-demo gates treat "more items than a demo could ever seed" as real data.
+rollback treats an earlier item count as information rather than deletion
+authority and confirms each target list separately.
 Silent caps that read as full coverage are defects.

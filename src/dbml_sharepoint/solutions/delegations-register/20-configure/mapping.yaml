@@ -255,8 +255,8 @@ list_validation:
     message: "A superseded delegation needs its supersession recorded in Notes: which instrument version replaced it, and where the authority went. The History view is only an audit trail if that line is there."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # review surfaces land on whatever day the demo runs.
 #
 # Coverage: four current authorities across four areas and four roles, so

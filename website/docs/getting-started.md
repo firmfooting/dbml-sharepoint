@@ -166,9 +166,8 @@ dbml-sharepoint build ... --seed
 
 Paste `demo-data.js.txt` after a successful deploy to create the declared
 `[DEMO]`-marked sample rows. When the demonstration is over,
-`rollback.js.txt` recognises demo-only content and removes it without
-ceremony. See [rollback](artifacts/rollback.md) for the exact gates it
-applies to anything that is *not* demo content.
+`rollback.js.txt` requires per-list confirmation before every target delete.
+See [rollback](artifacts/rollback.md) for the exact gates.
 
 ## Browse these docs locally
 

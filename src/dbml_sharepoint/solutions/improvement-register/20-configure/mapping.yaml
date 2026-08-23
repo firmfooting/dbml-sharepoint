@@ -322,8 +322,8 @@ list_validation:
     message: "This improvement cannot be saved yet. An Adopted or Abandoned improvement needs an Adopted Date, and an Adopted one needs its Measure After; 'improved' has to be a number."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # rolling adoption window lands on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every stage
 # colour renders, five of the seven sources are represented so "By source"

@@ -366,8 +366,8 @@ list_validation:
     message: "This item cannot be saved yet. Check both: anything past Received needs an Acknowledged Date, and a Closed item needs an Outcome and a Closed Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Titles are neutral and
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Titles are neutral and
 # factual, and carry no names, exactly as the staff guide asks of real
 # ones. Dates are today-N so both clocks and the rolling report window
 # land wherever the demo runs. Coverage: one row per Status and one per

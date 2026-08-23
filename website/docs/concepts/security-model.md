@@ -122,9 +122,10 @@ to type the site's leaf path at a first prompt. Within that scope it will:
 
 - **Recycle list items**, never permanently delete them: every row it removes
   is restorable from the site recycle bin.
-- **Delete a non-empty list** whose items are not all `[DEMO]`-marked, but
-  only after the operator types `DELETE NON-EMPTY` at a second prompt that is
-  re-asked for each such list.
+- **Delete a list** only after the operator types `DELETE NON-EMPTY` at a
+  second prompt that is re-asked for every provenance-confirmed target. The
+  phrase authorises that list and any items present; an earlier zero count,
+  Title value or demo prefix creates no exception.
 - **Clear a list's deletion block.** When a target list has
   `AllowDeletion = false`, rollback MERGEs it to `true`, verifies the change
   took effect, deletes the list, and re-locks it if the delete fails. A

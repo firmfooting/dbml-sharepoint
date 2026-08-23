@@ -416,8 +416,8 @@ list_validation:
     message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a Closed risk needs a Target Risk Rating and controls rated 'All reasonable controls in place' or better."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # cadence-derived surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: one risk per rating band (the Extreme one
 # drives the row wash, the red score bar, Levels Above Target 3, an OVERDUE
