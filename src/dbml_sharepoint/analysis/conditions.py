@@ -1417,29 +1417,6 @@ def _validation_literal(column_type: str, value: object, where: Location) -> str
 
 
 # === Semantic validation ====================================================
-# Types for the columns SharePoint provides but DBML never declares. Views
-# may reference these, and without them a date comparison on Created would
-# render as Type="Text", which SharePoint accepts and answers with the
-# wrong rows.
-SYSTEM_COLUMN_TYPES: dict[str, str] = {
-    "ID": "int",
-    "Created": "datetime",
-    "Modified": "datetime",
-    "Author": "person",
-    "Editor": "person",
-}
-
-
-def effective_column_types(
-    declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset(),
-) -> dict[str, str]:
-    """Types for DBML columns plus fields provisioned implicitly or by expansion."""
-    effective = {"Title": "nvarchar", **declared}
-    for name in cross_site_columns:
-        effective.setdefault(f"{name}Abbreviation", "nvarchar")
-        effective.setdefault(f"{name}SiteUrl", "hyperlink")
-    return effective
-
 # There is no defensible default between a person's display name, their
 # email and their id, so the accessor is declared rather than guessed.
 PROPERTY_ACCESSORS: dict[str, frozenset[str]] = {

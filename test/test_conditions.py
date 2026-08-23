@@ -15,7 +15,6 @@ from dbml_sharepoint.analysis.conditions import (
     MAX_DEPTH,
     MAX_LEAVES,
     NEGATION,
-    SYSTEM_COLUMN_TYPES,
     VALIDATION,
     condition_fields,
     condition_findings,
@@ -1136,14 +1135,6 @@ def test_capability_violations_come_from_the_renderer() -> None:
 def test_bounds_are_reported_with_the_actual_numbers() -> None:
     wide = [{"field": "Status", "op": "eq", "value": str(i)} for i in range(MAX_LEAVES + 1)]
     assert "the limit is" in _problems(wide)[0]
-
-
-def test_system_columns_have_declared_types() -> None:
-    """Views may reference these and DBML never declares them. Without a
-    type, a date comparison on Created renders as Type="Text", which
-    SharePoint accepts and answers with the wrong rows."""
-    assert SYSTEM_COLUMN_TYPES["Created"] == "datetime"
-    assert set(SYSTEM_COLUMN_TYPES) == {"ID", "Created", "Modified", "Author", "Editor"}
 
 
 def test_unknown_operator_under_none_of_reports_rather_than_raises() -> None:

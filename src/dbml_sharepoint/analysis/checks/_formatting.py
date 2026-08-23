@@ -2,10 +2,10 @@
 """Column formatting, style specs, and form formatting."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
-    effective_column_types,
     to_validation,
     validate_condition,
 )
