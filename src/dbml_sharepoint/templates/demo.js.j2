@@ -52,6 +52,44 @@
     return rows.length > 0 ? rows[0].Id : null;
   }
 
+  // Accept only the measured verbose-OData collection shape (probes M3/M4, 2026-08-17).
+  function storedMembers(item, field, raw) {
+    const name = field.name;
+    if (raw == null) return [];
+    const keys = typeof raw === 'object' && !Array.isArray(raw) ? Object.keys(raw).sort() : [];
+    const metadata = raw && raw.__metadata;
+    const results = raw && raw.results;
+    if (keys.join(',') !== '__metadata,results'
+        || !metadata || metadata.type !== field.metadata_type
+        || !Array.isArray(results) || results.some((m) => typeof m !== 'string')) {
+      throw new Error(`${name} read back in an unrecognised shape (${JSON.stringify(raw)}), so the members written to demo row '${item.key}' cannot be verified`);
+    }
+    return results;
+  }
+
+  // Verify every declared multi-value member before recording the row as created.
+  async function verifyMultiValues(item, itemId) {
+    const multi = item.fields.filter((f) => f.kind === 'multi_value');
+    if (!multi.length) return;  // a single-value row keeps its one POST
+    const select = multi.map((f) => odataName(f.name)).join(',');
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items(${itemId})?$select=${select}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      throw new Error(`the read-back of Id ${itemId} failed (HTTP ${r.status}), so the multi-value members written to demo row '${item.key}' are unverified`);
+    }
+    const stored = (await r.json()).d || {};
+    for (const f of multi) {
+      const got = storedMembers(item, f, stored[f.name]);
+      // Compare membership and count because member order is not a declared contract.
+      const missing = f.results.filter((m) => !got.includes(m));
+      const extra = got.filter((m) => !f.results.includes(m));
+      if (missing.length || extra.length || got.length !== f.results.length) {
+        throw new Error(`${f.name} was written ${JSON.stringify(f.results)} and read back ${JSON.stringify(got)}`);
+      }
+    }
+  }
+
   // A Map for the same reason as `entityTypes` above: a demo key of
   // `__proto__` would not survive assignment into an object.
   const createdIds = new Map();
@@ -70,6 +108,10 @@
       for (const f of item.fields) {
         if (f.kind === 'literal') {
           body[f.name] = f.value;
+        } else if (f.kind === 'multi_value') {
+          // A multi-value column takes a collection, not a bare array: the
+          // shape below is what SharePoint accepted (probe M3, 2026-08-17).
+          body[f.name] = { __metadata: { type: f.metadata_type }, results: f.results };
         } else if (f.kind === 'me') {
           // Person columns write <Name>Id; the demo owner is the operator.
           body[`${f.name}Id`] = _spPageContextInfo.userId;
@@ -98,6 +140,8 @@
         throw new Error(spError(await createResp.text()) || `item create failed (HTTP ${createResp.status})`);
       }
       const createdId = (await createResp.json()).d.Id;
+      // Before `createdIds`, so an unverified row resolves no later demo_ref.
+      await verifyMultiValues(item, createdId);
       createdIds.set(item.key, createdId);
       summary.created.push({ list: item.list, key: item.key, id: createdId });
       log('INFO', `'${item.list}': created demo row '${item.key}' (Id ${createdId}).`);
