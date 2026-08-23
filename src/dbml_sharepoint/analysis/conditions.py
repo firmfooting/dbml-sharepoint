@@ -34,7 +34,7 @@ from dbml_sharepoint.analysis.typemap import (
     is_boolean,
     is_multi_value,
 )
-from dbml_sharepoint.model.conditions import Condition, Group, Leaf
+from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Group, Leaf
 
 #: Where a refusal raised by a renderer says it is. The renderers are public
 #: and take no context, so this constant is the root every internal path
@@ -98,9 +98,6 @@ NEGATION: dict[str, str] = {
 MAX_DEPTH = 4
 MAX_LEAVES = 32
 
-# Their own inverses, and never null-ambiguous.
-_NULL_TESTS = frozenset({"is_null", "is_not_null"})
-
 # Negative operators whose own rendering already admits the empty value, so
 # `_push` must not OR a second `is_null` arm around them. `neq` and `not_in`
 # define the empty value as outside the compared literal or set and say so in
@@ -131,7 +128,7 @@ def _push(node: Condition, *, negate: bool) -> Condition:
                 f"known operators: {', '.join(sorted(NEGATION))}",
             )
         flipped = Leaf(node.field, NEGATION[node.op], node.value, node.property, node.measure)
-        if node.op in _NULL_TESTS or node.measure:
+        if node.op in VALUELESS_OPS or node.measure:
             # A null test is its own inverse, and a measure is never null.
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
@@ -472,7 +469,7 @@ _MEMBERSHIP_OPS = frozenset({"includes", "not_includes"})
 #   * the ordering operators and `begins_with` were never asked, and a set has
 #     no order.
 _MULTI_VALUE_OPERATORS: dict[str, frozenset[str]] = {
-    CAML: _MEMBERSHIP_OPS | _NULL_TESTS,
+    CAML: _MEMBERSHIP_OPS | VALUELESS_OPS,
 }
 
 # SharePoint's own separator between the members of a set on the wire.
@@ -607,7 +604,6 @@ _ME_OPS = frozenset({"eq", "neq"})
 # True == 1 and False == 0 in Python, so the bare ints cover the bools.
 _TRUTHY = frozenset({1, "1", "true", "True", "TRUE", "yes", "Yes", "YES"})
 _FALSY = frozenset({0, "0", "false", "False", "FALSE", "no", "No", "NO"})
-_VALUELESS_OPS = frozenset({"is_null", "is_not_null"})
 
 
 def _reject(code: FindingCode, target: str, reason: str, at: Location) -> _RefusalError:
@@ -701,14 +697,14 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             _UNSUPPORTED_PROPERTY[target],
             at,
         )
-    if leaf.op not in _VALUELESS_OPS and leaf.value is None:
+    if leaf.op not in VALUELESS_OPS and leaf.value is None:
         raise _reject(
             FindingCode.CONDITION_VALUE_MISSING,
             target,
             f"operator {leaf.op!r} needs a 'value'",
             at,
         )
-    if leaf.op in _VALUELESS_OPS and leaf.value is not None:
+    if leaf.op in VALUELESS_OPS and leaf.value is not None:
         raise _reject(
             FindingCode.CONDITION_VALUE_NOT_ALLOWED,
             target,
@@ -1296,7 +1292,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
     if target == CAML:
         ref = f'<FieldRef Name="{leaf.field}"/>'
         tag = _CAML_OP_TAGS[leaf.op]
-        if leaf.op in _VALUELESS_OPS:
+        if leaf.op in VALUELESS_OPS:
             return f"<{tag}>{ref}</{tag}>"
         rendered = f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
         if leaf.op in ("neq", "not_includes"):
@@ -1825,7 +1821,7 @@ def _operand_problems(
     # stakeholder-contacts' governance doc asks for by name) was
     # inexpressible: the accessor rules demanded a property and CAML
     # refuses every property.
-    if kind in PROPERTY_ACCESSORS and leaf.op in _VALUELESS_OPS and not leaf.property:
+    if kind in PROPERTY_ACCESSORS and leaf.op in VALUELESS_OPS and not leaf.property:
         return problems
     if kind in PROPERTY_ACCESSORS:
         allowed = PROPERTY_ACCESSORS[kind]
@@ -1901,28 +1897,3 @@ def _dedupe(problems: list[_Problem]) -> list[_Problem]:
             messages.add(problem[1])
             seen.append(problem)
     return seen
-
-
-def describe(node: Condition) -> str:
-    """A human-readable summary for manifests and documentation.
-
-    Deliberately not any target's syntax: an operator reads as its declared
-    name, so an operator a reader does not recognise sends them to the
-    grammar reference rather than to a SharePoint dialect they would then
-    have to identify.
-    """
-    if isinstance(node, Leaf):
-        subject = f"{node.field}.{node.property}" if node.property else node.field
-        if node.measure:
-            subject = f"{node.measure}({subject})"
-        if node.op in _NULL_TESTS:
-            return f"{subject} {node.op}"
-        return f"{subject} {node.op} {node.value!r}"
-    joiner = {"all_of": " AND ", "any_of": " OR ", "none_of": " OR "}[node.kind]
-    inner = joiner.join(describe(child) for child in node.children)
-    if node.kind == "none_of":
-        # NOT must survive a single child: `none_of[A]` is the canonical
-        # implication idiom, and dropping the negation made the manifest
-        # state the opposite of the rule it described.
-        return f"NOT({inner})"
-    return inner if len(node.children) == 1 else f"({inner})"

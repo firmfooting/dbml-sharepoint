@@ -32,6 +32,12 @@ everywhere else in this package.
 GROUP_KINDS = ('all_of', 'any_of', 'none_of')
 ```
 
+### `VALUELESS_OPS`
+
+```python
+VALUELESS_OPS = frozenset({'is_not_null', 'is_null'})
+```
+
 ### `Leaf`
 
 ```python

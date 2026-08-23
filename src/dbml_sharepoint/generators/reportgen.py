@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint import __version__
-from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import (
     display_column_for,
