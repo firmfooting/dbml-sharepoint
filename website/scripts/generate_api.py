@@ -61,7 +61,8 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.phases", "the deploy-phase manifest"),
     ("analysis.permissions", "SP base-permission bitmask helpers"),
     ("analysis.styles", "the fleet style standard"),
-    ("analysis.conditions", "condition normalisation, validation and rendering"),
+    ("analysis.condition_rendering", "condition normalisation and target rendering"),
+    ("analysis.conditions", "classified condition diagnosis"),
     ("analysis.condition_description", "human-readable condition prose"),
     ("analysis.demo_marker", "the demo-row Title-prefix contract"),
     ("analysis.forms", "composing declared form visibility"),
@@ -457,6 +458,7 @@ def generate_conditions_page() -> None:
     rewrites itself, and an operator a target cannot express prints as
     "not supported" because the renderer raised.
     """
+    rendering = importlib.import_module("dbml_sharepoint.analysis.condition_rendering")
     conditions = importlib.import_module("dbml_sharepoint.analysis.conditions")
     model = importlib.import_module("dbml_sharepoint.model.conditions")
     parse = model.parse_condition
@@ -486,9 +488,9 @@ def generate_conditions_page() -> None:
         ("property (person)", {"field": "Owner", "property": "title", "op": "neq", "value": ""}),
     ]
     renderers = [
-        ("CAML", conditions.to_caml),
-        ("Expression", conditions.to_expression),
-        ("Validation", conditions.to_validation),
+        ("CAML", rendering.to_caml),
+        ("Expression", rendering.to_expression),
+        ("Validation", rendering.to_validation),
     ]
 
     lines: list[str] = [
@@ -522,8 +524,8 @@ def generate_conditions_page() -> None:
     # it reads as a truncated page rather than as "nothing is pending",
     # which is the opposite of the claim the emptiness is meant to make.
     lines += ["", "## Not yet verified", ""]
-    if conditions.DISABLED_PENDING_PROBE:
-        for target, ops in sorted(conditions.DISABLED_PENDING_PROBE.items()):
+    if rendering.DISABLED_PENDING_PROBE:
+        for target, ops in sorted(rendering.DISABLED_PENDING_PROBE.items()):
             listed = ", ".join("`" + op + "`" for op in sorted(ops))
             lines += [
                 "On the **" + target + "** target these are refused until confirmed",
@@ -553,7 +555,7 @@ def generate_conditions_page() -> None:
         + str(conditions.MAX_LEAVES) + "** conditions, counted after normalisation;",
         "negation expands each leaf and `in` expands to one condition per value.", "",
         "## Normalisation", "",
-        docstring_block(conditions), "",
+        docstring_block(rendering), "",
     ]
     write_page(OUT_DIR / "conditions.md", "\n".join(lines) + "\n")
 

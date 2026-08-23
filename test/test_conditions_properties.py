@@ -27,19 +27,17 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from dbml_sharepoint.analysis.conditions import (
+from dbml_sharepoint.analysis.condition_rendering import (
     CAML,
     EXPRESSION,
-    MAX_DEPTH,
     NEGATION,
     VALIDATION,
-    condition_fields,
-    measure_tree,
     normalise,
     to_caml,
     to_expression,
     to_validation,
 )
+from dbml_sharepoint.analysis.conditions import MAX_DEPTH, condition_fields, measure_tree
 from dbml_sharepoint.model.conditions import GROUP_KINDS, Condition, Group, Leaf
 
 # A small closed vocabulary. Field names are drawn from a fixed set because
@@ -504,7 +502,7 @@ def test_caml_cannot_matches_the_capability_table() -> None:
     refusal property above would keep asserting a refusal that no longer
     happens -- passing, while testing nothing.
     """
-    from dbml_sharepoint.analysis.conditions import CAPABILITIES
+    from dbml_sharepoint.analysis.condition_rendering import CAPABILITIES
 
     assert set(CAML_CANNOT) == set(NEGATION) - CAPABILITIES[CAML]
 

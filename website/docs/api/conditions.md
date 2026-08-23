@@ -77,28 +77,15 @@ negation expands each leaf and `in` expands to one condition per value.
 
 ## Normalisation
 
-Normalisation, validation and rendering for the shared condition grammar.
+Normalisation and rendering for the shared condition grammar.
 
-`none_of` is eliminated here rather than at render time, because CAML has
-no group-level negation: a renderer meeting a negated group would have
-nothing to emit. De Morgan pushes negation down to the leaves, where every
-operator has an exact inverse, so both renderers only ever see
-`all_of`/`any_of` over positive leaves. That is the single property which
-lets one authored grammar serve targets of very different expressive power.
+This module is dependency-light by design. It owns target capability truth and
+raises renderer-neutral refusals; diagnosis translates those refusals into
+classified diagnostics in :mod:`dbml_sharepoint.analysis.conditions`.
 
-The transformation is mechanical, terminating and depth-preserving:
-
-    none_of[A, B]     ->  all_of[!A, !B]
-    !(all_of[X, Y])   ->  any_of[!X, !Y]
-    !(any_of[X, Y])   ->  all_of[!X, !Y]
-
-Implications need no operator of their own. A validation rule is usually
-"if A then B", which is `any_of[none_of[A], B]`, expressible in the
-grammar as authored and normalised by the rules above.
-
-BREAKING API CHANGE (#168): `validate_condition` was removed. Use
-`condition_findings`, which preserves each problem's finding code and leaf
-location instead of returning message-only prose.
+BREAKING API MOVE (#168): import rendering constants and functions from
+`dbml_sharepoint.analysis.condition_rendering`. They are not re-exported from
+`dbml_sharepoint.analysis.conditions`.
 
 
 

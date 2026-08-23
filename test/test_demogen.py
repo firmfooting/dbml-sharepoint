@@ -180,7 +180,7 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     Comments asserted the agreement; this asserts it.
     """
     from dbml_sharepoint.analysis.checks import _demo
-    from dbml_sharepoint.analysis.conditions import _TODAY
+    from dbml_sharepoint.analysis.condition_rendering import _TODAY
     from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
     from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
 
