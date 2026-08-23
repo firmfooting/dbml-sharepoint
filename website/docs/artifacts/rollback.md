@@ -16,24 +16,21 @@ deploy.js.txt.
    path before anything happens.
 2. **Permission preflight.** ManageLists + ManagePermissions are
    verified up front.
-3. **Per-list non-empty gate.** A list that still contains items is
-   *refused*, unless every item carries the `[DEMO]` Title marker
-   (demo-only content proceeds automatically), or the operator types
-   `DELETE NON-EMPTY` for **that specific list**. One confirmation never
-   authorises deleting any other non-empty list.
+3. **Per-list delete gate.** Every provenance-confirmed list is refused
+   unless the operator types `DELETE NON-EMPTY` for **that specific list**
+   and any items present. The earlier item count is informational rather than
+   authority; one confirmation never authorises deleting another list.
 
 ## Recycle-first teardown
 
 Retention-governed sites refuse to delete a list that still contains
 items, while an emptied list deletes fine (live-confirmed). Rollback
-therefore empties lists before deleting them, via `recycle()`, never a
-permanent delete, so every item remains restorable from the recycle bin:
-
-- **Demo path:** every row's `[DEMO]` marker is re-checked at the
-  moment of recycling; an unmarked item aborts that list, fail closed.
-- **Override path:** after `DELETE NON-EMPTY`, all items are recycled.
-  The operator just authorised deleting the list including its contents,
-  and emptying first is what makes the delete succeed under retention.
+therefore reads and recycles live items only after that list's
+`DELETE NON-EMPTY` confirmation, even when the earlier item count was zero. It
+uses `recycle()`, never a permanent item delete, so every item remains
+restorable from the recycle bin. After confirmation, all live items are
+recycled: the operator authorised deleting the list and anything present,
+and emptying first is what makes the delete succeed under retention.
 
 A paging safety stop aborts if a list fails to drain.
 

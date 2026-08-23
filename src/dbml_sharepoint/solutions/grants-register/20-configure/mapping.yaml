@@ -429,8 +429,8 @@ list_validation:
     message: "An obligation that has been filed needs the date it was filed. Add the Evidence URL as well; the list cannot check that one, and an acquittal nobody can produce a copy of is the same as one that was never sent."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # deadline surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator; { demo_ref: key } resolves to the Id of the submission
 # created under that key.

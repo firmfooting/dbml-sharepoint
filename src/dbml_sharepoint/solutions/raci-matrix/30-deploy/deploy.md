@@ -99,8 +99,8 @@ in the sample.
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO]` followed by a space, so they are obvious in every view, they are
 matched by Title on
-re-paste (running it twice never duplicates), and `rollback.js.txt` treats
-a list whose rows are *all* demo-marked as demo-only content. Do not seed
+re-paste (running it twice never duplicates), and `rollback.js.txt` requires
+per-list confirmation before every delete. Do not seed
 a site that already holds real rows.
 
 ## First job after the paste: seed `RACI_Party`

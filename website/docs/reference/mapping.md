@@ -1770,9 +1770,10 @@ from the payload rather than writing `null`: M4 measured an unset
 multi-value column reading back `null` rather than `[]`, and omitting the
 field is the only route to that read-back anybody has measured.
 
-Every Title must start with `[DEMO]` (validated). The marker is the
-[teardown contract](../artifacts/demo-data.md). Only emitted with
-`build --seed`.
+Every Title must start with `[DEMO]` followed by one space (validated), keeping
+sample data visible in every view and form. The prefix is not deletion
+authority; rollback confirms every target list separately. Only emitted with
+`build --seed`. See [demo data](../artifacts/demo-data.md).
 
 ## `extensions`
 

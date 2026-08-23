@@ -49,8 +49,8 @@ Trip km and is what the row wash exists to make obvious.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO]`, so they are obvious in every view, they are matched by Title on
-re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
-list whose rows are *all* demo-marked as demo-only content. Do not seed a
+re-paste (running it twice never duplicates), and `rollback.js.txt` requires
+per-list confirmation before every delete. Do not seed a
 site that already holds real trips.
 
 ## After the paste: verification checklist

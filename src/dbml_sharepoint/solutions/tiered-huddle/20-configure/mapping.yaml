@@ -354,7 +354,7 @@ retired_columns:
 # Two stream columns are omitted DELIBERATELY (ComplianceStatus on th3-d03,
 # SupplyChainStatus on th3-d01) so the unreported-grey cell is visible. Do
 # not fill them in. Every Title carries the [DEMO] marker: rows are matched
-# by Title on re-paste, and rollback treats an all-demo list as removable.
+# by Title on re-paste. Rollback confirms every target list before delete.
 #
 # Tiers 1 and 2 carry FOUR boards each rather than a fortnight. The point of
 # the long Tier 3 run is the heat grid over time; tiers 1 and 2 only need

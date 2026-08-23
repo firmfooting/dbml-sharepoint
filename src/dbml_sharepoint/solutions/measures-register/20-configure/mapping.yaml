@@ -255,8 +255,8 @@ list_validation:
     message: "An active measure needs a Review Date. Without one it never reaches the review queue and its definition is never re-tested."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # review-cadence surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
 # status band renders, and the review date appears both overdue (red) and

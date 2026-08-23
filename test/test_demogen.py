@@ -121,7 +121,7 @@ def test_demo_script_contract() -> None:
     assert "findByTitle" in js
     assert "_spPageContextInfo.userId" in js
     assert "body[`${f.name}Id`]" in js
-    # The teardown contract and in-record notice ride the Title marker.
+    # The visible sample-data notice rides in the Title prefix.
     assert "[DEMO] " in js
     # Per-row list-item comments were tried and WITHDRAWN: the modern
     # Comments() endpoint is undocumented surface and 400'd the write live

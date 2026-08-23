@@ -448,8 +448,8 @@ list_validation:
     message: "This declaration cannot be saved yet. Check both: an interest assessed as managed needs a Review Date, and a ceased interest needs the Ceased Date. The management plan itself cannot be checked here - see the governance rules."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # review and disclosure surfaces land on whatever day the demo runs; "@me"
 # is the pasting operator.
 #
