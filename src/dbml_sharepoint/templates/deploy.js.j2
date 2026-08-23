@@ -141,6 +141,13 @@
 {% include step.template %}
 {% endfor %}
 {% endfor %}
+  } catch (err) {
+    // Convert every uncaught phase failure into the same returned summary contract (#282).
+    const detail = String((err && err.message) || err).slice(0, 300);
+    log('ERROR', `${currentPhaseLabel || 'Deploy'}: ${detail}`);
+    summary.errors.push({ phase: currentPhaseLabel || 'deploy', error: detail });
+    if (!summary.aborted) summary.aborted = 'uncaught-phase-error';
+    return summary;
   } finally {
     // Restore field protection before dropping the temporary membership
     // that may be what authorises those writes.

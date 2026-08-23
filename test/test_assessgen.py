@@ -1186,6 +1186,99 @@ def test_a_throw_inside_the_standalone_assessment_still_names_a_verdict() -> Non
     assert summary["aborted"] == "assessment-failed", summary
 
 
+# Synthetic verbose-OData error body for contextinfo parser diagnostics (#282).
+_ACCESS_DENIED = {
+    "error": {
+        "code": "-2147024891, System.UnauthorizedAccessException",
+        "message": {
+            "lang": "en-US",
+            "value": "Access denied. You do not have permission to perform this action.",
+        },
+    },
+}
+
+
+def _refused_contextinfo_harness() -> str:
+    """`_ASSESS_HARNESS` answering contextinfo 403, with every call logged.
+
+    That one request changes and nothing else does, so a finding this
+    produces comes from the refusal rather than from a site the mock stopped
+    serving. The log is what proves the assessment stayed read-only through
+    it: contextinfo is the only POST the script is allowed to make.
+    """
+    assert "const respond = (status, payload)" in _ASSESS_HARNESS, (
+        "the harness no longer exposes the respond() this wrapper reuses"
+    )
+    wrapper = textwrap.dedent("""
+        const calls = [];
+        const siteFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          calls.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+          if (!String(url).includes('contextinfo')) return siteFetch(url, opts);
+          return respond(403, __DENIED__);
+        };
+        globalThis.__calls = calls;
+    """).replace("__DENIED__", json.dumps(_ACCESS_DENIED))
+    return _ASSESS_HARNESS + wrapper
+
+
+def _run_assess_refused(harness: str) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run the emitted assess.js and hand back its summary, calls and transcript.
+
+    `_run_assess` asserts its way to a summary, which is the wrong shape for a
+    test that has to prove the script did NOT throw and did NOT write.
+    """
+    js = _assess_js()
+    assert js.count("})();") == 1, "the IIFE terminator is no longer unique"
+    script = harness + "\n" + js.replace(
+        "})();",
+        "}))().then("
+        "(r) => console.log('__RESULT__' + JSON.stringify(r)),"
+        " (e) => console.log('__THROWN__' + JSON.stringify(String((e && e.message) || e))))"
+        ".then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = run_node(script)
+
+    def _marker(name: str) -> Any:
+        line = next((ln for ln in output.splitlines() if ln.startswith(name)), None)
+        return None if line is None else json.loads(line.removeprefix(name))
+
+    thrown = _marker("__THROWN__")
+    assert thrown is None, f"assess.js rejected instead of reporting: {thrown}"
+    summary = _marker("__RESULT__")
+    assert summary is not None, f"assess.js returned no summary:\n{output[-3000:]}"
+    calls = _marker("__CALLS__")
+    assert calls is not None, f"the harness produced no call log:\n{output[-3000:]}"
+    return summary, calls, output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_contextinfo_is_named_rather_than_reported_as_a_type_error() -> None:
+    """The standalone assessment made its own contextinfo POST and read
+    `j.d.GetContextWebInformation` off it without checking the response, so a
+    403 reached the operator as `Cannot read properties of undefined` under a
+    finding that says the build version could not be read. That is #282
+    surviving the fix to the shared digest helper, on the one script an
+    operator runs FIRST.
+    """
+    summary, calls, output = _run_assess_refused(_refused_contextinfo_harness())
+    assert "GetContextWebInformation" not in output, (
+        f"the refusal still surfaces as a property-access error:\n{output[-3000:]}"
+    )
+    # A refused digest degrades the assessment without preventing other reads.
+    assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+    assert summary.get("aborted") is None, summary
+    named = [f for f in summary["findings"] if "contextinfo" in str(f["detail"])]
+    assert named, f"no finding names the refused request: {summary['findings']}"
+    assert any(f["key"] == "platform_build" for f in named), named
+    for finding in named:
+        assert "403" in str(finding["detail"]), finding
+        assert "Access denied" in str(finding["detail"]), finding
+    # Contextinfo remains the only POST after the refusal.
+    writes = [c for c in calls if c["method"] == "POST" and "contextinfo" not in c["url"]]
+    assert not writes, f"the read-only assessment wrote: {writes}"
+
+
 if __name__ == "__main__":  # pragma: no cover
     # Regenerate the golden. Deliberately not a pytest flag: see
     # test_simple_assess_js_matches_golden. Uses the SAME renderer the test

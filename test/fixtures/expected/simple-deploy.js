@@ -201,11 +201,11 @@
   // error.message.value; fall back to (bounded) raw text. A bare HTTP
   // status left a blocked run undiagnosable (live finding 2026-07-24).
   const spError = (text) => {
+    let message = text;
     try {
-      return JSON.parse(text)?.error?.message?.value || String(text).slice(0, 300);
-    } catch {
-      return String(text).slice(0, 300);
-    }
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
   };
 
   // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
@@ -238,14 +238,51 @@
 
   let cachedDigest = null;
   let digestExpiresAt = 0;
+  // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
+  async function getContextWebInformation() {
+    // The bound spError applies, for a failure arriving as a rejection rather than as an error body.
+    const bounded = (e) => String((e && e.message) || e).slice(0, 300);
+    const failed = (detail) => new Error(`contextinfo (request digest) failed: ${detail}`);
+    let r;
+    try {
+      r = await fetchWithRetry(apiUrl('contextinfo'), {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      // fetch rejects outright on a network or CORS failure, so there is no status to report, only the operation.
+      throw failed(`no response (${bounded(err)})`);
+    }
+    // Preserve the operation and status even when the refused body is unreadable (#282).
+    if (!r.ok) {
+      const body = await r.text().catch((e) => `body unreadable: ${bounded(e)}`);
+      throw failed(`HTTP ${r.status} ${spError(body)}`);
+    }
+    let info = null;
+    try {
+      info = (await r.json())?.d?.GetContextWebInformation;
+    } catch (err) {
+      throw failed(`HTTP ${r.status} with an unreadable body (${bounded(err)})`);
+    }
+    // A 200 carrying no GetContextWebInformation is the same blind dereference one status code further along.
+    if (!info || typeof info !== 'object' || Array.isArray(info)) {
+      throw failed(`HTTP ${r.status} carried no GetContextWebInformation`);
+    }
+    if (typeof info.FormDigestValue !== 'string' || !info.FormDigestValue.trim()) {
+      throw failed(`HTTP ${r.status} carried no usable FormDigestValue`);
+    }
+    return info;
+  }
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
-    const r = await fetchWithRetry(apiUrl('contextinfo'), {
-      method: 'POST',
-      headers: { 'Accept': 'application/json;odata=verbose' },
-    });
-    const j = await r.json();
-    const info = j.d.GetContextWebInformation;
+    let info;
+    try {
+      info = await getContextWebInformation();
+    } catch (err) {
+      const failure = err instanceof Error ? err : new Error(String(err));
+      failure.digestFailure = true;
+      throw failure;
+    }
     cachedDigest = info.FormDigestValue;
     const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
     digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
@@ -257,7 +294,8 @@
   async function assessSite(ctx) {
     const { requirements: REQUIREMENTS, targets: TARGETS,
             notAssessable: NOT_ASSESSABLE, log, web: WEB, origin: ORIGIN,
-            fetchWithRetry, apiUrl, odataName, getDigest, verdictLevel } = ctx;
+            fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
+            verdictLevel } = ctx;
     // Fail closed on a caller-built targets: a missing key is a bare TypeError
     // several probes in, and every one of these is read below.
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
@@ -265,6 +303,11 @@
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
+    // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
+    const missingCollaborators = ['log', 'fetchWithRetry', 'apiUrl', 'odataName',
+      'getDigest', 'getContextWebInformation',
+    ].filter((k) => typeof ctx[k] !== 'function');
+    if (missingCollaborators.length) throw new Error(`assess-context-incomplete: ctx is missing ${missingCollaborators.join(', ')}`);
     const findings = [];
     let verdict = null;
     const finding = (tier, key, level, detail) => {
@@ -323,11 +366,10 @@
       }
     }
 
-    // Platform build fingerprint (from the digest response).
+    // Platform build fingerprint, through the shared helper: a second parse here reproduced #282 in both assess paths.
     try {
-      const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
-      const j = await r.json();
-      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(j.d.GetContextWebInformation.LibraryVersion)}.`);
+      const info = await getContextWebInformation();
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(info.LibraryVersion)}.`);
     } catch (err) {
       finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
     }
@@ -2194,7 +2236,7 @@
       requirements: ASSESS_REQUIREMENTS, targets: ASSESS_TARGETS,
       notAssessable: ASSESS_NOT_ASSESSABLE, log, web: WEB,
       origin: window.location.origin, verdictLevel: 'INFO',
-      fetchWithRetry, apiUrl, odataName, getDigest,
+      fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
     });
   } catch (err) {
     log('ERROR', `The assessment could not run (${err.message}); no deployment writes were attempted.`);
@@ -2345,7 +2387,17 @@
   // === Phase 1.3: custom permission levels + site groups ===
   log('INFO', 'Starting Phase 1.3: permission levels and site groups.');
   {
-    let digest0 = await getDigest();
+    // A digest the phase takes for itself is outside every per-object catch, so a refusal rejected the deploy (#282).
+    async function phaseDigest() {
+      try {
+        return await getDigest();
+      } catch (err) {
+        log('ERROR', `Phase 1.3: ${err.message}`);
+        summary.errors.push({ phase: '1.3', error: err.message });
+        return null;
+      }
+    }
+    let digest0 = await phaseDigest();
 
     // A built-in owner group always exists (it is the site's own associated
     // group), so resolveGroupOwner's Associated*Group branches never 404.
@@ -3083,7 +3135,10 @@
       // 'Fresh digest per seed'), so the apply pass takes its own fresh one
       // here, before its first write, rather than trusting whatever the
       // survey left behind.
-      digest0 = await getDigest();
+      digest0 = await phaseDigest();
+    }
+    // Re-tested after that fetch: a refused digest is recorded rather than thrown, and there is nothing to write with.
+    if (summary.errors.length === 0) {
       for (const decision of decisions) {
         try {
           if (decision.object === 'level') {
@@ -3092,9 +3147,7 @@
             await applyGroupDecision(decision);
           }
         } catch (err) {
-          // Deliberately continues past this failure rather than stopping
-          // the loop, so one run's transcript names every blocker instead
-          // of only the first.
+          // Continue after object errors, but a digest failure makes every later write unsafe.
           const label = decision.object === 'level' ? 'permission level' : 'site group';
           log('ERROR', `Phase 1.3 ${label} '${decision.name}': ${err.message}`);
           if (decision.object === 'level') {
@@ -3102,6 +3155,7 @@
           } else {
             summary.errors.push({ phase: '1.3', group: decision.name, error: err.message });
           }
+          if (err && err.digestFailure) break;
         }
       }
     }
@@ -4538,6 +4592,13 @@
   // try wrapping every phase closes. A phase partial that emitted `})();`
   // itself would close the function before that finally could run.
   return summary;
+  } catch (err) {
+    // Convert every uncaught phase failure into the same returned summary contract (#282).
+    const detail = String((err && err.message) || err).slice(0, 300);
+    log('ERROR', `${currentPhaseLabel || 'Deploy'}: ${detail}`);
+    summary.errors.push({ phase: currentPhaseLabel || 'deploy', error: detail });
+    if (!summary.aborted) summary.aborted = 'uncaught-phase-error';
+    return summary;
   } finally {
     // Restore field protection before dropping the temporary membership
     // that may be what authorises those writes.
