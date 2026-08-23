@@ -17,6 +17,10 @@ The transformation is mechanical, terminating and depth-preserving:
 Implications need no operator of their own. A validation rule is usually
 "if A then B", which is `any_of[none_of[A], B]`, expressible in the
 grammar as authored and normalised by the rules above.
+
+BREAKING API CHANGE (#168): `validate_condition` was removed. Use
+`condition_findings`, which preserves each problem's finding code and leaf
+location instead of returning message-only prose.
 """
 
 import datetime as dt
@@ -1453,37 +1457,6 @@ def leaves(node: Condition) -> list[Leaf]:
 type _Problem = tuple[FindingCode, str, str | None]
 
 
-def validate_condition(
-    condition: Condition,
-    *,
-    target: str,
-    rendered: set[str],
-    types: dict[str, str],
-    lookups: set[str],
-    context: str,
-) -> list[str]:
-    """Semantic problems with a declared condition, as messages.
-
-    Returns rather than raises, and keeps going after the first problem, so
-    one build reports every broken leaf instead of one per run.
-
-    The message-only view, kept for the callers that still wrap these into
-    Findings themselves. Prefer `condition_findings`, which hands back the
-    code and the location too; this drops both on the floor.
-    """
-    return [
-        message
-        for _code, message, _field in _condition_problems(
-            condition,
-            target=target,
-            rendered=rendered,
-            types=types,
-            lookups=lookups,
-            context=context,
-        )
-    ]
-
-
 def condition_findings(
     condition: Condition,
     *,
@@ -1493,7 +1466,7 @@ def condition_findings(
     lookups: set[str],
     at: Location,
 ) -> list[Finding]:
-    """The same problems as `validate_condition`, as classified Findings.
+    """Semantic problems with a declared condition, as classified Findings.
 
     Every one is an error: a condition that cannot be rendered has no
     degraded form to fall back to, so there is nothing to warn about.

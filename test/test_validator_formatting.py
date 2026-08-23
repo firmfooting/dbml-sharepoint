@@ -409,7 +409,14 @@ def test_list_validation_rules_validated() -> None:
     assert only(errors, FindingCode.UNKNOWN_ENTITY).location == Location(
         Section.LIST_VALIDATION, entity="Widget",
     )
-    assert "Ghost" in only(errors, FindingCode.INVALID_CONDITION).message
+    # The grammar's own code, and the leaf it is about: `when.Ghost`, not the
+    # whole rule. A reader of the finding no longer has to parse the prose to
+    # learn which of a rule's columns was wrong.
+    ghost = only(errors, FindingCode.CONDITION_FIELD_NOT_RENDERED)
+    assert ghost.location == Location(
+        Section.LIST_VALIDATION, entity="Project", sub="when.Ghost",
+    )
+    assert "Ghost" in ghost.message
 
 def test_list_validation_rejects_unsupported_column_types() -> None:
     """SP list validation formulas cannot reference calculated, person,
@@ -432,11 +439,20 @@ def test_list_validation_rejects_unsupported_column_types() -> None:
         )},
     )
     errors = by_severity(validate_against_mapping(schema, bundle), "error")
-    # The condition grammar hands its rejections back as prose under one
-    # code, so the type it refused lives only in the message.
-    reasons = messages(errors, FindingCode.INVALID_CONDITION)
+    # Both refusals are the same rule -- an operand type this target cannot
+    # read -- and the two are told apart by their LOCATION, which names the
+    # leaf. Under the retired generic code they were told apart by prose.
+    refused = [f for f in errors if f.code == FindingCode.CONDITION_OPERAND_TYPE_UNSUPPORTED]
+    assert {f.location for f in refused} == {
+        Location(Section.LIST_VALIDATION, entity="Risk", sub="when.Score"),
+        Location(Section.LIST_VALIDATION, entity="Risk", sub="when.Owner"),
+    }, refused
+    reasons = messages(errors, FindingCode.CONDITION_OPERAND_TYPE_UNSUPPORTED)
     assert any("Score" in m and "calculated" in m.lower() for m in reasons), reasons
     assert any("Owner" in m and "person" in m.lower() for m in reasons), reasons
+    # The guard held: a rule the grammar refused is never handed to the
+    # renderer, so there is no formula to measure.
+    none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
 
 def test_today_offset_valid_on_calculated_date() -> None:
     """A calculated_date column stores DateTime values, so 'today' offset
