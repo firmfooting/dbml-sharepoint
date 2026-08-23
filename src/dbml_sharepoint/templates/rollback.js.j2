@@ -71,12 +71,13 @@
   }
 
   // Demo-aware non-empty gate: rows seeded by demo-data.js.txt all carry the
-  // '[DEMO] ' Title marker. A list whose items are ALL demo rows is
-  // demo-only content: deleting the list deletes them, so it proceeds
-  // without the DELETE NON-EMPTY prompt (deploy, demonstrate, delete).
+  // '{{ demo_title_prefix }}' Title marker. A list whose item Titles ALL match
+  // that prefix is treated as demo-only and bypasses DELETE NON-EMPTY.
+  // This is a prefix heuristic, not row provenance: real Titles can collide.
+  // Issue #293 owns replacing this shortcut with evidence or confirmation.
   // ANY item without the marker keeps the refusal, and anything
   // unreadable or larger than a demo could ever be is treated as real.
-  const DEMO_PREFIX = '[DEMO] ';
+  const DEMO_PREFIX = '{{ demo_title_prefix }}';
   async function allItemsAreDemo(name, count) {
     if (count > 100) return false;  // a demo never seeds this many rows
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Title&$top=200`), {
@@ -97,7 +98,7 @@
   // its copies in the Preservation Hold Library
   // (https://learn.microsoft.com/purview/retention-policies-sharepoint).
   // recycle(), never a permanent DELETE: nothing this script does is
-  // unrestorable. Demo-only lists require the '[DEMO] ' marker on every
+  // unrestorable. Demo-only lists require the '{{ demo_title_prefix }}' marker on every
   // row at the moment of recycling (an unmarked item aborts, fail
   // closed); the DELETE NON-EMPTY override path recycles EVERY item:
   // the operator just authorised deleting the list including its
@@ -196,7 +197,7 @@
       }
       if (count > 0) {
         if (await allItemsAreDemo(name, count)) {
-          log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked, demo-only content; recycling the demo rows, then deleting the list.`);
+          log('INFO', `'${name}': ${count} item(s), all matching the '{{ demo_title_prefix }}' prefix; taking the demo-prefix rollback path. A Title prefix is not provenance (#293).`);
           await recycleItems(name, true);
         } else {
           // Re-prompt PER non-empty list. A single global unlock would let one

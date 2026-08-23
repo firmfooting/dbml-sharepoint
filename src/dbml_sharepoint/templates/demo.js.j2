@@ -4,13 +4,13 @@
 {% include "_provenance.js.j2" %}
  *
  * Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared
- * demo/sample rows. Every Title starts with '[DEMO] ' (visible in every
- * view and form, and the marker rollback.js.txt trusts), and each row's text
+ * demo/sample rows. Every Title starts with '{{ demo_title_prefix }}' (visible in every
+ * view and form, and the prefix rollback.js.txt currently uses as a heuristic), and each row's text
  * identifies it as demonstration data to delete before active use.
  * Re-pasting is safe: rows that already exist (matched by Title) are
  * skipped, never duplicated. rollback.js.txt deletes lists whose items are ALL
- * demo rows without the non-empty refusal prompt: deploy, demonstrate,
- * delete.
+ * prefixed rows without the non-empty refusal prompt. A Title prefix is not
+ * row provenance; see issue #293 before relying on that shortcut.
  */
 (async () => {
   const SITE_URL  = {{ site_url | tojson }};
@@ -152,7 +152,7 @@
   }
 
   log('DONE', `Demo data complete. Created ${summary.created.length}, skipped ${summary.skipped.length} existing, errors ${summary.errors.length}.`);
-  log('INFO', 'Every demo row is marked "[DEMO] ". Delete before active use; rollback.js.txt removes demo-only lists without the non-empty prompt.');
+  log('INFO', 'Every demo row is prefixed "{{ demo_title_prefix }}". Delete before active use; rollback.js.txt currently treats an all-prefixed list as demo-only, but a Title prefix is not provenance (#293).');
   console.log(summary);
   return summary;
 })();

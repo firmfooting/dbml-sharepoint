@@ -111,7 +111,7 @@ dbml-sharepoint explain unknown_column_type
 | `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
 | `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
 | `demo_rows_on_document_library` | error | `demo_items:` seeds a `DocumentLibrary`. A library's items are files and seeding posts to `/items`, which SharePoint refuses outright -- so the paste fails in front of whoever was being shown the demo. |
-| `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the marker the teardown trusts to tell demo rows from real records. |
+| `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the prefix rollback currently requires for its automatic demo-list heuristic. A Title prefix is not row provenance; see #293. |
 | `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
 | `display_column_not_rendered` | error | A lookup target's `display_column` names a column the deploy never creates, so the automatic index would be created on a field that does not exist. |
 | `display_column_type_unindexable` | error | A lookup target's `display_column` is a type SharePoint cannot index. The deploy sets `Indexed=true`, reads it back and aborts part-way through when it did not stick. |

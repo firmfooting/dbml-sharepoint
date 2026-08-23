@@ -7,12 +7,13 @@ script knows whether to write a literal, resolve the deploying operator
 Id (lookups also take `<Name>Id`), or compute a run-time date from a
 `today+/-N` offset. Cadence-derived demo surfaces (Review due, overdue
 formatting, Tolerance due) must land on whatever day the demo runs.
-The '[DEMO] ' Title marker (validated mandatory) is the in-record notice
-and the teardown contract.
+The Title marker (validated mandatory) is the in-record notice and the
+teardown contract; `analysis/demo_marker.py` declares it.
 """
 
 from typing import Any
 
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.typemap import (
     MULTI_VALUE_METADATA_TYPE,
@@ -33,13 +34,6 @@ from dbml_sharepoint.templating import script_env
 # accepts and the other does not passes the build with zero findings and
 # emits the literal string "today" into a script.
 _TODAY_OFFSET = TODAY_SENTINEL
-
-# The Title marker is the in-record demo notice: visible in every view and
-# form header, and the marker rollback.js trusts. (Per-row list-item
-# comments were tried and withdrawn: the modern Comments() endpoint is
-# undocumented surface and rejected the write live, 2026-07-24, while
-# adding nothing the marker doesn't already show.)
-DEMO_TITLE_PREFIX = "[DEMO] "
 
 _DATE_TYPES = {"date", "datetime"}
 
