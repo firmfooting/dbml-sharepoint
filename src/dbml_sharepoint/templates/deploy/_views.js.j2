@@ -211,6 +211,11 @@
           await mergeView(viewUrl, patchBody, viewDigest);
         }
       }
+      // MEASURED on 2026-08-14 by test/manual/view-aggregations-probe.js,
+      // revisions aa79f6c4 and 96d0a67a on two sites, reproducing 2026-07-29:
+      // `seeded=ok mechanism=patch readback=ok rendered=yes`.
+      // Q5/Q6: internal names bound; two totals rendered in declaration order.
+      // An empty aggregated column renders no footer until a row carries a value.
       // Declared totals. OUTSIDE the create/adopt branch above, like
       // ViewFields, formatting and the default flag: createViewWithCleanUrl
       // does not send Aggregations, so a newly created view would otherwise
