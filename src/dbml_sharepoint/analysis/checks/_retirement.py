@@ -5,11 +5,11 @@ import datetime as dt
 from dataclasses import replace
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.column_refs import formula_column_refs
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     condition_findings,
-    effective_column_types,
     leaves,
     to_validation,
 )
