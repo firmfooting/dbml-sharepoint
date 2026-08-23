@@ -23,7 +23,6 @@ from dbml_sharepoint.analysis.conditions import (
     to_caml,
     to_expression,
     to_validation,
-    validate_condition,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
@@ -1072,10 +1071,42 @@ RENDERED = {"Status", "Count", "Owner", "Note", "Parent", "Due", "Flag"}
 LOOKUPS = {"Parent"}
 
 
+#: The location the message prefixes below are spelled from: `condition_findings`
+#: passes `at.path` down as the context. The tests here read the sentence after
+#: the prefix, so any location with a `when` sub would do.
+WHEN = Location(Section.LIST_VALIDATION, sub="when")
+#: The other conditional surface, for the tests whose subject is a view filter.
+WHERE = Location(Section.VIEWS, entity="X", sub="where")
+
+
+def _messages(
+    condition: Condition,
+    *,
+    target: str,
+    rendered: set[str],
+    types: dict[str, str],
+    lookups: set[str],
+    at: Location = WHEN,
+) -> list[str]:
+    """The prose of every problem, for the tests that read the wording.
+
+    `condition_findings` is the only entry point now, so the tests that predate
+    the codes get their messages from it rather than from a second function
+    whose whole behaviour was to discard the code and the location.
+    """
+    return [
+        finding.message
+        for finding in condition_findings(
+            condition, target=target, rendered=rendered, types=types,
+            lookups=lookups, at=at,
+        )
+    ]
+
+
 def _problems(condition_raw: object, target: str = EXPRESSION) -> list[str]:
-    return validate_condition(
+    return _messages(
         parse_condition(condition_raw, "when"),
-        target=target, rendered=RENDERED, types=TYPES, lookups=LOOKUPS, context="when",
+        target=target, rendered=RENDERED, types=TYPES, lookups=LOOKUPS,
     )
 
 
@@ -1144,8 +1175,8 @@ def test_unknown_operator_under_none_of_reports_rather_than_raises() -> None:
     condition = parse_condition(
         {"none_of": [{"field": "Status", "op": "equals", "value": "x"}]}, "w",
     )
-    problems = validate_condition(
-        condition, target=CAML, rendered={"Status"}, types=TYPES, lookups=set(), context="w",
+    problems = _messages(
+        condition, target=CAML, rendered={"Status"}, types=TYPES, lookups=set(),
     )
     assert any("unknown operator" in p for p in problems)
 
@@ -1159,9 +1190,8 @@ def test_two_faults_on_one_column_are_both_reported() -> None:
         ],
         "w",
     )
-    problems = validate_condition(
-        condition, target=EXPRESSION, rendered={"Owner"}, types=TYPES,
-        lookups=set(), context="w",
+    problems = _messages(
+        condition, target=EXPRESSION, rendered={"Owner"}, types=TYPES, lookups=set(),
     )
     assert len(problems) == 2
 
@@ -1197,9 +1227,9 @@ def test_a_negation_that_normalisation_breaks_is_a_finding_not_a_crash() -> None
     condition = parse_condition(
         {"none_of": [{"field": "Status", "op": "contains", "value": "x"}]}, "w",
     )
-    problems = validate_condition(
+    problems = _messages(
         condition, target=CAML, rendered={"Status"},
-        types={"Status": "nvarchar"}, lookups=set(), context="views[X].where",
+        types={"Status": "nvarchar"}, lookups=set(), at=WHERE,
     )
     assert problems, "a rule CAML cannot render must be reported, not raised"
     assert "not_contains" in problems[0]
@@ -1211,9 +1241,9 @@ def test_an_authored_operator_is_not_re_reported_under_a_rewritten_name() -> Non
     """The second pass reports only what normalisation introduced. A rule the
     author wrote was already judged in their own vocabulary above."""
     condition = parse_condition([{"field": "Status", "op": "contains", "value": "x"}], "w")
-    problems = validate_condition(
+    problems = _messages(
         condition, target=CAML, rendered={"Status"},
-        types={"Status": "nvarchar"}, lookups=set(), context="views[X].where",
+        types={"Status": "nvarchar"}, lookups=set(), at=WHERE,
     )
     assert problems == [], f"a plain supported operator must be clean: {problems}"
 
@@ -1249,9 +1279,9 @@ def test_a_view_filter_accepts_none_of_wrapped_round_a_negative_text_operator() 
     assert to_caml(condition, {"Note": "nvarchar"}) == (
         '<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>'
     )
-    assert validate_condition(
+    assert _messages(
         condition, target=CAML, rendered={"Note"},
-        types={"Note": "nvarchar"}, lookups=set(), context="views[0].where",
+        types={"Note": "nvarchar"}, lookups=set(), at=WHERE,
     ) == []
 
 
@@ -1269,9 +1299,9 @@ def test_the_implication_idiom_survives_a_negative_text_operator() -> None:
     types = {"Note": "nvarchar", "Status": "nvarchar"}
 
     assert "<Or><Contains>" in to_caml(condition, types)
-    assert validate_condition(
+    assert _messages(
         condition, target=CAML, rendered=set(types),
-        types=types, lookups=set(), context="views[0].where",
+        types=types, lookups=set(), at=WHERE,
     ) == []
 
 

@@ -96,5 +96,9 @@ Implications need no operator of their own. A validation rule is usually
 "if A then B", which is `any_of[none_of[A], B]`, expressible in the
 grammar as authored and normalised by the rules above.
 
+BREAKING API CHANGE (#168): `validate_condition` was removed. Use
+`condition_findings`, which preserves each problem's finding code and leaf
+location instead of returning message-only prose.
+
 
 

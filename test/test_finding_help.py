@@ -20,7 +20,7 @@ import re
 from _paths import PACKAGE, REPO_ROOT, TEST_DIR
 from typer.testing import CliRunner
 
-from dbml_sharepoint.analysis.finding_help import FINDING_HELP
+from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.cli import app
@@ -245,6 +245,13 @@ def test_explain_prints_the_meaning_of_a_code() -> None:
     assert FINDING_HELP[FindingCode.UNKNOWN_COLUMN_TYPE] in " ".join(
         result.output.split(),
     )
+
+
+def test_explain_keeps_the_retired_generic_condition_code_answerable() -> None:
+    result = runner.invoke(app, ["explain", "invalid_condition"])
+
+    assert result.exit_code == 0, result.output
+    assert RETIRED_FINDINGS["invalid_condition"] in " ".join(result.output.split())
 
 
 def test_explain_names_the_severity() -> None:

@@ -288,10 +288,6 @@ class FindingCode(StrEnum):
     FORM_COLUMNS_IN_NO_SECTION = "form_columns_in_no_section", "warning"
     LIST_VALIDATION_MESSAGE_TOO_LONG = "list_validation_message_too_long", "error"
     LIST_VALIDATION_FORMULA_TOO_LONG = "list_validation_formula_too_long", "error"
-    # The condition grammar rejected the expression. `conditions.py` has 28
-    # distinct reasons behind this and hands them back as prose; splitting
-    # them into codes is that module's classification, not this one's.
-    INVALID_CONDITION = "invalid_condition", "error"
 
     # --- checks/_demo.py: rows seeded by `--seed`
     DEMO_ROWS_ON_DOCUMENT_LIBRARY = "demo_rows_on_document_library", "error"
