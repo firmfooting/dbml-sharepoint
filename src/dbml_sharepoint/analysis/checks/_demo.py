@@ -281,7 +281,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         findings.append(Finding(
                             FindingCode.DEMO_ENUM_VALUE_UNKNOWN,
                             f"{ctx}: {col_name} value {member!r} is not a member "
-                            f"of enum {col_type}.",
+                            f"of enum {enum_name}.",
                             location=at,
                         ))
 

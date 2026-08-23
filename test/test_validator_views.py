@@ -719,6 +719,8 @@ def test_a_bogus_member_in_a_multi_value_demo_value_is_refused() -> None:
     # reader to find which of them SharePoint would have refused.
     assert "Nonsense" in found.message
     assert "View" not in found.message
+    assert "enum audit_event." in found.message
+    assert "audit_event[]" not in found.message
 
 def test_a_scalar_literal_for_a_multi_value_column_is_refused() -> None:
     """A MultiChoice column's write shape is a collection, not a scalar."""

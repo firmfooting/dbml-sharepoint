@@ -1,6 +1,7 @@
 # test/test_demogen.py
 """demo-data.js generation (--seed): plan typing and script contract."""
 
+import pytest
 from _model import bundle as make_bundle
 from _model import column, enum, person, ref
 from _model import schema as make_schema
@@ -212,14 +213,12 @@ def test_a_today_offset_keeps_its_sign_through_the_planner() -> None:
         }
 
 
-def test_the_planner_reads_the_date_grammar_whatever_the_arity() -> None:
-    """`date[]` is not a key in the planner's date set, so the offset went out
-    as the literal string "today+30" while the type read as covered."""
+def test_a_scalar_today_offset_is_refused_for_a_multi_value_date() -> None:
+    """A scalar offset cannot bypass the multi-value list requirement."""
     from dbml_sharepoint.generators.demogen import _field_plan
 
-    assert _field_plan("date[]", "D", "today+30") == {
-        "name": "D", "kind": "date_offset", "value": 30,
-    }
+    with pytest.raises(ValueError, match="must be a list"):
+        _field_plan("date[]", "D", "today+30")
 
 
 def _multi_value_js(members: list[str]) -> str:

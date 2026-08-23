@@ -81,24 +81,7 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any] |
             "kind": "url",
             "value": {"url": url, "description": str(description or url)},
         }
-    # Through `element_type`, because `date[]` is not a key in this set and the
-    # test read as though it covered the column.
-    if element_type(col_type or "") in _DATE_TYPES and isinstance(value, str):
-        m = _TODAY_OFFSET.match(value)
-        if m:
-            # The shared pattern captures sign and digits separately, so an
-            # offset is rebuilt from both rather than read from one group.
-            sign, digits = m.group(1), m.group(2)
-            offset = int(digits) if digits else 0
-            return {
-                "name": name,
-                "kind": "date_offset",
-                "value": -offset if sign == "-" else offset,
-            }
-    # Placed immediately before `literal`, which is where a multi-value column
-    # would otherwise land and emit the bare array nothing has sent. The kinds
-    # above keep their place: each answers a shape arity does not change, and
-    # `date[]` reaches the date grammar deliberately.
+    # Placed before date parsing so a scalar cannot bypass the multi-value shape.
     if is_multi_value(col_type or ""):
         if not isinstance(value, list):
             # DEMO_MULTI_VALUE_NOT_A_LIST reports this first, so reaching here
@@ -120,6 +103,18 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any] |
             "metadata_type": MULTI_VALUE_METADATA_TYPE,
             "results": list(value),
         }
+    if element_type(col_type or "") in _DATE_TYPES and isinstance(value, str):
+        m = _TODAY_OFFSET.match(value)
+        if m:
+            # The shared pattern captures sign and digits separately, so an
+            # offset is rebuilt from both rather than read from one group.
+            sign, digits = m.group(1), m.group(2)
+            offset = int(digits) if digits else 0
+            return {
+                "name": name,
+                "kind": "date_offset",
+                "value": -offset if sign == "-" else offset,
+            }
     return {"name": name, "kind": "literal", "value": value}
 
 
