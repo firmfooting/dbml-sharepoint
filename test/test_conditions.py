@@ -19,7 +19,6 @@ from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     condition_fields,
     condition_findings,
-    describe,
     measure_tree,
     normalise,
     to_caml,
@@ -1176,15 +1175,6 @@ def test_two_faults_on_one_column_are_both_reported() -> None:
     assert len(problems) == 2
 
 
-def test_describe_keeps_the_negation_of_a_single_child_group() -> None:
-    """none_of with one child is the canonical implication idiom, and
-    dropping its NOT made the manifest state the opposite of the rule."""
-    condition = parse_condition(
-        {"none_of": [{"field": "Status", "op": "eq", "value": "Closed"}]}, "w",
-    )
-    assert describe(condition) == "NOT(Status eq 'Closed')"
-
-
 def test_calculated_columns_are_refused_as_expression_operands() -> None:
     """Microsoft documents calculated columns as unsupported in conditional
     show/hide formulas. The formula is syntactically valid, so it saves and
@@ -2186,10 +2176,3 @@ def test_the_multi_value_operand_refusal_still_covers_the_formula_targets() -> N
     )
 
     assert only(findings, FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED).severity == "error"
-
-
-def test_membership_describes_itself_in_the_manifest() -> None:
-    """`describe` renders the DECLARED operator, so a manifest reader sees the
-    word the mapping used rather than the `<Eq>` it becomes -- which on this
-    column would read as equality and mean something else."""
-    assert describe(Leaf("Events", "includes", "View")) == "Events includes 'View'"

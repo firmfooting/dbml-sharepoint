@@ -190,16 +190,3 @@ degraded form to fall back to, so there is nothing to warn about.
 A leaf's finding is located one element below `at`, which is exactly
 what the message prefix has always spelled by hand.
 
-### `describe`
-
-```python
-def describe(node: Condition) -> str
-```
-
-A human-readable summary for manifests and documentation.
-
-Deliberately not any target's syntax: an operator reads as its declared
-name, so an operator a reader does not recognise sends them to the
-grammar reference rather than to a SharePoint dialect they would then
-have to identify.
-

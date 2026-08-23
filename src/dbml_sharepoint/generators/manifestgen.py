@@ -4,7 +4,7 @@
 import json
 from typing import Any
 
-from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
