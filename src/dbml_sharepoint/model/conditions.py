@@ -24,6 +24,18 @@ from typing import Any, Literal
 
 GROUP_KINDS: tuple[str, ...] = ("all_of", "any_of", "none_of")
 
+#: Operators that carry no `value`, which is a fact about the GRAMMAR rather
+#: than about any target: `is_null` asks whether the column is empty, and there
+#: is nothing to compare it against in any syntax.
+#:
+#: It lives here because both sides of the condition split need it and neither
+#: may own it. `analysis.conditions` reads it to refuse a missing or surplus
+#: value, and `analysis.condition_description` reads it to print the operator
+#: with no operand after it -- and that module exists to be importable without
+#: the validation stack, so it cannot reach across for a frozenset.
+#: `test_condition_description.py` holds this module as the only owner.
+VALUELESS_OPS: frozenset[str] = frozenset({"is_null", "is_not_null"})
+
 _LEAF_KEYS = frozenset({"field", "op", "value", "property", "measure"})
 
 

@@ -61,6 +61,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.permissions", "SP base-permission bitmask helpers"),
     ("analysis.styles", "the fleet style standard"),
     ("analysis.conditions", "condition normalisation, validation and rendering"),
+    ("analysis.condition_description", "human-readable condition prose"),
     ("analysis.forms", "composing declared form visibility"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),

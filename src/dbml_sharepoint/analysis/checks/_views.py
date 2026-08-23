@@ -33,7 +33,7 @@ from dbml_sharepoint.analysis.typemap import (
     is_multi_value,
     unsupported_index_reason,
 )
-from dbml_sharepoint.model.conditions import Condition, Leaf
+from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Leaf
 from dbml_sharepoint.model.mapping_types import view_url_slug
 
 # What SharePoint can add up. A calculated_number is included deliberately:
@@ -260,9 +260,6 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # Microsoft-hosted statement found says that service does not support filtering
 # on null. It does here, under and over the threshold. That reasoning described
 # the documentation rather than the behaviour.
-_NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
-
-
 def _formatter_strings(node: object, key: str = "") -> list[tuple[str, str]]:
     """Every (key, string value) pair in a formatter JSON tree, depth first.
 
@@ -687,7 +684,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # warning without the index remedy.
                     compared = {
                         leaf.field for leaf in leaves(view.where)
-                        if leaf.op not in _NULL_TEST_OPS
+                        if leaf.op not in VALUELESS_OPS
                     }
                     null_only = not (filtered & compared)
                     names = ", ".join(sorted(filtered))
