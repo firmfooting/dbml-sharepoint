@@ -2,13 +2,15 @@
 """Field sets and declared views."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_projection import (
+    SYSTEM_COLUMN_TYPES,
+    effective_column_types,
+)
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.conditions import (
     CAML,
-    SYSTEM_COLUMN_TYPES,
     condition_fields,
     condition_findings,
-    effective_column_types,
     leaves,
     normalise,
 )

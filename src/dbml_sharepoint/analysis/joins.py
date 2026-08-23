@@ -67,7 +67,7 @@ uncertainty is carried by a warning band rather than hidden.
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
-from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES
+from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
 from dbml_sharepoint.model.mapping_types import EntityMapping
@@ -81,8 +81,8 @@ JOIN_LIMIT = 12
 JOIN_WARN_AT = 9
 
 # Appended to every generated `All Items` view without being asked for, and the
-# two nobody counts. DERIVED, not written out: `conditions.SYSTEM_COLUMN_TYPES`
-# already records that Author and Editor are `person` while Created and Modified
+# two nobody counts. DERIVED, not written out: `column_projection` already
+# records that Author and Editor are `person` while Created and Modified
 # are `datetime`, and a second hand-written copy of that fact is exactly what
 # goes stale. `Created` and `Modified` fall out of this expression on their own,
 # which is the INFERRED half of the rule, never measured; see the module

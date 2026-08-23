@@ -52,6 +52,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.findings", "what a finding is: code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),
     ("analysis.rendered_columns", "which columns a provisioned list actually has"),
+    ("analysis.column_projection", "effective and system-column type projections"),
     ("analysis.column_refs", "column names written inside a formula or formatter"),
     ("analysis.limits", "the SharePoint ceilings, each named once"),
     ("analysis.ordering", "dependency ordering and site filtering"),
