@@ -329,8 +329,8 @@ list_validation:
     message: "A trip that has been returned needs its closing odometer reading. Read it off the dash before you walk away from the car."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Vehicles are created
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Vehicles are created
 # first and the trips reference them by demo key. Odometer readings run
 # CONTINUOUSLY per vehicle, oldest trip to newest, because odometer
 # continuity is the thing a fleet owner reads this register for and demo

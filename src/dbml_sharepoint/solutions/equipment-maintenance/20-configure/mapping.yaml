@@ -342,8 +342,8 @@ list_validation:
     message: "An event that passed with actions, or failed, needs a note: what arose, what was done, and who owns what is left."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Equipment is created first
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Equipment is created first
 # and the events reference items by demo key.
 #
 # ONE ITEM IS DELIBERATELY OVERDUE, and it is the point of the seed. The

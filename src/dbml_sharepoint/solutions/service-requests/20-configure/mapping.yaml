@@ -345,8 +345,8 @@ list_validation:
     message: "Completing or declining a request needs a Completed Date and one line in Resolution saying what was done, or why it was declined and where to go instead."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. "@me" is the pasting
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. "@me" is the pasting
 # operator, which is also what makes "My requests" show content on a
 # seeded site. Coverage: one row per Status and one per Priority, a
 # facilities request and an IT request so both named queues fill, a

@@ -131,9 +131,8 @@ generic one.
 resolved to whoever pastes the script. They are chosen so that every
 declared view returns something and every formatted column renders in its
 colours. A view that demonstrates empty teaches the adopter it does not
-work. Build with `--seed` to get them; `rollback.js.txt` removes a list whose
-rows are all marked without its usual non-empty prompt, so it is
-deploy, demonstrate, delete.
+work. Build with `--seed` to get them. The marker keeps sample rows visible;
+`rollback.js.txt` still requires per-list confirmation before every delete.
 
 ## Anatomy: every template follows the same sequence
 

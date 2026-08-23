@@ -1,9 +1,9 @@
 # test/test_demo_marker_authority.py
-"""One owner for the demo-row prefix used by validation and teardown.
+"""One owner for the demo-row prefix used by validation and demo rendering.
 
 The static scan is a ratchet over direct and constant-concatenated copies. The
-behavioral tests are the stronger evidence: validator, seed and rollback output
-must move when their imported owner moves.
+behavioral tests are the stronger evidence: validator and seed output must move
+when their imported owner moves. Rollback no longer consumes this prefix.
 """
 
 import ast
@@ -21,10 +21,8 @@ from _validator_helpers import _project_errors
 from dbml_sharepoint.analysis import finding_help
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.findings import FindingCode
-from dbml_sharepoint.generators import demogen, rollbackgen
-from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.generators import demogen
 from dbml_sharepoint.model.mapping_types import DemoItem
-from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 _OWNER = PACKAGE / "analysis" / "demo_marker.py"
@@ -35,7 +33,6 @@ _CONSUMERS = (
     PACKAGE / "bundle.py",
     PACKAGE / "cli.py",
     PACKAGE / "generators" / "demogen.py",
-    PACKAGE / "generators" / "rollbackgen.py",
     PACKAGE / "wizard.py",
 )
 _COMMON_ARGS = {
@@ -127,14 +124,6 @@ def _demo_js(title_prefix: str = DEMO_TITLE_PREFIX) -> str:
     )
 
 
-def _rollback_js() -> str:
-    return rollbackgen.generate_rollback_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
-        release=load_release(FIXTURES / "release.yaml"),
-        **_COMMON_ARGS,
-    )
-
 
 def test_owner_declares_the_marker_and_safe_javascript_shape() -> None:
     assert DEMO_TITLE_PREFIX == "[DEMO] "
@@ -198,25 +187,20 @@ def test_validator_rule_and_message_move_with_the_owner(
     )
 
 
-def test_seed_and_teardown_scripts_move_with_the_owner(
+def test_seed_script_moves_with_the_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(demogen, "DEMO_TITLE_PREFIX", "[SAMPLE] ")
-    monkeypatch.setattr(rollbackgen, "DEMO_TITLE_PREFIX", "[SAMPLE] ")
     assert "[SAMPLE] " in _demo_js("[SAMPLE] ")
-    assert "const DEMO_PREFIX = '[SAMPLE] ';" in _rollback_js()
 
 
 def test_default_rendering_is_byte_pinned_at_changed_template_lines() -> None:
     demo = _demo_js()
-    rollback = _rollback_js()
     assert " * demo/sample rows. Every Title starts with '[DEMO] ' (visible in every" in demo
     assert (
         "  log('INFO', 'Every demo row is prefixed \"[DEMO] \". Delete before active "
-        "use; rollback.js.txt currently treats an all-prefixed list as demo-only, "
-        "but a Title prefix is not provenance (#293).');"
+        "use; rollback.js.txt confirms every list before delete.');"
     ) in demo
-    assert "  const DEMO_PREFIX = '[DEMO] ';" in rollback.splitlines()
 
 
 def test_finding_help_quotes_the_owner() -> None:

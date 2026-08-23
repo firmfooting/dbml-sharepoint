@@ -549,8 +549,8 @@ list_validation:
     message: "A key marked Returned needs the time it came back."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Keys are created before
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Keys are created before
 # the movements that reference them. Coverage: every Status and Urgency
 # member, real events and drills on both sides of the IsDrill filter, a
 # code still running so the "Running" treatment is visible, and an

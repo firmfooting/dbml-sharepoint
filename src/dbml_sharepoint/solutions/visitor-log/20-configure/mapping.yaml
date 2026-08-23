@@ -250,8 +250,8 @@ column_validation:
 # at all. Both stay governance checks; 50-govern/governance.md says so.
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # muster surfaces land correctly whenever the demo runs; "@me" is the
 # pasting operator. Coverage: three people still on site (one of them
 # signed in yesterday, which is what "Never signed out" exists for), a

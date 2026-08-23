@@ -663,7 +663,7 @@ def test_demo_items_validated() -> None:
         FindingCode.DUPLICATE_DEMO_KEY,
         FindingCode.DEMO_REF_UNKNOWN_KEY,
     }
-    # The marker itself, spelled exactly: it is what the teardown matches on.
+    # The marker itself, spelled exactly: it is the visible sample-data notice.
     assert "[DEMO] " in only(errors, FindingCode.DEMO_TITLE_MISSING_MARKER).message
 
 def test_demo_items_valid_set_passes() -> None:

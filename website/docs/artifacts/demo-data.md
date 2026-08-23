@@ -19,9 +19,8 @@ whole contract:
   for records.
 - Each row's text identifies it as demonstration data to delete before
   active use.
-- [rollback.js.txt](rollback.md) trusts it: a list whose items are *all*
-  marked is demo-only content and is removed without the non-empty
-  refusal prompt: deploy, demonstrate, delete.
+- [rollback.js.txt](rollback.md) treats the prefix as a visible notice only.
+  Every target list requires its own confirmation before delete.
 
 The build validator enforces the marker on every declared demo Title, so
 an unmarked demo row cannot be produced.

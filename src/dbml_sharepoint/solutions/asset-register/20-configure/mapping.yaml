@@ -277,8 +277,8 @@ list_validation:
     message: "An asset with a Warranty Expiry needs a Purchase Date as well, or the warranty term cannot be calculated."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Locations are created
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Locations are created
 # first and the assets reference them by demo key, which is also the
 # cheapest way to see that the lookup deployed correctly. Coverage: one
 # asset per Status, a warranty inside the sixty-day window so "Warranty

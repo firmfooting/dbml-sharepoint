@@ -312,8 +312,8 @@ list_validation:
     message: "A process that is Planned, In progress or Digitised needs a Target State: which system, which template, which form. Say where it is going before you say it is on its way."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # review cadence lands on whatever day the demo runs; "@me" is the pasting
 # operator. Coverage: every declared view returns rows, every member of
 # every formatted column renders at least once: all five current states,

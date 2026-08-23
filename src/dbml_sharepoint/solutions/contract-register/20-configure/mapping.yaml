@@ -303,8 +303,8 @@ list_validation:
     message: "An auto-renewing contract needs a Notice Period Days value. That number is the only thing standing between this contract and a renewal nobody chose."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # expiry surfaces land on whatever day the demo runs; "@me" is the pasting
 # operator. Coverage: one row per Status member, an auto-renewer already
 # inside its own notice window, and an exited contract for the history lens.

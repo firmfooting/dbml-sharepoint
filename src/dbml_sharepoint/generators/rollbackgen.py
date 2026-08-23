@@ -1,7 +1,6 @@
 # src/dbml_sharepoint/generators/rollbackgen.py
 """Render rollback.js."""
 
-from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -42,6 +41,5 @@ def generate_rollback_js(
         release=release,
         source_dbml=source_dbml,
         target_lists=target_lists,
-        demo_title_prefix=DEMO_TITLE_PREFIX,
         generated_at=generated_at,
     )

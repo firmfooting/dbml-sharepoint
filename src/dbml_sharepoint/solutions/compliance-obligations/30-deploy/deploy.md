@@ -59,7 +59,7 @@ of its grouping rather than one.
 **Delete the demo rows before loading real obligations.** Every demo Title
 begins with `[DEMO]`, so they are obvious in every view, they are matched
 by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
-treats a list whose rows are *all* demo-marked as demo-only content.
+requires per-list confirmation before every delete.
 
 ## After the paste: verification checklist
 

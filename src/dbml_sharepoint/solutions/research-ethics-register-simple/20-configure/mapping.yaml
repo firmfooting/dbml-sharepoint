@@ -587,8 +587,8 @@ list_validation:
     message: "This project cannot be recorded as site-authorised. A site authorisation is given against evidence of ethics clearance, so Ethics Status must be Approved - or Ethics review not required, for a quality activity that correctly did not go to a committee. An approval that has since expired stays recordable, because a live authorisation over a lapsed approval is the state this register has to show rather than hide."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
-# starts "[DEMO] ", the marker rollback.js trusts to delete demo-only lists
-# without its non-empty refusal. Dates are today+/-N so the rolling views land
+# starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the rolling views land
 # correctly on whatever day the demo runs, and "@me" is whoever pastes the
 # script.
 #

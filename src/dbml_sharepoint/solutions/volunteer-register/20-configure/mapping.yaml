@@ -287,8 +287,8 @@ list_validation:
     message: "An Active volunteer needs an induction date and a start date. Complete the checks first; the role's check requirements are in the governance matrix, and the Missing checks view is where gaps show."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # sweep-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
 #

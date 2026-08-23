@@ -3,8 +3,8 @@
  * dbml-sharepoint ROLLBACK script.
 {% include "_provenance.js.j2" %}
  *
- * DELETES every list declared by this schema at this site. Refuses non-empty lists
- * unless the user types DELETE NON-EMPTY at the second prompt.
+ * DELETES every list declared by this schema at this site. Refuses EVERY list
+ * unless the user types DELETE NON-EMPTY for that list and any items present.
  * Deletion-blocked lists (AllowDeletion = false) are unlocked per list
  * after confirmation and re-locked if their delete fails.
  */
@@ -52,42 +52,35 @@
   // absence probes; seen on this script 2026-07-24). The enumeration is
   // always HTTP 200. Counts are a start-of-run snapshot; classification
   // and recycling read live items anyway.
+  // Page through the complete live list catalogue. An omitted page cannot be
+  // treated as an absent target: that would skip its per-list confirmation.
   let listCountsByTitle = null;
   async function itemCount(name) {
     if (listCountsByTitle === null) {
-      const r = await fetchWithRetry(apiUrl('web/lists?$select=Title,ItemCount'), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!r.ok) {
-        throw new Error(`list enumeration failed: HTTP ${r.status} ${spError(await r.text())}`);
+      // Titles are live data, so avoid Object.prototype keys such as
+      // `constructor` or `__proto__` becoming false list matches.
+      const discovered = Object.create(null);
+      let nextUrl = apiUrl('web/lists?$select=Title,ItemCount&$top=5000');
+      let pages = 0;
+      while (nextUrl) {
+        if (++pages > 100) throw new Error('list enumeration exceeded 100 pages; aborting');
+        const r = await fetchWithRetry(nextUrl, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) {
+          throw new Error(`list enumeration failed: HTTP ${r.status} ${spError(await r.text())}`);
+        }
+        const j = await r.json();
+        for (const l of ((j && j.d && j.d.results) || [])) {
+          discovered[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
+        }
+        nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
       }
-      const j = await r.json();
-      listCountsByTitle = {};
-      for (const l of ((j && j.d && j.d.results) || [])) {
-        listCountsByTitle[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
-      }
+      // Publish only a complete enumeration. A page failure leaves the cache
+      // null, so no later target can mistake a partial catalogue for absence.
+      listCountsByTitle = discovered;
     }
     return (name in listCountsByTitle) ? listCountsByTitle[name] : null;
-  }
-
-  // Demo-aware non-empty gate: rows seeded by demo-data.js.txt all carry the
-  // '{{ demo_title_prefix }}' Title marker. A list whose item Titles ALL match
-  // that prefix is treated as demo-only and bypasses DELETE NON-EMPTY.
-  // This is a prefix heuristic, not row provenance: real Titles can collide.
-  // Issue #293 owns replacing this shortcut with evidence or confirmation.
-  // ANY item without the marker keeps the refusal, and anything
-  // unreadable or larger than a demo could ever be is treated as real.
-  const DEMO_PREFIX = '{{ demo_title_prefix }}';
-  async function allItemsAreDemo(name, count) {
-    if (count > 100) return false;  // a demo never seeds this many rows
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Title&$top=200`), {
-      headers: { 'Accept': 'application/json;odata=verbose' },
-    });
-    if (!r.ok) return false;
-    const j = await r.json();
-    const rows = (j && j.d && j.d.results) || [];
-    if (j?.d?.__next || rows.length === 0) return false;
-    return rows.every((row) => typeof row.Title === 'string' && row.Title.startsWith(DEMO_PREFIX));
   }
 
   // Recycle a list's items BEFORE deleting the list. Live findings
@@ -98,16 +91,14 @@
   // its copies in the Preservation Hold Library
   // (https://learn.microsoft.com/purview/retention-policies-sharepoint).
   // recycle(), never a permanent DELETE: nothing this script does is
-  // unrestorable. Demo-only lists require the '{{ demo_title_prefix }}' marker on every
-  // row at the moment of recycling (an unmarked item aborts, fail
-  // closed); the DELETE NON-EMPTY override path recycles EVERY item:
-  // the operator just authorised deleting the list including its
-  // contents, and emptying it first is what makes that delete actually
-  // succeed under retention.
-  async function recycleItems(name, requireDemoMarker) {
+  // unrestorable. This is reached only after the operator typed DELETE
+  // NON-EMPTY for THIS list, so it recycles EVERY item: they just
+  // authorised deleting the list including its contents, and emptying it
+  // first is what makes that delete actually succeed under retention.
+  async function recycleItems(name) {
     let total = 0;
     for (;;) {
-      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Id,Title&$top=200`), {
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Id&$top=200`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) throw new Error(`item read failed: HTTP ${r.status}`);
@@ -115,9 +106,6 @@
       if (rows.length === 0) break;
       const digest = await getDigest();
       for (const row of rows) {
-        if (requireDemoMarker && (typeof row.Title !== 'string' || !row.Title.startsWith(DEMO_PREFIX))) {
-          throw new Error(`unmarked item (Id ${row.Id}) appeared during teardown; refusing to continue with '${name}'`);
-        }
         const rec = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items(${row.Id})/recycle()`), {
           method: 'POST',
           headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest },
@@ -195,24 +183,23 @@
         log('WARN', `'${name}': exists but carries no '${target.expected_marker}' marker, so it was not provisioned by this family. Skipping; nothing has been deleted. Rename it, or delete it by hand if you are certain.`);
         continue;
       }
-      if (count > 0) {
-        if (await allItemsAreDemo(name, count)) {
-          log('INFO', `'${name}': ${count} item(s), all matching the '{{ demo_title_prefix }}' prefix; taking the demo-prefix rollback path. A Title prefix is not provenance (#293).`);
-          await recycleItems(name, true);
-        } else {
-          // Re-prompt PER non-empty list. A single global unlock would let one
-          // DELETE NON-EMPTY authorise deleting every remaining non-empty list,
-          // which is too coarse for a live site.
-          const override = prompt(`'${name}' has ${count} items. Type DELETE NON-EMPTY to delete THIS list AND its items (recycled first, restorable; you will be asked again for each non-empty list), or anything else to skip:`);
-          if (override !== 'DELETE NON-EMPTY') {
-            summary.skipped.push({ list: name, reason: 'non-empty', items: count });
-            continue;
-          }
-          // Authorised: empty the list first so the delete succeeds under
-          // retention; recycle() keeps every item restorable.
-          await recycleItems(name, false);
-        }
+      // Confirm EVERY list, not only a snapshot classified as non-empty.
+      // ItemCount is not an atomic gate: an item can exist despite a stale
+      // zero or arrive after enumeration. The same phrase therefore
+      // authorises this list and any items present when recycling starts.
+      // Re-prompt PER list so one answer never authorises another target.
+      const override = prompt(`'${name}' currently reports ${count} items. Type DELETE NON-EMPTY to delete THIS list AND any items present (recycled first, restorable; you will be asked again for every list), or anything else to skip:`);
+      if (override !== 'DELETE NON-EMPTY') {
+        summary.skipped.push({
+          list: name,
+          reason: count > 0 ? 'non-empty' : 'empty-unconfirmed',
+          items: count,
+        });
+        continue;
       }
+      // Authorised: read and recycle live items even when the earlier count
+      // was zero, then delete. recycle() keeps every item restorable.
+      await recycleItems(name);
       // Unlock only once deletion is authorised for THIS list; skipped
       // lists keep their protection untouched.
       let unlockedForDelete = false;
@@ -246,7 +233,7 @@
           // that still CONTAINS items; an emptied list deletes fine. If
           // an EMPTY list is still refused, a site-level hold applies,
           // which is compliance enforcement this script will never bypass.
-          log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. Rollback empties lists before deleting (demo-only lists automatically; others after your DELETE NON-EMPTY confirmation). If this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
+          log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. After your per-list DELETE NON-EMPTY confirmation, rollback recycles any live items before deleting. If this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
         }
         if (unlockedForDelete) {
           // Best-effort re-lock: this run removed the protection and the

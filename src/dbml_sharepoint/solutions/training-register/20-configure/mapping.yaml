@@ -311,8 +311,8 @@ list_validation:
     message: "A record marked Expiring or Expired needs an expiry date. That date is what the sweep, the views and the escalation all count from."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today+/-N so the
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
 # sweep-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
 #

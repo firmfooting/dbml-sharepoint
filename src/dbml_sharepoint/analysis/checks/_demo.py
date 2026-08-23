@@ -91,9 +91,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             ):
                 findings.append(Finding(
                     FindingCode.DEMO_TITLE_MISSING_MARKER,
-                    f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the prefix "
-                    f"rollback currently requires for its automatic demo-list "
-                    f"heuristic. A Title prefix is not row provenance; see #293.",
+                    f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the "
+                    f"visible notice that identifies this declared row as sample "
+                    f"data. Rollback requires per-list confirmation before every delete.",
                     location=at,
                 ))
             for col_name, value in row.values.items():

@@ -63,8 +63,8 @@ window, and one superseded row carrying its supersession trail.
 **Delete the demo rows before loading from your instrument.** Every demo
 Title begins with `[DEMO]`, so they are obvious in every view, they are
 matched by Title on re-paste (running it twice never duplicates), and
-`rollback.js.txt` treats a list whose rows are *all* demo-marked as demo-only
-content. A demo delegation left in a live register is an authority nobody
+`rollback.js.txt` requires per-list confirmation before every delete. A demo
+delegation left in a live register is an authority nobody
 approved.
 
 ## After the paste: verification checklist
