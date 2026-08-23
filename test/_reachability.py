@@ -34,6 +34,9 @@ from __future__ import annotations
 # guard for a rule that still exists.
 NOT_YET_REACHED = frozenset({
     "COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS",
+    # Diagnosis reports an unknown operator before normalisation can try to
+    # negate it, so this renderer refusal has no current Finding path.
+    "CONDITION_OPERATOR_NOT_NEGATABLE",
     "DEMO_OBJECT_VALUE_INVALID",
     "DEMO_PERSON_VALUE_UNSUPPORTED",
     "DEMO_VALUE_ON_CALCULATED_COLUMN",

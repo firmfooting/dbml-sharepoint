@@ -4,11 +4,8 @@
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
-from dbml_sharepoint.analysis.conditions import (
-    VALIDATION,
-    condition_findings,
-    to_validation,
-)
+from dbml_sharepoint.analysis.condition_rendering import VALIDATION, to_validation
+from dbml_sharepoint.analysis.conditions import condition_findings
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_FORMULA,

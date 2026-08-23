@@ -269,7 +269,8 @@ def test_column_validation_refuses_a_multi_value_operand() -> None:
 
 
 def _caml_findings(op: str) -> list[Finding]:
-    from dbml_sharepoint.analysis.conditions import CAML, condition_findings
+    from dbml_sharepoint.analysis.condition_rendering import CAML
+    from dbml_sharepoint.analysis.conditions import condition_findings
 
     return condition_findings(
         parse_condition([{"field": "Events", "op": op, "value": "View"}], "w"),

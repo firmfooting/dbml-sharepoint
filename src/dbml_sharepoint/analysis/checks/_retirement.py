@@ -7,12 +7,8 @@ from dataclasses import replace
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.column_refs import formula_column_refs
-from dbml_sharepoint.analysis.conditions import (
-    VALIDATION,
-    condition_findings,
-    leaves,
-    to_validation,
-)
+from dbml_sharepoint.analysis.condition_rendering import VALIDATION, to_validation
+from dbml_sharepoint.analysis.conditions import condition_findings, leaves
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.limits import (

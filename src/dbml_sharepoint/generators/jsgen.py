@@ -11,7 +11,7 @@ from dbml_sharepoint.analysis.column_projection import (
     effective_column_types,
 )
 from dbml_sharepoint.analysis.column_refs import FORMULA_COLUMN_REF, formula_column_refs
-from dbml_sharepoint.analysis.conditions import to_caml, to_validation
+from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden

@@ -70,7 +70,7 @@ class Group:
 A boolean combination of conditions.
 
 `none_of` is accepted from authors but never survives normalisation.
-See `analysis.conditions.normalise`.
+See `analysis.condition_rendering.normalise`.
 
 ### `parse_condition`
 
