@@ -28,8 +28,8 @@ RESERVED_NAMES = frozenset({
 # The operand denylist and the declared-view operator set used to be spelled
 # here as well as in `conditions.py`. Both copies were dead, and both had
 # already drifted from the live answer -- see the deletion commit. The
-# operator vocabulary is `conditions.NEGATION`; the forbidden operand types
-# are `conditions._FORBIDDEN_OPERAND_TYPES`. Do not restate either here.
+# operator vocabulary and forbidden operand types live in
+# `condition_rendering`. Do not restate either here.
 
 
 def _report(code: FindingCode, at: Location, reason: str) -> Finding:

@@ -33,7 +33,7 @@ from typing import Any
 import pytest
 from _paths import SOLUTION_TEMPLATES
 
-from dbml_sharepoint.analysis.conditions import _NULL_INCLUSIVE_NEGATIVES, normalise
+from dbml_sharepoint.analysis.condition_rendering import _NULL_INCLUSIVE_NEGATIVES, normalise
 from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.list_description import (

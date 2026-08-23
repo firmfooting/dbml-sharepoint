@@ -17,7 +17,8 @@ undone over REST. See the form_visibility spec.
 
 from dataclasses import replace
 
-from dbml_sharepoint.analysis.conditions import EXPRESSION, condition_findings, to_expression
+from dbml_sharepoint.analysis.condition_rendering import EXPRESSION, to_expression
+from dbml_sharepoint.analysis.conditions import condition_findings
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location
 from dbml_sharepoint.model.conditions import Condition
 

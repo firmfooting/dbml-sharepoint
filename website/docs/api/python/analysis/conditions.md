@@ -1,40 +1,23 @@
 ---
 title: conditions
-sidebar_position: 19
+sidebar_position: 20
 ---
 
 # `dbml_sharepoint.analysis.conditions`
 
-*condition normalisation, validation and rendering*
+*classified condition diagnosis*
 
-Normalisation, validation and rendering for the shared condition grammar.
+Semantic diagnosis for the shared condition grammar.
 
-`none_of` is eliminated here rather than at render time, because CAML has
-no group-level negation: a renderer meeting a negated group would have
-nothing to emit. De Morgan pushes negation down to the leaves, where every
-operator has an exact inverse, so both renderers only ever see
-`all_of`/`any_of` over positive leaves. That is the single property which
-lets one authored grammar serve targets of very different expressive power.
+Rendering and target capability truth live in
+:mod:`dbml_sharepoint.analysis.condition_rendering`. This module retains
+classified Findings, source locations, operand diagnosis and deduplication.
 
-The transformation is mechanical, terminating and depth-preserving:
-
-    none_of[A, B]     ->  all_of[!A, !B]
-    !(all_of[X, Y])   ->  any_of[!X, !Y]
-    !(any_of[X, Y])   ->  all_of[!X, !Y]
-
-Implications need no operator of their own. A validation rule is usually
-"if A then B", which is `any_of[none_of[A], B]`, expressible in the
-grammar as authored and normalised by the rules above.
-
-BREAKING API CHANGE (#168): `validate_condition` was removed. Use
-`condition_findings`, which preserves each problem's finding code and leaf
-location instead of returning message-only prose.
-
-### `NEGATION`
-
-```python
-NEGATION = {'eq': 'neq', 'neq': 'eq', 'lt': 'geq', 'geq': 'lt', 'gt': 'leq', 'leq': 'gt', 'is_null': 'is_not_null', 'is_not_null': 'is_null', 'in': 'not_in', 'not_in': 'in', 'contains': 'not_contains', 'not_cont…
-```
+BREAKING API MOVE (#168): import `CAML`, `EXPRESSION`, `VALIDATION`, `NEGATION`,
+`CAPABILITIES`, `DISABLED_PENDING_PROBE`, `normalise`, `to_caml`,
+`to_expression`, and `to_validation` from
+`dbml_sharepoint.analysis.condition_rendering`. There are deliberately no
+compatibility re-exports here.
 
 ### `MAX_DEPTH`
 
@@ -47,14 +30,6 @@ MAX_DEPTH = 4
 ```python
 MAX_LEAVES = 32
 ```
-
-### `normalise`
-
-```python
-def normalise(condition: Condition) -> Condition
-```
-
-Return an equivalent tree of `all_of`/`any_of` over positive leaves.
 
 ### `measure_tree`
 
@@ -82,60 +57,6 @@ Values are deliberately ignored: valueless operators such as
 operands rather than column references. The helper is shared by
 checks that need the dependency set without rendering or re-walking
 the grammar in their own way.
-
-### `CAML`
-
-```python
-CAML = 'caml'
-```
-
-### `EXPRESSION`
-
-```python
-EXPRESSION = 'expression'
-```
-
-### `VALIDATION`
-
-```python
-VALIDATION = 'validation'
-```
-
-### `CAPABILITIES`
-
-```python
-CAPABILITIES = {'caml': frozenset({'begins_with', 'contains', 'eq', 'geq', 'gt', 'in', 'includes', 'is_not_null', 'is_null', 'leq', 'lt', 'neq', 'not_in', 'not_includes'}), 'expression': frozenset({'begins_with', 'c…
-```
-
-### `DISABLED_PENDING_PROBE`
-
-```python
-DISABLED_PENDING_PROBE = {}
-```
-
-### `to_caml`
-
-```python
-def to_caml(condition: Condition, column_types: dict[str, str]) -> str
-```
-
-Render to a CAML `<Where>` body.
-
-### `to_expression`
-
-```python
-def to_expression(condition: Condition, column_types: dict[str, str]) -> str
-```
-
-Render to a list-formatting predicate for `ClientValidationFormula`.
-
-### `to_validation`
-
-```python
-def to_validation(condition: Condition, column_types: dict[str, str]) -> str
-```
-
-Render to a classic validation predicate for `ValidationFormula`.
 
 ### `PROPERTY_ACCESSORS`
 

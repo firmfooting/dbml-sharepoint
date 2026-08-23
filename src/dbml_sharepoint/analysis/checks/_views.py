@@ -7,13 +7,8 @@ from dbml_sharepoint.analysis.column_projection import (
     effective_column_types,
 )
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
-from dbml_sharepoint.analysis.conditions import (
-    CAML,
-    condition_fields,
-    condition_findings,
-    leaves,
-    normalise,
-)
+from dbml_sharepoint.analysis.condition_rendering import CAML, normalise
+from dbml_sharepoint.analysis.conditions import condition_fields, condition_findings, leaves
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,

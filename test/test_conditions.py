@@ -7,22 +7,25 @@ import pytest
 from _findings import messages, none_of, only
 from _paths import MANUAL
 
+from dbml_sharepoint.analysis import condition_rendering as rendering
 from dbml_sharepoint.analysis import conditions
-from dbml_sharepoint.analysis.conditions import (
+from dbml_sharepoint.analysis.condition_rendering import (
     CAML,
     CAPABILITIES,
     EXPRESSION,
-    MAX_DEPTH,
-    MAX_LEAVES,
     NEGATION,
     VALIDATION,
-    condition_fields,
-    condition_findings,
-    measure_tree,
     normalise,
     to_caml,
     to_expression,
     to_validation,
+)
+from dbml_sharepoint.analysis.conditions import (
+    MAX_DEPTH,
+    MAX_LEAVES,
+    condition_fields,
+    condition_findings,
+    measure_tree,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
@@ -899,7 +902,7 @@ def test_nothing_is_pending_a_probe_without_one_named() -> None:
     signpost pointing at a probe that does not ask the question reads as
     though somebody already checked.
     """
-    from dbml_sharepoint.analysis.conditions import DISABLED_PENDING_PROBE
+    from dbml_sharepoint.analysis.condition_rendering import DISABLED_PENDING_PROBE
 
     for target, operators in DISABLED_PENDING_PROBE.items():
         assert operators, f"{target} has an empty pending set; remove the key"
@@ -1400,7 +1403,7 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
     because CAML never sees it, and the second steps over the `contains`
     normalisation put in its place because a sibling rule happens to be
     spelled the same. The empty needle then reaches `to_caml` and comes back
-    as a `_RefusalError` at generation time, which is precisely the traceback
+    as a `ConditionRefusal` at generation time, which is precisely the traceback
     the second pass was added to prevent.
 
     The sibling is the whole experiment, so it is asserted to be innocent:
@@ -1597,7 +1600,7 @@ def test_per_leaf_normalisation_matches_the_whole_tree(declared: dict[str, objec
         introduced
         for leaf in conditions.leaves(condition)
         for introduced in conditions.leaves(
-            conditions._push(leaf, negate=id(leaf) in flipped),
+            rendering._push(leaf, negate=id(leaf) in flipped),
         )
     ]
 
@@ -1943,7 +1946,7 @@ def test_an_operator_withheld_pending_a_probe_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        conditions, "DISABLED_PENDING_PROBE", {CAML: frozenset({"contains"})},
+        rendering, "DISABLED_PENDING_PROBE", {CAML: frozenset({"contains"})},
     )
 
     findings = _findings(Group("all_of", (Leaf("Status", "contains", "x"),)))

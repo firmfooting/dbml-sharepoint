@@ -13,7 +13,7 @@ from _model import table as make_table
 from _packs import write_dbml
 from _validator_helpers import _project_errors, _project_inputs
 
-from dbml_sharepoint.analysis.conditions import to_validation
+from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA
 from dbml_sharepoint.analysis.validator import (

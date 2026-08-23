@@ -9,7 +9,6 @@ import pytest
 from _reachability import NOT_YET_REACHED, evaluate
 from hypothesis import HealthCheck, settings
 
-from dbml_sharepoint.analysis import conditions as _conditions
 from dbml_sharepoint.analysis import findings as _findings
 
 if TYPE_CHECKING:
@@ -64,27 +63,14 @@ def _record(name: str) -> None:
 
 
 def _instrument() -> None:
-    """Watch both carriers of a `FindingCode`.
-
-    `Finding` is the usual one. `conditions._RefusalError` is the other: the
-    condition compiler raises it with a code and its caller turns that into a
-    `Finding` later, so watching `Finding` alone reports every condition rule as
-    unreached. Measured -- instrumenting only `Finding` put 40 codes on the
-    unreached list, 19 of them purely from this.
-    """
+    """Watch findings that production diagnosis actually constructs."""
     original_finding: Callable[..., None] = _findings.Finding.__init__
-    original_refusal: Callable[..., None] = _conditions._RefusalError.__init__
 
     def finding_init(self: Any, *args: Any, **kwargs: Any) -> None:
         original_finding(self, *args, **kwargs)
         _record(self.code.name)
 
-    def refusal_init(self: Any, code: Any, message: str) -> None:
-        original_refusal(self, code, message)
-        _record(code.name)
-
     _findings.Finding.__init__ = finding_init  # type: ignore[method-assign]
-    _conditions._RefusalError.__init__ = refusal_init  # type: ignore[method-assign]
 
 
 def _shared_dir(config: pytest.Config) -> Path:
