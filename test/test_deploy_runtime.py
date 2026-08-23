@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import textwrap
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import quote
 
 import pytest
@@ -3919,3 +3919,324 @@ def test_no_reader_no_enrolment_code() -> None:
     # And the same mapping, WITH a reader, does emit it. Otherwise the two
     # assertions above would also hold for a template that never works.
     assert "ensureuser" in _reader_deploy_js()
+
+
+# Every write path reaches a refused contextinfo through the shared digest helper (#282).
+_ACCESS_DENIED = json.dumps({
+    "error": {
+        "code": "-2147024891, System.UnauthorizedAccessException",
+        "message": {
+            "lang": "en-US",
+            "value": "Access denied. You do not have permission to perform this action.",
+        },
+    },
+})
+
+# Wrap `_HARNESS` so contextinfo alone fails and the call log shows any later write.
+_REFUSE_DIGEST = textwrap.dedent("""
+    const DIGEST_BODY = __BODY__;
+    const healthyFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      if (!String(url).includes('contextinfo')) return healthyFetch(url, opts);
+      // json() reads through text(), so a body that cannot be read cannot be
+      // parsed either, as with a real Response.
+      const refused = {
+        ok: false, status: __STATUS__,
+        headers: { get: () => null },
+        text: async () => __TEXT__,
+        json: async () => JSON.parse(await refused.text()),
+      };
+      return refused;
+    };
+""")
+
+# Model a fetch rejection before any contextinfo Response exists.
+_NO_RESPONSE = textwrap.dedent("""
+    const healthyFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      if (!String(url).includes('contextinfo')) return healthyFetch(url, opts);
+      // The message a browser gives for a failed or blocked fetch.
+      throw new TypeError('Failed to fetch');
+    };
+""")
+
+# Model a successful HTTP response whose contextinfo payload cannot authorise a write.
+_MALFORMED_CONTEXTINFO = textwrap.dedent("""
+    const healthyFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      if (!String(url).includes('contextinfo')) return healthyFetch(url, opts);
+      const payload = { d: { GetContextWebInformation: __INFO__ } };
+      return {
+        ok: true, status: 200, headers: { get: () => null },
+        json: async () => payload, text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
+def _malformed_contextinfo(info: Any) -> str:
+    return _MALFORMED_CONTEXTINFO.replace("__INFO__", json.dumps(info))
+
+
+# Model a connection drop or decode failure while `Response.text()` reads the body.
+_BODY_READ_REJECTS = "Promise.reject(new Error('network error reading the response body'))"
+
+
+def _refuse_digest(status: int, body: str, *, body_read_fails: bool = False) -> str:
+    """`_HARNESS`'s fetch, wrapped so contextinfo alone answers `status`."""
+    return _REFUSE_DIGEST.replace("__STATUS__", str(status)).replace(
+        "__BODY__", json.dumps(body),
+    ).replace("__TEXT__", _BODY_READ_REJECTS if body_read_fails else "DIGEST_BODY")
+
+
+class _DigestRun(NamedTuple):
+    """What a run whose contextinfo is refused left the operator with.
+
+    `thrown` is the rejection that reached the top of the deploy promise, and
+    it must be None: every phase hands back a structured summary, so a
+    refusal that rejects instead is the #282 failure one level up. It is
+    captured rather than asserted here so each test can say so in its own
+    terms.
+    """
+
+    summary: dict[str, Any] | None
+    messages: list[str]
+    calls: list[dict[str, Any]]
+    thrown: str | None
+    output: str
+
+
+def _run_with_failing_digest(refusal: str, *, js: str | None = None) -> _DigestRun:
+    """Run the shipped deploy against a site whose contextinfo is refused.
+
+    `refusal` is one of the fetch wrappers above; `js` swaps the stubbed
+    assessment for the script exactly as it ships. The contextinfo attempt
+    itself never reaches the call log (the wrapper answers it before
+    delegating), so any POST in `calls` is a real write.
+    """
+    js = _deploy_js() if js is None else js
+    script = _HARNESS + refusal + "\n" + js.replace(
+        "})();",
+        "}))().then("
+        "(r) => console.log('__RESULT__' + JSON.stringify(r)),"
+        " (e) => console.log('__THROWN__' + JSON.stringify(String((e && e.message) || e))))"
+        ".then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+
+    def _marker(name: str) -> Any:
+        line = next((ln for ln in output.splitlines() if ln.startswith(name)), None)
+        return None if line is None else json.loads(line.removeprefix(name))
+
+    calls = _marker("__CALLS__")
+    assert calls is not None, f"the harness produced no call log:\n{output[-3000:]}"
+    summary = _marker("__RESULT__")
+    thrown = _marker("__THROWN__")
+    messages = [str(e.get("error")) for e in ((summary or {}).get("errors") or [])]
+    return _DigestRun(summary, messages, calls, None if thrown is None else str(thrown), output)
+
+
+def _reached_a_summary(run: _DigestRun) -> dict[str, Any]:
+    """The summary, refusing a run that rejected instead of returning one."""
+    assert run.thrown is None, (
+        "the deploy promise rejected instead of handing back a summary: "
+        f"{run.thrown}\n{run.output[-3000:]}"
+    )
+    assert run.summary is not None, f"the run returned no summary:\n{run.output[-3000:]}"
+    return run.summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_contextinfo_reports_the_sharepoint_reason() -> None:
+    """A 403 on contextinfo surfaced as `Cannot read properties of undefined
+    (reading 'GetContextWebInformation')`, because the helper read the
+    verbose success shape without checking `r.ok`. The operator was handed a
+    JavaScript type error in place of the reason SharePoint gave.
+    """
+    run = _run_with_failing_digest(_refuse_digest(403, _ACCESS_DENIED))
+    _reached_a_summary(run)
+    assert "GetContextWebInformation" not in run.output, (
+        f"the refusal still surfaces as a property-access error:\n{run.output[-3000:]}"
+    )
+    named = [m for m in run.messages if "contextinfo" in m]
+    assert named, f"nothing the operator sees names the failed operation: {run.messages}"
+    for message in named:
+        assert "403" in message, message
+        assert "Access denied" in message, message
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"a run that cannot take a digest must not write: {writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_phase_digest_is_recorded_rather_than_thrown() -> None:
+    """The first digest of the run is taken at the head of the security phase,
+    outside every per-object catch there, so a refusal rejected the whole
+    deploy promise. An operator got an unhandled rejection where every other
+    failure in that phase hands back the aborted summary, and a test that
+    accepted the throw as a named message could not tell the two apart.
+    """
+    run = _run_with_failing_digest(_refuse_digest(403, _ACCESS_DENIED))
+    summary = _reached_a_summary(run)
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+    errors = _security_errors(summary)
+    assert errors, f"the refused phase digest reached no summary.errors: {summary}"
+    for err in errors:
+        assert "contextinfo" in str(err.get("error")), err
+        assert "403" in str(err.get("error")), err
+    # The abort has to precede the apply pass, not merely be reported after it.
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"the phase wrote without a digest: {writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_contextinfo_that_never_answered_still_names_the_operation() -> None:
+    """`fetchWithRetry` can reject before there is any Response: a dropped
+    connection, a CORS refusal. Checking `r.ok` cannot see that, so the raw
+    `TypeError: Failed to fetch` bubbled with nothing saying which request
+    produced it, on a script that makes hundreds.
+    """
+    run = _run_with_failing_digest(_NO_RESPONSE)
+    _reached_a_summary(run)
+    named = [m for m in run.messages if "contextinfo" in m]
+    assert named, f"nothing the operator sees names the failed operation: {run.messages}"
+    for message in named:
+        assert "no response" in message, message
+        assert "Failed to fetch" in message, message
+        # Bounded like every other arm, rather than pasting an unbounded cause.
+        assert len(message) < 400, message
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"a run that cannot take a digest must not write: {writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("info", "expected"), [
+    ([], "GetContextWebInformation"),
+    ({}, "FormDigestValue"),
+    ({"FormDigestValue": ""}, "FormDigestValue"),
+    ({"FormDigestValue": "   "}, "FormDigestValue"),
+])
+def test_a_contextinfo_without_a_digest_cannot_reach_a_write(
+    info: Any, expected: str,
+) -> None:
+    run = _run_with_failing_digest(_malformed_contextinfo(info))
+    _reached_a_summary(run)
+    named = [m for m in run.messages if expected in m]
+    assert named, f"the malformed success payload was not named: {run.messages}"
+    assert all("HTTP 200" in message for message in named)
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"the phase wrote with no usable digest: {writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_malformed_contextinfo_error_body_falls_back_to_bounded_text() -> None:
+    """`spError` cannot parse a sign-in page or a proxy's HTML, so the helper
+    must still name the operation and the status, and carry the raw text
+    clipped to spError's 300-character bound rather than the whole page.
+    """
+    body = "<html><body>Sign in to SharePoint " + ("x" * 600) + "</body></html>"
+    run = _run_with_failing_digest(_refuse_digest(500, body))
+    _reached_a_summary(run)
+    named = [m for m in run.messages if "contextinfo" in m]
+    assert named, f"nothing the operator sees names the failed operation: {run.messages}"
+    for message in named:
+        assert "500" in message, message
+        assert "Sign in to SharePoint" in message, message
+        assert body not in message, f"the whole body was pasted in unbounded: {message}"
+        assert len(message) < len(body), message
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_parsed_sharepoint_error_message_is_also_bounded() -> None:
+    server_message = "SharePoint says " + ("x" * 800)
+    body = json.dumps({"error": {"message": {"value": server_message}}})
+    run = _run_with_failing_digest(_refuse_digest(500, body))
+    _reached_a_summary(run)
+    named = [m for m in run.messages if "contextinfo" in m]
+    assert named, f"nothing names the failed operation: {run.messages}"
+    assert all("SharePoint says" in message for message in named)
+    assert all(server_message not in message for message in named)
+    assert all(len(message) < 400 for message in named)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_contextinfo_body_that_cannot_be_read_still_names_the_operation() -> None:
+    """`Response.text()` can itself reject: a connection dropped mid-body, a
+    decode failure. Awaiting it inside the throw expression let that
+    rejection replace the named error before it was ever constructed,
+    leaving the operator with neither the operation nor the status, which is
+    where #282 started.
+    """
+    run = _run_with_failing_digest(
+        _refuse_digest(500, "never read", body_read_fails=True),
+    )
+    _reached_a_summary(run)
+    named = [m for m in run.messages if "contextinfo" in m]
+    assert named, f"nothing the operator sees names the failed operation: {run.messages}"
+    for message in named:
+        assert "500" in message, message
+        assert "unreadable" in message, message
+        # A 400-character cap proves the bounded fallback rather than the whole body.
+        assert len(message) < 400, message
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"a run that cannot take a digest must not write: {writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_uncaught_phase_failure_returns_an_aborted_summary() -> None:
+    needle = "  log('INFO', 'Starting Phase 1.3: permission levels and site groups.');"
+    js = _deploy_js().replace(
+        needle,
+        needle + "\n  throw new Error('contextinfo (request digest) failed: no response');",
+        1,
+    ).replace(
+        "    await removeSelfEnrollments();",
+        "    await removeSelfEnrollments();\n    console.log('__CLEANUP__');",
+        1,
+    )
+    assert js != _deploy_js(), "the phase failure and cleanup marker were not injected"
+    run = _run_with_failing_digest("", js=js)
+    summary = _reached_a_summary(run)
+    assert "__CLEANUP__" in run.output
+    assert summary.get("aborted") == "uncaught-phase-error", summary
+    assert any("contextinfo" in str(error.get("error")) for error in summary["errors"])
+    list_writes = [
+        call for call in run.calls
+        if call["method"] == "POST" and call["url"].rstrip("/").endswith("/lists")
+    ]
+    assert not list_writes, f"list creation ran after the phase failed: {list_writes}"
+
+
+def test_a_security_digest_failure_stops_the_decision_loop() -> None:
+    js = _deploy_js()
+    assert "failure.digestFailure = true;" in js
+    assert "let digestFailure" not in js
+    assert "if (err && err.digestFailure) break;" in js
+    assert js.index("summary.errors.push({ phase: '1.3'") < js.index(
+        "if (err && err.digestFailure) break;",
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_deploy_assessment_names_a_refused_contextinfo() -> None:
+    """Deploy's first phase is the assessment, and its own contextinfo probe
+    read `j.d.GetContextWebInformation` without checking the response. A 403
+    there reported a property-access TypeError as the site's answer, one
+    phase before the shared digest helper is ever reached.
+    """
+    run = _run_with_failing_digest(
+        _refuse_digest(403, _ACCESS_DENIED), js=_deploy_js_with_assessment(),
+    )
+    summary = _reached_a_summary(run)
+    assert "GetContextWebInformation" not in run.output, (
+        f"the refusal still surfaces as a property-access error:\n{run.output[-3000:]}"
+    )
+    findings = (summary.get("assessment") or {}).get("findings") or []
+    named = [f for f in findings if "contextinfo" in str(f.get("detail"))]
+    assert named, f"no finding names the refused request: {findings}"
+    for finding in named:
+        assert "403" in str(finding["detail"]), finding
+        assert "Access denied" in str(finding["detail"]), finding
+    # The gate must stop the run, and it must stop it before anything is written.
+    assert str(summary.get("aborted")).startswith("assessment-"), summary
+    writes = [c for c in run.calls if c["method"] == "POST"]
+    assert not writes, f"the deploy wrote after a failed assessment: {writes}"

@@ -4,7 +4,8 @@
   async function assessSite(ctx) {
     const { requirements: REQUIREMENTS, targets: TARGETS,
             notAssessable: NOT_ASSESSABLE, log, web: WEB, origin: ORIGIN,
-            fetchWithRetry, apiUrl, odataName, getDigest, verdictLevel } = ctx;
+            fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
+            verdictLevel } = ctx;
     // Fail closed on a caller-built targets: a missing key is a bare TypeError
     // several probes in, and every one of these is read below.
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
@@ -12,6 +13,11 @@
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
+    // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
+    const missingCollaborators = ['log', 'fetchWithRetry', 'apiUrl', 'odataName',
+      'getDigest', 'getContextWebInformation',
+    ].filter((k) => typeof ctx[k] !== 'function');
+    if (missingCollaborators.length) throw new Error(`assess-context-incomplete: ctx is missing ${missingCollaborators.join(', ')}`);
     const findings = [];
     let verdict = null;
     const finding = (tier, key, level, detail) => {
@@ -70,11 +76,10 @@
       }
     }
 
-    // Platform build fingerprint (from the digest response).
+    // Platform build fingerprint, through the shared helper: a second parse here reproduced #282 in both assess paths.
     try {
-      const r = await fetchWithRetry(apiUrl('contextinfo'), { method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' } });
-      const j = await r.json();
-      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(j.d.GetContextWebInformation.LibraryVersion)}.`);
+      const info = await getContextWebInformation();
+      finding(1, 'platform_build', 'INFO', `SharePoint build ${reported(info.LibraryVersion)}.`);
     } catch (err) {
       finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
     }

@@ -7,7 +7,17 @@
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   {
-    let digest0 = await getDigest();
+    // A digest the phase takes for itself is outside every per-object catch, so a refusal rejected the deploy (#282).
+    async function phaseDigest() {
+      try {
+        return await getDigest();
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }}: ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', error: err.message });
+        return null;
+      }
+    }
+    let digest0 = await phaseDigest();
 
     // A built-in owner group always exists (it is the site's own associated
     // group), so resolveGroupOwner's Associated*Group branches never 404.
@@ -745,7 +755,10 @@
       // 'Fresh digest per seed'), so the apply pass takes its own fresh one
       // here, before its first write, rather than trusting whatever the
       // survey left behind.
-      digest0 = await getDigest();
+      digest0 = await phaseDigest();
+    }
+    // Re-tested after that fetch: a refused digest is recorded rather than thrown, and there is nothing to write with.
+    if (summary.errors.length === 0) {
       for (const decision of decisions) {
         try {
           if (decision.object === 'level') {
@@ -754,9 +767,7 @@
             await applyGroupDecision(decision);
           }
         } catch (err) {
-          // Deliberately continues past this failure rather than stopping
-          // the loop, so one run's transcript names every blocker instead
-          // of only the first.
+          // Continue after object errors, but a digest failure makes every later write unsafe.
           const label = decision.object === 'level' ? 'permission level' : 'site group';
           log('ERROR', `Phase {{ phase.number }} ${label} '${decision.name}': ${err.message}`);
           if (decision.object === 'level') {
@@ -764,6 +775,7 @@
           } else {
             summary.errors.push({ phase: '{{ phase.number }}', group: decision.name, error: err.message });
           }
+          if (err && err.digestFailure) break;
         }
       }
     }
