@@ -513,6 +513,10 @@ def test_a_pointless_acceptance_warns() -> None:
         FindingCode.REDUNDANT_DISPLAY_COLUMN_ACCEPTANCE,
     )
     assert f.severity == "warning"
+    assert f.location == Location(
+        Section.ENTITIES, entity="Event",
+        sub="accept_unindexable_display_column",
+    )
     # One code, several reasons: which one applies is only in the prose.
     assert "is not calculated" in f.message
 

@@ -24,6 +24,8 @@ TEMPLATES = MANUAL / "templates"
 # Everything except tab, newline and carriage return.
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 PLACEHOLDER_HOSTS = re.compile(r"https://(example|contoso|tenant|yourtenant|x)\.")
+RECORD_CALL = re.compile(r"^\s*record\(\s*'([A-Z0-9]+)'", re.MULTILINE)
+EXPECT_CALL = re.compile(r"^\s*expect\(\s*'([A-Z0-9]+)'", re.MULTILINE)
 
 
 def _load_renderer() -> ModuleType:
@@ -51,16 +53,44 @@ def _all_probe_sources() -> list[Path]:
     return _probe_scripts() + sorted(TEMPLATES.glob("*.js.j2"))
 
 
+# Floors for the sweeps below, each well under what is committed today so that
+# retiring a probe stays an ordinary edit, and far enough above zero that a
+# glob finding nothing fails.
+#
+# EVERY SWEEP ASSERTS ITS OWN, rather than one check covering the module.
+# `_probe_scripts` globs `test/manual/*.js` and is not recursive, so moving the
+# probes down one directory empties it, and an empty `for` loop passes every
+# guard in this file: the write-guard check, the question registration check,
+# `node --check`, and the verbose-OData check all went green that way when it
+# was measured. These are the checks keeping tenant identifiers and live
+# credentials out of tracked files, so each states separately how much it saw.
+#
+# Counted where each sweep actually reaches its assertion, not at the top of
+# the loop. Three of them skip files by content, and a floor on files SCANNED
+# would stay green if every probe stopped matching the filter.
+_MIN_SCRIPTS = 15
+_MIN_SOURCES = 30
+_MIN_TEMPLATES = 12
+# Its own floor: only the probes that send `__metadata` reach that assertion,
+# and they are a minority of the scripts.
+_MIN_METADATA_PROBES = 8
+
+
 def test_rendered_probes_match_their_templates() -> None:
     """An operator pastes the .js, so a stale .js is a probe that does not
     match the template anyone reviewed."""
     render = _load_renderer()
     stale = []
+    compared = 0
     for template in render.probe_templates():
+        compared += 1
         target = render.target_for(template)
         actual = target.read_text(encoding="utf-8") if target.exists() else ""
         if render.render_one(template) != actual:
             stale.append(target.name)
+    assert compared >= _MIN_TEMPLATES, (
+        f"only {compared} probe templates compared, so this pins nothing"
+    )
     assert not stale, (
         f"Stale rendered probe(s): {stale}. Run: "
         f".venv/Scripts/python.exe test/manual/render_probes.py"
@@ -71,14 +101,18 @@ def test_probes_carry_no_tenant_url() -> None:
     """A tenant URL committed here has leaked twice, both times through a
     SITE_URL field an operator edited. Probes read the site they are pasted
     into and must never carry one."""
+    sources = _all_probe_sources()
     offenders = [
         f"{path.name}: {host}"
-        for path in _all_probe_sources()
+        for path in sources
         for host in re.findall(
             r"https://[a-z0-9-]+\.sharepoint\.com", path.read_text(encoding="utf-8"),
         )
         if not PLACEHOLDER_HOSTS.match(host)
     ]
+    assert len(sources) >= _MIN_SOURCES, (
+        f"only {len(sources)} probe sources scanned, so this pins nothing"
+    )
     assert not offenders, f"Tenant URL in probe(s): {offenders}"
 
 
@@ -157,10 +191,12 @@ def test_a_probe_that_writes_defaults_to_read_only() -> None:
     A read-only probe needs no guard, so the requirement is conditional on
     the script actually containing a write call.
     """
+    guarded = 0
     for path in _probe_scripts():
         text = path.read_text(encoding="utf-8")
         if not WRITE_CALL.search(text):
             continue
+        guarded += 1
         declared = {
             flag: value
             for flag in GUARD_FLAGS
@@ -185,6 +221,9 @@ def test_a_probe_that_writes_defaults_to_read_only() -> None:
                 f"file would {consequence} the tenant of whoever ran it, "
                 f"without asking. It must be committed as false."
             )
+    assert guarded >= _MIN_SCRIPTS, (
+        f"only {guarded} writing probes checked, so this pins nothing"
+    )
 
 
 def test_every_recorded_question_is_registered_up_front() -> None:
@@ -195,12 +234,14 @@ def test_every_recorded_question_is_registered_up_front() -> None:
     while most of its questions were never asked. Registering every
     question with expect() up front makes an abort report the truth.
     """
+    reporting = 0
     for path in _probe_scripts():
         text = path.read_text(encoding="utf-8")
-        if "record(" not in text:
+        recorded = set(RECORD_CALL.findall(text))
+        if not recorded:
             continue  # a probe using its own reporting style
-        recorded = set(re.findall(r"\brecord\(\s*'([A-Z0-9]+)'", text))
-        registered = set(re.findall(r"\bexpect\(\s*'([A-Z0-9]+)'", text))
+        reporting += 1
+        registered = set(EXPECT_CALL.findall(text))
         # BOOT-style ids report a bootstrap failure rather than answering a
         # declared question, so they are not expected to be pre-registered.
         missing = {q for q in recorded - registered if not q.startswith("BOOT")}
@@ -209,13 +250,31 @@ def test_every_recorded_question_is_registered_up_front() -> None:
             f"never registered with expect(). If the run aborts before reaching "
             f"them, the summary will not report them as unanswered."
         )
+    assert reporting >= _MIN_SCRIPTS, (
+        f"only {reporting} probes using record() checked, so this pins nothing"
+    )
+
+
+def test_question_call_detector_ignores_comments_and_strings() -> None:
+    text = """\
+      // record('COMMENT', 'not a call')
+      const example = "record('STRING', 'not a call')";
+      record('REAL', 'a call');
+      expect('REAL', 'a call');
+    """
+    assert RECORD_CALL.findall(text) == ["REAL"]
+    assert EXPECT_CALL.findall(text) == ["REAL"]
 
 
 def test_probes_carry_no_control_characters() -> None:
     """A NUL byte reached generated deploy.js on this branch and was
     invisible to ruff, mypy, j2lint, the golden comparison and the whole
     suite. Only git showed it, as 'Bin N -> M bytes'."""
-    for path in _all_probe_sources():
+    sources = _all_probe_sources()
+    assert len(sources) >= _MIN_SOURCES, (
+        f"only {len(sources)} probe sources scanned, so this pins nothing"
+    )
+    for path in sources:
         found = CONTROL_CHARS.findall(path.read_text(encoding="utf-8"))
         assert not found, (
             f"{path.name}: control character(s) {[hex(ord(c)) for c in found]}"
@@ -225,7 +284,11 @@ def test_probes_carry_no_control_characters() -> None:
 def test_rendered_probes_are_syntactically_valid() -> None:
     """Without this, an operator discovers a probe does not parse by
     pasting it into a live tenant."""
-    for path in _probe_scripts():
+    scripts = _probe_scripts()
+    assert len(scripts) >= _MIN_SCRIPTS, (
+        f"only {len(scripts)} probes parsed, so this pins nothing"
+    )
+    for path in scripts:
         result = subprocess.run(
             ["node", "--check", str(path)],
             capture_output=True, text=True, check=False,
@@ -385,13 +448,18 @@ def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
     # why they do NOT send __metadata, and "__metadata: the harness sends..."
     # matched a looser pattern, flagging the files that got this right.
     sends_metadata = re.compile(r"__metadata\s*:\s*\{")
+    checked = 0
     for path in _probe_scripts():
         text = path.read_text(encoding="utf-8")
         if not sends_metadata.search(text):
             continue
+        checked += 1
         assert verbose_content_type in text, (
             f"{path.name} sends __metadata but never sets a verbose "
             f"Content-Type. SharePoint answers 400, __metadata is meaningless "
             f"to a nometadata endpoint. Override Content-Type in that call's "
             f"spPost extraHeaders, as _http_write.js.j2 does."
         )
+    assert checked >= _MIN_METADATA_PROBES, (
+        f"only {checked} probes sending __metadata checked, so this pins nothing"
+    )

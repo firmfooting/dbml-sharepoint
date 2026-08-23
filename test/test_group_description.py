@@ -78,6 +78,41 @@ def test_the_budget_reserves_room_for_the_marker_to_grow() -> None:
     assert budget == MAX_GROUP_DESCRIPTION - len(marker) - 1 - GROUP_MARKER_GROWTH_RESERVE
 
 
+#: The reserve, written out rather than imported. See the test below for why.
+_PINNED_GROUP_RESERVE = 21
+
+
+def test_a_description_the_budget_accepts_survives_the_marker_growing() -> None:
+    """The reserve, asserted as the invariant it buys rather than as arithmetic.
+
+    Every other test of this constant either asks `description_budget` what
+    fits or computes its expectation from `GROUP_MARKER_GROWTH_RESERVE`, so
+    both sides move together and the reserve can be set to zero with all of
+    them green. Measured 2026-08-23 against 838c727: zeroing this constant and
+    `LEVEL_MARKER_GROWTH_RESERVE` leaves the entire suite passing.
+
+    So the number is written out here instead, and what is asserted is the
+    property the constant exists for: a description this build accepts today
+    still fits beside a marker 21 characters longer than the current one.
+
+    Both marker shapes are covered. A tool-owned group's marker carries no
+    family name, so it is the shorter of the two and buys the larger budget.
+    """
+    for group_name, family in (
+        ("RR Risk Managers", "risk-register"),
+        ("dbml Enterprise Readers", "risk-register"),
+    ):
+        marker = marker_for_group(group_name, family)
+        accepted = "z" * description_budget(group_name, family)
+        grown = marker + "v" * _PINNED_GROUP_RESERVE
+        assert len(f"{accepted} {grown}") <= MAX_GROUP_DESCRIPTION, (
+            f"{group_name}: a description of {len(accepted)} characters is "
+            f"accepted today but would not fit beside a marker "
+            f"{_PINNED_GROUP_RESERVE} characters longer, so the reserve no "
+            f"longer holds back what it claims to."
+        )
+
+
 def test_an_absurd_family_name_yields_a_zero_budget_not_a_negative_one() -> None:
     """A negative budget makes note[:budget] keep everything but the last N chars."""
     assert description_budget("RR Risk Managers", "f" * MAX_GROUP_DESCRIPTION) == 0
