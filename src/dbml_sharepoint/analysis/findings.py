@@ -357,6 +357,8 @@ class FindingCode(StrEnum):
         "marker_field_has_reserved_text", "error")
     MARKER_FAMILY_MISSING = (
         "marker_family_missing", "error")
+    MARKER_FAMILY_NOT_CANONICAL = (
+        "marker_family_not_canonical", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
     PERMISSION_LEVEL_DESCRIPTION_TOO_LONG = (

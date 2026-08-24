@@ -7,6 +7,7 @@ name contains the terminator, so refusing one here is what makes the grammar
 prefix-free. Without it, `from risk.` matches inside `from risk.v2.`.
 """
 
+import re
 from collections.abc import Iterator
 
 from dbml_sharepoint.analysis import provenance
@@ -30,6 +31,15 @@ from dbml_sharepoint.analysis.role_definition_description import marker_for_leve
 #: left a name embedding the whole prefix able to carry another family's
 #: complete marker as a suffix.
 _RESERVED = (provenance.MARKER_TERMINATOR, provenance.MARKER_PREFIX)
+_FAMILY_BOUNDARY = re.compile(
+    r" for (?:"
+    + "|".join(map(re.escape, (
+        provenance.LIST_KIND,
+        provenance.GROUP_KIND,
+        provenance.LEVEL_KIND,
+    )))
+    + r")(?: |$)"
+)
 
 _SCHEMA = Location(Section.SCHEMA)
 _ENTITIES = Location(Section.ENTITIES)
@@ -51,6 +61,25 @@ def check(vc: ValidationContext) -> list[Finding]:
             "how a later deploy tells its own objects from another family's, "
             "and how rollback decides what it may delete. Declare "
             "`Project my_thing { }`.",
+            location=_SCHEMA,
+        ))
+    elif (
+        declared != declared.strip()
+        or "-" in declared
+        or "/" in declared
+        or _FAMILY_BOUNDARY.search(declared) is not None
+    ):
+        canonical = declared.strip().replace("-", "_").replace("/", "_")
+        remedy = (
+            "choose a `Project` name without a marker boundary such as ' for list'"
+            if _FAMILY_BOUNDARY.search(canonical) is not None
+            else f"declare `Project {canonical} {{ }}` instead"
+        )
+        findings.append(Finding(
+            FindingCode.MARKER_FAMILY_NOT_CANONICAL,
+            f"the DBML `Project` name {declared!r} is not canonical; {remedy}. "
+            "Family identity authorizes adoption, so two declarations must never "
+            "fold to the same provenance marker.",
             location=_SCHEMA,
         ))
 

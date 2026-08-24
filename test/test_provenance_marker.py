@@ -7,6 +7,7 @@ matching. Both were false before #240 and #241.
 """
 
 import itertools
+from pathlib import Path
 
 import pytest
 from _findings import none_of, only
@@ -17,13 +18,14 @@ from _model import table as make_table
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.group_description import marker_for_group
-from dbml_sharepoint.analysis.list_description import marker_for
+from dbml_sharepoint.analysis.list_description import marker_for, normalise_family
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.mapping_types import (
     CustomPermissionLevel,
     PermissionsConfig,
 )
+from dbml_sharepoint.model.parser import parse_dbml
 
 # Adversarial on purpose: names that differ only by a suffix, by a separator,
 # or by the characters the old fold collapsed.
@@ -166,11 +168,89 @@ def test_a_schema_with_no_project_name_is_refused() -> None:
     only(_marker_findings(""), FindingCode.MARKER_FAMILY_MISSING)
 
 
+@pytest.mark.parametrize(
+    "project_name",
+    [
+        "risk-register",
+        "risk/register",
+        " risk_register ",
+        "risk for list Archive",
+        "risk for group Owners",
+        "risk for level Reader",
+        "risk for group",
+    ],
+)
+def test_a_noncanonical_project_name_is_refused(project_name: str) -> None:
+    codes = {finding.code.value for finding in _marker_findings(project_name)}
+
+    assert "marker_family_not_canonical" in codes
+
+
+def test_ordinary_for_text_that_is_not_a_marker_boundary_is_allowed() -> None:
+    none_of(
+        _marker_findings("risk for archive"),
+        FindingCode.MARKER_FAMILY_NOT_CANONICAL,
+    )
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_family_kind_boundary_would_make_two_object_markers_equal(kind: str) -> None:
+    one = provenance.marker_for_object(
+        family=f"risk for {kind} A",
+        kind=kind,
+        name="B",
+    )
+    other = provenance.marker_for_object(
+        family="risk",
+        kind=kind,
+        name=f"A for {kind} B",
+    )
+
+    assert one == other
+
+
+@pytest.mark.parametrize("project_name", ["risk-register", "risk/register", " risk_register "])
+def test_quoted_noncanonical_dbml_project_names_reach_the_rule(
+    project_name: str,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "schema.dbml"
+    path.write_text(
+        f'''Project "{project_name}" {{ database_type: "SharePoint" }}
+        Table Risk {{
+          Id int [pk, increment]
+          Note: "Risk records."
+        }}''',
+        encoding="utf-8",
+        newline="\n",
+    )
+    schema = parse_dbml(path)
+
+    findings = validate_against_mapping(schema, make_bundle(entities=["Risk"]))
+
+    only(findings, FindingCode.MARKER_FAMILY_NOT_CANONICAL)
+
+
+@pytest.mark.parametrize("old", ["risk-register", "risk/register", " risk_register "])
+def test_underscore_migration_preserves_existing_marker_bytes(old: str) -> None:
+    assert normalise_family(old) == normalise_family("risk_register")
+
+
+def test_hyphenated_family_finding_names_the_marker_preserving_remedy() -> None:
+    finding = only(
+        _marker_findings("risk-register"),
+        FindingCode.MARKER_FAMILY_NOT_CANONICAL,
+    )
+
+    assert "Project risk_register" in finding.message
+
+
 def test_an_ordinary_project_name_fires_neither() -> None:
     """The complement, so the rules are not passing by refusing everything."""
     findings = _marker_findings("routine_checks")
     none_of(findings, FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT)
     none_of(findings, FindingCode.MARKER_FAMILY_MISSING)
+    none_of(findings, FindingCode.MARKER_FAMILY_NOT_CANONICAL)
 
 
 def test_a_name_embedding_the_marker_prefix_is_refused() -> None:

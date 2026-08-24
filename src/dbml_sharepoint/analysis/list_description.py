@@ -103,12 +103,9 @@ MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for list {entity}."
 #: note already written became invalid.
 MARKER_GROWTH_RESERVE = 23
 
-# The family recorded for a schema that declares no DBML `Project`. A
-# hand-written schema is a perfectly ordinary input -- `dbml-sharepoint build`
-# takes any DBML path -- and such a list must still be DISCOVERABLE even
-# though its family is unknown. Losing the family name costs precision in a
-# report; losing the marker loses the list entirely, which is the failure this
-# whole module exists to prevent.
+# Backstop for callers that render without validation. The public build path
+# refuses a schema with no DBML `Project`, because an unattributed marker cannot
+# establish ownership for adoption or rollback.
 UNNAMED_FAMILY = "custom"
 
 
@@ -143,21 +140,14 @@ def normalise_family(project_name: str) -> str:
     by `test_template_standard.py`, so a new family that breaks it fails the
     build rather than emitting a family nobody can look up.
 
-    `/` is folded too because the marker's grammar is `family/entity` and a
-    separator inside the family would make it ambiguous to the reader that
-    parses it back out.
-
-    THE FOLD IS NOT INJECTIVE, and that is accepted rather than overlooked.
-    `a_b`, `a/b` and `a-b` all become `a-b`, and a schema declaring
-    `Project custom` is indistinguishable from one declaring no `Project` at
-    all. Both are fail-OPEN: the marker is still present and the list is still
-    discoverable, so the cost is a mis-attributed row in a report rather than
-    a list missing from it. That is the right way round -- the failure this
-    module exists to prevent is a list nobody can find, and no collision here
-    can cause one. Making the fold injective (escaping, or refusing a name
-    that collides) would add a build-time refusal for a problem no shipped
-    family has: the catalogue sweep in `test_template_standard.py` pins all 31
-    to distinct slugs.
+    The fold remains for marker compatibility, but validation now admits only
+    the canonical underscore spelling. Hyphens, slashes, surrounding
+    whitespace and family/kind boundaries for the current list, group and level
+    kinds are refused before generation.
+    This keeps the emitted marker bytes unchanged while making the fold
+    injective over accepted project names. That matters because family identity
+    now authorizes adoption, ACL reconciliation and rollback rather than merely
+    attributing a reporting row.
     """
     slug = project_name.strip().replace("_", "-").replace("/", "-")
     return slug or UNNAMED_FAMILY
