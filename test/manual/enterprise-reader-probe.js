@@ -540,7 +540,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 95d22f5e. Quote this when reporting results.');
+  log('INFO', 'probe revision a7f0971c. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // All three are obvious placeholders. Each group refuses to run against

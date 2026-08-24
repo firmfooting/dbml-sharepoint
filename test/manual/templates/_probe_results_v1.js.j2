@@ -1,0 +1,19 @@
+  // Shared result registry v1. Register findings before any network work.
+  const results = [];
+  const expect = (id, question) => {
+    results.push({
+      id,
+      question,
+      observed: 'NOT ESTABLISHED',
+      detail: 'the run did not reach this question',
+    });
+  };
+  const record = (id, question, observed, detail) => {
+    const row = results.find((candidate) => candidate.id === id);
+    if (row) {
+      Object.assign(row, { question, observed, detail: detail || '' });
+    } else {
+      results.push({ id, question, observed, detail: detail || '' });
+    }
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
+  };

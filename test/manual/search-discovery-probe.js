@@ -929,7 +929,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 5db348ae. Quote this when reporting results.');
+  log('INFO', 'probe revision 44b30b75. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately. See the harness.
