@@ -74,12 +74,19 @@ template the list came from:
 Provisioned by dbml-sharepoint from routine-checks for list CheckPoint.
 ```
 
-You do not write the marker and cannot suppress it. The family is the
-DBML `Project` name with underscores and `/` folded to hyphens
-(`Project routine_checks` → `routine-checks`). A schema declaring no
-`Project` is refused: the marker is how a later deploy tells its own
-objects from another family's, and how rollback decides what it may
-delete, so there has to be a family to attribute them to.
+You do not write the marker and cannot suppress it. Declare the DBML
+`Project` name in its canonical underscore spelling; the marker renders those
+underscores as hyphens (`Project routine_checks` → `routine-checks`). Hyphens,
+slashes and surrounding whitespace are refused. A family also cannot contain a
+marker-shaped boundary where a space is followed by `for list`, `for group`, or
+`for level`, because that could encode the same marker as another family's
+object name.
+Ordinary text such as `risk for archive` remains valid. Existing hyphen or
+slash spellings can usually move to underscores without changing the emitted
+marker. A boundary-shaped name needs a different name and may change the marker;
+no public release predates this rule. A schema declaring no `Project` is also
+refused: the marker is how a later deploy tells its own objects from another
+family's, and how rollback decides what it may delete.
 
 The marker names the object it belongs to, and ends with a full point.
 Neither the `Project` name nor an entity, group or level name may contain
