@@ -19,11 +19,13 @@
 
 This browser script supports a **clean first provision** and resuming the
 **same generated release** after a partial failure. It is not evidence of a
-general in-place schema upgrade. Before writing, it proves list template plus
-field internal name/type/writability and lookup target, then narrowly reconciles
-and reads back the declared mutable list/field settings, including required,
-unique/indexed, default, Choice members and type-specific display/storage
-properties. An unsupported or unproven shape aborts for explicit migration.
+general in-place schema upgrade. Before writing, an existing list must carry
+this declaration's exact provenance marker and match its immutable template.
+Existing fields must match internal name/type/writability and lookup target.
+Only then are declared mutable settings narrowly reconciled and read back,
+including required, unique/indexed, default, Choice members and type-specific
+display/storage properties. Unknown ownership or unsupported shape aborts for
+explicit migration.
 
 > **Fail closed:** if a declared list/library already exists from another
 > release or its provenance is unknown, do not run this script. Keep the site
@@ -55,7 +57,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    pasted script before running: every REST call logs its timing and a
    per-phase seconds table prints before DONE. No rebuild needed.)
 6. **Watch the `[SP-DEPLOY]` log lines.** The script runs read-only preflights
-   (permissions, existing-schema shapes), then Phase {{ phase_num['security'] }} permission levels and
+   (permissions, list ownership and existing-schema shapes), then Phase {{ phase_num['security'] }} permission levels and
    groups, then lists -> columns -> lookups -> indexes -> ACLs -> seeds, and prints
    a summary object: `listsCreated`, `columnsCreated`, `columnsSkipped`,
    `errors`. Success is `errors: []`.
@@ -165,23 +167,38 @@ Power Automate flows must validate these at write time.
 
 ## Phase {{ phase_num['lists'] }}: list creation order
 
+### Existing-list ownership and first redeploy
+
+This release requires an existing list to carry its exact marker below before
+ordinary deploy will reconcile it. A first redeploy over a list created by an
+older development build may therefore block. This is an operational breaking
+change, not mutable drift the script can repair automatically.
+
+Verify ownership from independent evidence before editing a live Description.
+If this tool created the list, preserve any human prose you need and append or
+restore the exact marker printed below. If ownership cannot be proved, do not
+stamp the marker: change the declaration's prefix/title or use an approved
+explicit migration. Title, template, fields, row count and emptiness are not
+ownership evidence.
+
 {% for l in lists %}
 {{ loop.index }}. **{{ l.title }}** ({{ l.kind }})
 {# indent(5, blank=true) keeps a multi-line note inside this bullet: a note may
    contain a line break since the round trip was measured, and an unindented
    continuation would end the list and orphan the bullets below it. #}
    - Description: {{ l.description | indent(5, false, true) }}
+   - Exact ownership marker: {{ l.expected_marker }}
    {# Resolved above because trim_blocks eats the newline after a block tag, so an inline endif joined the next bullet onto this one. #}
 {% set versioning = "enabled, " ~ l.major_version_limit ~ " major versions" if l.enable_versioning else "disabled" %}
    - Versioning: {{ versioning }}
    - Phase {{ phase_num['lists'] }} fields: {{ l.fields_phase1 | length }}
 
 {% endfor %}
-Each list's **Description** is set to the text shown above, **replacing
-whatever it currently holds**, including a description an owner wrote by
-hand, which is not preserved. The previous value is printed in the run
-transcript on the line that reports the change, so copy anything you need out
-of it before pasting.
+For a new or already-owned list, **Description** is set to the text shown above,
+replacing surrounding prose an owner wrote by hand. The previous value is
+printed in the transcript, so copy anything you need before pasting. A list
+without the exact marker is refused before this replacement; deploy never
+manufactures ownership by writing it.
 
 ## Phase {{ phase_num['lookups'] }}: deferred lookups
 

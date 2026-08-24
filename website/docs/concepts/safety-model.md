@@ -17,6 +17,9 @@ same-origin network reach and the governed-tenant review checklist, see the
 
 - The wrong site aborts before any request (site guard).
 - A validation error at build time refuses to emit scripts at all.
+- An existing list without this declaration's exact provenance marker fails
+  before writes. Title, template, fields, row count and emptiness are not
+  ownership authority.
 - An existing object whose immutable shape differs from the declaration
   fails that object with a named error; nothing is mutated.
 - A readback that does not match the write fails the phase.

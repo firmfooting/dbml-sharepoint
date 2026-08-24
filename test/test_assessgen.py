@@ -2,6 +2,7 @@
 import json
 import re
 import textwrap
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -334,21 +335,20 @@ def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
     ]
 
 
-def test_every_provisioned_list_has_a_degrading_marker_requirement() -> None:
-    """A list whose Description an owner rewrote is still a good list, and
-    deploying over it is the repair. Only reporting is broken -- blocking the
-    deploy on it would block the one thing that fixes it.
+def test_every_provisioned_list_has_a_blocking_marker_requirement() -> None:
+    """A list with no exact marker has no ownership evidence. Ordinary deploy
+    must not manufacture that evidence by stamping a title collision.
 
     Over EVERY list the deploy provisions, not over two named ones: a rule
     that covers all but one list is indistinguishable from a rule that works,
-    right up until the uncovered list is the one that drifts.
+    right up until the uncovered list is the one that collides.
     """
     schema, bundle = _simple()
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
     for title in _declared_descriptions():
         key = f"{_MARKER_KEY}{title}"
         assert key in reqs, f"no marker requirement for '{title}': {sorted(reqs)}"
-        assert reqs[key].level_on_fail == "WARN", reqs[key]
+        assert reqs[key].level_on_fail == "BLOCKED", reqs[key]
 
 
 # The key prefix the marker check owns. Findings are selected by KEY, never by
@@ -472,7 +472,7 @@ def _locked_harness() -> str:
 
 
 def _run_assess(
-    list_description: str | dict[str, str],
+    list_description: str | Mapping[str, str | None],
     *,
     harness: str = _ASSESS_HARNESS,
     js: str | None = None,
@@ -534,8 +534,8 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     """
     titles = list(_declared_descriptions())
     summary = _run_assess("an owner rewrote this")
-    warned = _marker_findings(summary, levels={"WARN", "BLOCKED"})
-    assert warned, (
+    blocked = _marker_findings(summary, levels={"WARN", "BLOCKED"})
+    assert blocked, (
         "a declared list carrying no provenance marker drew no finding: "
         f"{summary['findings']}"
     )
@@ -543,20 +543,20 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     # site where list one is checked and lists two through forty are not, and
     # an `any(...)` assertion cannot tell that from a working check.
     for title in titles:
-        assert any(title in f["detail"] for f in warned), (
-            f"'{title}' drifted and nothing said so; the warning must name "
-            f"the list, and it must name every one of them: {warned}"
+        assert any(title in f["detail"] for f in blocked), (
+            f"'{title}' lost ownership evidence and nothing said so; the finding "
+            f"must name every affected list: {blocked}"
         )
-    # DEGRADED, not BLOCKED: the list is fine and the deploy is the repair.
-    assert all(f["level"] == "WARN" for f in warned), warned
+    assert all(f["level"] == "BLOCKED" for f in blocked), blocked
+    assert summary["verdict"] == "BLOCKED"
     # And it must actually REACH the verdict. That loop walks the requirement
     # keys, so a WARN nobody declared a requirement for is logged and then
     # ignored -- the operator reads COMPATIBLE on a site that is not.
     schema, bundle = _simple()
     declared = {r.key for r in derive_requirements(schema, bundle, "default")}
-    assert {f["key"] for f in warned} <= declared, (
-        "warned on keys no requirement covers, so the verdict ignores them: "
-        f"{sorted({f['key'] for f in warned} - declared)}"
+    assert {f["key"] for f in blocked} <= declared, (
+        "blocked on keys no requirement covers, so the verdict ignores them: "
+        f"{sorted({f['key'] for f in blocked} - declared)}"
     )
 
 
@@ -629,10 +629,43 @@ def test_a_description_reported_as_empty_still_loses_its_marker() -> None:
     the rule it was meant to leave alone.
     """
     summary = _run_assess("")
-    warned = _marker_findings(summary, levels={"WARN"})
-    assert {f["key"] for f in warned} == {
+    blocked = _marker_findings(summary, levels={"BLOCKED"})
+    assert {f["key"] for f in blocked} == {
         f"{_MARKER_KEY}{title}" for title in _declared_descriptions()
-    }, warned
+    }, blocked
+    assert summary["verdict"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_reported_as_null_is_blocked_not_unassessable() -> None:
+    held = dict.fromkeys(_declared_descriptions(), None)
+
+    summary = _run_assess(held)
+
+    blocked = _marker_findings(summary, levels={"BLOCKED"})
+    assert {finding["key"] for finding in blocked} == {
+        f"{_MARKER_KEY}{title}" for title in held
+    }
+    assert summary["verdict"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_missing_generated_marker_contract_blocks_assessment() -> None:
+    schema, bundle = _simple()
+    title, marker = assess_targets(schema, bundle, "default")["list_markers"][0]
+    js = _assess_js()
+    mutated, count = js.replace(json.dumps(marker), "null", 1), js.count(json.dumps(marker))
+    assert count == 1, "the selected marker was not emitted exactly once"
+
+    summary = _run_assess(_declared_descriptions(), js=mutated)
+
+    finding = next(
+        item
+        for item in summary["findings"]
+        if item["key"] == f"{_MARKER_KEY}{title}"
+    )
+    assert finding["level"] == "BLOCKED"
+    assert summary["verdict"] == "BLOCKED"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -675,7 +708,7 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
     assert [
         (f["key"], f["level"])
         for f in _marker_findings(drifted, levels={"WARN", "BLOCKED"})
-    ] == [("provenance_marker:__proto__", "WARN")], (
+    ] == [("provenance_marker:__proto__", "BLOCKED")], (
         f"a list named __proto__ lost its marker and nothing said so: "
         f"{drifted['findings']}"
     )
@@ -731,14 +764,14 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "1\tapp_catalog\tINFO\tTenant app catalog not reported by this site.\n"
         "1\tcustom_actions\tINFO\t0 web custom action(s) / SPFx extension(s) registered.\n"
         "1\tsearch\tINFO\tSearch service responds.\n"
-        "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100), a "
-        "redeploy/reconcile target.\n"
+        "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100); the "
+        "ownership check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_Project\tPASS\t'APP_Project' carries its provenance marker.\n"
-        "2\tcollision:APP_Task\tINFO\t'APP_Task' already exists (BaseTemplate 100), a "
-        "redeploy/reconcile target.\n"
+        "2\tcollision:APP_Task\tINFO\t'APP_Task' already exists (BaseTemplate 100); the ownership "
+        "check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_Task\tPASS\t'APP_Task' carries its provenance marker.\n"
         "2\tcollision:APP_AppSettings\tINFO\t'APP_AppSettings' already exists (BaseTemplate "
-        "100), a redeploy/reconcile target.\n"
+        "100); the ownership check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_AppSettings\tPASS\t'APP_AppSettings' carries its provenance "
         "marker.\n"
         "2\tcustom_formatter_surface\tPASS\tProperty surface present.\n"
@@ -938,10 +971,10 @@ def test_a_requirement_nobody_could_assess_degrades_the_verdict() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
-    """Saying nobody could tell must not be weaker than the WARN it replaced.
+    """An unreadable Description is uncertainty, not proof of foreign ownership.
 
-    An unreported Description used to WARN falsely, and a false WARN at least
-    degraded the verdict.
+    It cannot pass the ownership requirement, but it also cannot honestly say
+    the marker is absent. The deploy's fresh preflight read makes the decision.
     """
     summary = _run_assess(
         _declared_descriptions(),

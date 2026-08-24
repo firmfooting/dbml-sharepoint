@@ -1,8 +1,8 @@
-{# Phase body: create or adopt lists in dependency order with their
+{# Phase body: create or reconcile owned lists in dependency order with their
    non-lookup columns and every same-site lookup whose target already
    exists. Wave 1 runs sequentially to capture lookup-target GUIDs;
-   wave 2 runs in per-list lanes. Existing lists/fields are adopted only
-   when their immutable shape provably matches (fail closed). #}
+   wave 2 runs in per-list lanes. Existing lists are reconciled only when
+   exact provenance and immutable shape both match (fail closed). #}
   // === Phase {{ phase.number }}: lists + non-lookup columns + same-site lookups ===
 {% if phase.first_in_group %}
   log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
@@ -10,7 +10,7 @@
   log('INFO', `Starting Phase {{ phase.number }}: {{ phase.name }}. Release ${RELEASE_TAG}.`);
   invalidateFieldShapes();  // probes reflect phase-start state
   let digest = await getDigest();
-  const listGuids = {};
+  const listGuids = Object.create(null);
   const earlyIsolationLists = new Set(SCHEMA.list_assignments
     .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
     .map(la => la.list));
@@ -19,6 +19,7 @@
   // list shape, GUID capture, early ACL isolation. Sequential because
   // wave 2's same-site lookup fields need every target list's GUID.
   const fieldWork = [];
+  const errorsBeforeWaveOne = summary.errors.length;
   for (const list of SCHEMA.lists) {
     try {
       // Refresh the digest per list: a long Phase {{ phase.number }} (hundreds of field POSTs)
@@ -31,8 +32,8 @@
         // The read-only preflight already rejected immutable template drift;
         // re-read here to close the preflight/write race and then reconcile
         // only the declared mutable list settings.
-        assertListImmutableShape(list, listShape);
-        log('INFO', `List '${list.title}' exists; validating and reconciling declared shape.`);
+        assertListAdoptable(list, listShape);
+        log('INFO', `List '${list.title}' is owned; validating and reconciling declared shape.`);
         summary.listsSkipped.push(list.title);
       } else {
         log('INFO', `Creating list '${list.title}' (${list.kind})...`);
@@ -40,12 +41,10 @@
           __metadata: { type: 'SP.List' },
           Title: list.title,
           BaseTemplate: list.base_template,
-          // Creation is not where the Description is guaranteed. It carries
-          // the provenance marker, and this POST only runs for a list that
-          // does not exist yet; reconcileListDescription (called from
-          // reconcileListShape just below, on both paths) is what reads it
-          // back and what repairs an adopted list whose description predates
-          // markers or was edited by an owner.
+          // The create request carries ownership evidence from the first
+          // write. ReconcileListShape reads it back before any field work.
+          // Existing lists reach that function only after proving they already
+          // carry the exact marker; ordinary deploy never manufactures it.
           Description: list.description || '',
           ContentTypesEnabled: list.content_types_enabled,
           EnableVersioning: list.enable_versioning,
@@ -123,12 +122,45 @@
     }
   }
 
+  if (summary.errors.length > errorsBeforeWaveOne) {
+    log('ERROR', 'Wave 1 list reconciliation failed; aborting before any field work.');
+    return { ...summary, aborted: 'wave-1-schema-errors' };
+  }
+
+  // Wave 1 can be long enough for an earlier list's ownership to change while
+  // later lists are reconciled. Re-survey every field-work list as one batch;
+  // no field write starts unless all still carry exact ownership and shape.
+  let fieldWaveOwnershipFailed = false;
+  await mapLanes(fieldWork, list => list.title, async (list) => {
+    try {
+      const actual = await readListShape(list.title, true);
+      if (!actual) throw new Error(`Declared list '${list.title}' disappeared before field work`);
+      assertListAdoptable(list, actual);
+      listGuids[list.title] = actual.Id;
+    } catch (err) {
+      fieldWaveOwnershipFailed = true;
+      log('ERROR', `Field-wave ownership recheck '${list.title}': ${err.message}`);
+      summary.errors.push({
+        phase: '{{ phase.number }}', list: list.title, error: err.message,
+      });
+    }
+  }, 4);
+  if (fieldWaveOwnershipFailed) {
+    log('ERROR', 'Field-wave ownership recheck failed; aborting before any field write.');
+    return { ...summary, aborted: 'field-wave-ownership-errors' };
+  }
+
   // Wave 2 is field provisioning, one lane per list: every target GUID now
   // exists, and concurrent schema writes to the SAME list race into save
   // conflicts while different lists are independent, so each list's fields
   // run sequentially inside a lane and the lanes run concurrently.
   await mapLanes(fieldWork, (list) => list.title, async (list) => {
     try {
+      const assertLaneOwnership = async () => {
+        const owned = await assertDeclaredListOwnedNow(list.title);
+        listGuids[list.title] = owned.Id;
+      };
+      await assertLaneOwnership();
       let laneDigest = await getDigest();
       for (const col of list.fields_phase1) {
         // Guard each field independently: one field's failure (a transient
@@ -137,11 +169,15 @@
         // trusted by name alone: immutable identity is checked before safely
         // mutable declared settings are reconciled and read back.
         try {
+          await assertLaneOwnership();
           laneDigest = await getDigest();
-          const targetGuid = col.target_list ? listGuids[col.target_list] : null;
-          if (col.target_list && !targetGuid) {
-            throw new Error(`Lookup target ${col.target_list} not yet created`);
-          }
+          const resolveTargetGuid = async () => {
+            if (!col.target_list) return null;
+            const targetOwned = await assertDeclaredListOwnedNow(col.target_list);
+            listGuids[col.target_list] = targetOwned.Id;
+            return targetOwned.Id;
+          };
+          let targetGuid = await resolveTargetGuid();
           if (await reconcileDeclaredField(
             list.title, col, targetGuid, laneDigest, true,
           )) {
@@ -163,12 +199,17 @@
               createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
               createBody = { parameters };
             }
+            await assertLaneOwnership();
+            targetGuid = await resolveTargetGuid();
+            if (col.target_list) createBody.parameters.LookupListId = targetGuid;
             await postJson(
               createUrl,
               createBody,
               laneDigest,
             );
             invalidateFieldShapes();  // new field: next probe re-enumerates
+            await assertLaneOwnership();
+            targetGuid = await resolveTargetGuid();
             await reconcileDeclaredField(
               list.title, col, targetGuid, laneDigest, false,
             );
@@ -208,12 +249,14 @@
       }
 
       if (list.title_patch) {
+        await assertLaneOwnership();
         await reconcileDeclaredField(
           list.title, syntheticTitleField(list), null, laneDigest, false,
         );
       }
 
       laneDigest = await getDigest();
+      await assertLaneOwnership();
       await reconcileListValidation(list, laneDigest);
     } catch (err) {
       log('ERROR', `Phase {{ phase.number }} '${list.title}': ${err.message}`);

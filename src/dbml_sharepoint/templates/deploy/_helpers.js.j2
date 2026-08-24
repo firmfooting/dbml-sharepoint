@@ -51,6 +51,43 @@
     }
   }
 
+  const sharePointGuid = (value, label) => {
+    const held = String(value || '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(held)) {
+      throw new Error(`Invalid ${label} GUID returned by SharePoint`);
+    }
+    return held;
+  };
+
+  async function patchFieldById(listId, fieldId, body, digest) {
+    const safeListId = sharePointGuid(listId, 'list');
+    const safeFieldId = sharePointGuid(fieldId, 'field');
+    const url = apiUrl(`web/lists(guid'${safeListId}')/fields(guid'${safeFieldId}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`Field ${safeFieldId} MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
+  async function patchListById(listId, body, digest) {
+    const safeListId = sharePointGuid(listId, 'list');
+    const url = apiUrl(`web/lists(guid'${safeListId}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`List ${safeListId} MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
   async function patchList(listName, body, digest) {
     const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')`);
     const r = await fetchWithRetry(url, {

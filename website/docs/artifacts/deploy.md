@@ -43,12 +43,29 @@ deploy.js.txt is a reconciler, not an installer:
 
 - Objects that exist and verify are **skipped** (counted in the
   summary).
+- An existing list is reconciled only when its Description already carries
+  this declaration's exact provenance marker. A missing, foreign, copied or
+  legacy marker blocks before writes; ordinary deploy never stamps ownership
+  onto a title collision.
 - Declared mutable settings that drifted are **narrowly reconciled** and
   read back.
 - Objects whose immutable shape mismatches **fail closed** with a named
   error: the script never migrates types or retargets lookups.
 - User content (undeclared views, rows, user-added columns) is never
   touched; `reconcile: exact` ACL mode is the single declared exception.
+
+### First redeploy after this ownership gate
+
+An older development build may have created lists before the current exact
+family/entity marker existed. The first redeploy now blocks those lists rather
+than silently stamping them.
+
+Verify ownership from independent deployment evidence before editing a live
+Description. If this tool created the list, preserve any human prose you need
+and append or restore the exact marker printed by `assess.js.txt` and
+`deploy-manifest.md`. If ownership cannot be proved, do not add the marker;
+change the declaration's prefix/title or use an approved explicit migration.
+Matching shape, an empty list or a familiar title is not proof of ownership.
 
 ## Views
 
