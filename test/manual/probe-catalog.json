@@ -774,6 +774,20 @@
               "assertions": [
                 "both field outcomes visible"
               ]
+            },
+            {
+              "role": "edit-after",
+              "page": "Edit form after save",
+              "assertions": [
+                "both field outcomes visible"
+              ]
+            },
+            {
+              "role": "display-after",
+              "page": "Display form after save",
+              "assertions": [
+                "both field outcomes visible"
+              ]
             }
           ],
           "controls": [

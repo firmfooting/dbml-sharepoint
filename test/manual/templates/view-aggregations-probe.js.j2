@@ -29,6 +29,7 @@
 
 {% include "_probe_core_v2.js.j2" %}
 {% include "_probe_list_fixture_v1.js.j2" %}
+{% include "_view_aggregation_results_v1.js.j2" %}
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint aggregations probe. Safe to delete.';
@@ -121,7 +122,16 @@
     viewId = probeView?.Id;
     viewUrl = probeView?.ServerRelativeUrl;
     // The Amount column must be IN the view or there is nothing to total.
-    await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(AGG_FIELD)}')`);
+    const amountOnView = await post(
+      `${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(AGG_FIELD)}')`,
+    );
+    const initialViewFields = await get(`${listPath}/views('${viewId}')/viewfields`);
+    const initialViewFieldNames = initialViewFields.ok
+      && Array.isArray(initialViewFields.d?.Items?.results)
+      ? initialViewFields.d.Items.results
+      : null;
+    const amountMembershipHeld = Array.isArray(initialViewFieldNames)
+      && initialViewFieldNames.includes(AGG_FIELD);
     log('INFO', `View ready at ${window.location.origin}${viewUrl}`);
 
     const AGG_XML = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`;
@@ -182,7 +192,7 @@
     const after = await get(`${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`);
     const gotAgg = after.d?.Aggregations || '(null)';
     const gotStatus = after.d?.AggregationsStatus || '(null)';
-    const matches = String(gotAgg).includes(AGG_FIELD) && String(gotAgg).includes(AGG_TYPE);
+    const matches = String(gotAgg) === AGG_XML && gotStatus === 'On';
     record(
       'Q3',
       'the written property reads back unchanged',
@@ -190,7 +200,9 @@
       `Aggregations=${gotAgg} AggregationsStatus=${gotStatus}`,
     );
 
-    record('Q4', 'a totals row actually RENDERS', 'MANUAL', `open ${window.location.origin}${viewUrl} and look for a total of 42 under ${AGG_FIELD}`);
+    const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');
+    const visibleSetupReady = rowCount === 2 && !!viewId && !!viewUrl
+      && amountOnView.ok && initialViewFields.ok && amountMembershipHeld;
 
     // === Q5/Q6: the naming question, and two columns at once =============
     //
@@ -209,18 +221,29 @@
     // halves pass, and no figure renders. That is the exact silent
     // failure this repository exists to prevent.
     const SECOND = 'SecondAmount';
+    const SECOND_DISPLAY = 'Second Amount Display';
     const second = await post(`${listPath}/fields`, {
       __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: SECOND,
     });
     if (second.ok) {
       // Rename the DISPLAY title, leaving the internal name as created,
       // the same create-then-rename trick deploy.js uses for every column.
-      await post(
+      const renamed = await post(
         `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')`,
-        { __metadata: { type: 'SP.FieldNumber' }, Title: 'Second Amount Display' },
+        { __metadata: { type: 'SP.FieldNumber' }, Title: SECOND_DISPLAY },
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
       );
-      await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`);
+      const secondOnView = await post(
+        `${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`,
+      );
+      const finalViewFields = await get(`${listPath}/views('${viewId}')/viewfields`);
+      const finalViewFieldNames = finalViewFields.ok
+        && Array.isArray(finalViewFields.d?.Items?.results)
+        ? finalViewFields.d.Items.results
+        : null;
+      const renamedField = await get(
+        `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')?$select=InternalName,Title`,
+      );
 
       // SEED THE SECOND COLUMN, because run 1 could not answer its own
       // question without it. The field is created after the rows, so both
@@ -231,16 +254,29 @@
       // hand-typing values into the list. That ambiguity is the probe's
       // fault; these two writes remove it.
       const secondValues = [1, 3];  // AVG 2, distinct from Amount's Sum 42
-      const seededRows = await get(`${listPath}/items?$select=Id&$top=10`);
+      const seededRows = await get(`${listPath}/items?$select=Id&$orderby=Id&$top=10`);
       const seededIds = (seededRows.ok && seededRows.d && seededRows.d.results
         ? seededRows.d.results.map((r) => r.Id) : []);
+      const secondWrites = [];
       for (let i = 0; i < seededIds.length && i < secondValues.length; i += 1) {
-        await post(
+        secondWrites.push(await post(
           `${listPath}/items(${seededIds[i]})`,
           { __metadata: { type: itemType }, [SECOND]: secondValues[i] },
           { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
-        );
+        ));
       }
+      const secondSeeded = seededIds.length === secondValues.length
+        && secondWrites.length === secondValues.length
+        && secondWrites.every((result) => result.ok);
+      const secondSeedBack = await get(
+        `${listPath}/items?$select=Id,${SECOND}&$orderby=Id&$top=2`,
+      );
+      const secondSeedValues = secondSeedBack.ok && secondSeedBack.d?.results
+        ? secondSeedBack.d.results.map((row) => row[SECOND])
+        : null;
+      const secondControlsReady = visibleSetupReady && second.ok
+        && renamed.ok && secondOnView.ok && finalViewFields.ok && renamedField.ok
+        && secondSeeded;
       const both = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`
         + `<FieldRef Name="${SECOND}" Type="AVG"/>`;
       const wrote = await post(
@@ -248,36 +284,82 @@
         { __metadata: { type: 'SP.View' }, Aggregations: both, AggregationsStatus: 'On' },
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
       );
-      const back = await get(`${listPath}/views('${viewId}')?$select=Aggregations`);
+      const back = await get(
+        `${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`,
+      );
+      const manualOutcome = aggregationManualOutcome({
+        setupReady: secondControlsReady,
+        writeOk: wrote.ok && back.ok,
+        aggregationXml: back.d?.Aggregations,
+        expectedXml: both,
+        aggregationStatus: back.d?.AggregationsStatus,
+        seedValues: secondSeedValues,
+        viewFieldNames: finalViewFieldNames,
+        expectedViewFields: [AGG_FIELD, SECOND],
+        fieldTitle: renamedField.d?.Title,
+        expectedFieldTitle: SECOND_DISPLAY,
+      });
+      const q4ManualOutcome = aggregationManualOutcome({
+        setupReady: secondControlsReady,
+        writeOk: mechanism !== 'none' && after.ok,
+        aggregationXml: gotAgg,
+        expectedXml: AGG_XML,
+        aggregationStatus: gotStatus,
+        seedValues: secondSeedValues,
+        viewFieldNames: finalViewFieldNames,
+        expectedViewFields: [AGG_FIELD, SECOND],
+        fieldTitle: renamedField.d?.Title,
+        expectedFieldTitle: SECOND_DISPLAY,
+      });
+      record(
+        'Q4',
+        'a totals row actually RENDERS',
+        q4ManualOutcome,
+        q4ManualOutcome === 'MANUAL'
+          ? `open ${window.location.origin}${viewUrl} and look for a total of 42 under ${AGG_FIELD}`
+          : `controls not established: seeded=${rowCount === 2}, view=${!!viewId && !!viewUrl}, `
+            + `amount-add-response=${amountOnView.ok}, initial-fields=${JSON.stringify(initialViewFieldNames)}, `
+            + `second-add-response=${secondOnView.ok}, final-fields=${JSON.stringify(finalViewFieldNames)}, `
+            + `rename-response=${renamed.ok}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `mechanism=${mechanism}, aggregation-readback=${matches}`,
+      );
       record(
         'Q5',
         'Aggregations binds by INTERNAL name, not display title',
-        wrote.ok ? 'MANUAL' : 'WRITE REFUSED',
-        wrote.ok
+        manualOutcome,
+        manualOutcome === 'MANUAL'
           ? `wrote Name="${SECOND}" while its DISPLAY title is "Second Amount Display"; `
-            + `readback ${back.ok ? JSON.stringify(back.d.Aggregations) : '(unreadable)'}. `
+            + `readback ${JSON.stringify(back.d.Aggregations)} with status On and seeds 1,3. `
             + `OPEN THE VIEW: a figure under "Second Amount Display" means INTERNAL names bind `
             + `(what the tool assumes). No figure under it means DISPLAY titles bind, and every `
             + `shipped totals view is silently empty.`
-          : `HTTP ${wrote.status} (${wrote.error})`,
+          : `controls not established: rename-response=${renamed.ok}, add-response=${secondOnView.ok}, `
+            + `final-fields=${JSON.stringify(finalViewFieldNames)}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `second-seed-write=${secondSeeded}, second-seed-read=${JSON.stringify(secondSeedValues)}, `
+            + `write=${wrote.ok}, aggregation=${JSON.stringify(back.d?.Aggregations)}, `
+            + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
       record(
         'Q6',
         'two totalled columns both render, in declaration order',
-        wrote.ok ? 'MANUAL' : 'NOT REACHED',
-        wrote.ok
+        manualOutcome,
+        manualOutcome === 'MANUAL'
           ? 'the same view now declares two aggregations; confirm BOTH figures appear, and that '
             + 'the readback above preserved declaration order. The deployer compares the string '
             + 'exactly, so a reordered readback would drift on every redeploy'
-          : 'the two-column write was refused',
+          : `controls not established: rename-response=${renamed.ok}, add-response=${secondOnView.ok}, `
+            + `final-fields=${JSON.stringify(finalViewFieldNames)}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `second-seed-write=${secondSeeded}, second-seed-read=${JSON.stringify(secondSeedValues)}, `
+            + `write=${wrote.ok}, aggregation=${JSON.stringify(back.d?.Aggregations)}, `
+            + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
     } else {
+      record('Q4', 'a totals row actually RENDERS', 'NOT ESTABLISHED', `controls not established: could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
       record('Q5', 'Aggregations binds by INTERNAL name, not display title', 'NOT ESTABLISHED', `could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
       record('Q6', 'two totalled columns both render, in declaration order', 'NOT ESTABLISHED', 'the second column could not be created');
     }
 
     // === Verdict =========================================================
-    const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
     log(
       'VERDICT',

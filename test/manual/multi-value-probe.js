@@ -54,6 +54,33 @@
     }
     log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
+  const chainedViewOutcome = (controls) => {
+    const unavailable = [];
+    if (!controls.fixtureUsable) unavailable.push('CAML fixture');
+    if (!controls.viewCreateOk) unavailable.push('view creation');
+    if (!controls.viewReadOk) unavailable.push('view readback request');
+    if (!controls.storedViewQuery) unavailable.push('stored ViewQuery');
+    if (!controls.sentOk) unavailable.push('sent-query response');
+    if (!controls.replayOk) unavailable.push('stored-query replay response');
+    if (!controls.columnOnViewOk) unavailable.push('column-on-view request');
+    if (!controls.viewUrl) unavailable.push('stored view URL');
+    if (unavailable.length) {
+      return {
+        observed: 'NOT ESTABLISHED',
+        detail: `NOT ESTABLISHED: unavailable control(s): ${unavailable.join(', ')}. Nothing is established about chained-predicate storage.`,
+      };
+    }
+    const sameRows = JSON.stringify(controls.sentTitles) === JSON.stringify(controls.replayTitles);
+    return sameRows
+      ? {
+        observed: 'MANUAL',
+        detail: 'All machine controls succeeded and the sent and replayed row sets match.',
+      }
+      : {
+        observed: 'CHANGED',
+        detail: 'Storage changed the predicate result after all machine controls succeeded.',
+      };
+  };
   expect('Q0', 'the fixture actually built: two fields, four rows, seeded sets as asked');
   expect('M1', 'a MultiChoice field is created by a plain POST to /fields');
   expect('M2', 'the created field reads back as MultiChoice');
@@ -100,7 +127,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 133d71b5; core v2; results v1.`);
+  log('INFO', `probe revision 5d3f21e4; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -216,6 +243,57 @@
     }
     return response.d.ListItemEntityTypeFullName;
   }
+  // Shared list fixture v1: exact ownership checks and bounded recycle.
+  // Title is never treated as ownership. Callers supply a stable description.
+  async function inspectOwnedList(title, ownershipDescription) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const existing = await get(`${listPath}?$select=Id,Description`);
+    if (!existing.ok) {
+      if (existing.status === 404) return { state: 'missing', listPath, d: null };
+      return {
+        state: 'error', listPath, d: null,
+        error: `HTTP ${existing.status}: ${existing.error}`,
+      };
+    }
+    if (existing.d.Description !== ownershipDescription) {
+      return {
+        state: 'foreign', listPath, d: existing.d,
+        error: `A same-title list '${title}' exists without the exact probe ownership marker; refusing to modify it.`,
+      };
+    }
+    return { state: 'owned', listPath, d: existing.d };
+  }
+
+  async function recycleOwnedList(title, ownershipDescription) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'missing') return { ok: true, removed: false };
+    if (inspected.state !== 'owned') {
+      return { ok: false, removed: false, error: inspected.error };
+    }
+    const recycled = await post(`${inspected.listPath}/recycle`);
+    return {
+      ok: recycled.ok,
+      removed: recycled.ok,
+      error: recycled.ok ? null : `HTTP ${recycled.status}: ${recycled.error}`,
+    };
+  }
+
+  async function prepareOwnedList(title, ownershipDescription, removeExisting) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'foreign' || inspected.state === 'error') {
+      return { ok: false, existing: null, error: inspected.error };
+    }
+    if (inspected.state === 'owned' && removeExisting) {
+      const recycled = await recycleOwnedList(title, ownershipDescription);
+      if (!recycled.ok) return { ok: false, existing: null, error: recycled.error };
+      return { ok: true, existing: null, removed: true };
+    }
+    return {
+      ok: true,
+      existing: inspected.state === 'owned' ? inspected.d : null,
+      removed: false,
+    };
+  }
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const fieldPath = (name) => `${listPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
@@ -225,9 +303,7 @@
   let createdList = false;
   let viewUrl = null;
   let listDefaultUrl = null;
-  const deleteProbeList = async () => post(
-    listPath, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
-  );
+
 
   // The four candidate item-value shapes, most-likely first. Learn's list-item
   // REST page documents none of them for a multi-value column, so this is an
@@ -255,11 +331,11 @@
     if (CLEANUP_AT_END) {
       const prior = await get(`${listPath}?$select=Title,Description`);
       if (prior.ok && prior.d?.Description === PROBE_DESCRIPTION) {
-        const swept = await deleteProbeList();
+        const swept = await recycleOwnedList(PROBE_LIST, PROBE_DESCRIPTION);
         log(swept.ok ? 'INFO' : 'ERROR', swept.ok
-          ? 'Removed the list left behind by the previous run.'
-          : `Could not remove the previous run's list (HTTP ${swept.status} ${swept.error}). `
-            + `Delete it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
+          ? 'Recycled the list left behind by the previous run.'
+          : `Could not recycle the previous run's list (${swept.error}). `
+            + `Recycle it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
       } else if (prior.ok) {
         log('ERROR', `A list titled '${PROBE_LIST}' exists but its Description is `
           + `${show(prior.d?.Description)}, not this probe's. Refusing to delete a list this probe `
@@ -871,42 +947,54 @@
       RowLimit: 50,
     });
     const chainViews = chainView.ok
-      ? await get(`${listPath}/views?$select=Title,ViewQuery`)
+      ? await get(`${listPath}/views?$select=Title,ViewQuery,ServerRelativeUrl`)
       : null;
     const chainStored = (chainViews?.d?.results || []).find((v) => v.Title === CHAIN_VIEW);
+    const chainViewUrl = chainStored?.ServerRelativeUrl || null;
+    const chainColumnOnView = chainStored
+      ? await post(`${listPath}/views/getbytitle('${odataName(CHAIN_VIEW)}')/viewfields/addviewfield('${odataName(MULTI)}')`)
+      : { ok: false, status: 0, error: 'the chained view was not read back' };
     // Replay what was STORED, not what was sent. Same helper, so a difference
     // in rows can only come from a difference in the XML.
     const chainReplay = chainStored
       ? await camlRows(String(chainStored.ViewQuery).replace(/^<Where>|<\/Where>$/g, ''))
       : null;
-    // BOTH queries must have succeeded before either verdict is reachable. A
-    // refused or throttled request makes the row sets differ trivially, and
-    // reporting that as CHANGED would attribute an unreadable observation to a
-    // semantic rewrite and tell the grammar to refuse chaining.
-    const chainQueriesOk = chainSent.ok && !!chainReplay && chainReplay.ok;
-    const sameRows = chainQueriesOk
-      && JSON.stringify(chainSent.titles) === JSON.stringify(chainReplay.titles);
+    // Every request and fixture control must succeed before semantic or manual
+    // guidance is reachable. A failed control is neutral evidence, even if the
+    // partial row values happen to differ.
+    const c14Outcome = chainedViewOutcome({
+      fixtureUsable: camlFixtureUsable,
+      viewCreateOk: chainView.ok,
+      viewReadOk: !!chainViews?.ok,
+      storedViewQuery: chainStored?.ViewQuery || null,
+      sentOk: chainSent.ok,
+      sentTitles: chainSent.titles,
+      replayOk: !!chainReplay?.ok,
+      replayTitles: chainReplay?.titles,
+      columnOnViewOk: chainColumnOnView.ok,
+      viewUrl: chainViewUrl,
+    });
     record(
       'C14',
       'a chained any_of predicate survives being STORED as a view ViewQuery',
-      !chainView.ok || !chainStored || !chainQueriesOk || !camlFixtureUsable
-        ? 'NOT ESTABLISHED'
-        : (sameRows ? 'NOT ESTABLISHED (arms not observable)' : 'CHANGED'),
-      !chainView.ok || !chainStored
-        ? `the view could not be created or read back: ${chainView.ok
-          ? 'not found after create'
-          : `HTTP ${chainView.status} ${chainView.error}`}. Nothing is established about chaining.`
+      c14Outcome.observed,
+      c14Outcome.observed === 'NOT ESTABLISHED'
+        ? c14Outcome.detail
         : `sent ${show(chainWhere)} and got ${show(chainSent.titles)}; SharePoint stored `
           + `${show(chainStored.ViewQuery)} which replays to ${show(chainReplay?.titles)}. `
-          + (sameRows
-            ? 'Same rows. That is WEAKER than it looks and the outcome says so. The padding members '
+          + (c14Outcome.observed === 'MANUAL'
+            ? (chainColumnOnView.ok && chainViewUrl
+              ? `OPEN ${window.location.origin}${chainViewUrl} and capture the stored chained view. Confirm `
+                + 'R1 {View} and R2 {View,Edit} are visible, while R3 {Edit,Export} and R4 {} are absent. '
+              : `The replay returned the expected rows, but the visible state is unreachable: column-on-view=${chainColumnOnView.ok}, URL=${chainViewUrl || '(missing)'}. `)
+              + 'Same rows are weaker than they look. The padding members '
               + 'Delete and PermissionChange are held by no row, so dropping either arm during storage '
               + 'leaves the result identical: this row cannot tell a surviving chain from a truncated '
               + 'one. It establishes only that the view stored and still answers. Nor does it speak to '
               + 'all_of: only a nested Or was stored here. test/manual/caml-chain-depth-probe.js seeds '
               + 'one row per member so the COUNT is the measurement, and it is what actually settled '
               + 'this: no query-side ceiling to 40 disjuncts, and a filter editor that truncates at ten.'
-            : 'DIFFERENT rows. Storage changed what the predicate means, so the grammar must refuse '
+            : `${c14Outcome.detail} The grammar must refuse `
               + 'chained membership on a multi-value column rather than emit a view that quietly '
               + 'answers a different question.'),
     );
@@ -1147,14 +1235,14 @@
       log('ERROR', `fixture=FAILED on the single-value CONTROL field only. The C, M, V, F and X rows do not depend on it and stand; I1 and I1C are VOID. Fix '${SINGLE}' and re-run if the index question matters.`);
     }
     log('INFO', 'Paste both VERDICT lines back, with the two <fill in> values set after doing the manual steps.');
-    return { results, winningShape: winningShape?.name || null, viewUrl };
+    return { results, winningShape: winningShape?.name || null, viewUrl, chainViewUrl };
   } finally {
     if (createdList && CLEANUP_AT_END) {
-      const gone = await deleteProbeList();
+      const gone = await recycleOwnedList(PROBE_LIST, PROBE_DESCRIPTION);
       if (gone.ok) {
-        log('INFO', `Deleted '${PROBE_LIST}'.`);
+        log('INFO', `Recycled '${PROBE_LIST}'.`);
       } else {
-        log('ERROR', `COULD NOT DELETE '${PROBE_LIST}' (HTTP ${gone.status} ${gone.error}). Delete it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
+        log('ERROR', `COULD NOT RECYCLE '${PROBE_LIST}' (${gone.error}). Recycle it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
       }
     } else if (createdList) {
       log('INFO', `Left '${PROBE_LIST}' in place for the manual steps (X1 and C8). Re-run with CLEANUP_AT_END = true to remove it.`);

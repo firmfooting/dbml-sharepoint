@@ -67,7 +67,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 8a3a2d66; core v2; results v1.`);
+  log('INFO', `probe revision c54b23c0; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -234,6 +234,45 @@
       removed: false,
     };
   }
+  // SharePoint list/formula validation refusals are HTTP 400. Other failures
+  // cannot establish application behavior and must not be described as refusals.
+  const isSharePointBehavioralRefusal = (r) => !r.ok && r.status === 400;
+  const classifyAttempt = (r, accepted, refused) => r.ok
+    ? accepted : isSharePointBehavioralRefusal(r) ? refused : 'NOT ESTABLISHED';
+  const describeAttempt = (r, accepted, refused) => r.ok
+    ? accepted
+    : isSharePointBehavioralRefusal(r)
+      ? refused
+      : `NOT ESTABLISHED: HTTP ${r.status} ${r.error}`;
+  const describeDisposition = (r) => r.ok
+    ? 'accepted'
+    : isSharePointBehavioralRefusal(r)
+      ? 'behaviorally refused'
+      : `NOT ESTABLISHED (HTTP ${r.status} ${r.error})`;
+  const hyperlinkOperandVerdict = ({ Q1, Q2, Q3 }) => {
+    if (Q1 === 'ACCEPTED' && Q2 === 'FIRED' && Q3 === 'PASSED') {
+      return {
+        operandUsable: 'YES',
+        guidance: 'Usable. Remove the "hyperlink" entry from _FORBIDDEN_OPERAND_TYPES[VALIDATION] in analysis/conditions.py, restore audit-actions\' EvidenceUrl rule, and cite this run.',
+      };
+    }
+    if ([Q1, Q2, Q3].includes('NOT ESTABLISHED')) {
+      return {
+        operandUsable: 'NOT ESTABLISHED',
+        guidance: 'Evidence is inconclusive. Do not change build behavior from this run; repeat the probe after resolving the failed request.',
+      };
+    }
+    if (Q1 === 'REFUSED' || Q2 === 'DID NOT FIRE' || Q3 === 'REFUSED EVERYTHING') {
+      return {
+        operandUsable: 'NO',
+        guidance: 'NOT usable. Leave the build refusal in place and keep the requirement as a governance check.',
+      };
+    }
+    return {
+      operandUsable: 'NOT ESTABLISHED',
+      guidance: 'Evidence is inconclusive. Do not change build behavior from this run; repeat the probe after resolving the failed request.',
+    };
+  };
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint hyperlink validation probe. Safe to delete.';
@@ -252,7 +291,9 @@
   // REFUSED is the interesting answer, so the helper reports both plainly.
   async function tryCreate(label, fields) {
     const r = await post(`${listPath}/items`, { __metadata: { type: itemType }, ...fields });
-    log('INFO', `  ${label}: ${r.ok ? 'ACCEPTED' : `REFUSED (HTTP ${r.status})`}`);
+    log('INFO', `  ${label}: ${r.ok ? 'ACCEPTED'
+      : isSharePointBehavioralRefusal(r) ? `REFUSED (HTTP ${r.status})`
+        : `NOT ESTABLISHED (HTTP ${r.status})`}`);
     return r;
   }
   async function setRule(formula, message) {
@@ -330,10 +371,12 @@
     record(
       'Q1',
       'SharePoint ACCEPTS a ValidationFormula referencing a URL column',
-      set1.ok ? 'ACCEPTED' : 'REFUSED',
-      set1.ok
-        ? `HTTP ${set1.status}; stored as ${JSON.stringify(set1.stored)}`
-        : `HTTP ${set1.status}: ${set1.error}`,
+      classifyAttempt(set1, 'ACCEPTED', 'REFUSED'),
+      describeAttempt(
+        set1,
+        `HTTP ${set1.status}; stored as ${JSON.stringify(set1.stored)}`,
+        `SharePoint refused the validation formula (HTTP ${set1.status}: ${set1.error})`,
+      ),
     );
 
     if (set1.ok) {
@@ -345,10 +388,12 @@
       record(
         'Q2',
         'the rule FIRES: a violating row is refused',
-        violating.ok ? 'DID NOT FIRE' : 'FIRED',
-        violating.ok
-          ? 'the row was ACCEPTED with Doc blank, so the rule is stored and inert, which is exactly the failure the build refuses the operand to avoid'
-          : `refused with HTTP ${violating.status}: ${violating.error}`,
+        classifyAttempt(violating, 'DID NOT FIRE', 'FIRED'),
+        describeAttempt(
+          violating,
+          'the row was ACCEPTED with Doc blank, so the rule is stored and inert, which is exactly the failure the build refuses the operand to avoid',
+          `the rule behaviorally refused the row (HTTP ${violating.status}: ${violating.error})`,
+        ),
       );
 
       // === Q3: does it pass a compliant row? ============================
@@ -360,10 +405,12 @@
       record(
         'Q3',
         'the rule PASSES a compliant row (not simply refusing everything)',
-        compliant.ok ? 'PASSED' : 'REFUSED EVERYTHING',
-        compliant.ok
-          ? 'a filled Doc saves, so the rule discriminates'
-          : `a filled Doc was ALSO refused (HTTP ${compliant.status}: ${compliant.error}), so the formula rejects every row regardless, which is not enforcement`,
+        classifyAttempt(compliant, 'PASSED', 'REFUSED EVERYTHING'),
+        describeAttempt(
+          compliant,
+          'a filled Doc saves, so the rule discriminates',
+          `a filled Doc was behaviorally refused (HTTP ${compliant.status}: ${compliant.error}), so the formula rejects every row regardless, which is not enforcement`,
+        ),
       );
 
       // === Q4: Url present, Description empty ===========================
@@ -376,10 +423,12 @@
       record(
         'Q4',
         'ISBLANK sees a Url with an EMPTY description as present',
-        noDescription.ok ? 'SEES THE URL' : 'SEES THE DESCRIPTION',
-        noDescription.ok
-          ? 'a Url with no Description satisfies NOT(ISBLANK(...)), so the formula reads the Url'
-          : `refused (HTTP ${noDescription.status}), so the formula is reading the DESCRIPTION, and a pasted link with no label would be rejected as missing`,
+        classifyAttempt(noDescription, 'SEES THE URL', 'SEES THE DESCRIPTION'),
+        describeAttempt(
+          noDescription,
+          'a Url with no Description satisfies NOT(ISBLANK(...)), so the formula reads the Url',
+          `behaviorally refused (HTTP ${noDescription.status}), so the formula is reading the DESCRIPTION, and a pasted link with no label would be rejected as missing`,
+        ),
       );
 
       // === Q5: which half does an equality comparison see? ==============
@@ -389,7 +438,16 @@
       const eqRule = `=[Doc]="${EVIDENCE}"`;
       const set2 = await setRule(eqRule, 'Doc must be the evidence URL.');
       if (!set2.ok) {
-        record('Q5', 'an equality comparison matches the Url rather than the Description', 'NOT ESTABLISHED', `could not set the equality rule: HTTP ${set2.status} ${set2.error}`);
+        record(
+          'Q5',
+          'an equality comparison matches the Url rather than the Description',
+          isSharePointBehavioralRefusal(set2) ? 'NOT APPLICABLE' : 'NOT ESTABLISHED',
+          describeAttempt(
+            set2,
+            'the equality rule was set',
+            `SharePoint refused the equality formula (HTTP ${set2.status}: ${set2.error})`,
+          ),
+        );
       } else {
         const byUrl = await tryCreate('Url matches, Description differs', {
           Title: 'by-url', Doc: urlValue(EVIDENCE, 'a label'),
@@ -397,39 +455,44 @@
         const byDescription = await tryCreate('Description matches, Url differs', {
           Title: 'by-description', Doc: urlValue(OTHER, EVIDENCE),
         });
-        const observed = byUrl.ok && !byDescription.ok ? 'MATCHES THE URL'
-          : !byUrl.ok && byDescription.ok ? 'MATCHES THE DESCRIPTION'
-            : byUrl.ok && byDescription.ok ? 'MATCHES EITHER'
-              : 'MATCHES NEITHER';
+        const rowsAreSemantic = [byUrl, byDescription]
+          .every((r) => r.ok || isSharePointBehavioralRefusal(r));
+        const observed = !rowsAreSemantic ? 'NOT ESTABLISHED'
+          : byUrl.ok && isSharePointBehavioralRefusal(byDescription) ? 'MATCHES THE URL'
+            : isSharePointBehavioralRefusal(byUrl) && byDescription.ok ? 'MATCHES THE DESCRIPTION'
+              : byUrl.ok && byDescription.ok ? 'MATCHES EITHER'
+                : 'MATCHES NEITHER';
         record(
           'Q5',
           'an equality comparison matches the Url rather than the Description',
           observed,
-          `url-match row ${byUrl.ok ? 'accepted' : 'refused'}; description-match row ${byDescription.ok ? 'accepted' : 'refused'}`,
+          `url-match row ${describeDisposition(byUrl)}; description-match row ${describeDisposition(byDescription)}`,
         );
       }
     } else {
       for (const id of ['Q2', 'Q3', 'Q4', 'Q5']) {
-        record(id, results.find((r) => r.id === id).question, 'NOT APPLICABLE', 'SharePoint refused the formula at Q1, so the conditional downstream question has no executable subject');
+        record(
+          id,
+          results.find((r) => r.id === id).question,
+          isSharePointBehavioralRefusal(set1) ? 'NOT APPLICABLE' : 'NOT ESTABLISHED',
+          isSharePointBehavioralRefusal(set1)
+            ? 'SharePoint refused the formula at Q1, so the conditional downstream question has no executable subject'
+            : `Q1 failed without a semantic response (HTTP ${set1.status} ${set1.error})`,
+        );
       }
     }
 
     // === Verdict =========================================================
     const q = (id) => results.find((r) => r.id === id)?.observed;
-    const usable = q('Q1') === 'ACCEPTED' && q('Q2') === 'FIRED' && q('Q3') === 'PASSED';
+    const verdict = hyperlinkOperandVerdict({ Q1: q('Q1'), Q2: q('Q2'), Q3: q('Q3') });
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
     log(
       'VERDICT',
       `accepted=${q('Q1')} fires=${q('Q2')} discriminates=${q('Q3')} `
-      + `blank_reads=${q('Q4')} equality_reads=${q('Q5')} => operand_usable=${usable ? 'YES' : 'NO'}`,
+      + `blank_reads=${q('Q4')} equality_reads=${q('Q5')} => operand_usable=${verdict.operandUsable}`,
     );
-    log(
-      'INFO',
-      usable
-        ? 'Usable. Remove the "hyperlink" entry from _FORBIDDEN_OPERAND_TYPES[VALIDATION] in analysis/conditions.py, restore audit-actions\' EvidenceUrl rule, and cite this run.'
-        : 'NOT usable. Leave the build refusal in place and keep the requirement as a governance check.',
-    );
-    return { usable, results };
+    log('INFO', verdict.guidance);
+    return { operandUsable: verdict.operandUsable, results };
   } finally {
     if (createdList && CLEANUP_AT_END) {
       // The validation formula must go first: a list rule can otherwise

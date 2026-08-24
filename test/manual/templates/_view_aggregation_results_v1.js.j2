@@ -1,0 +1,18 @@
+  const aggregationManualOutcome = (controls) => {
+    const seedsHeld = Array.isArray(controls.seedValues)
+      && controls.seedValues.length === 2
+      && controls.seedValues[0] === 1
+      && controls.seedValues[1] === 3;
+    const viewFieldsHeld = Array.isArray(controls.viewFieldNames)
+      && Array.isArray(controls.expectedViewFields)
+      && controls.expectedViewFields.every((name) => controls.viewFieldNames.includes(name));
+    const renamedTitleHeld = controls.fieldTitle === controls.expectedFieldTitle;
+    const ready = controls.setupReady
+      && controls.writeOk
+      && String(controls.aggregationXml) === controls.expectedXml
+      && controls.aggregationStatus === 'On'
+      && seedsHeld
+      && viewFieldsHeld
+      && renamedTitleHeld;
+    return ready ? 'MANUAL' : 'NOT ESTABLISHED';
+  };

@@ -72,7 +72,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 33d5bd8b; core v2; results v1.`);
+  log('INFO', `probe revision 983e67c6; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -188,6 +188,57 @@
     }
     return response.d.ListItemEntityTypeFullName;
   }
+  // Shared list fixture v1: exact ownership checks and bounded recycle.
+  // Title is never treated as ownership. Callers supply a stable description.
+  async function inspectOwnedList(title, ownershipDescription) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const existing = await get(`${listPath}?$select=Id,Description`);
+    if (!existing.ok) {
+      if (existing.status === 404) return { state: 'missing', listPath, d: null };
+      return {
+        state: 'error', listPath, d: null,
+        error: `HTTP ${existing.status}: ${existing.error}`,
+      };
+    }
+    if (existing.d.Description !== ownershipDescription) {
+      return {
+        state: 'foreign', listPath, d: existing.d,
+        error: `A same-title list '${title}' exists without the exact probe ownership marker; refusing to modify it.`,
+      };
+    }
+    return { state: 'owned', listPath, d: existing.d };
+  }
+
+  async function recycleOwnedList(title, ownershipDescription) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'missing') return { ok: true, removed: false };
+    if (inspected.state !== 'owned') {
+      return { ok: false, removed: false, error: inspected.error };
+    }
+    const recycled = await post(`${inspected.listPath}/recycle`);
+    return {
+      ok: recycled.ok,
+      removed: recycled.ok,
+      error: recycled.ok ? null : `HTTP ${recycled.status}: ${recycled.error}`,
+    };
+  }
+
+  async function prepareOwnedList(title, ownershipDescription, removeExisting) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'foreign' || inspected.state === 'error') {
+      return { ok: false, existing: null, error: inspected.error };
+    }
+    if (inspected.state === 'owned' && removeExisting) {
+      const recycled = await recycleOwnedList(title, ownershipDescription);
+      if (!recycled.ok) return { ok: false, existing: null, error: recycled.error };
+      return { ok: true, existing: null, removed: true };
+    }
+    return {
+      ok: true,
+      existing: inspected.state === 'owned' ? inspected.d : null,
+      removed: false,
+    };
+  }
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const OWNERSHIP_DESCRIPTION = 'Throwaway list created by dbml-sharepoint form-visibility-probe.js. Safe to delete.';
@@ -257,16 +308,24 @@
       log('ERROR', `A same-title list exists without the probe ownership marker; refusing to modify it.`);
       return { aborted: 'foreign-same-title-list' };
     }
+    const q6Readback = [];
     for (const [key, name] of Object.entries(FIELDS)) {
       const v = await visibility(name);
-      record(`RECHECK.${key}`, name, v.ok ? shape(v) : 'READ FAILED', v.ok ? (v.sealed ? 'sealed' : 'not sealed') : v.error);
+      q6Readback.push({ key, name, visibility: v });
     }
+    const q6Readable = q6Readback.every(({ visibility: v }) => v.ok);
+    record(
+      'Q6',
+      'the modern "Edit form columns" panel writes these attributes',
+      q6Readable ? 'MANUAL: capture New/Edit/Display after states' : 'NOT ESTABLISHED',
+      q6Readback.map(({ name, visibility: v }) => `${name}: ${v.ok ? shape(v) : v.error}`).join('; '),
+    );
     console.table(results);
     if (CLEANUP_AT_END) {
-      const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
-      log(del.ok ? 'INFO' : 'ERROR', del.ok
-        ? `Probe list '${PROBE_LIST}' deleted.`
-        : `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
+      const recycled = await recycleOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION);
+      log(recycled.ok ? 'INFO' : 'ERROR', recycled.ok
+        ? `Probe list '${PROBE_LIST}' recycled.`
+        : `CLEANUP_AT_END FAILED (${recycled.error}). Recycle it by hand: ${listUrl}`);
     } else {
       log('WARN', `CLEANUP_AT_END is false, so '${PROBE_LIST}' is still on the site: ${listUrl}`);
     }
@@ -286,10 +345,10 @@
     return { aborted: 'fixture-discovery-failed' };
   }
   if (existing.ok) {
-    log('INFO', 'Owned probe list already exists; deleting it before a clean run.');
-    const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
-    if (!del.ok) {
-      log('ERROR', `Could not delete the existing probe list: HTTP ${del.status} ${del.error}`);
+    log('INFO', 'Owned probe list already exists; recycling it before a clean run.');
+    const recycled = await recycleOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION);
+    if (!recycled.ok) {
+      log('ERROR', `Could not recycle the existing probe list: ${recycled.error}`);
       return { aborted: 'stale-probe-list' };
     }
   }
@@ -383,7 +442,8 @@
 
     // --- Q6: manual UI step ----------------------------------------------
     record('Q6', 'the modern "Edit form columns" panel writes these attributes',
-      'MANUAL: see instructions below', 'cannot be exercised from script');
+      'MANUAL: capture panel before/action, then recheck',
+      'capture the Edit form columns panel before and immediately before save; after saving, re-run with RECHECK_ONLY=true and capture the New, Edit and Display forms');
 
     // --- Q7: creation-time SchemaXml ---------------------------------------
     // The only form Microsoft actually shows a sample for.
@@ -396,11 +456,11 @@
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
   } finally {
     if (CLEANUP_AT_END) {
-      const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
-      if (del.ok) {
-        log('INFO', `Probe list '${PROBE_LIST}' deleted.`);
+      const recycled = await recycleOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION);
+      if (recycled.ok) {
+        log('INFO', `Probe list '${PROBE_LIST}' recycled.`);
       } else {
-        log('ERROR', `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
+        log('ERROR', `CLEANUP_AT_END FAILED (${recycled.error}). Recycle it by hand: ${listUrl}`);
       }
     } else {
       log('WARN', `CLEANUP_AT_END is false, so '${PROBE_LIST}' is still on the site: ${listUrl}`);
