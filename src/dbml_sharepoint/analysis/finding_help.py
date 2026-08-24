@@ -227,6 +227,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.CONDITION_OPERATOR_UNKNOWN: (
         "The declared operator is not in the grammar."
     ),
+    FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN: (
+        "A whole-member Choice comparison does not use the exact spelling of a member "
+        "declared by the column's DBML enum."
+    ),
     FindingCode.CONDITION_OPERATOR_UNRENDERABLE: (
         "The operator is in the grammar but the target has no spelling "
         "for it."

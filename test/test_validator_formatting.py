@@ -418,6 +418,24 @@ def test_list_validation_rules_validated() -> None:
     )
     assert "Ghost" in ghost.message
 
+def test_list_validation_refuses_an_unknown_choice_member() -> None:
+    schema, bundle = _project_inputs(list_validation={
+        "Project": ListValidation(
+            when=_when({"field": "Status", "op": "eq", "value": "Opne"}),
+            message="Choose an open project.",
+        ),
+    })
+
+    findings = validate_against_mapping(schema, bundle)
+
+    finding = only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+    assert finding.location == Location(
+        Section.LIST_VALIDATION,
+        entity="Project",
+        sub="when.Status",
+    )
+
+
 def test_list_validation_rejects_unsupported_column_types() -> None:
     """SP list validation formulas cannot reference calculated, person,
     lookup or multi-line columns. Reject at build, not at paste."""

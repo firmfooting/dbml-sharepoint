@@ -15,6 +15,7 @@ the obvious mechanism and are not: saving the designer migrates them into
 undone over REST. See the form_visibility spec.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from dbml_sharepoint.analysis.condition_rendering import EXPRESSION, to_expression
@@ -80,6 +81,7 @@ def validate_form_visibility(
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
+    enum_members: Mapping[str, Sequence[str]],
     at: Location,
 ) -> list[Finding]:
     """Semantic problems with one column's declaration, as Findings.
@@ -148,6 +150,7 @@ def validate_form_visibility(
             rendered=rendered,
             types=types,
             lookups=lookups,
+            enum_members=enum_members,
             at=replace(at, column=column, sub="when"),
         ))
     return findings
