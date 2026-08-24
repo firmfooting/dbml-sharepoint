@@ -208,6 +208,28 @@ def _multi_value_platform() -> Schema:
         ],
     )
 
+def test_view_filter_refuses_an_unknown_multichoice_member() -> None:
+    bundle = make_bundle(entities=["Platform"], views={"Platform": [ViewDef(
+        title="Logs viewing",
+        fields=["Title", "Events"],
+        where=Group(
+            "all_of",
+            (Leaf(field="Events", op="includes", value="Veiew"),),
+        ),
+    )]})
+
+    findings = validate_against_mapping(_multi_value_platform(), bundle)
+
+    finding = only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+    assert finding.location == Location(
+        Section.VIEWS,
+        entity="Platform",
+        view="Logs viewing",
+        sub="where.Events",
+    )
+    assert "use declared member 'View'" in finding.message
+
+
 def test_a_view_filtering_a_multi_value_column_is_told_no_index_is_possible() -> None:
     """The generic exposure warning prescribes a remedy this column cannot
     take, and following it fails the build.
@@ -864,7 +886,7 @@ def test_demo_refs_and_calendar_dates_are_validated_before_generation() -> None:
 def test_rendered_validation_formula_length_is_checked() -> None:
     values = [f"value-{i}-{'x' * 40}" for i in range(24)]
     too_long = Group("all_of", (Leaf(field="Status", op="in", value=values),))
-    errors = _project_errors(
+    schema, bundle = _project_inputs(
         list_validation={
             "Project": ListValidation(when=too_long, message="Too long."),
         },
@@ -874,6 +896,12 @@ def test_rendered_validation_formula_length_is_checked() -> None:
             }),
         },
     )
+    schema.enums[0].members.extend(values)
+    errors = [
+        finding
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "error"
+    ]
     list_level = only(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
     assert list_level.location == Location(Section.LIST_VALIDATION, entity="Project")
     # The limit is the number the author has to write the formula under, and

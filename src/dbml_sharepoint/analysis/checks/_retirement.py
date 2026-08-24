@@ -276,6 +276,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 rendered=rendered,
                 types=types,
                 lookups=lookups,
+                enum_members=vc.enum_members_by_name,
                 at=col_at,
             ))
 
@@ -335,6 +336,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 rendered=rendered,
                 types=types,
                 lookups=lookups,
+                enum_members=vc.enum_members_by_name,
                 at=replace(col_at, sub="when"),
             )
             findings.extend(problems)

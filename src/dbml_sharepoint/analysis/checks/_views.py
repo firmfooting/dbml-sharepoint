@@ -648,6 +648,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         rendered=view_rendered,
                         types={**SYSTEM_COLUMN_TYPES, **types_by_col},
                         lookups=lookup_cols,
+                        enum_members=vc.enum_members_by_name,
                         at=at_where,
                     )
                 )

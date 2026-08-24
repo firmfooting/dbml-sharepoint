@@ -51,6 +51,7 @@ dbml-sharepoint explain unknown_column_type
 | `column_validation_on_a_retired_column` | error | A save rule sits on a retired column. Retirement hides it from the New form, so the rule cannot be satisfied there and would reject every new item. |
 | `column_validation_references_other_columns` | error | A column validation formula references a column other than its own; SharePoint permits only the column being validated. |
 | `composite_index_unsupported` | error | A DBML `indexes { }` entry names more than one column; the deployer can represent only a one-column index. |
+| `condition_choice_member_unknown` | error | A whole-member Choice comparison does not use the exact spelling of a member declared by the column's DBML enum. |
 | `condition_column_type_unknown` | error | A leaf names a column with no declared type, so the literal cannot be typed. |
 | `condition_date_is_an_unquoted_yaml_datetime` | error | An unquoted YAML datetime reaches the renderers with a SPACE separating date from time, a spelling no probe has run. Quote it. |
 | `condition_date_unparseable` | error | A date column's literal is neither a date nor a `today`/`now` sentinel. |
