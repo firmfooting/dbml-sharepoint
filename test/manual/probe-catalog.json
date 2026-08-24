@@ -1,0 +1,1644 @@
+{
+  "schema_version": "1.0",
+  "probes": [
+    {
+      "file": "calculated-choice-operand.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "D1",
+            "D2",
+            "D3",
+            "DAT1",
+            "DAT2",
+            "L1",
+            "L2",
+            "L3",
+            "N1",
+            "NUM1",
+            "NUM2",
+            "P1",
+            "P2",
+            "R1",
+            "R2"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "calculated-operand-probe.js",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "BOOL",
+            "CALC",
+            "CHOI",
+            "DATE",
+            "LINK",
+            "LONG",
+            "LOOK",
+            "NUMB",
+            "PERS",
+            "RICH",
+            "TEXT",
+            "TIME"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "caml-chain-depth-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "run-unique list, rows and views"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "D01",
+            "D02",
+            "D03",
+            "D04",
+            "D06",
+            "D08",
+            "D12",
+            "D16",
+            "D24",
+            "D32",
+            "D40",
+            "G1",
+            "G2",
+            "N1",
+            "N2",
+            "Q0",
+            "R1",
+            "R2",
+            "T1",
+            "T3",
+            "T4",
+            "V01",
+            "V02",
+            "V03",
+            "V04",
+            "V06",
+            "V08",
+            "V12",
+            "V16",
+            "V24",
+            "V32",
+            "V40",
+            "W1",
+            "W3"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            "E1",
+            "E2",
+            "E3",
+            "E4",
+            "P1",
+            "P2",
+            "R3",
+            "T2",
+            "U1",
+            "U2",
+            "W2",
+            "W4"
+          ],
+          "states": [
+            {
+              "role": "deepest-view",
+              "page": "deepest chain view",
+              "assertions": [
+                "expected rows visible",
+                "non-match absent"
+              ]
+            },
+            {
+              "role": "editor-before",
+              "page": "classic filter editor before save",
+              "assertions": [
+                "all authored conditions visible",
+                "editable control works"
+              ]
+            },
+            {
+              "role": "editor-after",
+              "page": "classic filter editor after reopen",
+              "assertions": [
+                "retained or truncated conditions visible"
+              ]
+            },
+            {
+              "role": "e1",
+              "page": "classic filter editor e1",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "e2",
+              "page": "classic filter editor e2",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "e3",
+              "page": "classic filter editor e3",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "e4",
+              "page": "classic filter editor e4",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "p1",
+              "page": "classic filter editor p1",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "p2",
+              "page": "classic filter editor p2",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "r3",
+              "page": "classic filter editor r3",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "w2",
+              "page": "classic filter editor w2",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "w4",
+              "page": "classic filter editor w4",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            },
+            {
+              "role": "t2",
+              "page": "classic filter editor t2",
+              "assertions": [
+                "authored shape or refusal visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "datetime-sentinel-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, items, formulas and views"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "site time 04:00–20:00"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "CN",
+            "Q1",
+            "Q2",
+            "Q3",
+            "TZ0",
+            "V1",
+            "V2",
+            "V2C",
+            "V3",
+            "V3C",
+            "V4",
+            "V5",
+            "V6",
+            "VN"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            "C7",
+            "E1",
+            "Q4"
+          ],
+          "states": [
+            {
+              "role": "saved-view",
+              "page": "datetime saved view",
+              "assertions": [
+                "past rows visible",
+                "future row absent"
+              ]
+            },
+            {
+              "role": "past-edit",
+              "page": "past item Edit form",
+              "assertions": [
+                "ProbeWhen visible"
+              ]
+            },
+            {
+              "role": "future-edit",
+              "page": "future item Edit form",
+              "assertions": [
+                "ProbeWhen absent",
+                "Title visible control"
+              ]
+            },
+            {
+              "role": "designer-before",
+              "page": "conditional formula editor",
+              "assertions": [
+                "valid control visible"
+              ]
+            },
+            {
+              "role": "designer-result",
+              "page": "conditional formula editor after candidate",
+              "assertions": [
+                "acceptance or error visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "document-library-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, file, view and formatter"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "L1",
+            "L2",
+            "L3",
+            "L5",
+            "L6",
+            "LN"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "state-matrix",
+          "findings": [
+            "L4",
+            "L7"
+          ],
+          "states": [
+            {
+              "role": "library-grid",
+              "page": "default library view",
+              "assertions": [
+                "real file visible",
+                "fileless item outcome visible"
+              ]
+            },
+            {
+              "role": "file-header",
+              "page": "uploaded file details",
+              "assertions": [
+                "rendered header visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "enterprise-reader-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "optional ensureuser entries"
+      ],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "configured reader, real list and group"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "B1",
+            "B2",
+            "B3",
+            "B4",
+            "C1",
+            "C2",
+            "C3"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "single-visible-state",
+          "findings": [
+            "A5"
+          ],
+          "states": [
+            {
+              "role": "feature-state",
+              "page": "Site Collection Features",
+              "assertions": [
+                "lockdown feature state visible",
+                "active feature control visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "expression-text-operators-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, fields and formulas"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "X0"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "state-matrix",
+          "findings": [
+            "X1",
+            "X2",
+            "X3",
+            "X4",
+            "X5",
+            "X6"
+          ],
+          "states": [
+            {
+              "role": "at-zero",
+              "page": "New form",
+              "assertions": [
+                "needle at zero",
+                "all candidates visible"
+              ]
+            },
+            {
+              "role": "mid-string",
+              "page": "New form",
+              "assertions": [
+                "needle mid-string",
+                "all candidates visible"
+              ]
+            },
+            {
+              "role": "no-match",
+              "page": "New form",
+              "assertions": [
+                "non-match value",
+                "all candidates visible"
+              ]
+            },
+            {
+              "role": "empty",
+              "page": "New form",
+              "assertions": [
+                "empty ProbeText",
+                "all candidates visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "form-visibility-evidence-probe.js",
+      "harness": "helper",
+      "authority": "allow-legacy-writes",
+      "writes": [
+        "shared fixed form fixture"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "form fixture"
+      ],
+      "scenarios": [
+        {
+          "id": "ui-storage-sequence",
+          "pattern": "before-action-after",
+          "findings": [],
+          "states": [
+            {
+              "role": "column-validation-before",
+              "page": "Column Validation dialog",
+              "assertions": [
+                "initial formula visible"
+              ]
+            },
+            {
+              "role": "column-validation-after",
+              "page": "Column Validation after save",
+              "assertions": [
+                "save result visible"
+              ]
+            },
+            {
+              "role": "conditional-before",
+              "page": "Conditional Visibility dialog",
+              "assertions": [
+                "initial state visible"
+              ]
+            },
+            {
+              "role": "conditional-after",
+              "page": "Conditional Visibility after save",
+              "assertions": [
+                "save result visible"
+              ]
+            },
+            {
+              "role": "canonical-date",
+              "page": "formula dialog",
+              "assertions": [
+                "date syntax visible"
+              ]
+            },
+            {
+              "role": "canonical-person",
+              "page": "formula dialog",
+              "assertions": [
+                "person syntax visible"
+              ]
+            },
+            {
+              "role": "canonical-lookup",
+              "page": "formula dialog",
+              "assertions": [
+                "lookup syntax visible"
+              ]
+            },
+            {
+              "role": "canonical-nesting",
+              "page": "formula dialog",
+              "assertions": [
+                "nesting syntax visible"
+              ]
+            },
+            {
+              "role": "canonical-apostrophe",
+              "page": "formula dialog",
+              "assertions": [
+                "apostrophe syntax visible"
+              ]
+            }
+          ],
+          "controls": [
+            "ordinary and sealed control pair"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "form-visibility-interactive.js",
+      "harness": "helper",
+      "authority": "interactive",
+      "writes": [
+        "hard-recreated fixed form fixture"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "ui-storage-sequence",
+          "pattern": "before-action-after",
+          "findings": [],
+          "states": [
+            {
+              "role": "round1-new",
+              "page": "New form",
+              "assertions": [
+                "full field matrix visible"
+              ]
+            },
+            {
+              "role": "round1-edit",
+              "page": "Edit form",
+              "assertions": [
+                "full field matrix visible"
+              ]
+            },
+            {
+              "role": "round1-display",
+              "page": "Display form",
+              "assertions": [
+                "full field matrix visible"
+              ]
+            },
+            {
+              "role": "round2-before",
+              "page": "Edit columns panel",
+              "assertions": [
+                "Ctl and SealedF states visible"
+              ]
+            },
+            {
+              "role": "round2-action",
+              "page": "Edit columns panel",
+              "assertions": [
+                "Ctl and SealedF unticked"
+              ]
+            },
+            {
+              "role": "round2-after",
+              "page": "New form after save",
+              "assertions": [
+                "outcomes visible"
+              ]
+            },
+            {
+              "role": "round3-undo",
+              "page": "New form after undo",
+              "assertions": [
+                "restored outcomes visible"
+              ]
+            }
+          ],
+          "controls": [
+            "ordinary and sealed control pair"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "form-visibility-probe.js",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list and field visibility"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "setup then recheck"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "Q1",
+            "Q2",
+            "Q3",
+            "Q4",
+            "Q5",
+            "Q7"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            "Q6"
+          ],
+          "states": [
+            {
+              "role": "panel-before",
+              "page": "Edit form columns panel",
+              "assertions": [
+                "ordinary and sealed states visible"
+              ]
+            },
+            {
+              "role": "panel-action",
+              "page": "Edit form columns panel before save",
+              "assertions": [
+                "ordinary and sealed toggled"
+              ]
+            },
+            {
+              "role": "new-after",
+              "page": "New form after save",
+              "assertions": [
+                "both field outcomes visible"
+              ]
+            },
+            {
+              "role": "edit-after",
+              "page": "Edit form after save",
+              "assertions": [
+                "both field outcomes visible"
+              ]
+            },
+            {
+              "role": "display-after",
+              "page": "Display form after save",
+              "assertions": [
+                "both field outcomes visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "form-visibility-storage-probe.js",
+      "harness": "helper",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "form fixture and exact site URL"
+      ],
+      "scenarios": [
+        {
+          "id": "ui-storage-sequence",
+          "pattern": "before-action-after",
+          "findings": [],
+          "states": [
+            {
+              "role": "before",
+              "page": "Edit columns panel",
+              "assertions": [
+                "ordinary and sealed states visible"
+              ]
+            },
+            {
+              "role": "action",
+              "page": "Edit columns panel",
+              "assertions": [
+                "toggle and save visible"
+              ]
+            },
+            {
+              "role": "after",
+              "page": "affected form",
+              "assertions": [
+                "field outcome visible"
+              ]
+            }
+          ],
+          "controls": [
+            "ordinary and sealed control pair"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "formatter-xml-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, views, rows, formatters and metadata"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "A_AMP",
+            "A_AMPESC",
+            "A_APOS",
+            "A_GE",
+            "A_GT",
+            "A_LT",
+            "A_LTESC",
+            "A_QUOT",
+            "B_AMP",
+            "B_AMPESC",
+            "B_APOS",
+            "B_GE",
+            "B_GT",
+            "B_LT",
+            "B_LTESC",
+            "B_QUOT",
+            "C_AMP",
+            "C_AMPESC",
+            "C_APOS",
+            "C_GE",
+            "C_GT",
+            "C_LT",
+            "C_LTESC",
+            "C_QUOT"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            "A_COMBINED",
+            "B_COMBINED",
+            "C_COMBINED",
+            "D_DESC",
+            "D_TITLE",
+            "D_VALMSG",
+            "D_VIEWTITLE",
+            "D_WIDTH"
+          ],
+          "states": [
+            {
+              "role": "view-format",
+              "page": "list view",
+              "assertions": [
+                "view markers painted"
+              ]
+            },
+            {
+              "role": "column-format",
+              "page": "list view",
+              "assertions": [
+                "column markers painted"
+              ]
+            },
+            {
+              "role": "form-format",
+              "page": "New form",
+              "assertions": [
+                "form markers painted"
+              ]
+            },
+            {
+              "role": "column-title",
+              "page": "list settings column",
+              "assertions": [
+                "special title visible"
+              ]
+            },
+            {
+              "role": "view-width",
+              "page": "list view",
+              "assertions": [
+                "width visible"
+              ]
+            },
+            {
+              "role": "view-title",
+              "page": "view picker",
+              "assertions": [
+                "special title visible"
+              ]
+            },
+            {
+              "role": "validation-before",
+              "page": "New form",
+              "assertions": [
+                "invalid value entered"
+              ]
+            },
+            {
+              "role": "validation-after",
+              "page": "New form after save",
+              "assertions": [
+                "message visible"
+              ]
+            },
+            {
+              "role": "tooltip",
+              "page": "column header hover",
+              "assertions": [
+                "description visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "group-description-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "run-unique site group"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "G1",
+            "G10",
+            "G11",
+            "G2",
+            "G3",
+            "G4",
+            "G5",
+            "G6",
+            "G7",
+            "G8",
+            "G9",
+            "N1"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "hyperlink-validation-operand-probe.js",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, URL field, formula and rows"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "Q0",
+            "Q1",
+            "Q2",
+            "Q3",
+            "Q4",
+            "Q5"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "list-description-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "run-unique list"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "L1",
+            "L10",
+            "L11",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "L6",
+            "L7",
+            "L8",
+            "L9",
+            "N1"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "lookup-acl-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists and target ACL"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "owner and denied identities"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "K1",
+            "K2",
+            "K3",
+            "K4",
+            "K5",
+            "K6"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "identity-pair",
+          "findings": [
+            "K7"
+          ],
+          "states": [
+            {
+              "role": "calc-picker",
+              "page": "owner New form picker",
+              "assertions": [
+                "populated and empty-label outcomes visible"
+              ]
+            },
+            {
+              "role": "title-picker",
+              "page": "owner New form Title picker",
+              "assertions": [
+                "ordinary choices visible"
+              ]
+            },
+            {
+              "role": "denied-grid",
+              "page": "source grid as denied identity",
+              "assertions": [
+                "source readable",
+                "lookup outcome visible"
+              ]
+            },
+            {
+              "role": "denied-item",
+              "page": "source item as denied identity",
+              "assertions": [
+                "item readable",
+                "lookup outcome visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "multi-value-probe.js",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, rows, views and formatter"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "C1",
+            "C10",
+            "C11",
+            "C12",
+            "C13",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7",
+            "C9",
+            "F1",
+            "I1",
+            "I1C",
+            "I2",
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "Q0",
+            "V1"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "state-matrix",
+          "findings": [
+            "C14",
+            "C8",
+            "X1"
+          ],
+          "states": [
+            {
+              "role": "membership-view",
+              "page": "stored membership view",
+              "assertions": [
+                "matches visible",
+                "non-matches absent"
+              ]
+            },
+            {
+              "role": "any-of-view",
+              "page": "stored chained view",
+              "assertions": [
+                "matches visible",
+                "non-matches absent"
+              ]
+            },
+            {
+              "role": "severity-grid",
+              "page": "default list view",
+              "assertions": [
+                "four seeded rows visible",
+                "formatter result visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "native-index-probe.js",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "threshold fixture for threshold findings"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "CMPIDX",
+            "NATAUT",
+            "NATCRE",
+            "NATEDI",
+            "NATID",
+            "NATMOD",
+            "NULIDX"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "reader-bindings-probe.js",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "R1",
+            "R2",
+            "R3",
+            "R4",
+            "R5",
+            "R6"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "role-definition-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "run-unique role definition"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "N1",
+            "R1",
+            "R2",
+            "R3",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "R8",
+            "R9"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "search-discovery-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "persistent search marker"
+      ],
+      "cleanup": {
+        "policy": "delayed"
+      },
+      "prerequisites": [
+        "real list, threshold fixture, owner and reader identities, next-day rerun"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "delayed-reconciliation",
+          "findings": [
+            "S1",
+            "S10",
+            "S11",
+            "S12",
+            "S2",
+            "S3",
+            "S4",
+            "S5",
+            "S6",
+            "S6A",
+            "S6C",
+            "S7",
+            "S8",
+            "S9"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "threshold-index-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists, thousands of rows, indexes and views"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "phased checkpoints and owner id"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "ANDIDX",
+            "ANDUNI",
+            "CALCAM",
+            "CALCIDX",
+            "CMPCAM",
+            "CMPIDX",
+            "CMPUNI",
+            "IDXSET",
+            "JOINEDT",
+            "JOINMAX",
+            "JOINPER",
+            "JOINPRJ",
+            "JOINSYS",
+            "LKPCAL",
+            "LOOCAM",
+            "LOOKID",
+            "LOOPRJ",
+            "NNIDX",
+            "NNUNI",
+            "NOTEIDX",
+            "NULCAM",
+            "NULIDX",
+            "PERCAM",
+            "PERCAV",
+            "PERPRJ",
+            "PERSID",
+            "RUNCNT",
+            "SEEDCK",
+            "SYSAUT",
+            "SYSCRE",
+            "SYSEDI",
+            "SYSMOD",
+            "TGTCAL",
+            "TGTCND",
+            "TGTENU",
+            "TGTFLT",
+            "TGTORD",
+            "TGTPFX",
+            "TGTSFO",
+            "TGTSTA",
+            "TGTSTO"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "phased-threshold",
+          "findings": [
+            "FLAGS",
+            "PIKCAL",
+            "PIKCND",
+            "PIKIDX",
+            "PIKVW",
+            "TGTIDX"
+          ],
+          "states": [
+            {
+              "role": "sort-before",
+              "page": "Sort bait view before open",
+              "assertions": [
+                "identity and count visible"
+              ]
+            },
+            {
+              "role": "sort-after",
+              "page": "Sort bait view after open",
+              "assertions": [
+                "rendered view visible"
+              ]
+            },
+            {
+              "role": "indexed-picker",
+              "page": "New form picker",
+              "assertions": [
+                "indexed picker result visible"
+              ]
+            },
+            {
+              "role": "calculated-picker",
+              "page": "New form picker",
+              "assertions": [
+                "calculated picker result or refusal visible"
+              ]
+            },
+            {
+              "role": "conditional-picker",
+              "page": "New form picker",
+              "assertions": [
+                "conditional picker result or refusal visible"
+              ]
+            },
+            {
+              "role": "filter-off",
+              "page": "New form picker filter off",
+              "assertions": [
+                "population visible"
+              ]
+            },
+            {
+              "role": "filter-on",
+              "page": "New form picker filter on",
+              "assertions": [
+                "population visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "view-aggregations-probe.js",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed list, rows and totals view"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "Q0",
+            "Q1",
+            "Q2",
+            "Q3"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "single-visible-state",
+          "findings": [
+            "Q4",
+            "Q5",
+            "Q6"
+          ],
+          "states": [
+            {
+              "role": "totals-view",
+              "page": "Probe totals view",
+              "assertions": [
+                "seed rows visible",
+                "both totals and order visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "view-edit-page-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "run-unique list, rows and views"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6",
+            "F7",
+            "F8",
+            "Q0",
+            "Q1",
+            "S1",
+            "S2"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "state-matrix",
+          "findings": [
+            "P1",
+            "P2"
+          ],
+          "states": [
+            {
+              "role": "plain-editor",
+              "page": "plain view editor",
+              "assertions": [
+                "filter pane opens"
+              ]
+            },
+            {
+              "role": "guarded-editor",
+              "page": "guarded view editor",
+              "assertions": [
+                "refusal visible"
+              ]
+            },
+            {
+              "role": "unfiltered-control",
+              "page": "unfiltered view editor",
+              "assertions": [
+                "editor opens"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    }
+  ]
+}

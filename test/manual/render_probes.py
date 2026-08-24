@@ -13,7 +13,7 @@ Run me after editing anything under templates/:
 import hashlib
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, meta
 
 TEMPLATES = Path(__file__).parent / "templates"
 OUT = Path(__file__).parent
@@ -30,6 +30,25 @@ def _env() -> Environment:
     )
 
 
+def _dependency_sources(template_path: Path) -> list[Path]:
+    """Return one template and the static include/import closure it uses."""
+    environment = _env()
+    pending = [template_path]
+    found: dict[str, Path] = {}
+    while pending:
+        source = pending.pop()
+        key = source.relative_to(TEMPLATES).as_posix()
+        if key in found:
+            continue
+        found[key] = source
+        parsed = environment.parse(source.read_text(encoding="utf-8"))
+        for reference in meta.find_referenced_templates(parsed):
+            if reference is None:
+                raise ValueError(f"{source.name} uses a dynamic template reference")
+            pending.append(TEMPLATES / reference)
+    return [found[key] for key in sorted(found)]
+
+
 def revision_of(template_path: Path) -> str:
     """A short content hash of one probe's sources, for it to print at run time.
 
@@ -40,8 +59,10 @@ def revision_of(template_path: Path) -> str:
     that a one-line check instead.
 
     Hashes the SOURCES, not the output: hashing the output would have to
-    include the hash. Every partial is included because a harness change alters
-    behaviour without touching the probe's own template.
+    include the hash. Included partials are followed transitively because a
+    harness change alters behaviour without touching the probe's own template.
+    Unused partials are excluded so adding a new harness does not change
+    unrelated probe revisions.
 
     LINE ENDINGS ARE NORMALISED FIRST, and that is not tidiness. `core.autocrlf`
     checks these templates out as CRLF on Windows and LF everywhere else, so
@@ -55,7 +76,7 @@ def revision_of(template_path: Path) -> str:
     revision was added to prevent.
     """
     digest = hashlib.sha256()
-    for source in [template_path, *sorted(TEMPLATES.glob("_*.js.j2"))]:
+    for source in _dependency_sources(template_path):
         digest.update(source.read_bytes().replace(b"\r\n", b"\n"))
     return digest.hexdigest()[:8]
 

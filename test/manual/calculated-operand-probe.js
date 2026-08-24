@@ -67,210 +67,36 @@
  * them.
  */
 (async () => {
-  // ---- Operator gate -------------------------------------------------
-  // All default false. Pasting an unedited probe prints its plan and
-  // stops; nothing touches the tenant until the operator opts in.
   const CONFIRMED = false;
   const ALLOW_WRITES = false;
-
-  // CLEANUP deletes the probe's own list BEFORE the run, so every question
-  // is answered by actually creating something rather than reporting
-  // "already present" from a previous run, which is much weaker evidence.
-  //
-  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
-  // ever touches the explicitly named probe-owned list or lists; it never
-  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
-  // so a mistake is recoverable from the site recycle bin.
   const CLEANUP = false;
-
-  // No SITE_URL constant, deliberately. The probe reads the site it was
-  // pasted into. A tenant URL committed to this repo has leaked twice, and
-  // the field was the vector both times.
-  const pageCtx = window._spPageContextInfo;
-  if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
-    return;
-  }
-  const WEB = pageCtx.webAbsoluteUrl;
-
-  const log = (level, msg) => console.log(`[${level}] ${msg}`);
-
-  const getDigest = async () => {
-    const res = await fetch(`${WEB}/_api/contextinfo`, {
-      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
-    });
-    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
-    const body = await res.json();
-    return body.d.GetContextWebInformation.FormDigestValue;
-  };
-
-  const spGet = async (path) => {
-    const res = await fetch(`${WEB}/_api/${path}`, {
-      headers: { Accept: 'application/json;odata=nometadata' },
-    });
-    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
-  };
-
-  // NOTE the contract, because getting it wrong has produced false verdicts
-  // here twice: `body` is the PARSED payload whether or not the request
-  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON, never that the call
-  // worked. Anything asking "did I actually read this?" must test `ok`.
-  const readFailed = (r) => !r.ok || r.body === null;
-
-  // Was this request REFUSED (the server saying no to what was sent) or
-  // did it merely fail? A negative control that cannot tell the difference
-  // certifies the surface as observable on the strength of a throttle, and
-  // every row it guards is then read as evidence.
-  //
-  // Defined by what it EXCLUDES, because the tempting definition is wrong
-  // here. "400 means bad request" is the HTTP convention and it is not what
-  // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500:
-  //
-  //   "To add an item to a document library, use SPFileCollection.Add()"
-  //   "One or more column references are not allowed, because the columns
-  //    are defined as a data type that is not supported in formulas"
-  //   "The formula refers to a column that does not exist"
-  //   "This field type does not support..."
-  //
-  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py, each dated and cited to a live run). A 400-only test would
-  // therefore have reported NOT ESTABLISHED for every negative control on a
-  // tenant behaving exactly as recorded, which is the opposite failure and a
-  // worse one: it would quietly retire the controls the stack's own evidence
-  // rests on.
-  //
-  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
-  // are never refusals. Everything else non-2xx is treated as the server
-  // rejecting the content, and the response TEXT is always printed beside
-  // the verdict so a reader can see which it was.
-  const isRefusal = (status) =>
-    status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
-
-  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
-  // both through POST rather than accepting them as real verbs.
-  const spPost = async (path, payload, digest, extraHeaders = {}) => {
-    const res = await fetch(`${WEB}/_api/${path}`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json;odata=nometadata',
-        'Content-Type': 'application/json;odata=nometadata',
-        'X-RequestDigest': digest,
-        ...extraHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
-    // The interesting result is often the REFUSAL, so the response text is
-    // returned rather than thrown: a 400 here is the finding, not a crash.
-    const text = await res.text();
-    let parsed = null;
-    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
-    return { ok: res.ok, status: res.status, body: parsed, text };
-  };
-
-  // ---- Pre-run reset --------------------------------------------------
-  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
-  // probe body reads the same either way.
-  const resetList = async (title) => {
-    if (!CLEANUP) return false;
-    if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
-      return false;
-    }
-    const found = await spGet(`web/lists/getbytitle('${title}')`);
-    if (!found.ok) {
-      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
-      return false;
-    }
-    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
-
-    // Items first. Recycling the list takes them with it, but doing this
-    // explicitly still clears the data if the list itself cannot be
-    // removed. A locked or no-delete list would otherwise leave rows from
-    // a previous run answering this run's questions.
-    let digest = await getDigest();
-    const items = await spGet(
-      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
-    const rows = (items.ok && items.body && items.body.value) || [];
-    for (const row of rows) {
-      digest = await getDigest();
-      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
-                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
-    }
-    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
-    if (rows.length === 5000) {
-      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
-    }
-
-    digest = await getDigest();
-    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
-    if (gone.ok) {
-      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
-    } else {
-      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
-    }
-    return gone.ok;
-  };
-
-  // ---- Result table --------------------------------------------------
-  // A probe answers questions. Outcome and EVIDENCE are recorded
-  // separately so a run cannot be summarised as a verdict with nothing
-  // behind it.
-  //
-  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
-  // overwrites. Appending as you go looks equivalent and is not: a probe
-  // that aborts early then reports only what it reached, and prints
-  // "0 not established" while most of its questions were never asked.
-  const RESULTS = [];
-  const expect = (id, question) => {
-    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
-  };
-  const record = (id, question, outcome, evidence) => {
-    const row = RESULTS.find((r) => r.id === id);
-    if (row) {
-      Object.assign(row, { question, outcome, evidence });
-    } else {
-      RESULTS.push({ id, question, outcome, evidence });
-    }
-    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome}. ${question}`);
-    if (evidence) console.log(`      evidence: ${evidence}`);
-  };
-
-  const report = () => {
-    console.log('\n==================== RESULTS ====================');
-    for (const r of RESULTS) {
-      console.log(`${r.id.padEnd(6)} ${r.outcome.padEnd(16)} ${r.question}`);
-      if (r.evidence) console.log(`       ${r.evidence}`);
-    }
-    console.log('=================================================');
-    // Prefix matching keeps qualified unresolved outcomes from counting as answers.
-    // MANUAL and NOT REACHED stay open until a person records the observation.
-    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
-    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
-    const open = RESULTS.filter(isOpen).length;
-    const waiting = RESULTS.filter(
-      (r) => r.outcome.startsWith('MANUAL') || r.outcome.startsWith('NOT REACHED'),
-    ).length;
-    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
-    if (waiting) {
-      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
-    }
-    if (open) {
-      console.log('A question with no observation is NOT a pass. Report it as open.');
-    }
-    console.log('Copy this whole block back verbatim.');
-  };
+  const CLEANUP_AT_END = false;
+  const PROBE_RETRY_TRANSIENT = true;
+  const PROBE_RETRY_ATTEMPTS = 5;
 
   const LIST = 'dbmlsp Probe CalcOperands';
   const TARGET = `${LIST} Target`;
-  // Ships off so a pasted, unedited probe never removes anything. Turn it on
-  // with the two write gates to recycle the two probe-owned lists after the
-  // result table has printed.
-  const CLEANUP_AT_END = false;
+  const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint calculated-operand probe. Safe to recycle.';
 
+  // Shared result registry v1. Register findings before any network work.
+  const results = [];
+  const expect = (id, question) => {
+    results.push({
+      id,
+      question,
+      observed: 'NOT ESTABLISHED',
+      detail: 'the run did not reach this question',
+    });
+  };
+  const record = (id, question, observed, detail) => {
+    const row = results.find((candidate) => candidate.id === id);
+    if (row) {
+      Object.assign(row, { question, observed, detail: detail || '' });
+    } else {
+      results.push({ id, question, observed, detail: detail || '' });
+    }
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
+  };
   const QUESTIONS = [
     ['LOOK', 'Lookup operand in a calculated formula'],
     ['PERS', 'Person operand in a calculated formula'],
@@ -304,51 +130,239 @@
   expect('TEXT', 'Single-line-text operand in a calculated formula');
   expect('CALC', 'Calculated-column operand in another calculated formula');
 
-  if (!CONFIRMED) {
-    log('INFO', `Would create '${TARGET}' and '${LIST}', add one source column`);
-    log('INFO', 'of every supported tool type, then attempt one calculated');
-    log('INFO', 'field over each source and print every HTTP response.');
-    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
-    return;
+  // Shared probe core v2: context guard, bounded transport and REST helpers.
+  const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
+  if (typeof _spPageContextInfo === 'undefined') {
+    log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
+    return { aborted: 'no-sp-page-context' };
   }
-  if (!ALLOW_WRITES) {
-    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false. Stopping without writes.');
-    return;
+  const WEB = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
+  if (!CONFIRMED) {
+    log('INFO', `This page is ${window.location.origin}${WEB || '/'}.`);
+    log('INFO', 'If that is the site you want, set CONFIRMED = true and paste again.');
+    return { aborted: 'unconfirmed' };
+  }
+  const probeWrites = typeof PROBE_WRITES === 'undefined' ? true : PROBE_WRITES;
+  if (probeWrites && !ALLOW_WRITES) {
+    log('INFO', 'This probe writes only its declared fixture. Set ALLOW_WRITES = true to proceed.');
+    return { aborted: 'writes-disabled' };
+  }
+  const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
+  const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  log('INFO', `probe revision 5158247d; core v2; results v1.`);
+  log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const spError = (text) => {
+    try {
+      const parsed = JSON.parse(text);
+      return parsed?.error?.message?.value
+        || parsed?.odata?.error?.message?.value
+        || String(text).slice(0, 300);
+    } catch {
+      return String(text).slice(0, 300);
+    }
+  };
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429 && status !== 503;
+  async function fetchWithRetry(url, options, attempts = PROBE_RETRY_ATTEMPTS) {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetch(url, options);
+      const transient = response.status === 429 || response.status === 503;
+      if (PROBE_RETRY_TRANSIENT && transient && attempt < attempts) {
+        const retryAfter = Number(response.headers.get('Retry-After'))
+          || Math.min(2 ** attempt, 30);
+        log('INFO', `Throttled (HTTP ${response.status}); retry ${attempt + 1}/${attempts} in ${retryAfter}s.`);
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+      return response;
+    }
+  }
+  let cachedDigest = null;
+  let digestExpiresAt = 0;
+  async function getDigest() {
+    if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
+    const response = await fetchWithRetry(apiUrl('contextinfo'), {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`contextinfo failed HTTP ${response.status}: ${spError(text)}`);
+    }
+    const info = JSON.parse(text)?.d?.GetContextWebInformation;
+    if (!info?.FormDigestValue) throw new Error('contextinfo omitted FormDigestValue');
+    cachedDigest = info.FormDigestValue;
+    digestExpiresAt = Date.now()
+      + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
+    return cachedDigest;
+  }
+  const spHeaders = (digest, extra = {}) => ({
+    'Accept': 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+    'X-RequestDigest': digest,
+    ...extra,
+  });
+  async function post(suffix, body, extraHeaders) {
+    const digest = await getDigest();
+    const response = await fetchWithRetry(apiUrl(suffix), {
+      method: 'POST',
+      headers: spHeaders(digest, extraHeaders || {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: spError(text),
+        d: null,
+      };
+    }
+    let d = null;
+    try {
+      d = text ? JSON.parse(text).d : null;
+    } catch {
+      d = null;
+    }
+    return { ok: true, status: response.status, error: null, d };
+  }
+  async function get(suffix, accept) {
+    const response = await fetchWithRetry(apiUrl(suffix), {
+      method: 'GET',
+      headers: { 'Accept': accept || 'application/json;odata=verbose' },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: spError(text),
+        d: null,
+      };
+    }
+    const parsed = JSON.parse(text);
+    return {
+      ok: true,
+      status: response.status,
+      error: null,
+      d: parsed.d !== undefined ? parsed.d : parsed,
+    };
+  }
+  const merge = (suffix, body) => post(
+    suffix,
+    body,
+    { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  async function entityTypeFor(listTitle) {
+    const response = await get(
+      `web/lists/getbytitle('${odataName(listTitle)}')?$select=ListItemEntityTypeFullName`,
+    );
+    if (!response.ok) {
+      throw new Error(`could not resolve the item entity type: ${response.error}`);
+    }
+    return response.d.ListItemEntityTypeFullName;
+  }
+  // Shared list fixture v1: exact ownership checks and bounded recycle.
+  // Title is never treated as ownership. Callers supply a stable description.
+  async function inspectOwnedList(title, ownershipDescription) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const existing = await get(`${listPath}?$select=Id,Description`);
+    if (!existing.ok) {
+      if (existing.status === 404) return { state: 'missing', listPath, d: null };
+      return {
+        state: 'error', listPath, d: null,
+        error: `HTTP ${existing.status}: ${existing.error}`,
+      };
+    }
+    if (existing.d.Description !== ownershipDescription) {
+      return {
+        state: 'foreign', listPath, d: existing.d,
+        error: `A same-title list '${title}' exists without the exact probe ownership marker; refusing to modify it.`,
+      };
+    }
+    return { state: 'owned', listPath, d: existing.d };
+  }
+
+  async function recycleOwnedList(title, ownershipDescription) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'missing') return { ok: true, removed: false };
+    if (inspected.state !== 'owned') {
+      return { ok: false, removed: false, error: inspected.error };
+    }
+    const recycled = await post(`${inspected.listPath}/recycle`);
+    return {
+      ok: recycled.ok,
+      removed: recycled.ok,
+      error: recycled.ok ? null : `HTTP ${recycled.status}: ${recycled.error}`,
+    };
+  }
+
+  async function prepareOwnedList(title, ownershipDescription, removeExisting) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'foreign' || inspected.state === 'error') {
+      return { ok: false, existing: null, error: inspected.error };
+    }
+    if (inspected.state === 'owned' && removeExisting) {
+      const recycled = await recycleOwnedList(title, ownershipDescription);
+      if (!recycled.ok) return { ok: false, existing: null, error: recycled.error };
+      return { ok: true, existing: null, removed: true };
+    }
+    return {
+      ok: true,
+      existing: inspected.state === 'owned' ? inspected.d : null,
+      removed: false,
+    };
   }
 
   // Main first because it owns the lookup into TARGET.
-  await resetList(LIST);
-  await resetList(TARGET);
+  const preparedMain = await prepareOwnedList(LIST, OWNERSHIP_DESCRIPTION, CLEANUP);
+  const preparedTarget = await prepareOwnedList(TARGET, OWNERSHIP_DESCRIPTION, CLEANUP);
+  if (!preparedMain.ok || !preparedTarget.ok) {
+    record(
+      'BOOTOWNERSHIP',
+      'Probe fixture ownership is established before mutation',
+      'ABORTED',
+      preparedMain.error || preparedTarget.error,
+    );
+    console.table(results);
+    return { results };
+  }
 
-  let digest = await getDigest();
   // bootId is per LIST, not a shared 'BOOT'. record() overwrites by id, so one
   // id for both lists means whichever fails second erases the first, and the
   // surviving row names the wrong list in its own question text. Two lists
   // bootstrap here, so two ids.
   const ensureList = async (title, bootId) => {
-    const existing = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
-    if (existing.ok) return existing.body;
-    digest = await getDigest();
-    const created = await spPost('web/lists', {
+    const existing = await get(
+      `web/lists/getbytitle('${odataName(title)}')?$select=Id,Description`,
+    );
+    if (existing.ok) return existing.d;
+    const created = await post('web/lists', {
+      __metadata: { type: 'SP.List' },
       Title: title,
       BaseTemplate: 100,
-      Description: 'dbml-sharepoint calculated-operand probe. Safe to recycle.',
-    }, digest);
+      Description: OWNERSHIP_DESCRIPTION,
+    });
     if (!created.ok) {
       record(bootId, `Create probe list ${title}`, 'FAIL',
-             `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
+             `HTTP ${created.status}: ${created.error}`);
       return null;
     }
     // SharePoint's response shape varies with OData mode and can be empty
     // after a successful create. Re-read the list so the Lookup schema below
     // always receives a measured Id rather than trusting the POST payload.
-    const reread = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
-    if (!reread.ok || !reread.body || !reread.body.Id) {
+    const reread = await get(
+      `web/lists/getbytitle('${odataName(title)}')?$select=Id`,
+    );
+    if (!reread.ok || !reread.d || !reread.d.Id) {
       record(bootId, `Read back probe list ${title}`, 'FAIL',
              `HTTP ${reread.status}: successful create returned no usable list Id`);
       return null;
     }
-    return reread.body;
+    return reread.d;
   };
 
   // Both are attempted even if the first fails, so one run reports the state
@@ -356,22 +370,19 @@
   const target = await ensureList(TARGET, 'BOOTTARGET');
   const main = await ensureList(LIST, 'BOOTMAIN');
   if (!target || !main) {
-    report();
-    return;
+    console.table(results);
+    return { results };
   }
 
-  const fieldsPath = `web/lists/getbytitle('${LIST}')/fields`;
+  const fieldsPath = `web/lists/getbytitle('${odataName(LIST)}')/fields`;
   const xmlAttr = (value) => String(value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const fieldExists = async (name) =>
-    (await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')?$select=Id`)).ok;
-  const addField = async (schemaXml) => {
-    digest = await getDigest();
-    return spPost(`${fieldsPath}/createfieldasxml`, {
-      parameters: { SchemaXml: schemaXml, Options: 8 },
-    }, digest);
-  };
+    (await get(`${fieldsPath}/getbyinternalnameortitle('${odataName(name)}')?$select=Id`)).ok;
+  const addField = async (schemaXml) => post(`${fieldsPath}/createfieldasxml`, {
+    parameters: { SchemaXml: schemaXml, Options: 8 },
+  });
 
   const choiceXml =
     '<Field Type="Choice" DisplayName="ProbeChoice" Name="ProbeChoice" Format="Dropdown">' +
@@ -413,7 +424,7 @@
     if (made.ok) {
       sourceReady.add(name);
     } else {
-      log('FAIL', `Could not create source ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
+      log('FAIL', `Could not create source ${name}: HTTP ${made.status} ${made.error}`);
     }
   }
 
@@ -455,7 +466,7 @@
       id,
       question,
       made.ok ? 'ACCEPTED' : (isRefusal(made.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
-      `HTTP ${made.status}${made.text ? `: ${made.text.slice(0, 500)}` : ''}`,
+      `HTTP ${made.status}${made.error ? `: ${made.error}` : ''}`,
     );
     return made.ok;
   };
@@ -473,25 +484,23 @@
     await attempt('CALC', 'CalcNumber', 'CalcCalculated', '=[CalcNumber]', 'Number');
   }
 
-  report();
+  console.table(results);
 
   if (CLEANUP_AT_END) {
     // Main first: SharePoint may refuse to recycle a list still targeted by
     // a Lookup column on another list.
     for (const title of [LIST, TARGET]) {
-      digest = await getDigest();
-      const recycled = await spPost(
-        `web/lists/getbytitle('${title}')/recycle`, {}, digest,
-      );
+      const recycled = await recycleOwnedList(title, OWNERSHIP_DESCRIPTION);
       log(
         recycled.ok ? 'OK' : 'FAIL',
         recycled.ok
           ? `Recycled '${title}'. It is recoverable from the site recycle bin.`
-          : `Could not recycle '${title}': HTTP ${recycled.status} ${recycled.text.slice(0, 300)}`,
+          : `Could not recycle '${title}': ${recycled.error}`,
       );
     }
   } else {
     log('INFO', `Probe lists remain: '${LIST}' and '${TARGET}'.`);
     log('INFO', 'After copying results, set CLEANUP_AT_END=true and rerun, or recycle them manually.');
   }
+  return { results };
 })();

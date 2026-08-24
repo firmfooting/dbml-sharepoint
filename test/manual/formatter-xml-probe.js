@@ -375,7 +375,7 @@
   // Printed FIRST, before any gate: see threshold-index-probe.js.j2 for why
   // (a stale clipboard and a fix that did not work produce identical
   // transcripts otherwise).
-  log('INFO', 'probe revision eed9cca8. Quote this when reporting results.');
+  log('INFO', 'probe revision c61a2568. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe FormatterXML';
   const FIELD_FMT = 'ProbeFmtField';

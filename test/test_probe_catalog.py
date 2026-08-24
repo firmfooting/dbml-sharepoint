@@ -1,0 +1,536 @@
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+from typing import Any, cast
+
+from _paths import MANUAL
+
+CATALOG = MANUAL / "probe-catalog.json"
+VISIBLE_PATTERNS = {
+    "single-visible-state",
+    "state-matrix",
+    "before-action-after",
+    "identity-pair",
+    "phased-threshold",
+}
+ALL_PATTERNS = VISIBLE_PATTERNS | {
+    "machine-only",
+    "delayed-reconciliation",
+    "helper",
+}
+
+
+def _catalog() -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(CATALOG.read_text(encoding="utf-8")))
+
+
+def _static_finding_ids(source: str) -> set[str]:
+    ids = set(re.findall(r"^\s*expect\(\s*['\"]([^'\"]+)", source, re.MULTILINE))
+    ids |= set(re.findall(r"^\s*record\(\s*['\"]([^'\"]+)", source, re.MULTILINE))
+    ids -= {finding for finding in ids if finding.startswith("BOOT")}
+    if "const CANDIDATES = [" in source:
+        candidate_block = source.split("const CANDIDATES = [", 1)[1].split("];", 1)[0]
+        ids |= set(re.findall(r"['\"](X[1-9][0-9]*)['\"]", candidate_block))
+    return ids
+
+
+def _run_javascript(source: str, expression: str) -> Any:
+    node = shutil.which("node")
+    assert node is not None
+    completed = subprocess.run(  # noqa: S603 - executes repository-owned test code
+        [node, "-e", f"{source}\nconsole.log(JSON.stringify({expression}));"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
+def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
+    catalog = _catalog()
+    descriptors = catalog["probes"]
+    catalogued = {descriptor["file"] for descriptor in descriptors}
+    actual = {path.name for path in MANUAL.glob("*.js")}
+
+    assert catalog["schema_version"] == "1.0"
+    assert len(descriptors) == 24
+    assert catalogued == actual
+
+
+def test_probe_catalog_declares_every_static_finding_once() -> None:
+    for descriptor in _catalog()["probes"]:
+        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        declared = [
+            finding
+            for scenario in descriptor["scenarios"]
+            for finding in scenario["findings"]
+        ]
+        assert len(declared) == len(set(declared)), descriptor["file"]
+        assert set(declared) == _static_finding_ids(source), descriptor["file"]
+
+
+def test_visible_scenarios_declare_typed_capture_states_and_controls() -> None:
+    for descriptor in _catalog()["probes"]:
+        for scenario in descriptor["scenarios"]:
+            assert scenario["pattern"] in ALL_PATTERNS
+            states = scenario["states"]
+            if scenario["pattern"] in VISIBLE_PATTERNS:
+                assert states, f"{descriptor['file']}:{scenario['id']}"
+                roles = [state["role"] for state in states]
+                assert len(roles) == len(set(roles))
+                for state in states:
+                    assert state["page"]
+                    assert state["assertions"]
+                assert scenario["controls"], (
+                    f"{descriptor['file']}:{scenario['id']} has no control"
+                )
+            else:
+                assert states == []
+
+
+def test_probe_catalog_makes_side_effects_and_cleanup_explicit() -> None:
+    for descriptor in _catalog()["probes"]:
+        assert descriptor["harness"] in {"shared-v1", "shared-v2", "legacy", "helper"}
+        assert descriptor["authority"] in {
+            "read-only",
+            "allow-writes",
+            "allow-legacy-writes",
+            "interactive",
+        }
+        assert descriptor["cleanup"]["policy"] in {
+            "none",
+            "before",
+            "after",
+            "manual",
+            "delayed",
+        }
+        assert isinstance(descriptor["writes"], list)
+        assert isinstance(descriptor["prerequisites"], list)
+
+
+def test_hyperlink_probe_uses_versioned_shared_transport_and_results() -> None:
+    template = (
+        MANUAL / "templates" / "hyperlink-validation-operand-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert '{% include "_probe_core_v2.js.j2" %}' in template
+    assert '{% include "_probe_results_v1.js.j2" %}' in template
+    assert "async function fetchWithRetry" not in template
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "hyperlink-validation-operand-probe.js"
+    )
+    assert descriptor["harness"] == "shared-v2"
+
+
+def test_hyperlink_probe_refuses_to_reset_a_foreign_same_title_list() -> None:
+    template = (
+        MANUAL / "templates" / "hyperlink-validation-operand-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    fixture = (
+        MANUAL / "templates" / "_probe_list_fixture_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    assert "OWNERSHIP_DESCRIPTION" in template
+    assert "refusing to modify it" in fixture
+    assert '{% include "_probe_list_fixture_v1.js.j2" %}' in template
+    assert "prepareOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION, CLEANUP_AT_END)" in template
+
+
+def test_hyperlink_probe_marks_refused_downstream_questions_not_applicable() -> None:
+    template = (
+        MANUAL / "templates" / "hyperlink-validation-operand-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    refusal_branch = template.split("if (set1.ok)", 1)[1]
+    assert "'NOT APPLICABLE'" in refusal_branch
+    assert "'NOT REACHED'" not in refusal_branch
+
+
+def test_hyperlink_results_require_explicit_sharepoint_behavioral_refusal() -> None:
+    decisions = (
+        MANUAL / "templates" / "_hyperlink_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    statuses = [400, 404, 401, 403, 408, 429, 500, 502, 503, 504]
+    decisions += f"\nconst statuses = {json.dumps(statuses)};"
+
+    observed = _run_javascript(
+        decisions,
+        "statuses.map((status) => classifyAttempt("
+        "{ ok: false, status, error: 'failure' }, 'ACCEPTED', 'FIRED'))",
+    )
+
+    assert observed == ["FIRED"] + ["NOT ESTABLISHED"] * 9
+
+
+def test_hyperlink_non_behavioral_failures_never_claim_refusal_semantics() -> None:
+    decisions = (
+        MANUAL / "templates" / "_hyperlink_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    statuses = [404, 401, 403, 408, 429, 500, 502, 503, 504]
+    decisions += f"\nconst statuses = {json.dumps(statuses)};"
+
+    details = _run_javascript(
+        decisions,
+        "statuses.map((status) => describeAttempt("
+        "{ ok: false, status, error: 'failure' }, 'accepted', 'formula refused row'))",
+    )
+
+    assert all(detail.startswith("NOT ESTABLISHED:") for detail in details)
+    assert all("formula refused row" not in detail for detail in details)
+
+
+def test_hyperlink_final_reduction_is_tri_state_and_neutral_when_unestablished() -> None:
+    decisions = (
+        MANUAL / "templates" / "_hyperlink_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    cases = [
+        ["ACCEPTED", "FIRED", "PASSED"],
+        ["REFUSED", "NOT APPLICABLE", "NOT APPLICABLE"],
+        ["ACCEPTED", "DID NOT FIRE", "PASSED"],
+        ["NOT ESTABLISHED", "NOT APPLICABLE", "NOT APPLICABLE"],
+        ["ACCEPTED", "NOT ESTABLISHED", "PASSED"],
+        ["ACCEPTED", "FIRED", "NOT ESTABLISHED"],
+        ["ACCEPTED", "NOT ESTABLISHED", "REFUSED EVERYTHING"],
+        ["ACCEPTED", "DID NOT FIRE", "NOT ESTABLISHED"],
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    verdicts = _run_javascript(
+        decisions,
+        "cases.map(([q1, q2, q3]) => hyperlinkOperandVerdict({ Q1: q1, Q2: q2, Q3: q3 }))",
+    )
+
+    assert [verdict["operandUsable"] for verdict in verdicts] == [
+        "YES",
+        "NO",
+        "NO",
+        "NOT ESTABLISHED",
+        "NOT ESTABLISHED",
+        "NOT ESTABLISHED",
+        "NOT ESTABLISHED",
+        "NOT ESTABLISHED",
+    ]
+    assert all(
+        verdict["guidance"].startswith("Evidence is inconclusive.")
+        for verdict in verdicts[3:]
+    )
+    assert all("Leave the build refusal" not in verdict["guidance"] for verdict in verdicts[3:])
+
+
+def test_shared_v2_transport_preserves_success_bodies_and_accept_override() -> None:
+    core = (
+        MANUAL / "templates" / "_probe_core_v2.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "async function get(suffix, accept)" in core
+    assert "d: parsed.d !== undefined ? parsed.d : parsed" in core
+    assert "return { ok: true, status: response.status, error: null, d };" in core
+
+
+def test_multi_value_probe_uses_versioned_shared_transport_and_results() -> None:
+    template = (
+        MANUAL / "templates" / "multi-value-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert '{% include "_probe_core_v2.js.j2" %}' in template
+    assert '{% include "_probe_results_v1.js.j2" %}' in template
+    assert "async function fetchWithRetry" not in template
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "multi-value-probe.js"
+    )
+    assert descriptor["harness"] == "shared-v2"
+
+
+def test_view_aggregations_probe_uses_versioned_shared_transport_and_results() -> None:
+    template = (
+        MANUAL / "templates" / "view-aggregations-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert '{% include "_probe_core_v2.js.j2" %}' in template
+    assert '{% include "_probe_results_v1.js.j2" %}' in template
+    assert "async function fetchWithRetry" not in template
+    assert "OWNERSHIP_DESCRIPTION" in template
+    assert '{% include "_probe_list_fixture_v1.js.j2" %}' in template
+    assert "prepareOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION, CLEANUP_AT_END)" in template
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "view-aggregations-probe.js"
+    )
+    assert descriptor["harness"] == "shared-v2"
+
+
+def test_view_aggregation_manual_result_requires_final_on_status() -> None:
+    decisions = (
+        MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    base = {
+        "setupReady": True,
+        "writeOk": True,
+        "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "expectedXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "seedValues": [1, 3],
+        "viewFieldNames": ["Amount", "SecondAmount"],
+        "expectedViewFields": ["Amount", "SecondAmount"],
+        "fieldTitle": "Second Amount Display",
+        "expectedFieldTitle": "Second Amount Display",
+    }
+    cases = [
+        base,
+        {**base, "aggregationStatus": None},
+        {**base, "aggregationStatus": "Off"},
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    observed = _run_javascript(
+        decisions,
+        "cases.map((controls) => aggregationManualOutcome(controls))",
+    )
+
+    assert observed == ["NOT ESTABLISHED", "NOT ESTABLISHED", "NOT ESTABLISHED"]
+
+
+def test_view_aggregation_manual_result_requires_exact_seed_readback() -> None:
+    decisions = (
+        MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    base = {
+        "setupReady": True,
+        "writeOk": True,
+        "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "expectedXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "aggregationStatus": "On",
+        "viewFieldNames": ["Amount", "SecondAmount"],
+        "expectedViewFields": ["Amount", "SecondAmount"],
+        "fieldTitle": "Second Amount Display",
+        "expectedFieldTitle": "Second Amount Display",
+    }
+    cases = [
+        {**base, "seedValues": [1, 3]},
+        {**base, "seedValues": None},
+        {**base, "seedValues": [1, 4]},
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    observed = _run_javascript(
+        decisions,
+        "cases.map((controls) => aggregationManualOutcome(controls))",
+    )
+
+    assert observed == ["MANUAL", "NOT ESTABLISHED", "NOT ESTABLISHED"]
+
+
+def test_view_aggregation_manual_result_requires_final_view_membership() -> None:
+    decisions = (
+        MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    base = {
+        "setupReady": True,
+        "writeOk": True,
+        "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "expectedXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "aggregationStatus": "On",
+        "seedValues": [1, 3],
+        "expectedViewFields": ["Amount", "SecondAmount"],
+        "fieldTitle": "Second Amount Display",
+        "expectedFieldTitle": "Second Amount Display",
+    }
+    cases = [
+        {**base, "viewFieldNames": ["Title", "Amount", "SecondAmount"]},
+        {**base, "viewFieldNames": ["Title", "Amount"]},
+        {**base, "viewFieldNames": None},
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    observed = _run_javascript(
+        decisions,
+        "cases.map((controls) => aggregationManualOutcome(controls))",
+    )
+
+    assert observed == ["MANUAL", "NOT ESTABLISHED", "NOT ESTABLISHED"]
+
+
+def test_view_aggregation_manual_result_requires_persisted_renamed_title() -> None:
+    decisions = (
+        MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    base = {
+        "setupReady": True,
+        "writeOk": True,
+        "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "expectedXml": '<FieldRef Name="Amount" Type="SUM"/>',
+        "aggregationStatus": "On",
+        "seedValues": [1, 3],
+        "viewFieldNames": ["Title", "Amount", "SecondAmount"],
+        "expectedViewFields": ["Amount", "SecondAmount"],
+        "expectedFieldTitle": "Second Amount Display",
+    }
+    cases = [
+        {**base, "fieldTitle": "Second Amount Display"},
+        {**base, "fieldTitle": "SecondAmount"},
+        {**base, "fieldTitle": None},
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    observed = _run_javascript(
+        decisions,
+        "cases.map((controls) => aggregationManualOutcome(controls))",
+    )
+
+    assert observed == ["MANUAL", "NOT ESTABLISHED", "NOT ESTABLISHED"]
+
+
+def test_view_aggregation_probe_wires_authoritative_final_readbacks() -> None:
+    template = (
+        MANUAL / "templates" / "view-aggregations-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "const initialViewFields = await get(" in template
+    assert "const finalViewFields = await get(" in template
+    assert "/viewfields`" in template
+    assert "?$select=InternalName,Title`" in template
+    assert "viewFieldNames: finalViewFieldNames" in template
+    assert "fieldTitle: renamedField.d?.Title" in template
+    assert "expectedFieldTitle: SECOND_DISPLAY" in template
+
+
+def test_form_visibility_probe_uses_shared_v2_and_safe_setup_default() -> None:
+    template = (
+        MANUAL / "templates" / "form-visibility-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    assert '{% include "_probe_core_v2.js.j2" %}' in template
+    assert '{% include "_probe_results_v1.js.j2" %}' in template
+    assert "const RECHECK_ONLY = false;" in template
+    assert "OWNERSHIP_DESCRIPTION" in template
+    assert "refusing to modify it" in template
+    assert "const PROBE_WRITES = !RECHECK_ONLY || CLEANUP_AT_END;" in template
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "form-visibility-probe.js"
+    )
+    assert descriptor["harness"] == "shared-v2"
+
+
+def test_form_visibility_q6_recheck_and_catalogue_define_complete_visible_evidence() -> None:
+    template = (
+        MANUAL / "templates" / "form-visibility-probe.js.j2"
+    ).read_text(encoding="utf-8")
+    recheck = template.split("if (RECHECK_ONLY)", 1)[1].split("// === Setup ===", 1)[0]
+
+    assert re.search(r"record\(\s*'Q6'", recheck)
+    assert "record(`RECHECK." not in recheck
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "form-visibility-probe.js"
+    )
+    visible = next(
+        scenario for scenario in descriptor["scenarios"]
+        if scenario["id"] == "visible-findings"
+    )
+    assert visible["findings"] == ["Q6"]
+    assert [state["role"] for state in visible["states"]] == [
+        "panel-before",
+        "panel-action",
+        "new-after",
+        "edit-after",
+        "display-after",
+    ]
+
+
+def test_multi_value_c14_exposes_a_capturable_view_and_retains_machine_replay() -> None:
+    template = (
+        MANUAL / "templates" / "multi-value-probe.js.j2"
+    ).read_text(encoding="utf-8")
+    c14 = template.split("// === C14:", 1)[1].split("// === V1:", 1)[0]
+
+    assert "$select=Title,ViewQuery,ServerRelativeUrl" in c14
+    assert "const chainColumnOnView = chainStored" in c14
+    assert "const chainViewUrl = chainStored?.ServerRelativeUrl || null;" in c14
+    assert "const c14Outcome = chainedViewOutcome({" in c14
+    assert "columnOnViewOk: chainColumnOnView.ok" in c14
+    assert "OPEN ${window.location.origin}${chainViewUrl}" in c14
+    assert "chainReplay" in c14
+    assert (
+        "return { results, winningShape: winningShape?.name || null, viewUrl, "
+        "chainViewUrl };" in template
+    )
+
+
+def test_multi_value_c14_failed_controls_produce_neutral_unestablished_detail() -> None:
+    decisions = (
+        MANUAL / "templates" / "_multi_value_results_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    base = {
+        "fixtureUsable": True,
+        "viewCreateOk": True,
+        "viewReadOk": True,
+        "storedViewQuery": "<Where><Or>...</Or></Where>",
+        "sentOk": True,
+        "sentTitles": ["R1", "R2"],
+        "replayOk": True,
+        "replayTitles": ["R1", "R2"],
+        "columnOnViewOk": True,
+        "viewUrl": "/Lists/probe/view.aspx",
+    }
+    cases = [
+        base,
+        {**base, "replayTitles": ["R1"]},
+        {**base, "fixtureUsable": False},
+        {**base, "viewCreateOk": False},
+        {**base, "viewReadOk": False},
+        {**base, "storedViewQuery": None},
+        {**base, "sentOk": False},
+        {**base, "replayOk": False},
+        {**base, "columnOnViewOk": False},
+        {**base, "viewUrl": None},
+    ]
+    decisions += f"\nconst cases = {json.dumps(cases)};"
+
+    outcomes = _run_javascript(
+        decisions,
+        "cases.map((controls) => chainedViewOutcome(controls))",
+    )
+
+    assert [outcome["observed"] for outcome in outcomes[:2]] == ["MANUAL", "CHANGED"]
+    assert all(outcome["observed"] == "NOT ESTABLISHED" for outcome in outcomes[2:])
+    assert all(
+        outcome["detail"].startswith("NOT ESTABLISHED:") for outcome in outcomes[2:]
+    )
+    assert all("Storage changed" not in outcome["detail"] for outcome in outcomes[2:])
+
+
+def test_owned_form_and_multi_value_fixture_cleanup_recycles_with_exact_ownership() -> None:
+    for name, marker in [
+        ("form-visibility-probe.js.j2", "OWNERSHIP_DESCRIPTION"),
+        ("multi-value-probe.js.j2", "PROBE_DESCRIPTION"),
+    ]:
+        template = (MANUAL / "templates" / name).read_text(encoding="utf-8")
+        assert '{% include "_probe_list_fixture_v1.js.j2" %}' in template
+        assert f"recycleOwnedList(PROBE_LIST, {marker})" in template
+        assert "deleteProbeList" not in template
+
+
+def test_calculated_operand_probe_uses_shared_v2_and_exact_fixture_ownership() -> None:
+    template = (
+        MANUAL / "templates" / "calculated-operand-probe.js.j2"
+    ).read_text(encoding="utf-8")
+
+    fixture = (
+        MANUAL / "templates" / "_probe_list_fixture_v1.js.j2"
+    ).read_text(encoding="utf-8")
+    assert '{% include "_probe_core_v2.js.j2" %}' in template
+    assert '{% include "_probe_results_v1.js.j2" %}' in template
+    assert '{% include "_probe_list_fixture_v1.js.j2" %}' in template
+    assert '{% include "_probe_harness.js.j2" %}' not in template
+    assert "OWNERSHIP_DESCRIPTION" in template
+    assert "refusing to modify it" in fixture
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "calculated-operand-probe.js"
+    )
+    assert descriptor["harness"] == "shared-v2"
