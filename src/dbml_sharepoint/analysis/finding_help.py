@@ -919,6 +919,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "rollback decides what it may delete. Declare `Project my_thing { }` "
         "in the DBML."
     ),
+    FindingCode.MARKER_FAMILY_NOT_CANONICAL: (
+        "The DBML `Project` name can collide with another family's ownership "
+        "marker after normalization. Use underscores instead of hyphens or "
+        "slashes, remove surrounding whitespace, and avoid family text that "
+        "looks like ` for list`, ` for group`, or ` for level`. Existing hyphen "
+        "or slash names can usually move to the "
+        "underscore spelling without changing the emitted marker."
+    ),
     FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER: (
         "A `permission_levels:` entry's description leaves no room for the "
         "provenance marker appended to it. The deploy stamps every level it "
