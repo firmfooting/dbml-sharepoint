@@ -1,0 +1,27 @@
+  const chainedViewOutcome = (controls) => {
+    const unavailable = [];
+    if (!controls.fixtureUsable) unavailable.push('CAML fixture');
+    if (!controls.viewCreateOk) unavailable.push('view creation');
+    if (!controls.viewReadOk) unavailable.push('view readback request');
+    if (!controls.storedViewQuery) unavailable.push('stored ViewQuery');
+    if (!controls.sentOk) unavailable.push('sent-query response');
+    if (!controls.replayOk) unavailable.push('stored-query replay response');
+    if (!controls.columnOnViewOk) unavailable.push('column-on-view request');
+    if (!controls.viewUrl) unavailable.push('stored view URL');
+    if (unavailable.length) {
+      return {
+        observed: 'NOT ESTABLISHED',
+        detail: `NOT ESTABLISHED: unavailable control(s): ${unavailable.join(', ')}. Nothing is established about chained-predicate storage.`,
+      };
+    }
+    const sameRows = JSON.stringify(controls.sentTitles) === JSON.stringify(controls.replayTitles);
+    return sameRows
+      ? {
+        observed: 'MANUAL',
+        detail: 'All machine controls succeeded and the sent and replayed row sets match.',
+      }
+      : {
+        observed: 'CHANGED',
+        detail: 'Storage changed the predicate result after all machine controls succeeded.',
+      };
+  };

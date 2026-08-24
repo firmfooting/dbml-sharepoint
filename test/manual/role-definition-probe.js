@@ -400,7 +400,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 6c895000. Quote this when reporting results.');
+  log('INFO', 'probe revision 2326f56d. Quote this when reporting results.');
 
   // Run-unique, and that is a safety property rather than tidiness. A fixed
   // name plus a pre-emptive delete destroys somebody else's level on the one

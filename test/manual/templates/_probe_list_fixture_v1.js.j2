@@ -1,0 +1,51 @@
+  // Shared list fixture v1: exact ownership checks and bounded recycle.
+  // Title is never treated as ownership. Callers supply a stable description.
+  async function inspectOwnedList(title, ownershipDescription) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const existing = await get(`${listPath}?$select=Id,Description`);
+    if (!existing.ok) {
+      if (existing.status === 404) return { state: 'missing', listPath, d: null };
+      return {
+        state: 'error', listPath, d: null,
+        error: `HTTP ${existing.status}: ${existing.error}`,
+      };
+    }
+    if (existing.d.Description !== ownershipDescription) {
+      return {
+        state: 'foreign', listPath, d: existing.d,
+        error: `A same-title list '${title}' exists without the exact probe ownership marker; refusing to modify it.`,
+      };
+    }
+    return { state: 'owned', listPath, d: existing.d };
+  }
+
+  async function recycleOwnedList(title, ownershipDescription) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'missing') return { ok: true, removed: false };
+    if (inspected.state !== 'owned') {
+      return { ok: false, removed: false, error: inspected.error };
+    }
+    const recycled = await post(`${inspected.listPath}/recycle`);
+    return {
+      ok: recycled.ok,
+      removed: recycled.ok,
+      error: recycled.ok ? null : `HTTP ${recycled.status}: ${recycled.error}`,
+    };
+  }
+
+  async function prepareOwnedList(title, ownershipDescription, removeExisting) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'foreign' || inspected.state === 'error') {
+      return { ok: false, existing: null, error: inspected.error };
+    }
+    if (inspected.state === 'owned' && removeExisting) {
+      const recycled = await recycleOwnedList(title, ownershipDescription);
+      if (!recycled.ok) return { ok: false, existing: null, error: recycled.error };
+      return { ok: true, existing: null, removed: true };
+    }
+    return {
+      ok: true,
+      existing: inspected.state === 'owned' ? inspected.d : null,
+      removed: false,
+    };
+  }

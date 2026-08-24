@@ -97,6 +97,28 @@ def test_rendered_probes_match_their_templates() -> None:
     )
 
 
+def test_probe_revision_hashes_only_its_transitive_template_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = _load_renderer()
+    monkeypatch.setattr(render, "TEMPLATES", tmp_path)
+    probe = tmp_path / "probe.js.j2"
+    used = tmp_path / "_used.js.j2"
+    nested = tmp_path / "_nested.js.j2"
+    unrelated = tmp_path / "_unrelated.js.j2"
+    probe.write_text('{% include "_used.js.j2" %}\nprobe\n', encoding="utf-8")
+    used.write_text('{% include "_nested.js.j2" %}\nused\n', encoding="utf-8")
+    nested.write_text("nested\n", encoding="utf-8")
+    unrelated.write_text("unrelated\n", encoding="utf-8")
+
+    initial = render.revision_of(probe)
+    unrelated.write_text("changed but unused\n", encoding="utf-8")
+    assert render.revision_of(probe) == initial
+
+    nested.write_text("changed and used\n", encoding="utf-8")
+    assert render.revision_of(probe) != initial
+
+
 def test_probes_carry_no_tenant_url() -> None:
     """A tenant URL committed here has leaked twice, both times through a
     SITE_URL field an operator edited. Probes read the site they are pasted

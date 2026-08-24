@@ -1,117 +1,16 @@
 /**
- * dbml-sharepoint VIEW AGGREGATIONS PROBE (creates and deletes its own list).
+ * VIEW AGGREGATIONS PROBE.
  *
- * Answers one question the documentation does not, before `totals:` is
- * built into the tool: HOW is a view's totals row actually written, and
- * does writing it actually make a total appear?
- *
- * Three templates publish a totals view they cannot build: vehicle-log's
- * "Monthly km by vehicle" (sum TripKm), service-requests' turnaround
- * report and complaints-feedback's monthly report. `Aggregations` is a
- * property of SP.View rather than part of ViewQuery, and which write path
- * takes it is not established. This repository does not ship a write
- * mechanism it has not read back from a live list, so the feature is
- * gated on this probe rather than on an assumption.
- *
- * WHAT IT WRITES: one list, named by PROBE_LIST below, created at start
- * and deleted at end. It never reads, writes or enumerates any other
- * list. If cleanup fails it says so loudly and prints the URL to delete
- * by hand.
- *
- * HOW TO RUN
- *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
- *   2. Open that site's classic settings page (/_layouts/15/settings.aspx),
- *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
- *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
- *      paste this whole file -> Enter.
- *   4. Read the RESULTS table, then do THE MANUAL STEP below.
- *   5. Paste the [VERDICT] line back to whoever asked for this probe.
- *
- * THE MANUAL STEP (Q4 cannot be answered from script)
- *   A property that round-trips but renders no totals row is
- *   indistinguishable from a working one on every check a deploy can
- *   perform, which is exactly the failure class this repository keeps
- *   closing. So set CLEANUP_AT_END = false, run, then OPEN THE VIEW URL
- *   the probe prints and LOOK for the totals row under the Amount column.
- *   Re-run with CLEANUP_AT_END = true to remove the list.
- *
- * THIRD RUN 2026-08-14, revision 96d0a67a, on a THIRD site. Every result
- * below reproduced again: seeded=ok, mechanism=patch (HTTP 204), readback
- * exact, Sum of 42 and Average of 2 both rendered, so internal names bind
- * and two aggregations render together. Three independent sites now agree,
- * and nothing has ever contradicted the 2026-07-29 answers.
- *
- * That run also confirmed the self-seeding fix below works. The operator
- * settled Q5 and Q6 from the seeded data alone, with none of the hand-typing
- * the aa79f6c4 run needed.
- *
- * RE-RUN 2026-08-14, revision aa79f6c4, on a different site. Every result
- * below REPRODUCED: mechanism=patch (HTTP 204), readback exact, a Sum of 42
- * rendered, internal names bound, both columns rendered in order.
- *
- * It also surfaced something the 2026-07-29 record does not mention, and it
- * matters more than it looks:
- *
- *   AN AGGREGATION OVER AN EMPTY COLUMN RENDERS NOTHING AT ALL. No label,
- *   no zero, no blank total. The column footer is simply absent. The probe
- *   created `SecondAmount` AFTER seeding its rows, so both were empty, and
- *   the operator running it saw exactly what a FAILED BINDING looks like.
- *   Q5 could only be settled by hand-typing values into the list, at which
- *   point "Average 2" appeared under the display title and the binding was
- *   proven all along.
- *
- *   That is a diagnostic trap for anyone deploying a totals view onto a NEW
- *   list: it will look broken until the first row carries a value. It is
- *   also why this probe now seeds the second column itself. A probe that
- *   cannot answer its own question without manual data entry is one whose
- *   answer depends on the operator guessing what to try.
- *
- * ANSWERED, 2026-07-29, against a live SharePoint Online site:
- *
- *   seeded=ok mechanism=patch readback=ok rendered=yes
- *   internal_names=bind  two_columns=render  order=preserved
- *
- *   A REST MERGE of SP.View with Aggregations and AggregationsStatus is
- *   accepted (HTTP 204), reads back as
- *   `<FieldRef Name="Amount" Type="Sum" />` with AggregationsStatus `On`,
- *   and the view renders a totals row. SetViewXml was never attempted
- *   because the simpler mechanism won. The probe is kept for re-running
- *   against a tenant whose behaviour is in doubt.
- *
- *   Q5: AGGREGATIONS BINDS BY INTERNAL NAME. A FieldRef naming
- *       `SecondAmount` produced a figure under its display title
- *       "Second Amount Display". This is the opposite of the sibling
- *       ColumnWidth property, which binds by DISPLAY title and silently
- *       resets when given internal names, so the two are written
- *       differently on purpose, and neither can be inferred from the
- *       other.
- *   Q6: TWO AGGREGATIONS BOTH RENDER, and the readback preserves
- *       declaration order:
- *       `<FieldRef Name="Amount" Type="Sum" /><FieldRef Name="SecondAmount" Type="AVG" />`
- *       The deployer compares that string exactly, so order mattering is
- *       the safe outcome. Tokens also round-trip verbatim (`Sum` stays
- *       `Sum` and `AVG` stays `AVG`), so SharePoint normalises neither
- *       case nor spelling, and the only difference to absorb is the
- *       pre-`/>` space.
- *
- *   THE AGGREGATION TYPE IS AN ENUMERATION, NOT ENGLISH: AVG, COUNT, MAX,
- *   MIN, SUM, STDEV, VAR, per FieldRef element (Query), case-insensitive.
- *   A non-member such as "Average" is ACCEPTED, stored and read back
- *   unchanged, and then the view will not render at all ("Unknown render
- *   failure"). That is worse than a silent no-op, and it is observed
- *   behaviour on this tenant, not a caution.
- *
- *   To recover a view in that state, MERGE it with Aggregations: '' and
- *   AggregationsStatus: 'Off'.
- *
- *   SEEDING IS Q0 (posted, counted, and read back from ItemCount), and a
- *   failed seed downgrades the verdict line rather than sitting quietly
- *   beneath it. An empty list shows no totals row whether the feature works
- *   or not, so a `rendered=no` from an unseeded run means nothing.
+ * Creates one owned list and settles storage/readback of view aggregations.
+ * The catalogue defines the rendered totals state required for Q4-Q6.
+ * Historical runs belong in evidence rather than this executable source.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
   const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+  const PROBE_RETRY_TRANSIENT = true;
+  const PROBE_RETRY_ATTEMPTS = 5;
   const PROBE_LIST = 'zzz dbmlsp view aggregations probe';
   const CLEANUP_AT_END = false;
   // What the totals row should show once one of the attempts lands.
@@ -119,23 +18,24 @@
   const AGG_TYPE = 'Sum';
   // ------------------------------------------------------------------------
 
-  const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
-
-  // Printed before any gate: a stale clipboard and a fix that did not
-  // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision c096fcaa. Quote this when reporting results.');
+  // Shared result registry v1. Register findings before any network work.
   const results = [];
   const expect = (id, question) => {
-    results.push({ id, question, observed: 'NOT ESTABLISHED', detail: 'the run did not reach this question' });
+    results.push({
+      id,
+      question,
+      observed: 'NOT ESTABLISHED',
+      detail: 'the run did not reach this question',
+    });
   };
   const record = (id, question, observed, detail) => {
-    const row = results.find((r) => r.id === id);
+    const row = results.find((candidate) => candidate.id === id);
     if (row) {
       Object.assign(row, { question, observed, detail: detail || '' });
     } else {
       results.push({ id, question, observed, detail: detail || '' });
     }
-    log('INFO', `${id}: ${observed}${detail ? ` (${detail})` : ''}`);
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
   expect('Q0', 'two rows actually seeded, so the manual check has something to total');
   expect('Q1', 'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted');
@@ -145,10 +45,8 @@
   expect('Q5', 'Aggregations binds by INTERNAL name, not display title (manual: look)');
   expect('Q6', 'two totalled columns both render, in declaration order (manual: look)');
 
-  // === Preflight: confirm the site ===
-  // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web, NOT the sub-site you are
-  // viewing. Prefix every call with the current web's server-relative URL.
+  // Shared probe core v2: context guard, bounded transport and REST helpers.
+  const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
     return { aborted: 'no-sp-page-context' };
@@ -159,41 +57,61 @@
     log('INFO', 'If that is the site you want, set CONFIRMED = true and paste again.');
     return { aborted: 'unconfirmed' };
   }
+  const probeWrites = typeof PROBE_WRITES === 'undefined' ? true : PROBE_WRITES;
+  if (probeWrites && !ALLOW_WRITES) {
+    log('INFO', 'This probe writes only its declared fixture. Set ALLOW_WRITES = true to proceed.');
+    return { aborted: 'writes-disabled' };
+  }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  log('INFO', `probe revision 9cc758db; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
-  // === Transport ===
-  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const spError = (text) => {
     try {
-      return JSON.parse(text)?.error?.message?.value || String(text).slice(0, 300);
+      const parsed = JSON.parse(text);
+      return parsed?.error?.message?.value
+        || parsed?.odata?.error?.message?.value
+        || String(text).slice(0, 300);
     } catch {
       return String(text).slice(0, 300);
     }
   };
-  async function fetchWithRetry(url, opts, attempts = 5) {
-    for (let i = 0; ; i++) {
-      const r = await fetch(url, opts);
-      if ((r.status === 429 || r.status === 503) && i < attempts) {
-        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 30);
-        log('INFO', `Throttled (HTTP ${r.status}); retry ${i + 1}/${attempts} in ${ra}s.`);
-        await sleep(ra * 1000);
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429 && status !== 503;
+  async function fetchWithRetry(url, options, attempts = PROBE_RETRY_ATTEMPTS) {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetch(url, options);
+      const transient = response.status === 429 || response.status === 503;
+      if (PROBE_RETRY_TRANSIENT && transient && attempt < attempts) {
+        const retryAfter = Number(response.headers.get('Retry-After'))
+          || Math.min(2 ** attempt, 30);
+        log('INFO', `Throttled (HTTP ${response.status}); retry ${attempt + 1}/${attempts} in ${retryAfter}s.`);
+        await sleep(retryAfter * 1000);
         continue;
       }
-      return r;
+      return response;
     }
   }
   let cachedDigest = null;
   let digestExpiresAt = 0;
   async function getDigest() {
     if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
-    const r = await fetchWithRetry(apiUrl('contextinfo'), {
-      method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' },
+    const response = await fetchWithRetry(apiUrl('contextinfo'), {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose' },
     });
-    const info = (await r.json()).d.GetContextWebInformation;
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`contextinfo failed HTTP ${response.status}: ${spError(text)}`);
+    }
+    const info = JSON.parse(text)?.d?.GetContextWebInformation;
+    if (!info?.FormDigestValue) throw new Error('contextinfo omitted FormDigestValue');
     cachedDigest = info.FormDigestValue;
-    digestExpiresAt = Date.now() + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
+    digestExpiresAt = Date.now()
+      + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
     return cachedDigest;
   }
   const spHeaders = (digest, extra = {}) => ({
@@ -204,46 +122,163 @@
   });
   async function post(suffix, body, extraHeaders) {
     const digest = await getDigest();
-    const r = await fetchWithRetry(apiUrl(suffix), {
+    const response = await fetchWithRetry(apiUrl(suffix), {
       method: 'POST',
       headers: spHeaders(digest, extraHeaders || {}),
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const text = r.ok ? '' : await r.text();
-    return { ok: r.ok, status: r.status, error: r.ok ? null : spError(text) };
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: spError(text),
+        d: null,
+      };
+    }
+    let d = null;
+    try {
+      d = text ? JSON.parse(text).d : null;
+    } catch {
+      d = null;
+    }
+    return { ok: true, status: response.status, error: null, d };
   }
-  async function get(suffix) {
-    const r = await fetchWithRetry(apiUrl(suffix), {
-      method: 'GET', headers: { 'Accept': 'application/json;odata=verbose' },
+  async function get(suffix, accept) {
+    const response = await fetchWithRetry(apiUrl(suffix), {
+      method: 'GET',
+      headers: { 'Accept': accept || 'application/json;odata=verbose' },
     });
-    if (!r.ok) return { ok: false, status: r.status, error: spError(await r.text()) };
-    return { ok: true, status: r.status, d: (await r.json()).d };
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: spError(text),
+        d: null,
+      };
+    }
+    const parsed = JSON.parse(text);
+    return {
+      ok: true,
+      status: response.status,
+      error: null,
+      d: parsed.d !== undefined ? parsed.d : parsed,
+    };
   }
-  // An item POST's __metadata.type must be the LIST'S OWN entity type
-  // (SP.Data.<MangledListName>ListItem), not the generic SP.Data.ListItem,
-  // which the first version of this probe sent, earning two HTTP 400s that
-  // it then reported as "Seeded two rows". deploy.js has always resolved
-  // this properly; the probe did not.
+  const merge = (suffix, body) => post(
+    suffix,
+    body,
+    { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
   async function entityTypeFor(listTitle) {
-    const r = await get(
+    const response = await get(
       `web/lists/getbytitle('${odataName(listTitle)}')?$select=ListItemEntityTypeFullName`,
     );
-    if (!r.ok) throw new Error(`could not resolve the item entity type: ${r.error}`);
-    return r.d.ListItemEntityTypeFullName;
+    if (!response.ok) {
+      throw new Error(`could not resolve the item entity type: ${response.error}`);
+    }
+    return response.d.ListItemEntityTypeFullName;
+  }
+  // Shared list fixture v1: exact ownership checks and bounded recycle.
+  // Title is never treated as ownership. Callers supply a stable description.
+  async function inspectOwnedList(title, ownershipDescription) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const existing = await get(`${listPath}?$select=Id,Description`);
+    if (!existing.ok) {
+      if (existing.status === 404) return { state: 'missing', listPath, d: null };
+      return {
+        state: 'error', listPath, d: null,
+        error: `HTTP ${existing.status}: ${existing.error}`,
+      };
+    }
+    if (existing.d.Description !== ownershipDescription) {
+      return {
+        state: 'foreign', listPath, d: existing.d,
+        error: `A same-title list '${title}' exists without the exact probe ownership marker; refusing to modify it.`,
+      };
+    }
+    return { state: 'owned', listPath, d: existing.d };
   }
 
+  async function recycleOwnedList(title, ownershipDescription) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'missing') return { ok: true, removed: false };
+    if (inspected.state !== 'owned') {
+      return { ok: false, removed: false, error: inspected.error };
+    }
+    const recycled = await post(`${inspected.listPath}/recycle`);
+    return {
+      ok: recycled.ok,
+      removed: recycled.ok,
+      error: recycled.ok ? null : `HTTP ${recycled.status}: ${recycled.error}`,
+    };
+  }
+
+  async function prepareOwnedList(title, ownershipDescription, removeExisting) {
+    const inspected = await inspectOwnedList(title, ownershipDescription);
+    if (inspected.state === 'foreign' || inspected.state === 'error') {
+      return { ok: false, existing: null, error: inspected.error };
+    }
+    if (inspected.state === 'owned' && removeExisting) {
+      const recycled = await recycleOwnedList(title, ownershipDescription);
+      if (!recycled.ok) return { ok: false, existing: null, error: recycled.error };
+      return { ok: true, existing: null, removed: true };
+    }
+    return {
+      ok: true,
+      existing: inspected.state === 'owned' ? inspected.d : null,
+      removed: false,
+    };
+  }
+  const aggregationManualOutcome = (controls) => {
+    const seedsHeld = Array.isArray(controls.seedValues)
+      && controls.seedValues.length === 2
+      && controls.seedValues[0] === 1
+      && controls.seedValues[1] === 3;
+    const viewFieldsHeld = Array.isArray(controls.viewFieldNames)
+      && Array.isArray(controls.expectedViewFields)
+      && controls.expectedViewFields.every((name) => controls.viewFieldNames.includes(name));
+    const renamedTitleHeld = controls.fieldTitle === controls.expectedFieldTitle;
+    const ready = controls.setupReady
+      && controls.writeOk
+      && String(controls.aggregationXml) === controls.expectedXml
+      && controls.aggregationStatus === 'On'
+      && seedsHeld
+      && viewFieldsHeld
+      && renamedTitleHeld;
+    return ready ? 'MANUAL' : 'NOT ESTABLISHED';
+  };
+
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
+  const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint aggregations probe. Safe to delete.';
   let createdList = false;
   let viewId = null;
   let viewUrl = null;
 
   try {
+    const prepared = await prepareOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION, CLEANUP_AT_END);
+    if (!prepared.ok) {
+      record('Q0', 'setup', 'ABORTED', prepared.error);
+      throw new Error('fixture ownership or reset failed');
+    }
+    if (prepared.existing) {
+      record(
+        'Q0',
+        'setup',
+        'ABORTED',
+        `The owned fixture '${PROBE_LIST}' is retained for visible evidence. Re-run with CLEANUP_AT_END=true to recycle it before a fresh run.`,
+      );
+      console.table(results);
+      return { seeded: 0, mechanism: 'none', readback: 'not-run', viewUrl: null, results };
+    }
+
     // === Setup: a list, a number column, two rows, and a view =============
     const made = await post('web/lists', {
       __metadata: { type: 'SP.List' },
       BaseTemplate: 100,
       Title: PROBE_LIST,
-      Description: 'dbml-sharepoint aggregations probe. Safe to delete.',
+      Description: OWNERSHIP_DESCRIPTION,
     });
     if (!made.ok) {
       record('Q1', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
@@ -306,7 +341,16 @@
     viewId = probeView?.Id;
     viewUrl = probeView?.ServerRelativeUrl;
     // The Amount column must be IN the view or there is nothing to total.
-    await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(AGG_FIELD)}')`);
+    const amountOnView = await post(
+      `${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(AGG_FIELD)}')`,
+    );
+    const initialViewFields = await get(`${listPath}/views('${viewId}')/viewfields`);
+    const initialViewFieldNames = initialViewFields.ok
+      && Array.isArray(initialViewFields.d?.Items?.results)
+      ? initialViewFields.d.Items.results
+      : null;
+    const amountMembershipHeld = Array.isArray(initialViewFieldNames)
+      && initialViewFieldNames.includes(AGG_FIELD);
     log('INFO', `View ready at ${window.location.origin}${viewUrl}`);
 
     const AGG_XML = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`;
@@ -367,7 +411,7 @@
     const after = await get(`${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`);
     const gotAgg = after.d?.Aggregations || '(null)';
     const gotStatus = after.d?.AggregationsStatus || '(null)';
-    const matches = String(gotAgg).includes(AGG_FIELD) && String(gotAgg).includes(AGG_TYPE);
+    const matches = String(gotAgg) === AGG_XML && gotStatus === 'On';
     record(
       'Q3',
       'the written property reads back unchanged',
@@ -375,7 +419,9 @@
       `Aggregations=${gotAgg} AggregationsStatus=${gotStatus}`,
     );
 
-    record('Q4', 'a totals row actually RENDERS', 'MANUAL', `open ${window.location.origin}${viewUrl} and look for a total of 42 under ${AGG_FIELD}`);
+    const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');
+    const visibleSetupReady = rowCount === 2 && !!viewId && !!viewUrl
+      && amountOnView.ok && initialViewFields.ok && amountMembershipHeld;
 
     // === Q5/Q6: the naming question, and two columns at once =============
     //
@@ -394,18 +440,29 @@
     // halves pass, and no figure renders. That is the exact silent
     // failure this repository exists to prevent.
     const SECOND = 'SecondAmount';
+    const SECOND_DISPLAY = 'Second Amount Display';
     const second = await post(`${listPath}/fields`, {
       __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: SECOND,
     });
     if (second.ok) {
       // Rename the DISPLAY title, leaving the internal name as created,
       // the same create-then-rename trick deploy.js uses for every column.
-      await post(
+      const renamed = await post(
         `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')`,
-        { __metadata: { type: 'SP.FieldNumber' }, Title: 'Second Amount Display' },
+        { __metadata: { type: 'SP.FieldNumber' }, Title: SECOND_DISPLAY },
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
       );
-      await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`);
+      const secondOnView = await post(
+        `${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`,
+      );
+      const finalViewFields = await get(`${listPath}/views('${viewId}')/viewfields`);
+      const finalViewFieldNames = finalViewFields.ok
+        && Array.isArray(finalViewFields.d?.Items?.results)
+        ? finalViewFields.d.Items.results
+        : null;
+      const renamedField = await get(
+        `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')?$select=InternalName,Title`,
+      );
 
       // SEED THE SECOND COLUMN, because run 1 could not answer its own
       // question without it. The field is created after the rows, so both
@@ -416,16 +473,29 @@
       // hand-typing values into the list. That ambiguity is the probe's
       // fault; these two writes remove it.
       const secondValues = [1, 3];  // AVG 2, distinct from Amount's Sum 42
-      const seededRows = await get(`${listPath}/items?$select=Id&$top=10`);
+      const seededRows = await get(`${listPath}/items?$select=Id&$orderby=Id&$top=10`);
       const seededIds = (seededRows.ok && seededRows.d && seededRows.d.results
         ? seededRows.d.results.map((r) => r.Id) : []);
+      const secondWrites = [];
       for (let i = 0; i < seededIds.length && i < secondValues.length; i += 1) {
-        await post(
+        secondWrites.push(await post(
           `${listPath}/items(${seededIds[i]})`,
           { __metadata: { type: itemType }, [SECOND]: secondValues[i] },
           { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
-        );
+        ));
       }
+      const secondSeeded = seededIds.length === secondValues.length
+        && secondWrites.length === secondValues.length
+        && secondWrites.every((result) => result.ok);
+      const secondSeedBack = await get(
+        `${listPath}/items?$select=Id,${SECOND}&$orderby=Id&$top=2`,
+      );
+      const secondSeedValues = secondSeedBack.ok && secondSeedBack.d?.results
+        ? secondSeedBack.d.results.map((row) => row[SECOND])
+        : null;
+      const secondControlsReady = visibleSetupReady && second.ok
+        && renamed.ok && secondOnView.ok && finalViewFields.ok && renamedField.ok
+        && secondSeeded;
       const both = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`
         + `<FieldRef Name="${SECOND}" Type="AVG"/>`;
       const wrote = await post(
@@ -433,36 +503,82 @@
         { __metadata: { type: 'SP.View' }, Aggregations: both, AggregationsStatus: 'On' },
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
       );
-      const back = await get(`${listPath}/views('${viewId}')?$select=Aggregations`);
+      const back = await get(
+        `${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`,
+      );
+      const manualOutcome = aggregationManualOutcome({
+        setupReady: secondControlsReady,
+        writeOk: wrote.ok && back.ok,
+        aggregationXml: back.d?.Aggregations,
+        expectedXml: both,
+        aggregationStatus: back.d?.AggregationsStatus,
+        seedValues: secondSeedValues,
+        viewFieldNames: finalViewFieldNames,
+        expectedViewFields: [AGG_FIELD, SECOND],
+        fieldTitle: renamedField.d?.Title,
+        expectedFieldTitle: SECOND_DISPLAY,
+      });
+      const q4ManualOutcome = aggregationManualOutcome({
+        setupReady: secondControlsReady,
+        writeOk: mechanism !== 'none' && after.ok,
+        aggregationXml: gotAgg,
+        expectedXml: AGG_XML,
+        aggregationStatus: gotStatus,
+        seedValues: secondSeedValues,
+        viewFieldNames: finalViewFieldNames,
+        expectedViewFields: [AGG_FIELD, SECOND],
+        fieldTitle: renamedField.d?.Title,
+        expectedFieldTitle: SECOND_DISPLAY,
+      });
+      record(
+        'Q4',
+        'a totals row actually RENDERS',
+        q4ManualOutcome,
+        q4ManualOutcome === 'MANUAL'
+          ? `open ${window.location.origin}${viewUrl} and look for a total of 42 under ${AGG_FIELD}`
+          : `controls not established: seeded=${rowCount === 2}, view=${!!viewId && !!viewUrl}, `
+            + `amount-add-response=${amountOnView.ok}, initial-fields=${JSON.stringify(initialViewFieldNames)}, `
+            + `second-add-response=${secondOnView.ok}, final-fields=${JSON.stringify(finalViewFieldNames)}, `
+            + `rename-response=${renamed.ok}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `mechanism=${mechanism}, aggregation-readback=${matches}`,
+      );
       record(
         'Q5',
         'Aggregations binds by INTERNAL name, not display title',
-        wrote.ok ? 'MANUAL' : 'WRITE REFUSED',
-        wrote.ok
+        manualOutcome,
+        manualOutcome === 'MANUAL'
           ? `wrote Name="${SECOND}" while its DISPLAY title is "Second Amount Display"; `
-            + `readback ${back.ok ? JSON.stringify(back.d.Aggregations) : '(unreadable)'}. `
+            + `readback ${JSON.stringify(back.d.Aggregations)} with status On and seeds 1,3. `
             + `OPEN THE VIEW: a figure under "Second Amount Display" means INTERNAL names bind `
             + `(what the tool assumes). No figure under it means DISPLAY titles bind, and every `
             + `shipped totals view is silently empty.`
-          : `HTTP ${wrote.status} (${wrote.error})`,
+          : `controls not established: rename-response=${renamed.ok}, add-response=${secondOnView.ok}, `
+            + `final-fields=${JSON.stringify(finalViewFieldNames)}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `second-seed-write=${secondSeeded}, second-seed-read=${JSON.stringify(secondSeedValues)}, `
+            + `write=${wrote.ok}, aggregation=${JSON.stringify(back.d?.Aggregations)}, `
+            + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
       record(
         'Q6',
         'two totalled columns both render, in declaration order',
-        wrote.ok ? 'MANUAL' : 'NOT REACHED',
-        wrote.ok
+        manualOutcome,
+        manualOutcome === 'MANUAL'
           ? 'the same view now declares two aggregations; confirm BOTH figures appear, and that '
             + 'the readback above preserved declaration order. The deployer compares the string '
             + 'exactly, so a reordered readback would drift on every redeploy'
-          : 'the two-column write was refused',
+          : `controls not established: rename-response=${renamed.ok}, add-response=${secondOnView.ok}, `
+            + `final-fields=${JSON.stringify(finalViewFieldNames)}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
+            + `second-seed-write=${secondSeeded}, second-seed-read=${JSON.stringify(secondSeedValues)}, `
+            + `write=${wrote.ok}, aggregation=${JSON.stringify(back.d?.Aggregations)}, `
+            + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
     } else {
+      record('Q4', 'a totals row actually RENDERS', 'NOT ESTABLISHED', `controls not established: could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
       record('Q5', 'Aggregations binds by INTERNAL name, not display title', 'NOT ESTABLISHED', `could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
       record('Q6', 'two totalled columns both render, in declaration order', 'NOT ESTABLISHED', 'the second column could not be created');
     }
 
     // === Verdict =========================================================
-    const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
     log(
       'VERDICT',
@@ -476,11 +592,11 @@
     return { seeded: rowCount, mechanism, readback: matches ? 'ok' : 'mismatch', viewUrl, results };
   } finally {
     if (createdList && CLEANUP_AT_END) {
-      const gone = await post(listPath, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+      const gone = await recycleOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION);
       if (gone.ok) {
-        log('INFO', `Deleted '${PROBE_LIST}'.`);
+        log('INFO', `Recycled '${PROBE_LIST}'.`);
       } else {
-        log('ERROR', `COULD NOT DELETE '${PROBE_LIST}' (HTTP ${gone.status} ${gone.error}). Delete it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
+        log('ERROR', `COULD NOT RECYCLE '${PROBE_LIST}' (${gone.error}). Recycle it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
       }
     } else if (createdList) {
       log('INFO', `Left '${PROBE_LIST}' in place for the manual step. Re-run with CLEANUP_AT_END = true to remove it.`);

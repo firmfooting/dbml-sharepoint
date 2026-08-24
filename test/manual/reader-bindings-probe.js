@@ -310,7 +310,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 1b8adeea. Quote this when reporting results.');
+  log('INFO', 'probe revision ebd6bc20. Quote this when reporting results.');
 
 
   // Learn's stock `Read`, for R3 to compare against. From "Permission levels

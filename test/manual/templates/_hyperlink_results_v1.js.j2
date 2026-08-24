@@ -1,0 +1,39 @@
+  // SharePoint list/formula validation refusals are HTTP 400. Other failures
+  // cannot establish application behavior and must not be described as refusals.
+  const isSharePointBehavioralRefusal = (r) => !r.ok && r.status === 400;
+  const classifyAttempt = (r, accepted, refused) => r.ok
+    ? accepted : isSharePointBehavioralRefusal(r) ? refused : 'NOT ESTABLISHED';
+  const describeAttempt = (r, accepted, refused) => r.ok
+    ? accepted
+    : isSharePointBehavioralRefusal(r)
+      ? refused
+      : `NOT ESTABLISHED: HTTP ${r.status} ${r.error}`;
+  const describeDisposition = (r) => r.ok
+    ? 'accepted'
+    : isSharePointBehavioralRefusal(r)
+      ? 'behaviorally refused'
+      : `NOT ESTABLISHED (HTTP ${r.status} ${r.error})`;
+  const hyperlinkOperandVerdict = ({ Q1, Q2, Q3 }) => {
+    if (Q1 === 'ACCEPTED' && Q2 === 'FIRED' && Q3 === 'PASSED') {
+      return {
+        operandUsable: 'YES',
+        guidance: 'Usable. Remove the "hyperlink" entry from _FORBIDDEN_OPERAND_TYPES[VALIDATION] in analysis/conditions.py, restore audit-actions\' EvidenceUrl rule, and cite this run.',
+      };
+    }
+    if ([Q1, Q2, Q3].includes('NOT ESTABLISHED')) {
+      return {
+        operandUsable: 'NOT ESTABLISHED',
+        guidance: 'Evidence is inconclusive. Do not change build behavior from this run; repeat the probe after resolving the failed request.',
+      };
+    }
+    if (Q1 === 'REFUSED' || Q2 === 'DID NOT FIRE' || Q3 === 'REFUSED EVERYTHING') {
+      return {
+        operandUsable: 'NO',
+        guidance: 'NOT usable. Leave the build refusal in place and keep the requirement as a governance check.',
+      };
+    }
+    return {
+      operandUsable: 'NOT ESTABLISHED',
+      guidance: 'Evidence is inconclusive. Do not change build behavior from this run; repeat the probe after resolving the failed request.',
+    };
+  };

@@ -310,7 +310,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 28c5b6ad. Quote this when reporting results.');
+  log('INFO', 'probe revision 61252475. Quote this when reporting results.');
 
   // RUN-UNIQUE, and that is a safety property rather than tidiness.
   //

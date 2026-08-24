@@ -41,6 +41,7 @@ test/manual/*.txt
 test/manual/*.har
 test/manual/*.log
 test/manual/*.json
+!test/manual/probe-catalog.json
 test/manual/captures/
 
 # Editors / OS

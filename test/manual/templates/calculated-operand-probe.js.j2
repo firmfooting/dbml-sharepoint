@@ -67,15 +67,18 @@
  * them.
  */
 (async () => {
-{% include "_probe_harness.js.j2" %}
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+  const CLEANUP = false;
+  const CLEANUP_AT_END = false;
+  const PROBE_RETRY_TRANSIENT = true;
+  const PROBE_RETRY_ATTEMPTS = 5;
 
   const LIST = 'dbmlsp Probe CalcOperands';
   const TARGET = `${LIST} Target`;
-  // Ships off so a pasted, unedited probe never removes anything. Turn it on
-  // with the two write gates to recycle the two probe-owned lists after the
-  // result table has printed.
-  const CLEANUP_AT_END = false;
+  const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint calculated-operand probe. Safe to recycle.';
 
+{% include "_probe_results_v1.js.j2" %}
   const QUESTIONS = [
     ['LOOK', 'Lookup operand in a calculated formula'],
     ['PERS', 'Person operand in a calculated formula'],
@@ -109,51 +112,55 @@
   expect('TEXT', 'Single-line-text operand in a calculated formula');
   expect('CALC', 'Calculated-column operand in another calculated formula');
 
-  if (!CONFIRMED) {
-    log('INFO', `Would create '${TARGET}' and '${LIST}', add one source column`);
-    log('INFO', 'of every supported tool type, then attempt one calculated');
-    log('INFO', 'field over each source and print every HTTP response.');
-    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
-    return;
-  }
-  if (!ALLOW_WRITES) {
-    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false. Stopping without writes.');
-    return;
-  }
+{% include "_probe_core_v2.js.j2" %}
+{% include "_probe_list_fixture_v1.js.j2" %}
 
   // Main first because it owns the lookup into TARGET.
-  await resetList(LIST);
-  await resetList(TARGET);
+  const preparedMain = await prepareOwnedList(LIST, OWNERSHIP_DESCRIPTION, CLEANUP);
+  const preparedTarget = await prepareOwnedList(TARGET, OWNERSHIP_DESCRIPTION, CLEANUP);
+  if (!preparedMain.ok || !preparedTarget.ok) {
+    record(
+      'BOOTOWNERSHIP',
+      'Probe fixture ownership is established before mutation',
+      'ABORTED',
+      preparedMain.error || preparedTarget.error,
+    );
+    console.table(results);
+    return { results };
+  }
 
-  let digest = await getDigest();
   // bootId is per LIST, not a shared 'BOOT'. record() overwrites by id, so one
   // id for both lists means whichever fails second erases the first, and the
   // surviving row names the wrong list in its own question text. Two lists
   // bootstrap here, so two ids.
   const ensureList = async (title, bootId) => {
-    const existing = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
-    if (existing.ok) return existing.body;
-    digest = await getDigest();
-    const created = await spPost('web/lists', {
+    const existing = await get(
+      `web/lists/getbytitle('${odataName(title)}')?$select=Id,Description`,
+    );
+    if (existing.ok) return existing.d;
+    const created = await post('web/lists', {
+      __metadata: { type: 'SP.List' },
       Title: title,
       BaseTemplate: 100,
-      Description: 'dbml-sharepoint calculated-operand probe. Safe to recycle.',
-    }, digest);
+      Description: OWNERSHIP_DESCRIPTION,
+    });
     if (!created.ok) {
       record(bootId, `Create probe list ${title}`, 'FAIL',
-             `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
+             `HTTP ${created.status}: ${created.error}`);
       return null;
     }
     // SharePoint's response shape varies with OData mode and can be empty
     // after a successful create. Re-read the list so the Lookup schema below
     // always receives a measured Id rather than trusting the POST payload.
-    const reread = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
-    if (!reread.ok || !reread.body || !reread.body.Id) {
+    const reread = await get(
+      `web/lists/getbytitle('${odataName(title)}')?$select=Id`,
+    );
+    if (!reread.ok || !reread.d || !reread.d.Id) {
       record(bootId, `Read back probe list ${title}`, 'FAIL',
              `HTTP ${reread.status}: successful create returned no usable list Id`);
       return null;
     }
-    return reread.body;
+    return reread.d;
   };
 
   // Both are attempted even if the first fails, so one run reports the state
@@ -161,22 +168,19 @@
   const target = await ensureList(TARGET, 'BOOTTARGET');
   const main = await ensureList(LIST, 'BOOTMAIN');
   if (!target || !main) {
-    report();
-    return;
+    console.table(results);
+    return { results };
   }
 
-  const fieldsPath = `web/lists/getbytitle('${LIST}')/fields`;
+  const fieldsPath = `web/lists/getbytitle('${odataName(LIST)}')/fields`;
   const xmlAttr = (value) => String(value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const fieldExists = async (name) =>
-    (await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')?$select=Id`)).ok;
-  const addField = async (schemaXml) => {
-    digest = await getDigest();
-    return spPost(`${fieldsPath}/createfieldasxml`, {
-      parameters: { SchemaXml: schemaXml, Options: 8 },
-    }, digest);
-  };
+    (await get(`${fieldsPath}/getbyinternalnameortitle('${odataName(name)}')?$select=Id`)).ok;
+  const addField = async (schemaXml) => post(`${fieldsPath}/createfieldasxml`, {
+    parameters: { SchemaXml: schemaXml, Options: 8 },
+  });
 
   const choiceXml =
     '<Field Type="Choice" DisplayName="ProbeChoice" Name="ProbeChoice" Format="Dropdown">' +
@@ -218,7 +222,7 @@
     if (made.ok) {
       sourceReady.add(name);
     } else {
-      log('FAIL', `Could not create source ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
+      log('FAIL', `Could not create source ${name}: HTTP ${made.status} ${made.error}`);
     }
   }
 
@@ -260,7 +264,7 @@
       id,
       question,
       made.ok ? 'ACCEPTED' : (isRefusal(made.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
-      `HTTP ${made.status}${made.text ? `: ${made.text.slice(0, 500)}` : ''}`,
+      `HTTP ${made.status}${made.error ? `: ${made.error}` : ''}`,
     );
     return made.ok;
   };
@@ -278,25 +282,23 @@
     await attempt('CALC', 'CalcNumber', 'CalcCalculated', '=[CalcNumber]', 'Number');
   }
 
-  report();
+  console.table(results);
 
   if (CLEANUP_AT_END) {
     // Main first: SharePoint may refuse to recycle a list still targeted by
     // a Lookup column on another list.
     for (const title of [LIST, TARGET]) {
-      digest = await getDigest();
-      const recycled = await spPost(
-        `web/lists/getbytitle('${title}')/recycle`, {}, digest,
-      );
+      const recycled = await recycleOwnedList(title, OWNERSHIP_DESCRIPTION);
       log(
         recycled.ok ? 'OK' : 'FAIL',
         recycled.ok
           ? `Recycled '${title}'. It is recoverable from the site recycle bin.`
-          : `Could not recycle '${title}': HTTP ${recycled.status} ${recycled.text.slice(0, 300)}`,
+          : `Could not recycle '${title}': ${recycled.error}`,
       );
     }
   } else {
     log('INFO', `Probe lists remain: '${LIST}' and '${TARGET}'.`);
     log('INFO', 'After copying results, set CLEANUP_AT_END=true and rerun, or recycle them manually.');
   }
+  return { results };
 })();

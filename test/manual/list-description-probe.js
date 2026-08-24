@@ -258,7 +258,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 52b4aae5. Quote this when reporting results.');
+  log('INFO', 'probe revision e255bb90. Quote this when reporting results.');
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
