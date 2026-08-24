@@ -412,6 +412,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             rendered=rendered_columns(rule_table, xcols) | {"Title"},
             types=types,
             lookups={c.name for c in rule_table.columns if c.ref is not None},
+            enum_members=vc.enum_members_by_name,
             at=Location(Section.LIST_VALIDATION, entity=entity_name, sub="when"),
         )
         findings.extend(problems)

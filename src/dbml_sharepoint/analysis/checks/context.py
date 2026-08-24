@@ -32,6 +32,7 @@ class ValidationContext:
     table_names: set[str] = field(default_factory=set)
     tables_by_name: dict[str, Table] = field(default_factory=dict)
     enum_by_name: dict[str, EnumDef] = field(default_factory=dict)
+    enum_members_by_name: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # Columns expanded to a Choice+URL pair rather than deployed as declared,
     # so a check asking "is this column rendered?" must consult this too.
     cross_site_by_entity: dict[str, set[str]] = field(default_factory=dict)
@@ -116,6 +117,9 @@ class ValidationContext:
             table_names={t.name for t in schema.tables},
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
+            enum_members_by_name={
+                enum.name: tuple(enum.members) for enum in schema.enums
+            },
             cross_site_by_entity=cross_site_by_entity,
             cross_site_pairs=cross_site_pairs,
             calculated_by_entity=calculated_by_entity,

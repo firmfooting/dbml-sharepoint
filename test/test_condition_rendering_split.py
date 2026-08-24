@@ -240,6 +240,7 @@ def test_renderer_refusals_reach_classified_diagnosis(
         rendered=rendered,
         types=types,
         lookups=set(),
+        enum_members={},
         at=Location(Section.VIEWS, entity="X", view="V", sub="where"),
     )
     assert [finding.code for finding in findings] == [code]

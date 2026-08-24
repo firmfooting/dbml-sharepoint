@@ -12,10 +12,13 @@ BREAKING API MOVE (#168): import `CAML`, `EXPRESSION`, `VALIDATION`, `NEGATION`,
 compatibility re-exports here.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from difflib import get_close_matches
 
 from dbml_sharepoint.analysis import condition_rendering as _rendering
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location
+from dbml_sharepoint.analysis.typemap import choice_enum_for
 from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Group, Leaf
 
 # Bounds keep a pathological declaration a build error rather than a formula
@@ -149,6 +152,7 @@ def condition_findings(
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
+    enum_members: Mapping[str, Sequence[str]],
     at: Location,
 ) -> list[Finding]:
     """Semantic problems with a declared condition, as classified Findings.
@@ -158,6 +162,10 @@ def condition_findings(
 
     A leaf's finding is located one element below `at`, which is exactly
     what the message prefix has always spelled by hand.
+
+    `enum_members` is the ordered schema projection for Choice columns.
+    Whole-member operands must use the declared spelling. This is a schema
+    consistency rule and makes no claim about SharePoint's comparison casing.
     """
     return [
         Finding(
@@ -171,6 +179,7 @@ def condition_findings(
             rendered=rendered,
             types=types,
             lookups=lookups,
+            enum_members=enum_members,
             context=at.path,
         )
     ]
@@ -195,6 +204,7 @@ def _condition_problems(
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
+    enum_members: Mapping[str, Sequence[str]],
     context: str,
 ) -> list[_Problem]:
     """The shared body. `context` renders the message prefixes; the caller
@@ -318,6 +328,16 @@ def _condition_problems(
         rendering = _render_problems(leaf, target, types, context)
         problems.extend((code, message, leaf.field) for code, message in rendering)
         reported.setdefault(id(leaf), set()).update(code for code, _ in rendering)
+        if not rendering:
+            problems.extend(
+                (code, message, leaf.field)
+                for code, message in _choice_member_problems(
+                    leaf,
+                    where=f"{context}.{leaf.field}",
+                    types=types,
+                    enum_members=enum_members,
+                )
+            )
 
     # Second pass, over the tree the RENDERER will actually see. De Morgan
     # normalisation rewrites operators (none_of[contains] becomes
@@ -545,6 +565,50 @@ def _operand_problems(
             (
                 FindingCode.CONDITION_MEASURE_NOT_APPLICABLE,
                 f"{where}: 'measure: length' applies to text columns only",
+            )
+        )
+    return problems
+
+
+def _choice_member_problems(
+    leaf: Leaf,
+    *,
+    where: str,
+    types: Mapping[str, str],
+    enum_members: Mapping[str, Sequence[str]],
+) -> list[tuple[FindingCode, str]]:
+    """Unknown whole-member Choice operands, after shape and target checks."""
+    enum_name = choice_enum_for(types.get(leaf.field, ""), enum_members)
+    whole_member_ops = {"eq", "neq", "in", "not_in", "includes", "not_includes"}
+    if enum_name is None or leaf.op not in whole_member_ops:
+        return []
+    values = (
+        leaf.value
+        if leaf.op in {"in", "not_in"} and isinstance(leaf.value, list)
+        else [leaf.value]
+    )
+    declared = tuple(enum_members[enum_name])
+    problems: list[tuple[FindingCode, str]] = []
+    # Choice columns render as text on every target. Compare the same value
+    # the renderer emits, so YAML `1` matches a declared member named `"1"`.
+    unique_values: list[str] = []
+    for value in values:
+        rendered_value = str(value)
+        if rendered_value not in unique_values:
+            unique_values.append(rendered_value)
+    for value in unique_values:
+        if value in declared:
+            continue
+        nearest = get_close_matches(value, declared, n=1, cutoff=0.6)
+        remedy = (
+            f"use declared member {nearest[0]!r}"
+            if nearest
+            else f"declared members: {', '.join(repr(member) for member in declared)}"
+        )
+        problems.append(
+            (
+                FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN,
+                f"{where}: {value!r} is not an exact member of enum {enum_name!r}; {remedy}",
             )
         )
     return problems

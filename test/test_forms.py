@@ -117,6 +117,7 @@ def _findings(
         rendered={"Status", "Count", "Note"},
         types=TYPES,
         lookups=set(),
+        enum_members={},
         at=AT,
     )
 
@@ -211,6 +212,7 @@ def test_form_visibility_refuses_a_multi_value_operand() -> None:
         rendered={"Note", "Events"},
         types={"Note": "nvarchar", "Events": "audit_event[]"},
         lookups=set(),
+        enum_members={"audit_event": ("View", "Edit", "Export")},
         at=AT,
     )
 
@@ -268,6 +270,58 @@ def test_column_validation_refuses_a_multi_value_operand() -> None:
     )
 
 
+def test_form_and_column_validation_refuse_unknown_choice_members() -> None:
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    schema = make_schema(
+        make_table(
+            "Escalation",
+            make_column("Title", required=True),
+            make_column("Status", "status"),
+            make_column("Note"),
+        ),
+        enums=[make_enum("status", "Open", "Closed")],
+    )
+    typo = parse_condition(
+        [{"field": "Status", "op": "eq", "value": "Opne"}], "when",
+    )
+    bundle = make_bundle(
+        entities=["Escalation"],
+        form_visibility={
+            "Escalation": EntitySection(columns={
+                "Note": FormVisibility(when=typo),
+            }),
+        },
+        column_validation={
+            "Escalation": EntitySection(columns={
+                "Status": ColumnValidation(when=typo, message="Choose a status."),
+            }),
+        },
+    )
+
+    findings = validate_against_mapping(schema, bundle)
+    member_findings = [
+        finding
+        for finding in findings
+        if finding.code is FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN
+    ]
+
+    assert {finding.location for finding in member_findings} == {
+        Location(
+            Section.FORM_VISIBILITY,
+            entity="Escalation",
+            column="Note",
+            sub="when.Status",
+        ),
+        Location(
+            Section.COLUMN_VALIDATION,
+            entity="Escalation",
+            column="Status",
+            sub="when.Status",
+        ),
+    }
+
+
 def _caml_findings(op: str) -> list[Finding]:
     from dbml_sharepoint.analysis.condition_rendering import CAML
     from dbml_sharepoint.analysis.conditions import condition_findings
@@ -278,6 +332,7 @@ def _caml_findings(op: str) -> list[Finding]:
         rendered={"Events"},
         types={"Events": "audit_event[]"},
         lookups=set(),
+        enum_members={"audit_event": ("View", "Edit", "Export")},
         at=AT,
     )
 

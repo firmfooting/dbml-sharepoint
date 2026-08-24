@@ -75,7 +75,7 @@ Every leaf of a tree, in declaration order.
 ### `condition_findings`
 
 ```python
-def condition_findings(condition: Condition, *, target: str, rendered: set[str], types: dict[str, str], lookups: set[str], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
+def condition_findings(condition: Condition, *, target: str, rendered: set[str], types: dict[str, str], lookups: set[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Semantic problems with a declared condition, as classified Findings.
@@ -85,4 +85,8 @@ degraded form to fall back to, so there is nothing to warn about.
 
 A leaf's finding is located one element below `at`, which is exactly
 what the message prefix has always spelled by hand.
+
+`enum_members` is the ordered schema projection for Choice columns.
+Whole-member operands must use the declared spelling. This is a schema
+consistency rule and makes no claim about SharePoint's comparison casing.
 

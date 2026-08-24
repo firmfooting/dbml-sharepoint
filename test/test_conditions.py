@@ -1101,7 +1101,7 @@ def _messages(
         finding.message
         for finding in condition_findings(
             condition, target=target, rendered=rendered, types=types,
-            lookups=lookups, at=at,
+            lookups=lookups, enum_members={}, at=at,
         )
     ]
 
@@ -1115,6 +1115,195 @@ def _problems(condition_raw: object, target: str = EXPRESSION) -> list[str]:
 
 def test_valid_condition_has_no_problems() -> None:
     assert _problems([{"field": "Status", "op": "eq", "value": "Open"}]) == []
+
+
+def test_scalar_choice_member_must_use_the_declared_spelling() -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "eq", "value": "Opne"}], "when",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": "ticket_status"},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    code = FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN
+    finding = only(findings, code)
+    assert finding.location is not None
+    assert finding.location.path == "views[X].where.Status"
+    assert "'Opne' is not an exact member of enum 'ticket_status'" in finding.message
+    assert "use declared member 'Open'" in finding.message
+
+
+def test_multichoice_includes_member_must_be_declared() -> None:
+    condition = parse_condition(
+        [{"field": "Tags", "op": "includes", "value": "Permisson change"}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Tags"},
+        types={"Tags": "tag[]"},
+        lookups=set(),
+        enum_members={"tag": ("Permission change", "Policy review")},
+        at=WHERE,
+    )
+
+    finding = only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+    assert "use declared member 'Permission change'" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("column_type", "op", "value"),
+    [
+        ("ticket_status", "neq", "Missing"),
+        ("ticket_status", "in", ["Open", "Missing"]),
+        ("ticket_status", "not_in", ["Open", "Missing"]),
+        ("ticket_status[]", "not_includes", "Missing"),
+    ],
+)
+def test_every_whole_member_operator_checks_choice_members(
+    column_type: str,
+    op: str,
+    value: object,
+) -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": op, "value": value}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": column_type},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+
+
+def test_choice_member_matching_is_exact_and_case_sensitive() -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "eq", "value": "open"}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": "ticket_status"},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    finding = only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+    assert "use declared member 'Open'" in finding.message
+
+
+@pytest.mark.parametrize("target", [CAML, EXPRESSION, VALIDATION])
+def test_non_string_choice_operand_uses_the_rendered_text(target: str) -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "eq", "value": 1}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=target,
+        rendered={"Status"},
+        types={"Status": "ticket_status"},
+        lookups=set(),
+        enum_members={"ticket_status": ("1", "Open")},
+        at=WHERE,
+    )
+
+    none_of(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+
+
+@pytest.mark.parametrize(
+    ("column_type", "op", "value"),
+    [
+        ("nvarchar", "eq", "anything"),
+        ("date", "eq", "today"),
+        ("datetime", "eq", "now"),
+        ("person", "eq", "me"),
+        ("ticket_status", "contains", "pen"),
+    ],
+)
+def test_non_whole_member_operands_are_not_choice_member_checked(
+    column_type: str,
+    op: str,
+    value: object,
+) -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": op, "value": value}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": column_type},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    none_of(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+
+
+def test_choice_literal_named_like_a_sentinel_is_still_a_declared_member() -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "eq", "value": "today"}], "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": "ticket_status"},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    only(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN)
+
+
+def test_in_reports_each_distinct_unknown_choice_member_once() -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "in", "value": ["Missing", "Open", "Missing", "Gone"]}],
+        "where",
+    )
+
+    findings = condition_findings(
+        condition,
+        target=CAML,
+        rendered={"Status"},
+        types={"Status": "ticket_status"},
+        lookups=set(),
+        enum_members={"ticket_status": ("Open", "Closed")},
+        at=WHERE,
+    )
+
+    assert messages(findings, FindingCode.CONDITION_CHOICE_MEMBER_UNKNOWN) == [
+        (
+            "views[X].where.Status: 'Missing' is not an exact member of enum "
+            "'ticket_status'; declared members: 'Open', 'Closed'"
+        ),
+        (
+            "views[X].where.Status: 'Gone' is not an exact member of enum "
+            "'ticket_status'; declared members: 'Open', 'Closed'"
+        ),
+    ]
 
 
 def test_unknown_column_is_reported() -> None:
@@ -1838,6 +2027,7 @@ def _findings(
         rendered=set(resolved),
         types=resolved,
         lookups=lookups or set(),
+        enum_members={},
         at=Location(Section.VIEWS, entity="Risk", view="Open"),
     )
 

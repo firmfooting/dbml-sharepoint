@@ -389,6 +389,7 @@ class FindingCode(StrEnum):
     # The prefix names the SUBJECT, not a section: these are reachable from
     # views, form_visibility, column_validation and list_validation alike,
     # and the section is in the location.
+    CONDITION_CHOICE_MEMBER_UNKNOWN = "condition_choice_member_unknown", "error"
     CONDITION_COLUMN_TYPE_UNKNOWN = "condition_column_type_unknown", "error"
     CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME = (
         "condition_date_is_an_unquoted_yaml_datetime", "error"
