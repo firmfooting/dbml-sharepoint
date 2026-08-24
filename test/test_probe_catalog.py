@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, cast
 
 from _paths import MANUAL
 
@@ -22,7 +22,7 @@ ALL_PATTERNS = VISIBLE_PATTERNS | {
 
 
 def _catalog() -> dict[str, Any]:
-    return json.loads(CATALOG.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(CATALOG.read_text(encoding="utf-8")))
 
 
 def _static_finding_ids(source: str) -> set[str]:
