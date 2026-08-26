@@ -19,9 +19,10 @@ follow.
       matter is the list view threshold on lookup pickers, and it bites only
       past 5,000 items in the target list. A project RAID log is bounded by
       one project's life; a risk list approaching that has outgrown this
-      template and belongs in risk-register. The build indexes
-      `ProjectRisk.Title` regardless, so the two `RelatedRisk` pickers stay
-      safe either way. See `50-govern/governance.md`.
+      template and belongs in risk-register. The `RelatedRisk` picker shows
+      only live risks: its display column is the calculated `LiveRiskTitle`,
+      blank for Closed, so it cannot be indexed and the picker depends on
+      this list staying small. See `50-govern/governance.md`.
 - [ ] `raid_issue_severity` and `raid_risk_response` match how your project
       actually talks. Severity drives the issue colours and the row wash;
       a member missing from the enum is a member nobody can choose.
@@ -110,10 +111,10 @@ seed a write it has not read back from a live list.
       `ReviewDate` on Project Risk; `Status`, `AssignedTo`, `DueDate` and
       `RelatedRisk` on Project Action; `Status`, `Severity`, `Owner`,
       `RaisedDate` and `RelatedRisk` on Project Issue; and `DecisionDate`
-      on Project Decision. **Project Risk also shows `Title` indexed, and
-      that one is not declared anywhere**: it is the display column of a
-      lookup target, and the build indexes it so the two `RelatedRisk`
-      pickers keep working as the risk log grows. See the lookup note in
+      on Project Decision. **`LiveRiskTitle` does not appear**, and that is
+      correct: it is a calculated column and cannot be indexed. It is the
+      `RelatedRisk` display column, and its being calculated is what blanks
+      closed risks out of the picker. See the lookup note in
       `50-govern/governance.md`.
 - [ ] Matrix spot-checks on a test risk:
       - Rare + Minor -> **Low / 1**

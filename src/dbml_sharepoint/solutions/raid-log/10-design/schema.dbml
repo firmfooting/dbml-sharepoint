@@ -82,16 +82,19 @@ Table ProjectRisk {
   // either.
   ResidualRiskRating calculated_text   [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme']
   RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the log by this, highest first']
+  LiveRiskTitle calculated_text [note: 'Title for open risks, blank once Closed. The RelatedRisk lookup displays this, so the picker only offers live risks']
   RiskOwner   person           [not null, note: 'Manages the risk day to day. One person, never a team']
   RiskResponse raid_risk_response [note: 'What the project is doing about it. Tolerate is always for a set period and belongs in the decision log']
   Status      raid_risk_status [not null, default: 'Open', note: 'Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
   ReviewDate  date             [not null, note: 'When this risk is next looked at. Set by hand, and moved forward every time it is actually reviewed']
   ClosureNote richtext         [note: 'Why the risk is being closed: it happened and became an issue, it can no longer happen, or the project ended']
 
-  // Filter columns for the declared views. The calculated rating and score
-  // cannot be indexed by SharePoint and are rejected by the build validator.
-  // Title carries no entry here: it is the display column of a lookup target,
-  // so the build indexes it automatically.
+  // Filter columns for the declared views. The three calculated columns
+  // (rating, score and the live-title the RelatedRisk picker shows) cannot
+  // be indexed by SharePoint and are rejected by the build validator.
+  // LiveRiskTitle is the lookup display column and is deliberately left
+  // unindexed; mapping.yaml accepts that on the entity because a project risk
+  // log stays well under the 5,000-item threshold.
   indexes {
     Status
     RiskResponse
