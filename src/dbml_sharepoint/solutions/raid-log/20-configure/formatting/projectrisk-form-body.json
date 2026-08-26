@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "Describe the risk",
+      "fields": ["Title", "Detail"]
+    },
+    {
+      "displayname": "Assess the risk",
+      "fields": ["Likelihood", "Consequence"]
+    },
+    {
+      "displayname": "Response and owner",
+      "fields": ["RiskResponse", "RiskOwner"]
+    },
+    {
+      "displayname": "Review and closure",
+      "fields": ["Status", "ReviewDate", "ClosureNote"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["ResidualRiskRating", "RiskScore"]
+    }
+  ]
+}
