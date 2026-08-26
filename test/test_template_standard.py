@@ -330,6 +330,40 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Owner and date": "Act",
         "Progress": "Govern",
     },
+    # The RAID log borrows its neighbours' vocabularies on purpose rather
+    # than inventing a fifth one. ProjectRisk is risk-register's arc with
+    # the two sections it trimmed renamed to what is left in them
+    # ("Response and owner" has no controls, "Review and closure" has no
+    # sponsor or tolerance window). ProjectAction and ProjectDecision are
+    # meeting-actions' ActionItem and Decision unchanged, because they are
+    # the same artefact and a project member reading both should not have
+    # to learn two names for one section.
+    #
+    # ProjectIssue is the only new shape: Progress is its own Act section
+    # holding just Status, because on an issue the progress IS the status,
+    # and the resolution fields below it are conditional on that value.
+    ("raid-log", "ProjectRisk"): {
+        "Describe the risk": "Identify",
+        "Assess the risk": "Assess",
+        "Response and owner": "Act",
+        "Review and closure": "Govern",
+        "System": "System",
+    },
+    ("raid-log", "ProjectAction"): {
+        "The action": "Identify",
+        "Owner and date": "Act",
+        "Progress": "Govern",
+    },
+    ("raid-log", "ProjectIssue"): {
+        "Describe the issue": "Identify",
+        "Severity and owner": "Assess",
+        "Progress": "Act",
+        "Resolution and closure": "Govern",
+    },
+    ("raid-log", "ProjectDecision"): {
+        "The decision": "Identify",
+        "Why": "Assess",
+    },
     # "What was said" is the Assess beat on a log whose whole job is
     # judgement: the summary is what a colleague picking up the thread
     # actually reads.
@@ -1546,12 +1580,19 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     3 -> 29, 4 -> 20, 5 -> 1, 6 -> 1. Platform lands at 4 (AssessedBy,
     PlatformCustodian, Author, Editor). Its three multi-value columns cost
     nothing: a Choice (multi-valued) is not a Lookup and carries no join. The
-    worst is unchanged and is still raci-matrix/Activity at 6."""
+    worst is unchanged and is still raci-matrix/Activity at 6.
+
+    RE-MEASURED 2026-08-26 across 34 templates / 62 entities, when raid-log
+    joined the roster: 2 -> 7, 3 -> 31, 4 -> 22, 5 -> 1, 6 -> 1. The four
+    raid-log lists land at 3 (ProjectRisk, ProjectDecision: one person column
+    plus Author and Editor) and 4 (ProjectAction, ProjectIssue: one person
+    column plus the one RelatedRisk Lookup). The worst is unchanged and is
+    still raci-matrix/Activity at 6."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 33, (
-        f"{len(templates)} templates discovered, not the 33 this survey was "
+    assert len(templates) == 34, (
+        f"{len(templates)} templates discovered, not the 34 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -2023,8 +2064,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     """Unprefixed list names must stay unique across the shipped families.
 
     The prefix is a governance device -- you register yours so nobody else
-    takes it -- and it is on its way out. RE-MEASURED 2026-08-18: 58 entity
-    names across 33 families, zero duplicated, so several families can
+    takes it -- and it is on its way out. RE-MEASURED 2026-08-26: 62 entity
+    names across 34 families, zero duplicated, so several families can
     already share one site with no prefix at all.
 
     That is only true while it stays true. Two families both declaring
@@ -2032,8 +2073,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     nothing else in the build would notice: each family validates alone.
     """
     solutions = available_solutions()
-    assert len(solutions) == 33, (
-        f"{len(solutions)} templates discovered, not the 33 this collision "
+    assert len(solutions) == 34, (
+        f"{len(solutions)} templates discovered, not the 34 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )
@@ -2041,8 +2082,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     for solution in solutions:
         for entity in solution.lists:
             owners.setdefault(entity, []).append(solution.id)
-    assert len(owners) == 58, (
-        f"{len(owners)} unique entity names found, not the 58 this collision "
+    assert len(owners) == 62, (
+        f"{len(owners)} unique entity names found, not the 62 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )
