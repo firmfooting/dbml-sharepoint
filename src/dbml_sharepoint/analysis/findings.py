@@ -41,6 +41,7 @@ class Section(StrEnum):
     # `list_permissions.default...` and `list_permissions.overrides[...]`.
     LIST_PERMISSIONS = "list_permissions"
     LIST_VALIDATION = "list_validation"
+    LOOKUP_PROJECTIONS = "lookup_projections"
     PERMISSION_LEVELS = "permission_levels"
     POLYMORPHIC_PATTERNS = "polymorphic_patterns"
     # Not one of the eighteen message prefixes: retention lives in its own
@@ -161,6 +162,11 @@ class FindingCode(StrEnum):
     CROSS_SITE_GENERATED_NAME_COLLIDES = "cross_site_generated_name_collides", "error"
     CROSS_SITE_GENERATED_NAME_TOO_LONG = "cross_site_generated_name_too_long", "error"
     CROSS_SITE_UNKNOWN_COLUMN = "cross_site_unknown_column", "error"
+    PROJECTION_COLUMN_HAS_NO_REF = "projection_column_has_no_ref", "error"
+    PROJECTION_NAME_COLLIDES = "projection_name_collides", "error"
+    PROJECTION_NAME_TOO_LONG = "projection_name_too_long", "error"
+    PROJECTION_UNKNOWN_COLUMN = "projection_unknown_column", "error"
+    PROJECTION_UNKNOWN_TARGET_COLUMN = "projection_unknown_target_column", "error"
     DISPLAY_COLUMN_NOT_RENDERED = "display_column_not_rendered", "error"
     DISPLAY_COLUMN_TYPE_UNINDEXABLE = "display_column_type_unindexable", "error"
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"

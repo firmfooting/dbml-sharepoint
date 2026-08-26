@@ -53,10 +53,18 @@ def undeployable(context: str, column: str) -> str:
     )
 
 
-def rendered_columns(table: Table, cross_site_cols: set[str]) -> set[str]:
+def rendered_columns(
+    table: Table,
+    cross_site_cols: set[str],
+    projected_cols: set[str] | frozenset[str] = frozenset(),
+) -> set[str]:
     """Column names that will actually exist on the provisioned SP list:
     auto-increment Id is skipped at render time, cross-site logical columns
-    expand to <col>Abbreviation / <col>SiteUrl and never exist themselves."""
+    expand to <col>Abbreviation / <col>SiteUrl and never exist themselves.
+    projected_cols are the lookup-projection columns the mapping declares
+    (read-only dependent Lookups); they exist on the list and are renderable,
+    but are not DBML columns."""
+
     rendered: set[str] = set()
     for col in table.columns:
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
@@ -74,4 +82,5 @@ def rendered_columns(table: Table, cross_site_cols: set[str]) -> set[str]:
             rendered.add(col.name + "SiteUrl")
         else:
             rendered.add(col.name)
+    rendered.update(projected_cols)
     return rendered

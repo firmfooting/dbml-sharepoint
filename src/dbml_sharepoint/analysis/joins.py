@@ -47,11 +47,12 @@ JOINPRJ on runs 35700faa and f663165e, and on the later run the dependent field
 was verified PRESENT in the returned row (31 keys) rather than assumed. A view
 that silently dropped the field would have rendered too, which is how the earlier
 LOOPRJ question misled. So a lookup showing five of its target's fields costs
-ONE, not six. NOTHING IN THIS MODULE EXCLUDES THEM, because this tool cannot
-declare such a projection at all: there is no `projected_fields` or equivalent
-key in `mapping_types.py` or `mapping_loader.py`. That is also why the fact is
-recorded HERE rather than in a test, since there is no way to write one. If
-projections ever become declarable, this paragraph is what a test hangs off.
+ONE, not six. Projections ARE declarable now: the `lookup_projections` mapping
+key generates each dependent field as ``<column><target>`` (e.g.
+`RelatedRiskTitle`), and that generated name is not a DBML column, so
+`join_bearing_columns` never sees it and nothing here has to exclude it.
+`test/test_joins.py::test_a_lookup_projection_costs_no_join` is the test this
+paragraph was waiting for.
 
 8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
 does not exist in SharePoint Online; there is no "default 8 raised by a
@@ -124,9 +125,10 @@ def joining_fields(
     reader looking in the wrong file.
 
     A lookup's additional-field projections cost nothing extra and nothing here
-    excludes them, because this tool cannot declare one. Measurement and
-    reasoning are in the module docstring; that is where a test hangs off if
-    projections ever become declarable.
+    excludes them: each is a generated dependent field named ``<column><target>``,
+    which is not a DBML column and so is not in `join_bearing`. Measurement and
+    reasoning are in the module docstring; the test that hangs off them is
+    `test/test_joins.py::test_a_lookup_projection_costs_no_join`.
     """
     return sorted({name for name in fields if name in join_bearing})
 

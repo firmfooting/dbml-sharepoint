@@ -458,6 +458,15 @@ class Mapping:
     # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
     # attribute to carry them); the validator enforces the pairing.
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {entity: {column: (target columns)}} for a lookup column's additional
+    # projected (dependent) fields. Each target column is projected onto the
+    # source list as a read-only Lookup whose ShowField is that target column,
+    # linked back to the primary lookup by its FieldRef. This is how a view
+    # shows a target's real Title while the picker shows a calculated display
+    # column (e.g. LiveRiskTitle). See analysis/joins.py for why projections
+    # are join-free, and test/manual/projected-lookup-probe.js for the
+    # createfieldasxml shape that proves the linkage is scriptable.
+    lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     # {entity: EntitySection[FormVisibility]} (declared form behaviour).
     form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)
     # {entity: EntitySection[ColumnValidation]} (per-column save rules).
@@ -544,6 +553,16 @@ class Mapping:
             (xref.entity, xref.column)
             for xref in self.cross_site_reference_columns
         }
+
+    def projections_for(self, entity_name: str, column_name: str) -> list[str]:
+        """Projected target columns for a lookup column, empty when none.
+
+        The lookup shape for `lookup_projections`. Consumers must agree on
+        the projected field's generated internal name; `jsgen` and `reportgen`
+        both derive it as ``f"{column}{target}"``, so a projection only ever
+        adds columns, never renames the lookup itself.
+        """
+        return list(self.lookup_projections.get(entity_name, {}).get(column_name, ()))
 
     def versioning_for(self, entity_name: str) -> Versioning:
         """The versioning settings this entity's list is provisioned with.

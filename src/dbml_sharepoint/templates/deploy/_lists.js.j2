@@ -146,34 +146,57 @@
             list.title, col, targetGuid, laneDigest, true,
           )) {
             summary.columnsSkipped += 1;
-            continue;
+          } else {
+            let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
+            let createBody = col.body;
+            if (col.target_list) {
+              // SharePoint rejects POSTing an SP.FieldLookup directly to
+              // /fields ("Please use addfield to add a lookup field"). Use the
+              // supported FieldCollection.AddField REST method and keep its
+              // SP.FieldCreationInformation object nested under `parameters`.
+              // Properties that type does not carry are MERGEd and read back by
+              // reconcileDeclaredField immediately below.
+              const parameters = {
+                ...col.lookup_creation_parameters,
+                LookupListId: targetGuid,
+              };
+              createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
+              createBody = { parameters };
+            }
+            await postJson(
+              createUrl,
+              createBody,
+              laneDigest,
+            );
+            invalidateFieldShapes();  // new field: next probe re-enumerates
+            await reconcileDeclaredField(
+              list.title, col, targetGuid, laneDigest, false,
+            );
+            summary.columnsCreated += 1;
           }
-          let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
-          let createBody = col.body;
-          if (col.target_list) {
-            // SharePoint rejects POSTing an SP.FieldLookup directly to
-            // /fields ("Please use addfield to add a lookup field"). Use the
-            // supported FieldCollection.AddField REST method and keep its
-            // SP.FieldCreationInformation object nested under `parameters`.
-            // Properties that type does not carry are MERGEd and read back by
-            // reconcileDeclaredField immediately below.
-            const parameters = {
-              ...col.lookup_creation_parameters,
-              LookupListId: targetGuid,
-            };
-            createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
-            createBody = { parameters };
+          // Projected dependent fields, created after the primary lookup
+          // exists so its Id is known. Each is a read-only Lookup linked back
+          // by FieldRef and created via createfieldasxml, because the FieldRef
+          // linkage cannot be expressed through AddField. Read-only fields do
+          // not drift, so they are checked for existence only. See
+          // test/manual/projected-lookup-probe.js for the measured create shape.
+          if (col.projections && col.projections.length) {
+            laneDigest = await getDigest();
+            const primaryShape = await readFieldShape(list.title, col.title, null, true);
+            for (const proj of col.projections) {
+              if (await readFieldShape(list.title, proj.name, null, true)) continue;
+              laneDigest = await getDigest();
+              const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+                + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+                + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+              await postJson(
+                apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
+                { parameters: { SchemaXml: xml, Options: 8 } },
+                laneDigest,
+              );
+              summary.columnsCreated += 1;
+            }
           }
-          await postJson(
-            createUrl,
-            createBody,
-            laneDigest,
-          );
-          invalidateFieldShapes();  // new field: next probe re-enumerates
-          await reconcileDeclaredField(
-            list.title, col, targetGuid, laneDigest, false,
-          );
-          summary.columnsCreated += 1;
         } catch (err) {
           log('ERROR', `Phase {{ phase.number }} field '${list.title}.${col.title}': ${err.message}`);
           summary.errors.push({

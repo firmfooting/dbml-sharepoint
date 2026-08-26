@@ -1265,6 +1265,28 @@ references are not allowed…"* (`multi_value_operand_unsupported`). The full
 live-verified operand matrix is in the
 [DBML reference](dbml.md#constraints-sharepoint-imposes).
 
+## `lookup_projections`
+
+```yaml
+lookup_projections:
+  ProjectAction:
+    RelatedRisk: [Title]
+  ProjectIssue:
+    RelatedRisk: [Title]
+```
+
+Additional fields a Lookup carries across from its target. Each entry names a
+lookup column and the target columns to project as read-only dependent Lookup
+fields on the source list, linked back to the primary by `FieldRef`. The
+generated field is named `<column><target>` (e.g. `RelatedRiskTitle`), is
+read-only, and appears in views but never in forms. The picker shows the
+lookup's `display_column` (a calculated column can blank closed items) while a
+view shows the projected real value. A projection adds no join on top of its
+lookup, so it cannot push a view over the lookup ceiling. The dependent
+linkage (`IsDependentLookup`) is read-only in REST and CSOM, so the field is
+created with `createfieldasxml` + `FieldRef`; that mechanism is live-verified
+by `test/manual/projected-lookup-probe.js`.
+
 ## Structure and behaviour
 
 ```yaml
@@ -1281,6 +1303,7 @@ enum_sources:            # shared enum vocabularies loaded from YAML
   risk_rating: enums/risk-rating.yaml
 
 cross_site_reference_columns: []   # Choice + URL pattern for cross-site links
+lookup_projections: {}             # dependent fields projected from lookups
 polymorphic_patterns: []           # discriminator-typed reference columns
 watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)

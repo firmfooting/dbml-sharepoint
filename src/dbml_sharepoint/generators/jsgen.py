@@ -451,6 +451,19 @@ def build_schema_json(
                     })
                 continue
 
+            projections = [
+                {
+                    "name": f"{col.name}{target_col}",
+                    "display_title": bundle.mapping.display_name_for(
+                        table_name, f"{col.name}{target_col}",
+                    ),
+                    "show_field": target_col,
+                }
+                for target_col in bundle.mapping.projections_for(
+                    table_name, col.name,
+                )
+            ]
+
             if (table.name, col.name) in deferred_set:
                 prefix = bundle.mapping.prefix
                 target = (prefix + col.ref.target_table) if col.ref else ""
@@ -461,6 +474,7 @@ def build_schema_json(
                         col, enums_by_name, list_title_prefix=prefix,
                         entities=bundle.mapping.entities,
                     ),
+                    "projections": projections,
                 })
                 continue
 
@@ -472,6 +486,8 @@ def build_schema_json(
             )
             if field is None:
                 continue
+            if projections:
+                field["projections"] = projections
             fields_phase1.append(field)
             body = field["body"]
             if "DefaultValue" in body:

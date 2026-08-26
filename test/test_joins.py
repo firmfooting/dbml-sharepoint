@@ -130,3 +130,36 @@ def test_all_items_hidden_reads_the_entity_key() -> None:
     )
     # The negative case: an entity that declares nothing hides nothing.
     assert all_items_hidden(bundle.mapping.entities["Person"]) == frozenset()
+
+
+def test_a_lookup_projection_costs_no_join() -> None:
+    """The module docstring's JOINPRJ claim, now that projections are
+    declarable. A lookup column bears one join; each of its additional-field
+    projections is a generated dependent field -- not a DBML column -- so
+    `join_bearing_columns` never sees it. A view showing a lookup and five of
+    its target's fields therefore costs ONE, not six, and no projection can
+    push a view over the 12-join ceiling on its own.
+
+    `RelatedRiskTitle` and `RelatedActionTitle` are the names the
+    `lookup_projections` key generates for projecting Title from each lookup;
+    they are asserted ABSENT from the join set while the lookups themselves
+    are asserted present.
+    """
+    table = make_table(
+        "ProjectAction",
+        make_column("Title"),
+        make_ref("RelatedRisk", "ProjectRisk.Id"),
+        make_ref("RelatedAction", "ProjectAction.Id"),
+    )
+    bearing = join_bearing_columns(table, set())
+    assert "RelatedRisk" in bearing
+    assert "RelatedAction" in bearing
+    # Generated dependent names are not DBML columns, so they cannot count.
+    assert "RelatedRiskTitle" not in bearing
+    assert "RelatedActionTitle" not in bearing
+    # A view that lists the lookups plus their projected Titles costs two
+    # joins, not four.
+    assert joining_fields(
+        ["RelatedRisk", "RelatedRiskTitle", "RelatedAction", "RelatedActionTitle"],
+        bearing,
+    ) == ["RelatedAction", "RelatedRisk"]

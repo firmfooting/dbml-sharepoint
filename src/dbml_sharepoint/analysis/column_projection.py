@@ -44,11 +44,21 @@ SYSTEM_COLUMN_TYPES: dict[str, str] = {
 
 
 def effective_column_types(
-    declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset(),
+    declared: dict[str, str],
+    cross_site_columns: set[str] | frozenset[str] = frozenset(),
+    projected_columns: set[str] | frozenset[str] = frozenset(),
 ) -> dict[str, str]:
-    """Types for DBML columns plus fields provisioned implicitly or by expansion."""
+    """Types for DBML columns plus fields provisioned implicitly or by expansion.
+
+    projected_columns are lookup-projection columns; they render the target's
+    Title (text), so they are typed nvarchar here. Their lookup-ness is not
+    represented in the type map, matching declared lookups whose DBML type is
+    `int` and whose join behaviour is inferred separately from `ref`."""
+
     effective = {"Title": "nvarchar", **declared}
     for name in cross_site_columns:
         effective.setdefault(f"{name}Abbreviation", "nvarchar")
         effective.setdefault(f"{name}SiteUrl", "hyperlink")
+    for name in projected_columns:
+        effective.setdefault(name, "nvarchar")
     return effective

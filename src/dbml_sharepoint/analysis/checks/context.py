@@ -44,6 +44,12 @@ class ValidationContext:
     # each check, so no two of them can disagree about what "calculated"
     # means, which is the whole point of this object.
     calculated_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # {entity: projected field names}. A lookup's projected (dependent)
+    # fields are synthetic read-only Lookup columns named ``{column}{target}``;
+    # they exist on the list so a view can render the target's real value,
+    # but they are not DBML columns. Kept here so the view renderability check
+    # and the projection declaration check agree on the generated name.
+    projected_by_entity: dict[str, set[str]] = field(default_factory=dict)
     # Effective SharePoint indexes declared by the schema: bare DBML
     # indexes plus the implicit index SharePoint creates for a supported
     # [unique] column. Kept here because both the per-list index ceiling and
@@ -100,6 +106,13 @@ class ValidationContext:
             }
             for table in schema.tables
         }
+        projected_by_entity: dict[str, set[str]] = {}
+        for entity, cols in bundle.mapping.lookup_projections.items():
+            names: set[str] = set()
+            for column, targets in cols.items():
+                for target in targets:
+                    names.add(f"{column}{target}")
+            projected_by_entity[entity] = names
         # A lookup's picker enumerates its target list, and past the 5,000-item
         # threshold that enumeration is refused unless the displayed column is
         # indexed, so this index is not optional and it spends a real slot.
@@ -123,6 +136,7 @@ class ValidationContext:
             cross_site_by_entity=cross_site_by_entity,
             cross_site_pairs=cross_site_pairs,
             calculated_by_entity=calculated_by_entity,
+            projected_by_entity=projected_by_entity,
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
             display_index_by_entity=display_columns,
@@ -140,6 +154,10 @@ class ValidationContext:
     def cross_site_columns(self, entity_name: str) -> set[str]:
         """Cross-site reference columns declared on one entity."""
         return self.cross_site_by_entity.get(entity_name, set())
+
+    def projected_columns(self, entity_name: str) -> set[str]:
+        """Projected (dependent) field names on one entity, empty when none."""
+        return self.projected_by_entity.get(entity_name, set())
 
     def effective_indexes(self, entity_name: str) -> set[str]:
         """Declared and implicit SharePoint indexes for one entity."""

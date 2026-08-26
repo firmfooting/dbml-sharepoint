@@ -44,10 +44,13 @@ The message for a declaration on a column the deploy never writes.
 ### `rendered_columns`
 
 ```python
-def rendered_columns(table: dbml_sharepoint.model.parser.Table, cross_site_cols: set[str]) -> set[str]
+def rendered_columns(table: dbml_sharepoint.model.parser.Table, cross_site_cols: set[str], projected_cols: set[str] | frozenset[str] = frozenset()) -> set[str]
 ```
 
 Column names that will actually exist on the provisioned SP list:
 auto-increment Id is skipped at render time, cross-site logical columns
 expand to &lt;col>Abbreviation / &lt;col>SiteUrl and never exist themselves.
+projected_cols are the lookup-projection columns the mapping declares
+(read-only dependent Lookups); they exist on the list and are renderable,
+but are not DBML columns.
 
