@@ -1,0 +1,654 @@
+# RAID log: physical mapping. Four flat lists, two optional lookups.
+prefix: "RAID_"
+
+entities:
+  ProjectRisk:     { kind: List, base_template: 100, site_role: default }
+  ProjectAction:   { kind: List, base_template: 100, site_role: default }
+  ProjectIssue:    { kind: List, base_template: 100, site_role: default }
+  ProjectDecision: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# The 5x5 matrix, lifted from risk-register unchanged except for the version
+# guard (rows = likelihood Rare..Almost Certain; columns = consequence
+# Minor..Business Critical):
+#
+#                 Minor   Moderate  Substantial  Major    Business Critical
+#  Rare           Low     Low       Low          Medium   Medium
+#  Unlikely       Low     Low       Medium       Medium   High
+#  Likely         Low     Medium    Medium       High     High
+#  Very Likely    Medium  Medium    High         High     Extreme
+#  Almost Certain Medium  High      High         Extreme  Extreme
+#
+# RiskScore is the matrix score 1-25, for sorting.
+#
+# WHAT WAS DROPPED, AND WHY. risk-register wraps both formulas in a
+# `[MatrixVersion]<>"1.0"` term, so a row stamped to an older matrix shows
+# blank rather than being silently re-rated. That machinery pays for itself on
+# a register that outlives several revisions of the matrix. A project RAID log
+# does not: the log is created with the project and archived with it, so there
+# is no second matrix version for a row to have been stamped against, and the
+# column, the enum and the guard would only be three things to explain.
+# A project that DOES need to re-rate under a revised matrix has outgrown this
+# template and belongs on risk-register.
+#
+# These formulas are keyed to EXACTLY the five Likelihood and five Consequence
+# members in the schema, in that order: the nested IFs map the first four by
+# name and treat everything else as the fifth, so an added, renamed or
+# reordered member silently rates as the worst case rather than failing. The
+# matrix is 5x5, so changing the enums means rewriting the 25 cells anyway.
+# The coupling is recorded here because this is where someone editing an enum
+# will look.
+#
+# The ISBLANK guards are kept even though both columns are required. They cost
+# nothing, and they are what makes the formulas identical to the ones that have
+# been read back from a live list.
+calculated_formulas:
+  ProjectRisk:
+    ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
+
+# Security: on a project site everybody records, the same reasoning as
+# meeting-actions. A RAID log nobody but a manager can write to is a RAID log
+# that is filled in once. Members and Owners hold Contribute; Full Control is
+# confined to the empty-by-default admin group.
+groups:
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Contribute"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible: drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement. See
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (the two
+# lookups, the indexes, the views and the reporting bundle all key on them);
+# the deployer renames the display Title after create. Auto PascalCase
+# splitting handles every column in all four lists, so there are no overrides.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), SharePoint's own severity boxes and icons, tokens resolved
+# by the style library.
+#
+# Three omissions are deliberate. RiskResponse is a taxonomy of strategies
+# rather than a lifecycle, so severity tokens would hand the fleet's colour
+# vocabulary a second, incompatible meaning (the style guide's role-not-word
+# rule). RaisedDate and ResolvedDate record when something HAPPENED and are
+# not deadlines; reddening every past issue would be the whole list.
+# ProjectDecision carries no formatting at all, because it holds no column
+# that carries a state: a decision is a fact, which is the point of the list.
+column_formatting:
+  ProjectRisk:
+    Status: { style: severity, map: { Open: low, Closed: good } }
+    ResidualRiskRating: { style: severity, calculated: true,
+                          map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    # Data-bar with the fill translated from the rating column via the
+    # severity tokens (style standard `color_by`), the same map the rating
+    # column declares, so bar and rating cell can never disagree.
+    RiskScore: { style: data-bar, max: 25, calculated: true,
+                 color_by: { field: ResidualRiskRating, calculated: true,
+                             map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
+    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+  ProjectAction:
+    Status: { style: severity, map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
+    DueDate: { style: overdue-date, guard: { field: Status, not: [Done, Dropped] } }
+  ProjectIssue:
+    Severity: { style: severity,
+                map: { Minor: low, Moderate: warning, Major: severe, Critical: blocked } }
+    Status: { style: severity,
+              map: { Open: low, "In progress": low, Resolved: good, Closed: muted } }
+
+# Every action view and every issue view opens with the same identifying
+# columns and then its own payload, so each spine is declared once.
+field_sets:
+  ProjectAction:
+    action: [Title, AssignedTo, DueDate, Status, RelatedRisk]
+  ProjectIssue:
+    issue: [Title, Severity, Status, Owner, RaisedDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared views
+# are never touched). Widths are pixel ColumnWidth per view and the keys are
+# INTERNAL names. The build rewrites them to display titles, because
+# ColumnWidth binds by display name and an internal name silently resets.
+# Rating pills ~160, dates ~160, people ~160, status chips ~100-130, the
+# RelatedRisk lookup wide enough to show a risk title.
+views:
+  ProjectRisk:
+    - title: "Open"
+      default: true
+      fields: [Title, Likelihood, Consequence, ResidualRiskRating, RiskScore,
+               RiskOwner, RiskResponse, Status, ReviewDate]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+      sort:
+        - { field: RiskScore, direction: desc }
+      # ONE row-level signal, reserved for Extreme, lifted from
+      # risk-register. Everything else stays cell-level.
+      #
+      # The wash reads ResidualRiskRating, so it must stay in this view's
+      # `fields:` list; view formatting can only read columns the view
+      # displays. Drop it from fields and the wash stops firing with a
+      # clean build.
+      #
+      # It compares with `==` even though the column is calculated. That is
+      # correct HERE and would be wrong in column_formatting: the `string;#`
+      # prefix that makes `calculated: true` necessary there does not reach
+      # a view formatter's [$Field] reference. Confirmed on a live list;
+      # see the note in website/docs/reference/style-guide.md.
+      formatting: formatting/row-extreme.json
+      widths:
+        Title: 280
+        Likelihood: 110
+        Consequence: 120
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        RiskResponse: 130
+        Status: 100
+        ReviewDate: 160
+    # The queue for the standing review item in the project meeting. It
+    # includes risks whose review date has already passed, which is the point:
+    # a review that slipped is exactly the row that needs the meeting.
+    - title: "Review due"
+      fields: [Title, ResidualRiskRating, RiskScore, RiskOwner, RiskResponse,
+               Status, ReviewDate]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+        - { field: ReviewDate, op: leq, value: today+30 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        RiskResponse: 130
+        Status: 100
+        ReviewDate: 160
+    - title: "Closed"
+      fields: [Title, ResidualRiskRating, RiskScore, RiskOwner, Status,
+               ReviewDate, ClosureNote]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+      sort:
+        - { field: ReviewDate, direction: desc }
+      widths:
+        Title: 260
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        Status: 100
+        ReviewDate: 160
+        ClosureNote: 200
+  ProjectAction:
+    - title: "Open by person"
+      default: true
+      fields: ["@action", Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      group_by: { field: AssignedTo, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRisk: 220
+        Notes: 200
+    # The same view filtered by SharePoint rather than by hand. AssignedTo is
+    # a person column, which is what the current-user sentinel exists for.
+    - title: "My actions"
+      fields: ["@action", Notes]
+      where:
+        - { field: AssignedTo, op: eq, value: me }
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRisk: 220
+        Notes: 200
+    - title: "Overdue"
+      fields: ["@action", Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRisk: 220
+        Notes: 200
+    - title: "Done and dropped"
+      fields: ["@action", CompletedDate, Notes]
+      where:
+        - { field: Status, op: in, value: ["Done", "Dropped"] }
+      sort:
+        - { field: CompletedDate, direction: desc }
+      widths:
+        Title: 280
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRisk: 220
+        CompletedDate: 160
+        Notes: 200
+  ProjectIssue:
+    - title: "Open"
+      default: true
+      fields: ["@issue", RelatedRisk, Detail]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      # Oldest first, deliberately. An issue that has been open longest is the
+      # one the project has stopped noticing, and severity is already carried
+      # by the cell colour and the row wash.
+      sort:
+        - { field: RaisedDate, direction: asc }
+      # ONE row-level signal, reserved for Critical, the same pattern the risk
+      # log uses for Extreme. Severity is a Choice rather than a calculated
+      # column, so no `string;#` prefix reaches the comparison.
+      formatting: formatting/row-critical.json
+      widths:
+        Title: 280
+        Severity: 120
+        Status: 130
+        Owner: 160
+        RaisedDate: 160
+        RelatedRisk: 220
+        Detail: 200
+    # Deliberately unfiltered, so no issue is ever reachable only through the
+    # hidden All Items view. This is also the read for "what is my share of
+    # this", which is the question that gets issues picked up.
+    - title: "By owner"
+      fields: ["@issue", RelatedRisk]
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      widths:
+        Title: 300
+        Severity: 120
+        Status: 130
+        Owner: 160
+        RaisedDate: 160
+        RelatedRisk: 220
+    # Both terminal states, not just Resolved. Closed is what Resolved becomes
+    # once somebody has confirmed it, so a view holding only one of them would
+    # lose every issue the moment it was fully finished.
+    - title: "Resolved and closed"
+      fields: ["@issue", ResolvedDate, Resolution]
+      where:
+        - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      sort:
+        - { field: ResolvedDate, direction: desc }
+      widths:
+        Title: 260
+        Severity: 120
+        Status: 130
+        Owner: 160
+        RaisedDate: 160
+        ResolvedDate: 160
+        Resolution: 200
+  ProjectDecision:
+    # One view, unfiltered. A decision has no lifecycle to filter on and no
+    # owner to group by, so a second view would be the same rows in a
+    # different order.
+    - title: "Decision log"
+      default: true
+      fields: [Title, DecisionDate, DecidedBy, Detail]
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 320
+        DecisionDate: 160
+        DecidedBy: 160
+        Detail: 260
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles. Per-field description hints render on the NEW form only.
+# SharePoint suppresses column descriptions on the Edit form.
+form_formatting:
+  ProjectRisk:
+    header: formatting/projectrisk-form-header.json
+    body: formatting/projectrisk-form-body.json
+  ProjectAction:
+    header: formatting/projectaction-form-header.json
+    body: formatting/projectaction-form-body.json
+  ProjectIssue:
+    header: formatting/projectissue-form-header.json
+    body: formatting/projectissue-form-body.json
+  ProjectDecision:
+    header: formatting/projectdecision-form-header.json
+    body: formatting/projectdecision-form-body.json
+
+# Each of these pairs a field with the save rule below it: the field is on
+# screen exactly when it is mandatory, rather than firing a refusal about a
+# field the author cannot see.
+#
+# Moving a status back does NOT clear a date already entered (SharePoint has
+# no such mechanism), so these fields hide while keeping their values.
+#
+# Deliberately NOT declared: any rule conditioned on ResidualRiskRating.
+# Conditional show/hide cannot read a calculated column. The formula stays
+# syntactically valid, so it saves, the readback compares equal and the phase
+# passes, but the form never reacts. The build refuses it; see the note in
+# analysis/conditions.py.
+form_visibility:
+  ProjectRisk:
+    columns:
+      # Nobody closes a risk at creation. Off the New form entirely, and on
+      # the edit form only once the author has actually selected Closed.
+      ClosureNote:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+  ProjectAction:
+    columns:
+      CompletedDate:
+        when:
+          - { field: Status, op: eq, value: "Done" }
+  ProjectIssue:
+    columns:
+      # Left on the New form on purpose: an issue that was raised, fixed and
+      # is only being written up afterwards is a real case on a project, and
+      # setting Status at creation is how it gets recorded.
+      ResolvedDate:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      Resolution:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run, unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  ProjectAction:
+    columns:
+      # A forward-dated completion sorts to the top of "Done and dropped" and
+      # reads as the most recent thing the project finished.
+      CompletedDate:
+        when:
+          - { field: CompletedDate, op: leq, value: today }
+        message: "An action cannot have been completed in the future. Use the date the work was actually finished."
+  ProjectIssue:
+    columns:
+      ResolvedDate:
+        when:
+          - { field: ResolvedDate, op: leq, value: today }
+        message: "An issue cannot have been resolved in the future. Use the date it actually stopped happening."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# One rule per list, each of them a claim the log should not accept unbacked.
+#
+# Dropped is deliberately NOT covered. 40-adopt/staff-guide.md asks for a note
+# when an action is dropped, and that stays a habit rather than a rule:
+# dropping an action is already the honest move against leaving it Open, and a
+# template whose first act is to make the honest move harder than the dishonest
+# one has its incentives backwards.
+#
+# NOTE: ClosureNote is rich text, which SharePoint validation formulas cannot
+# reference at all, so "a closed risk says why" stays a governance check (see
+# 50-govern/governance.md).
+list_validation:
+  ProjectAction:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Done" }
+        - { field: CompletedDate, op: is_not_null }
+    message: "An action marked Done needs a completed date. If it is finished but you cannot say when, it is still In progress."
+  ProjectIssue:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - { field: ResolvedDate, op: is_not_null }
+    message: "An issue marked Resolved or Closed needs a resolved date. If it has stopped happening but you cannot say when, it is still In progress."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
+# starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are
+# today+/-N so the date-derived views land correctly on whatever day the demo
+# runs, and "@me" is the pasting operator.
+#
+# Coverage: six risks spanning all four rating bands and both statuses (the
+# Extreme one drives the row wash and the red score bar, and one open risk is
+# already past its review date); six actions across every status including one
+# overdue and still open; five issues across every severity and every status,
+# the Critical one driving the issue row wash; and four decisions. Three
+# actions and two issues carry a RelatedRisk so the lookup demonstrates
+# itself, and the rest leave it blank, which is the ordinary case.
+demo_items:
+  ProjectRisk:
+    - key: risk-migration
+      values:
+        Title: "[DEMO] Untested data migration corrupts records at cutover"
+        Detail: "Demo row. Migrating without a rehearsal on masked data risks corruption that is only discovered in live use, after the old system is gone."
+        Likelihood: "Almost Certain"
+        Consequence: "Business Critical"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today+10"
+    - key: risk-supplier
+      values:
+        Title: "[DEMO] Supplier misses the integration milestone"
+        Detail: "Demo row. The supplier's own plan has no float left before the integration window, and slipping it pushes testing into the go-live freeze."
+        Likelihood: "Very Likely"
+        Consequence: "Substantial"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today-5"
+    - key: risk-adoption
+      values:
+        Title: "[DEMO] Frontline teams do not adopt the new process"
+        Detail: "Demo row. The benefit case depends on the new process being used, not installed. Nothing about go-live makes people use it."
+        Likelihood: "Unlikely"
+        Consequence: "Business Critical"
+        RiskOwner: "@me"
+        RiskResponse: "Monitor"
+        Status: "Open"
+        ReviewDate: "today+60"
+    - key: risk-resourcing
+      values:
+        Title: "[DEMO] Key analyst is pulled onto another project"
+        Detail: "Demo row. One person holds the configuration knowledge and is shared with a second programme that has a competing deadline."
+        Likelihood: "Likely"
+        Consequence: "Moderate"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today+45"
+    - key: risk-venue
+      values:
+        Title: "[DEMO] Training room is unavailable in the go-live week"
+        Detail: "Demo row. The usual room is provisionally booked by another team. Two alternatives exist and neither is worse than inconvenient."
+        Likelihood: "Rare"
+        Consequence: "Minor"
+        RiskOwner: "@me"
+        RiskResponse: "Accept"
+        Status: "Open"
+        ReviewDate: "today+90"
+    - key: risk-access
+      values:
+        Title: "[DEMO] Test accounts are provisioned with live permissions"
+        Detail: "Demo row. The first batch of test accounts inherited a live role. Caught in setup, before any test data was entered."
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        RiskOwner: "@me"
+        RiskResponse: "Terminate"
+        Status: "Closed"
+        ReviewDate: "today-20"
+        ClosureNote: "Demo row. Role removed, the provisioning script now grants the test role explicitly, and the remaining accounts were re-checked. The risk can no longer happen."
+  ProjectAction:
+    - key: act-rehearse
+      values:
+        Title: "[DEMO] Rehearse the migration on masked data and reconcile row counts"
+        AssignedTo: "@me"
+        DueDate: "today+7"
+        Status: "Open"
+        RelatedRisk: { demo_ref: risk-migration }
+        Notes: "The whole of the migration risk response. Until this is done the rating does not move."
+    - key: act-supplier-plan
+      values:
+        Title: "[DEMO] Get a dated integration plan from the supplier"
+        AssignedTo: "@me"
+        DueDate: "today+3"
+        Status: "In progress"
+        RelatedRisk: { demo_ref: risk-supplier }
+    - key: act-test-window
+      values:
+        Title: "[DEMO] Book the integration test window with the platform team"
+        AssignedTo: "@me"
+        DueDate: "today-6"
+        Status: "Open"
+        RelatedRisk: { demo_ref: risk-supplier }
+        Notes: "Demo row. Overdue and still Open. Its date is red everywhere it appears, and it is the row the Overdue view puts in front of the project meeting every week until it moves."
+    - key: act-charter
+      values:
+        Title: "[DEMO] Circulate the revised project charter for comment"
+        AssignedTo: "@me"
+        DueDate: "today+21"
+        Status: "Open"
+        Notes: "Ordinary project work with no risk behind it, which is why Related Risk is blank."
+    - key: act-brief
+      values:
+        Title: "[DEMO] Brief the reporting stakeholders on the phase-one cut"
+        AssignedTo: "@me"
+        DueDate: "today-12"
+        Status: "Done"
+        CompletedDate: "today-11"
+    - key: act-room
+      values:
+        Title: "[DEMO] Hold a second training room for go-live week"
+        AssignedTo: "@me"
+        DueDate: "today-30"
+        Status: "Dropped"
+        RelatedRisk: { demo_ref: risk-venue }
+        Notes: "Demo row. Training moved online and the action stopped making sense. Dropped honestly beats Done falsely, and it beats an Open row nobody will ever close."
+  ProjectIssue:
+    - key: iss-environment
+      values:
+        Title: "[DEMO] The test environment has been unavailable since Tuesday"
+        Severity: "Critical"
+        Status: "Open"
+        Owner: "@me"
+        RaisedDate: "today-4"
+        RelatedRisk: { demo_ref: risk-supplier }
+        Detail: "Demo row. Nothing can be tested. Every day of this moves the integration window and the supplier milestone with it."
+    - key: iss-data-quality
+      values:
+        Title: "[DEMO] Legacy records are missing site codes"
+        Severity: "Major"
+        Status: "In progress"
+        Owner: "@me"
+        RaisedDate: "today-9"
+        Detail: "Demo row. Roughly one record in twenty has no site code, so it cannot be routed after migration. Being counted properly before anyone decides what to do."
+    - key: iss-training
+      values:
+        Title: "[DEMO] Two teams have had no training slot offered"
+        Severity: "Moderate"
+        Status: "Open"
+        Owner: "@me"
+        RaisedDate: "today-2"
+        RelatedRisk: { demo_ref: risk-adoption }
+        Detail: "Demo row. The schedule was built from an old team list. This is the adoption risk turning into something real."
+    - key: iss-signage
+      values:
+        Title: "[DEMO] Room signage still shows the old process"
+        Severity: "Minor"
+        Status: "Resolved"
+        Owner: "@me"
+        RaisedDate: "today-20"
+        ResolvedDate: "today-6"
+        Resolution: "Demo row. Signage replaced on all three floors. Facilities now prints from the project's own file, so the next change follows automatically."
+    - key: iss-licence
+      values:
+        Title: "[DEMO] Two testers had no licence for the first week"
+        Severity: "Moderate"
+        Status: "Closed"
+        Owner: "@me"
+        RaisedDate: "today-40"
+        ResolvedDate: "today-25"
+        Resolution: "Demo row. Licences assigned and the week made up. Licence allocation is now part of the onboarding checklist, and the fix was confirmed with both testers."
+  ProjectDecision:
+    - key: dec-phase-one
+      values:
+        Title: "[DEMO] We will drop the reporting module from phase one"
+        DecisionDate: "today-24"
+        DecidedBy: "@me"
+        Detail: "Demo row. Phase one ships without reporting; the module moves to phase two with its own budget line. Two people argued for keeping it and said so. Recorded here so nobody rediscovers the argument in November."
+    - key: dec-supplier
+      values:
+        Title: "[DEMO] We will hold the supplier to the original integration date"
+        DecisionDate: "today-10"
+        DecidedBy: "@me"
+        Detail: "Demo row. Options were to hold the date, to re-plan around a two-week slip, or to bring the work in house. Holding the date keeps go-live outside the year-end freeze, which the other two do not."
+    - key: dec-environment
+      values:
+        Title: "[DEMO] We will rebuild the test environment rather than repair it"
+        DecisionDate: "today-3"
+        DecidedBy: "@me"
+        Detail: "Demo row. A repair had an unknown end date and a rebuild has a known one. The cost is two days of re-loading test data, which is cheaper than a second week of not testing."
+    - key: dec-tolerate
+      values:
+        Title: "[DEMO] We will accept the training room risk rather than spend on a venue"
+        DecisionDate: "today-45"
+        Detail: "Demo row. Decided by the project board rather than one person, which is why Decided By is blank and the board is named here instead. Two alternative rooms exist and the cost of holding a third was not justified."

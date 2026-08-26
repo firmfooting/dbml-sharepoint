@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The action",
+      "fields": ["Title", "RelatedRisk"]
+    },
+    {
+      "displayname": "Owner and date",
+      "fields": ["AssignedTo", "DueDate"]
+    },
+    {
+      "displayname": "Progress",
+      "fields": ["Status", "CompletedDate", "Notes"]
+    }
+  ]
+}

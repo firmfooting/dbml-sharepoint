@@ -40,6 +40,7 @@ hand-off into that same improvement/investment chain.
 | Template | Process | Highlights |
 | --- | --- | --- |
 | [risk-register](risk-register/) | Organisational risk | **Self-rating 5x5 matrix**: rating and score calculated, matrix-inconsistent entries impossible |
+| [raid-log](raid-log/) | Project RAID log | Risks, actions, issues and decisions for one project, read together in the project meeting |
 | [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
