@@ -30,9 +30,10 @@ titles read *Project Risk*, *Project Action*, *Project Issue* and
 **Two optional lookups, and nothing else joins.** `ProjectAction` and
 `ProjectIssue` each carry a `RelatedRisk` lookup to `ProjectRisk`, and both
 are nullable on purpose: most actions are ordinary project work and most
-issues arrived out of nowhere. Decisions link to nothing. There is no
-project list and no meeting list, because a project site already knows
-which project it is.
+issues arrived out of nowhere. The picker only offers **live** risks: it
+shows a calculated `LiveRiskTitle` that is blank once a risk is Closed.
+Decisions link to nothing. There is no project list and no meeting list,
+because a project site already knows which project it is.
 
 **The risk matrix is the risk-register matrix.** Pick **Likelihood** and
 **Consequence** and SharePoint calculates **ResidualRiskRating**

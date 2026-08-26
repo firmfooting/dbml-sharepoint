@@ -82,24 +82,29 @@ that enumeration is refused, so the **new-item form stops working** while
 every view that merely displays the column carries on normally. It looks
 like a form bug and it arrives late.
 
-The measured lever is the target list's display column. Measured 2026-07-31
-at 6,500 items against `GetLookupFieldChoices`, the call the form itself
-makes (`test/manual/threshold-index-probe.js`):
+The display column is `LiveRiskTitle`, a **calculated** column on
+`ProjectRisk` that returns the risk's `Title` while it is Open and blank
+once it is Closed. Measured 2026-07-31 at 6,500 items against
+`GetLookupFieldChoices` (`test/manual/threshold-index-probe.js`), the call
+the form itself makes: an indexed `Title` is served and a calculated column
+is refused past the threshold. Below it, a blank calculated label is simply
+omitted, which is what keeps the `RelatedRisk` picker to live risks.
 
-| Display column | Result |
-| --- | --- |
-| `Title`, indexed | served, 2,000 choices |
-| a Calculated column | refused, `SPQueryThrottledException` |
+This is the one deliberate calculated display column in the family.
+`mapping.yaml` sets `display_column: LiveRiskTitle` and
+`accept_unindexable_display_column: true` on `ProjectRisk`, the build's
+explicit acknowledgement that the list stays under the threshold. Two
+things trade for the cleaner picker:
 
-So `ProjectRisk.Title` is indexed. It is **not** declared in the
-`indexes { }` block in `schema.dbml`, and it should not be added there: the
-build appends it because `Title` is the display column of a lookup target,
-and that index is the thing keeping both pickers working. A calculated
-display column would be the wrong answer twice over, because a calculated
-column cannot be indexed at all (setting `Indexed=true` is accepted and
-reads back `false`), so there would be no index to create and the picker
-would fail the moment the list grew. Do not point a display column at
-`ResidualRiskRating` or `RiskScore` for a nicer-looking picker.
+- **The label is blank everywhere, not just the picker.** An action or
+  issue still linked to a now-closed risk shows a blank `RelatedRisk`. The
+  link is intact; the label is gone. Closing a risk is meant to be rare,
+  and the action that closed it is usually done by then.
+- **The picker fails past 5,000 items.** A calculated column cannot be
+  indexed (setting `Indexed=true` is accepted and reads back `false`), so
+  there is no index to create and the picker would stop working the moment
+  the list grew. That is accepted, not overlooked: see the "no list will
+  reach 5,000 rows" note in `30-deploy/deploy.md`.
 
 If a project risk log is genuinely approaching the threshold, the answer is
 not a bigger index. It is that the list is counting something other than

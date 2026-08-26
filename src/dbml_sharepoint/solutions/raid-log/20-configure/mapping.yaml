@@ -2,7 +2,9 @@
 prefix: "RAID_"
 
 entities:
-  ProjectRisk:     { kind: List, base_template: 100, site_role: default }
+  ProjectRisk:     { kind: List, base_template: 100, site_role: default,
+                     display_column: LiveRiskTitle,
+                     accept_unindexable_display_column: true }
   ProjectAction:   { kind: List, base_template: 100, site_role: default }
   ProjectIssue:    { kind: List, base_template: 100, site_role: default }
   ProjectDecision: { kind: List, base_template: 100, site_role: default }
@@ -57,6 +59,11 @@ calculated_formulas:
   ProjectRisk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
     RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
+    # The RelatedRisk picker shows this column. Blank for Closed means the
+    # picker offers only live risks: below the 5,000-item threshold a blank
+    # calculated label is simply omitted from the picker. See
+    # 50-govern/governance.md.
+    LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
 
 # Security: on a project site everybody records, the same reasoning as
 # meeting-actions. A RAID log nobody but a manager can write to is a RAID log

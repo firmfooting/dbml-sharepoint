@@ -51,7 +51,9 @@ quietly die.
 
 **Related Risk** is optional and usually blank. Fill it in when the action
 exists *because* of a risk: that is what makes the risk's response
-something you can point at rather than a word in a column.
+something you can point at rather than a word in a column. The picker only
+offers risks that are still **Open**; a closed risk is done and cannot be
+the reason for new work.
 
 - Your queue is ***My actions***. It follows whoever is signed in, so it is
   your list without you filtering anything.
