@@ -2309,6 +2309,22 @@ def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
     assert only(findings, FindingCode.DISPLAY_TITLE_TOO_LONG).severity == "error"
 
 
+def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("Title")),
+            make_table("Risk", make_ref("Owner", "Person.Id")),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            display_name_mode="title-case",
+            display_name_overrides={"Risk": {"OwnerTitle": "Risk Owner"}},
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+
+
 def test_a_display_name_override_at_the_sp_limit_is_accepted() -> None:
     """Exactly 255 characters is legal, so the rule must not reject it.
 
