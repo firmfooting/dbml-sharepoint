@@ -165,6 +165,7 @@ class FindingCode(StrEnum):
     PROJECTION_COLUMN_HAS_NO_REF = "projection_column_has_no_ref", "error"
     PROJECTION_NAME_COLLIDES = "projection_name_collides", "error"
     PROJECTION_NAME_TOO_LONG = "projection_name_too_long", "error"
+    PROJECTION_ON_CROSS_SITE_REF = "projection_on_cross_site_ref", "error"
     PROJECTION_UNKNOWN_COLUMN = "projection_unknown_column", "error"
     PROJECTION_UNKNOWN_TARGET_COLUMN = "projection_unknown_target_column", "error"
     DISPLAY_COLUMN_NOT_RENDERED = "display_column_not_rendered", "error"

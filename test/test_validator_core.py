@@ -1603,6 +1603,40 @@ def test_a_lookup_projection_whose_generated_name_would_be_too_long_is_an_error(
     assert only(findings, FindingCode.PROJECTION_NAME_TOO_LONG).severity == "error"
 
 
+def test_a_lookup_projection_on_a_cross_site_reference_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_ref("Owner", "Risk.Id"))),
+        make_bundle(
+            entities=["Risk"],
+            cross_site_reference_columns=[
+                CrossSiteRef(entity="Risk", column="Owner"),
+            ],
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_ON_CROSS_SITE_REF).severity == "error"
+
+
+def test_two_projection_declarations_that_generate_the_same_name_are_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("C"), make_column("BC")),
+            make_table(
+                "Risk",
+                make_ref("AB", "Person.Id"),
+                make_ref("A", "Person.Id"),
+            ),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            lookup_projections={"Risk": {"AB": ["C"], "A": ["BC"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_NAME_COLLIDES).severity == "error"
+
+
 def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
     """`owner_group` must name a built-in or one this mapping declares;
     anything else cannot be resolved when the group is created."""

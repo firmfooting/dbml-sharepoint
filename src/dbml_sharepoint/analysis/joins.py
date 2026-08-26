@@ -143,7 +143,11 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
     return frozenset(entity.hide_from_all_items)
 
 
-def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[str]:
+def all_items_rendered(
+    table: Table,
+    cross_site_cols: AbstractSet[str],
+    projected_cols: AbstractSet[str] = frozenset(),
+) -> set[str]:
     """Every column the generated `All Items` view renders, before hiding.
 
     `rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
@@ -167,11 +171,17 @@ def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[s
     other's callers unaffected, which is what the test above exists to catch
     now that there is only one copy for it to catch a drift in.
     """
-    return rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
+    return (
+        rendered_columns(table, set(cross_site_cols), set(projected_cols))
+        | {"Title"} | SYSTEM_COLUMNS
+    )
 
 
 def all_items_joining_fields(
-    table: Table, entity: EntityMapping, cross_site_cols: AbstractSet[str],
+    table: Table,
+    entity: EntityMapping,
+    cross_site_cols: AbstractSet[str],
+    projected_cols: AbstractSet[str] = frozenset(),
 ) -> list[str]:
     """The join-bearing fields the GENERATED `All Items` view renders.
 
@@ -191,7 +201,7 @@ def all_items_joining_fields(
     carries ONE equivalence test pinning the two together; if that test goes,
     so does the guarantee.
     """
-    rendered = all_items_rendered(table, cross_site_cols)
+    rendered = all_items_rendered(table, cross_site_cols, projected_cols)
     bearing = join_bearing_columns(table, cross_site_cols)
     hidden = all_items_hidden(entity)
     return joining_fields(rendered - hidden, bearing)

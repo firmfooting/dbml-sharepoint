@@ -983,9 +983,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         # undetected; see `all_items_rendered`'s docstring in joins.py and
         # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
         # test/test_validator_joins.py.
-        rendered = all_items_rendered(table, xcols)
+        rendered = all_items_rendered(table, xcols, vc.projected_columns(entity_name))
         bearing = join_bearing_columns(table, xcols)
-        shown_joins = all_items_joining_fields(table, entity, xcols)
+        shown_joins = all_items_joining_fields(
+            table, entity, xcols, vc.projected_columns(entity_name),
+        )
         if len(shown_joins) >= JOIN_WARN_AT:
             findings.append(_join_finding(
                 f"entities[{entity_name}]: the generated 'All Items' view",

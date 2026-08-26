@@ -216,6 +216,7 @@ dbml-sharepoint explain unknown_column_type
 | `projection_column_has_no_ref` | error | A `lookup_projections:` entry names a column with no DBML `ref:`. |
 | `projection_name_collides` | error | A lookup projection's generated dependent field has the same name as a column the DBML already declares. |
 | `projection_name_too_long` | error | A lookup projection's generated dependent field exceeds SharePoint's 32-character internal-name limit. |
+| `projection_on_cross_site_ref` | error | A `lookup_projections:` entry names a cross-site reference column, which expands to Choice and URL fields rather than a primary lookup, so it cannot carry a dependent projection. |
 | `projection_unknown_column` | error | A `lookup_projections:` entry names a column the entity's table does not declare. |
 | `projection_unknown_target_column` | error | A `lookup_projections:` entry projects a column the lookup target does not declare. |
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |

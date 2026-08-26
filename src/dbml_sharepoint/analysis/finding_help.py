@@ -337,6 +337,11 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A lookup projection's generated dependent field exceeds "
         f"SharePoint's {MAX_INTERNAL_NAME}-character internal-name limit."
     ),
+    FindingCode.PROJECTION_ON_CROSS_SITE_REF: (
+        "A `lookup_projections:` entry names a cross-site reference column, "
+        "which expands to Choice and URL fields rather than a primary lookup, "
+        "so it cannot carry a dependent projection."
+    ),
     FindingCode.PROJECTION_UNKNOWN_COLUMN: (
         "A `lookup_projections:` entry names a column the entity's table "
         "does not declare."
