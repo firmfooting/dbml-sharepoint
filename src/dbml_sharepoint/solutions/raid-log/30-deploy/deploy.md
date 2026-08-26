@@ -15,6 +15,13 @@ follow.
       because the site is the project. Two projects sharing a site share
       one risk log, one action list and one decision log, and no view can
       separate them afterwards. Deploy the family once per project site.
+- [ ] **No list here will reach 5,000 rows.** The only limit that could
+      matter is the list view threshold on lookup pickers, and it bites only
+      past 5,000 items in the target list. A project RAID log is bounded by
+      one project's life; a risk list approaching that has outgrown this
+      template and belongs in risk-register. The build indexes
+      `ProjectRisk.Title` regardless, so the two `RelatedRisk` pickers stay
+      safe either way. See `50-govern/governance.md`.
 - [ ] `raid_issue_severity` and `raid_risk_response` match how your project
       actually talks. Severity drives the issue colours and the row wash;
       a member missing from the enum is a member nobody can choose.
