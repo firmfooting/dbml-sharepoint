@@ -3715,6 +3715,8 @@
             const primaryShape = await readFieldShape(list.title, col.title, null, true);
             for (const proj of col.projections) {
               if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                await assertLaneOwnership();
+                targetGuid = await resolveTargetGuid();
                 laneDigest = await getDigest();
                 const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
                   + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
