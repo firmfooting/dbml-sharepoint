@@ -7,6 +7,32 @@
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
+
+  // listGuids is a title -> GUID map the field wave filled, and the field
+  // wave is long enough for a list to lose its marker after being read into
+  // it. Re-survey every deferred lookup's own list AND its target as one
+  // batch, refresh the map from that read, and abort the whole batch before
+  // any write if a single one no longer proves ownership.
+  let deferredOwnershipFailed = false;
+  const deferredOwnedLists = [...new Set(SCHEMA.phase2_lookups
+    .flatMap(lookup => [lookup.list, lookup.target_list]))];
+  await mapLanes(deferredOwnedLists, listName => listName, async (listName) => {
+    try {
+      const owned = await assertDeclaredListOwnedNow(listName);
+      listGuids[listName] = owned.Id;
+    } catch (err) {
+      deferredOwnershipFailed = true;
+      log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
+      summary.errors.push({
+        phase: '{{ phase.number }}', list: listName, error: err.message,
+      });
+    }
+  }, 4);
+  if (deferredOwnershipFailed) {
+    log('ERROR', 'Deferred-lookup ownership recheck failed; aborting before any lookup write.');
+    return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
+  }
+
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
       digest = await getDigest();  // refresh per item (digest lifetime)

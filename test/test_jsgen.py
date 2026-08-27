@@ -1138,8 +1138,11 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     shape is wrong still has columns worth reporting, and a column's other
     mismatches are still worth reporting when its lookup target is unreadable.
     Every remaining site is a write or a post-write read-back, where throwing is
-    the point. Lowering either number again means a write-region site stopped
-    throwing, which is the failure this test exists to catch.
+    the point. One of them is a phase boundary rather than a single write: the
+    deferred-lookup phase re-surveys every list it is about to touch, because
+    the field wave is long enough for a marker to disappear after being read.
+    Lowering either number again means a write-region site stopped throwing,
+    which is the failure this test exists to catch.
 
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
@@ -1149,7 +1152,7 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
     assert _call_count(js, "assertListAdoptable") == 11
-    assert _call_count(js, "assertDeclaredListOwnedNow") == 8
+    assert _call_count(js, "assertDeclaredListOwnedNow") == 9
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
 

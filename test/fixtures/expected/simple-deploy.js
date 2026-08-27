@@ -3643,11 +3643,36 @@
   // exists, and concurrent schema writes to the SAME list race into save
   // conflicts while different lists are independent, so each list's fields
   // run sequentially inside a lane and the lanes run concurrently.
+  //
+  // Ownership loss inside the wave is phase-wide, not one field's business.
+  // The per-field catch below records an error and moves to the next column,
+  // which for a transient 403 is right and for a lost marker means writing on
+  // past a KNOWN ownership loss, in this lane and in every other one still
+  // running. So it is marked on the error, re-thrown past that catch, and
+  // latched here where every lane can see it.
+  let fieldWaveOwnershipLoss = null;
+  const stopFieldWave = (listName, err) => {
+    fieldWaveOwnershipLoss = fieldWaveOwnershipLoss
+      || { list: listName, error: err.message };
+    err.ownershipLoss = true;
+    return err;
+  };
   await mapLanes(fieldWork, (list) => list.title, async (list) => {
     try {
+      // Called before every write in this lane, so the latch is what stops
+      // the wave: a lane that has not failed itself stops at its next check.
       const assertLaneOwnership = async () => {
-        const owned = await assertDeclaredListOwnedNow(list.title);
-        listGuids[list.title] = owned.Id;
+        if (fieldWaveOwnershipLoss) {
+          throw stopFieldWave(list.title, new Error(
+            `field wave stopped by ownership loss on '${fieldWaveOwnershipLoss.list}'`,
+          ));
+        }
+        try {
+          const owned = await assertDeclaredListOwnedNow(list.title);
+          listGuids[list.title] = owned.Id;
+        } catch (err) {
+          throw stopFieldWave(list.title, err);
+        }
       };
       await assertLaneOwnership();
       let laneDigest = await getDigest();
@@ -3662,9 +3687,15 @@
           laneDigest = await getDigest();
           const resolveTargetGuid = async () => {
             if (!col.target_list) return null;
-            const targetOwned = await assertDeclaredListOwnedNow(col.target_list);
-            listGuids[col.target_list] = targetOwned.Id;
-            return targetOwned.Id;
+            try {
+              const targetOwned = await assertDeclaredListOwnedNow(col.target_list);
+              listGuids[col.target_list] = targetOwned.Id;
+              return targetOwned.Id;
+            } catch (err) {
+              // The target is written to as surely as the lane's own list:
+              // its GUID becomes the LookupListId of every field created here.
+              throw stopFieldWave(col.target_list, err);
+            }
           };
           let targetGuid = await resolveTargetGuid();
           if (await reconcileDeclaredField(
@@ -3732,6 +3763,9 @@
             }
           }
         } catch (err) {
+          // Recorded per field and carried on, EXCEPT for ownership loss:
+          // that one leaves the lane, and the wave, without another write.
+          if (err.ownershipLoss) throw err;
           log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
           summary.errors.push({
             phase: '2.1', list: list.title, column: col.title, error: err.message,
@@ -3750,10 +3784,23 @@
       await assertLaneOwnership();
       await reconcileListValidation(list, laneDigest);
     } catch (err) {
+      // One named phase error for the whole wave, recorded after mapLanes:
+      // every lane stops on the same loss, and one per lane would report a
+      // site-wide refusal as a list-by-list failure.
+      if (err.ownershipLoss) return;
       log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
       summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
     }
   }, 4);
+
+  if (fieldWaveOwnershipLoss) {
+    log('ERROR', `Phase 2.1 lost ownership of '${fieldWaveOwnershipLoss.list}' mid-wave; aborting every lane before any further field write.`);
+    summary.errors.push({
+      phase: '2.1', list: fieldWaveOwnershipLoss.list,
+      error: fieldWaveOwnershipLoss.error,
+    });
+    return { ...summary, aborted: 'field-wave-ownership-loss' };
+  }
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
@@ -3764,6 +3811,32 @@
   log('INFO', 'Starting Phase 2.2: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
+
+  // listGuids is a title -> GUID map the field wave filled, and the field
+  // wave is long enough for a list to lose its marker after being read into
+  // it. Re-survey every deferred lookup's own list AND its target as one
+  // batch, refresh the map from that read, and abort the whole batch before
+  // any write if a single one no longer proves ownership.
+  let deferredOwnershipFailed = false;
+  const deferredOwnedLists = [...new Set(SCHEMA.phase2_lookups
+    .flatMap(lookup => [lookup.list, lookup.target_list]))];
+  await mapLanes(deferredOwnedLists, listName => listName, async (listName) => {
+    try {
+      const owned = await assertDeclaredListOwnedNow(listName);
+      listGuids[listName] = owned.Id;
+    } catch (err) {
+      deferredOwnershipFailed = true;
+      log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
+      summary.errors.push({
+        phase: '2.2', list: listName, error: err.message,
+      });
+    }
+  }, 4);
+  if (deferredOwnershipFailed) {
+    log('ERROR', 'Deferred-lookup ownership recheck failed; aborting before any lookup write.');
+    return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
+  }
+
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
       digest = await getDigest();  // refresh per item (digest lifetime)
