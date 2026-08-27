@@ -1551,6 +1551,35 @@
           "depends_on": []
         },
         {
+          "id": "editor-row-findings",
+          "pattern": "identity-pair",
+          "findings": [
+            "EDTNEG",
+            "EDTPLN"
+          ],
+          "states": [
+            {
+              "role": "plain-clauses",
+              "page": "Threshold EDTPLN view, Edit current view",
+              "assertions": [
+                "filter row count visible or the editor refuses to open the filter"
+              ]
+            },
+            {
+              "role": "negated-clauses",
+              "page": "Threshold EDTNEG view, Edit current view",
+              "assertions": [
+                "filter row count visible or the editor refuses to open the filter"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "same clause count, differing only in the negation"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "guard-view-findings",
           "pattern": "state-matrix",
           "findings": [
