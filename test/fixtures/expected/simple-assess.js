@@ -528,7 +528,11 @@
         continue;
       }
       const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
-      if (list.ok) {
+      if (!list.ok && list.status === 404) {
+        // Enumeration refused (knownTitles null): a 404 still means absent,
+        // not "could not probe".
+        finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
+      } else if (list.ok) {
         finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}); the ownership check below decides whether deploy may reconcile it.`);
         markerFinding(
           title,
