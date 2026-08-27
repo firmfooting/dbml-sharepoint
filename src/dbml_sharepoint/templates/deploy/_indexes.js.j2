@@ -7,13 +7,41 @@
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   digest = await getDigest();
-  for (const idx of SCHEMA.indexed_columns) {
-    try {
-      digest = await getDigest();  // refresh per item (digest lifetime)
-      await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
-    } catch (err) {
-      log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
-      summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+  {
+    // Index writes are the first mutation after schema reconciliation ends,
+    // so the ownership it proved is no longer current. Survey every source
+    // list as one batch before the first write: a failure here must stop the
+    // batch rather than index the lists ahead of it and refuse the rest.
+    const indexOwned = SCHEMA.indexed_columns.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.indexed_columns.map(idx => idx.list), '{{ phase.number }}', 'Index',
+      )
+      : new Map();
+    if (!indexOwned) {
+      log('ERROR', 'Index ownership survey failed; aborting before any index write.');
+      return { ...summary, aborted: 'index-ownership-errors' };
+    }
+    for (const idx of SCHEMA.indexed_columns) {
+      try {
+        digest = await getDigest();  // refresh per item (digest lifetime)
+        const target = await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list));
+        await patchFieldById(
+          target.listId, target.field.Id,
+          { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
+        );
+        // Identity read-back, not a value read-back. What SharePoint reports
+        // for Indexed immediately after the MERGE has not been measured here
+        // (it builds the index behind the flag asynchronously), so asserting
+        // it would be a guess; what IS asserted is that the write landed on
+        // the list and field the pre-write check approved.
+        const after = await ownedFieldIdentity(idx.list, idx.field, target.listId);
+        if (after.field.Id !== target.field.Id) {
+          throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.field.Id})`);
+        }
+      } catch (err) {
+        log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+        summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+      }
     }
   }
 

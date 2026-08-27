@@ -1757,6 +1757,78 @@
     }
   }
 
+  // === Live ownership guard for the post-schema write phases (#305) ===
+  // Schema reconciliation proves ownership and then stops. Index writes,
+  // sealing, ACL reconciliation and seeding all ran afterwards addressing
+  // their target by TITLE, so a marker removed or a same-titled list swapped
+  // in between phases was written to by a run that had never proved it owned
+  // that object. ACL removals and seeding are the worst of those, because
+  // neither is recoverable by rerunning. The three functions below are the
+  // one guard every such phase uses.
+
+  // One declared list's live identity, immediately before a write group:
+  // assertDeclaredListOwnedNow's cache-bypassing read and exact marker check,
+  // plus the binding to an identity an earlier check in this phase captured.
+  // The marker alone cannot see a same-titled replacement, since a
+  // replacement can carry a copied Description; the list Id is what separates
+  // them.
+  async function ownedListIdentity(listName, expectedId = null, when = 'before a write') {
+    const actual = await assertDeclaredListOwnedNow(listName);
+    const listId = sharePointGuid(actual.Id, 'list');
+    if (expectedId != null && listId !== sharePointGuid(expectedId, 'list')) {
+      throw new Error(`List '${listName}' changed identity ${when}`);
+    }
+    return actual;
+  }
+
+  // The ownership survey for a whole write batch, run before ANY list in it
+  // is mutated: one list's failure must not leave the lists surveyed ahead of
+  // it written and the ones behind it refused. Returns title -> live Id, or
+  // null when any list failed, which is the caller's signal to abort the
+  // phase. `allowAbsent` is for the phases that legitimately run before a
+  // list exists (a clean first provision); absence is not a failure there.
+  async function surveyOwnedListsForWrites(listTitles, phaseNumber, label, allowAbsent = false) {
+    const identities = new Map();
+    let failed = false;
+    await mapLanes([...new Set(listTitles)], title => title, async (listTitle) => {
+      try {
+        if (!allowAbsent) {
+          identities.set(listTitle, (await assertDeclaredListOwnedNow(listTitle)).Id);
+          return;
+        }
+        const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+        if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+        const actual = await readListShape(listTitle, true);
+        if (!actual) return;
+        assertListAdoptable(list, actual);
+        identities.set(listTitle, actual.Id);
+      } catch (err) {
+        failed = true;
+        log('ERROR', `${label} ownership survey '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: phaseNumber, list: listTitle, error: err.message });
+      }
+    }, 4);
+    return failed ? null : identities;
+  }
+
+  // The live field a MERGE is addressed by, bound to both identities: the
+  // list is re-proved owned and unchanged, then the field's own Id is read so
+  // the write goes to /lists(guid)/fields(guid) rather than to two names a
+  // replacement object answers to just as well. `fresh` is false where the
+  // caller has already refreshed the per-list field enumeration this probe
+  // reads from, so a bulk lane does not pay one GET per column for evidence
+  // it already holds.
+  async function ownedFieldIdentity(listName, columnName, expectedListId, fresh = true) {
+    const owned = await ownedListIdentity(
+      listName, expectedListId, `before writing '${listName}.${columnName}'`,
+    );
+    const shape = await readFieldShape(listName, columnName, null, fresh);
+    if (!shape) {
+      throw new Error(`Declared column '${listName}.${columnName}' disappeared before a write`);
+    }
+    return { listId: owned.Id, field: shape };
+  }
+
   function desiredListSettings(list) {
     return {
       ContentTypesEnabled: list.content_types_enabled,
@@ -3418,27 +3490,15 @@
     if (sealDeclared.length > 0) {
       // Preflight ownership can change before this first list mutation. Re-read
       // every list this phase may touch and gate the whole unseal batch before
-      // opening one field. An absent list is a clean first-provision target.
-      const unsealListTitles = new Set(sealDeclared.map(([listTitle]) => listTitle));
-      let ownershipFailed = false;
-      await mapLanes(
-        SCHEMA.lists.filter(list => unsealListTitles.has(list.title)),
-        list => list.title,
-        async (list) => {
-          try {
-            const actual = await readListShape(list.title, true);
-            if (actual) assertListAdoptable(list, actual);
-          } catch (err) {
-            ownershipFailed = true;
-            log('ERROR', `Maintenance ownership recheck '${list.title}': ${err.message}`);
-            summary.errors.push({
-              phase: '1.6', list: list.title, error: err.message,
-            });
-          }
-        },
-        4,
+      // opening one field. An absent list is a clean first-provision target,
+      // so the survey tolerates absence here; the identities it does capture
+      // are carried into the write lane below, which refuses a list that has
+      // become a different object since.
+      const unsealOwned = await surveyOwnedListsForWrites(
+        sealDeclared.map(([listTitle]) => listTitle),
+        '1.6', 'Maintenance ownership recheck', true,
       );
-      if (ownershipFailed) {
+      if (!unsealOwned) {
         log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
         return { ...summary, aborted: 'maintenance-ownership-errors' };
       }
@@ -3451,9 +3511,20 @@
         try {
           const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
           if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
-          const currentList = await readListShape(listTitle, true);
-          if (!currentList) return;
-          assertListAdoptable(list, currentList);
+          // A list the survey found is required to still be the same object;
+          // one it did not find may still be absent, since this phase runs
+          // before the structural phases create it.
+          const surveyedId = unsealOwned.get(listTitle);
+          let currentList;
+          if (surveyedId == null) {
+            currentList = await readListShape(listTitle, true);
+            if (!currentList) return;
+            assertListAdoptable(list, currentList);
+          } else {
+            currentList = await ownedListIdentity(
+              listTitle, surveyedId, 'before maintenance unseal',
+            );
+          }
           const shape = await readFieldShape(listTitle, field.title, field, true);
           // A partial first provision may not have created this deferred
           // lookup yet. With no live field there is nothing to unseal, and its
@@ -3903,13 +3974,41 @@
   // === Phase 2.3: indexed columns ===
   log('INFO', 'Starting Phase 2.3: indexed columns.');
   digest = await getDigest();
-  for (const idx of SCHEMA.indexed_columns) {
-    try {
-      digest = await getDigest();  // refresh per item (digest lifetime)
-      await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
-    } catch (err) {
-      log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
-      summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+  {
+    // Index writes are the first mutation after schema reconciliation ends,
+    // so the ownership it proved is no longer current. Survey every source
+    // list as one batch before the first write: a failure here must stop the
+    // batch rather than index the lists ahead of it and refuse the rest.
+    const indexOwned = SCHEMA.indexed_columns.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.indexed_columns.map(idx => idx.list), '2.3', 'Index',
+      )
+      : new Map();
+    if (!indexOwned) {
+      log('ERROR', 'Index ownership survey failed; aborting before any index write.');
+      return { ...summary, aborted: 'index-ownership-errors' };
+    }
+    for (const idx of SCHEMA.indexed_columns) {
+      try {
+        digest = await getDigest();  // refresh per item (digest lifetime)
+        const target = await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list));
+        await patchFieldById(
+          target.listId, target.field.Id,
+          { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
+        );
+        // Identity read-back, not a value read-back. What SharePoint reports
+        // for Indexed immediately after the MERGE has not been measured here
+        // (it builds the index behind the flag asynchronously), so asserting
+        // it would be a guess; what IS asserted is that the write landed on
+        // the list and field the pre-write check approved.
+        const after = await ownedFieldIdentity(idx.list, idx.field, target.listId);
+        if (after.field.Id !== target.field.Id) {
+          throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.field.Id})`);
+        }
+      } catch (err) {
+        log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+        summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+      }
     }
   }
 
@@ -3919,31 +4018,58 @@
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
   // idempotent and lets a provisioned constant replace after-create flows.
   log('INFO', 'Starting Phase 2.4: field defaults.');
-  for (const fieldDefault of SCHEMA.field_defaults) {
-    try {
-      digest = await getDigest();
-      await patchField(
-        fieldDefault.list,
-        fieldDefault.field,
-        {
-          __metadata: { type: fieldDefault.metadata_type },
-          DefaultValue: fieldDefault.default_value,
-        },
-        digest,
-      );
-      const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
-      if (!actual
-          || normalizeDefaultValue(actual.DefaultValue)
-             !== normalizeDefaultValue(fieldDefault.default_value)) {
-        throw new Error('DefaultValue readback did not match the declared value');
+  {
+    // Post-schema, so the same batch gate as the other write phases: prove
+    // every target list before the first MERGE, and refuse the phase instead
+    // of writing defaults into the lists ahead of the failing one.
+    const defaultsOwned = SCHEMA.field_defaults.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.field_defaults.map(fieldDefault => fieldDefault.list),
+        '2.4', 'Field default',
+      )
+      : new Map();
+    if (!defaultsOwned) {
+      log('ERROR', 'Field-default ownership survey failed; aborting before any default is written.');
+      return { ...summary, aborted: 'default-ownership-errors' };
+    }
+    for (const fieldDefault of SCHEMA.field_defaults) {
+      try {
+        digest = await getDigest();
+        const target = await ownedFieldIdentity(
+          fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
+        );
+        await patchFieldById(
+          target.listId,
+          target.field.Id,
+          {
+            __metadata: { type: fieldDefault.metadata_type },
+            DefaultValue: fieldDefault.default_value,
+          },
+          digest,
+        );
+        const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+        if (!actual
+            || normalizeDefaultValue(actual.DefaultValue)
+               !== normalizeDefaultValue(fieldDefault.default_value)) {
+          throw new Error('DefaultValue readback did not match the declared value');
+        }
+        // The readback resolves list and column by name, so it is only
+        // evidence about the field just written if both still resolve to it.
+        if (actual.Id !== target.field.Id) {
+          throw new Error(`column changed identity across the default write (was ${target.field.Id}, now ${actual.Id})`);
+        }
+        await ownedListIdentity(
+          fieldDefault.list, target.listId,
+          `after writing the default for '${fieldDefault.list}.${fieldDefault.field}'`,
+        );
+      } catch (err) {
+        log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+        summary.errors.push({
+          list: fieldDefault.list,
+          column: fieldDefault.field,
+          error: err.message,
+        });
       }
-    } catch (err) {
-      log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
-      summary.errors.push({
-        list: fieldDefault.list,
-        column: fieldDefault.field,
-        error: err.message,
-      });
     }
   }
 
@@ -4031,6 +4157,14 @@
   }
   const deployView = async (view) => {
     try {
+      // Lane-level rather than per-request, unlike the ACL phase. Every URL
+      // below hangs off the list title, and a view lane issues tens of them;
+      // one cache-bypassing list read per request would cost what the seal
+      // phase measured and removed. So the lane is bracketed: owned before
+      // the first read, and the title proved to still resolve to the same Id
+      // after the last write, before this view is reported verified.
+      const viewListId = viewsOwned.get(view.list);
+      await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
       let viewDigest = await getDigest();
       const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
       const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);
@@ -4117,6 +4251,9 @@
             // Transfer the flag first: SP refuses to delete a default view.
             await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
           }
+          // The one request in this phase that destroys an existing object,
+          // so it is rechecked on its own rather than riding the lane bracket.
+          await ownedListIdentity(view.list, viewListId, `before deleting the migrated view on '${view.list}'`);
           const delResp = await fetchWithRetry(apiUrl(`${listPath}/views('${existing.Id}')`), {
             method: 'POST',
             headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
@@ -4327,12 +4464,28 @@
           }
         }
       }
+      // Closes the lane bracket: the readbacks above resolved the list by
+      // title, so they are evidence about the owned list only if the title
+      // still answers with the Id this lane started from.
+      await ownedListIdentity(view.list, viewListId, `after writing views on '${view.list}'`);
       log('INFO', `[Phase 3.1] View '${view.title}' on '${view.list}' verified.`);
     } catch (err) {
       log('ERROR', `Phase 3.1 view '${view.list}'.'${view.title}': ${err.message}`);
       summary.errors.push({ phase: '3.1', list: view.list, view: view.title, error: err.message });
     }
   };
+  // Post-schema, so the same batch gate: prove every list carrying a declared
+  // view before the first one is written, and refuse the phase rather than
+  // reconcile the lists ahead of the failing one.
+  const viewsOwned = SCHEMA.views.length > 0
+    ? await surveyOwnedListsForWrites(
+      SCHEMA.views.map((view) => view.list), '3.1', 'View',
+    )
+    : new Map();
+  if (!viewsOwned) {
+    log('ERROR', 'View ownership survey failed; aborting before any view is written.');
+    return { ...summary, aborted: 'view-ownership-errors' };
+  }
   // One lane per list: views live in the list schema, and concurrent schema
   // writes to the same list race into save conflicts; different lists are
   // independent, so their lanes run concurrently.
@@ -4364,48 +4517,68 @@
     }
     return JSON.stringify(canon);
   };
-  for (const form of SCHEMA.form_formatting) {
-    try {
-      digest = await getDigest();
-      const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
-      const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!ctResp.ok) {
-        const text = await ctResp.text();
-        throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
-      }
-      const ctJson = await ctResp.json();
-      const contentTypes = (ctJson.d && ctJson.d.results) || [];
-      const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
-      if (!target) throw new Error('no default item content type found on the list');
-      if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-        const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
-          method: 'POST',
-          headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-          body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
+  {
+    // Post-schema, so the same batch gate: prove every list with declared form
+    // formatting before the first content-type MERGE, and refuse the phase
+    // rather than format the lists ahead of the failing one.
+    const formsOwned = SCHEMA.form_formatting.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.form_formatting.map((form) => form.list), '3.2', 'Form',
+      )
+      : new Map();
+    if (!formsOwned) {
+      log('ERROR', 'Form-formatting ownership survey failed; aborting before any form is written.');
+      return { ...summary, aborted: 'form-ownership-errors' };
+    }
+    for (const form of SCHEMA.form_formatting) {
+      try {
+        // The content-type collection hangs off the list title, so the write and
+        // its readback are bracketed by the same identity, exactly as the ACL
+        // phase brackets its title-bound requests.
+        const formListId = formsOwned.get(form.list);
+        await ownedListIdentity(form.list, formListId, `before writing form formatting on '${form.list}'`);
+        digest = await getDigest();
+        const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
+        const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
         });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
+        if (!ctResp.ok) {
+          const text = await ctResp.text();
+          throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
         }
+        const ctJson = await ctResp.json();
+        const contentTypes = (ctJson.d && ctJson.d.results) || [];
+        const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+        if (!target) throw new Error('no default item content type found on the list');
+        if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+          const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
+            method: 'POST',
+            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
+          });
+          if (!r.ok) {
+            const text = await r.text();
+            throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
+          }
+        }
+        const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!verifyResp.ok) {
+          const text = await verifyResp.text();
+          throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
+        }
+        const verifyJson = await verifyResp.json();
+        const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
+        if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+          throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
+        }
+        await ownedListIdentity(form.list, formListId, `after writing form formatting on '${form.list}'`);
+        log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
+      } catch (err) {
+        log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
+        summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
       }
-      const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!verifyResp.ok) {
-        const text = await verifyResp.text();
-        throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
-      }
-      const verifyJson = await verifyResp.json();
-      const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
-      if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-        throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
-      }
-      log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
-    } catch (err) {
-      log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
-      summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
     }
   }
 
@@ -4447,15 +4620,43 @@
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
       sealByList.get(listTitle).push(columnTitle);
     }
+    // Sealing is a write, so it gets the same batch gate as every other
+    // post-schema write phase: prove ownership of every list first, and refuse
+    // the phase rather than seal the lists ahead of the failing one. Without
+    // it, a same-titled replacement dropped in after the structural phases
+    // would be sealed by this run, which hands it the tool's own protection.
+    const sealOwned = await surveyOwnedListsForWrites(
+      [...sealByList.keys()], '4.1', 'Seal',
+    );
+    if (!sealOwned) {
+      log('ERROR', 'Seal ownership survey failed; aborting before any column is sealed.');
+      return { ...summary, aborted: 'seal-ownership-errors' };
+    }
     await mapLanes([...sealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, columns]) => {
       const failed = new Set();
+      const writtenIds = new Map();
+      let laneListId;
+      try {
+        // Once per lane, not once per column: every write below addresses
+        // /lists(guid)/fields(guid), which no title rebind can redirect, so
+        // re-proving the list per column would buy nothing the by-Id address
+        // does not already give.
+        laneListId = (await ownedListIdentity(
+          listTitle, sealOwned.get(listTitle), `before sealing '${listTitle}'`,
+        )).Id;
+      } catch (err) {
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+        return;
+      }
       for (const columnTitle of columns) {
         try {
           const shape = await readFieldShape(listTitle, columnTitle, null);
           if (!shape) throw new Error('declared column missing at seal time');
+          writtenIds.set(columnTitle, sharePointGuid(shape.Id, 'field'));
           if (!shape.Sealed) {
             const sealDigest = await getDigest();
-            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
+            await patchFieldById(laneListId, writtenIds.get(columnTitle), { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
             sealedCount += 1;
           }
         } catch (err) {
@@ -4465,12 +4666,24 @@
         }
       }
       invalidateFieldShapes(listTitle);  // verify from post-write state
+      try {
+        // The verify readback resolves the list by title, so the title has to
+        // still answer with the identity that was written to.
+        await ownedListIdentity(listTitle, laneListId, `after sealing '${listTitle}'`);
+      } catch (err) {
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+        return;
+      }
       for (const columnTitle of columns) {
         if (failed.has(columnTitle)) continue;
         try {
           const verify = await readFieldShape(listTitle, columnTitle, null);
           if (!verify || verify.Sealed !== true) {
             throw new Error(`did not retain sealed state (readback ${verify && verify.Sealed})`);
+          }
+          if (verify.Id !== writtenIds.get(columnTitle)) {
+            throw new Error(`column changed identity across the seal write (was ${writtenIds.get(columnTitle)}, now ${verify.Id})`);
           }
         } catch (err) {
           log('ERROR', `Phase 4.1 seal '${listTitle}.${columnTitle}': ${err.message}`);
@@ -4569,9 +4782,39 @@
       throw new Error(`${uniqueScopeIds.length} item/folder unique permission scope(s) remain (item IDs: ${sample}${uniqueScopeIds.length > 10 ? ', ...' : ''}); review and remove or explicitly migrate them before rerunning; the deployer will never erase descendant scopes`);
     }
 
+    // Ownership was last proved by the structural phases, and everything
+    // below addresses a list by title. Survey the whole batch first: a list
+    // that has lost its marker or been replaced must stop the phase before
+    // the lists ahead of it in the loop have their permissions rewritten.
+    const aclOwned = await surveyOwnedListsForWrites(
+      SCHEMA.list_assignments.map(la => la.list), '4.2', 'ACL',
+    );
+    if (!aclOwned) {
+      log('ERROR', 'ACL ownership survey failed; aborting before any role assignment changes.');
+      return { ...summary, aborted: 'acl-ownership-errors' };
+    }
+
+    // Every role-assignment endpoint SharePoint documents is addressed by
+    // list title; there is no by-Id form to switch these to the way a field
+    // MERGE can be. What is available is to bracket the request: prove the
+    // title resolves to the surveyed list immediately before it, and prove it
+    // still does immediately after. A rebind can then only produce a failed
+    // phase, never a grant or a removal applied to a stranger.
+    const withOwnedList = async (listTitle, expectedId, what, request) => {
+      await ownedListIdentity(listTitle, expectedId, `before ${what}`);
+      const result = await request();
+      await ownedListIdentity(listTitle, expectedId, `after ${what}`);
+      return result;
+    };
+
     for (const la of SCHEMA.list_assignments) {
       log('INFO', `[Phase 4.2] Processing role assignments for '${la.list}'...`);
       try {
+        const aclListId = aclOwned.get(la.list);
+        // Before the first READ, not just the first write: exact mode turns
+        // the enumeration below into a removal list, so a snapshot taken from
+        // the wrong object is as dangerous as a write to it.
+        await ownedListIdentity(la.list, aclListId, `before reading ACL state for '${la.list}'`);
         // Probe before *any* list ACL mutation. breakroleinheritance with
         // clearSubscopes=true would silently erase descendant exceptions on an
         // adopted/populated inheriting list before the old post-check saw them.
@@ -4592,15 +4835,17 @@
           }
           const checkJson = await checkResp.json();
           if (!checkJson.d.HasUniqueRoleAssignments) {
-            digest4 = await getDigest();
-            const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
-              method: 'POST',
-              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            await withOwnedList(la.list, aclListId, `breakroleinheritance on '${la.list}'`, async () => {
+              digest4 = await getDigest();
+              const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+              });
+              if (!breakResp.ok) {
+                const text = await breakResp.text();
+                throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
+              }
             });
-            if (!breakResp.ok) {
-              const text = await breakResp.text();
-              throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
-            }
             log('INFO', `[Phase 4.2] Broke inheritance on '${la.list}'.`);
           } else {
             log('INFO', `[Phase 4.2] '${la.list}' already has unique role assignments, reconciling existing bindings.`);
@@ -4621,16 +4866,21 @@
           }
         }
 
+        // The one irreversible operation in this phase, so it carries the
+        // strictest bracket: nothing is removed unless the title still
+        // resolves to the surveyed list at the moment of the request.
         const removeBinding = async (principalId, roleDefId, reason) => {
-          digest4 = await getDigest();
-          const rmResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/removeroleassignment(principalid=${principalId},roleDefId=${roleDefId})`), {
-            method: 'POST',
-            headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+          await withOwnedList(la.list, aclListId, `removeroleassignment (${reason}) on '${la.list}'`, async () => {
+            digest4 = await getDigest();
+            const rmResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/removeroleassignment(principalid=${principalId},roleDefId=${roleDefId})`), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            });
+            if (!rmResp.ok) {
+              const text = await rmResp.text();
+              throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
+            }
           });
-          if (!rmResp.ok) {
-            const text = await rmResp.text();
-            throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
-          }
           log('INFO', `[Phase 4.2] '${la.list}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
         };
 
@@ -4694,15 +4944,17 @@
           }
           const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
           if (!desiredPresent) {
-            digest4 = await getDigest();
-            const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
-              method: 'POST',
-              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
+              digest4 = await getDigest();
+              const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+              });
+              if (!assignResp.ok) {
+                const text = await assignResp.text();
+                throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
+              }
             });
-            if (!assignResp.ok) {
-              const text = await assignResp.text();
-              throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
-            }
           }
         }
 
@@ -4737,6 +4989,10 @@
               assignmentsUrl = (allJson.d && allJson.d.__next) || null;
             }
           }
+          // The snapshot above may have been taken before the adds; either
+          // way it is the allowlist this loop prunes against, so the title it
+          // was read through has to still be the surveyed list.
+          await ownedListIdentity(la.list, aclListId, `before exact-mode pruning on '${la.list}'`);
           for (const existing of allAssignments) {
             const principalId = existing.Member && existing.Member.Id;
             if (principalId == null) {
@@ -4877,51 +5133,81 @@
     }
   }
 
-  for (const seed of SCHEMA.seed_items) {
-    // Fresh digest per seed: FormDigestValue expires (~30 min), so a
-    // long run must not reuse one digest across every POST (rollback.js.txt
-    // per-operation getDigest pattern).
-    const digest5 = await getDigest();
-    try {
-      // Idempotent only when the existing singleton is the declared singleton.
-      // An arbitrary, mismatched or duplicate row must never suppress seeding
-      // and make a partial/hostile deployment look activated.
-      if (seed.skip_if_has_rows) {
-        const singleton = await readSeedSingleton(seed);
-        if (singleton.hasMore || singleton.rows.length > 1) {
-          throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+  {
+    // The last write phase, and the only one that inserts data. An insert into
+    // a replaced list is not repairable by rerunning, so the batch is gated on
+    // ownership before the first row: a failure here must leave every seed
+    // target untouched rather than seed the ones ahead of it in the loop. A
+    // seed target that is not a declared list of this run fails the survey by
+    // construction, which is the intent; nothing else has ever proved it owned.
+    const seedOwned = SCHEMA.seed_items.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.seed_items.map(seed => seed.title), '5.1', 'Seed',
+      )
+      : new Map();
+    if (!seedOwned) {
+      log('ERROR', 'Seed ownership survey failed; aborting before any row is inserted.');
+      return { ...summary, aborted: 'seed-ownership-errors' };
+    }
+    for (const seed of SCHEMA.seed_items) {
+      // Fresh digest per seed: FormDigestValue expires (~30 min), so a
+      // long run must not reuse one digest across every POST (rollback.js.txt
+      // per-operation getDigest pattern).
+      const digest5 = await getDigest();
+      try {
+        const seedListId = seedOwned.get(seed.title);
+        // Before the probe as well as the insert: skip_if_has_rows decides
+        // whether to write at all from what it reads here, so reading a
+        // stranger's rows can suppress a real seed as easily as it can permit
+        // an insert into one.
+        await ownedListIdentity(seed.title, seedListId, `before reading '${seed.title}'`);
+        // Idempotent only when the existing singleton is the declared singleton.
+        // An arbitrary, mismatched or duplicate row must never suppress seeding
+        // and make a partial/hostile deployment look activated.
+        if (seed.skip_if_has_rows) {
+          const singleton = await readSeedSingleton(seed);
+          if (singleton.hasMore || singleton.rows.length > 1) {
+            throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+          }
+          if (singleton.rows.length === 1) {
+            assertSeedSingletonMatches(seed, singleton);
+            log('INFO', `Verified existing singleton row in '${seed.title}' exactly matches the declared seed.`);
+            continue;
+          }
         }
-        if (singleton.rows.length === 1) {
-          assertSeedSingletonMatches(seed, singleton);
-          log('INFO', `Verified existing singleton row in '${seed.title}' exactly matches the declared seed.`);
-          continue;
+        // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
+        // correct for ANY list title: SharePoint encodes non-alphanumeric
+        // characters (e.g. '_') in the entity type name, so a hardcoded
+        // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
+        // titles.
+        const typeResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')?$select=ListItemEntityTypeFullName`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!typeResp.ok) {
+          throw new Error(`Cannot resolve ListItemEntityTypeFullName for '${seed.title}' (HTTP ${typeResp.status})`);
         }
-      }
-      // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
-      // correct for ANY list title: SharePoint encodes non-alphanumeric
-      // characters (e.g. '_') in the entity type name, so a hardcoded
-      // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
-      // titles.
-      const typeResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')?$select=ListItemEntityTypeFullName`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!typeResp.ok) {
-        throw new Error(`Cannot resolve ListItemEntityTypeFullName for '${seed.title}' (HTTP ${typeResp.status})`);
-      }
-      const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
+        const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
 
-      const body = { __metadata: { type: entityType }, ...seed.fields };
-      await postJson(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items`), body, digest5);
-      if (seed.skip_if_has_rows) {
-        // Re-read after creation to detect a concurrent insert between the
-        // empty probe and POST. A mismatch or second row is an activation
-        // failure; it is never auto-deleted.
-        assertSeedSingletonMatches(seed, await readSeedSingleton(seed));
+        const body = { __metadata: { type: entityType }, ...seed.fields };
+        // The item-creation endpoint SharePoint documents is addressed by list
+        // title, so the insert is bracketed instead: owned immediately before
+        // the POST, and the title still resolving to the same list immediately
+        // after it, which is also what makes the readback below evidence about
+        // the row this run just wrote.
+        await ownedListIdentity(seed.title, seedListId, `before inserting into '${seed.title}'`);
+        await postJson(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items`), body, digest5);
+        await ownedListIdentity(seed.title, seedListId, `after inserting into '${seed.title}'`);
+        if (seed.skip_if_has_rows) {
+          // Re-read after creation to detect a concurrent insert between the
+          // empty probe and POST. A mismatch or second row is an activation
+          // failure; it is never auto-deleted.
+          assertSeedSingletonMatches(seed, await readSeedSingleton(seed));
+        }
+        log('INFO', `Seeded and verified '${seed.title}'.`);
+      } catch (err) {
+        log('ERROR', `Phase 5.1 seed '${seed.title}': ${err.message}`);
+        summary.errors.push({ phase: '5.1', list: seed.title, error: err.message });
       }
-      log('INFO', `Seeded and verified '${seed.title}'.`);
-    } catch (err) {
-      log('ERROR', `Phase 5.1 seed '${seed.title}': ${err.message}`);
-      summary.errors.push({ phase: '5.1', list: seed.title, error: err.message });
     }
   }
 
