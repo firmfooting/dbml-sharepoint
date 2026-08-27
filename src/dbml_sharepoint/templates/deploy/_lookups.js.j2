@@ -16,22 +16,47 @@
         lookup.list, lookup.field, targetGuid, digest, true,
       )) {
         summary.columnsSkipped += 1;
-        continue;
+      } else {
+        const parameters = {
+          ...lookup.field.lookup_creation_parameters,
+          LookupListId: targetGuid,
+        };
+        await postJson(
+          apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
+          { parameters },
+          digest,
+        );
+        invalidateFieldShapes();  // new field: next probe re-enumerates
+        await reconcileDeclaredField(
+          lookup.list, lookup.field, targetGuid, digest, false,
+        );
+        summary.columnsCreated += 1;
       }
-      const parameters = {
-        ...lookup.field.lookup_creation_parameters,
-        LookupListId: targetGuid,
-      };
-      await postJson(
-        apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
-        { parameters },
-        digest,
-      );
-      invalidateFieldShapes();  // new field: next probe re-enumerates
-      await reconcileDeclaredField(
-        lookup.list, lookup.field, targetGuid, digest, false,
-      );
-      summary.columnsCreated += 1;
+      // Projected dependent fields, created after the primary exists so its
+      // Id is known. Each is a read-only Lookup linked back by FieldRef and
+      // created via createfieldasxml, because the FieldRef linkage cannot be
+      // expressed through AddField. Read-only fields do not drift, so they are
+      // checked for existence only, never reconciled. See the probe
+      // test/manual/projected-lookup-probe.js for the measured create shape.
+      if (lookup.projections && lookup.projections.length) {
+        digest = await getDigest();
+        const primaryShape = await readFieldShape(lookup.list, lookup.field.title, null, true);
+        for (const proj of lookup.projections) {
+          if (!(await readFieldShape(lookup.list, proj.name, null, true))) {
+            digest = await getDigest();
+            const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+              + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+              + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+            await postJson(
+              apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
+              { parameters: { SchemaXml: xml, Options: 8 } },
+              digest,
+            );
+            summary.columnsCreated += 1;
+          }
+          await verifyDependentField(lookup.list, proj.name, lookup.field.title, primaryShape.Id, targetGuid);
+        }
+      }
     } catch (err) {
       log('ERROR', `Phase {{ phase.number }} ${lookup.list}.${lookup.field.title}: ${err.message}`);
       summary.errors.push({

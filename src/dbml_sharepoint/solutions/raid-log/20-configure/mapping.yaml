@@ -65,6 +65,16 @@ calculated_formulas:
     # 50-govern/governance.md.
     LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
 
+# Each RelatedRisk lookup projects the target's real Title onto the source
+# list as a read-only dependent field (RelatedRiskTitle). The picker shows
+# LiveRiskTitle (blank once a risk is Closed); views show the projected
+# Title, so a closed risk still reads by name. See 50-govern/governance.md.
+lookup_projections:
+  ProjectAction:
+    RelatedRisk: [Title]
+  ProjectIssue:
+    RelatedRisk: [Title]
+
 # Security: on a project site everybody records, the same reasoning as
 # meeting-actions. A RAID log nobody but a manager can write to is a RAID log
 # that is filled in once. Members and Owners hold Contribute; Full Control is
@@ -159,7 +169,7 @@ column_formatting:
 # columns and then its own payload, so each spine is declared once.
 field_sets:
   ProjectAction:
-    action: [Title, AssignedTo, DueDate, Status, RelatedRisk]
+    action: [Title, AssignedTo, DueDate, Status, RelatedRiskTitle]
   ProjectIssue:
     issue: [Title, Severity, Status, Owner, RaisedDate]
 
@@ -251,7 +261,7 @@ views:
         AssignedTo: 160
         DueDate: 160
         Status: 120
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
         Notes: 200
     # The same view filtered by SharePoint rather than by hand. AssignedTo is
     # a person column, which is what the current-user sentinel exists for.
@@ -267,7 +277,7 @@ views:
         AssignedTo: 160
         DueDate: 160
         Status: 120
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
         Notes: 200
     - title: "Overdue"
       fields: ["@action", Notes]
@@ -281,7 +291,7 @@ views:
         AssignedTo: 160
         DueDate: 160
         Status: 120
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
         Notes: 200
     - title: "Done and dropped"
       fields: ["@action", CompletedDate, Notes]
@@ -294,13 +304,13 @@ views:
         AssignedTo: 160
         DueDate: 160
         Status: 120
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
         CompletedDate: 160
         Notes: 200
   ProjectIssue:
     - title: "Open"
       default: true
-      fields: ["@issue", RelatedRisk, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       # Oldest first, deliberately. An issue that has been open longest is the
@@ -318,13 +328,13 @@ views:
         Status: 130
         Owner: 160
         RaisedDate: 160
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
         Detail: 200
     # Deliberately unfiltered, so no issue is ever reachable only through the
     # hidden All Items view. This is also the read for "what is my share of
     # this", which is the question that gets issues picked up.
     - title: "By owner"
-      fields: ["@issue", RelatedRisk]
+      fields: ["@issue", RelatedRiskTitle]
       group_by: { field: Owner, collapsed: true }
       sort:
         - { field: RaisedDate, direction: desc }
@@ -334,7 +344,7 @@ views:
         Status: 130
         Owner: 160
         RaisedDate: 160
-        RelatedRisk: 220
+        RelatedRiskTitle: 220
     # Both terminal states, not just Resolved. Closed is what Resolved becomes
     # once somebody has confirmed it, so a view holding only one of them would
     # lose every issue the moment it was fully finished.

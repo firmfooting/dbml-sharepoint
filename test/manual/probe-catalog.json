@@ -1274,6 +1274,35 @@
       ]
     },
     {
+      "file": "projected-lookup-probe.js",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists, a primary lookup and its FieldRef-linked dependent field, rows"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "PRIM",
+            "DEPCR",
+            "DEPFLAG",
+            "DEPLINK",
+            "DEPPOP",
+            "DEPLIVE"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "reader-bindings-probe.js",
       "harness": "shared-v1",
       "authority": "read-only",

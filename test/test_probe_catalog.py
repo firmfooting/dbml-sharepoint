@@ -56,7 +56,7 @@ def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     actual = {path.name for path in MANUAL.glob("*.js")}
 
     assert catalog["schema_version"] == "1.0"
-    assert len(descriptors) == 24
+    assert len(descriptors) == 25
     assert catalogued == actual
 
 

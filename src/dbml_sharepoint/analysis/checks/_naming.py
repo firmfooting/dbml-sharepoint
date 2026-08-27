@@ -41,7 +41,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
                 continue
             xcols = cross_site_by_entity.get(entity_name, set())
-            rendered = rendered_columns(override_table, xcols)
+            rendered = rendered_columns(
+                override_table, xcols, vc.projected_columns(entity_name),
+            )
             for col_name, display_title in cols.items():
                 if col_name not in rendered:
                     findings.append(Finding(
@@ -69,7 +71,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             xcols = cross_site_by_entity.get(table.name, set())
             resolved: dict[str, list[str]] = {}
-            for col_name in sorted(rendered_columns(table, xcols)):
+            for col_name in sorted(
+                rendered_columns(table, xcols, vc.projected_columns(table.name)),
+            ):
                 resolved.setdefault(
                     bundle.mapping.display_name_for(table.name, col_name), [],
                 ).append(col_name)

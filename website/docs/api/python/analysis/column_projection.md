@@ -47,8 +47,13 @@ SYSTEM_COLUMN_TYPES = {'ID': 'int', 'Created': 'datetime', 'Modified': 'datetime
 ### `effective_column_types`
 
 ```python
-def effective_column_types(declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset()) -> dict[str, str]
+def effective_column_types(declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset(), projected_columns: set[str] | frozenset[str] = frozenset()) -> dict[str, str]
 ```
 
 Types for DBML columns plus fields provisioned implicitly or by expansion.
+
+projected_columns are lookup-projection columns; they render the target's
+Title (text), so they are typed nvarchar here. Their lookup-ness is not
+represented in the type map, matching declared lookups whose DBML type is
+`int` and whose join behaviour is inferred separately from `ref`.
 
