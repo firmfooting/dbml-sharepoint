@@ -278,6 +278,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         *_entities(vc, lookup_targets, family),
         *_mapping_and_schema_agree(vc),
         *_cross_site_references(vc),
+        *_lookup_projections(vc),
         *_indexes(vc),
         *_entity_keyed_sections(vc),
         *_calculated_columns(vc),
@@ -599,6 +600,107 @@ def _cross_site_generated_names(xref: CrossSiteRef, table: Table) -> list[Findin
                     entity=xref.entity, column=xref.column, sub=generated,
                 ),
             ))
+    return findings
+
+
+def _lookup_projections(vc: ValidationContext) -> list[Finding]:
+    """Every lookup projection must name a real lookup column that is not a
+    cross-site reference, project columns that render on the target, and
+    generate field names that fit the internal-name limit and collide with
+    neither a declared column nor another projection."""
+    findings: list[Finding] = []
+    for entity_name, columns in vc.bundle.mapping.lookup_projections.items():
+        if entity_name not in vc.table_names:
+            findings.append(Finding(
+                FindingCode.UNKNOWN_ENTITY,
+                f"lookup_projections: entity {entity_name} not in schema",
+                location=Location(Section.LOOKUP_PROJECTIONS),
+            ))
+            continue
+        table = vc.tables_by_name[entity_name]
+        generated_here: set[str] = set()
+        for column, targets in columns.items():
+            col = next((c for c in table.columns if c.name == column), None)
+            if col is None:
+                findings.append(Finding(
+                    FindingCode.PROJECTION_UNKNOWN_COLUMN,
+                    f"lookup_projections: {entity_name}.{column} not in schema",
+                    location=Location(
+                        Section.LOOKUP_PROJECTIONS, entity=entity_name,
+                    ),
+                ))
+                continue
+            if col.ref is None:
+                findings.append(Finding(
+                    FindingCode.PROJECTION_COLUMN_HAS_NO_REF,
+                    f"lookup_projections: {entity_name}.{column} has no ref:",
+                    location=Location(
+                        Section.LOOKUP_PROJECTIONS,
+                        entity=entity_name, column=column,
+                    ),
+                ))
+                continue
+            if column in vc.cross_site_columns(entity_name):
+                findings.append(Finding(
+                    FindingCode.PROJECTION_ON_CROSS_SITE_REF,
+                    f"lookup_projections: {entity_name}.{column} is a "
+                    "cross-site reference, which expands to Choice and URL "
+                    "fields rather than a primary lookup, so it cannot carry "
+                    "a dependent projection.",
+                    location=Location(
+                        Section.LOOKUP_PROJECTIONS,
+                        entity=entity_name, column=column,
+                    ),
+                ))
+                continue
+            target_table = vc.tables_by_name.get(col.ref.target_table)
+            target_rendered = (
+                rendered_columns(
+                    target_table,
+                    vc.cross_site_columns(col.ref.target_table),
+                )
+                | {"Title"}
+                if target_table is not None else set()
+            )
+            for target in targets:
+                generated = f"{column}{target}"
+                if len(generated) > MAX_INTERNAL_NAME:
+                    findings.append(Finding(
+                        FindingCode.PROJECTION_NAME_TOO_LONG,
+                        f"lookup_projections {entity_name}.{column}: generated "
+                        f"name {generated!r} is {len(generated)} chars; "
+                        f"SP internal-name limit is {MAX_INTERNAL_NAME}.",
+                        location=Location(
+                            Section.LOOKUP_PROJECTIONS,
+                            entity=entity_name, column=column, sub=generated,
+                        ),
+                    ))
+                if target_table is not None and target not in target_rendered:
+                    findings.append(Finding(
+                        FindingCode.PROJECTION_UNKNOWN_TARGET_COLUMN,
+                        f"lookup_projections {entity_name}.{column}: target "
+                        f"{col.ref.target_table}.{target} is not a rendered "
+                        f"column of the lookup target.",
+                        location=Location(
+                            Section.LOOKUP_PROJECTIONS,
+                            entity=entity_name, column=column, sub=target,
+                        ),
+                    ))
+                if (
+                    generated in generated_here
+                    or any(c.name == generated for c in table.columns)
+                ):
+                    findings.append(Finding(
+                        FindingCode.PROJECTION_NAME_COLLIDES,
+                        f"lookup_projections {entity_name}.{column}: generated "
+                        f"field {generated!r} collides with another generated "
+                        f"or declared column.",
+                        location=Location(
+                            Section.LOOKUP_PROJECTIONS,
+                            entity=entity_name, column=column, sub=generated,
+                        ),
+                    ))
+                generated_here.add(generated)
     return findings
 
 

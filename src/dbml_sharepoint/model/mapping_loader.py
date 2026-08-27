@@ -76,6 +76,7 @@ KNOWN_SECTIONS = frozenset({
     "extension", "extensions", "calculated_formulas", "views", "display_names",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
     "retired_columns", "field_sets",
+    "lookup_projections",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
@@ -173,6 +174,24 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             field=item["field"],
             discriminator=item["discriminator"],
         ))
+
+    lookup_projections: dict[str, dict[str, list[str]]] = {}
+    for entity, cols in _require_mapping(
+        raw.get("lookup_projections"), "lookup_projections",
+    ).items():
+        entity_proj: dict[str, list[str]] = {}
+        for column, targets in _require_mapping(
+            cols, f"lookup_projections.{entity}",
+        ).items():
+            if not isinstance(targets, list) or not all(
+                isinstance(t, str) for t in targets
+            ):
+                raise ValueError(
+                    f"lookup_projections.{entity}.{column} must be a list of "
+                    f"strings, got {targets!r}",
+                )
+            entity_proj[column] = list(targets)
+        lookup_projections[entity] = entity_proj
 
     versioning = _require_mapping(raw.get("versioning"), "versioning")
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
@@ -297,6 +316,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         enum_sources=enum_source_paths,
         watched_lists=watched,
         polymorphic_patterns=polymorphic,
+        lookup_projections=lookup_projections,
         retention_policies_source=retention_path,
         extension=extension,
         permissions=permissions_config,

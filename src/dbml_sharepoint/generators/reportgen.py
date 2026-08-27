@@ -1207,6 +1207,14 @@ def _column_rows_for_table(
                 "SharePoint item identifier." if sp.kind == "Skip" else "-"
             ),
         ))
+    for column, targets in bundle.mapping.lookup_projections.get(table.name, {}).items():
+        for target in targets:
+            rows.append((
+                f"{column}{target}",
+                "Lookup (read-only dependent)",
+                "-", "-", "-", "-", "-", "Always", "-",
+                f"Read-only dependent of {column}, showing the target's {target}.",
+            ))
     return rows
 
 

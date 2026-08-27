@@ -702,6 +702,20 @@ def test_data_dictionary_includes_calculated_formulas() -> None:
     assert '=IF([Severity]="High",10,1)' in md
 
 
+def test_data_dictionary_includes_lookup_projections() -> None:
+    schema = make_schema(
+        make_table("Person", column("Title")),
+        make_table("Risk", make_ref("Owner", "Person.Id")),
+    )
+    bundle = make_bundle(
+        entities=["Risk", "Person"],
+        lookup_projections={"Risk": {"Owner": ["Title"]}},
+    )
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "OwnerTitle" in md
+    assert "read-only dependent" in md
+
+
 def test_data_dictionary_includes_deployment_metadata() -> None:
     schema, bundle = _simple()
     release = load_release(FIXTURES / "release.yaml")

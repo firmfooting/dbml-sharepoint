@@ -441,6 +441,7 @@ class Mapping:
     extension: str | None = None
     permissions: PermissionsConfig | None = None
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
+    lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     form_visibility: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.FormVisibility]] = field(default_factory=dict)
     column_validation: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.ColumnValidation]] = field(default_factory=dict)
     views: dict[str, list[dbml_sharepoint.model.mapping_types.ViewDef]] = field(default_factory=dict)
@@ -512,6 +513,19 @@ Returns override if present, else the default policy, but the default
 only applies when its site-role scope (if any) matches the entity's
 site_role. A default scoped to one role must not re-ACL lists
 belonging to another role.
+
+#### `Mapping.projections_for`
+
+```python
+def projections_for(self, entity_name: str, column_name: str) -> list[str]
+```
+
+Projected target columns for a lookup column, empty when none.
+
+The lookup shape for `lookup_projections`. Consumers must agree on
+the projected field's generated internal name; `jsgen` and `reportgen`
+both derive it as ``f"{column}{target}"``, so a projection only ever
+adds columns, never renames the lookup itself.
 
 #### `Mapping.versioning_for`
 

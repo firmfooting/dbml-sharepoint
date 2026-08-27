@@ -213,6 +213,12 @@ dbml-sharepoint explain unknown_column_type
 | `previous_title_is_a_current_title` | error | A `renamed_from` entry is another declared view's current title. |
 | `previous_title_is_own_title` | error | A `renamed_from` entry repeats the view's own current title. |
 | `previous_title_is_reserved` | error | A `renamed_from` entry claims `All Items`, which is reserved for the generated recovery view. |
+| `projection_column_has_no_ref` | error | A `lookup_projections:` entry names a column with no DBML `ref:`. |
+| `projection_name_collides` | error | A lookup projection's generated dependent field has the same name as a column the DBML already declares. |
+| `projection_name_too_long` | error | A lookup projection's generated dependent field exceeds SharePoint's 32-character internal-name limit. |
+| `projection_on_cross_site_ref` | error | A `lookup_projections:` entry names a cross-site reference column, which expands to Choice and URL fields rather than a primary lookup, so it cannot carry a dependent projection. |
+| `projection_unknown_column` | error | A `lookup_projections:` entry names a column the entity's table does not declare. |
+| `projection_unknown_target_column` | error | A `lookup_projections:` entry projects a column the lookup target does not declare. |
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
 | `required_column_hidden_from_the_new_form` | error | A required column with no default is hidden from the New form, so every save would fail. Statically provable, hence an error. |
 | `required_column_may_be_hidden_at_creation` | warning | A required column with no default has a `when` that MAY hide it at creation. Whether it does depends on what the person types, so the build cannot decide it -- a warning by design, per the form_visibility spec. |

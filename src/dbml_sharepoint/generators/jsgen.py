@@ -451,6 +451,19 @@ def build_schema_json(
                     })
                 continue
 
+            projections = [
+                {
+                    "name": f"{col.name}{target_col}",
+                    "display_title": bundle.mapping.display_name_for(
+                        table_name, f"{col.name}{target_col}",
+                    ),
+                    "show_field": target_col,
+                }
+                for target_col in bundle.mapping.projections_for(
+                    table_name, col.name,
+                )
+            ]
+
             if (table.name, col.name) in deferred_set:
                 prefix = bundle.mapping.prefix
                 target = (prefix + col.ref.target_table) if col.ref else ""
@@ -461,6 +474,7 @@ def build_schema_json(
                         col, enums_by_name, list_title_prefix=prefix,
                         entities=bundle.mapping.entities,
                     ),
+                    "projections": projections,
                 })
                 continue
 
@@ -472,6 +486,8 @@ def build_schema_json(
             )
             if field is None:
                 continue
+            if projections:
+                field["projections"] = projections
             fields_phase1.append(field)
             body = field["body"]
             if "DefaultValue" in body:
@@ -631,6 +647,13 @@ def build_schema_json(
         column_types = effective_column_types(
             {col.name: col.type for col in table.columns},
             {name for entity_name, name in cross_site_keys if entity_name == table_name},
+            {
+                f"{col.name}{target}"
+                for col in table.columns
+                for target in bundle.mapping.projections_for(
+                    table_name, col.name,
+                )
+            },
         )
         declared_views = bundle.mapping.views.get(table_name, [])
         views_to_render = list(declared_views)
@@ -640,6 +663,19 @@ def build_schema_json(
                 lookup["field"]["title"]
                 for lookup in phase2
                 if lookup["list"] == list_title
+            )
+            # Projected dependent fields are provisioned too (read-only,
+            # FieldRef-linked), so All Items renders them beside their primary.
+            emitted_fields.extend(
+                projection["name"]
+                for field in fields_phase1
+                for projection in field.get("projections", [])
+            )
+            emitted_fields.extend(
+                projection["name"]
+                for lookup in phase2
+                if lookup["list"] == list_title
+                for projection in lookup.get("projections", [])
             )
             system_fields = list(SYSTEM_COLUMN_TYPES)
             # The list view LOOKUP threshold. All Items renders every column,

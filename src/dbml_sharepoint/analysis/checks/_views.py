@@ -384,7 +384,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         set_rendered = (
-            rendered_columns(set_table, cross_site_by_entity.get(entity_name, set()))
+            rendered_columns(
+                set_table, cross_site_by_entity.get(entity_name, set()),
+                vc.projected_columns(entity_name),
+            )
             | {"Title"} | SYSTEM_COLUMNS
         )
         # A set is "referenced" if some view on this entity actually
@@ -463,14 +466,19 @@ def check(vc: ValidationContext) -> list[Finding]:
         # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
         # (the generated All Items one), same shape, different subject, kept
         # separate on purpose; do not fold this into that helper.
-        view_rendered = rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        view_rendered = (
+            rendered_columns(view_table, xcols, vc.projected_columns(entity_name))
+            | {"Title"} | SYSTEM_COLUMNS
+        )
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
-        # build. Two are rendered without being DBML columns: the built-in
-        # Title, which every provisioned list has, and the Choice+URL pair a
-        # cross-site reference expands into. Both are text.
+        # build. Three are rendered without being DBML columns: the built-in
+        # Title, which every provisioned list has, the Choice+URL pair a
+        # cross-site reference expands into, and a lookup-projection column.
+        # All are text.
         types_by_col = effective_column_types(
             {c.name: c.type for c in view_table.columns}, xcols,
+            vc.projected_columns(entity_name),
         )
         # Entity-level: the totals check needs it too, and a lookup's DBML
         # type is `int`, so nothing downstream can infer it from the type.
@@ -975,9 +983,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         # undetected; see `all_items_rendered`'s docstring in joins.py and
         # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
         # test/test_validator_joins.py.
-        rendered = all_items_rendered(table, xcols)
+        rendered = all_items_rendered(table, xcols, vc.projected_columns(entity_name))
         bearing = join_bearing_columns(table, xcols)
-        shown_joins = all_items_joining_fields(table, entity, xcols)
+        shown_joins = all_items_joining_fields(
+            table, entity, xcols, vc.projected_columns(entity_name),
+        )
         if len(shown_joins) >= JOIN_WARN_AT:
             findings.append(_join_finding(
                 f"entities[{entity_name}]: the generated 'All Items' view",

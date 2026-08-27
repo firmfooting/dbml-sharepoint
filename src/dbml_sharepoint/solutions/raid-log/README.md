@@ -31,7 +31,9 @@ titles read *Project Risk*, *Project Action*, *Project Issue* and
 `ProjectIssue` each carry a `RelatedRisk` lookup to `ProjectRisk`, and both
 are nullable on purpose: most actions are ordinary project work and most
 issues arrived out of nowhere. The picker only offers **live** risks: it
-shows a calculated `LiveRiskTitle` that is blank once a risk is Closed.
+shows a calculated `LiveRiskTitle` that is blank once a risk is Closed. List
+views show the real `Title` instead, through a read-only projected field
+(`RelatedRiskTitle`), so a closed risk still reads by name.
 Decisions link to nothing. There is no project list and no meeting list,
 because a project site already knows which project it is.
 

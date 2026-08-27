@@ -209,6 +209,7 @@ class MappingSections(TypedDict, total=False):
     extension: str | None
     permissions: PermissionsConfig | None
     calculated_formulas: dict[str, dict[str, str]]
+    lookup_projections: dict[str, dict[str, list[str]]]
     form_visibility: dict[str, EntitySection[FormVisibility]]
     column_validation: dict[str, EntitySection[ColumnValidation]]
     views: dict[str, list[ViewDef]]

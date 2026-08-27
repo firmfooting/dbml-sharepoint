@@ -2130,6 +2130,39 @@
     return true;
   }
 
+  async function verifyDependentField(listName, dependentName, primaryInternalName, primaryId, targetGuid) {
+    // A projected dependent field must be a genuine dependent Lookup linked
+    // back to its primary by FieldRef, targeting the same list, and read-only.
+    // Existence alone is not enough: a same-named impostor field would be
+    // adopted silently. See test/manual/projected-lookup-probe.js for the
+    // measured create shape and the properties verified here.
+    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(dependentName)}')`;
+    const r = await fetchWithRetry(apiUrl(
+      `${fieldPath}?$select=IsDependentLookup,PrimaryFieldId,LookupList,LookupField,ReadOnlyField`,
+    ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`Dependent field '${listName}.${dependentName}' probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    const s = j && j.d;
+    const mismatches = [];
+    const check = (name, ok, detail) => { if (!ok) mismatches.push(`${name} ${detail}`); };
+    check('IsDependentLookup', s.IsDependentLookup === true,
+      `(readback ${JSON.stringify(s.IsDependentLookup)})`);
+    check('PrimaryFieldId', normalizeGuid(s.PrimaryFieldId) === normalizeGuid(primaryId),
+      `(readback ${JSON.stringify(s.PrimaryFieldId)}; expected primary '${primaryId}')`);
+    check('LookupList', normalizeGuid(s.LookupList) === normalizeGuid(targetGuid),
+      `(readback ${JSON.stringify(s.LookupList)}; expected target '${targetGuid}')`);
+    check('LookupField', s.LookupField === primaryInternalName,
+      `(readback ${JSON.stringify(s.LookupField)}; expected '${primaryInternalName}')`);
+    check('ReadOnlyField', s.ReadOnlyField === true,
+      `(readback ${JSON.stringify(s.ReadOnlyField)})`);
+    if (mismatches.length) {
+      throw new Error(`Dependent field '${listName}.${dependentName}' is misconfigured: ${mismatches.join(', ')}`);
+    }
+  }
+
   // === Preflight: ManageLists (+ ManagePermissions when the schema has ACL work) ===
   // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
   // (Previous check incorrectly tested High; ManageLists lives in Low.)
@@ -3421,34 +3454,59 @@
             list.title, col, targetGuid, laneDigest, true,
           )) {
             summary.columnsSkipped += 1;
-            continue;
+          } else {
+            let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
+            let createBody = col.body;
+            if (col.target_list) {
+              // SharePoint rejects POSTing an SP.FieldLookup directly to
+              // /fields ("Please use addfield to add a lookup field"). Use the
+              // supported FieldCollection.AddField REST method and keep its
+              // SP.FieldCreationInformation object nested under `parameters`.
+              // Properties that type does not carry are MERGEd and read back by
+              // reconcileDeclaredField immediately below.
+              const parameters = {
+                ...col.lookup_creation_parameters,
+                LookupListId: targetGuid,
+              };
+              createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
+              createBody = { parameters };
+            }
+            await postJson(
+              createUrl,
+              createBody,
+              laneDigest,
+            );
+            invalidateFieldShapes();  // new field: next probe re-enumerates
+            await reconcileDeclaredField(
+              list.title, col, targetGuid, laneDigest, false,
+            );
+            summary.columnsCreated += 1;
           }
-          let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
-          let createBody = col.body;
-          if (col.target_list) {
-            // SharePoint rejects POSTing an SP.FieldLookup directly to
-            // /fields ("Please use addfield to add a lookup field"). Use the
-            // supported FieldCollection.AddField REST method and keep its
-            // SP.FieldCreationInformation object nested under `parameters`.
-            // Properties that type does not carry are MERGEd and read back by
-            // reconcileDeclaredField immediately below.
-            const parameters = {
-              ...col.lookup_creation_parameters,
-              LookupListId: targetGuid,
-            };
-            createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
-            createBody = { parameters };
+          // Projected dependent fields, created after the primary lookup
+          // exists so its Id is known. Each is a read-only Lookup linked back
+          // by FieldRef and created via createfieldasxml, because the FieldRef
+          // linkage cannot be expressed through AddField. Read-only fields do
+          // not drift, so they are checked for existence only. See
+          // test/manual/projected-lookup-probe.js for the measured create shape.
+          if (col.projections && col.projections.length) {
+            laneDigest = await getDigest();
+            const primaryShape = await readFieldShape(list.title, col.title, null, true);
+            for (const proj of col.projections) {
+              if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                laneDigest = await getDigest();
+                const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+                  + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+                  + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+                await postJson(
+                  apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
+                  { parameters: { SchemaXml: xml, Options: 8 } },
+                  laneDigest,
+                );
+                summary.columnsCreated += 1;
+              }
+              await verifyDependentField(list.title, proj.name, col.title, primaryShape.Id, targetGuid);
+            }
           }
-          await postJson(
-            createUrl,
-            createBody,
-            laneDigest,
-          );
-          invalidateFieldShapes();  // new field: next probe re-enumerates
-          await reconcileDeclaredField(
-            list.title, col, targetGuid, laneDigest, false,
-          );
-          summary.columnsCreated += 1;
         } catch (err) {
           log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
           summary.errors.push({
@@ -3489,22 +3547,47 @@
         lookup.list, lookup.field, targetGuid, digest, true,
       )) {
         summary.columnsSkipped += 1;
-        continue;
+      } else {
+        const parameters = {
+          ...lookup.field.lookup_creation_parameters,
+          LookupListId: targetGuid,
+        };
+        await postJson(
+          apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
+          { parameters },
+          digest,
+        );
+        invalidateFieldShapes();  // new field: next probe re-enumerates
+        await reconcileDeclaredField(
+          lookup.list, lookup.field, targetGuid, digest, false,
+        );
+        summary.columnsCreated += 1;
       }
-      const parameters = {
-        ...lookup.field.lookup_creation_parameters,
-        LookupListId: targetGuid,
-      };
-      await postJson(
-        apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
-        { parameters },
-        digest,
-      );
-      invalidateFieldShapes();  // new field: next probe re-enumerates
-      await reconcileDeclaredField(
-        lookup.list, lookup.field, targetGuid, digest, false,
-      );
-      summary.columnsCreated += 1;
+      // Projected dependent fields, created after the primary exists so its
+      // Id is known. Each is a read-only Lookup linked back by FieldRef and
+      // created via createfieldasxml, because the FieldRef linkage cannot be
+      // expressed through AddField. Read-only fields do not drift, so they are
+      // checked for existence only, never reconciled. See the probe
+      // test/manual/projected-lookup-probe.js for the measured create shape.
+      if (lookup.projections && lookup.projections.length) {
+        digest = await getDigest();
+        const primaryShape = await readFieldShape(lookup.list, lookup.field.title, null, true);
+        for (const proj of lookup.projections) {
+          if (!(await readFieldShape(lookup.list, proj.name, null, true))) {
+            digest = await getDigest();
+            const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+              + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+              + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+            await postJson(
+              apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
+              { parameters: { SchemaXml: xml, Options: 8 } },
+              digest,
+            );
+            summary.columnsCreated += 1;
+          }
+          await verifyDependentField(lookup.list, proj.name, lookup.field.title, primaryShape.Id, targetGuid);
+        }
+      }
     } catch (err) {
       log('ERROR', `Phase 2.2 ${lookup.list}.${lookup.field.title}: ${err.message}`);
       summary.errors.push({

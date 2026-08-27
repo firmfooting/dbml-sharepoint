@@ -1538,6 +1538,105 @@ def test_a_cross_site_generated_name_at_the_internal_name_limit_is_accepted() ->
     none_of(findings, FindingCode.CROSS_SITE_GENERATED_NAME_TOO_LONG)
 
 
+def test_a_lookup_projection_to_an_unknown_column_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            lookup_projections={"Risk": {"Nope": ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_UNKNOWN_COLUMN).severity == "error"
+
+
+def test_a_lookup_projection_on_a_column_without_a_ref_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_column("Owner"))),
+        make_bundle(
+            entities=["Risk"],
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_COLUMN_HAS_NO_REF).severity == "error"
+
+
+def test_a_lookup_projection_to_an_unknown_target_column_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_ref("RelatedRisk", "Risk.Id"))),
+        make_bundle(
+            entities=["Risk"],
+            lookup_projections={"Risk": {"RelatedRisk": ["Nope"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_UNKNOWN_TARGET_COLUMN).severity == "error"
+
+
+def test_a_lookup_projection_whose_generated_name_collides_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table(
+            "Risk",
+            make_ref("RelatedRisk", "Risk.Id"),
+            make_column("RelatedRiskTitle"),
+        )),
+        make_bundle(
+            entities=["Risk"],
+            lookup_projections={"Risk": {"RelatedRisk": ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_NAME_COLLIDES).severity == "error"
+
+
+def test_a_lookup_projection_whose_generated_name_would_be_too_long_is_an_error() -> None:
+    long_name = "A" * 30
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_ref(long_name, "Risk.Id"))),
+        make_bundle(
+            entities=["Risk"],
+            lookup_projections={"Risk": {long_name: ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_NAME_TOO_LONG).severity == "error"
+
+
+def test_a_lookup_projection_on_a_cross_site_reference_is_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", make_ref("Owner", "Risk.Id"))),
+        make_bundle(
+            entities=["Risk"],
+            cross_site_reference_columns=[
+                CrossSiteRef(entity="Risk", column="Owner"),
+            ],
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_ON_CROSS_SITE_REF).severity == "error"
+
+
+def test_two_projection_declarations_that_generate_the_same_name_are_an_error() -> None:
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("C"), make_column("BC")),
+            make_table(
+                "Risk",
+                make_ref("AB", "Person.Id"),
+                make_ref("A", "Person.Id"),
+            ),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            lookup_projections={"Risk": {"AB": ["C"], "A": ["BC"]}},
+        ),
+    )
+
+    assert only(findings, FindingCode.PROJECTION_NAME_COLLIDES).severity == "error"
+
+
 def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
     """`owner_group` must name a built-in or one this mapping declares;
     anything else cannot be resolved when the group is created."""
@@ -2208,6 +2307,22 @@ def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
     )
 
     assert only(findings, FindingCode.DISPLAY_TITLE_TOO_LONG).severity == "error"
+
+
+def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("Title")),
+            make_table("Risk", make_ref("Owner", "Person.Id")),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            display_name_mode="title-case",
+            display_name_overrides={"Risk": {"OwnerTitle": "Risk Owner"}},
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
 
 
 def test_a_display_name_override_at_the_sp_limit_is_accepted() -> None:

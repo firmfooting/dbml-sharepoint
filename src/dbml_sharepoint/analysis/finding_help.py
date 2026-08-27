@@ -326,6 +326,30 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `cross_site_reference_columns:` entry names a column the "
         "entity's table does not declare."
     ),
+    FindingCode.PROJECTION_COLUMN_HAS_NO_REF: (
+        "A `lookup_projections:` entry names a column with no DBML `ref:`."
+    ),
+    FindingCode.PROJECTION_NAME_COLLIDES: (
+        "A lookup projection's generated dependent field has the same name "
+        "as a column the DBML already declares."
+    ),
+    FindingCode.PROJECTION_NAME_TOO_LONG: (
+        "A lookup projection's generated dependent field exceeds "
+        f"SharePoint's {MAX_INTERNAL_NAME}-character internal-name limit."
+    ),
+    FindingCode.PROJECTION_ON_CROSS_SITE_REF: (
+        "A `lookup_projections:` entry names a cross-site reference column, "
+        "which expands to Choice and URL fields rather than a primary lookup, "
+        "so it cannot carry a dependent projection."
+    ),
+    FindingCode.PROJECTION_UNKNOWN_COLUMN: (
+        "A `lookup_projections:` entry names a column the entity's table "
+        "does not declare."
+    ),
+    FindingCode.PROJECTION_UNKNOWN_TARGET_COLUMN: (
+        "A `lookup_projections:` entry projects a column the lookup target "
+        "does not declare."
+    ),
     FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER: (
         "A column's default is not a member of the enum it is typed as."
     ),
