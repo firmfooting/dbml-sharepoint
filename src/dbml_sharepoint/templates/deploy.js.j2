@@ -149,13 +149,26 @@
     if (!summary.aborted) summary.aborted = 'uncaught-phase-error';
     return summary;
   } finally {
-    // Restore field protection before dropping the temporary membership
-    // that may be what authorises those writes.
-    await restoreUnsealedFields();
-    // The reader drain precedes the operator drain for the same reason:
-    // the operator's temporary membership may be what authorises this
-    // removal too.
-    await removeReaderEnrollments();
-    await removeSelfEnrollments();
+    // Each exit cleanup is guarded on its own: one throwing must not skip a
+    // later one, because the operator's run-scoped membership is the LAST
+    // drain and the exact thing a failed run must not leave behind. Order
+    // still matters -- restore field protection while the temporary
+    // membership still authorises the write, then drain the reader before
+    // the operator.
+    try {
+      await restoreUnsealedFields();
+    } catch (err) {
+      log('ERROR', `Could not restore field protection on exit: ${err.message}`);
+    }
+    try {
+      await removeReaderEnrollments();
+    } catch (err) {
+      log('ERROR', `Could not remove the enterprise reader on exit: ${err.message}`);
+    }
+    try {
+      await removeSelfEnrollments();
+    } catch (err) {
+      log('ERROR', `Could not remove the operator's run-scoped enrolment on exit: ${err.message}. Remove yourself in Site permissions > Groups.`);
+    }
   }
 })();
