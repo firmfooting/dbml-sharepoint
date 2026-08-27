@@ -5187,3 +5187,408 @@ def test_a_same_titled_replacement_stops_a_write_phase(
         f"phase {phase.key} wrote to a replaced list: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
     )
+
+
+def test_the_deploy_confirms_the_editor_still_refuses_the_guard() -> None:
+    """The emitted script must ask the tenant rather than assume.
+
+    Measured 2026-08-17 (view-edit-page-probe.js): a view is protected when
+    its edit page returns 200 from the endpoint asked for, carries a
+    sentinel, and does not carry the editor's control names. What that
+    predicate is applied to (an editable control, then every filtered view)
+    is exercised against a mock site further down.
+    """
+    script = _deploy_js()
+    assert "ViewEdit.aspx" in script
+    assert 'name=\"FieldPicker1\"' in script
+    # A sentinel gates the absence check. C6 measured a request for a view
+    # that does not exist answering 200 with no editor controls, so absence
+    # alone would call a page that is not a view protected. Pinned as the
+    # declaration rather than as a substring: `ctl00` and `ViewEdit` are on
+    # that page too and are named in the comment beside it, so a bare
+    # containment test would pass on either of them.
+    assert "const EDITOR_PAGE_SENTINEL = 'ViewFilter';" in script
+    # English display text must not be the predicate: it reads correctly on
+    # an English tenant and silently wrong on any other.
+    assert "complex filter" not in script
+
+
+def test_no_path_through_the_guard_check_can_report_a_clean_run() -> None:
+    """Unverifiable and unprotected are different, and both must fail.
+
+    They were once a warning and an error respectively, on the reading that a
+    check unable to read the page is not evidence the view is unprotected.
+    True, and not enough: nothing else asks the question, so a warning left
+    the run reporting clean about the one property an operator destroys by
+    pressing Save. Every path out of the check now records an error, and the
+    behaviours themselves are exercised against a mock site below.
+    """
+    script = _deploy_js()
+    start = script.index("async function confirmEditorRefusesTheGuard")
+    block = script[start:script.index("await confirmEditorRefusesTheGuard();")]
+
+    # Nothing under this check warns any more, anywhere in the script: a
+    # second warn-only path is the shape this regressed as the first time.
+    assert "summary.warnings" not in script
+
+    # Every path that could not answer routes through one helper, and each
+    # one stops there rather than falling through to the success line.
+    calls = [line for line in block.splitlines() if "unverified(" in line]
+    assert len(calls) >= 4, calls
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        if "unverified(" not in line:
+            continue
+        assert "return;" in chr(10).join(lines[index:index + 8]), line
+
+    # The helper records an error rather than a warning, and the push is a
+    # statement rather than a guarded expression: `void 0 && push` would
+    # satisfy a containment test while never running.
+    helper = script[script.index("const unverified = (why, view) => {"):]
+    helper = helper[:helper.index("\n  };")]
+    assert "log('ERROR'" in helper
+    assert [ln.strip() for ln in helper.splitlines() if "summary.errors.push" in ln] == [
+        "summary.errors.push({",
+    ]
+
+
+# The view settings page as measured on 2026-08-17 (view-edit-page-probe.js):
+# half a megabyte of markup carrying the `ViewFilter` sentinel, and the
+# editor's control names only where the filter is editable. The mock serves a
+# variant per view title, so one run can hold a refused view beside an
+# editable one, which is the arrangement the whole check exists to tell apart.
+#
+#   editable   the controls are there, so the filter can be truncated
+#   refused    the guard took: sentinel, no controls, complete document
+#   drifted    complete and editable, but the controls carry other names
+#   truncated  HTTP 200 cut after the sentinel and before the controls
+#   stub       complete and sentinelled, but a fraction of a page's size
+#   redirect   HTTP 200 from somewhere else, as a login redirect answers
+_SETTINGS_PAGE_JS = (
+    "const PAGE_POLICY = __POLICY__;\n"
+    "const FILLER = 'f'.repeat(60000);\n"
+    "const CONTROLS = ['FieldPicker1', 'OperatorPicker1'];\n"
+    "const editorPage = (names, tail) => "
+    "'<html><head><title>ViewFilter</title></head><body>'\n"
+    "  + names.map((n) => `<input name=\"${n}\" type=\"text\" />`).join('')\n"
+    "  + FILLER + tail;\n"
+    "globalThis.__pageReads = [];\n"
+    "const settingsPage = (u) => {\n"
+    "  const raw = decodeURIComponent((u.match(/View=([^&]+)/) || [])[1] || '');\n"
+    "  const known = VIEW_BY_GUID[raw.replace(/[{}]/g, '')];\n"
+    "  globalThis.__pageReads.push(known ? known.title : `unknown ${raw}`);\n"
+    "  const policy = known ? (PAGE_POLICY[known.title] || 'refused') : 'unknown';\n"
+    "  const pages = {\n"
+    "    editable: editorPage(CONTROLS, '</body></html>'),\n"
+    "    refused: editorPage([], '</body></html>'),\n"
+    "    drifted: editorPage(['FilterField1', 'FilterOperator1'], '</body></html>'),\n"
+    "    truncated: '<html><head><title>ViewFilter</title></head><body>',\n"
+    "    stub: '<html><head><title>ViewFilter</title></head><body>x</body></html>',\n"
+    "    unknown: editorPage([], '</body></html>'),\n"
+    "    redirect: '<html><body>sign in</body></html>',\n"
+    "  };\n"
+    "  const redirected = policy === 'redirect';\n"
+    "  return { ok: true, status: 200, redirected,\n"
+    "    url: redirected ? 'https://example.sharepoint.com/_forms/default.aspx' : u,\n"
+    "    headers: { get: () => null },\n"
+    "    text: async () => pages[policy],\n"
+    "    json: async () => ({}) };\n"
+    "};\n"
+    "globalThis.fetch = async (url, opts = {}) => {\n"
+    "  if (String(url).includes('ViewEdit.aspx')) {\n"
+    "    calls.push({ url: String(url), method: 'GET', body: null });\n"
+    "    return settingsPage(String(url));\n"
+    "  }\n"
+)
+
+# What `web/lists/getbytitle('X')?$select=Id` answers with. Only the guard
+# confirmation reads that endpoint, and it reads it after the write lanes have
+# closed their ownership brackets, so answering it with a different Id models
+# one thing and nothing else: a same-titled list that replaced the owned one
+# in between.
+_OWNED_LIST_ID = "22222222-2222-2222-2222-222222222222"
+_REPLACEMENT_LIST_ID = "66666666-6666-6666-6666-666666666666"
+
+# A distinct id per view. The settings-page URL carries the view GUID and
+# nothing else that names the view, so the mock cannot serve two views
+# different pages while `_ADOPTED_HARNESS` gives every view one fixed id.
+_VIEW_GUIDS_JS = (
+    "const views = {};\n"
+    "const SETTINGS_LIST_ID = '__SETTINGS_LIST_ID__';\n"
+    "const VIEW_GUIDS = {};\n"
+    "const VIEW_BY_GUID = {};\n"
+    "let nextViewId = 0;\n"
+    "const viewGuid = (listTitle, title) => {\n"
+    "  const key = `${listTitle} ${title}`;\n"
+    "  if (!VIEW_GUIDS[key]) {\n"
+    "    nextViewId += 1;\n"
+    "    VIEW_GUIDS[key] = "
+    "`55555555-0000-0000-0000-${String(nextViewId).padStart(12, '0')}`;\n"
+    "    VIEW_BY_GUID[VIEW_GUIDS[key]] = { list: listTitle, title };\n"
+    "  }\n"
+    "  return VIEW_GUIDS[key];\n"
+    "};\n"
+)
+
+_VIEWS_ENUM_OLD = (
+    "  if (url.includes('/views?')) {\n"
+    "    const listTitle = listOf(url);\n"
+    "    return { d: { results: [viewState(listTitle)] } };\n"
+    "  }\n"
+)
+
+# The list's own Id (the check reads `?$select=Id` to build the page URL) and
+# an enumeration that answers with the views this run created, not with the
+# one built-in All Items. Without the second, every declared view reads as
+# absent after deployment and the check can only ever report that.
+_VIEWS_ENUM_NEW = (
+    "  if (url.endsWith('?$select=Id')) {\n"
+    "    return { d: { Id: SETTINGS_LIST_ID } };\n"
+    "  }\n"
+    "  if (url.includes('/views?')) {\n"
+    "    const listTitle = listOf(url);\n"
+    "    viewState(listTitle);\n"
+    "    return { d: { results: Object.entries(views)\n"
+    "      .filter(([key]) => key.startsWith(`${listTitle} `))\n"
+    "      .map(([, shape]) => shape) } };\n"
+    "  }\n"
+)
+
+_VIEW_CREATE_JS = (
+    "  if ((opts.method || 'GET') === 'POST' && opts.body && /\\/views$/.test(u)) {\n"
+    "    const parsed = JSON.parse(opts.body);\n"
+    "    if (parsed.__metadata && parsed.__metadata.type === 'SP.View') {\n"
+    "      const state = viewState(listOf(u), parsed.Title);\n"
+    "      for (const key of ['Hidden', 'RowLimit', 'ViewQuery']) {\n"
+    "        if (parsed[key] !== undefined) state[key] = parsed[key];\n"
+    "      }\n"
+    "      state.DefaultView = parsed.DefaultView === true;\n"
+    "      state.ServerRelativeUrl = "
+    "`/sites/test/Lists/${listOf(u)}/${parsed.Title}.aspx`;\n"
+    "      state.ViewFields = { Items: { results: [] } };\n"
+    "    }\n"
+    "  }\n"
+    "  if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {\n"
+)
+
+# Two filtered views on one list, so a run can refuse the first and open the
+# second. Single-word titles: the deployer creates a view under its URL slug
+# and renames it afterwards, and a title equal to its own slug keeps the
+# mock's view state under one key.
+_GUARDED_VIEWS = """
+views:
+  Escalation:
+    - title: "Open"
+      fields: [Title, Note]
+      where:
+        - { field: Note, op: neq, value: "done" }
+    - title: "Recent"
+      fields: [Title, Note]
+      where:
+        - { field: Title, op: neq, value: "x" }
+"""
+
+
+def _view_guard_harness(
+    policy: dict[str, str], settings_list_id: str = _OWNED_LIST_ID,
+) -> str:
+    """`_ADOPTED_HARNESS` that also serves view settings pages.
+
+    `policy` maps a view title to the page variant the mock serves for it,
+    defaulting to `refused`. `All Items` is the unfiltered control the check
+    validates its markers against, so a run that means to reach the filtered
+    views has to declare it editable.
+
+    `settings_list_id` is the Id the guard confirmation's list read answers
+    with; see `_REPLACEMENT_LIST_ID`.
+    """
+    harness = _ADOPTED_HARNESS
+    for what, old, new in (
+        ("view guids", "const views = {};\n", _VIEW_GUIDS_JS),
+        ("view id", "    Id: '44444444-4444-4444-4444-444444444444',\n",
+         "    Id: viewGuid(listTitle, title),\n"),
+        ("view enumeration", _VIEWS_ENUM_OLD, _VIEWS_ENUM_NEW),
+        ("view create",
+         "  if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {\n",
+         _VIEW_CREATE_JS),
+        ("settings page", "globalThis.fetch = async (url, opts = {}) => {\n",
+         _SETTINGS_PAGE_JS),
+    ):
+        spliced = harness.replace(old, new, 1)
+        assert spliced != harness, f"{what} was not spliced into the harness"
+        harness = spliced
+    return harness.replace("__POLICY__", json.dumps(policy)).replace(
+        "__SETTINGS_LIST_ID__", settings_list_id,
+    )
+
+
+def _run_view_guard_deploy(
+    tmp_path: Path, policy: dict[str, str],
+    settings_list_id: str = _OWNED_LIST_ID,
+) -> tuple[dict[str, Any], list[str], str]:
+    """Deploy two filtered views against a site that serves settings pages.
+
+    Returns (summary, the view titles whose settings page was read in order,
+    output).
+    """
+    js = _declared_deploy_js(tmp_path, _GUARDED_VIEWS)
+    script = _view_guard_harness(policy, settings_list_id) + "\n" + js.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__PAGES__' + JSON.stringify(globalThis.__pageReads)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    summary = _summary_of(output)
+    pages_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__PAGES__")), None,
+    )
+    assert pages_line is not None, f"harness logged no page reads:\n{output[-3000:]}"
+    read: list[str] = json.loads(pages_line.removeprefix("__PAGES__"))
+    return summary, read, output
+
+
+def _refusal_errors(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        e for e in summary.get("errors", [])
+        if e.get("check") == "filter-editor-refusal"
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_guard_check_reads_the_control_then_every_filtered_view(
+    tmp_path: Path,
+) -> None:
+    """The clean run, and what the failing runs below are measured against.
+
+    The control is read first: its markers are what makes an absence on a
+    guarded view mean anything, so a run that could not read it has nothing
+    to conclude from the pages that follow.
+    """
+    summary, read, output = _run_view_guard_deploy(tmp_path, {"All Items": "editable"})
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    assert read == ["All Items", "Open", "Recent"], read
+    assert "refuses 2 of 2 declared filter(s)" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_view_the_editor_opens_fails_the_run_even_when_the_first_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Checking one view establishes nothing about the others.
+
+    The first filtered view here is refused and the second is editable, which
+    is the arrangement a single-view check reports as protected: it reads the
+    refused one, finds no controls and says so for the whole deployment.
+    """
+    summary, read, output = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable", "Recent": "editable"},
+    )
+    assert read == ["All Items", "Open", "Recent"], read
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["Recent"], errors
+    assert "still editable in the filter editor" in errors[0]["error"]
+    assert summary.get("aborted"), summary
+    assert "refuses 1 of 2 declared filter(s)" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_truncated_settings_page_is_not_a_confirmation(tmp_path: Path) -> None:
+    """A response cut after the sentinel and before the controls has neither.
+
+    Absence of the controls is the whole predicate, so a page that stopped
+    early reads exactly like a protected one. view-edit-page-probe.js C6
+    records this shape as unmeasured and names a length or completeness test
+    as what closes it, which is what the check now requires.
+    """
+    summary, read, _ = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable", "Open": "truncated"},
+    )
+    assert read == ["All Items", "Open", "Recent"], read
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["Open"], errors
+    assert "complete=false" in errors[0]["error"]
+    assert summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_page_far_smaller_than_the_settings_page_is_not_a_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Ending in `</html>` is not the same as having arrived whole.
+
+    A stub that closes its own document passes a terminator test while
+    carrying none of the editor. The settings page measured 501,773
+    characters on 2026-08-17, so a response orders of magnitude under that is
+    not the page whose missing controls would mean anything.
+    """
+    summary, _, _ = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable", "Open": "stub"},
+    )
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["Open"], errors
+    assert "complete=false" in errors[0]["error"]
+    assert summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_redirected_settings_page_is_not_a_confirmation(tmp_path: Path) -> None:
+    """A login or modern-settings redirect answers HTTP 200 from elsewhere.
+
+    The page never arrived, so nothing is missing from it. This was a warning
+    once, which left the deployment reporting clean.
+    """
+    summary, _, _ = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable", "Open": "redirect"},
+    )
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["Open"], errors
+    assert "redirected=true" in errors[0]["error"]
+    assert summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_control_markers_missing_from_an_editable_view_stop_the_check(
+    tmp_path: Path,
+) -> None:
+    """A tenant that renamed both controls would read as every view protected.
+
+    The sentinel is still on the page and the control names are not, which is
+    indistinguishable from protection unless something known to be editable
+    is asked the same question. So the unfiltered view is read first, and its
+    answer decides whether an absence means anything at all.
+    """
+    summary, read, _ = _run_view_guard_deploy(tmp_path, {"All Items": "drifted"})
+    assert read == ["All Items"], read
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["All Items"], errors
+    assert "marker drift" in errors[0]["error"]
+    assert summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_titled_replacement_stops_the_guard_confirmation(
+    tmp_path: Path,
+) -> None:
+    """The confirmation resolves each list by title, long after the lane.
+
+    #305 brackets the view-write lane: the title is proved to resolve to the
+    Id the survey captured before the first write and again after the last.
+    The guard confirmation runs after every lane has closed, and it resolves
+    the title again to build the settings-page URL. A same-titled list that
+    replaced the owned one in between answers that read, so its settings page
+    would be read and reported on under the owned list's name. Nothing
+    downstream can see that the wrong list was asked, which is the whole
+    reason this check exists.
+    """
+    summary, read, output = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable"},
+        settings_list_id=_REPLACEMENT_LIST_ID,
+    )
+    assert read == [], f"a replaced list's settings page was read: {read}"
+    errors = _refusal_errors(summary)
+    assert len(errors) == 1, errors
+    assert "changed identity before the filter editor was read" in errors[0]["error"]
+    assert _REPLACEMENT_LIST_ID in errors[0]["error"]
+    assert summary.get("aborted"), summary
+    assert "refuses 2 of 2 declared filter(s)" not in output
