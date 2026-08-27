@@ -270,7 +270,7 @@
                 );
                 summary.columnsCreated += 1;
               }
-              await verifyDependentField(list.title, proj.name, col.title, primaryShape.Id, targetGuid);
+              await verifyDependentField(list.title, proj.name, proj.show_field, primaryShape.Id, targetGuid);
             }
           }
         } catch (err) {

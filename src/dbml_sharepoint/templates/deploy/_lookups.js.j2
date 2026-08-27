@@ -80,7 +80,7 @@
             );
             summary.columnsCreated += 1;
           }
-          await verifyDependentField(lookup.list, proj.name, lookup.field.title, primaryShape.Id, targetGuid);
+          await verifyDependentField(lookup.list, proj.name, proj.show_field, primaryShape.Id, targetGuid);
         }
       }
     } catch (err) {

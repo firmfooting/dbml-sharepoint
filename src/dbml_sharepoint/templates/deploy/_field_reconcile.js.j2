@@ -865,7 +865,7 @@
     return true;
   }
 
-  async function verifyDependentField(listName, dependentName, primaryInternalName, primaryId, targetGuid) {
+  async function verifyDependentField(listName, dependentName, showField, primaryId, targetGuid) {
     // A projected dependent field must be a genuine dependent Lookup linked
     // back to its primary by FieldRef, targeting the same list, and read-only.
     // Existence alone is not enough: a same-named impostor field would be
@@ -889,8 +889,8 @@
       `(readback ${JSON.stringify(s.PrimaryFieldId)}; expected primary '${primaryId}')`);
     check('LookupList', normalizeGuid(s.LookupList) === normalizeGuid(targetGuid),
       `(readback ${JSON.stringify(s.LookupList)}; expected target '${targetGuid}')`);
-    check('LookupField', s.LookupField === primaryInternalName,
-      `(readback ${JSON.stringify(s.LookupField)}; expected '${primaryInternalName}')`);
+    check('LookupField', s.LookupField === showField,
+      `(readback ${JSON.stringify(s.LookupField)}; expected '${showField}')`);
     check('ReadOnlyField', s.ReadOnlyField === true,
       `(readback ${JSON.stringify(s.ReadOnlyField)})`);
     if (mismatches.length) {
