@@ -187,7 +187,7 @@ def test_the_threshold_probe_measures_the_guard_this_tool_emits() -> None:
     be a different string, and this project has already carried an OData
     result over to a CAML question once.
     """
-    from dbml_sharepoint.analysis.conditions import CAML_VIEW_FILTER_GUARD
+    from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
 
     probe = (PACKAGE.parent.parent / "test" / "manual" / "threshold-index-probe.js")
     assert CAML_VIEW_FILTER_GUARD in probe.read_text(encoding="utf-8"), (
