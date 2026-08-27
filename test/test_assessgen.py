@@ -422,6 +422,15 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
           Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),
         } });
       }
+      // The list-title enumeration (web/lists?$select=Title...). Answers every
+      // EXISTING list's Title so the assess collision probe reads absence from
+      // a 200 with an empty set, exactly as a real tenant does -- not a
+      // getbytitle 404.
+      if (path.endsWith('/lists')) {
+        return respond(200, {
+          d: { results: [...LIST_DESCRIPTIONS.keys()].map((t) => ({ Title: t })) },
+        });
+      }
       return respond(200, body(u));
     };
 """)
@@ -1310,6 +1319,52 @@ def test_a_refused_contextinfo_is_named_rather_than_reported_as_a_type_error() -
     # Contextinfo remains the only POST after the refusal.
     writes = [c for c in calls if c["method"] == "POST" and "contextinfo" not in c["url"]]
     assert not writes, f"the read-only assessment wrote: {writes}"
+
+
+def _refused_enumeration_harness() -> str:
+    """`_ASSESS_HARNESS` refusing the list-title enumeration, calls logged.
+
+    The enumeration is the happy path that lets a first deploy read absence
+    from a 200 rather than painting getbytitle 404s. Refusing it forces the
+    collision probe onto its per-title fallback, which is where the "absent
+    list degrades to WARN" regression lived.
+    """
+    wrapper = textwrap.dedent("""
+        const calls = [];
+        const siteFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          calls.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+          // web/lists (the enumeration) ends with /lists; getbytitle does not.
+          if (String(url).split('?')[0].endsWith('/lists')) {
+            return respond(403, __DENIED__);
+          }
+          return siteFetch(url, opts);
+        };
+        globalThis.__calls = calls;
+    """).replace("__DENIED__", json.dumps(_ACCESS_DENIED))
+    return _ASSESS_HARNESS + wrapper
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_enumeration_still_reads_a_404_as_absence() -> None:
+    """A refused title enumeration must not turn absent lists into warnings.
+
+    With the enumeration unavailable the collision probe falls back to
+    per-title getbytitle, and an absent list's 404 is the only signal. It must
+    still read "clean provision target" (PASS) -- reading it as a probe
+    failure degrades every first deploy whose tenant refuses the enumeration.
+    """
+    summary, _calls, _output = _run_assess_refused(_refused_enumeration_harness())
+    collisions = {
+        f["key"]: f["level"]
+        for f in summary["findings"]
+        if f["key"].startswith("collision:")
+    }
+    for title in _declared_descriptions():
+        assert collisions.get(f"collision:{title}") == "PASS", (
+            f"refused enumeration turned absent '{title}' into "
+            f"{collisions.get(f'collision:{title}')!r} instead of PASS"
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

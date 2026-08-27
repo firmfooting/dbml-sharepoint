@@ -335,6 +335,17 @@
       }
     }
 
+    // Which list titles exist, from ONE enumeration, answered
+    // case-insensitively and without a getbytitle 404 (a first deploy has every
+    // declared list absent, and the browser paints each 404 red). Null means
+    // "enumeration refused"; callers fall back to per-list probing.
+    const assessListTitleSet = async () => {
+      const r = await probeGet('web/lists?$select=Title&$top=5000');
+      if (!r.ok) return null;
+      const results = (r.d && r.d.results) || [];
+      return new Set(results.map((l) => String(l.Title == null ? '' : l.Title).toLowerCase()));
+    };
+
     // ===================================================================
     // Tier 1: always-run enumerations
     // ===================================================================
@@ -545,10 +556,19 @@
 
     // Collision probe per declared list. Description rides along on a request
     // already being made, so the marker check above costs no probe of its own.
+    // Absence is read from the shared title enumeration, never a getbytitle
+    // 404, so a first deploy does not paint the console red.
+    const knownTitles = await assessListTitleSet();
     for (const title of TARGETS.list_titles) {
       const key = `collision:${title}`;
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
+        finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
+        continue;
+      }
       const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
       if (!list.ok && list.status === 404) {
+        // Enumeration refused (knownTitles null): a 404 still means absent,
+        // not "could not probe".
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
       } else if (list.ok) {
         finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}); the ownership check below decides whether deploy may reconcile it.`);
@@ -566,9 +586,14 @@
     // the site's own lists: 200 PASS, non-200 WARN.
     {
       let probeList = null;
-      for (const title of TARGETS.list_titles) {
-        const l = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title`);
-        if (l.ok) { probeList = title; break; }
+      const surfaceTitles = await assessListTitleSet();
+      if (surfaceTitles) {
+        probeList = TARGETS.list_titles.find((t) => surfaceTitles.has(String(t).toLowerCase())) || null;
+      } else {
+        for (const title of TARGETS.list_titles) {
+          const l = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title`);
+          if (l.ok) { probeList = title; break; }
+        }
       }
       const surfaceProbe = async (key, present, suffixFor) => {
         if (!present) return;
@@ -701,8 +726,8 @@
   // list create or delete.
   let knownListTitles = null;
   const invalidateListShapes = () => { knownListTitles = null; };
-  async function ensureKnownListTitles() {
-    if (knownListTitles) return knownListTitles;
+  async function ensureKnownListTitles(force = false) {
+    if (knownListTitles && !force) return knownListTitles;
     const r = await fetchWithRetry(apiUrl('web/lists?$select=Title&$top=5000'), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -717,12 +742,14 @@
   }
 
   async function readListShape(name, fresh = false) {
-    // Verification after a write passes fresh=true and always asks the
-    // server: a cache must never be able to confirm our own write.
-    if (!fresh) {
-      const titles = await ensureKnownListTitles();
-      if (titles && !hasName(titles, name)) return null;
-    }
+    // The existence check always runs, because asking getbytitle for an
+    // absent list answers 404, which the browser paints red and an operator
+    // reads as a failure. `fresh` re-enumerates rather than trusting the
+    // cache (a verification after a write must never have its own write
+    // confirmed by a cache); either way absence is learned from the
+    // enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
     // Description rides along on a request already being made: it is a
     // declared, reconciled setting (it carries the provenance marker), so
     // reading it here is what lets reconcileListDescription compare without
@@ -5480,13 +5507,26 @@
     if (!summary.aborted) summary.aborted = 'uncaught-phase-error';
     return summary;
   } finally {
-    // Restore field protection before dropping the temporary membership
-    // that may be what authorises those writes.
-    await restoreUnsealedFields();
-    // The reader drain precedes the operator drain for the same reason:
-    // the operator's temporary membership may be what authorises this
-    // removal too.
-    await removeReaderEnrollments();
-    await removeSelfEnrollments();
+    // Each exit cleanup is guarded on its own: one throwing must not skip a
+    // later one, because the operator's run-scoped membership is the LAST
+    // drain and the exact thing a failed run must not leave behind. Order
+    // still matters -- restore field protection while the temporary
+    // membership still authorises the write, then drain the reader before
+    // the operator.
+    try {
+      await restoreUnsealedFields();
+    } catch (err) {
+      log('ERROR', `Could not restore field protection on exit: ${err.message}`);
+    }
+    try {
+      await removeReaderEnrollments();
+    } catch (err) {
+      log('ERROR', `Could not remove the enterprise reader on exit: ${err.message}`);
+    }
+    try {
+      await removeSelfEnrollments();
+    } catch (err) {
+      log('ERROR', `Could not remove the operator's run-scoped enrolment on exit: ${err.message}. Remove yourself in Site permissions > Groups.`);
+    }
   }
 })();
