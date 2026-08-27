@@ -1,3 +1,8 @@
+  // Shared by Q3 and the Q4-Q6 outcome gate. SharePoint stores the aggregation
+  // XML with a space before self-closing `/>` and quote normalisation, the same
+  // storage form that bit the threshold probe's ViewQuery readback.
+  const normalizeAgg = (xml) => String(xml || '')
+    .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').replace(/ \/>/g, '/>').trim();
   const aggregationManualOutcome = (controls) => {
     const seedsHeld = Array.isArray(controls.seedValues)
       && controls.seedValues.length === 2
@@ -9,7 +14,7 @@
     const renamedTitleHeld = controls.fieldTitle === controls.expectedFieldTitle;
     const ready = controls.setupReady
       && controls.writeOk
-      && String(controls.aggregationXml) === controls.expectedXml
+      && normalizeAgg(controls.aggregationXml) === normalizeAgg(controls.expectedXml)
       && controls.aggregationStatus === 'On'
       && seedsHeld
       && viewFieldsHeld
