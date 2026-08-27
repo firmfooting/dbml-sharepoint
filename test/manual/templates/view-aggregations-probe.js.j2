@@ -15,7 +15,10 @@
   const CLEANUP_AT_END = false;
   // What the totals row should show once one of the attempts lands.
   const AGG_FIELD = 'Amount';
-  const AGG_TYPE = 'Sum';
+  // Uppercase: the classic view renderer matches aggregation types by exact
+  // case, and a capitalised 'Sum' stored fine but rendered 'Count= undefined'
+  // (live finding 2026-08-27). 'AVG' already matched.
+  const AGG_TYPE = 'SUM';
   // ------------------------------------------------------------------------
 
 {% include "_probe_results_v1.js.j2" %}
@@ -60,6 +63,10 @@
       BaseTemplate: 100,
       Title: PROBE_LIST,
       Description: OWNERSHIP_DESCRIPTION,
+      // Classic experience, so the retained fixture renders server-side and the
+      // visible findings (Q4-Q6) are capturable by the harness's capture-visible
+      // step. The modern list web part does not render under Camofox.
+      ListExperienceOptions: 2,
     });
     if (!made.ok) {
       record('Q1', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
@@ -192,7 +199,9 @@
     const after = await get(`${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`);
     const gotAgg = after.d?.Aggregations || '(null)';
     const gotStatus = after.d?.AggregationsStatus || '(null)';
-    const matches = String(gotAgg) === AGG_XML && gotStatus === 'On';
+    // Compared on the normalised form (normalizeAgg above) because SharePoint
+    // stores the XML with a space before self-closing `/>` and quote changes.
+    const matches = normalizeAgg(gotAgg) === normalizeAgg(AGG_XML) && gotStatus === 'On';
     record(
       'Q3',
       'the written property reads back unchanged',

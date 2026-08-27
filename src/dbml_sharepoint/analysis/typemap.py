@@ -571,6 +571,12 @@ NOW_SENTINEL = re.compile(r"^now$")
 # MAX, MIN, SUM, STDEV and VAR and notes they are case-insensitive:
 # https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
 #
+# The live classic renderer does not agree with "case-insensitive":
+# `Type="Sum"` (capitalised) stores and round-trips byte-identically but
+# renders `Count= undefined`, while `Type="SUM"` renders `Sum= 42`
+# (measured 2026-08-27 by test/manual/view-aggregations-probe.js). Emit
+# UPPERCASE, which this table already does.
+#
 # `avg` is the exception: the English word is "Average" and the token is "AVG".
 # A non-member is ACCEPTED (SharePoint stores it and reads it back
 # unchanged) and then fails the whole view with "Unknown render failure".
