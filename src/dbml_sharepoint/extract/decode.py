@@ -249,6 +249,7 @@ def decode_list(
         _recover_mapping(raw, decoded, types, entity, unrecovered)
 
     _recover_display_names(kept, decoded)
+    _recover_renames(kept, decoded, unrecovered)
     return decoded
 
 
@@ -482,6 +483,50 @@ def _recover_display_names(kept: list[RawField], decoded: DecodedEntity) -> None
     for raw in kept:
         if raw.display_name != auto_display_name(raw.internal_name):
             decoded.display_overrides[raw.internal_name] = raw.display_name
+
+
+def _rename_key(name: str) -> str:
+    """Whitespace- and case-insensitive form of a name, for drift checks.
+
+    SharePoint's internal-name derivation drops a space here and escapes one
+    there (`Due_x002f_reviewdate` for "Due/review date" but
+    `Risk_x0020_Owner` for "Risk Owner"), so whitespace is not a signal that
+    a name changed, and neither is case. What is left is the character
+    sequence that must match for the internal name to have been derived from
+    the current title rather than an older one.
+    """
+    return "".join(ch for ch in name.lower() if not ch.isspace())
+
+
+def _recover_renames(
+    kept: list[RawField],
+    decoded: DecodedEntity,
+    unrecovered: list[Unrecovered],
+) -> None:
+    """Flag columns whose internal name is a fossil of an earlier title.
+
+    `_recover_display_names` records a title that `auto` would not derive
+    from the internal name. This answers the separate, harder question: is
+    the internal name itself a fossil of a DIFFERENT title than the one
+    shown now? SharePoint never renames an internal name when the column is
+    renamed, so a "yes" means every reference to the old internal name - a
+    formula, a view, a formatter, a Power Automate flow - breaks on rebuild.
+    """
+    for raw in kept:
+        old = _rename_key(_decode_escapes(raw.internal_name))
+        current = _rename_key(raw.display_name)
+        if old == current:
+            continue
+        unrecovered.append(Unrecovered(
+            "renamed-column",
+            f"{decoded.name}.{raw.internal_name}",
+            (
+                f"internal name decodes to {_decode_escapes(raw.internal_name)!r} "
+                f"but the column is titled {raw.display_name!r}; it was renamed "
+                "after creation, so references to the old internal name break "
+                "on rebuild"
+            ),
+        ))
 
 
 def new_enum_registry() -> _EnumRegistry:

@@ -122,6 +122,15 @@ _KINDS: dict[str, tuple[str, str]] = {
         name on the way back. Rename the live column, or accept the new one
         and migrate the data.""",
     ),
+    "renamed-column": (
+        "Columns renamed after creation",
+        """The column's internal name decodes to a different title than the one
+        shown now. SharePoint freezes the internal name when a column is
+        created, so a rename leaves the old name behind and anything still
+        referencing it - a formula, a view, a formatter, a Power Automate
+        flow - breaks when the list is rebuilt. Re-point those references,
+        or accept the new internal name and migrate the data.""",
+    ),
     "calculated-default": (
         "Defaults dropped from calculated columns",
         """A calculated column derives its value on every edit, so the

@@ -377,6 +377,34 @@ def test_a_column_that_survives_with_a_caveat_still_reports_it(
     assert kind in [u.kind for u in unrecovered]
 
 
+@pytest.mark.parametrize("xml", [
+    field_xml("Text", StaticName="Probability", DisplayName="Likelihood"),
+    field_xml("Text", StaticName="Risk_x0028_cause_x27a1__xfe0f_ev",
+              DisplayName="Description"),
+])
+def test_a_column_renamed_after_creation_reports_its_fossil_name(xml: str) -> None:
+    """The internal name decodes to a different title than the one shown."""
+    unrecovered: list[Unrecovered] = []
+    decoded = _decode(xml, unrecovered=unrecovered)
+    assert len(decoded.columns) == 1
+    renamed = [u for u in unrecovered if u.kind == "renamed-column"]
+    assert len(renamed) == 1
+    assert renamed[0].subject.startswith("T.")
+
+
+@pytest.mark.parametrize("xml", [
+    field_xml("Text", StaticName="Due_x002f_reviewdate",
+              DisplayName="Due/review date"),
+    field_xml("Text", StaticName="Status", DisplayName="Status "),
+    field_xml("Text", StaticName="Risk_x0020_Owner", DisplayName="Risk Owner"),
+])
+def test_a_current_internal_name_is_not_reported_as_renamed(xml: str) -> None:
+    """Whitespace and case differences are SharePoint's own, not a rename."""
+    unrecovered: list[Unrecovered] = []
+    _decode(xml, unrecovered=unrecovered)
+    assert "renamed-column" not in [u.kind for u in unrecovered]
+
+
 def test_a_field_element_carrying_a_dtd_is_refused() -> None:
     """MEASURED 2026-08-27: `ET.fromstring` refuses an external entity and
     expands an internal one, so a DOCTYPE is the whole amplification
