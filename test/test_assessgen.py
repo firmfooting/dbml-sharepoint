@@ -422,6 +422,15 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
           Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),
         } });
       }
+      // The list-title enumeration (web/lists?$select=Title...). Answers every
+      // EXISTING list's Title so the assess collision probe reads absence from
+      // a 200 with an empty set, exactly as a real tenant does -- not a
+      // getbytitle 404.
+      if (path.endsWith('/lists')) {
+        return respond(200, {
+          d: { results: [...LIST_DESCRIPTIONS.keys()].map((t) => ({ Title: t })) },
+        });
+      }
       return respond(200, body(u));
     };
 """)

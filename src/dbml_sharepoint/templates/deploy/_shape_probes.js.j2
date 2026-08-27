@@ -20,8 +20,8 @@
   // list create or delete.
   let knownListTitles = null;
   const invalidateListShapes = () => { knownListTitles = null; };
-  async function ensureKnownListTitles() {
-    if (knownListTitles) return knownListTitles;
+  async function ensureKnownListTitles(force = false) {
+    if (knownListTitles && !force) return knownListTitles;
     const r = await fetchWithRetry(apiUrl('web/lists?$select=Title&$top=5000'), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -36,12 +36,14 @@
   }
 
   async function readListShape(name, fresh = false) {
-    // Verification after a write passes fresh=true and always asks the
-    // server: a cache must never be able to confirm our own write.
-    if (!fresh) {
-      const titles = await ensureKnownListTitles();
-      if (titles && !hasName(titles, name)) return null;
-    }
+    // The existence check always runs, because asking getbytitle for an
+    // absent list answers 404, which the browser paints red and an operator
+    // reads as a failure. `fresh` re-enumerates rather than trusting the
+    // cache (a verification after a write must never have its own write
+    // confirmed by a cache); either way absence is learned from the
+    // enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
     // Description rides along on a request already being made: it is a
     // declared, reconciled setting (it carries the provenance marker), so
     // reading it here is what lets reconcileListDescription compare without
