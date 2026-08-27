@@ -163,10 +163,17 @@ def _write_text_calls(source: str) -> list[ast.Call]:
 
 
 def _writers_missing_lf(source: str) -> list[int]:
-    """Line numbers of the `write_text` calls in `source` that do not pin LF."""
+    """Line numbers of the `write_text` calls in `source` that do not pin LF.
+
+    Read off the KEYWORDS the call passes, not off its source text. A
+    substring answers a question about the call's content, so a writer
+    emitting the words `newline="\\n"` into the file it was writing passed
+    while pinning nothing itself. A `**kwargs` splat has no `arg` and does not
+    count either: what it holds is not visible here, and this fails closed.
+    """
     return [
         call.lineno for call in _write_text_calls(source)
-        if "newline=" not in (ast.get_source_segment(source, call) or "")
+        if not any(keyword.arg == "newline" for keyword in call.keywords)
     ]
 
 
@@ -238,4 +245,33 @@ def test_the_threshold_probe_measures_the_guard_this_tool_emits() -> None:
         f"{probe.name} does not contain CAML_VIEW_FILTER_GUARD verbatim, so "
         f"its GRDIDX/GRDNUL/GRDUNI/GRDONLY rows are measuring some other "
         f"string. Re-render the probe after changing the constant."
+    )
+
+
+def test_the_lf_gate_reads_the_keywords_a_call_actually_passes() -> None:
+    """`newline=` appearing in the call's text is not the same as passing it.
+
+    Substring-matching the source of the whole call answers a question about
+    its CONTENT, so a writer that emits the words `newline="\\n"` into a file
+    while pinning nothing itself is accepted. That is the direction that
+    ships: an unpinned writer passes the gate and marks every file it touches
+    as modified on Windows.
+
+    A call spread over several lines carries the keyword further down, so it
+    is read from the complete call rather than from the line the call opens
+    on.
+    """
+    spread = (
+        "path.write_text(\n"
+        "    render(bundle),\n"
+        "    encoding=\"utf-8\",\n"
+        '    newline="\\n",\n'
+        ")\n"
+    )
+    assert _writers_missing_lf(spread) == [], (
+        "a multi-line call was judged on the line it opens on"
+    )
+    about = 'path.write_text(\'pass newline="\\\\n" to write_text\', encoding="utf-8")\n'
+    assert _writers_missing_lf(about) == [1], (
+        "a call that only MENTIONS newline= in its content passed the gate"
     )
