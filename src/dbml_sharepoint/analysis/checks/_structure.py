@@ -1016,21 +1016,22 @@ def _calculated_columns(vc: ValidationContext) -> list[Finding]:
     ]
 
 
-def _deferred_lookups(schema: Schema) -> dict[str, set[str]]:
+def _deferred_lookups(schema: Schema, entities: dict[str, EntityMapping]) -> dict[str, set[str]]:
     """Lookups the deploy plan defers to Phase 2.
 
-    Self-references and one side of every cycle. They exist by the end of the
-    run but not when Phase 1 fields are created.
+    Self-references, one side of every cycle, and any lookup whose display
+    field is not the built-in Title. They exist by the end of the run but not
+    when Phase 1 fields are created.
     """
     deferred: dict[str, set[str]] = {}
-    for entity_name, col_name in compute_phases(schema).phase2_lookups:
+    for entity_name, col_name in compute_phases(schema, entities).phase2_lookups:
         deferred.setdefault(entity_name, set()).add(col_name)
     return deferred
 
 
 def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
     """Every calculated column's formula, against the columns it names."""
-    deferred = _deferred_lookups(vc.schema)
+    deferred = _deferred_lookups(vc.schema, vc.bundle.mapping.entities)
     findings: list[Finding] = []
     for table in vc.schema.tables:
         # Per TABLE, not per calculated column: all three are pure functions

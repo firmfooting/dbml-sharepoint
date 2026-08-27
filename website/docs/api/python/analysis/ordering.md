@@ -12,8 +12,16 @@ Two-pass dependency resolution.
 Phase 2.1: create lists in topological order, with non-lookup columns and as
 many lookup columns as can be resolved (target already created).
 
-Phase 2.2: add the remaining lookup columns (self-references and any side
-of a strongly connected component).
+Phase 2.2: add the remaining lookup columns (self-references, any side of a
+strongly connected component, and any lookup whose display field is not the
+built-in Title).
+
+The display-field deferral exists because the field wave runs one lane per list
+in PARALLEL: a lookup whose `LookupField` is a calculated or custom column is
+reading a field the target list's lane may not have created yet. The lookup must
+wait for Phase 2.2, where every lane has finished. Measured 2026-08-27: the
+raid-log `RelatedRisk` displays the calculated `LiveRiskTitle` and failed with
+"target display field 'ProjectRisk.LiveRiskTitle' does not exist".
 
 ### `DeployPlan`
 
@@ -29,7 +37,7 @@ DeployPlan(list_creation_order: list[str] = &lt;factory>, phase2_lookups: list[t
 ### `compute_phases`
 
 ```python
-def compute_phases(schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.analysis.ordering.DeployPlan
+def compute_phases(schema: dbml_sharepoint.model.parser.Schema, entities: 'dict[str, EntityMapping] | None' = None) -> dbml_sharepoint.analysis.ordering.DeployPlan
 ```
 
 ### `is_deployed_here`
