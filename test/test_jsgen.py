@@ -1070,6 +1070,21 @@ def test_existing_lookup_shape_requires_exact_target_and_display_field() -> None
     assert "declared target list" in js
 
 
+def test_dependent_lookup_verifies_the_projected_field_not_the_primary() -> None:
+    """A dependent field projects `proj.show_field` (a field on the target
+    list), so its `LookupField` readback must match that -- not the primary
+    lookup column's own name. Regression: the check compared against the
+    primary's title, which refused every correctly-shaped site because a
+    dependent field's LookupField is its ShowField, never its primary."""
+    js = _generate_simple_js()
+
+    assert "s.LookupField === showField" in js
+    assert "verifyDependentField(list.title, proj.name, proj.show_field" in js
+    assert "verifyDependentField(lookup.list, proj.name, proj.show_field" in js
+    assert "verifyDependentField(list.title, proj.name, col.title" not in js
+    assert "verifyDependentField(lookup.list, proj.name, lookup.field.title" not in js
+
+
 def test_mutable_list_and_field_shape_is_reconciled_and_read_back() -> None:
     """Mutable properties are MERGEd only after ownership and immutable checks."""
     js = _generate_simple_js()
