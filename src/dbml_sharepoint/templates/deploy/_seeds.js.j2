@@ -73,51 +73,81 @@
     }
   }
 
-  for (const seed of SCHEMA.seed_items) {
-    // Fresh digest per seed: FormDigestValue expires (~30 min), so a
-    // long run must not reuse one digest across every POST (rollback.js.txt
-    // per-operation getDigest pattern).
-    const digest5 = await getDigest();
-    try {
-      // Idempotent only when the existing singleton is the declared singleton.
-      // An arbitrary, mismatched or duplicate row must never suppress seeding
-      // and make a partial/hostile deployment look activated.
-      if (seed.skip_if_has_rows) {
-        const singleton = await readSeedSingleton(seed);
-        if (singleton.hasMore || singleton.rows.length > 1) {
-          throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+  {
+    // The last write phase, and the only one that inserts data. An insert into
+    // a replaced list is not repairable by rerunning, so the batch is gated on
+    // ownership before the first row: a failure here must leave every seed
+    // target untouched rather than seed the ones ahead of it in the loop. A
+    // seed target that is not a declared list of this run fails the survey by
+    // construction, which is the intent; nothing else has ever proved it owned.
+    const seedOwned = SCHEMA.seed_items.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.seed_items.map(seed => seed.title), '{{ phase.number }}', 'Seed',
+      )
+      : new Map();
+    if (!seedOwned) {
+      log('ERROR', 'Seed ownership survey failed; aborting before any row is inserted.');
+      return { ...summary, aborted: 'seed-ownership-errors' };
+    }
+    for (const seed of SCHEMA.seed_items) {
+      // Fresh digest per seed: FormDigestValue expires (~30 min), so a
+      // long run must not reuse one digest across every POST (rollback.js.txt
+      // per-operation getDigest pattern).
+      const digest5 = await getDigest();
+      try {
+        const seedListId = seedOwned.get(seed.title);
+        // Before the probe as well as the insert: skip_if_has_rows decides
+        // whether to write at all from what it reads here, so reading a
+        // stranger's rows can suppress a real seed as easily as it can permit
+        // an insert into one.
+        await ownedListIdentity(seed.title, seedListId, `before reading '${seed.title}'`);
+        // Idempotent only when the existing singleton is the declared singleton.
+        // An arbitrary, mismatched or duplicate row must never suppress seeding
+        // and make a partial/hostile deployment look activated.
+        if (seed.skip_if_has_rows) {
+          const singleton = await readSeedSingleton(seed);
+          if (singleton.hasMore || singleton.rows.length > 1) {
+            throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+          }
+          if (singleton.rows.length === 1) {
+            assertSeedSingletonMatches(seed, singleton);
+            log('INFO', `Verified existing singleton row in '${seed.title}' exactly matches the declared seed.`);
+            continue;
+          }
         }
-        if (singleton.rows.length === 1) {
-          assertSeedSingletonMatches(seed, singleton);
-          log('INFO', `Verified existing singleton row in '${seed.title}' exactly matches the declared seed.`);
-          continue;
+        // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
+        // correct for ANY list title: SharePoint encodes non-alphanumeric
+        // characters (e.g. '_') in the entity type name, so a hardcoded
+        // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
+        // titles.
+        const typeResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')?$select=ListItemEntityTypeFullName`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!typeResp.ok) {
+          throw new Error(`Cannot resolve ListItemEntityTypeFullName for '${seed.title}' (HTTP ${typeResp.status})`);
         }
-      }
-      // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
-      // correct for ANY list title: SharePoint encodes non-alphanumeric
-      // characters (e.g. '_') in the entity type name, so a hardcoded
-      // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
-      // titles.
-      const typeResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')?$select=ListItemEntityTypeFullName`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!typeResp.ok) {
-        throw new Error(`Cannot resolve ListItemEntityTypeFullName for '${seed.title}' (HTTP ${typeResp.status})`);
-      }
-      const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
+        const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
 
-      const body = { __metadata: { type: entityType }, ...seed.fields };
-      await postJson(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items`), body, digest5);
-      if (seed.skip_if_has_rows) {
-        // Re-read after creation to detect a concurrent insert between the
-        // empty probe and POST. A mismatch or second row is an activation
-        // failure; it is never auto-deleted.
-        assertSeedSingletonMatches(seed, await readSeedSingleton(seed));
+        const body = { __metadata: { type: entityType }, ...seed.fields };
+        // The item-creation endpoint SharePoint documents is addressed by list
+        // title, so the insert is bracketed instead: owned immediately before
+        // the POST, and the title still resolving to the same list immediately
+        // after it, which is also what makes the readback below evidence about
+        // the row this run just wrote.
+        await ownedListIdentity(seed.title, seedListId, `before inserting into '${seed.title}'`);
+        await postJson(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items`), body, digest5);
+        await ownedListIdentity(seed.title, seedListId, `after inserting into '${seed.title}'`);
+        if (seed.skip_if_has_rows) {
+          // Re-read after creation to detect a concurrent insert between the
+          // empty probe and POST. A mismatch or second row is an activation
+          // failure; it is never auto-deleted.
+          assertSeedSingletonMatches(seed, await readSeedSingleton(seed));
+        }
+        log('INFO', `Seeded and verified '${seed.title}'.`);
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} seed '${seed.title}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: seed.title, error: err.message });
       }
-      log('INFO', `Seeded and verified '${seed.title}'.`);
-    } catch (err) {
-      log('ERROR', `Phase {{ phase.number }} seed '${seed.title}': ${err.message}`);
-      summary.errors.push({ phase: '{{ phase.number }}', list: seed.title, error: err.message });
     }
   }
 

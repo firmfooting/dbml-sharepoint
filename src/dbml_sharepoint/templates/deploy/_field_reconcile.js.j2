@@ -290,6 +290,78 @@
     }
   }
 
+  // === Live ownership guard for the post-schema write phases (#305) ===
+  // Schema reconciliation proves ownership and then stops. Index writes,
+  // sealing, ACL reconciliation and seeding all ran afterwards addressing
+  // their target by TITLE, so a marker removed or a same-titled list swapped
+  // in between phases was written to by a run that had never proved it owned
+  // that object. ACL removals and seeding are the worst of those, because
+  // neither is recoverable by rerunning. The three functions below are the
+  // one guard every such phase uses.
+
+  // One declared list's live identity, immediately before a write group:
+  // assertDeclaredListOwnedNow's cache-bypassing read and exact marker check,
+  // plus the binding to an identity an earlier check in this phase captured.
+  // The marker alone cannot see a same-titled replacement, since a
+  // replacement can carry a copied Description; the list Id is what separates
+  // them.
+  async function ownedListIdentity(listName, expectedId = null, when = 'before a write') {
+    const actual = await assertDeclaredListOwnedNow(listName);
+    const listId = sharePointGuid(actual.Id, 'list');
+    if (expectedId != null && listId !== sharePointGuid(expectedId, 'list')) {
+      throw new Error(`List '${listName}' changed identity ${when}`);
+    }
+    return actual;
+  }
+
+  // The ownership survey for a whole write batch, run before ANY list in it
+  // is mutated: one list's failure must not leave the lists surveyed ahead of
+  // it written and the ones behind it refused. Returns title -> live Id, or
+  // null when any list failed, which is the caller's signal to abort the
+  // phase. `allowAbsent` is for the phases that legitimately run before a
+  // list exists (a clean first provision); absence is not a failure there.
+  async function surveyOwnedListsForWrites(listTitles, phaseNumber, label, allowAbsent = false) {
+    const identities = new Map();
+    let failed = false;
+    await mapLanes([...new Set(listTitles)], title => title, async (listTitle) => {
+      try {
+        if (!allowAbsent) {
+          identities.set(listTitle, (await assertDeclaredListOwnedNow(listTitle)).Id);
+          return;
+        }
+        const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+        if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+        const actual = await readListShape(listTitle, true);
+        if (!actual) return;
+        assertListAdoptable(list, actual);
+        identities.set(listTitle, actual.Id);
+      } catch (err) {
+        failed = true;
+        log('ERROR', `${label} ownership survey '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: phaseNumber, list: listTitle, error: err.message });
+      }
+    }, 4);
+    return failed ? null : identities;
+  }
+
+  // The live field a MERGE is addressed by, bound to both identities: the
+  // list is re-proved owned and unchanged, then the field's own Id is read so
+  // the write goes to /lists(guid)/fields(guid) rather than to two names a
+  // replacement object answers to just as well. `fresh` is false where the
+  // caller has already refreshed the per-list field enumeration this probe
+  // reads from, so a bulk lane does not pay one GET per column for evidence
+  // it already holds.
+  async function ownedFieldIdentity(listName, columnName, expectedListId, fresh = true) {
+    const owned = await ownedListIdentity(
+      listName, expectedListId, `before writing '${listName}.${columnName}'`,
+    );
+    const shape = await readFieldShape(listName, columnName, null, fresh);
+    if (!shape) {
+      throw new Error(`Declared column '${listName}.${columnName}' disappeared before a write`);
+    }
+    return { listId: owned.Id, field: shape };
+  }
+
   function desiredListSettings(list) {
     return {
       ContentTypesEnabled: list.content_types_enabled,

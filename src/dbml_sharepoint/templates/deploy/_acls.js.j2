@@ -92,9 +92,39 @@
       throw new Error(`${uniqueScopeIds.length} item/folder unique permission scope(s) remain (item IDs: ${sample}${uniqueScopeIds.length > 10 ? ', ...' : ''}); review and remove or explicitly migrate them before rerunning; the deployer will never erase descendant scopes`);
     }
 
+    // Ownership was last proved by the structural phases, and everything
+    // below addresses a list by title. Survey the whole batch first: a list
+    // that has lost its marker or been replaced must stop the phase before
+    // the lists ahead of it in the loop have their permissions rewritten.
+    const aclOwned = await surveyOwnedListsForWrites(
+      SCHEMA.list_assignments.map(la => la.list), '{{ phase.number }}', 'ACL',
+    );
+    if (!aclOwned) {
+      log('ERROR', 'ACL ownership survey failed; aborting before any role assignment changes.');
+      return { ...summary, aborted: 'acl-ownership-errors' };
+    }
+
+    // Every role-assignment endpoint SharePoint documents is addressed by
+    // list title; there is no by-Id form to switch these to the way a field
+    // MERGE can be. What is available is to bracket the request: prove the
+    // title resolves to the surveyed list immediately before it, and prove it
+    // still does immediately after. A rebind can then only produce a failed
+    // phase, never a grant or a removal applied to a stranger.
+    const withOwnedList = async (listTitle, expectedId, what, request) => {
+      await ownedListIdentity(listTitle, expectedId, `before ${what}`);
+      const result = await request();
+      await ownedListIdentity(listTitle, expectedId, `after ${what}`);
+      return result;
+    };
+
     for (const la of SCHEMA.list_assignments) {
       log('INFO', `[Phase {{ phase.number }}] Processing role assignments for '${la.list}'...`);
       try {
+        const aclListId = aclOwned.get(la.list);
+        // Before the first READ, not just the first write: exact mode turns
+        // the enumeration below into a removal list, so a snapshot taken from
+        // the wrong object is as dangerous as a write to it.
+        await ownedListIdentity(la.list, aclListId, `before reading ACL state for '${la.list}'`);
         // Probe before *any* list ACL mutation. breakroleinheritance with
         // clearSubscopes=true would silently erase descendant exceptions on an
         // adopted/populated inheriting list before the old post-check saw them.
@@ -115,15 +145,17 @@
           }
           const checkJson = await checkResp.json();
           if (!checkJson.d.HasUniqueRoleAssignments) {
-            digest4 = await getDigest();
-            const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
-              method: 'POST',
-              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            await withOwnedList(la.list, aclListId, `breakroleinheritance on '${la.list}'`, async () => {
+              digest4 = await getDigest();
+              const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+              });
+              if (!breakResp.ok) {
+                const text = await breakResp.text();
+                throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
+              }
             });
-            if (!breakResp.ok) {
-              const text = await breakResp.text();
-              throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
-            }
             log('INFO', `[Phase {{ phase.number }}] Broke inheritance on '${la.list}'.`);
           } else {
             log('INFO', `[Phase {{ phase.number }}] '${la.list}' already has unique role assignments, reconciling existing bindings.`);
@@ -144,16 +176,21 @@
           }
         }
 
+        // The one irreversible operation in this phase, so it carries the
+        // strictest bracket: nothing is removed unless the title still
+        // resolves to the surveyed list at the moment of the request.
         const removeBinding = async (principalId, roleDefId, reason) => {
-          digest4 = await getDigest();
-          const rmResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/removeroleassignment(principalid=${principalId},roleDefId=${roleDefId})`), {
-            method: 'POST',
-            headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+          await withOwnedList(la.list, aclListId, `removeroleassignment (${reason}) on '${la.list}'`, async () => {
+            digest4 = await getDigest();
+            const rmResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/removeroleassignment(principalid=${principalId},roleDefId=${roleDefId})`), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            });
+            if (!rmResp.ok) {
+              const text = await rmResp.text();
+              throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
+            }
           });
-          if (!rmResp.ok) {
-            const text = await rmResp.text();
-            throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
-          }
           log('INFO', `[Phase {{ phase.number }}] '${la.list}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
         };
 
@@ -217,15 +254,17 @@
           }
           const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
           if (!desiredPresent) {
-            digest4 = await getDigest();
-            const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
-              method: 'POST',
-              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
+              digest4 = await getDigest();
+              const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+              });
+              if (!assignResp.ok) {
+                const text = await assignResp.text();
+                throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
+              }
             });
-            if (!assignResp.ok) {
-              const text = await assignResp.text();
-              throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
-            }
           }
         }
 
@@ -260,6 +299,10 @@
               assignmentsUrl = (allJson.d && allJson.d.__next) || null;
             }
           }
+          // The snapshot above may have been taken before the adds; either
+          // way it is the allowlist this loop prunes against, so the title it
+          // was read through has to still be the surveyed list.
+          await ownedListIdentity(la.list, aclListId, `before exact-mode pruning on '${la.list}'`);
           for (const existing of allAssignments) {
             const principalId = existing.Member && existing.Member.Id;
             if (principalId == null) {

@@ -37,15 +37,43 @@
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
       sealByList.get(listTitle).push(columnTitle);
     }
+    // Sealing is a write, so it gets the same batch gate as every other
+    // post-schema write phase: prove ownership of every list first, and refuse
+    // the phase rather than seal the lists ahead of the failing one. Without
+    // it, a same-titled replacement dropped in after the structural phases
+    // would be sealed by this run, which hands it the tool's own protection.
+    const sealOwned = await surveyOwnedListsForWrites(
+      [...sealByList.keys()], '{{ phase.number }}', 'Seal',
+    );
+    if (!sealOwned) {
+      log('ERROR', 'Seal ownership survey failed; aborting before any column is sealed.');
+      return { ...summary, aborted: 'seal-ownership-errors' };
+    }
     await mapLanes([...sealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, columns]) => {
       const failed = new Set();
+      const writtenIds = new Map();
+      let laneListId;
+      try {
+        // Once per lane, not once per column: every write below addresses
+        // /lists(guid)/fields(guid), which no title rebind can redirect, so
+        // re-proving the list per column would buy nothing the by-Id address
+        // does not already give.
+        laneListId = (await ownedListIdentity(
+          listTitle, sealOwned.get(listTitle), `before sealing '${listTitle}'`,
+        )).Id;
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, error: err.message });
+        return;
+      }
       for (const columnTitle of columns) {
         try {
           const shape = await readFieldShape(listTitle, columnTitle, null);
           if (!shape) throw new Error('declared column missing at seal time');
+          writtenIds.set(columnTitle, sharePointGuid(shape.Id, 'field'));
           if (!shape.Sealed) {
             const sealDigest = await getDigest();
-            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
+            await patchFieldById(laneListId, writtenIds.get(columnTitle), { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
             sealedCount += 1;
           }
         } catch (err) {
@@ -55,12 +83,24 @@
         }
       }
       invalidateFieldShapes(listTitle);  // verify from post-write state
+      try {
+        // The verify readback resolves the list by title, so the title has to
+        // still answer with the identity that was written to.
+        await ownedListIdentity(listTitle, laneListId, `after sealing '${listTitle}'`);
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, error: err.message });
+        return;
+      }
       for (const columnTitle of columns) {
         if (failed.has(columnTitle)) continue;
         try {
           const verify = await readFieldShape(listTitle, columnTitle, null);
           if (!verify || verify.Sealed !== true) {
             throw new Error(`did not retain sealed state (readback ${verify && verify.Sealed})`);
+          }
+          if (verify.Id !== writtenIds.get(columnTitle)) {
+            throw new Error(`column changed identity across the seal write (was ${writtenIds.get(columnTitle)}, now ${verify.Id})`);
           }
         } catch (err) {
           log('ERROR', `Phase {{ phase.number }} seal '${listTitle}.${columnTitle}': ${err.message}`);

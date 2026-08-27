@@ -83,6 +83,14 @@
   }
   const deployView = async (view) => {
     try {
+      // Lane-level rather than per-request, unlike the ACL phase. Every URL
+      // below hangs off the list title, and a view lane issues tens of them;
+      // one cache-bypassing list read per request would cost what the seal
+      // phase measured and removed. So the lane is bracketed: owned before
+      // the first read, and the title proved to still resolve to the same Id
+      // after the last write, before this view is reported verified.
+      const viewListId = viewsOwned.get(view.list);
+      await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
       let viewDigest = await getDigest();
       const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
       const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);
@@ -169,6 +177,9 @@
             // Transfer the flag first: SP refuses to delete a default view.
             await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
           }
+          // The one request in this phase that destroys an existing object,
+          // so it is rechecked on its own rather than riding the lane bracket.
+          await ownedListIdentity(view.list, viewListId, `before deleting the migrated view on '${view.list}'`);
           const delResp = await fetchWithRetry(apiUrl(`${listPath}/views('${existing.Id}')`), {
             method: 'POST',
             headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
@@ -379,12 +390,28 @@
           }
         }
       }
+      // Closes the lane bracket: the readbacks above resolved the list by
+      // title, so they are evidence about the owned list only if the title
+      // still answers with the Id this lane started from.
+      await ownedListIdentity(view.list, viewListId, `after writing views on '${view.list}'`);
       log('INFO', `[Phase {{ phase.number }}] View '${view.title}' on '${view.list}' verified.`);
     } catch (err) {
       log('ERROR', `Phase {{ phase.number }} view '${view.list}'.'${view.title}': ${err.message}`);
       summary.errors.push({ phase: '{{ phase.number }}', list: view.list, view: view.title, error: err.message });
     }
   };
+  // Post-schema, so the same batch gate: prove every list carrying a declared
+  // view before the first one is written, and refuse the phase rather than
+  // reconcile the lists ahead of the failing one.
+  const viewsOwned = SCHEMA.views.length > 0
+    ? await surveyOwnedListsForWrites(
+      SCHEMA.views.map((view) => view.list), '{{ phase.number }}', 'View',
+    )
+    : new Map();
+  if (!viewsOwned) {
+    log('ERROR', 'View ownership survey failed; aborting before any view is written.');
+    return { ...summary, aborted: 'view-ownership-errors' };
+  }
   // One lane per list: views live in the list schema, and concurrent schema
   // writes to the same list race into save conflicts; different lists are
   // independent, so their lanes run concurrently.

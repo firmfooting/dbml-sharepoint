@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import textwrap
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 from urllib.parse import quote
 
 import pytest
@@ -31,6 +31,7 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.extension import BaseExtension
 
 
 def _deploy_js_with_assessment() -> str:
@@ -211,14 +212,6 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // line IS the boundary, so watch stdout for it instead of counting.
     const DROP_LIST_MARKER_AT_PHASE = null;
     let phaseMarkerDropped = false;
-    const consoleLog = console.log.bind(console);
-    console.log = (...parts) => {
-      if (DROP_LIST_MARKER_AT_PHASE != null
-          && String(parts[0]).includes(`Starting Phase ${DROP_LIST_MARKER_AT_PHASE}:`)) {
-        phaseMarkerDropped = true;
-      }
-      consoleLog(...parts);
-    };
     const listDescriptionReads = Object.create(null);
     const listDescription = (listTitle) => {
       const reads = listDescriptionReads[listTitle] || 0;
@@ -232,6 +225,54 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         return LIST_DESCRIPTIONS.get(listTitle) == null ? '' : LIST_DESCRIPTIONS.get(listTitle);
       }
       return DEFAULT_LIST_DESCRIPTIONS.get(listTitle) || '';
+    };
+    // #305: ownership sabotage armed at a PHASE BOUNDARY rather than after an
+    // absolute read count. Every post-schema phase issues a different number
+    // of list reads, so a count pins the test to today's request pattern
+    // instead of to the boundary it means. SABOTAGE_AFTER_READS then allows
+    // that many further reads of the named title before it bites: 0 breaks
+    // the phase's ownership survey, 1 lets the survey pass and breaks the
+    // recheck the write group makes immediately before mutating. Mode
+    // 'marker' removes the provenance marker; 'rebind' keeps the marker and
+    // answers with a different list Id, which is what a same-titled
+    // replacement looks like from here. Rewritten by _run_ownership_deploy.
+    const SABOTAGE_FROM_PHASE = null;
+    const SABOTAGE_TITLES = [];
+    const SABOTAGE_MODE = 'marker';
+    const SABOTAGE_AFTER_READS = 0;
+    const REPLACEMENT_LIST_ID = '55555555-5555-5555-5555-555555555555';
+    let sabotageArmed = false;
+    const sabotageReads = Object.create(null);
+    // The phase every request belongs to, read off the run's own phase
+    // banner. The call log carries it so a test can say "nothing was written
+    // during THIS phase" without re-deriving phase boundaries from URLs.
+    let mockPhase = null;
+    const consoleLog = console.log.bind(console);
+    console.log = (...args) => {
+      const line = typeof args[0] === 'string' ? args[0] : '';
+      const started = /Starting Phase ([0-9.]+):/.exec(line);
+      if (DROP_LIST_MARKER_AT_PHASE != null
+          && String(args[0]).includes(`Starting Phase ${DROP_LIST_MARKER_AT_PHASE}:`)) {
+        phaseMarkerDropped = true;
+      }
+      if (started) {
+        mockPhase = started[1];
+        if (started[1] === SABOTAGE_FROM_PHASE) sabotageArmed = true;
+      }
+      // A phase that announces an abort has ended, even though its banner is
+      // still the last one printed. What runs after it is the exit cleanup in
+      // the run's finally, which re-seals what the run opened and belongs to
+      // no phase. Attributing those writes to the aborted phase would make
+      // every "this phase wrote nothing" assertion fail on the guarantee that
+      // a failed run does not leave a column unsealed.
+      if (/\[ERROR\].*aborting/.test(line)) mockPhase = null;
+      consoleLog(...args);
+    };
+    const sabotageFor = (listTitle) => {
+      if (!sabotageArmed || !SABOTAGE_TITLES.includes(listTitle)) return null;
+      const seen = sabotageReads[listTitle] || 0;
+      sabotageReads[listTitle] = seen + 1;
+      return seen < SABOTAGE_AFTER_READS ? null : SABOTAGE_MODE;
     };
     // Per-group Description and paginated membership, keyed by group Title.
     // A name with no entry keeps the prior fixed shape (Description 'Test
@@ -398,6 +439,19 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       const raw = (url.match(/getbytitle\('(.*?)'\)/) || [])[1];
       return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
     };
+    // List items. Without them the seed phase reads an empty list, inserts,
+    // reads empty again and fails its own read-back, so no test could ever
+    // reach the seeding write group; with them a seeded row persists exactly
+    // as SharePoint would return it.
+    const items = {};
+    const itemsOf = (listTitle) => (items[listTitle] ||= []);
+    // The list's content types. A list form's declared layout lives on the
+    // default item content type, so without this the form phase finds no
+    // content type at all and fails before its write group is reached.
+    const contentTypes = {};
+    const contentTypeState = (listTitle) => (contentTypes[listTitle] ||= {
+      Name: 'Item', StringId: '0x0100AA', ClientFormCustomFormatter: null,
+    });
     const views = {};
     const viewOf = (url) => {
       const match = url.match(/\/views\/getbytitle\('([^']+)'\)/);
@@ -419,7 +473,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       Description: b.Description == null ? '' : b.Description,
       Required: b.Required === true,
       EnforceUniqueValues: b.EnforceUniqueValues === true,
-      Indexed: b.EnforceUniqueValues === true,
+      // A create body may declare Indexed itself (a DBML `indexes` block
+      // reaches the field that way), and Phase 2.1 verifies that setting by
+      // read-back like any other. Deriving it from EnforceUniqueValues alone
+      // made every such column fail the phase it was created in.
+      Indexed: b.Indexed === true || b.EnforceUniqueValues === true,
       ReadOnlyField: b.FieldTypeKind === 17,
       Sealed: false,
       DefaultValue: b.DefaultValue == null ? null : b.DefaultValue,
@@ -586,6 +644,19 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         if (url.includes('/viewfields')) return { d: state.ViewFields };
         return { d: state };
       }
+      if (url.includes('/contenttypes')) {
+        const state = contentTypeState(listOf(url));
+        return url.includes("contenttypes('")
+          ? { d: state } : { d: { results: [state] } };
+      }
+      if (/\/items(\?|$)/.test(url)) {
+        return { d: { results: itemsOf(listOf(url)) } };
+      }
+      // The seed phase resolves __metadata.type from the list rather than
+      // hardcoding SP.Data.<Title>ListItem, so the mock has to answer it.
+      if (url.includes('ListItemEntityTypeFullName')) {
+        return { d: { ListItemEntityTypeFullName: `SP.Data.${listOf(url)}ListItem` } };
+      }
       // The single list ENUMERATION. This mock's fiction is "any list probe
       // succeeds", which an enumeration cannot express, since it would have to
       // know the declared names. Refusing it exercises the documented
@@ -594,10 +665,16 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if (url.includes('web/lists?')) return { error: { code: 'enumeration-not-mocked' } };
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
+        const probeTitle = listOf(url);
+        const sabotage = sabotageFor(probeTitle);
+        // Called either way: it drives the read counter DROP_LIST_MARKER_
+        // AFTER_READS uses, which must not depend on the sabotage knobs.
+        const description = listDescription(probeTitle);
         return { d: {
-          Id: '22222222-2222-2222-2222-222222222222',
+          Id: sabotage === 'rebind'
+            ? REPLACEMENT_LIST_ID : '22222222-2222-2222-2222-222222222222',
           Title: 'adopted', BaseTemplate: 100, ContentTypesEnabled: false,
-          Description: listDescription(listOf(url)),
+          Description: sabotage === 'marker' ? '' : description,
           EnableVersioning: true, EnableMinorVersions: false,
           MajorVersionLimit: 500, ValidationFormula: null, ValidationMessage: null } };
       }
@@ -608,6 +685,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // body is null, never absent: JSON.stringify drops an undefined key,
       // and the Python side reads c['body'] unconditionally.
       calls.push({ url: u, method: opts.method || 'GET',
+                   phase: mockPhase,
                    body: opts.body === undefined ? null : opts.body });
       // Apply writes, exactly as SharePoint would, so readbacks converge.
       if ((opts.method || 'GET') === 'POST' && opts.body && u.includes('/fields')) {
@@ -636,7 +714,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             if (parsed.ClientValidationFormula != null) f.__cvf = parsed.ClientValidationFormula;
             if (parsed.ValidationFormula != null) f.__vf = parsed.ValidationFormula;
             if (parsed.ValidationMessage != null) f.__vm = parsed.ValidationMessage;
-            for (const k of ['Description', 'Required', 'DefaultValue', 'CustomFormatter']) {
+            // Indexed and EnforceUniqueValues among them: the field
+            // reconcile MERGEs whichever of these has drifted and then
+            // verifies by read-back, so a mock that accepts the write and
+            // keeps the old value fails the phase that made it.
+            for (const k of ['Description', 'Required', 'DefaultValue', 'CustomFormatter',
+                             'Indexed', 'EnforceUniqueValues']) {
               if (parsed[k] !== undefined) f[k] = parsed[k];
             }
           }
@@ -686,6 +769,19 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
           if (writtenTitle) LIST_DESCRIPTIONS.set(writtenTitle, parsed.Description);
         }
+      }
+      if ((opts.method || 'GET') === 'POST' && opts.body && u.includes("/contenttypes('")) {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.ClientFormCustomFormatter !== undefined) {
+          contentTypeState(listOf(u)).ClientFormCustomFormatter = parsed.ClientFormCustomFormatter;
+        }
+      }
+      if ((opts.method || 'GET') === 'POST' && opts.body && /\/items$/.test(u)) {
+        const row = { Id: itemsOf(listOf(u)).length + 1 };
+        for (const [key, value] of Object.entries(JSON.parse(opts.body))) {
+          if (key !== '__metadata') row[key] = value;
+        }
+        itemsOf(listOf(u)).push(row);
       }
       if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {
         const state = viewState(listOf(u), viewOf(u));
@@ -4748,3 +4844,346 @@ def test_the_deploy_assessment_names_a_refused_contextinfo() -> None:
     assert str(summary.get("aborted")).startswith("assessment-"), summary
     writes = [c for c in run.calls if c["method"] == "POST"]
     assert not writes, f"the deploy wrote after a failed assessment: {writes}"
+
+
+# --- The live ownership guard on the later write phases (#305) --------------
+#
+# Ownership is proved by the schema phases and then goes stale: every phase
+# after them addresses its target list by TITLE, so a marker removed or a
+# same-titled list swapped in afterwards used to be written to by a run that
+# had never proved it owned the object in front of it. The runs below put
+# each of those two events at each later write phase's boundary and assert
+# the phase writes nothing.
+#
+# The two are not the same guard and are tested separately. A marker loss is
+# caught by the phase's batch survey, which runs before the first write of
+# the batch; a same-titled replacement carries the marker, so only the list
+# ID comparison sees it, and it is armed one read LATER (the survey passes,
+# the recheck immediately before the write does not).
+
+
+class _GuardedPhase(NamedTuple):
+    """A write phase with a live ownership guard, and the code it aborts on."""
+
+    key: str
+    aborted: str
+
+
+_GUARDED_WRITE_PHASES = (
+    _GuardedPhase("unseal", "maintenance-ownership-errors"),
+    _GuardedPhase("indexes", "index-ownership-errors"),
+    _GuardedPhase("defaults", "default-ownership-errors"),
+    _GuardedPhase("views", "view-ownership-errors"),
+    _GuardedPhase("forms", "form-ownership-errors"),
+    _GuardedPhase("seal", "seal-ownership-errors"),
+    _GuardedPhase("acls", "acl-ownership-errors"),
+    _GuardedPhase("seeds", "seed-ownership-errors"),
+)
+
+
+class _OwnershipSeedExtension(BaseExtension):
+    """Seeds one row into every declared list.
+
+    Seeding is the only write phase whose work comes from an extension
+    rather than the mapping, so without one the DATA phase loops over an
+    empty list and every assertion about it passes for the wrong reason.
+    """
+
+    name: ClassVar[str] = "ownershipstub"
+
+    def __init__(self, titles: tuple[str, ...]) -> None:
+        self._titles = titles
+
+    def seed_lists(
+        self, bundle: Any, schema: Any, site_context: Any,
+    ) -> dict[str, dict[str, Any]]:
+        return {title: {"Title": "seeded"} for title in self._titles}
+
+
+def _ownership_section(table_names: tuple[str, ...]) -> str:
+    """Mapping that gives every guarded write phase something to write.
+
+    `_declared_pack`'s schema reaches the end of the run but declares no
+    index, no default, no form formatting and no ACL, so six of the eight
+    guarded phases would loop over nothing.
+    """
+    forms = "".join(
+        f"  {name}:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Main, fields: [Title, Note] }\n"
+        for name in table_names
+    )
+    return (
+        "groups:\n"
+        '  - name: "Ownership Reader"\n'
+        '    description: "Read-only grant target for the ownership tests."\n'
+        '    owner_group: "Site Owners"\n'
+        "    allow_members_edit_membership: false\n"
+        "    allow_request_to_join_leave: false\n"
+        "    auto_accept_request_to_join_leave: false\n"
+        "    only_allow_members_view_membership: false\n"
+        "\n"
+        "list_permissions:\n"
+        "  default:\n"
+        "    site_role: default\n"
+        "    break_inheritance: true\n"
+        "    reconcile: exact\n"
+        "    assignments:\n"
+        '      - principal: { kind: group, name: "Ownership Reader" }\n'
+        '        level: "Read"\n'
+        "\n"
+        f"form_formatting:\n{forms}"
+    )
+
+
+def _ownership_pack(
+    tmp_path: Path, table_names: tuple[str, ...],
+) -> tuple[Any, Any]:
+    """The (schema, bundle) the ownership runs deploy.
+
+    A DBML default on `Title` rather than on `Note`: the mock keys created
+    columns by a shared Id, so only the Title field's own state can observe
+    a by-Id MERGE landing, and a default that cannot be read back would fail
+    the phase for a reason that has nothing to do with ownership.
+    """
+    return pack(
+        tmp_path,
+        dbml="".join(
+            table(
+                name, ID_PK, "Title nvarchar [default: 'seeded']", "Note nvarchar",
+                "indexes {\n    Note\n  }",
+            )
+            for name in table_names
+        ),
+        mapping=blocks(entities(*table_names), _ownership_section(table_names)),
+    )
+
+
+def _ownership_deploy_js(tmp_path: Path, table_names: tuple[str, ...]) -> str:
+    from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = _ownership_pack(tmp_path, table_names)
+    titles = tuple(
+        entry["title"] for entry in build_schema_json(schema, bundle, "default")["lists"]
+    )
+    return _without_assessment(generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        extension=_OwnershipSeedExtension(titles),
+    ))
+
+
+def _ownership_list_descriptions(
+    tmp_path: Path, table_names: tuple[str, ...],
+) -> dict[str, str]:
+    """List title -> the Description this pack declares for it.
+
+    Read out of the generator rather than re-spelled, for the reason
+    `_declared_list_descriptions` gives: the marker embeds the entity name,
+    so no single string is the declared description of two lists.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = _ownership_pack(tmp_path, table_names)
+    return {
+        entry["title"]: entry["description"]
+        for entry in build_schema_json(schema, bundle, "default")["lists"]
+    }
+
+
+# One direct grant nobody declared, so exact-mode reconciliation has a
+# removal to make. Without it the ACL phase only ever adds, and the
+# removal path -- the irreversible one, and the reason #305 calls ACLs the
+# highest risk alongside seeding -- is never reached by any of these runs.
+_STRAY_BINDING = [[{
+    "Member": {"Id": 7, "Title": "Stray Group", "PrincipalType": 8},
+    "RoleDefinitionBindings": {"results": [{"Id": 1, "Name": "Schema Manager"}]},
+}]]
+
+
+def _run_ownership_deploy(
+    tmp_path: Path,
+    *,
+    table_names: tuple[str, ...] = ("Escalation",),
+    sabotage_phase: str | None = None,
+    sabotage_titles: tuple[str, ...] = (),
+    sabotage_mode: str = "marker",
+    sabotage_after_reads: int = 0,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run the ownership pack against the adopted-site mock.
+
+    Built on `_READER_ACL_HARNESS` rather than `_ADOPTED_HARNESS` for the
+    same reason the enterprise-reader run is: these lists grant a BUILT-IN
+    level ('Read'), which the plain harness's role-definition state does not
+    carry.
+    """
+    descriptions = _ownership_list_descriptions(tmp_path, table_names)
+    harness = _READER_ACL_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    ).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
+    ).replace(
+        "const SABOTAGE_FROM_PHASE = null;",
+        f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
+    ).replace(
+        "const SABOTAGE_TITLES = [];",
+        f"const SABOTAGE_TITLES = {json.dumps(list(sabotage_titles))};",
+    ).replace(
+        "const SABOTAGE_MODE = 'marker';",
+        f"const SABOTAGE_MODE = {json.dumps(sabotage_mode)};",
+    ).replace(
+        "const SABOTAGE_AFTER_READS = 0;",
+        f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
+    )
+    script = harness + "\n" + _ownership_deploy_js(tmp_path, table_names).replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    return (
+        json.loads(result_line.removeprefix("__RESULT__")),
+        json.loads(calls_line.removeprefix("__CALLS__")),
+        output,
+    )
+
+
+def _writes_in_phase(
+    calls: list[dict[str, Any]], phase: str,
+) -> list[dict[str, Any]]:
+    """Mutating requests the run issued while `phase` was the current one.
+
+    The mock tags every request with the phase banner in force when it was
+    made, so a test can say "this phase wrote nothing" without re-deriving
+    phase boundaries from URLs.
+    """
+    return [c for c in _deployment_writes(calls) if c["phase"] == phase]
+
+
+def _phase_log(output: str, phase: str) -> list[str]:
+    """The run's log lines between `phase`'s banner and the next phase's.
+
+    So a test can say WHICH phase reported a failure. The summary's error
+    list cannot: half the write phases record an error without a phase key,
+    and a rebound title survives into the phases after the one under test,
+    which would let a later phase's identical complaint satisfy an
+    assertion about this one.
+    """
+    lines = output.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if f"Starting Phase {phase}:" in line), None,
+    )
+    assert start is not None, f"phase {phase} never ran:\n{output[-3000:]}"
+    rest = lines[start + 1:]
+    end = next(
+        (i for i, line in enumerate(rest) if "Starting Phase " in line), len(rest),
+    )
+    return rest[:end]
+
+
+_OWNED_TITLE = "APP_Escalation"
+_OTHER_TITLE = "APP_Other"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_every_guarded_phase_writes_when_ownership_holds(tmp_path: Path) -> None:
+    """What gives the refusal tests below their meaning.
+
+    Each of those asserts a phase wrote NOTHING. That assertion passes just
+    as happily against a fixture that declares no index, no default, no form
+    and no ACL, or against a run that never reached the phase at all. This
+    run is the same fixture with nothing sabotaged: it must finish clean and
+    write in every phase the others watch refusing to write.
+    """
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, table_names=("Escalation", "Other"),
+    )
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    for phase in _GUARDED_WRITE_PHASES:
+        assert _writes_in_phase(calls, pn(phase.key)), (
+            f"phase {phase.key} ({pn(phase.key)}) wrote nothing, so the "
+            f"refusal test for it proves nothing:\n{output[-3000:]}"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "phase", _GUARDED_WRITE_PHASES, ids=[p.key for p in _GUARDED_WRITE_PHASES],
+)
+def test_losing_a_marker_stops_a_write_phase_before_its_first_write(
+    tmp_path: Path, phase: _GuardedPhase,
+) -> None:
+    """One list loses its marker as the phase opens, and the batch stops.
+
+    Two lists, and only the first loses its marker: the phase must not write
+    to the SECOND one either. Every one of these phases loops over its
+    targets, so the failure has to be found by the survey that runs before
+    the loop, not by the target's own turn in it.
+    """
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path,
+        table_names=("Escalation", "Other"),
+        sabotage_phase=pn(phase.key),
+        sabotage_titles=(_OWNED_TITLE,),
+        sabotage_mode="marker",
+    )
+    assert summary.get("aborted") == phase.aborted, summary
+    assert any(
+        f"ownership survey '{_OWNED_TITLE}'" in line
+        for line in _phase_log(output, pn(phase.key))
+    ), f"phase {phase.key} did not name the list it refused:\n{output[-3000:]}"
+    assert not _writes_in_phase(calls, pn(phase.key)), (
+        f"phase {phase.key} wrote after its ownership survey failed: "
+        f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "phase", _GUARDED_WRITE_PHASES, ids=[p.key for p in _GUARDED_WRITE_PHASES],
+)
+def test_a_same_titled_replacement_stops_a_write_phase(
+    tmp_path: Path, phase: _GuardedPhase,
+) -> None:
+    """The title still resolves, and it resolves to a different list.
+
+    The replacement carries the marker, which is the case the survey cannot
+    see: only comparing the live list ID against the one the survey captured
+    catches it. Armed one read after the phase opens, so the survey passes
+    and the recheck immediately before the write is what refuses.
+    """
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path,
+        sabotage_phase=pn(phase.key),
+        sabotage_titles=(_OWNED_TITLE,),
+        sabotage_mode="rebind",
+        sabotage_after_reads=1,
+    )
+    assert any(
+        "changed identity" in line for line in _phase_log(output, pn(phase.key))
+    ), f"phase {phase.key} did not refuse the replacement:\n{output[-3000:]}"
+    assert summary["errors"], summary
+    assert not _writes_in_phase(calls, pn(phase.key)), (
+        f"phase {phase.key} wrote to a replaced list: "
+        f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
