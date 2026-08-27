@@ -4,14 +4,26 @@
 Phase 2.1: create lists in topological order, with non-lookup columns and as
 many lookup columns as can be resolved (target already created).
 
-Phase 2.2: add the remaining lookup columns (self-references and any side
-of a strongly connected component).
+Phase 2.2: add the remaining lookup columns (self-references, any side of a
+strongly connected component, and any lookup whose display field is not the
+built-in Title).
+
+The display-field deferral exists because the field wave runs one lane per list
+in PARALLEL: a lookup whose `LookupField` is a calculated or custom column is
+reading a field the target list's lane may not have created yet. The lookup must
+wait for Phase 2.2, where every lane has finished. Measured 2026-08-27: the
+raid-log `RelatedRisk` displays the calculated `LiveRiskTitle` and failed with
+"target display field 'ProjectRisk.LiveRiskTitle' does not exist".
 """
 
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from dbml_sharepoint.analysis.lookups import (
+    DEFAULT_DISPLAY_COLUMN,
+    display_column_for,
+)
 from dbml_sharepoint.model.parser import Schema
 
 if TYPE_CHECKING:
@@ -24,10 +36,14 @@ class DeployPlan:
     phase2_lookups: list[tuple[str, str]] = field(default_factory=list)
 
 
-def compute_phases(schema: Schema) -> DeployPlan:
+def compute_phases(
+    schema: Schema,
+    entities: "dict[str, EntityMapping] | None" = None,
+) -> DeployPlan:
     table_names = [t.name for t in schema.tables]
     edges: dict[str, set[str]] = defaultdict(set)
     self_refs: set[tuple[str, str]] = set()
+    deferred: list[tuple[str, str]] = []
 
     by_name = {t.name: t for t in schema.tables}
 
@@ -41,9 +57,16 @@ def compute_phases(schema: Schema) -> DeployPlan:
                 continue
             if target in by_name:
                 edges[table.name].add(target)
+                # A lookup whose display field is not the built-in Title waits
+                # for Phase 2.2. The edge stays: the target list is still a
+                # creation-order dependency, only the lookup column is deferred.
+                if entities is not None and display_column_for(
+                    entities.get(target),
+                ) != DEFAULT_DISPLAY_COLUMN:
+                    deferred.append((table.name, col.name))
 
     order = _topological(table_names, edges)
-    deferred = list(self_refs)
+    deferred.extend(self_refs)
 
     # For any cycle (Tarjan-style or unresolvable), defer one side's lookups.
     placed: set[str] = set()

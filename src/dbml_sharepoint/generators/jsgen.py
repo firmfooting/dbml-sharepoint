@@ -371,7 +371,7 @@ def build_schema_json(
     site_context: SiteContext | None = None,
 ) -> dict[str, Any]:
     by_name = {t.name: t for t in schema.tables}
-    plan = compute_phases(schema)
+    plan = compute_phases(schema, bundle.mapping.entities)
 
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
     sc = _resolve_site_context(
