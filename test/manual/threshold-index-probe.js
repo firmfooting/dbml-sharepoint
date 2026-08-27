@@ -602,7 +602,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision d395a945. Quote this when reporting results.');
+  log('INFO', 'probe revision 4ff84d5c. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -2524,11 +2524,23 @@
     // expected count would have been unreadable; a comparison is not, because
     // both halves see whatever the list now holds. Every other row here asks
     // "how many", so they keep the stricter gate.
+    //
+    // The INDEX CONTROL is in the gate for the same reason the row count is.
+    // Every question below is an indexed-versus-unindexed comparison, so
+    // IDXSET reading TABLE VOID means the labels those rows rest on are not
+    // established and neither is anything measured against them. The run of
+    // 2026-08-17 had SharePoint re-index Shadow between pastes, and this gate
+    // saw only ItemCount: GRDIDX and GRDNUL answered "UNCHANGED (both served)"
+    // one screen below IDXSET saying the flags were wrong, and four views went
+    // to an operator labelled INDEXED and UNINDEXED.
     const guardBlocked =
       count < 0 ? 'ItemCount could not be read'
       : count <= LIST_VIEW_THRESHOLD
         ? `ItemCount ${count} is not past the ${LIST_VIEW_THRESHOLD} threshold, `
           + 'so nothing here is throttled and the comparison says nothing'
+      : wrong.length
+        ? 'the index flags are not what they claim (see IDXSET), so nothing here '
+          + 'can be labelled indexed or unindexed'
       : '';
 
     // One line, unbroken, so a test can compare it to the emitted constant.
