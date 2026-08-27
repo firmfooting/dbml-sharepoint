@@ -1144,6 +1144,15 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     Lowering either number again means a write-region site stopped throwing,
     which is the failure this test exists to catch.
 
+    The post-schema phases reach the same assertions through the shared guard
+    (#305), so their sites are counted on the guard rather than on
+    `assertDeclaredListOwnedNow` directly: `ownedListIdentity` binds a proven
+    list to a captured Id, `surveyOwnedListsForWrites` gates a whole write
+    batch, and `ownedFieldIdentity` adds the field Id a by-Id MERGE is
+    addressed with. Counting those separately is what keeps the attribution:
+    routing a phase back through a bare title write drops one of these numbers
+    without touching the two above.
+
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
     comment on a line of code is still counted, which is the remaining hole.
@@ -1152,9 +1161,14 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
     assert _call_count(js, "assertListAdoptable") == 11
-    assert _call_count(js, "assertDeclaredListOwnedNow") == 9
+    assert _call_count(js, "assertDeclaredListOwnedNow") == 11
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
+    # One survey per post-schema write phase: unseal, indexes, defaults, views,
+    # forms, seal, ACLs, seeds.
+    assert _call_count(js, "surveyOwnedListsForWrites") == 8
+    assert _call_count(js, "ownedListIdentity") == 17
+    assert _call_count(js, "ownedFieldIdentity") == 3
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:

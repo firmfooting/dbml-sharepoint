@@ -27,48 +27,68 @@
     }
     return JSON.stringify(canon);
   };
-  for (const form of SCHEMA.form_formatting) {
-    try {
-      digest = await getDigest();
-      const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
-      const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!ctResp.ok) {
-        const text = await ctResp.text();
-        throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
-      }
-      const ctJson = await ctResp.json();
-      const contentTypes = (ctJson.d && ctJson.d.results) || [];
-      const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
-      if (!target) throw new Error('no default item content type found on the list');
-      if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-        const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
-          method: 'POST',
-          headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-          body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
+  {
+    // Post-schema, so the same batch gate: prove every list with declared form
+    // formatting before the first content-type MERGE, and refuse the phase
+    // rather than format the lists ahead of the failing one.
+    const formsOwned = SCHEMA.form_formatting.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.form_formatting.map((form) => form.list), '{{ phase.number }}', 'Form',
+      )
+      : new Map();
+    if (!formsOwned) {
+      log('ERROR', 'Form-formatting ownership survey failed; aborting before any form is written.');
+      return { ...summary, aborted: 'form-ownership-errors' };
+    }
+    for (const form of SCHEMA.form_formatting) {
+      try {
+        // The content-type collection hangs off the list title, so the write and
+        // its readback are bracketed by the same identity, exactly as the ACL
+        // phase brackets its title-bound requests.
+        const formListId = formsOwned.get(form.list);
+        await ownedListIdentity(form.list, formListId, `before writing form formatting on '${form.list}'`);
+        digest = await getDigest();
+        const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
+        const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
         });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
+        if (!ctResp.ok) {
+          const text = await ctResp.text();
+          throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
         }
+        const ctJson = await ctResp.json();
+        const contentTypes = (ctJson.d && ctJson.d.results) || [];
+        const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+        if (!target) throw new Error('no default item content type found on the list');
+        if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+          const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
+            method: 'POST',
+            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
+          });
+          if (!r.ok) {
+            const text = await r.text();
+            throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
+          }
+        }
+        const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!verifyResp.ok) {
+          const text = await verifyResp.text();
+          throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
+        }
+        const verifyJson = await verifyResp.json();
+        const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
+        if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+          throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
+        }
+        await ownedListIdentity(form.list, formListId, `after writing form formatting on '${form.list}'`);
+        log('INFO', `[Phase {{ phase.number }}] Form formatting on '${form.list}' verified.`);
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} form '${form.list}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: form.list, error: err.message });
       }
-      const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!verifyResp.ok) {
-        const text = await verifyResp.text();
-        throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
-      }
-      const verifyJson = await verifyResp.json();
-      const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
-      if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-        throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
-      }
-      log('INFO', `[Phase {{ phase.number }}] Form formatting on '${form.list}' verified.`);
-    } catch (err) {
-      log('ERROR', `Phase {{ phase.number }} form '${form.list}': ${err.message}`);
-      summary.errors.push({ phase: '{{ phase.number }}', list: form.list, error: err.message });
     }
   }
 

@@ -31,27 +31,15 @@
     if (sealDeclared.length > 0) {
       // Preflight ownership can change before this first list mutation. Re-read
       // every list this phase may touch and gate the whole unseal batch before
-      // opening one field. An absent list is a clean first-provision target.
-      const unsealListTitles = new Set(sealDeclared.map(([listTitle]) => listTitle));
-      let ownershipFailed = false;
-      await mapLanes(
-        SCHEMA.lists.filter(list => unsealListTitles.has(list.title)),
-        list => list.title,
-        async (list) => {
-          try {
-            const actual = await readListShape(list.title, true);
-            if (actual) assertListAdoptable(list, actual);
-          } catch (err) {
-            ownershipFailed = true;
-            log('ERROR', `Maintenance ownership recheck '${list.title}': ${err.message}`);
-            summary.errors.push({
-              phase: '{{ phase.number }}', list: list.title, error: err.message,
-            });
-          }
-        },
-        4,
+      // opening one field. An absent list is a clean first-provision target,
+      // so the survey tolerates absence here; the identities it does capture
+      // are carried into the write lane below, which refuses a list that has
+      // become a different object since.
+      const unsealOwned = await surveyOwnedListsForWrites(
+        sealDeclared.map(([listTitle]) => listTitle),
+        '{{ phase.number }}', 'Maintenance ownership recheck', true,
       );
-      if (ownershipFailed) {
+      if (!unsealOwned) {
         log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
         return { ...summary, aborted: 'maintenance-ownership-errors' };
       }
@@ -64,9 +52,20 @@
         try {
           const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
           if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
-          const currentList = await readListShape(listTitle, true);
-          if (!currentList) return;
-          assertListAdoptable(list, currentList);
+          // A list the survey found is required to still be the same object;
+          // one it did not find may still be absent, since this phase runs
+          // before the structural phases create it.
+          const surveyedId = unsealOwned.get(listTitle);
+          let currentList;
+          if (surveyedId == null) {
+            currentList = await readListShape(listTitle, true);
+            if (!currentList) return;
+            assertListAdoptable(list, currentList);
+          } else {
+            currentList = await ownedListIdentity(
+              listTitle, surveyedId, 'before maintenance unseal',
+            );
+          }
           const shape = await readFieldShape(listTitle, field.title, field, true);
           // A partial first provision may not have created this deferred
           // lookup yet. With no live field there is nothing to unseal, and its
