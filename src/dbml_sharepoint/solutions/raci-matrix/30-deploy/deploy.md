@@ -60,7 +60,7 @@ change, so copy anything you need out of it before pasting. The exact
 three strings that will be written are in `build/deploy-manifest.md`, in
 the list-creation phase. Read them there rather than after the fact.
 
-This matters more on a redeploy over an adopted list than on a fresh
+This matters more on a redeploy over an existing owned list than on a fresh
 provision, where there was nothing to lose.
 
 ## Optional: the seeded demonstration build

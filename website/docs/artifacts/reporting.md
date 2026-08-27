@@ -33,11 +33,13 @@ Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
 ```
 
 It is appended to the table's own note (see [the table note is
-required](../reference/dbml.md#the-table-note-is-required)) on every
-list, on both the created and the adopted path, and it is never
-truncated: a note too long to leave room for it is refused at build time
-instead. `assess.js` reports a provisioned list whose marker has gone
-missing as DEGRADED, naming the list.
+required](../reference/dbml.md#the-table-note-is-required)) when the list is
+created. On a later run, an existing list must already carry that exact marker
+before deploy may reconcile it. Deploy can repair human prose around a retained
+marker, but it will not add a missing marker: that would manufacture the
+ownership evidence rollback later trusts. A note too long to leave room for the
+marker is refused at build time instead of being truncated. `assess.js` reports
+a readable Description with no exact marker as BLOCKED, naming the list.
 
 **What it is for.** A deployed list otherwise carries no record of what
 produced it. Reporting across a fleet (a hundred sites running the same
@@ -48,7 +50,10 @@ human reads it in list settings, and it survives a rename of the list.
 
 ### What is not true yet
 
-The marker is inert. It is stamped and verified; nothing reads it.
+The marker is active ownership evidence. Deploy and rollback read it before
+mutating or deleting an existing list, and assessment reports whether it can be
+proved. What does not exist yet is a fleet-wide query that uses it for
+reporting.
 
 - **No fleet query exists.** Phase 1 only puts the marker there. The
   query that finds lists by it is Phase 2, and until that ships the
@@ -73,14 +78,11 @@ The marker is inert. It is stamped and verified; nothing reads it.
   Note also that Queryable and Searchable are *defaults* a tenant admin
   can change in the search schema, so they are not invariants of the
   platform even where they do apply.
-- **Byte-identical round-trip of a list Description is also inferred.**
-  Learn does not document it, and the deploy's reconcile compares what it
-  wrote against what it read back. That is why the shipped notes avoid
-  `&` and newlines: if SharePoint normalises whitespace or entity-encodes
-  there, the comparison never matches and that list aborts on every
-  re-paste, forever. It fails closed and loud, which is the right
-  failure, but it is a failure, and no adopter should meet it. The
-  restriction lifts when a `test/manual/` line closes the question.
+- **Description round-trip is measured, not inferred.** Runs 1 and 2 of
+  `test/manual/list-description-probe.js` on 2026-08-14 established byte-exact
+  create and MERGE round-trip for the tested values, including ampersands,
+  line breaks and CRLF. The deploy still reads back every write rather than
+  treating that measurement as authority over a later tenant response.
 
 ## Empty lists load
 

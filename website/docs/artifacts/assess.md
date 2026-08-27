@@ -44,11 +44,12 @@ Findings roll up per requirement key to a single line:
   reviews each `WARN` finding and sets `ACKNOWLEDGE_DEGRADED = true` near
   the top of the script. A requirement reported `NOT-ASSESSABLE` degrades
   the verdict too, because nobody could check it. This includes a
-  provisioned list whose
-  [provenance marker](reporting.md#the-provenance-marker) has gone
-  missing from its Description, named in the finding. The list itself is
-  fine and only reporting is affected, which is why that finding degrades
-  rather than blocks.
+  list whose [provenance marker](reporting.md#the-provenance-marker) could not
+  be read, named in the finding. A Description that was read and does not carry
+  the exact marker blocks deploy: the list may be foreign, and ordinary deploy
+  will not stamp it. An unreadable Description degrades instead, because the
+  assessment cannot honestly decide whether the marker is present; deploy's
+  fresh preflight read makes that decision.
 - `BLOCKED`: a named requirement fails (for example, missing permission
   bits or a locked site); resolve before deploying.
 

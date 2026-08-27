@@ -59,6 +59,150 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert "0.1.0-test" in js  # release tag rendered
 
 
+def test_each_list_emits_one_exact_adoption_marker() -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    built = build_schema_json(schema, bundle, "default")
+    markers = {entry["title"]: entry["expected_marker"] for entry in built["lists"]}
+    assessed = dict(assess_targets(schema, bundle, "default")["list_markers"])
+
+    assert markers == assessed
+    assert all(
+        entry["expected_marker"] in entry["description"]
+        for entry in built["lists"]
+    )
+
+
+def test_title_keyed_deploy_state_has_no_object_prototype() -> None:
+    js = _generate_simple_js()
+
+    assert "const preflightListShapes = Object.create(null)" in js
+    assert "let fieldShapesByList = Object.create(null)" in js
+    assert "const listGuids = Object.create(null)" in js
+
+
+def test_maintenance_records_reseal_cleanup_before_unseal_request() -> None:
+    js = _generate_simple_js()
+    maintenance = js.split("// === Maintenance unseal", 1)[1].split(
+        "// === Group", 1,
+    )[0]
+
+    assert maintenance.index("fieldsUnsealedForRun.set") < maintenance.index(
+        "await patchField",
+    )
+
+
+def test_exit_reseal_requires_original_owned_list_and_field_ids() -> None:
+    js = _generate_simple_js()
+    restore = js.split("async function restoreUnsealedFields", 1)[1].split(
+        "function syntheticTitleField", 1,
+    )[0]
+    maintenance = js.split("// === Maintenance unseal", 1)[1].split(
+        "// === Group", 1,
+    )[0]
+
+    assert "[listTitle, field.title, currentList.Id, shape.Id]" in maintenance
+    assert "await patchFieldById(currentList.Id, shape.Id" in maintenance
+    ownership = restore.index("assertListAdoptable(list, currentList)")
+    list_id = restore.index("currentList.Id !== listId", ownership)
+    field_id = restore.index("shape.Id !== fieldId", list_id)
+    reseal = restore.index("await patchFieldById(", field_id)
+    readback = restore.index("const verify = await readFieldShape", reseal)
+    verified = restore.index("verify.Id !== fieldId || verify.Sealed !== true", readback)
+    assert ownership < list_id < field_id < reseal < readback < verified
+
+
+def test_maintenance_checks_field_existence_before_lookup_target() -> None:
+    js = _generate_simple_js()
+    maintenance = js.split("// === Maintenance unseal", 1)[1].split(
+        "// === Group", 1,
+    )[0]
+
+    field_read = maintenance.index("const shape = await readFieldShape")
+    missing_return = maintenance.index("if (!shape) return", field_read)
+    target_check = maintenance.index("if (field.target_list)", field_read)
+    assert field_read < missing_return < target_check
+
+
+def test_list_validation_rechecks_ownership_before_merge() -> None:
+    js = _generate_simple_js()
+    validation = js.split("async function reconcileListValidation", 1)[1].split(
+        "async function reconcileListDeletionBlock", 1,
+    )[0]
+
+    live_read = validation.index("const actual = await readListShape")
+    ownership = validation.index("assertListAdoptable(list, actual)", live_read)
+    merge = validation.index("await patchListById(actual.Id", ownership)
+    assert live_read < ownership < merge
+
+
+def test_wave_one_list_writes_bind_fresh_owned_list_id() -> None:
+    js = _generate_simple_js()
+    settings = js.split("async function reconcileListShape", 1)[1].split(
+        "async function expectedLookupFieldInternalName", 1,
+    )[0]
+    description = js.split("async function reconcileListDescription", 1)[1].split(
+        "async function reconcileListShape", 1,
+    )[0]
+    deletion = js.split("async function reconcileListDeletionBlock", 1)[1].split(
+        "async function reconcileListDescription", 1,
+    )[0]
+
+    assert "actual = await assertDeclaredListOwnedNow(list.title)" in settings
+    assert "await patchListById(actual.Id" in settings
+    assert "actual = await assertDeclaredListOwnedNow(list.title)" in description
+    assert "await patchListById(actual.Id" in description
+    assert "const owned = await assertDeclaredListOwnedNow(list.title)" in deletion
+    assert "await patchListById(owned.Id" in deletion
+
+
+def test_field_reconcile_rechecks_ownership_after_its_reads() -> None:
+    js = _generate_simple_js()
+    reconcile = js.split("async function reconcileDeclaredField", 1)[1].split(
+        "// === Preflight", 1,
+    )[0]
+
+    last_shape_check = reconcile.index("await assertFieldImmutableShape")
+    ownership = reconcile.index(
+        "await assertDeclaredFieldTargetNow(listName, field, targetGuid)",
+        last_shape_check,
+    )
+    merge = reconcile.index("await patchField", ownership)
+    assert last_shape_check < ownership < merge
+
+
+def test_field_formula_merges_bind_fresh_lookup_target_identity() -> None:
+    js = _generate_simple_js()
+    formulas = js.split("async function enforceDeclaredFormulas", 1)[1].split(
+        "async function reconcileDeclaredField", 1,
+    )[0]
+    assert formulas.count(
+        "await assertDeclaredFieldTargetNow(listName, field, targetGuid)",
+    ) == 2
+
+
+def test_phase_one_lookup_refreshes_owned_target_before_reconcile() -> None:
+    js = _generate_simple_js()
+    wave_two = js.split("// Wave 2 is field provisioning", 1)[1].split(
+        "if (summary.errors.length > 0)", 1,
+    )[0]
+
+    target_read = wave_two.index(
+        "await assertDeclaredListOwnedNow(col.target_list)",
+    )
+    target_guid = wave_two.index("return targetOwned.Id", target_read)
+    reconcile = wave_two.index("await reconcileDeclaredField", target_guid)
+    assert target_read < target_guid < reconcile
+    refreshed = wave_two.index("targetGuid = await resolveTargetGuid()", reconcile)
+    body_refresh = wave_two.index(
+        "createBody.parameters.LookupListId = targetGuid", refreshed,
+    )
+    create = wave_two.index("await postJson", body_refresh)
+    assert refreshed < body_refresh < create
+
+
 def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
     """One spelling, or the two scripts disagree about the same site.
 
@@ -925,10 +1069,10 @@ def test_existing_lookup_shape_requires_exact_target_and_display_field() -> None
 
 
 def test_mutable_list_and_field_shape_is_reconciled_and_read_back() -> None:
-    """Only declared mutable properties are MERGEd after immutable checks."""
+    """Mutable properties are MERGEd only after ownership and immutable checks."""
     js = _generate_simple_js()
 
-    assert "assertListImmutableShape(list, actual)" in js
+    assert "assertListAdoptable(list, actual)" in js
     assert "await patchList" in js
     assert "did not retain declared setting(s)" in js
     assert "await assertFieldImmutableShape" in js
@@ -980,22 +1124,25 @@ def _call_count(js: str, name: str) -> int:
     return code.count(f"{name}(") - declarations
 
 
-def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> None:
+def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     """The count is the only attribution available, and it has to hold.
 
-    `assertListImmutableShape` emits the same message from every one of its
-    sites, so no error text distinguishes them. A site switched from the wrapper
-    to the collector stops throwing, and two of these sites verify a read-back:
+    `assertListAdoptable` combines exact ownership with immutable shape. A site
+    switched back to the shape-only wrapper can stamp a foreign list, while a
+    site switched to a collector stops throwing. Two sites verify read-back, so
     one that stops throwing is indistinguishable from one that passed.
 
-    Both counts dropped by one deliberately, and 2 and 3 is now exactly the five
-    write-region sites. Preflight's two lanes call the collectors directly,
+    The counts below pin every current write-region assertion. Preflight's two
+    lanes call the collectors directly,
     because a throw reported one property and hid the rest: a list whose own
     shape is wrong still has columns worth reporting, and a column's other
     mismatches are still worth reporting when its lookup target is unreadable.
     Every remaining site is a write or a post-write read-back, where throwing is
-    the point. Lowering either number again means a write-region site stopped
-    throwing, which is the failure this test exists to catch.
+    the point. One of them is a phase boundary rather than a single write: the
+    deferred-lookup phase re-surveys every list it is about to touch, because
+    the field wave is long enough for a marker to disappear after being read.
+    Lowering either number again means a write-region site stopped throwing,
+    which is the failure this test exists to catch.
 
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
@@ -1003,8 +1150,11 @@ def test_every_immutable_shape_call_site_still_uses_the_throwing_wrapper() -> No
     """
     js = _generate_simple_js()
 
-    assert _call_count(js, "assertFieldImmutableShape") == 2
-    assert _call_count(js, "assertListImmutableShape") == 3
+    assert _call_count(js, "assertFieldImmutableShape") == 3
+    assert _call_count(js, "assertListAdoptable") == 11
+    assert _call_count(js, "assertDeclaredListOwnedNow") == 9
+    assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
+    assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:

@@ -127,7 +127,7 @@ Phase body: assert Indexed=true on every declared indexed column, verified by re
 
 *Phase 2.1 (STRUCTURE): list creation*
 
-Phase body: create or adopt lists in dependency order with their non-lookup columns and every same-site lookup whose target already exists. Wave 1 runs sequentially to capture lookup-target GUIDs; wave 2 runs in per-list lanes. Existing lists/fields are adopted only when their immutable shape provably matches (fail closed).
+Phase body: create or reconcile owned lists in dependency order with their non-lookup columns and every same-site lookup whose target already exists. Wave 1 runs sequentially to capture lookup-target GUIDs; wave 2 runs in per-list lanes. Existing lists are reconciled only when exact provenance and immutable shape both match (fail closed).
 
 ### `deploy/_lookups.js.j2`
 
@@ -151,7 +151,7 @@ Some mappings route all list administration through an empty-by-default admin gr
 
 *Phase 1.2 (PREPARE): read-only preflight*
 
-A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.3 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
+A matching display name is not proof that an existing list or field was created from this schema. Before Phase 1.3 performs its first write, every existing list must carry this declaration's exact provenance marker and every immutable shape must agree. Mutable settings are reconciled only after both checks pass.
 
 ### `deploy/_reader_enrolment.js.j2`
 

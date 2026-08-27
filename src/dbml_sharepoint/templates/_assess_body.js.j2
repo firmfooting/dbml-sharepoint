@@ -205,16 +205,10 @@
     // The provenance marker on an EXISTING declared list. Reported, never
     // repaired: this script writes nothing, and that is its whole contract.
     //
-    // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. deploy.js reconciles a drifted
-    // Description, but only at the NEXT run. In the gap, a list whose
-    // description an owner edited in list settings is absent from every fleet
-    // report: discovery enumerates `Description`, so that site contributes
-    // fewer rows, raises no error, and nothing knows how many there should have
-    // been. assess.js is what an operator runs before touching a site, so it is
-    // the only thing that can surface this between deploys.
-    //
-    // WARN, not BLOCKED: the list itself is fine and deploying over it is the
-    // repair. Only reporting is affected, which is what DEGRADED means here.
+    // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. A missing marker means the
+    // list may be foreign. Ordinary deploy must not stamp it, because doing so
+    // manufactures the ownership evidence rollback later trusts. Assessment
+    // therefore predicts the same fail-closed decision before any write.
     //
     // SUBSTRING, not equality. The deploy compares the whole Description
     // because it owns the note as well; this check owns only discoverability,
@@ -228,27 +222,34 @@
     // A Map, because an object literal drops a `__proto__` key and this check
     // then returned silently on a list whose marker was missing.
     const LIST_MARKERS = new Map(TARGETS.list_markers);
-    const markerFinding = (title, description) => {
-      if (!LIST_MARKERS.has(title)) return;
-      const expected = LIST_MARKERS.get(title);
-      if (!expected) return;
+    const markerFinding = (title, description, descriptionReported) => {
       const key = `provenance_marker:${title}`;
-      // A Description the probe did not report is not one that lost its marker.
-      // An empty string that WAS reported still warns, which is the drift this
-      // check exists for.
-      if (description == null) {
-        finding(2, key, 'NOT-ASSESSABLE',
-          `'${title}' exists, but its Description was not reported, so whether fleet `
-          + 'reporting can see it is unknown.');
+      const expected = LIST_MARKERS.get(title);
+      if (!LIST_MARKERS.has(title)
+          || typeof expected !== 'string'
+          || expected.length === 0) {
+        finding(2, key, 'BLOCKED',
+          `'${title}' has no valid generated ownership marker. Rebuild the artifacts; `
+          + 'assessment and deploy cannot safely classify the existing list.');
         return;
       }
-      const held = String(description);
+      // A missing property means the probe did not answer the ownership
+      // question. An explicitly reported null or empty value did answer: it
+      // carries no marker and therefore blocks ordinary deploy.
+      if (!descriptionReported) {
+        finding(2, key, 'NOT-ASSESSABLE',
+          `'${title}' exists, but its Description was not reported, so ownership `
+          + 'could not be assessed. Deploy will make a fresh preflight read.');
+        return;
+      }
+      const held = typeof description === 'string' ? description : '';
       if (held.includes(expected)) {
         finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
       } else {
-        finding(2, key, 'WARN',
-          `'${title}' exists but its Description no longer carries the provenance marker `
-          + `"${expected}". Fleet reporting cannot see '${title}' until a deploy restores it.`);
+        finding(2, key, 'BLOCKED',
+          `'${title}' exists but its Description does not carry this declaration's exact `
+          + `provenance marker "${expected}". Restore that marker only if this tool created `
+          + `the list; otherwise rename the declaration. Deploy will not adopt or stamp it.`);
       }
     };
 
@@ -260,8 +261,12 @@
       if (!list.ok && list.status === 404) {
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
       } else if (list.ok) {
-        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}), a redeploy/reconcile target.`);
-        markerFinding(title, list.d.Description);
+        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}); the ownership check below decides whether deploy may reconcile it.`);
+        markerFinding(
+          title,
+          list.d.Description,
+          Object.prototype.hasOwnProperty.call(list.d, 'Description'),
+        );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
       }
