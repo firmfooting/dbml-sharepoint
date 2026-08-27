@@ -15,7 +15,10 @@
   const CLEANUP_AT_END = false;
   // What the totals row should show once one of the attempts lands.
   const AGG_FIELD = 'Amount';
-  const AGG_TYPE = 'Sum';
+  // Uppercase: the classic view renderer matches aggregation types by exact
+  // case, and a capitalised 'Sum' stored fine but rendered 'Count= undefined'
+  // (live finding 2026-08-27). 'AVG' already matched.
+  const AGG_TYPE = 'SUM';
   // ------------------------------------------------------------------------
 
   // Shared result registry v1. Register findings before any network work.
@@ -64,7 +67,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 9cc758db; core v2; results v1.`);
+  log('INFO', `probe revision f037d382; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -231,6 +234,11 @@
       removed: false,
     };
   }
+  // Shared by Q3 and the Q4-Q6 outcome gate. SharePoint stores the aggregation
+  // XML with a space before self-closing `/>` and quote normalisation, the same
+  // storage form that bit the threshold probe's ViewQuery readback.
+  const normalizeAgg = (xml) => String(xml || '')
+    .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').replace(/ \/>/g, '/>').trim();
   const aggregationManualOutcome = (controls) => {
     const seedsHeld = Array.isArray(controls.seedValues)
       && controls.seedValues.length === 2
@@ -242,7 +250,7 @@
     const renamedTitleHeld = controls.fieldTitle === controls.expectedFieldTitle;
     const ready = controls.setupReady
       && controls.writeOk
-      && String(controls.aggregationXml) === controls.expectedXml
+      && normalizeAgg(controls.aggregationXml) === normalizeAgg(controls.expectedXml)
       && controls.aggregationStatus === 'On'
       && seedsHeld
       && viewFieldsHeld
@@ -279,6 +287,10 @@
       BaseTemplate: 100,
       Title: PROBE_LIST,
       Description: OWNERSHIP_DESCRIPTION,
+      // Classic experience, so the retained fixture renders server-side and the
+      // visible findings (Q4-Q6) are capturable by the harness's capture-visible
+      // step. The modern list web part does not render under Camofox.
+      ListExperienceOptions: 2,
     });
     if (!made.ok) {
       record('Q1', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
@@ -411,7 +423,9 @@
     const after = await get(`${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`);
     const gotAgg = after.d?.Aggregations || '(null)';
     const gotStatus = after.d?.AggregationsStatus || '(null)';
-    const matches = String(gotAgg) === AGG_XML && gotStatus === 'On';
+    // Compared on the normalised form (normalizeAgg above) because SharePoint
+    // stores the XML with a space before self-closing `/>` and quote changes.
+    const matches = normalizeAgg(gotAgg) === normalizeAgg(AGG_XML) && gotStatus === 'On';
     record(
       'Q3',
       'the written property reads back unchanged',
