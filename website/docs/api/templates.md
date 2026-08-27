@@ -31,6 +31,20 @@ dbml-sharepoint deployment script.
 
 Paste into the SharePoint browser console and press Enter. Wait for the [SP-DEPLOY] [DONE] log line.
 
+### `extract.js.j2`
+
+dbml-sharepoint SCHEMA EXTRACTION script (READ-ONLY).
+
+Target site: Deployer:     v Generated at: Lists:
+
+Reads each list's field definitions, content types and views, and offers the result as a JSON download. Makes NO changes: every request is a GET, and this script carries no write helpers at all.
+
+Then, on the machine you generated this from, in the folder you saved the download into:
+
+dbml-sharepoint extract
+
+That creates a folder named after the download and writes a DRAFT schema.dbml, mapping.yaml and release.yaml into it, plus an EXTRACTION-NOTES.md listing everything the read could not recover. Pass --out to write somewhere else.
+
 ### `manifest.md.j2`
 
 The operator-facing deploy manifest: supported mode, step-by-step run instructions, validation findings (must be zero errors), and the full deployment inventory - list creation order, deferred lookups, indexes, views, formatting, permissions - with phase numbers taken from the phases manifest.
@@ -57,7 +71,7 @@ Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be d
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them.
 
@@ -75,7 +89,7 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function and SITE_URL const to be defined already; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line.
 

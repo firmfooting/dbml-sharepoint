@@ -120,7 +120,7 @@ def test_every_documented_command_survived_the_wizard_default() -> None:
     change that can turn a subcommand into a no-op: the callback runs for
     every invocation, and an early `raise typer.Exit` in it would swallow
     them all while `--help` kept listing them."""
-    for command in ("build", "validate", "report", "version"):
+    for command in ("build", "validate", "report", "extract", "extract-script", "version"):
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, f"{command} --help failed"
         assert command in result.stdout
@@ -170,7 +170,7 @@ def test_help_still_renders_as_rich_panels() -> None:
 
     # Every registered command is listed. A command silently dropped from the
     # help screen is invisible to anyone who has not read the source.
-    for command in ("build", "validate", "report", "version"):
+    for command in ("build", "validate", "report", "extract", "extract-script", "version"):
         assert command in out, f"{command!r} is missing from the help screen"
 
 
@@ -231,7 +231,8 @@ def test_help_text_is_ascii() -> None:
 #: Modules whose string literals reach a console rather than a file.
 #:
 #: `analysis/` and `model/` are where finding messages and loader errors are
-#: written; `cli`, `wizard` and `catalogue` are the terminal surface itself.
+#: written; `cli`, the two wizards and `catalogue` are the terminal surface
+#: itself.
 #:
 #: Deliberately EXCLUDES the generators and `bundle`. Those write artifacts
 #: through `write_artifact`, which is UTF-8 by contract, so nothing about a
@@ -240,14 +241,25 @@ def test_help_text_is_ascii() -> None:
 #: The rule THIS list draws is about bytes that go to a console, not about
 #: prose in general; comments and docstrings are excluded below for the same
 #: reason.
-_CONSOLE_BOUND = ("analysis", "model", "cli.py", "wizard.py", "catalogue.py")
+#:
+#: Matched against the whole relative path, not just its first part, so a
+#: console-bound module inside a subpackage can be named on its own.
+_CONSOLE_BOUND = (
+    "analysis",
+    "model",
+    "cli.py",
+    "wizard.py",
+    "catalogue.py",
+    "extract/wizard.py",
+)
 
 
 def _console_bound_modules() -> list[Path]:
     return [
         path
         for path in sorted(PACKAGE.rglob("*.py"))
-        if path.relative_to(PACKAGE).parts[0] in _CONSOLE_BOUND
+        if (relative := path.relative_to(PACKAGE)).parts[0] in _CONSOLE_BOUND
+        or relative.as_posix() in _CONSOLE_BOUND
     ]
 
 
