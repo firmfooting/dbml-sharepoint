@@ -1643,4 +1643,8 @@ def test_extract_refuses_out_with_no_download(
     monkeypatch.chdir(tmp_path)
     result = _run("extract", "--out", str(tmp_path / "p"))
     assert result.exit_code == 2
-    assert "--out has no download" in result.output
+    # rich highlights the `--out` token when colour is enabled (CI does),
+    # splicing ANSI escapes into the middle of the message. Assert on the
+    # message, not the decoration.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--out has no download" in plain
