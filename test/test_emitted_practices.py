@@ -9,6 +9,7 @@ Adding an entry to an allowlist needs a reason in the pull request. Removing
 one needs nothing.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -144,6 +145,31 @@ def test_a_bound_failure_is_read_rather_than_discarded(template: Path) -> None:
     )
 
 
+def _write_text_calls(source: str) -> list[ast.Call]:
+    """Every `<something>.write_text(...)` call in `source`, found by parsing it.
+
+    Parsed rather than scanned. The predecessor matched `.write_text(` with a
+    regex and then counted brackets to the end of the call, which treats a `)`
+    in a string or a comment as Python syntax and a `.write_text(` in a
+    docstring as a call site. Both mistakes reject a compliant writer, and the
+    author's only fix is to satisfy a rule the code already satisfied.
+    """
+    return [
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "write_text"
+    ]
+
+
+def _writers_missing_lf(source: str) -> list[int]:
+    """Line numbers of the `write_text` calls in `source` that do not pin LF."""
+    return [
+        call.lineno for call in _write_text_calls(source)
+        if "newline=" not in (ast.get_source_segment(source, call) or "")
+    ]
+
+
 def test_every_committed_writer_pins_lf() -> None:
     """`Path.write_text` defaults to text mode, so it emits CRLF on Windows.
 
@@ -152,26 +178,44 @@ def test_every_committed_writer_pins_lf() -> None:
     real change among the noise. The defect is per-call-site, which is why
     this is a test rather than a fixed helper.
     """
-    offenders: list[str] = []
-    for source in sorted(PACKAGE.rglob("*.py")):
-        text = source.read_text(encoding="utf-8")
-        for match in re.finditer(r"\.write_text\s*\(", text):
-            # Read to the closing bracket, because a compliant call may put
-            # `newline="\n"` on a later line and judging the opening line
-            # alone would reject it.
-            depth, index = 1, match.end()
-            while index < len(text) and depth:
-                depth += {"(": 1, ")": -1}.get(text[index], 0)
-                index += 1
-            if "newline=" in text[match.end():index]:
-                continue
-            offenders.append(
-                f"{source.relative_to(PACKAGE).as_posix()}:"
-                f"{text[:match.start()].count(chr(10)) + 1}"
-            )
+    offenders = [
+        f"{source.relative_to(PACKAGE).as_posix()}:{line}"
+        for source in sorted(PACKAGE.rglob("*.py"))
+        for line in _writers_missing_lf(source.read_text(encoding="utf-8"))
+    ]
     assert not offenders, (
         f"write_text without newline=\"\\n\": {offenders}. Use the helper for "
         f"the surface you are writing, or pass newline explicitly."
+    )
+
+
+def test_the_lf_gate_reads_python_rather_than_counting_brackets() -> None:
+    """A `)` inside a string or a comment is not a closing bracket.
+
+    The scanner counted every parenthesis in the call's text, so it stopped
+    early on a call whose own content held an unmatched `)` and never reached
+    the `newline` that came after it. The same arithmetic read a `.write_text(`
+    written in a docstring as a call site.
+
+    Both reject a compliant writer, which is the direction that costs: the
+    author's fix is to satisfy a rule the code already satisfied.
+    """
+    quoted = 'path.write_text("looks done :)", encoding="utf-8", newline="\\n")\n'
+    assert _writers_missing_lf(quoted) == [], (
+        "a `)` inside the content string was counted as closing the call"
+    )
+    commented = (
+        "path.write_text(\n"
+        "    body,  # see #305 (the CRLF one\n"
+        '    newline="\\n",\n'
+        ")\n"
+    )
+    assert _writers_missing_lf(commented) == [], (
+        "a `(` inside a comment was counted as opening a nested call"
+    )
+    prose = '"""Use bundle.write_artifact, never path.write_text(text)."""\n'
+    assert _writers_missing_lf(prose) == [], (
+        "a `.write_text(` inside a docstring was read as a call site"
     )
 
 
