@@ -184,17 +184,19 @@
             laneDigest = await getDigest();
             const primaryShape = await readFieldShape(list.title, col.title, null, true);
             for (const proj of col.projections) {
-              if (await readFieldShape(list.title, proj.name, null, true)) continue;
-              laneDigest = await getDigest();
-              const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
-                + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
-                + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
-              await postJson(
-                apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
-                { parameters: { SchemaXml: xml, Options: 8 } },
-                laneDigest,
-              );
-              summary.columnsCreated += 1;
+              if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                laneDigest = await getDigest();
+                const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+                  + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+                  + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+                await postJson(
+                  apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
+                  { parameters: { SchemaXml: xml, Options: 8 } },
+                  laneDigest,
+                );
+                summary.columnsCreated += 1;
+              }
+              await verifyDependentField(list.title, proj.name, col.title, primaryShape.Id, targetGuid);
             }
           }
         } catch (err) {

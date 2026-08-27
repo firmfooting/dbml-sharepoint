@@ -42,17 +42,19 @@
         digest = await getDigest();
         const primaryShape = await readFieldShape(lookup.list, lookup.field.title, null, true);
         for (const proj of lookup.projections) {
-          if (await readFieldShape(lookup.list, proj.name, null, true)) continue;
-          digest = await getDigest();
-          const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
-            + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
-            + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
-          await postJson(
-            apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
-            { parameters: { SchemaXml: xml, Options: 8 } },
-            digest,
-          );
-          summary.columnsCreated += 1;
+          if (!(await readFieldShape(lookup.list, proj.name, null, true))) {
+            digest = await getDigest();
+            const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+              + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+              + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+            await postJson(
+              apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
+              { parameters: { SchemaXml: xml, Options: 8 } },
+              digest,
+            );
+            summary.columnsCreated += 1;
+          }
+          await verifyDependentField(lookup.list, proj.name, lookup.field.title, primaryShape.Id, targetGuid);
         }
       }
     } catch (err) {

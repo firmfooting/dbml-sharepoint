@@ -2130,6 +2130,39 @@
     return true;
   }
 
+  async function verifyDependentField(listName, dependentName, primaryInternalName, primaryId, targetGuid) {
+    // A projected dependent field must be a genuine dependent Lookup linked
+    // back to its primary by FieldRef, targeting the same list, and read-only.
+    // Existence alone is not enough: a same-named impostor field would be
+    // adopted silently. See test/manual/projected-lookup-probe.js for the
+    // measured create shape and the properties verified here.
+    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(dependentName)}')`;
+    const r = await fetchWithRetry(apiUrl(
+      `${fieldPath}?$select=IsDependentLookup,PrimaryFieldId,LookupList,LookupField,ReadOnlyField`,
+    ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`Dependent field '${listName}.${dependentName}' probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    const s = j && j.d;
+    const mismatches = [];
+    const check = (name, ok, detail) => { if (!ok) mismatches.push(`${name} ${detail}`); };
+    check('IsDependentLookup', s.IsDependentLookup === true,
+      `(readback ${JSON.stringify(s.IsDependentLookup)})`);
+    check('PrimaryFieldId', normalizeGuid(s.PrimaryFieldId) === normalizeGuid(primaryId),
+      `(readback ${JSON.stringify(s.PrimaryFieldId)}; expected primary '${primaryId}')`);
+    check('LookupList', normalizeGuid(s.LookupList) === normalizeGuid(targetGuid),
+      `(readback ${JSON.stringify(s.LookupList)}; expected target '${targetGuid}')`);
+    check('LookupField', s.LookupField === primaryInternalName,
+      `(readback ${JSON.stringify(s.LookupField)}; expected '${primaryInternalName}')`);
+    check('ReadOnlyField', s.ReadOnlyField === true,
+      `(readback ${JSON.stringify(s.ReadOnlyField)})`);
+    if (mismatches.length) {
+      throw new Error(`Dependent field '${listName}.${dependentName}' is misconfigured: ${mismatches.join(', ')}`);
+    }
+  }
+
   // === Preflight: ManageLists (+ ManagePermissions when the schema has ACL work) ===
   // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
   // (Previous check incorrectly tested High; ManageLists lives in Low.)
@@ -3459,17 +3492,19 @@
             laneDigest = await getDigest();
             const primaryShape = await readFieldShape(list.title, col.title, null, true);
             for (const proj of col.projections) {
-              if (await readFieldShape(list.title, proj.name, null, true)) continue;
-              laneDigest = await getDigest();
-              const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
-                + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
-                + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
-              await postJson(
-                apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
-                { parameters: { SchemaXml: xml, Options: 8 } },
-                laneDigest,
-              );
-              summary.columnsCreated += 1;
+              if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                laneDigest = await getDigest();
+                const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+                  + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+                  + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+                await postJson(
+                  apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
+                  { parameters: { SchemaXml: xml, Options: 8 } },
+                  laneDigest,
+                );
+                summary.columnsCreated += 1;
+              }
+              await verifyDependentField(list.title, proj.name, col.title, primaryShape.Id, targetGuid);
             }
           }
         } catch (err) {
@@ -3538,17 +3573,19 @@
         digest = await getDigest();
         const primaryShape = await readFieldShape(lookup.list, lookup.field.title, null, true);
         for (const proj of lookup.projections) {
-          if (await readFieldShape(lookup.list, proj.name, null, true)) continue;
-          digest = await getDigest();
-          const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
-            + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
-            + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
-          await postJson(
-            apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
-            { parameters: { SchemaXml: xml, Options: 8 } },
-            digest,
-          );
-          summary.columnsCreated += 1;
+          if (!(await readFieldShape(lookup.list, proj.name, null, true))) {
+            digest = await getDigest();
+            const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+              + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+              + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+            await postJson(
+              apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
+              { parameters: { SchemaXml: xml, Options: 8 } },
+              digest,
+            );
+            summary.columnsCreated += 1;
+          }
+          await verifyDependentField(lookup.list, proj.name, lookup.field.title, primaryShape.Id, targetGuid);
         }
       }
     } catch (err) {
