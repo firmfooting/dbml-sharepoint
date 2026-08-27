@@ -123,7 +123,7 @@ ban-relative-imports = "all"
 # NOT_YET_REACHED: set ABOVE today's worst so it blocks nothing now, and
 # lowered as the offenders are split. Never raised to make a build pass.
 #
-# 66 leaves six points above today's worst, `_views.py::check` at 60.
+# 66 leaves five points above today's worst, `_views.py::check` at 61.
 # `_structure.py::check` fell from 72 to 1 after its helpers were extracted (#254).
 # `_formatting.py::check` is 49 and `_retirement.py::check` is 40.
 #
