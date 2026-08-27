@@ -12,11 +12,11 @@
     const sealDeclared = [];
     for (const list of SCHEMA.lists) {
       for (const col of list.fields_phase1) {
-        if (col.seal) sealDeclared.push([list.title, col.title]);
+        if (col.seal) sealDeclared.push([list.title, col]);
       }
     }
     for (const lookup of SCHEMA.phase2_lookups) {
-      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field]);
     }
     // The built-in Title is not a declared column, so it was never in this
     // set, and Phase 1 writes list.title_patch to it. A Title sealed by
@@ -26,32 +26,83 @@
     // (the loop below writes ONLY if it finds Sealed true), so a normal
     // site pays one read and nothing changes.
     for (const list of SCHEMA.lists) {
-      if (list.title_patch) sealDeclared.push([list.title, 'Title']);
+      if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
     if (sealDeclared.length > 0) {
+      // Preflight ownership can change before this first list mutation. Re-read
+      // every list this phase may touch and gate the whole unseal batch before
+      // opening one field. An absent list is a clean first-provision target.
+      const unsealListTitles = new Set(sealDeclared.map(([listTitle]) => listTitle));
+      let ownershipFailed = false;
+      await mapLanes(
+        SCHEMA.lists.filter(list => unsealListTitles.has(list.title)),
+        list => list.title,
+        async (list) => {
+          try {
+            const actual = await readListShape(list.title, true);
+            if (actual) assertListAdoptable(list, actual);
+          } catch (err) {
+            ownershipFailed = true;
+            log('ERROR', `Maintenance ownership recheck '${list.title}': ${err.message}`);
+            summary.errors.push({
+              phase: '{{ phase.number }}', list: list.title, error: err.message,
+            });
+          }
+        },
+        4,
+      );
+      if (ownershipFailed) {
+        log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
+        return { ...summary, aborted: 'maintenance-ownership-errors' };
+      }
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
       // One lane per list: same-list field MERGEs race into save conflicts;
       // different lists unseal concurrently.
-      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, columnTitle]) => {
+      const errorsBeforeUnseal = summary.errors.length;
+      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, field]) => {
         try {
-          const shape = await readFieldShape(listTitle, columnTitle, null);
-          if (shape && shape.Sealed) {
+          const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+          if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+          const currentList = await readListShape(listTitle, true);
+          if (!currentList) return;
+          assertListAdoptable(list, currentList);
+          const shape = await readFieldShape(listTitle, field.title, field, true);
+          // A partial first provision may not have created this deferred
+          // lookup yet. With no live field there is nothing to unseal, and its
+          // target is allowed to remain absent until the structural phases.
+          if (!shape) return;
+          let targetGuid = null;
+          if (field.target_list) {
+            const target = SCHEMA.lists.find(candidate => candidate.title === field.target_list);
+            if (!target) throw new Error(`No declaration found for lookup target '${field.target_list}'`);
+            const targetShape = await readListShape(target.title, true);
+            if (!targetShape) throw new Error(`Lookup target '${target.title}' disappeared before maintenance unseal`);
+            assertListAdoptable(target, targetShape);
+            targetGuid = targetShape.Id;
+          }
+          await assertFieldImmutableShape(listTitle, field, shape, targetGuid);
+          if (shape.Sealed) {
             const unsealDigest = await getDigest();
-            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
-            unsealedCount += 1;
-            // Record only after the write succeeds. The exit path restores
-            // every field this run actually opened, including ordinary
-            // declared columns when a later phase aborts before PROTECTION.
+            // Record before the request. If SharePoint commits the MERGE but
+            // the response is lost, exit cleanup must still re-seal it. A
+            // redundant Sealed=true write is safe when the MERGE never landed.
             fieldsUnsealedForRun.set(
-              `${listTitle}\u0000${columnTitle}`, [listTitle, columnTitle],
+              `${listTitle}\u0000${field.title}`,
+              [listTitle, field.title, currentList.Id, shape.Id],
             );
+            await patchFieldById(currentList.Id, shape.Id, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
+            unsealedCount += 1;
           }
         } catch (err) {
-          log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
-          summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, column: columnTitle, error: err.message });
+          log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
+          summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, column: field.title, error: err.message });
         }
       }, 4);
+      if (summary.errors.length > errorsBeforeUnseal) {
+        log('ERROR', 'Maintenance unseal failed; aborting before any structural phase begins. Exit cleanup will re-seal fields this run may have opened.');
+        return { ...summary, aborted: 'maintenance-unseal-errors' };
+      }
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }

@@ -62,20 +62,43 @@
   // so the success path pays one field enumeration per affected list.
   async function restoreUnsealedFields() {
     const byList = new Map();
-    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+    for (const [listTitle, columnTitle, listId, fieldId] of fieldsUnsealedForRun.values()) {
       if (!byList.has(listTitle)) byList.set(listTitle, []);
-      byList.get(listTitle).push(columnTitle);
+      byList.get(listTitle).push([columnTitle, listId, fieldId]);
     }
     for (const [listTitle, columns] of byList.entries()) {
       invalidateFieldShapes(listTitle);  // never trust phase-start state
-      for (const columnTitle of columns) {
+      for (const [columnTitle, listId, fieldId] of columns) {
         try {
-          const shape = await readFieldShape(listTitle, columnTitle, null);
-          if (shape && shape.Sealed === true) continue;
+          const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+          if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+          const currentList = await readListShape(listTitle, true);
+          if (!currentList) {
+            log('WARN', `Could not re-seal '${listTitle}.${columnTitle}': the original list no longer exists.`);
+            continue;
+          }
+          assertListAdoptable(list, currentList);
+          if (currentList.Id !== listId) {
+            throw new Error(`List '${listTitle}' changed identity before exit cleanup`);
+          }
+          const shape = await readFieldShape(listTitle, columnTitle, null, true);
+          if (!shape) {
+            log('WARN', `Could not re-seal '${listTitle}.${columnTitle}': the original field no longer exists.`);
+            continue;
+          }
+          if (shape.Id !== fieldId) {
+            throw new Error(`Field '${listTitle}.${columnTitle}' changed identity before exit cleanup`);
+          }
+          if (shape.Sealed === true) continue;
           const digest = await getDigest();
-          await patchField(
-            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          await patchFieldById(
+            listId, fieldId, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
           );
+          invalidateFieldShapes(listTitle);
+          const verify = await readFieldShape(listTitle, columnTitle, null, true);
+          if (!verify || verify.Id !== fieldId || verify.Sealed !== true) {
+            throw new Error(`Field '${listTitle}.${columnTitle}' did not retain sealed state during exit cleanup`);
+          }
           log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
         } catch (err) {
           // Loud, and recorded: the operator has to know the site was left
@@ -209,11 +232,62 @@
     return mismatches;
   }
 
-  function assertListImmutableShape(list, actual) {
-    const mismatches = immutableListMismatches(list, actual);
-    // De-duplicated: two properties of one lookup share a single message, and
-    // the joined text must stay what a single-property mismatch has always said.
-    if (mismatches.length > 0) throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
+  function listOwnershipMismatches(list, actual) {
+    const expected = list.expected_marker;
+    const held = actual && actual.Description;
+    if (typeof expected === 'string'
+        && expected.length > 0
+        && typeof held === 'string'
+        && held.includes(expected)) return [];
+    return [{
+      property: 'Description',
+      declared: expected,
+      actual: held,
+      message: `Existing '${list.title}' does not carry its exact provenance marker. `
+        + 'A matching title, template, schema or item count is not ownership authority; '
+        + 'restore the exact marker only if this tool created the list, otherwise rename the declaration.',
+      checked: true,
+    }];
+  }
+
+  function listAdoptionMismatches(list, actual) {
+    return [
+      ...immutableListMismatches(list, actual),
+      ...listOwnershipMismatches(list, actual),
+    ];
+  }
+
+  function assertListAdoptable(list, actual) {
+    const mismatches = listAdoptionMismatches(list, actual);
+    if (mismatches.length > 0) {
+      throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
+    }
+  }
+
+  async function assertDeclaredListOwnedNow(listName) {
+    const list = SCHEMA.lists.find(candidate => candidate.title === listName);
+    if (!list) throw new Error(`No declaration found for list '${listName}'`);
+    const actual = await readListShape(listName, true);
+    if (!actual) throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    assertListAdoptable(list, actual);
+    return actual;
+  }
+
+  async function assertDeclaredFieldOwnedNow(listName, field) {
+    await assertDeclaredListOwnedNow(listName);
+    const target = field.target_list
+      ? await assertDeclaredListOwnedNow(field.target_list)
+      : null;
+    return target ? target.Id : null;
+  }
+
+  async function assertDeclaredFieldTargetNow(listName, field, targetGuid) {
+    const freshTargetGuid = await assertDeclaredFieldOwnedNow(listName, field);
+    if (field.target_list && freshTargetGuid !== targetGuid) {
+      throw new Error(
+        `Lookup target '${field.target_list}' changed identity before reconciling '${listName}.${field.title}'`,
+      );
+    }
   }
 
   function desiredListSettings(list) {
@@ -236,17 +310,19 @@
   // means "never touch" (a hand-set validation survives).
   async function reconcileListValidation(list, digest) {
     if (list.validation_formula == null) return;
-    const actual = await readListShape(list.title);
+    const actual = await readListShape(list.title, true);
     if (!actual) throw new Error(`Declared list '${list.title}' disappeared before validation reconcile`);
+    assertListAdoptable(list, actual);
     const formulaSame = canonicalFormula(actual.ValidationFormula || '') === canonicalFormula(list.validation_formula);
     const messageSame = (actual.ValidationMessage || '') === (list.validation_message || '');
     if (formulaSame && messageSame) return;
-    await patchList(list.title, {
+    await patchListById(actual.Id, {
       __metadata: { type: 'SP.List' },
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
     const verify = await readListShape(list.title, true);
+    if (verify) assertListAdoptable(list, verify);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -271,7 +347,8 @@
     }
     const adJson = await adResp.json();
     if (adJson && adJson.d && adJson.d.AllowDeletion === false) return;
-    await patchList(list.title, { __metadata: { type: 'SP.List' }, AllowDeletion: false }, digest);
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, AllowDeletion: false }, digest);
     const verifyResp = await fetchWithRetry(adUrl, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -282,13 +359,10 @@
     log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
   }
 
-  // The declared list Description, which carries the provenance marker: the
-  // one list-level string recording which template family and entity
-  // produced this list, and the only thing fleet reporting has to find it
-  // by. It is written in the creation POST AND reconciled here, because a
-  // list provisioned before markers existed (or one whose description an
-  // owner edited in list settings) otherwise keeps a description discovery
-  // cannot match, forever, while every deploy phase reports success.
+  // The declared list Description carries the provenance marker. Ownership is
+  // established before this function runs. Reconciliation may repair human
+  // prose around a retained marker, but must never add a missing marker to an
+  // object ordinary deploy found by title.
   //
   // There is no lock to lean on. Fields have Sealed and lists have
   // AllowDeletion; SharePoint offers no equivalent for a Description.
@@ -307,14 +381,19 @@
   // list it looks at. Only a repair pays the MERGE and its fresh re-read.
   async function reconcileListDescription(list, actual, digest) {
     const desired = normalizeDescription(list.description);
+    actual = await assertDeclaredListOwnedNow(list.title);
     if (normalizeDescription(actual.Description) === desired) return actual;
-    await patchList(list.title, {
+    await patchListById(actual.Id, {
       __metadata: { type: 'SP.List' },
       Description: desired,
     }, digest);
     const verify = await readListShape(list.title, true);
     if (!verify) {
       throw new Error(`Declared list '${list.title}' disappeared after the Description MERGE`);
+    }
+    assertListAdoptable(list, verify);
+    if (verify.Id !== actual.Id) {
+      throw new Error(`List '${list.title}' changed identity after the Description MERGE`);
     }
     if (normalizeDescription(verify.Description) !== desired) {
       throw new Error(
@@ -328,18 +407,21 @@
   }
 
   async function reconcileListShape(list, digest) {
-    let actual = await readListShape(list.title);
-    if (!actual) throw new Error(`Declared list '${list.title}' disappeared during deployment`);
-    assertListImmutableShape(list, actual);
+    let actual = await assertDeclaredListOwnedNow(list.title);
     const desired = desiredListSettings(list);
     if (listSettingsMismatch(actual, desired)) {
-      await patchList(list.title, {
+      actual = await assertDeclaredListOwnedNow(list.title);
+      const patchedListId = actual.Id;
+      await patchListById(actual.Id, {
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
       actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
-      assertListImmutableShape(list, actual);
+      assertListAdoptable(list, actual);
+      if (actual.Id !== patchedListId) {
+        throw new Error(`List '${list.title}' changed identity after settings MERGE`);
+      }
       if (listSettingsMismatch(actual, desired)) {
         const drifted = Object.keys(desired).filter(key => actual[key] !== desired[key]);
         throw new Error(`List '${list.title}' did not retain declared setting(s): ${drifted.join(', ')}`);
@@ -474,7 +556,7 @@
   // hides a column from EVERY form and is not writable over REST, so a
   // per-form declaration would silently become hide-everywhere the first
   // time anyone opened the designer.
-  async function enforceDeclaredFormulas(listName, field, digest) {
+  async function enforceDeclaredFormulas(listName, field, digest, targetGuid) {
     const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
     const read = async () => {
       const r = await fetchWithRetry(`${url}?$select=ClientValidationFormula,ClientValidationMessage,ValidationFormula,ValidationMessage`, {
@@ -543,6 +625,7 @@
       log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas: ${replaced.join('; ')}`);
     }
 
+    await assertDeclaredFieldTargetNow(listName, field, targetGuid);
     const r = await fetchWithRetry(url, {
       method: 'POST',
       headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
@@ -576,6 +659,7 @@
           clientOnly.ClientValidationMessage = body.ClientValidationMessage;
         }
         if (Object.keys(clientOnly).length > 1) {
+          await assertDeclaredFieldTargetNow(listName, field, targetGuid);
           const retry = await fetchWithRetry(url, {
             method: 'POST',
             headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
@@ -676,6 +760,7 @@
       for (const [name, value] of Object.entries(desired.derived)) {
         if (!sameDerivedValue(name, actual[name], value)) patchBody[name] = value;
       }
+      await assertDeclaredFieldTargetNow(listName, field, targetGuid);
       await patchField(listName, field.title, patchBody, digest);
       actual = await readFieldShape(listName, field.title, field, true);
       if (!actual) throw new Error(`Field '${listName}.${field.title}' disappeared after reconciliation`);
@@ -704,7 +789,7 @@
     if (drifted.length > 0) {
       throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
     }
-    await enforceDeclaredFormulas(listName, field, digest);
+    await enforceDeclaredFormulas(listName, field, digest, targetGuid);
     return true;
   }
 

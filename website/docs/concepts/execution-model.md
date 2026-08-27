@@ -66,10 +66,11 @@ run concurrently (bounded). Never parallelise same-list schema writes.
 
 Rerunning any script must be safe:
 
-- **Existing objects are adopted, never assumed.** A list or field that
-  already exists is adopted only when its *immutable* shape provably
-  matches the declaration. A mismatch fails that object closed with a
-  named error. Explicit migration beats silent mutation. The immutable
+- **Existing objects are adopted, never assumed.** A list that already exists
+  must carry this declaration's exact provenance marker, and its immutable
+  shape must match. Existing fields must match their immutable shape. Any
+  mismatch fails that object closed with a named error. Explicit migration
+  beats silent mutation. The immutable
   set is: internal name, `TypeAsString`, `ReadOnlyField`, unexpected
   sealing, the lookup's target list and target field, and the list's base
   template.

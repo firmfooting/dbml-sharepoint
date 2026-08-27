@@ -131,10 +131,11 @@ to type the site's leaf path at a first prompt. Within that scope it will:
   took effect, deletes the list, and re-locks it if the delete fails. A
   protection the site owner set is therefore overridden, per list, once
   deletion is authorised.
-- **Delete lists by title.** A pre-existing list whose title collides with a
-  prefixed deploy list is indistinguishable to rollback and would be deleted.
-  The script logs this warning before the first prompt; confirm target lists
-  are deploy-owned before confirming.
+- **Require current provenance before confirmation.** Rollback re-reads each
+  target's live Description and requires the exact family/entity marker. An
+  unreadable or foreign marker is skipped before the destructive prompt; title
+  alone never authorises deletion. A second ownership check after the prompt is
+  tracked separately in issue #303.
 
 The list itself is removed with a REST `DELETE`, not `recycle()`. Treat list
 recoverability as a tenant recycle-bin question rather than something this

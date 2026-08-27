@@ -105,12 +105,12 @@
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
     'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter',
   ].join(',');
-  let fieldShapesByList = {};
+  let fieldShapesByList = Object.create(null);
   // No argument: full reset (phase starts). With a list name: drop only
   // that list's snapshot, so lanes refresh their own list after writes
   // without thrashing the other lanes' caches.
   const invalidateFieldShapes = (listName) => {
-    if (listName == null) { fieldShapesByList = {}; return; }
+    if (listName == null) { fieldShapesByList = Object.create(null); return; }
     delete fieldShapesByList[listName];
   };
   async function listFieldShapes(listName) {

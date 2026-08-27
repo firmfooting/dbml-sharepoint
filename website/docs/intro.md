@@ -45,10 +45,11 @@ schema.dbml + mapping.yaml + release.yaml
   what PnP, site scripts and Graph offer that this tool does not,
   [why not PnP, site scripts, or Graph?](concepts/comparison.md)
 - **Fail closed, rerun safely.** Every write is preceded by read-only
-  preflights: the wrong site aborts, existing lists and fields are adopted
-  only when their immutable shape provably matches, mutable drift is
-  narrowly reconciled and read back. Reruns of the same release skip
-  verified work. See the [safety model](concepts/safety-model.md).
+  preflights: the wrong site aborts, an existing list needs the exact
+  provenance marker and matching immutable shape, and an existing field needs
+  matching immutable shape. Mutable drift is narrowly reconciled and read
+  back. Reruns of the same release skip verified work. See the [safety
+  model](concepts/safety-model.md).
 - **The whole lifecycle ships in the bundle.** A read-only
   [site assessment](artifacts/assess.md) before you deploy, optional
   [demo data](artifacts/demo-data.md) to demonstrate with, a

@@ -40,11 +40,11 @@ philosophy.
   Graph consent. See [why not PnP, site scripts, or
   Graph?](website/docs/concepts/comparison.md) for an honest comparison.
 - **Fail closed, rerun safely.** Every write is preceded by read-only
-  preflights: wrong site aborts, existing lists/fields are adopted only when
-  their immutable shape provably matches, mutable drift is narrowly
-  reconciled and read back. Reruns skip work the script can verify is
-  already correct, which it decides by reading the live site, not by
-  comparing release tags.
+  preflights: wrong site aborts, an existing list needs the exact provenance
+  marker and matching immutable shape, and an existing field needs matching
+  immutable shape. Mutable drift is narrowly reconciled and read back. Reruns
+  skip work the script can verify is already correct, which it decides by
+  reading the live site, not by comparing release tags.
 - **Real column support.** Text, note, choice (+ defaults), person, date,
   number, boolean, hyperlink, same-site lookups (including deferred circular
   and self-lookups), **calculated columns** (formulas in the mapping),

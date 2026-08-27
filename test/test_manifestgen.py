@@ -79,6 +79,13 @@ def test_manifest_includes_phase_headings_and_release() -> None:
     assert "isolated as" in md and f"Phase {pn('lists')}" in md
     assert "copyRoleAssignments=false" in md
     assert "clearSubscopes=false" in md
+    assert "Existing-list ownership and first redeploy" in md
+    assert "Exact ownership marker" in md
+    assert "Verify ownership from independent evidence" in md
+    assert "If ownership cannot be proved" in md
+    assert "stamp the marker:" in md
+    for declared_list in schema_json["lists"]:
+        assert declared_list["expected_marker"] in md
 
 
 class _SeedExtension(BaseExtension):

@@ -51,19 +51,19 @@
     "level_on_fail": "BLOCKED"
   },
   {
-    "description": "List \u0027APP_Project\u0027 still carries the provenance marker fleet reporting finds it by",
+    "description": "Existing list \u0027APP_Project\u0027 carries this declaration\u0027s exact provenance marker",
     "key": "provenance_marker:APP_Project",
-    "level_on_fail": "WARN"
+    "level_on_fail": "BLOCKED"
   },
   {
-    "description": "List \u0027APP_Task\u0027 still carries the provenance marker fleet reporting finds it by",
+    "description": "Existing list \u0027APP_Task\u0027 carries this declaration\u0027s exact provenance marker",
     "key": "provenance_marker:APP_Task",
-    "level_on_fail": "WARN"
+    "level_on_fail": "BLOCKED"
   },
   {
-    "description": "List \u0027APP_AppSettings\u0027 still carries the provenance marker fleet reporting finds it by",
+    "description": "Existing list \u0027APP_AppSettings\u0027 carries this declaration\u0027s exact provenance marker",
     "key": "provenance_marker:APP_AppSettings",
-    "level_on_fail": "WARN"
+    "level_on_fail": "BLOCKED"
   },
   {
     "description": "Operator holds ManagePermissions",
@@ -495,16 +495,10 @@
     // The provenance marker on an EXISTING declared list. Reported, never
     // repaired: this script writes nothing, and that is its whole contract.
     //
-    // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. deploy.js reconciles a drifted
-    // Description, but only at the NEXT run. In the gap, a list whose
-    // description an owner edited in list settings is absent from every fleet
-    // report: discovery enumerates `Description`, so that site contributes
-    // fewer rows, raises no error, and nothing knows how many there should have
-    // been. assess.js is what an operator runs before touching a site, so it is
-    // the only thing that can surface this between deploys.
-    //
-    // WARN, not BLOCKED: the list itself is fine and deploying over it is the
-    // repair. Only reporting is affected, which is what DEGRADED means here.
+    // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. A missing marker means the
+    // list may be foreign. Ordinary deploy must not stamp it, because doing so
+    // manufactures the ownership evidence rollback later trusts. Assessment
+    // therefore predicts the same fail-closed decision before any write.
     //
     // SUBSTRING, not equality. The deploy compares the whole Description
     // because it owns the note as well; this check owns only discoverability,
@@ -518,27 +512,34 @@
     // A Map, because an object literal drops a `__proto__` key and this check
     // then returned silently on a list whose marker was missing.
     const LIST_MARKERS = new Map(TARGETS.list_markers);
-    const markerFinding = (title, description) => {
-      if (!LIST_MARKERS.has(title)) return;
-      const expected = LIST_MARKERS.get(title);
-      if (!expected) return;
+    const markerFinding = (title, description, descriptionReported) => {
       const key = `provenance_marker:${title}`;
-      // A Description the probe did not report is not one that lost its marker.
-      // An empty string that WAS reported still warns, which is the drift this
-      // check exists for.
-      if (description == null) {
-        finding(2, key, 'NOT-ASSESSABLE',
-          `'${title}' exists, but its Description was not reported, so whether fleet `
-          + 'reporting can see it is unknown.');
+      const expected = LIST_MARKERS.get(title);
+      if (!LIST_MARKERS.has(title)
+          || typeof expected !== 'string'
+          || expected.length === 0) {
+        finding(2, key, 'BLOCKED',
+          `'${title}' has no valid generated ownership marker. Rebuild the artifacts; `
+          + 'assessment and deploy cannot safely classify the existing list.');
         return;
       }
-      const held = String(description);
+      // A missing property means the probe did not answer the ownership
+      // question. An explicitly reported null or empty value did answer: it
+      // carries no marker and therefore blocks ordinary deploy.
+      if (!descriptionReported) {
+        finding(2, key, 'NOT-ASSESSABLE',
+          `'${title}' exists, but its Description was not reported, so ownership `
+          + 'could not be assessed. Deploy will make a fresh preflight read.');
+        return;
+      }
+      const held = typeof description === 'string' ? description : '';
       if (held.includes(expected)) {
         finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
       } else {
-        finding(2, key, 'WARN',
-          `'${title}' exists but its Description no longer carries the provenance marker `
-          + `"${expected}". Fleet reporting cannot see '${title}' until a deploy restores it.`);
+        finding(2, key, 'BLOCKED',
+          `'${title}' exists but its Description does not carry this declaration's exact `
+          + `provenance marker "${expected}". Restore that marker only if this tool created `
+          + `the list; otherwise rename the declaration. Deploy will not adopt or stamp it.`);
       }
     };
 
@@ -550,8 +551,12 @@
       if (!list.ok && list.status === 404) {
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
       } else if (list.ok) {
-        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}), a redeploy/reconcile target.`);
-        markerFinding(title, list.d.Description);
+        finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${reported(list.d.BaseTemplate)}); the ownership check below decides whether deploy may reconcile it.`);
+        markerFinding(
+          title,
+          list.d.Description,
+          Object.prototype.hasOwnProperty.call(list.d, 'Description'),
+        );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
       }
@@ -781,12 +786,12 @@
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
     'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter',
   ].join(',');
-  let fieldShapesByList = {};
+  let fieldShapesByList = Object.create(null);
   // No argument: full reset (phase starts). With a list name: drop only
   // that list's snapshot, so lanes refresh their own list after writes
   // without thrashing the other lanes' caches.
   const invalidateFieldShapes = (listName) => {
-    if (listName == null) { fieldShapesByList = {}; return; }
+    if (listName == null) { fieldShapesByList = Object.create(null); return; }
     delete fieldShapesByList[listName];
   };
   async function listFieldShapes(listName) {
@@ -1002,6 +1007,43 @@
     }
   }
 
+  const sharePointGuid = (value, label) => {
+    const held = String(value || '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(held)) {
+      throw new Error(`Invalid ${label} GUID returned by SharePoint`);
+    }
+    return held;
+  };
+
+  async function patchFieldById(listId, fieldId, body, digest) {
+    const safeListId = sharePointGuid(listId, 'list');
+    const safeFieldId = sharePointGuid(fieldId, 'field');
+    const url = apiUrl(`web/lists(guid'${safeListId}')/fields(guid'${safeFieldId}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`Field ${safeFieldId} MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
+  async function patchListById(listId, body, digest) {
+    const safeListId = sharePointGuid(listId, 'list');
+    const url = apiUrl(`web/lists(guid'${safeListId}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`List ${safeListId} MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
   async function patchList(listName, body, digest) {
     const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')`);
     const r = await fetchWithRetry(url, {
@@ -1169,6 +1211,7 @@
       "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test for list Project.",
       "enable_minor_versions": false,
       "enable_versioning": true,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list Project.",
       "fields_phase1": [
         {
           "body": {
@@ -1234,6 +1277,7 @@
       "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test for list Task.",
       "enable_minor_versions": false,
       "enable_versioning": true,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list Task.",
       "fields_phase1": [
         {
           "body": {
@@ -1302,6 +1346,7 @@
       "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "enable_minor_versions": false,
       "enable_versioning": true,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "fields_phase1": [],
       "kind": "List",
       "major_version_limit": 500,
@@ -1484,20 +1529,43 @@
   // so the success path pays one field enumeration per affected list.
   async function restoreUnsealedFields() {
     const byList = new Map();
-    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+    for (const [listTitle, columnTitle, listId, fieldId] of fieldsUnsealedForRun.values()) {
       if (!byList.has(listTitle)) byList.set(listTitle, []);
-      byList.get(listTitle).push(columnTitle);
+      byList.get(listTitle).push([columnTitle, listId, fieldId]);
     }
     for (const [listTitle, columns] of byList.entries()) {
       invalidateFieldShapes(listTitle);  // never trust phase-start state
-      for (const columnTitle of columns) {
+      for (const [columnTitle, listId, fieldId] of columns) {
         try {
-          const shape = await readFieldShape(listTitle, columnTitle, null);
-          if (shape && shape.Sealed === true) continue;
+          const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+          if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+          const currentList = await readListShape(listTitle, true);
+          if (!currentList) {
+            log('WARN', `Could not re-seal '${listTitle}.${columnTitle}': the original list no longer exists.`);
+            continue;
+          }
+          assertListAdoptable(list, currentList);
+          if (currentList.Id !== listId) {
+            throw new Error(`List '${listTitle}' changed identity before exit cleanup`);
+          }
+          const shape = await readFieldShape(listTitle, columnTitle, null, true);
+          if (!shape) {
+            log('WARN', `Could not re-seal '${listTitle}.${columnTitle}': the original field no longer exists.`);
+            continue;
+          }
+          if (shape.Id !== fieldId) {
+            throw new Error(`Field '${listTitle}.${columnTitle}' changed identity before exit cleanup`);
+          }
+          if (shape.Sealed === true) continue;
           const digest = await getDigest();
-          await patchField(
-            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          await patchFieldById(
+            listId, fieldId, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
           );
+          invalidateFieldShapes(listTitle);
+          const verify = await readFieldShape(listTitle, columnTitle, null, true);
+          if (!verify || verify.Id !== fieldId || verify.Sealed !== true) {
+            throw new Error(`Field '${listTitle}.${columnTitle}' did not retain sealed state during exit cleanup`);
+          }
           log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
         } catch (err) {
           // Loud, and recorded: the operator has to know the site was left
@@ -1631,11 +1699,62 @@
     return mismatches;
   }
 
-  function assertListImmutableShape(list, actual) {
-    const mismatches = immutableListMismatches(list, actual);
-    // De-duplicated: two properties of one lookup share a single message, and
-    // the joined text must stay what a single-property mismatch has always said.
-    if (mismatches.length > 0) throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
+  function listOwnershipMismatches(list, actual) {
+    const expected = list.expected_marker;
+    const held = actual && actual.Description;
+    if (typeof expected === 'string'
+        && expected.length > 0
+        && typeof held === 'string'
+        && held.includes(expected)) return [];
+    return [{
+      property: 'Description',
+      declared: expected,
+      actual: held,
+      message: `Existing '${list.title}' does not carry its exact provenance marker. `
+        + 'A matching title, template, schema or item count is not ownership authority; '
+        + 'restore the exact marker only if this tool created the list, otherwise rename the declaration.',
+      checked: true,
+    }];
+  }
+
+  function listAdoptionMismatches(list, actual) {
+    return [
+      ...immutableListMismatches(list, actual),
+      ...listOwnershipMismatches(list, actual),
+    ];
+  }
+
+  function assertListAdoptable(list, actual) {
+    const mismatches = listAdoptionMismatches(list, actual);
+    if (mismatches.length > 0) {
+      throw new Error([...new Set(mismatches.map(m => m.message))].join(' '));
+    }
+  }
+
+  async function assertDeclaredListOwnedNow(listName) {
+    const list = SCHEMA.lists.find(candidate => candidate.title === listName);
+    if (!list) throw new Error(`No declaration found for list '${listName}'`);
+    const actual = await readListShape(listName, true);
+    if (!actual) throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    assertListAdoptable(list, actual);
+    return actual;
+  }
+
+  async function assertDeclaredFieldOwnedNow(listName, field) {
+    await assertDeclaredListOwnedNow(listName);
+    const target = field.target_list
+      ? await assertDeclaredListOwnedNow(field.target_list)
+      : null;
+    return target ? target.Id : null;
+  }
+
+  async function assertDeclaredFieldTargetNow(listName, field, targetGuid) {
+    const freshTargetGuid = await assertDeclaredFieldOwnedNow(listName, field);
+    if (field.target_list && freshTargetGuid !== targetGuid) {
+      throw new Error(
+        `Lookup target '${field.target_list}' changed identity before reconciling '${listName}.${field.title}'`,
+      );
+    }
   }
 
   function desiredListSettings(list) {
@@ -1658,17 +1777,19 @@
   // means "never touch" (a hand-set validation survives).
   async function reconcileListValidation(list, digest) {
     if (list.validation_formula == null) return;
-    const actual = await readListShape(list.title);
+    const actual = await readListShape(list.title, true);
     if (!actual) throw new Error(`Declared list '${list.title}' disappeared before validation reconcile`);
+    assertListAdoptable(list, actual);
     const formulaSame = canonicalFormula(actual.ValidationFormula || '') === canonicalFormula(list.validation_formula);
     const messageSame = (actual.ValidationMessage || '') === (list.validation_message || '');
     if (formulaSame && messageSame) return;
-    await patchList(list.title, {
+    await patchListById(actual.Id, {
       __metadata: { type: 'SP.List' },
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
     const verify = await readListShape(list.title, true);
+    if (verify) assertListAdoptable(list, verify);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -1693,7 +1814,8 @@
     }
     const adJson = await adResp.json();
     if (adJson && adJson.d && adJson.d.AllowDeletion === false) return;
-    await patchList(list.title, { __metadata: { type: 'SP.List' }, AllowDeletion: false }, digest);
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, AllowDeletion: false }, digest);
     const verifyResp = await fetchWithRetry(adUrl, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -1704,13 +1826,10 @@
     log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
   }
 
-  // The declared list Description, which carries the provenance marker: the
-  // one list-level string recording which template family and entity
-  // produced this list, and the only thing fleet reporting has to find it
-  // by. It is written in the creation POST AND reconciled here, because a
-  // list provisioned before markers existed (or one whose description an
-  // owner edited in list settings) otherwise keeps a description discovery
-  // cannot match, forever, while every deploy phase reports success.
+  // The declared list Description carries the provenance marker. Ownership is
+  // established before this function runs. Reconciliation may repair human
+  // prose around a retained marker, but must never add a missing marker to an
+  // object ordinary deploy found by title.
   //
   // There is no lock to lean on. Fields have Sealed and lists have
   // AllowDeletion; SharePoint offers no equivalent for a Description.
@@ -1729,14 +1848,19 @@
   // list it looks at. Only a repair pays the MERGE and its fresh re-read.
   async function reconcileListDescription(list, actual, digest) {
     const desired = normalizeDescription(list.description);
+    actual = await assertDeclaredListOwnedNow(list.title);
     if (normalizeDescription(actual.Description) === desired) return actual;
-    await patchList(list.title, {
+    await patchListById(actual.Id, {
       __metadata: { type: 'SP.List' },
       Description: desired,
     }, digest);
     const verify = await readListShape(list.title, true);
     if (!verify) {
       throw new Error(`Declared list '${list.title}' disappeared after the Description MERGE`);
+    }
+    assertListAdoptable(list, verify);
+    if (verify.Id !== actual.Id) {
+      throw new Error(`List '${list.title}' changed identity after the Description MERGE`);
     }
     if (normalizeDescription(verify.Description) !== desired) {
       throw new Error(
@@ -1750,18 +1874,21 @@
   }
 
   async function reconcileListShape(list, digest) {
-    let actual = await readListShape(list.title);
-    if (!actual) throw new Error(`Declared list '${list.title}' disappeared during deployment`);
-    assertListImmutableShape(list, actual);
+    let actual = await assertDeclaredListOwnedNow(list.title);
     const desired = desiredListSettings(list);
     if (listSettingsMismatch(actual, desired)) {
-      await patchList(list.title, {
+      actual = await assertDeclaredListOwnedNow(list.title);
+      const patchedListId = actual.Id;
+      await patchListById(actual.Id, {
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
       actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
-      assertListImmutableShape(list, actual);
+      assertListAdoptable(list, actual);
+      if (actual.Id !== patchedListId) {
+        throw new Error(`List '${list.title}' changed identity after settings MERGE`);
+      }
       if (listSettingsMismatch(actual, desired)) {
         const drifted = Object.keys(desired).filter(key => actual[key] !== desired[key]);
         throw new Error(`List '${list.title}' did not retain declared setting(s): ${drifted.join(', ')}`);
@@ -1896,7 +2023,7 @@
   // hides a column from EVERY form and is not writable over REST, so a
   // per-form declaration would silently become hide-everywhere the first
   // time anyone opened the designer.
-  async function enforceDeclaredFormulas(listName, field, digest) {
+  async function enforceDeclaredFormulas(listName, field, digest, targetGuid) {
     const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
     const read = async () => {
       const r = await fetchWithRetry(`${url}?$select=ClientValidationFormula,ClientValidationMessage,ValidationFormula,ValidationMessage`, {
@@ -1965,6 +2092,7 @@
       log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas: ${replaced.join('; ')}`);
     }
 
+    await assertDeclaredFieldTargetNow(listName, field, targetGuid);
     const r = await fetchWithRetry(url, {
       method: 'POST',
       headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
@@ -1998,6 +2126,7 @@
           clientOnly.ClientValidationMessage = body.ClientValidationMessage;
         }
         if (Object.keys(clientOnly).length > 1) {
+          await assertDeclaredFieldTargetNow(listName, field, targetGuid);
           const retry = await fetchWithRetry(url, {
             method: 'POST',
             headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
@@ -2098,6 +2227,7 @@
       for (const [name, value] of Object.entries(desired.derived)) {
         if (!sameDerivedValue(name, actual[name], value)) patchBody[name] = value;
       }
+      await assertDeclaredFieldTargetNow(listName, field, targetGuid);
       await patchField(listName, field.title, patchBody, digest);
       actual = await readFieldShape(listName, field.title, field, true);
       if (!actual) throw new Error(`Field '${listName}.${field.title}' disappeared after reconciliation`);
@@ -2126,7 +2256,7 @@
     if (drifted.length > 0) {
       throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
     }
-    await enforceDeclaredFormulas(listName, field, digest);
+    await enforceDeclaredFormulas(listName, field, digest, targetGuid);
     return true;
   }
 
@@ -2307,16 +2437,16 @@
   markPhase('Phase 1.2: read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
-  // created from this schema. Validate every immutable identity before Phase 1.3
-  // performs its first write. Mutable declared settings are reconciled and
-  // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
-  // always requires an explicit migration.
+  // created from this schema. Before Phase 1.3 performs its first write, every
+  // existing list must carry this declaration's exact provenance marker and
+  // every immutable shape must agree. Mutable settings are reconciled only
+  // after both checks pass.
   log('INFO', 'Starting Phase 1.2: read-only preflight.');
   invalidateFieldShapes();  // probes reflect phase-start state
   // Read-only, so lanes are free of write races, but the field wave still
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
-  const preflightListShapes = {};
+  const preflightListShapes = Object.create(null);
   // Three outcomes: 'absent' (no such list), 'unreadable' (its probe failed),
   // 'ok' (a shape was read, whether or not that shape matched). A fourth,
   // 'mismatch', was removed: a mismatched list still has its shape stored, so
@@ -2337,7 +2467,7 @@
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
-      const mismatches = immutableListMismatches(list, actual);
+      const mismatches = listAdoptionMismatches(list, actual);
       if (mismatches.length === 0) return;
       const message = [...new Set(mismatches.map(m => m.message))].join(' ');
       log('ERROR', `Existing-schema list '${list.title}': ${message}`);
@@ -3269,11 +3399,11 @@
     const sealDeclared = [];
     for (const list of SCHEMA.lists) {
       for (const col of list.fields_phase1) {
-        if (col.seal) sealDeclared.push([list.title, col.title]);
+        if (col.seal) sealDeclared.push([list.title, col]);
       }
     }
     for (const lookup of SCHEMA.phase2_lookups) {
-      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field]);
     }
     // The built-in Title is not a declared column, so it was never in this
     // set, and Phase 1 writes list.title_patch to it. A Title sealed by
@@ -3283,32 +3413,83 @@
     // (the loop below writes ONLY if it finds Sealed true), so a normal
     // site pays one read and nothing changes.
     for (const list of SCHEMA.lists) {
-      if (list.title_patch) sealDeclared.push([list.title, 'Title']);
+      if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
     if (sealDeclared.length > 0) {
+      // Preflight ownership can change before this first list mutation. Re-read
+      // every list this phase may touch and gate the whole unseal batch before
+      // opening one field. An absent list is a clean first-provision target.
+      const unsealListTitles = new Set(sealDeclared.map(([listTitle]) => listTitle));
+      let ownershipFailed = false;
+      await mapLanes(
+        SCHEMA.lists.filter(list => unsealListTitles.has(list.title)),
+        list => list.title,
+        async (list) => {
+          try {
+            const actual = await readListShape(list.title, true);
+            if (actual) assertListAdoptable(list, actual);
+          } catch (err) {
+            ownershipFailed = true;
+            log('ERROR', `Maintenance ownership recheck '${list.title}': ${err.message}`);
+            summary.errors.push({
+              phase: '1.6', list: list.title, error: err.message,
+            });
+          }
+        },
+        4,
+      );
+      if (ownershipFailed) {
+        log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
+        return { ...summary, aborted: 'maintenance-ownership-errors' };
+      }
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
       // One lane per list: same-list field MERGEs race into save conflicts;
       // different lists unseal concurrently.
-      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, columnTitle]) => {
+      const errorsBeforeUnseal = summary.errors.length;
+      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, field]) => {
         try {
-          const shape = await readFieldShape(listTitle, columnTitle, null);
-          if (shape && shape.Sealed) {
+          const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+          if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+          const currentList = await readListShape(listTitle, true);
+          if (!currentList) return;
+          assertListAdoptable(list, currentList);
+          const shape = await readFieldShape(listTitle, field.title, field, true);
+          // A partial first provision may not have created this deferred
+          // lookup yet. With no live field there is nothing to unseal, and its
+          // target is allowed to remain absent until the structural phases.
+          if (!shape) return;
+          let targetGuid = null;
+          if (field.target_list) {
+            const target = SCHEMA.lists.find(candidate => candidate.title === field.target_list);
+            if (!target) throw new Error(`No declaration found for lookup target '${field.target_list}'`);
+            const targetShape = await readListShape(target.title, true);
+            if (!targetShape) throw new Error(`Lookup target '${target.title}' disappeared before maintenance unseal`);
+            assertListAdoptable(target, targetShape);
+            targetGuid = targetShape.Id;
+          }
+          await assertFieldImmutableShape(listTitle, field, shape, targetGuid);
+          if (shape.Sealed) {
             const unsealDigest = await getDigest();
-            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
-            unsealedCount += 1;
-            // Record only after the write succeeds. The exit path restores
-            // every field this run actually opened, including ordinary
-            // declared columns when a later phase aborts before PROTECTION.
+            // Record before the request. If SharePoint commits the MERGE but
+            // the response is lost, exit cleanup must still re-seal it. A
+            // redundant Sealed=true write is safe when the MERGE never landed.
             fieldsUnsealedForRun.set(
-              `${listTitle}\u0000${columnTitle}`, [listTitle, columnTitle],
+              `${listTitle}\u0000${field.title}`,
+              [listTitle, field.title, currentList.Id, shape.Id],
             );
+            await patchFieldById(currentList.Id, shape.Id, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
+            unsealedCount += 1;
           }
         } catch (err) {
-          log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
-          summary.errors.push({ phase: '1.6', list: listTitle, column: columnTitle, error: err.message });
+          log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
+          summary.errors.push({ phase: '1.6', list: listTitle, column: field.title, error: err.message });
         }
       }, 4);
+      if (summary.errors.length > errorsBeforeUnseal) {
+        log('ERROR', 'Maintenance unseal failed; aborting before any structural phase begins. Exit cleanup will re-seal fields this run may have opened.');
+        return { ...summary, aborted: 'maintenance-unseal-errors' };
+      }
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }
@@ -3318,7 +3499,7 @@
   log('INFO', `Starting Phase 2.1: list creation. Release ${RELEASE_TAG}.`);
   invalidateFieldShapes();  // probes reflect phase-start state
   let digest = await getDigest();
-  const listGuids = {};
+  const listGuids = Object.create(null);
   const earlyIsolationLists = new Set(SCHEMA.list_assignments
     .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
     .map(la => la.list));
@@ -3327,6 +3508,7 @@
   // list shape, GUID capture, early ACL isolation. Sequential because
   // wave 2's same-site lookup fields need every target list's GUID.
   const fieldWork = [];
+  const errorsBeforeWaveOne = summary.errors.length;
   for (const list of SCHEMA.lists) {
     try {
       // Refresh the digest per list: a long Phase 2.1 (hundreds of field POSTs)
@@ -3339,8 +3521,8 @@
         // The read-only preflight already rejected immutable template drift;
         // re-read here to close the preflight/write race and then reconcile
         // only the declared mutable list settings.
-        assertListImmutableShape(list, listShape);
-        log('INFO', `List '${list.title}' exists; validating and reconciling declared shape.`);
+        assertListAdoptable(list, listShape);
+        log('INFO', `List '${list.title}' is owned; validating and reconciling declared shape.`);
         summary.listsSkipped.push(list.title);
       } else {
         log('INFO', `Creating list '${list.title}' (${list.kind})...`);
@@ -3348,12 +3530,10 @@
           __metadata: { type: 'SP.List' },
           Title: list.title,
           BaseTemplate: list.base_template,
-          // Creation is not where the Description is guaranteed. It carries
-          // the provenance marker, and this POST only runs for a list that
-          // does not exist yet; reconcileListDescription (called from
-          // reconcileListShape just below, on both paths) is what reads it
-          // back and what repairs an adopted list whose description predates
-          // markers or was edited by an owner.
+          // The create request carries ownership evidence from the first
+          // write. ReconcileListShape reads it back before any field work.
+          // Existing lists reach that function only after proving they already
+          // carry the exact marker; ordinary deploy never manufactures it.
           Description: list.description || '',
           ContentTypesEnabled: list.content_types_enabled,
           EnableVersioning: list.enable_versioning,
@@ -3431,12 +3611,70 @@
     }
   }
 
+  if (summary.errors.length > errorsBeforeWaveOne) {
+    log('ERROR', 'Wave 1 list reconciliation failed; aborting before any field work.');
+    return { ...summary, aborted: 'wave-1-schema-errors' };
+  }
+
+  // Wave 1 can be long enough for an earlier list's ownership to change while
+  // later lists are reconciled. Re-survey every field-work list as one batch;
+  // no field write starts unless all still carry exact ownership and shape.
+  let fieldWaveOwnershipFailed = false;
+  await mapLanes(fieldWork, list => list.title, async (list) => {
+    try {
+      const actual = await readListShape(list.title, true);
+      if (!actual) throw new Error(`Declared list '${list.title}' disappeared before field work`);
+      assertListAdoptable(list, actual);
+      listGuids[list.title] = actual.Id;
+    } catch (err) {
+      fieldWaveOwnershipFailed = true;
+      log('ERROR', `Field-wave ownership recheck '${list.title}': ${err.message}`);
+      summary.errors.push({
+        phase: '2.1', list: list.title, error: err.message,
+      });
+    }
+  }, 4);
+  if (fieldWaveOwnershipFailed) {
+    log('ERROR', 'Field-wave ownership recheck failed; aborting before any field write.');
+    return { ...summary, aborted: 'field-wave-ownership-errors' };
+  }
+
   // Wave 2 is field provisioning, one lane per list: every target GUID now
   // exists, and concurrent schema writes to the SAME list race into save
   // conflicts while different lists are independent, so each list's fields
   // run sequentially inside a lane and the lanes run concurrently.
+  //
+  // Ownership loss inside the wave is phase-wide, not one field's business.
+  // The per-field catch below records an error and moves to the next column,
+  // which for a transient 403 is right and for a lost marker means writing on
+  // past a KNOWN ownership loss, in this lane and in every other one still
+  // running. So it is marked on the error, re-thrown past that catch, and
+  // latched here where every lane can see it.
+  let fieldWaveOwnershipLoss = null;
+  const stopFieldWave = (listName, err) => {
+    fieldWaveOwnershipLoss = fieldWaveOwnershipLoss
+      || { list: listName, error: err.message };
+    err.ownershipLoss = true;
+    return err;
+  };
   await mapLanes(fieldWork, (list) => list.title, async (list) => {
     try {
+      // Called before every write in this lane, so the latch is what stops
+      // the wave: a lane that has not failed itself stops at its next check.
+      const assertLaneOwnership = async () => {
+        if (fieldWaveOwnershipLoss) {
+          throw stopFieldWave(list.title, new Error(
+            `field wave stopped by ownership loss on '${fieldWaveOwnershipLoss.list}'`,
+          ));
+        }
+        try {
+          const owned = await assertDeclaredListOwnedNow(list.title);
+          listGuids[list.title] = owned.Id;
+        } catch (err) {
+          throw stopFieldWave(list.title, err);
+        }
+      };
+      await assertLaneOwnership();
       let laneDigest = await getDigest();
       for (const col of list.fields_phase1) {
         // Guard each field independently: one field's failure (a transient
@@ -3445,11 +3683,21 @@
         // trusted by name alone: immutable identity is checked before safely
         // mutable declared settings are reconciled and read back.
         try {
+          await assertLaneOwnership();
           laneDigest = await getDigest();
-          const targetGuid = col.target_list ? listGuids[col.target_list] : null;
-          if (col.target_list && !targetGuid) {
-            throw new Error(`Lookup target ${col.target_list} not yet created`);
-          }
+          const resolveTargetGuid = async () => {
+            if (!col.target_list) return null;
+            try {
+              const targetOwned = await assertDeclaredListOwnedNow(col.target_list);
+              listGuids[col.target_list] = targetOwned.Id;
+              return targetOwned.Id;
+            } catch (err) {
+              // The target is written to as surely as the lane's own list:
+              // its GUID becomes the LookupListId of every field created here.
+              throw stopFieldWave(col.target_list, err);
+            }
+          };
+          let targetGuid = await resolveTargetGuid();
           if (await reconcileDeclaredField(
             list.title, col, targetGuid, laneDigest, true,
           )) {
@@ -3471,12 +3719,17 @@
               createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
               createBody = { parameters };
             }
+            await assertLaneOwnership();
+            targetGuid = await resolveTargetGuid();
+            if (col.target_list) createBody.parameters.LookupListId = targetGuid;
             await postJson(
               createUrl,
               createBody,
               laneDigest,
             );
             invalidateFieldShapes();  // new field: next probe re-enumerates
+            await assertLaneOwnership();
+            targetGuid = await resolveTargetGuid();
             await reconcileDeclaredField(
               list.title, col, targetGuid, laneDigest, false,
             );
@@ -3493,6 +3746,8 @@
             const primaryShape = await readFieldShape(list.title, col.title, null, true);
             for (const proj of col.projections) {
               if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                await assertLaneOwnership();
+                targetGuid = await resolveTargetGuid();
                 laneDigest = await getDigest();
                 const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
                   + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
@@ -3508,6 +3763,9 @@
             }
           }
         } catch (err) {
+          // Recorded per field and carried on, EXCEPT for ownership loss:
+          // that one leaves the lane, and the wave, without another write.
+          if (err.ownershipLoss) throw err;
           log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
           summary.errors.push({
             phase: '2.1', list: list.title, column: col.title, error: err.message,
@@ -3516,18 +3774,33 @@
       }
 
       if (list.title_patch) {
+        await assertLaneOwnership();
         await reconcileDeclaredField(
           list.title, syntheticTitleField(list), null, laneDigest, false,
         );
       }
 
       laneDigest = await getDigest();
+      await assertLaneOwnership();
       await reconcileListValidation(list, laneDigest);
     } catch (err) {
+      // One named phase error for the whole wave, recorded after mapLanes:
+      // every lane stops on the same loss, and one per lane would report a
+      // site-wide refusal as a list-by-list failure.
+      if (err.ownershipLoss) return;
       log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
       summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
     }
   }, 4);
+
+  if (fieldWaveOwnershipLoss) {
+    log('ERROR', `Phase 2.1 lost ownership of '${fieldWaveOwnershipLoss.list}' mid-wave; aborting every lane before any further field write.`);
+    summary.errors.push({
+      phase: '2.1', list: fieldWaveOwnershipLoss.list,
+      error: fieldWaveOwnershipLoss.error,
+    });
+    return { ...summary, aborted: 'field-wave-ownership-loss' };
+  }
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
@@ -3538,6 +3811,32 @@
   log('INFO', 'Starting Phase 2.2: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
+
+  // listGuids is a title -> GUID map the field wave filled, and the field
+  // wave is long enough for a list to lose its marker after being read into
+  // it. Re-survey every deferred lookup's own list AND its target as one
+  // batch, refresh the map from that read, and abort the whole batch before
+  // any write if a single one no longer proves ownership.
+  let deferredOwnershipFailed = false;
+  const deferredOwnedLists = [...new Set(SCHEMA.phase2_lookups
+    .flatMap(lookup => [lookup.list, lookup.target_list]))];
+  await mapLanes(deferredOwnedLists, listName => listName, async (listName) => {
+    try {
+      const owned = await assertDeclaredListOwnedNow(listName);
+      listGuids[listName] = owned.Id;
+    } catch (err) {
+      deferredOwnershipFailed = true;
+      log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
+      summary.errors.push({
+        phase: '2.2', list: listName, error: err.message,
+      });
+    }
+  }, 4);
+  if (deferredOwnershipFailed) {
+    log('ERROR', 'Deferred-lookup ownership recheck failed; aborting before any lookup write.');
+    return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
+  }
+
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
       digest = await getDigest();  // refresh per item (digest lifetime)

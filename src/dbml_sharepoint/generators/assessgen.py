@@ -113,16 +113,13 @@ def derive_requirements(
             "BLOCKED",
         ))
     for title, _marker in t["list_markers"]:
-        # WARN, never BLOCKED. A list whose Description an owner rewrote is
-        # still a perfectly good list and deploying over it is safe -- the
-        # deploy is what repairs it. What is broken is REPORTING: fleet
-        # discovery enumerates Description, so between deploys that site
-        # returns fewer rows and nothing knows it should have returned more.
-        # Degraded is exactly that: deployable, but review it first.
+        # Ownership is required before ordinary deploy may reconcile an
+        # existing list. A missing marker cannot be repaired automatically,
+        # because writing it would manufacture the evidence rollback trusts.
         reqs.append(Requirement(
             f"provenance_marker:{title}",
-            f"List '{title}' still carries the provenance marker fleet reporting finds it by",
-            "WARN",
+            f"Existing list '{title}' carries this declaration's exact provenance marker",
+            "BLOCKED",
         ))
     if t["requires_manage_permissions"]:
         reqs.append(Requirement("manage_permissions_bit",

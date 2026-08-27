@@ -15,7 +15,7 @@ from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
-from dbml_sharepoint.analysis.list_description import family_for, list_description
+from dbml_sharepoint.analysis.list_description import family_for, list_description, marker_for
 from dbml_sharepoint.analysis.lookups import (
     display_column_for,
     lookup_display_columns,
@@ -585,6 +585,7 @@ def build_schema_json(
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
+            "expected_marker": marker_for(family, table_name),
             "content_types_enabled": False,
             "enable_versioning": versioning.enable_versioning,
             "major_version_limit": versioning.major_version_limit,

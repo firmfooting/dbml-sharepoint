@@ -29,6 +29,7 @@ from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 
 
@@ -189,15 +190,49 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     };
     // Per-list Description state, mutated by MERGEs exactly as SharePoint
     // would, so the list probe reads back what was actually written and a
-    // run can never satisfy its own read-back. Default '' is the honest
-    // pre-marker state: a list provisioned before descriptions were written,
-    // or one an owner blanked, which is exactly what the reconcile repairs.
-    // Both constants are rewritten by _run_adopted_deploy.
-    const LIST_DESCRIPTIONS = {};
+    // run can never satisfy its own read-back. Explicit entries drive the
+    // ownership/refusal cases. The default map gives unrelated adopted-site
+    // tests currently owned lists so they reach the behavior they exercise.
+    // These constants are rewritten by _run_adopted_deploy.
+    const LIST_DESCRIPTIONS = new Map([]);
+    const DEFAULT_LIST_DESCRIPTIONS = new Map([
+      ['APP_Project', 'Provisioned by dbml-sharepoint from simple-test for list Project.'],
+      ['APP_Task', 'Provisioned by dbml-sharepoint from simple-test for list Task.'],
+      ['APP_AppSettings', 'Provisioned by dbml-sharepoint from simple-test for list AppSettings.'],
+      ['APP_Escalation', 'Provisioned by dbml-sharepoint from t for list Escalation.'],
+    ]);
     const IGNORE_DESCRIPTION_WRITES = false;
-    const listDescription = (listTitle) => (
-      LIST_DESCRIPTIONS[listTitle] == null ? '' : LIST_DESCRIPTIONS[listTitle]
-    );
+    const DROP_LIST_MARKER_AFTER_READS = null;
+    const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
+    // Drop every list's marker the moment a named phase announces itself. A
+    // read COUNT cannot name a phase boundary: it shifts as soon as any probe
+    // is added earlier in the run, and the test then measures a different
+    // boundary while still passing. The phase's own 'Starting Phase N.M:'
+    // line IS the boundary, so watch stdout for it instead of counting.
+    const DROP_LIST_MARKER_AT_PHASE = null;
+    let phaseMarkerDropped = false;
+    const consoleLog = console.log.bind(console);
+    console.log = (...parts) => {
+      if (DROP_LIST_MARKER_AT_PHASE != null
+          && String(parts[0]).includes(`Starting Phase ${DROP_LIST_MARKER_AT_PHASE}:`)) {
+        phaseMarkerDropped = true;
+      }
+      consoleLog(...parts);
+    };
+    const listDescriptionReads = Object.create(null);
+    const listDescription = (listTitle) => {
+      const reads = listDescriptionReads[listTitle] || 0;
+      listDescriptionReads[listTitle] = reads + 1;
+      if (phaseMarkerDropped) return '';
+      const dropAfter = DROP_LIST_MARKER_AFTER_READS_BY_TITLE.has(listTitle)
+        ? DROP_LIST_MARKER_AFTER_READS_BY_TITLE.get(listTitle)
+        : DROP_LIST_MARKER_AFTER_READS;
+      if (Number.isInteger(dropAfter) && reads >= dropAfter) return '';
+      if (LIST_DESCRIPTIONS.has(listTitle)) {
+        return LIST_DESCRIPTIONS.get(listTitle) == null ? '' : LIST_DESCRIPTIONS.get(listTitle);
+      }
+      return DEFAULT_LIST_DESCRIPTIONS.get(listTitle) || '';
+    };
     // Per-group Description and paginated membership, keyed by group Title.
     // A name with no entry keeps the prior fixed shape (Description 'Test
     // group.', no members), so every existing test is unaffected. Rewritten
@@ -328,14 +363,21 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const ROLE_ASSIGNMENT_PAGES = {};
     const roleAssignmentPages = (listTitle) => ROLE_ASSIGNMENT_PAGES[listTitle] || [[]];
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
-    const titles = {};
+    const titles = Object.create(null);
+    // Indexed is state, not a constant: a lookup's TARGET carries the
+    // picker's index on its display column, so any run with a lookup MERGEs
+    // Indexed:true onto a Title and reads it back. Answering a fixed false
+    // fails that read-back, which looks like a deploy defect.
+    const TITLE_SETTINGS_KEYS = ['Sealed', 'Required', 'Description',
+      'DefaultValue', 'Indexed'];
     const titleState = (listTitle) => (titles[listTitle] ||= {
       Sealed: true, Required: true, Description: '', DefaultValue: null,
+      Indexed: false,
     });
     const titleField = (listTitle) => ({
       Id: '11111111-1111-1111-1111-111111111111',
       InternalName: 'Title', Title: 'Title', TypeAsString: 'Text',
-      EnforceUniqueValues: false, Indexed: false, ReadOnlyField: false,
+      EnforceUniqueValues: false, ReadOnlyField: false,
       CustomFormatter: null, ...titleState(listTitle),
     });
     // Created fields persist, so the run converges instead of failing
@@ -572,8 +614,18 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const parsed = JSON.parse(opts.body);
         const listTitle = listOf(u);
         const named = (u.match(/getbyinternalnameortitle\('([^']+)'\)/) || [])[1];
-        if (named === 'Title') {
-          for (const k of ['Sealed', 'Required', 'Description', 'DefaultValue']) {
+        const byId = (u.match(/\/fields\(guid'([^']+)'\)/) || [])[1];
+        if (byId === '11111111-1111-1111-1111-111111111111') {
+          for (const state of Object.values(titles)) {
+            for (const k of TITLE_SETTINGS_KEYS) {
+              if (parsed[k] !== undefined) state[k] = parsed[k];
+            }
+          }
+        } else if (byId) {
+          const f = Object.values(created).find(candidate => candidate.Id === byId);
+          if (f && parsed.Sealed != null) f.Sealed = parsed.Sealed;
+        } else if (named === 'Title') {
+          for (const k of TITLE_SETTINGS_KEYS) {
             if (parsed[k] !== undefined) titleState(listTitle)[k] = parsed[k];
           }
         } else if (named) {
@@ -590,6 +642,22 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
         } else if (parsed.Title) {
           created[`${listTitle} ${parsed.Title}`] = fieldShape(listTitle, parsed.Title, parsed);
+        } else if (parsed.parameters && parsed.parameters.Title) {
+          // FieldCollection.AddField. SharePoint refuses an SP.FieldLookup
+          // POSTed to /fields, so a lookup create arrives with its
+          // SP.FieldCreationInformation nested under `parameters`. Without
+          // this branch the column is never recorded and the deferred-lookup
+          // phase always fails its own read-back.
+          const p = parsed.parameters;
+          created[`${listTitle} ${p.Title}`] = fieldShape(listTitle, p.Title, {
+            ...p,
+            // AddField names the target LookupListId / LookupFieldName, and
+            // the read-back probe asks for LookupList / LookupField. Recorded
+            // under both spellings so the probe answers off __body, the same
+            // route every hand-seeded lookup in this file already takes.
+            LookupList: p.LookupListId,
+            LookupField: p.LookupFieldName,
+          });
         }
       }
       // A MERGE onto the LIST object itself. The URL ends at getbytitle(...)
@@ -602,10 +670,21 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // SharePoint reports as 200 and discards, which is the only state in
       // which the read-back can be watched failing.
       if ((opts.method || 'GET') === 'POST' && opts.body
-          && /getbytitle\('[^/]*'\)$/.test(u)) {
+          && (/getbytitle\('[^/]*'\)$/.test(u) || /lists\(guid'[^']+'\)$/.test(u))) {
         const parsed = JSON.parse(opts.body);
         if (parsed.Description !== undefined && !IGNORE_DESCRIPTION_WRITES) {
-          LIST_DESCRIPTIONS[listOf(u)] = parsed.Description;
+          let writtenTitle = listOf(u);
+          if (!writtenTitle) {
+            const marker = /(Provisioned by dbml-sharepoint from .* for list [^.]+\.)$/.exec(
+              parsed.Description || '',
+            );
+            writtenTitle = marker && [
+              ...LIST_DESCRIPTIONS.entries(), ...DEFAULT_LIST_DESCRIPTIONS.entries(),
+            ].find(
+              ([, description]) => String(description || '').includes(marker[1]),
+            )?.[0];
+          }
+          if (writtenTitle) LIST_DESCRIPTIONS.set(writtenTitle, parsed.Description);
         }
       }
       if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {
@@ -914,6 +993,29 @@ def test_a_blocked_site_stops_even_when_degradation_is_acknowledged() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_missing_list_ownership_blocks_embedded_assessment_before_preflight() -> None:
+    from dbml_sharepoint.generators.assessgen import assess_targets
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    titles = assess_targets(schema, bundle, "default")["list_titles"]
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        "const LIST_DESCRIPTIONS = new Map("
+        f"{json.dumps(list(dict.fromkeys(titles, '').items()))});",
+    )
+
+    output = _run_deploy_with_assessment(acknowledge=True, harness=harness)
+    summary = _summary_of(output)
+
+    assert summary["assessment"]["verdict"] == "BLOCKED"
+    assert summary.get("aborted") == "assessment-blocked"
+    assert f"Starting Phase {pn('preflight')}" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_pack_needing_no_acl_work_deploys_without_manage_permissions(
     tmp_path: Path,
 ) -> None:
@@ -1085,7 +1187,10 @@ def test_a_sealed_title_is_unsealed_for_the_run() -> None:
         json.loads(c["body"])["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
-        and "getbyinternalnameortitle('Title')" in c["url"]
+        and (
+            "getbyinternalnameortitle('Title')" in c["url"]
+            or "/fields(guid'" in c["url"]
+        )
         and "Sealed" in c["body"]
     ]
     assert False in seal_writes, "a sealed Title was never unsealed for the run"
@@ -1141,7 +1246,10 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
         json.loads(c["body"])["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
-        and "getbyinternalnameortitle('Title')" in c["url"]
+        and (
+            "getbyinternalnameortitle('Title')" in c["url"]
+            or "/fields(guid'" in c["url"]
+        )
         and "Sealed" in c["body"]
     ]
     assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
@@ -1172,7 +1280,9 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
 # percent-encode one anyway, so "no slash after the opening quote" separates
 # the list object from everything nested under it. Both directions are pinned
 # by test_the_list_write_matcher_survives_an_apostrophe.
-_LIST_WRITE_URL = re.compile(r"web/lists/getbytitle\('[^/]*'\)$")
+_LIST_WRITE_URL = re.compile(
+    r"(?:web/lists/getbytitle\('[^/]*'\)|web/lists\(guid'[0-9a-f-]+'\))$",
+)
 
 
 def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1184,8 +1294,63 @@ def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _deployment_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mutating requests, excluding read-only POST-shaped protocols."""
+    return [
+        call
+        for call in calls
+        if call["method"] == "POST"
+        and "contextinfo" not in call["url"]
+        and "ProcessQuery" not in call["url"]
+    ]
+
+
+def _field_writes(
+    calls: list[dict[str, Any]], list_title: str | None = None,
+) -> list[dict[str, Any]]:
+    """POSTs into a list's `/fields` collection: creates and MERGEs alike.
+
+    Matched on the collection rather than on the verb because
+    `summary.columnsCreated` already counts creates, and it is the MERGE that
+    it cannot see: a reconcile onto a list whose ownership was just lost
+    writes without incrementing anything.
+
+    `list_title` is compared against the by-title segment. Every caller passes
+    a plain ASCII title, which `odataName` and encodeURIComponent both leave
+    untouched; `_LIST_WRITE_URL` above records what an escaped one costs.
+    """
+    return [
+        call
+        for call in calls
+        if call["method"] == "POST"
+        and "/fields" in call["url"].split("?")[0]
+        and (
+            list_title is None
+            or f"web/lists/getbytitle('{list_title}')/fields" in call["url"]
+        )
+    ]
+
+
+def _addfield_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """POSTs that create a lookup column.
+
+    SharePoint refuses an SP.FieldLookup POSTed to `/fields`, so every lookup
+    create goes through FieldCollection.AddField instead. That makes it the
+    one field write the deferred-lookup phase performs, and the thing to count
+    when asking whether that phase wrote.
+    """
+    return [
+        call
+        for call in calls
+        if call["method"] == "POST"
+        and call["url"].split("?")[0].endswith("/fields/addfield")
+    ]
+
+
 def _declared_list_descriptions(
     tmp_path: Path, prefix: str = DEFAULT_PREFIX,
+    *, table_names: tuple[str, ...] | None = None,
+    self_reference: bool = False,
 ) -> dict[str, str]:
     """List title -> the Description `_declared_deploy_js` declares for it.
 
@@ -1198,9 +1363,23 @@ def _declared_list_descriptions(
     """
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    schema, bundle = _declared_pack(tmp_path, "", prefix)
+    schema, bundle = _declared_pack(
+        tmp_path, "", prefix, table_names=table_names,
+        self_reference=self_reference,
+    )
     schema_json = build_schema_json(schema, bundle, "default")
     return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
+
+
+def _declared_list_markers(
+    tmp_path: Path, prefix: str = DEFAULT_PREFIX,
+) -> dict[str, str]:
+    """List title -> the exact ownership marker emitted in SCHEMA."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = _declared_pack(tmp_path, "", prefix)
+    schema_json = build_schema_json(schema, bundle, "default")
+    return {entry["title"]: entry["expected_marker"] for entry in schema_json["lists"]}
 
 
 def _run_adopted_deploy(
@@ -1209,6 +1388,12 @@ def _run_adopted_deploy(
     *,
     ignore_description_writes: bool = False,
     prefix: str = DEFAULT_PREFIX,
+    expect_list_phase: bool = True,
+    drop_marker_after_reads: int | None = None,
+    drop_marker_after_reads_by_title: dict[str, int] | None = None,
+    drop_marker_at_phase: str | None = None,
+    table_names: tuple[str, ...] | None = None,
+    self_reference: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -1230,24 +1415,46 @@ def _run_adopted_deploy(
     `prefix` reaches the mapping's list-title prefix, which is how a caller
     deploys to a list whose title needs OData escaping.
 
+    `drop_marker_at_phase` takes a dotted phase number and removes every
+    list's marker as that phase announces itself, which names a boundary a
+    read count cannot. `self_reference` reaches `_declared_pack`, and is what
+    gives the run a deferred lookup to defer.
+
     Returns (summary, calls, output). The list phase must actually have
     started: otherwise a "nothing was written" assertion would pass against a
     run that aborted in the preflight and never reached the reconcile at all.
     """
     held = (
         dict.fromkeys(
-            _declared_list_descriptions(tmp_path, prefix), list_description,
+            _declared_list_descriptions(
+                tmp_path, prefix, table_names=table_names,
+                self_reference=self_reference,
+            ),
+            list_description,
         )
         if isinstance(list_description, str) else dict(list_description)
     )
     harness = _ADOPTED_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = {};",
-        f"const LIST_DESCRIPTIONS = {json.dumps(held)};",
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
     ).replace(
         "const IGNORE_DESCRIPTION_WRITES = false;",
         f"const IGNORE_DESCRIPTION_WRITES = {json.dumps(ignore_description_writes)};",
+    ).replace(
+        "const DROP_LIST_MARKER_AFTER_READS = null;",
+        f"const DROP_LIST_MARKER_AFTER_READS = {json.dumps(drop_marker_after_reads)};",
+    ).replace(
+        "const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);",
+        "const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map("
+        f"{json.dumps(list((drop_marker_after_reads_by_title or {}).items()))});",
+    ).replace(
+        "const DROP_LIST_MARKER_AT_PHASE = null;",
+        f"const DROP_LIST_MARKER_AT_PHASE = {json.dumps(drop_marker_at_phase)};",
     )
-    script = harness + "\n" + _declared_deploy_js(tmp_path, "", prefix).replace(
+    script = harness + "\n" + _declared_deploy_js(
+        tmp_path, "", prefix, table_names=table_names,
+        self_reference=self_reference,
+    ).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -1264,9 +1471,10 @@ def _run_adopted_deploy(
     # By KEY, not by number: phase numbers derive from position and renumber
     # themselves the moment anybody inserts a phase, and a hardcoded '2.1'
     # would then silently stop guarding reach.
-    assert f"Starting Phase {pn('lists')}" in output, (
-        f"the list reconcile phase never ran:\n{output[-3000:]}"
-    )
+    if expect_list_phase:
+        assert f"Starting Phase {pn('lists')}" in output, (
+            f"the list reconcile phase never ran:\n{output[-3000:]}"
+        )
     return (
         json.loads(result_line.removeprefix("__RESULT__")),
         json.loads(calls_line.removeprefix("__CALLS__")),
@@ -1275,29 +1483,105 @@ def _run_adopted_deploy(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_existing_list_with_the_wrong_description_is_corrected(
+def test_an_existing_list_without_the_marker_is_refused_before_writes(
     tmp_path: Path,
 ) -> None:
-    """The adoption path is the one that matters.
-
-    A list provisioned before markers existed, or one an owner edited, holds
-    a description discovery cannot match. Creation-only writing leaves it
-    that way forever and reports success.
-    """
+    """A matching title and shape are information, not ownership authority."""
     summary, calls, output = _run_adopted_deploy(
         tmp_path, "something an owner typed",
+        expect_list_phase=False,
     )
-    writes = _description_writes(calls)
-    assert writes, (
-        "an existing list kept a description with no marker and the run "
-        f"reported success; it is now invisible to fleet reporting\n{output[-2000:]}"
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    assert not _deployment_writes(calls), (
+        f"a deployment write occurred before ownership refusal\n{output[-2000:]}"
     )
-    assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
-    # The repair has to CONVERGE, not merely be attempted: a MERGE whose
-    # read-back then failed would satisfy the assertions above while leaving
-    # the operator with an aborted run.
-    assert summary.get("aborted") is None, summary
+    assert any(
+        "provenance marker" in error["error"] for error in summary["errors"]
+    ), summary["errors"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "description",
+    [
+        "",
+        marker_for("other", "Escalation"),
+        marker_for("t", "OtherEntity"),
+        "Provisioned by dbml-sharepoint from t/Escalation.",
+    ],
+)
+def test_foreign_copied_and_legacy_markers_are_refused(
+    tmp_path: Path,
+    description: str,
+) -> None:
+    summary, calls, _ = _run_adopted_deploy(
+        tmp_path,
+        description,
+        expect_list_phase=False,
+    )
+
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    assert not _deployment_writes(calls), calls
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("replacement", ["null", '""'])
+def test_missing_or_empty_generated_expected_marker_fails_closed(
+    tmp_path: Path,
+    replacement: str,
+) -> None:
+    js = _declared_deploy_js(tmp_path, "")
+    mutated, count = re.subn(
+        r'"expected_marker": "[^"]+"',
+        f'"expected_marker": {replacement}',
+        js,
+    )
+    assert count == 1, "the one-list fixture did not expose one expected marker"
+    script = _ADOPTED_HARNESS + "\n" + mutated.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+
+    output = _run(script)
+    summary = _summary_of(output)
+    calls_line = next(
+        line for line in output.splitlines() if line.startswith("__CALLS__")
+    )
+    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    assert not _deployment_writes(calls), calls
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_owned_list_named_proto_reaches_reconciliation(tmp_path: Path) -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = _declared_pack(
+        tmp_path, "", prefix='prefix: ""', table_name="__proto__",
+    )
+    built = build_schema_json(schema, bundle, "default")
+    descriptions = {
+        entry["title"]: entry["description"] for entry in built["lists"]
+    }
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    )
+    js = _declared_deploy_js(
+        tmp_path, "", prefix='prefix: ""', table_name="__proto__",
+    )
+    script = harness + "\n" + js.replace(
+        "})();",
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+
+    output = _run(script)
+    summary = _summary_of(output)
+
     assert summary.get("errors") == [], summary["errors"]
+    assert summary.get("aborted") is None, (summary, output[-2000:])
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1324,6 +1608,192 @@ def test_a_correct_description_is_not_rewritten(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_owned_list_with_human_prose_drift_is_repaired(tmp_path: Path) -> None:
+    held = {
+        title: f"An owner rewrote the note. {marker}"
+        for title, marker in _declared_list_markers(tmp_path).items()
+    }
+
+    summary, calls, output = _run_adopted_deploy(tmp_path, held)
+
+    assert summary.get("aborted") is None, summary
+    assert _description_writes(calls), f"owned prose drift was not repaired\n{output[-2000:]}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_after_preflight_is_refused_before_reconcile(
+    tmp_path: Path,
+) -> None:
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=1,
+        expect_list_phase=False,
+    )
+
+    assert summary.get("aborted") == "maintenance-ownership-errors", summary
+    assert not _deployment_writes(calls), (
+        f"a deployment write occurred after ownership disappeared\n{output[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_during_unseal_aborts_before_structure(
+    tmp_path: Path,
+) -> None:
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=2,
+        expect_list_phase=False,
+    )
+
+    assert summary.get("aborted") == "maintenance-unseal-errors", summary
+    assert not _deployment_writes(calls), (
+        f"a deployment write followed the per-field ownership loss\n{output[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_after_wave_one_aborts_before_fields(
+    tmp_path: Path,
+) -> None:
+    summary, _calls, _output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=6,
+    )
+
+    assert summary.get("aborted") == "field-wave-ownership-errors", summary
+    assert summary["columnsCreated"] == 0, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_at_field_lane_stops_the_wave(
+    tmp_path: Path,
+) -> None:
+    summary, _calls, _output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=7,
+    )
+
+    assert summary.get("aborted") == "field-wave-ownership-loss", summary
+    assert summary["columnsCreated"] == 0, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_after_field_lane_entry_blocks_field_writes(
+    tmp_path: Path,
+) -> None:
+    summary, _calls, _output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=8,
+    )
+
+    assert summary.get("aborted") == "field-wave-ownership-loss", summary
+    assert summary["columnsCreated"] == 0, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_ownership_loss_in_one_field_lane_stops_every_other_lane(
+    tmp_path: Path,
+) -> None:
+    """One lane's ownership loss is phase-wide, not that lane's own business.
+
+    Wave 2 provisions fields in one concurrent lane per list, and the
+    per-field catch records an error and moves on to the next column. An
+    ownership recheck that failed inside it was therefore recorded like a
+    transient 403 and every other lane kept provisioning: structural writes
+    that follow a KNOWN ownership loss, which is the state this gate exists
+    to stop.
+
+    The boundary is inside a phase rather than at its start, so it is named
+    by a read count: read eight of `APP_Escalation`'s Description is its
+    wave-2 lane entry, seven having gone to the preflight, the unseal, wave 1
+    and the pre-wave re-survey. A count that drifts lands on a different
+    boundary and changes the abort code, so it fails rather than passing on
+    the wrong thing.
+    """
+    table_names = ("Escalation", "Second")
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path, table_names=table_names),
+        table_names=table_names,
+        drop_marker_after_reads_by_title={"APP_Escalation": 7},
+    )
+
+    assert summary.get("aborted") == "field-wave-ownership-loss", summary
+    assert summary["columnsCreated"] == 0, summary
+    assert not _field_writes(calls, "APP_Second"), (
+        "the second lane went on writing fields after the first list lost "
+        f"ownership\n{output[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_self_referencing_declaration_writes_its_deferred_lookup(
+    tmp_path: Path,
+) -> None:
+    """The control for the gate below.
+
+    "No lookup was written" passes just as happily against a fixture that had
+    no lookup to write, so pin first that this one writes one.
+    """
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path, self_reference=True),
+        self_reference=True,
+    )
+
+    assert f"Starting Phase {pn('lookups')}" in output, output[-3000:]
+    assert not summary.get("aborted"), summary
+    assert _addfield_writes(calls), f"no deferred lookup was created\n{output[-3000:]}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_before_deferred_lookups_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    """The deferred phase wrote by a GUID map the field wave left behind.
+
+    `listGuids` maps a declared title to the GUID read during the field wave.
+    A list can lose its marker between that wave and this phase, and the
+    cached entry kept the lookup writes flowing to a list nobody could still
+    prove was ours.
+    """
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path, self_reference=True),
+        self_reference=True,
+        drop_marker_at_phase=pn("lookups"),
+    )
+
+    assert summary.get("aborted") == "deferred-lookup-ownership-errors", summary
+    assert not _addfield_writes(calls), (
+        f"a deferred lookup was created after ownership was lost\n{output[-3000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_wave_one_failure_on_one_list_aborts_before_other_list_fields(
+    tmp_path: Path,
+) -> None:
+    table_names = ("Escalation", "Second")
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    summary, _calls, _output = _run_adopted_deploy(
+        tmp_path,
+        held,
+        table_names=table_names,
+        drop_marker_after_reads_by_title={"APP_Escalation": 4},
+    )
+
+    assert summary.get("aborted") == "wave-1-schema-errors", summary
+    assert summary["columnsCreated"] == 0, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_description_that_does_not_read_back_aborts(tmp_path: Path) -> None:
     """`AGENTS.md`: anything that writes must read back and verify.
 
@@ -1331,8 +1801,12 @@ def test_a_description_that_does_not_read_back_aborts(tmp_path: Path) -> None:
     shape this repository exists to catch -- the deploy reports success and
     the list is still undiscoverable.
     """
+    held = {
+        title: f"An owner rewrote the note. {marker}"
+        for title, marker in _declared_list_markers(tmp_path).items()
+    }
     summary, calls, output = _run_adopted_deploy(
-        tmp_path, "stale", ignore_description_writes=True,
+        tmp_path, held, ignore_description_writes=True,
     )
     assert _description_writes(calls), f"nothing was even attempted\n{output[-2000:]}"
     assert summary.get("aborted"), (
@@ -1394,8 +1868,14 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
     """
     declared = _declared_list_descriptions(tmp_path, _APOSTROPHE_PREFIX)
     assert any("'" in title for title in declared), declared
+    held = {
+        title: f"typed by an owner. {marker}"
+        for title, marker in _declared_list_markers(
+            tmp_path, _APOSTROPHE_PREFIX,
+        ).items()
+    }
     summary, calls, output = _run_adopted_deploy(
-        tmp_path, "typed by an owner", prefix=_APOSTROPHE_PREFIX,
+        tmp_path, held, prefix=_APOSTROPHE_PREFIX,
     )
     writes = _description_writes(calls)
     assert writes, (
@@ -1501,12 +1981,17 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         json.loads(c["body"])["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
-        and "getbyinternalnameortitle('Title')" in c["url"]
+        and (
+            "getbyinternalnameortitle('Title')" in c["url"]
+            or "/fields(guid'" in c["url"]
+        )
         and "Sealed" in c["body"]
     ]
     assert seal_writes, "PREPARE never unsealed a Title, so there was nothing to restore"
     assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
-    assert seal_writes[-1] is True, f"the aborted run left Title unsealed: {seal_writes}"
+    assert seal_writes[-1] is True, (
+        f"the aborted run left Title unsealed: {seal_writes}; errors={summary['errors']}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1536,7 +2021,10 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
         json.loads(c["body"])["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
-        and "getbyinternalnameortitle('Note')" in c["url"]
+        and (
+            "getbyinternalnameortitle('Note')" in c["url"]
+            or "/fields(guid'" in c["url"]
+        )
         and "Sealed" in c["body"]
     ]
     assert seal_writes[0] is False, f"PREPARE did not unseal Note: {seal_writes}"
@@ -1662,7 +2150,7 @@ def test_a_lookup_whose_target_display_field_cannot_be_resolved_is_refused() -> 
     ]
 
 
-# One adopted list carrying the wrong BaseTemplate. Every other list keeps the
+# One owned list carrying the wrong BaseTemplate. Every other list keeps the
 # declared 100, so the abort has to name this one.
 _WRONG_BASE_TEMPLATE_HARNESS = _ADOPTED_HARNESS.replace(
     "Title: 'adopted', BaseTemplate: 100, ContentTypesEnabled: false,",
@@ -1673,13 +2161,11 @@ _WRONG_BASE_TEMPLATE_HARNESS = _ADOPTED_HARNESS.replace(
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write() -> None:
-    """The list collector's only refusal, executed rather than read.
+    """Execute the immutable half of the combined adoptability classifier.
 
-    Four call sites go through `assertListImmutableShape`, one of them the
-    post-MERGE read-back, and no test ever ran it against a list that actually
-    differed: widening the wrapper to `mismatches.length > 99` left the suite
-    green. A wrong BaseTemplate means somebody else's list is about to be
-    treated as ours, and SharePoint offers no way to change it.
+    Preflight collects both ownership and immutable mismatches before any
+    write. A wrong BaseTemplate cannot be repaired and must stay visible even
+    when the exact ownership marker is present.
     """
     output = _run_deploy(
         _WRONG_BASE_TEMPLATE_HARNESS,
@@ -2049,6 +2535,9 @@ def test_generated_deploy_js_carries_no_control_characters() -> None:
 
 def _declared_pack(
     tmp_path: Path, section: str, prefix: str = DEFAULT_PREFIX,
+    *, table_name: str = "Escalation",
+    table_names: tuple[str, ...] | None = None,
+    self_reference: bool = False,
 ) -> tuple[Any, Any]:
     """The (schema, bundle) behind `_declared_deploy_js`.
 
@@ -2061,17 +2550,32 @@ def _declared_pack(
     TITLE. The rest of the title is the DBML table name, which the parser
     constrains. It is what lets a test deploy to a list whose title needs
     OData escaping.
+
+    `self_reference` gives every table a lookup back to its own list. That is
+    what puts a column in `phase2_lookups`: a lookup whose target does not
+    exist yet when the field wave runs is deferred, and without one the
+    deferred-lookup phase has nothing to do and cannot be reached from here.
     """
+    names = table_names or (table_name,)
     return pack(
         tmp_path,
-        dbml=table("Escalation", ID_PK, "Title nvarchar", "Note nvarchar"),
-        mapping=blocks(entities("Escalation"), section),
+        dbml="".join(
+            table(
+                name, ID_PK, "Title nvarchar", "Note nvarchar",
+                *((f"Parent int [ref: > {name}.Id]",) if self_reference else ()),
+            )
+            for name in names
+        ),
+        mapping=blocks(entities(*names), section),
         prefix=prefix,
     )
 
 
 def _declared_deploy_js(
     tmp_path: Path, section: str, prefix: str = DEFAULT_PREFIX,
+    *, table_name: str = "Escalation",
+    table_names: tuple[str, ...] | None = None,
+    self_reference: bool = False,
 ) -> str:
     """deploy.js for an all-text schema that actually declares a formula.
 
@@ -2089,7 +2593,11 @@ def _declared_deploy_js(
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
-    schema, bundle = _declared_pack(tmp_path, section, prefix)
+    schema, bundle = _declared_pack(
+        tmp_path, section, prefix,
+        table_name=table_name, table_names=table_names,
+        self_reference=self_reference,
+    )
     return _without_assessment(generate_deploy_js(
         schema=schema,
         bundle=bundle,
