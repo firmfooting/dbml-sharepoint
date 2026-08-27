@@ -5,7 +5,8 @@ holding a consumer to that declaration, and three failure modes followed: a
 literal that bypasses it, prose that restates the value, and a constant whose
 value changes nothing observable.
 
-`_structure.py` (the internal-name limit check, now at `_structure.py:586` and `:672`) was all three at once. It compared against a bare 32 and
+`_structure.py` (the internal-name limit check, now at `_structure.py:586` and
+`:672`) was all three at once. It compared against a bare 32 and
 wrote "SP internal-name limit is 32." in its message, while `MAX_INTERNAL_NAME`
 was read only by `validator.py`. Setting the constant to 33 made the two
 enforcement sites disagree and no test saw it, which is the surviving mutant
