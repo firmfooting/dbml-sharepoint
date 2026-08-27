@@ -602,7 +602,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision 4ff84d5c. Quote this when reporting results.');
+  log('INFO', 'probe revision 6a919337. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -2669,28 +2669,39 @@
       const shadowRows = await rawCaml(`<Where>${UNI_LEAF}</Where>`);
       const readable = bucketRows.ok && shadowRows.ok
         && bucketRows.ids !== null && shadowRows.ids !== null;
+      // null, not false, when a half could not be read. GRDUNI below tests
+      // `!== true`, so either value blocks it, and null is the one that does
+      // not also claim the twins were compared and found to differ.
       twinsAgree = readable
-        && bucketRows.ids.join(',') === shadowRows.ids.join(',');
+        ? bucketRows.ids.join(',') === shadowRows.ids.join(',')
+        : null;
       // The INDEXED half is the only complete answer this run has, and GRDUNI
       // below needs it to tell a truncated answer from a whole one.
       twinComplete = bucketRows.ok ? bucketRows.rows : null;
       const why = !readable
-        ? 'The row IDs could not be read on one or both halves, so nothing here '
-          + 'establishes that the twins match.'
+        ? 'One or both halves was refused or came back with no readable row ID.'
         : bucketRows.rows === shadowRows.rows
           ? 'The twins match the same NUMBER of rows and NOT the same rows, which '
             + 'a count alone would have read as agreement.'
           : 'The twins do NOT match the same rows.';
+      // THREE outcomes, not two. DISAGREE is an answer: report() counts it, and
+      // it sends an operator to reconcile a seed that may be perfectly fine.
+      // A refused request and a response carrying no row ID say only that the
+      // comparison could not be made, which is what NOT ESTABLISHED is for.
       record('TWINCK', TWINCK_Q,
-        twinsAgree ? 'AGREE' : 'DISAGREE',
+        !readable ? 'NOT ESTABLISHED' : twinsAgree ? 'AGREE' : 'DISAGREE',
         `[${stamp}] Bucket: HTTP ${bucketRows.status}, ${bucketRows.rows} row(s). `
         + `Shadow: HTTP ${shadowRows.status}, ${shadowRows.rows} row(s). `
-        + (twinsAgree
-          ? 'Identical data, identical row IDs, so the pair differs only in the '
-            + 'index and GRDUNI below is a comparison rather than a coincidence.'
-          : `${why} They differ in more than the index, so no indexed-versus-`
-            + 'unindexed row here is readable. Reconcile the seed before reading '
-            + 'GRDUNI.'));
+        + (!readable
+          ? `${why} Nothing was compared, so the twins neither agree nor `
+            + 'disagree here. Every indexed-versus-unindexed row below stays '
+            + 'closed until one run reads both halves.'
+          : twinsAgree
+            ? 'Identical data, identical row IDs, so the pair differs only in the '
+              + 'index and GRDUNI below is a comparison rather than a coincidence.'
+            : `${why} They differ in more than the index, so no indexed-versus-`
+              + 'unindexed row here is readable. Reconcile the seed before reading '
+              + 'GRDUNI.'));
     }
 
     // The two measurements. Both twins are on INDEXED columns and are expected

@@ -279,3 +279,30 @@ def test_a_failed_index_control_leaves_every_guard_row_unestablished() -> None:
         f"them is an indexed-versus-unindexed comparison, so the labels it "
         f"rests on are the ones IDXSET reported wrong."
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "shadow"),
+    [
+        ("the request was refused", {"ok": False, "status": 500}),
+        ("no row carried a readable ID",
+         {"ok": True, "ids": list(range(1, 61)), "noIds": True}),
+    ],
+)
+def test_twins_that_could_not_be_read_are_not_recorded_as_disagreeing(
+    why: str, shadow: dict[str, Any],
+) -> None:
+    """TWINCK asks whether the twins match the same rows, and an unreadable
+    half does not answer it either way.
+
+    DISAGREE is an answer: report() counts it, and GRDUNI reads it as the seed
+    having drifted, which sends an operator to reconcile a fixture that may be
+    fine. A refused request and a response whose rows carry no ID say only
+    that the comparison could not be made.
+    """
+    rows = _run_probe(render=[{"contains": ["Name='Shadow'"], **shadow}])
+    assert rows["TWINCK"].startswith("NOT ESTABLISHED"), (
+        f"{why}, and TWINCK recorded {rows['TWINCK']!r}. Nothing was compared, "
+        f"so nothing disagreed."
+    )
