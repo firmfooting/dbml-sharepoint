@@ -1,0 +1,277 @@
+"""Practices the emitted scripts must not reacquire.
+
+Each rule here was a live defect once. A comment saying "do not do X" is not
+a control: the next person writing the next phase does not read it, and the
+gates do not either. These are shrink-only ratchets over the Jinja templates
+that become `deploy.js.txt`, `rollback.js.txt` and `assess.js.txt`.
+
+Adding an entry to an allowlist needs a reason in the pull request. Removing
+one needs nothing.
+"""
+
+import ast
+import re
+from pathlib import Path
+
+import pytest
+from _paths import PACKAGE
+
+TEMPLATES = PACKAGE / "templates"
+
+# The transport itself, which is the one place a bare fetch belongs.
+_TRANSPORT = "_http.js.j2"
+
+# The only permitted shape, matched exactly rather than counted. A count
+# would accept deleting one of these and adding an unsafe site in its place.
+#
+# Both address a view that exists at the moment they are used: `slugUrl`
+# after `createViewWithCleanUrl` has created it under that slug, `viewUrl`
+# after the rename to that title. `listViewShapes` is what answers the
+# existence question, which is the rule.
+_GETBYTITLE_ALLOWED = {
+    "deploy/_views.js.j2": {
+        "const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);",
+        "const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);",
+    },
+}
+
+
+def _templates() -> list[Path]:
+    return sorted(TEMPLATES.rglob("*.j2"))
+
+
+def _code_lines(path: Path) -> list[tuple[int, str]]:
+    """Lines that are not a `//` comment and not inside a Jinja comment."""
+    out: list[tuple[int, str]] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith(("//", "{#")):
+            continue
+        out.append((number, line))
+    return out
+
+
+def _rel(path: Path) -> str:
+    return path.relative_to(TEMPLATES).as_posix()
+
+
+@pytest.mark.parametrize("template", _templates(), ids=_rel)
+def test_every_request_rides_the_shared_transport(template: Path) -> None:
+    """A bare `fetch(` skips Retry-After handling and the request counter.
+
+    SharePoint Online throttles bursts with HTTP 429 and sheds load with 503,
+    and `fetchWithRetry` is the one place that honours `Retry-After`. A phase
+    calling `fetch` directly turns a throttle into a failure on a run that
+    only needed to wait, and it does so intermittently, which is the worst
+    way to find out.
+
+    This fired for real: the view-settings confirmation added for #267 used a
+    bare `fetch` because the page is not a REST endpoint. The throttling
+    argument does not care about that distinction.
+    """
+    bare = [
+        f"{_rel(template)}:{number}"
+        for number, line in _code_lines(template)
+        if re.search(r"(?<![\w.])fetch\s*\(", line) and "fetchWithRetry" not in line
+    ]
+    if _rel(template) == _TRANSPORT:
+        assert len(bare) == 1, (
+            f"{_TRANSPORT} should contain exactly the one fetch that IS the "
+            f"transport, found {bare}"
+        )
+        return
+    assert not bare, (
+        f"bare fetch() outside the shared transport: {bare}. Use "
+        f"fetchWithRetry(url, opts), which honours Retry-After on 429 and 503."
+    )
+
+
+@pytest.mark.parametrize("template", _templates(), ids=_rel)
+def test_a_view_is_not_resolved_by_title_where_it_may_be_absent(template: Path) -> None:
+    """`views/getbytitle` on an absent view answers HTTP 400.
+
+    The browser console paints that red even though `isAbsent400` handles it,
+    and operators read those lines as failures in a transcript they are asked
+    to paste back. `_views.js.j2` says so at the top of the file and reads one
+    enumeration per list instead.
+
+    A ratchet rather than a ban, because addressing a view the run has just
+    created or renamed is legitimate. The permitted lines are matched
+    verbatim: counting them would accept deleting one and adding an unsafe
+    site in its place, which is the mutation this most needs to survive.
+    """
+    allowed = _GETBYTITLE_ALLOWED.get(_rel(template), set())
+    unexpected = [
+        f"{number}: {line.strip()}"
+        for number, line in _code_lines(template)
+        if "views/getbytitle" in line and line.strip() not in allowed
+    ]
+    assert not unexpected, (
+        f"{_rel(template)} resolves a view by title in a form this file does "
+        f"not record: {unexpected}. An absent view answers HTTP 400 and the "
+        f"console shows it as an error the operator did not cause, so read "
+        f"one enumeration per list instead. If the site is safe, say why in "
+        f"the pull request and add the line to _GETBYTITLE_ALLOWED."
+    )
+
+
+@pytest.mark.parametrize("template", _templates(), ids=_rel)
+def test_a_bound_failure_is_read_rather_than_discarded(template: Path) -> None:
+    """`catch (err)` whose body never mentions `err` throws the cause away.
+
+    The transcript is what this project asks an operator to paste back, so a
+    swallowed message is a support round trip. The confirmation added for
+    #267 did exactly this: `catch (err) { listId = null; }` reported "could
+    not identify" and nothing an operator could act on.
+
+    A bare `catch {` is not flagged. That form takes no binding to discard,
+    and this codebase uses it where the failure IS the answer, as in the
+    `JSON.parse` fallbacks in `spError` and `isAbsent400`.
+    """
+    text = template.read_text(encoding="utf-8")
+    discarded: list[int] = []
+    for match in re.finditer(r"\bcatch\s*\(\s*(\w+)\s*\)\s*\{", text):
+        name = match.group(1)
+        depth, index = 1, match.end()
+        while index < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[index], 0)
+            index += 1
+        if not re.search(rf"\b{name}\b", text[match.end():index - 1]):
+            discarded.append(text[:match.start()].count("\n") + 1)
+    assert not discarded, (
+        f"{_rel(template)} binds a caught error and never reads it, at "
+        f"line(s) {discarded}. Put its message in the log or the summary, or "
+        f"use a bare `catch {{` to say the failure itself is the answer."
+    )
+
+
+def _write_text_calls(source: str) -> list[ast.Call]:
+    """Every `<something>.write_text(...)` call in `source`, found by parsing it.
+
+    Parsed rather than scanned. The predecessor matched `.write_text(` with a
+    regex and then counted brackets to the end of the call, which treats a `)`
+    in a string or a comment as Python syntax and a `.write_text(` in a
+    docstring as a call site. Both mistakes reject a compliant writer, and the
+    author's only fix is to satisfy a rule the code already satisfied.
+    """
+    return [
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "write_text"
+    ]
+
+
+def _writers_missing_lf(source: str) -> list[int]:
+    """Line numbers of the `write_text` calls in `source` that do not pin LF.
+
+    Read off the KEYWORDS the call passes, not off its source text. A
+    substring answers a question about the call's content, so a writer
+    emitting the words `newline="\\n"` into the file it was writing passed
+    while pinning nothing itself. A `**kwargs` splat has no `arg` and does not
+    count either: what it holds is not visible here, and this fails closed.
+    """
+    return [
+        call.lineno for call in _write_text_calls(source)
+        if not any(keyword.arg == "newline" for keyword in call.keywords)
+    ]
+
+
+def test_every_committed_writer_pins_lf() -> None:
+    """`Path.write_text` defaults to text mode, so it emits CRLF on Windows.
+
+    `.gitattributes` declares `* text=auto eol=lf`, so a writer that omits
+    `newline="\\n"` marks every file it touched as modified and hides the one
+    real change among the noise. The defect is per-call-site, which is why
+    this is a test rather than a fixed helper.
+    """
+    offenders = [
+        f"{source.relative_to(PACKAGE).as_posix()}:{line}"
+        for source in sorted(PACKAGE.rglob("*.py"))
+        for line in _writers_missing_lf(source.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, (
+        f"write_text without newline=\"\\n\": {offenders}. Use the helper for "
+        f"the surface you are writing, or pass newline explicitly."
+    )
+
+
+def test_the_lf_gate_reads_python_rather_than_counting_brackets() -> None:
+    """A `)` inside a string or a comment is not a closing bracket.
+
+    The scanner counted every parenthesis in the call's text, so it stopped
+    early on a call whose own content held an unmatched `)` and never reached
+    the `newline` that came after it. The same arithmetic read a `.write_text(`
+    written in a docstring as a call site.
+
+    Both reject a compliant writer, which is the direction that costs: the
+    author's fix is to satisfy a rule the code already satisfied.
+    """
+    quoted = 'path.write_text("looks done :)", encoding="utf-8", newline="\\n")\n'
+    assert _writers_missing_lf(quoted) == [], (
+        "a `)` inside the content string was counted as closing the call"
+    )
+    commented = (
+        "path.write_text(\n"
+        "    body,  # see #305 (the CRLF one\n"
+        '    newline="\\n",\n'
+        ")\n"
+    )
+    assert _writers_missing_lf(commented) == [], (
+        "a `(` inside a comment was counted as opening a nested call"
+    )
+    prose = '"""Use bundle.write_artifact, never path.write_text(text)."""\n'
+    assert _writers_missing_lf(prose) == [], (
+        "a `.write_text(` inside a docstring was read as a call site"
+    )
+
+
+def test_the_threshold_probe_measures_the_guard_this_tool_emits() -> None:
+    """A probe measuring a paraphrase of the emitted string measures nothing.
+
+    `threshold-index-probe.js` asks whether the #267 guard changes what
+    SharePoint serves past the list view threshold. That answer is only about
+    the deployed shape if the probe sends the deployed shape, and the two
+    live in different files with nothing joining them.
+
+    Verbatim rather than equivalent: an XML-equivalent spelling would still
+    be a different string, and this project has already carried an OData
+    result over to a CAML question once.
+    """
+    from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
+
+    probe = (PACKAGE.parent.parent / "test" / "manual" / "threshold-index-probe.js")
+    assert CAML_VIEW_FILTER_GUARD in probe.read_text(encoding="utf-8"), (
+        f"{probe.name} does not contain CAML_VIEW_FILTER_GUARD verbatim, so "
+        f"its GRDIDX/GRDNUL/GRDUNI/GRDONLY rows are measuring some other "
+        f"string. Re-render the probe after changing the constant."
+    )
+
+
+def test_the_lf_gate_reads_the_keywords_a_call_actually_passes() -> None:
+    """`newline=` appearing in the call's text is not the same as passing it.
+
+    Substring-matching the source of the whole call answers a question about
+    its CONTENT, so a writer that emits the words `newline="\\n"` into a file
+    while pinning nothing itself is accepted. That is the direction that
+    ships: an unpinned writer passes the gate and marks every file it touches
+    as modified on Windows.
+
+    A call spread over several lines carries the keyword further down, so it
+    is read from the complete call rather than from the line the call opens
+    on.
+    """
+    spread = (
+        "path.write_text(\n"
+        "    render(bundle),\n"
+        "    encoding=\"utf-8\",\n"
+        '    newline="\\n",\n'
+        ")\n"
+    )
+    assert _writers_missing_lf(spread) == [], (
+        "a multi-line call was judged on the line it opens on"
+    )
+    about = 'path.write_text(\'pass newline="\\\\n" to write_text\', encoding="utf-8")\n'
+    assert _writers_missing_lf(about) == [1], (
+        "a call that only MENTIONS newline= in its content passed the gate"
+    )

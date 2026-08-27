@@ -1426,6 +1426,7 @@
             "CMPCAM",
             "CMPIDX",
             "CMPUNI",
+            "IDXCLR",
             "IDXSET",
             "JOINEDT",
             "JOINMAX",
@@ -1533,6 +1534,96 @@
           ],
           "depends_on": [
             "machine-findings"
+          ]
+        },
+        {
+          "id": "guard-machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            "GRDIDX",
+            "GRDNUL",
+            "GRDONLY",
+            "GRDUNI",
+            "TWINCK"
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": []
+        },
+        {
+          "id": "editor-row-findings",
+          "pattern": "identity-pair",
+          "findings": [
+            "EDTNEG",
+            "EDTPLN"
+          ],
+          "states": [
+            {
+              "role": "plain-clauses",
+              "page": "Threshold EDTPLN view, Edit current view",
+              "assertions": [
+                "filter row count visible or the editor refuses to open the filter"
+              ]
+            },
+            {
+              "role": "negated-clauses",
+              "page": "Threshold EDTNEG view, Edit current view",
+              "assertions": [
+                "filter row count visible or the editor refuses to open the filter"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "same clause count, differing only in the negation"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "guard-view-findings",
+          "pattern": "state-matrix",
+          "findings": [
+            "VWGRD",
+            "VWIDX",
+            "VWUGD",
+            "VWUNI"
+          ],
+          "states": [
+            {
+              "role": "indexed-unguarded",
+              "page": "Threshold VWIDX view",
+              "assertions": [
+                "rows listed or threshold message visible"
+              ]
+            },
+            {
+              "role": "indexed-guarded",
+              "page": "Threshold VWGRD view",
+              "assertions": [
+                "rows listed or threshold message visible"
+              ]
+            },
+            {
+              "role": "unindexed-unguarded",
+              "page": "Threshold VWUNI view",
+              "assertions": [
+                "threshold message visible"
+              ]
+            },
+            {
+              "role": "unindexed-guarded",
+              "page": "Threshold VWUGD view",
+              "assertions": [
+                "rows listed or threshold message visible"
+              ]
+            }
+          ],
+          "controls": [
+            "machine setup/readback",
+            "positive and negative visible controls"
+          ],
+          "depends_on": [
+            "guard-machine-findings"
           ]
         }
       ]

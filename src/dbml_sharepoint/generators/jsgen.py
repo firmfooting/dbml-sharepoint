@@ -11,7 +11,7 @@ from dbml_sharepoint.analysis.column_projection import (
     effective_column_types,
 )
 from dbml_sharepoint.analysis.column_refs import FORMULA_COLUMN_REF, formula_column_refs
-from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
+from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -304,7 +304,9 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
         # DBML; without their types a Created comparison would render as
         # Type="Text" and the view would answer with the wrong rows.
         types = {**SYSTEM_COLUMN_TYPES, **column_types}
-        parts.append(f"<Where>{to_caml(view.where, types)}</Where>")
+        # Guarded, so the filter editor refuses to open it: an editor that
+        # opens a filter writes back only the ten conditions it renders. #267.
+        parts.append(f"<Where>{to_caml_protected(view.where, types)}</Where>")
     if view.sort:
         refs = "".join(
             f'<FieldRef Name="{entry.field}"/>' if entry.direction == "asc"
