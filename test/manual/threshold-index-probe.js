@@ -602,7 +602,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision 6a919337. Quote this when reporting results.');
+  log('INFO', 'probe revision 00b09ba0. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -1292,7 +1292,20 @@
   // clear, the table below is void and IDXSET is what says so.
   const clearControl = async () => {
     const before = await readField('Shadow');
-    const wasIndexed = !readFailed(before) && before.body.Indexed === true;
+    // The read failure is its OWN case, before the clear is decided. Folding
+    // it into `wasIndexed` made an unreadable column indistinguishable from
+    // one read as unindexed, and recorded NOT NEEDED with an evidence line
+    // saying "Shadow is already unindexed", which this run had not seen.
+    if (readFailed(before)) {
+      record('IDXCLR', 'Can the negative control be un-indexed again?',
+             'NOT ESTABLISHED',
+             `[${stamp}] Shadow's index state could not be read (HTTP `
+             + `${before.status}), so whether the negative control needs `
+             + 'clearing is unknown and nothing was written. IDXSET reads the '
+             + 'flags again below and says what the table is worth.');
+      return;
+    }
+    const wasIndexed = before.body.Indexed === true;
     if (!wasIndexed) {
       record('IDXCLR', 'Can the negative control be un-indexed again?',
              'NOT NEEDED',

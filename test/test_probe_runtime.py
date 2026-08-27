@@ -306,3 +306,24 @@ def test_twins_that_could_not_be_read_are_not_recorded_as_disagreeing(
         f"{why}, and TWINCK recorded {rows['TWINCK']!r}. Nothing was compared, "
         f"so nothing disagreed."
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_negative_control_is_not_reported_as_needing_no_clear() -> None:
+    """A read that failed says nothing about whether Shadow is indexed.
+
+    `wasIndexed` folded the read failure into `false`, so a 500 on the field
+    read recorded NOT NEEDED and the evidence line said "Shadow is already
+    unindexed", which the probe had not established and could not have. The
+    negative control is what every indexed-versus-unindexed row rests on, so
+    an unverified one is the quietest way this table goes wrong.
+    """
+    rows = _run_probe(
+        # Armed off the RUNCNT log line rather than a read count: clearControl
+        # makes the first read of Shadow after that row is recorded.
+        failReadsAfter={"marker": "RUNCNT:", "field": "Shadow", "count": 1},
+    )
+    assert rows["IDXCLR"].startswith("NOT ESTABLISHED"), (
+        f"the Shadow read failed and IDXCLR recorded {rows['IDXCLR']!r}. A "
+        f"failed read is not a reading of Indexed=false."
+    )
