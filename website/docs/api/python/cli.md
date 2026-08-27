@@ -235,6 +235,63 @@ usage instructions and the Power BI relationship table, and a
 data-dictionary.md companion. Assumes a schema that `build` accepts;
 run `build --dry-run` first if unsure.
 
+### `extract_script`
+
+```python
+def extract_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+```
+
+Generate the read-only browser-paste script that reads a live list.
+
+Takes the whole list URL, because that is the one string the browser
+address bar already holds: the site and the list title are split out of
+it rather than asked for separately. One list per script.
+
+The script and a readme are written into a folder named after the list,
+which is where `dbml-sharepoint extract` then writes the draft schema
+and mapping, so both halves of the flow keep one directory.
+
+Paste the emitted file into the browser console on that site. It
+downloads the list's field definitions as JSON; feed that JSON to
+`dbml-sharepoint extract` to get a draft schema and mapping.
+
+Every request the script makes is a GET. It carries no write helpers.
+
+### `extract`
+
+```python
+def extract(source: pathlib.Path | None = ..., out: pathlib.Path | None = ..., entity: str | None = ..., prefix: str = ..., project: str | None = ..., force: bool = ...) -> None
+```
+
+Recover a draft schema.dbml and mapping.yaml from an existing list.
+
+Takes the JSON `dbml-sharepoint extract-script` produced and you pasted
+into the browser console. That read is the only input; nothing here is
+recovered from an export.
+
+With no argument it runs interactively instead, asking for the list's
+URL, writing the script, waiting while you paste it, and extracting the
+download when you say it has landed. The same two commands do the work
+either way.
+
+This is a SCAFFOLDING tool, not a lossless round-trip. What the read
+carries is recovered; everything else is itemised in the
+EXTRACTION-NOTES.md written beside the output. Read that file before
+editing the schema, and again before deploying anything.
+
+### `execute_extraction`
+
+```python
+def execute_extraction(source: pathlib.Path, *, out: pathlib.Path | None = None, entity: str | None = None, prefix: str = 'EX_', project: str | None = None, force: bool = False) -> None
+```
+
+One extraction, from a download to a written project directory.
+
+Shared by the `extract` command and the interactive flow, for the same
+reason `execute_build` is shared with the template wizard: the wizard
+must not be able to produce anything the documented flags could not.
+Refusals leave through `typer.Exit`, which both callers understand.
+
 ### `version`
 
 ```python

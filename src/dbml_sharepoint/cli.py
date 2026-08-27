@@ -38,6 +38,23 @@ from dbml_sharepoint.extension import (
     UnknownExtensionError,
     resolve_extension,
 )
+from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
+from dbml_sharepoint.extract.folder import (
+    README_FILENAME,
+    folder_for_download,
+    seed,
+)
+from dbml_sharepoint.extract.list_url import ListUrlError, parse_list_url
+from dbml_sharepoint.extract.run import (
+    NOTES_RELPATH,
+    check_identifier,
+    entity_name_for,
+    extraction_from,
+)
+from dbml_sharepoint.extract.run import write as write_extraction
+from dbml_sharepoint.extract.sources import load_source
+from dbml_sharepoint.extract.wizard import run_extract_wizard
+from dbml_sharepoint.generators.extractgen import EXTRACT_SCRIPT, download_name
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import (
@@ -1149,6 +1166,243 @@ def report(
         f"Generated {len(queries)} Power Query file(s), sql/{REPORT_VIEWS_SQL}, "
         f"{REPORT_GUIDE} and {REPORT_DICTIONARY} in {out}.",
     )
+
+
+@app.command("extract-script")
+def extract_script(
+    url: str = typer.Argument(
+        ...,
+        help="The list's URL, copied from the browser address bar with the "
+        "list open, e.g. https://contoso.sharepoint.com/sites/Risk/Lists/"
+        "RG_Project/AllItems.aspx",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        help="Where to write the script, with the readme beside it. Default: "
+        f"<list name>/{EXTRACT_SCRIPT}",
+    ),
+) -> None:
+    """Generate the read-only browser-paste script that reads a live list.
+
+    Takes the whole list URL, because that is the one string the browser
+    address bar already holds: the site and the list title are split out of
+    it rather than asked for separately. One list per script.
+
+    The script and a readme are written into a folder named after the list,
+    which is where `dbml-sharepoint extract` then writes the draft schema
+    and mapping, so both halves of the flow keep one directory.
+
+    Paste the emitted file into the browser console on that site. It
+    downloads the list's field definitions as JSON; feed that JSON to
+    `dbml-sharepoint extract` to get a draft schema and mapping.
+
+    Every request the script makes is a GET. It carries no write helpers.
+    """
+    try:
+        target = parse_list_url(url)
+    except ListUrlError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    # Still asked of `validate_site_url`, which owns what a usable site URL
+    # is, so the split half meets the same rule an operator-typed one does.
+    used = validate_site_url(target.site_url)
+
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    seeded = seed(
+        list_title=target.list_title,
+        site_url=used,
+        generated_at=generated_at,
+        script=out,
+    )
+    typer.echo(f"Reading the list {target.list_title!r} on {used}.")
+    typer.echo(
+        f"Wrote {seeded.script}. Open it, copy all of it, and paste it into the "
+        f"browser console on {used}. It makes no changes.",
+    )
+    if seeded.readme is not None:
+        typer.echo(f"Wrote {seeded.readme}, which has the rest of the procedure.")
+    else:
+        typer.echo(f"Left the {README_FILENAME} already in {seeded.folder} alone.")
+    download = download_name([target.list_title])
+    typer.echo(
+        f"The script downloads {download}. Save it into {seeded.folder}, then "
+        f"run: dbml-sharepoint extract {seeded.folder / download}",
+    )
+
+
+@app.command()
+def extract(
+    source: Path | None = typer.Argument(
+        None,
+        help="The JSON extract.js.txt downloaded from the site. Omit it to be "
+        "walked through the whole flow, starting from the list's URL.",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        help="Project directory to write into. Default: a folder named after "
+        "the list, which is the one extract-script wrote the script into.",
+    ),
+    entity: str | None = typer.Option(
+        None,
+        help="DBML table name for the extracted list. Default: derived from the "
+        "list title. Only valid when the source describes one list.",
+    ),
+    prefix: str = typer.Option(
+        DEFAULT_PREFIX,
+        help="The mapping's list-name prefix. An extraction cannot know the "
+        f"deploying project's, so it defaults to {DEFAULT_PREFIX!r}.",
+    ),
+    project: str | None = typer.Option(
+        None, help="DBML Project name. Default: the first entity name, lowercased.",
+    ),
+    force: bool = typer.Option(
+        False, help="Overwrite an existing schema.dbml, mapping.yaml or release.yaml.",
+    ),
+) -> None:
+    """Recover a draft schema.dbml and mapping.yaml from an existing list.
+
+    Takes the JSON `dbml-sharepoint extract-script` produced and you pasted
+    into the browser console. That read is the only input; nothing here is
+    recovered from an export.
+
+    With no argument it runs interactively instead, asking for the list's
+    URL, writing the script, waiting while you paste it, and extracting the
+    download when you say it has landed. The same two commands do the work
+    either way.
+
+    This is a SCAFFOLDING tool, not a lossless round-trip. What the read
+    carries is recovered; everything else is itemised in the
+    EXTRACTION-NOTES.md written beside the output. Read that file before
+    editing the schema, and again before deploying anything.
+    """
+    if source is None:
+        if out is not None:
+            raise typer.BadParameter(
+                "--out has no download to write from. Name the JSON to "
+                "extract, or drop --out and be asked for the list's URL; the "
+                "interactive flow always writes into the list's own folder.",
+            )
+        if not stdin_is_interactive():
+            # Same rule the wizard callback applies: never block on a prompt
+            # nobody can answer. A pipe or a CI job that ran `extract` with no
+            # argument meant to name a file, so this is a usage error rather
+            # than a help screen.
+            typer.echo(
+                "[ERROR] no download named, and there is no terminal to ask "
+                "at. Pass the JSON that extract.js.txt downloaded.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        raise typer.Exit(code=run_extract_wizard(
+            entity=entity, prefix=prefix, project=project, force=force,
+        ))
+    execute_extraction(
+        source, out=out, entity=entity, prefix=prefix, project=project, force=force,
+    )
+
+
+def execute_extraction(
+    source: Path,
+    *,
+    out: Path | None = None,
+    entity: str | None = None,
+    prefix: str = DEFAULT_PREFIX,
+    project: str | None = None,
+    force: bool = False,
+) -> None:
+    """One extraction, from a download to a written project directory.
+
+    Shared by the `extract` command and the interactive flow, for the same
+    reason `execute_build` is shared with the template wizard: the wizard
+    must not be able to produce anything the documented flags could not.
+    Refusals leave through `typer.Exit`, which both callers understand.
+    """
+    try:
+        loaded = load_source(source)
+    except _CONFIG_ERRORS as exc:
+        _config_error("extraction source", source, exc)
+
+    if entity is not None and len(loaded.lists) > 1:
+        raise typer.BadParameter(
+            f"--entity names one table, but the source describes "
+            f"{len(loaded.lists)} lists. Extract them one at a time, or drop "
+            "the flag and let each be named from its list title.",
+        )
+    try:
+        entity_names = {
+            source_list.title: (
+                check_identifier(entity, "--entity")
+                if entity is not None
+                else entity_name_for(source_list.title)
+            )
+            for source_list in loaded.lists
+        }
+        extraction = extraction_from(loaded, entity_names=entity_names)
+    except _CONFIG_ERRORS as exc:
+        _config_error("extraction source", source, exc)
+
+    if project is not None:
+        check_identifier(project, "--project")
+    # The FIRST list's title. A download this tool generates carries exactly
+    # one, and a hand-assembled one carrying several has no single folder it
+    # could be named after; `--out` is the answer there.
+    root = out if out is not None else folder_for_download(
+        source, loaded.lists[0].title,
+    )
+    _refuse_existing_project(root, force=force)
+
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    written = write_extraction(
+        extraction,
+        root,
+        generated_at=generated_at,
+        prefix=prefix,
+        project=project or "",
+    )
+
+    columns = sum(len(e.columns) for e in extraction.entities)
+    # A run from inside the list's own folder derives `.` as its root, and
+    # "into ." names nothing. Resolve that one case.
+    destination = written.root if written.root.name else written.root.resolve()
+    typer.echo(
+        f"Extracted {len(extraction.entities)} list(s), {columns} column(s) and "
+        f"{len(extraction.enums)} enum(s) from {loaded.kind} into {destination}",
+    )
+    typer.echo(f"  {written.schema}\n  {written.mapping}\n  {written.release}")
+    for path in written.preserved:
+        typer.echo(f"  {path}")
+    typer.echo(
+        f"\n{len(extraction.unrecovered)} thing(s) could not be recovered. "
+        f"Read {written.notes} before you edit or deploy anything.",
+    )
+
+
+def _refuse_existing_project(out: Path, *, force: bool) -> None:
+    """Refuse to write over a project that is already there.
+
+    Applied to the derived default directory as well as to an explicit
+    `--out`: one folder per list makes a second run of the same extraction
+    land on the first one's output, which is where a hand-edited schema
+    would be lost. An extraction produces a DRAFT, so
+    overwriting real work with one is the worst outcome this command has;
+    it is refused by name rather than guarded by a prompt, because the
+    command must behave the same in a pipe.
+    """
+    if force:
+        return
+    present = [
+        out / relpath
+        for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH, NOTES_RELPATH)
+        if (out / relpath).exists()
+    ]
+    if not present:
+        return
+    typer.echo(
+        "[ERROR] refusing to overwrite an existing project. These already "
+        "exist:\n" + "\n".join(f"  {path}" for path in present)
+        + "\nPass --out with an empty directory, or --force to overwrite them.",
+        err=True,
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command()

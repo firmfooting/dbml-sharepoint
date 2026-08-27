@@ -72,11 +72,17 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: come out, and one going in needs a reason in the pull request.
 #:
 #: Not all of these are cycles. `wizard.py`'s four are, with `cli.py`, tracked
-#: by #171. Of `bundle.py`'s five, only the `reportgen` one is: that module
+#: by #171, and `extract/wizard.py`'s two are the same cycle in the same
+#: direction: `cli` imports both wizards at its top, so both defer their way
+#: back. Of `bundle.py`'s five, only the `reportgen` one is: that module
 #: imports `bundle` back. The other four are deliberate lazy loading so
 #: `bundle.py` stays importable for its packaging helpers, which its own
 #: comment states.
-DEFERRED_IMPORTS: dict[str, int] = {"bundle.py": 5, "wizard.py": 4}
+DEFERRED_IMPORTS: dict[str, int] = {
+    "bundle.py": 5,
+    "wizard.py": 4,
+    "extract/wizard.py": 2,
+}
 
 #: How a deferred import is declared, since PLC0415 is enforced in `src/`.
 #: Counted as a substring, so a suppression listing further codes after this

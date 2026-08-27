@@ -2,7 +2,6 @@
 """Render deploy.js from the schema, mapping bundle, and release."""
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +9,10 @@ from dbml_sharepoint.analysis.column_projection import (
     SYSTEM_COLUMN_TYPES,
     effective_column_types,
 )
-from dbml_sharepoint.analysis.column_refs import FORMULA_COLUMN_REF, formula_column_refs
+from dbml_sharepoint.analysis.column_refs import (
+    formula_column_refs,
+    rewrite_formula_refs,
+)
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
@@ -146,30 +148,6 @@ def generate_deploy_js(
     )
 
 
-# SP formula string literals use Excel-style "" escaping; odd split indices
-# are literal tokens and pass through any rewrite untouched.
-_FORMULA_LITERAL_SPLIT = re.compile(r'("(?:""|[^"])*")')
-
-
-def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
-    """Rewrite [InternalName] formula references to [Display Name].
-
-    SharePoint resolves calculated-formula column references against DISPLAY
-    names when the formula is written, so once fields are renamed a formula
-    authored with internal names would fail to create. Authors keep writing
-    internal names; the build translates. String literals are data and are
-    never rewritten."""
-
-    def _replace(match: "re.Match[str]") -> str:
-        name = match.group(1)
-        return f"[{display_by_col.get(name, name)}]"
-
-    return "".join(
-        part if index % 2 == 1 else FORMULA_COLUMN_REF.sub(_replace, part)
-        for index, part in enumerate(_FORMULA_LITERAL_SPLIT.split(formula))
-    )
-
-
 # CAML fragments for the declared-view DSL. Operators/columns are validated
 # at build time (validate_against_mapping), so rendering can be direct.
 
@@ -262,7 +240,7 @@ def _column_validation(
         return ("", "") if clear else (UNMANAGED, UNMANAGED)
     # SP resolves validation formulas by DISPLAY name, exactly as it does
     # for the list-level rule and for calculated columns.
-    rendered = _rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
+    rendered = rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
     return (rendered, declared.message)
 
 
@@ -536,7 +514,7 @@ def build_schema_json(
             )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
-                f["body"]["Formula"] = _rewrite_formula_refs(f["body"]["Formula"], display_map)
+                f["body"]["Formula"] = rewrite_formula_refs(f["body"]["Formula"], display_map)
             formatter = table_formatting.get(f["title"])
             f["custom_formatter"] = (
                 json.dumps(formatter, separators=(",", ":"), sort_keys=True)
@@ -598,7 +576,7 @@ def build_schema_json(
                 # SP resolves validation formulas by DISPLAY name, like
                 # calculated formulas, so names are rewritten after the
                 # grammar renders them.
-                _rewrite_formula_refs(
+                rewrite_formula_refs(
                     f"={to_validation(declared_validation.when, col_types)}", display_map,
                 )
                 if declared_validation is not None

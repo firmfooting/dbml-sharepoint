@@ -1,0 +1,194 @@
+{# src/dbml_sharepoint/templates/extract.js.j2 #}
+/**
+ * dbml-sharepoint SCHEMA EXTRACTION script (READ-ONLY).
+ *
+ * Target site:  {{ site_url | comment_safe }}
+ * Deployer:     v{{ deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}
+ * Lists:        {{ list_titles | join(', ') | comment_safe }}
+ *
+ * Reads each list's field definitions, content types and views, and offers
+ * the result as a JSON download. Makes NO changes: every request is a GET,
+ * and this script carries no write helpers at all.
+ *
+ * Then, on the machine you generated this from, in the folder you saved the
+ * download into:
+ *
+ *   dbml-sharepoint extract {{ download_name | comment_safe }}
+ *
+ * That creates a folder named after the download and writes a DRAFT
+ * schema.dbml, mapping.yaml and release.yaml into it, plus an
+ * EXTRACTION-NOTES.md listing everything the read could not recover. Pass
+ * --out to write somewhere else.
+ */
+(async () => {
+  const SITE_URL = {{ site_url | tojson }};
+  const LIST_TITLES = {{ list_titles | tojson(indent=2) }};
+  const FORMAT = {{ live_format | tojson }};
+  const DOWNLOAD_NAME = {{ download_name | tojson }};
+  const GENERATED_AT = {{ generated_at | tojson }};
+  const DEPLOYER_VERSION = {{ deployer_version | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-EXTRACT] [${level}] ${msg}`);
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+  log('INFO', 'Read-only extraction. No changes are made.');
+
+  const verbose = () => ({ headers: { 'Accept': 'application/json;odata=verbose' } });
+
+  // One entity read. Returns the `d` object, or throws with the reason
+  // SharePoint gave rather than a bare status.
+  async function getOne(suffix, what) {
+    const r = await fetchWithRetry(apiUrl(suffix), verbose());
+    if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    return (j && j.d) || {};
+  }
+
+  // A whole collection, following OData's __next. Paged rather than capped
+  // with $top: a list wider than one page would otherwise lose columns from
+  // the tail, and a schema that is silently four columns short is the exact
+  // failure this tool exists to make visible. Same shape rollback.js.txt
+  // enumerates the web's lists with.
+  async function getAll(suffix, what) {
+    const rows = [];
+    let nextUrl = apiUrl(suffix);
+    let pages = 0;
+    while (nextUrl) {
+      if (++pages > 100) throw new Error(`${what}: exceeded 100 pages; aborting`);
+      const r = await fetchWithRetry(nextUrl, verbose());
+      if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+      const j = await r.json();
+      for (const row of ((j && j.d && j.d.results) || [])) rows.push(row);
+      nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+    }
+    return rows;
+  }
+
+  // Every title on the web, so a mistyped list name is answered with the
+  // names that DO exist. A by-title GET on an absent list answers 404, which
+  // the console paints red and operators read as a broken script.
+  let titlesOnWeb = null;
+  async function knownTitles() {
+    if (titlesOnWeb === null) {
+      const rows = await getAll('web/lists?$select=Title,Hidden&$top=5000', 'list enumeration');
+      titlesOnWeb = rows.filter((l) => !l.Hidden).map((l) => l.Title).sort();
+    }
+    return titlesOnWeb;
+  }
+
+  async function readList(title) {
+    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
+    const meta = await getOne(`${listPath}?$select=Title,Description,BaseTemplate,ItemCount`, `list '${title}'`);
+
+    // SchemaXml holds each field's whole CAML <Field> element, which is
+    // everything the Python decoder reads. Proven in this repository by
+    // test/manual/form-visibility-storage-probe.js, which reads the
+    // ShowInNewForm attributes back out of a live field's SchemaXml.
+    //
+    // EVERY field is sent, built-ins included. Deciding what is a built-in
+    // is done once, in Python, where the extraction notes can name the test
+    // that fired; a second filter here would be free to disagree with it.
+    const fields = await getAll(`${listPath}/fields?$select=InternalName,SchemaXml`, `fields of '${title}'`);
+    const schemaXml = fields.map((f) => f.SchemaXml).filter((x) => typeof x === 'string' && x);
+    if (!schemaXml.length) throw new Error(`fields of '${title}': no SchemaXml came back`);
+    log('INFO', `'${title}': ${schemaXml.length} field definition(s).`);
+
+    // Views and the form formatter are REPORTED, not decoded, so a tenant
+    // that will not serve either still yields a usable schema. Fields are
+    // the extraction; these are the footnotes.
+    let views = [];
+    try {
+      const rows = await getAll(
+        `${listPath}/views?$select=Id,Title,DefaultView,Hidden,PersonalView,RowLimit,ViewQuery,CustomFormatter&$expand=ViewFields`,
+        `views of '${title}'`,
+      );
+      views = rows.filter((v) => !v.Hidden && !v.PersonalView).map((v) => ({
+        id: v.Id, title: v.Title, defaultView: !!v.DefaultView,
+        rowLimit: v.RowLimit, viewQuery: v.ViewQuery || '',
+        customFormatter: v.CustomFormatter || '',
+        viewFields: (v.ViewFields && v.ViewFields.Items && v.ViewFields.Items.results) || [],
+      }));
+      log('INFO', `'${title}': ${views.length} view(s).`);
+    } catch (err) {
+      log('WARN', `'${title}': views could not be read (${err.message}); the notes will not mention any.`);
+    }
+
+    let contentTypeFormatter = '';
+    try {
+      const cts = await getAll(
+        `${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`,
+        `content types of '${title}'`,
+      );
+      const withFormatter = cts.find((c) => c.ClientFormCustomFormatter);
+      contentTypeFormatter = (withFormatter && withFormatter.ClientFormCustomFormatter) || '';
+    } catch (err) {
+      log('WARN', `'${title}': content types could not be read (${err.message}); a form formatter would not be reported.`);
+    }
+
+    return {
+      title: meta.Title || title,
+      description: meta.Description || '',
+      baseTemplate: meta.BaseTemplate,
+      itemCount: meta.ItemCount,
+      fields: schemaXml,
+      views,
+      contentTypeFormatter,
+    };
+  }
+
+  const lists = [];
+  for (const title of LIST_TITLES) {
+    try {
+      lists.push(await readList(title));
+    } catch (err) {
+      // Abort rather than download what was read so far. A partial
+      // extraction produces a schema that parses, builds and is missing a
+      // list, and nothing downstream can tell that from a site that has one
+      // list fewer.
+      log('ERROR', `Could not read '${title}': ${err.message}`);
+      const known = await knownTitles().catch(() => null);
+      if (known) log('INFO', `Lists on this web: ${known.join(', ')}`);
+      log('ERROR', 'Nothing was downloaded. Fix the list name or your permissions and re-run.');
+      return { aborted: 'list-read-failed', list: title };
+    }
+  }
+
+  const payload = {
+    format: FORMAT,
+    siteUrl: `${window.location.origin}${WEB}`,
+    generatedAt: GENERATED_AT,
+    deployerVersion: DEPLOYER_VERSION,
+    lists,
+  };
+  const text = JSON.stringify(payload, null, 2);
+
+  // The download is the convenience; the console is the guarantee. A site
+  // whose policy blocks a blob download must still hand the operator their
+  // schema, so the payload is parked on `window` either way and the failure
+  // path says how to get at it.
+  window.__dbmlSharepointExtract = payload;
+  let downloaded = false;
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = DOWNLOAD_NAME;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    downloaded = true;
+  } catch (err) {
+    log('WARN', `The download could not start (${err.message}).`);
+  }
+
+  if (downloaded) {
+    log('DONE', `Saved ${DOWNLOAD_NAME} (${lists.length} list(s), ${text.length} bytes). Run: dbml-sharepoint extract ${DOWNLOAD_NAME} --out ./my-project`);
+  } else {
+    log('DONE', `Read ${lists.length} list(s). Run copy(JSON.stringify(window.__dbmlSharepointExtract, null, 2)) to put the payload on your clipboard, save it as ${DOWNLOAD_NAME}, then run: dbml-sharepoint extract ${DOWNLOAD_NAME} --out ./my-project`);
+  }
+  return payload;
+})();

@@ -41,8 +41,8 @@ ALL_TEMPLATES = sorted(
 )
 
 # Context keys the generators pass to render() (union across jsgen,
-# rollbackgen, assessgen, demogen and manifestgen) plus the three names
-# deploy.js.j2's phase loop provides to included phase bodies.
+# rollbackgen, assessgen, demogen, manifestgen and extractgen) plus the
+# three names deploy.js.j2's phase loop provides to included phase bodies.
 KNOWN_CONTEXT = {
     # every generator (provenance + identity)
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
@@ -75,6 +75,10 @@ KNOWN_CONTEXT = {
     # that nothing was), same wording in the manifest, index.md and the
     # deploy transcript's log() line.
     "env_file_line",
+    # extractgen (extract.js). `deployer_version` is bare here rather than
+    # `release.deployer_version`: extract.js runs before a release.yaml
+    # exists, so there is no release object to hang it off.
+    "list_titles", "live_format", "download_name", "deployer_version",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }
