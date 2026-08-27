@@ -5301,11 +5301,20 @@ _SETTINGS_PAGE_JS = (
     "  }\n"
 )
 
+# What `web/lists/getbytitle('X')?$select=Id` answers with. Only the guard
+# confirmation reads that endpoint, and it reads it after the write lanes have
+# closed their ownership brackets, so answering it with a different Id models
+# one thing and nothing else: a same-titled list that replaced the owned one
+# in between.
+_OWNED_LIST_ID = "22222222-2222-2222-2222-222222222222"
+_REPLACEMENT_LIST_ID = "66666666-6666-6666-6666-666666666666"
+
 # A distinct id per view. The settings-page URL carries the view GUID and
 # nothing else that names the view, so the mock cannot serve two views
 # different pages while `_ADOPTED_HARNESS` gives every view one fixed id.
 _VIEW_GUIDS_JS = (
     "const views = {};\n"
+    "const SETTINGS_LIST_ID = '__SETTINGS_LIST_ID__';\n"
     "const VIEW_GUIDS = {};\n"
     "const VIEW_BY_GUID = {};\n"
     "let nextViewId = 0;\n"
@@ -5334,7 +5343,7 @@ _VIEWS_ENUM_OLD = (
 # absent after deployment and the check can only ever report that.
 _VIEWS_ENUM_NEW = (
     "  if (url.endsWith('?$select=Id')) {\n"
-    "    return { d: { Id: '22222222-2222-2222-2222-222222222222' } };\n"
+    "    return { d: { Id: SETTINGS_LIST_ID } };\n"
     "  }\n"
     "  if (url.includes('/views?')) {\n"
     "    const listTitle = listOf(url);\n"
@@ -5380,13 +5389,18 @@ views:
 """
 
 
-def _view_guard_harness(policy: dict[str, str]) -> str:
+def _view_guard_harness(
+    policy: dict[str, str], settings_list_id: str = _OWNED_LIST_ID,
+) -> str:
     """`_ADOPTED_HARNESS` that also serves view settings pages.
 
     `policy` maps a view title to the page variant the mock serves for it,
     defaulting to `refused`. `All Items` is the unfiltered control the check
     validates its markers against, so a run that means to reach the filtered
     views has to declare it editable.
+
+    `settings_list_id` is the Id the guard confirmation's list read answers
+    with; see `_REPLACEMENT_LIST_ID`.
     """
     harness = _ADOPTED_HARNESS
     for what, old, new in (
@@ -5403,11 +5417,14 @@ def _view_guard_harness(policy: dict[str, str]) -> str:
         spliced = harness.replace(old, new, 1)
         assert spliced != harness, f"{what} was not spliced into the harness"
         harness = spliced
-    return harness.replace("__POLICY__", json.dumps(policy))
+    return harness.replace("__POLICY__", json.dumps(policy)).replace(
+        "__SETTINGS_LIST_ID__", settings_list_id,
+    )
 
 
 def _run_view_guard_deploy(
     tmp_path: Path, policy: dict[str, str],
+    settings_list_id: str = _OWNED_LIST_ID,
 ) -> tuple[dict[str, Any], list[str], str]:
     """Deploy two filtered views against a site that serves settings pages.
 
@@ -5415,7 +5432,7 @@ def _run_view_guard_deploy(
     output).
     """
     js = _declared_deploy_js(tmp_path, _GUARDED_VIEWS)
-    script = _view_guard_harness(policy) + "\n" + js.replace(
+    script = _view_guard_harness(policy, settings_list_id) + "\n" + js.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__PAGES__' + JSON.stringify(globalThis.__pageReads)); })",
@@ -5547,3 +5564,31 @@ def test_control_markers_missing_from_an_editable_view_stop_the_check(
     assert [e["view"] for e in errors] == ["All Items"], errors
     assert "marker drift" in errors[0]["error"]
     assert summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_titled_replacement_stops_the_guard_confirmation(
+    tmp_path: Path,
+) -> None:
+    """The confirmation resolves each list by title, long after the lane.
+
+    #305 brackets the view-write lane: the title is proved to resolve to the
+    Id the survey captured before the first write and again after the last.
+    The guard confirmation runs after every lane has closed, and it resolves
+    the title again to build the settings-page URL. A same-titled list that
+    replaced the owned one in between answers that read, so its settings page
+    would be read and reported on under the owned list's name. Nothing
+    downstream can see that the wrong list was asked, which is the whole
+    reason this check exists.
+    """
+    summary, read, output = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable"},
+        settings_list_id=_REPLACEMENT_LIST_ID,
+    )
+    assert read == [], f"a replaced list's settings page was read: {read}"
+    errors = _refusal_errors(summary)
+    assert len(errors) == 1, errors
+    assert "changed identity before the filter editor was read" in errors[0]["error"]
+    assert _REPLACEMENT_LIST_ID in errors[0]["error"]
+    assert summary.get("aborted"), summary
+    assert "refuses 2 of 2 declared filter(s)" not in output

@@ -4555,12 +4555,26 @@
   // Which of EDITOR_CONTROLS the view's settings page carries, or the reason
   // the page could not be read. `present` is meaningful only when `why` is
   // null: every other return says the question went unanswered.
-  async function readEditorControls(view) {
+  //
+  // `ownedId` is the Id the write lane proved it owned for this view's list.
+  // Every read below addresses the list by TITLE and this runs after the
+  // lanes closed their brackets, so a same-titled replacement landing since
+  // would have its settings page read and reported under the owned list's
+  // name. Nothing downstream can see that the wrong list was asked, so the
+  // resolved Id is compared before anything else is read.
+  async function readEditorControls(view, ownedId) {
     const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
     let listId = null;
     let viewId = null;
     try {
       listId = await readListId(listPath);
+      if (ownedId == null
+          || sharePointGuid(listId, 'list') !== sharePointGuid(ownedId, 'list')) {
+        return { present: null, why: `list '${view.list}' changed identity before the filter`
+          + ` editor was read for '${view.title}': the write lane owned`
+          + ` ${ownedId == null ? 'no proven Id' : ownedId}, and the title now resolves to`
+          + ` ${listId}` };
+      }
       const shape = (await listViewShapes(listPath)).find((s) => s.Title === view.title);
       viewId = shape && shape.Id;
     } catch (err) {
@@ -4634,7 +4648,7 @@
         + " editor's control names still exist on this tenant", filtered[0]);
       return;
     }
-    const controlRead = await readEditorControls(control);
+    const controlRead = await readEditorControls(control, viewsOwned.get(control.list));
     if (controlRead.why) {
       unverified(`the editable control read failed: ${controlRead.why}`, control);
       return;
@@ -4657,7 +4671,7 @@
       + ' to confirm the filter editor refuses each declared filter.');
     let refused = 0;
     await mapLanes(filtered, (view) => view.list, async (view) => {
-      const read = await readEditorControls(view);
+      const read = await readEditorControls(view, viewsOwned.get(view.list));
       if (read.why) {
         unverified(read.why, view);
         return;
