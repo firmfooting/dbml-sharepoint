@@ -1016,7 +1016,7 @@ def _calculated_columns(vc: ValidationContext) -> list[Finding]:
     ]
 
 
-def _deferred_lookups(schema: Schema, entities: dict) -> dict[str, set[str]]:
+def _deferred_lookups(schema: Schema, entities: dict[str, EntityMapping]) -> dict[str, set[str]]:
     """Lookups the deploy plan defers to Phase 2.
 
     Self-references, one side of every cycle, and any lookup whose display
