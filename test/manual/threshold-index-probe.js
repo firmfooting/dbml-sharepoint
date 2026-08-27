@@ -602,7 +602,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision d6dd1e88. Quote this when reporting results.');
+  log('INFO', 'probe revision d395a945. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -2815,7 +2815,7 @@
       // printed in full rather than summarised, so one run can say what was
       // actually stored and the next revision can widen this if it needs to.
       const flatten = (xml) => String(xml || '')
-        .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').trim();
+        .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').replace(/ \/>/g, '/>').trim();
       const differs = [];
       if (flatten(view.ViewQuery) !== flatten(where)) {
         differs.push(`ViewQuery is '${view.ViewQuery}'`);

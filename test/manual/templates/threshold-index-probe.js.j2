@@ -2543,7 +2543,7 @@
       // printed in full rather than summarised, so one run can say what was
       // actually stored and the next revision can widen this if it needs to.
       const flatten = (xml) => String(xml || '')
-        .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').trim();
+        .replace(/\s+/g, ' ').replace(/"/g, "'").replace(/> </g, '><').replace(/ \/>/g, '/>').trim();
       const differs = [];
       if (flatten(view.ViewQuery) !== flatten(where)) {
         differs.push(`ViewQuery is '${view.ViewQuery}'`);
