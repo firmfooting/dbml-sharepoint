@@ -440,10 +440,10 @@
   // has to be told from one that renders no editor. C6 rejects a page that is
   // not a view and records the truncated shape as still unmeasured, naming a
   // length or completeness test as what would close it. Both are required
-  // here: the document ended, and it is the size of a settings page. That
-  // page measured 501,773 characters on 2026-08-17, so this floor sits an
-  // order of magnitude under it and rejects a login stub or an error page
-  // without resting on a size SharePoint owns.
+  // here: the document closed (its `</html>` is present), and it is the size
+  // of a settings page. That page measured 501,773 characters on 2026-08-17,
+  // so this floor sits an order of magnitude under it and rejects a login
+  // stub or an error page without resting on a size SharePoint owns.
   const EDITOR_PAGE_MIN_CHARS = 50000;
 
   // Fail closed. A check that could not read the page is not evidence the
@@ -531,7 +531,11 @@
     // hand the wrong HTML to the test below. A response carrying no final URL
     // cannot show it came from the endpoint asked for, so it does not land.
     const landed = res.ok && !res.redirected && String(res.url || '').includes('ViewEdit.aspx');
-    const complete = body.trimEnd().endsWith('</html>') && body.length >= EDITOR_PAGE_MIN_CHARS;
+    // `</html>` need not be the final characters: SharePoint now serves
+    // trailing markup after the document close, so `endsWith` read a complete
+    // page as cut short. A page cut before the close carries no `</html>` at
+    // all, so containment still tells a truncated page from a complete one.
+    const complete = body.includes('</html>') && body.length >= EDITOR_PAGE_MIN_CHARS;
     const sentinel = body.includes(EDITOR_PAGE_SENTINEL);
     if (!landed || !complete || !sentinel) {
       return { present: null, why: `the settings page for '${view.title}' on '${view.list}'`
