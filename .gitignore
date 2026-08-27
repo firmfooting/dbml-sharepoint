@@ -44,6 +44,17 @@ test/manual/*.json
 !test/manual/probe-catalog.json
 test/manual/captures/
 
+# Manual extraction runs. extract.js.txt is pasted into a LIVE tenant, so the
+# browser log and the JSON it downloads carry the site URL and the operator's
+# UPN. The script itself is a local build artifact (extract-script writes it
+# by default). Zone.Identifier is the Windows mark a browser leaves on every
+# download; WSL materialises it as `<file>:Zone.Identifier`, and git's `*`
+# will not cross the colon, so the colon is in the pattern. Nothing here is
+# tracked.
+extract.js.txt
+*:Zone.Identifier
+human-run/
+
 # Editors / OS
 .vscode/
 .idea/

@@ -1,23 +1,23 @@
 """The interactive wizard.
 
-Driven through a Console whose `input` is scripted, which is how rich's
-`Prompt`/`Confirm` read: both call `console.input`. Patching that rather
-than `Prompt.ask` keeps the real prompt objects -- including their default
-handling and their validation of a `choices=` answer -- under test.
+Driven through `_console.ScriptedConsole`, whose `input` is scripted,
+which is how rich's `Prompt`/`Confirm` read: both call `console.input`.
+Patching that rather than `Prompt.ask` keeps the real prompt objects --
+including their default handling and their validation of a `choices=`
+answer -- under test.
 """
 
 import ast
 import hashlib
-import io
 import shutil
 import sys
 import tempfile
-from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from rich.console import Console
+from _console import ScriptedConsole
+from _console import collapsed as _collapsed
 
 from dbml_sharepoint import wizard
 from dbml_sharepoint.catalogue import (
@@ -29,33 +29,6 @@ from dbml_sharepoint.catalogue import (
 from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
-
-
-class ScriptedConsole(Console):
-    """A console that answers prompts from a fixed list.
-
-    Renders to a StringIO so a test can assert on what the user was shown,
-    and raises `EOFError` when the script runs out -- which is what a real
-    terminal does on Ctrl-D, and which the wizard already handles. A test
-    that under-scripts therefore fails as an assertion about the wizard's
-    exit code rather than hanging.
-    """
-
-    def __init__(self, answers: Sequence[str], width: int = 100) -> None:
-        super().__init__(file=io.StringIO(), width=width, force_terminal=False)
-        self._answers = list(answers)
-
-    def input(self, prompt: object = "", **kwargs: object) -> str:
-        if prompt:
-            self.print(prompt, end="")
-        if not self._answers:
-            raise EOFError
-        return self._answers.pop(0)
-
-    @property
-    def text(self) -> str:
-        assert isinstance(self.file, io.StringIO)
-        return self.file.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -135,16 +108,6 @@ def _answers(
     return [
         template, *prefix_answers, str(destination), site_url, *tail, confirm,
     ]
-
-
-def _collapsed(console: ScriptedConsole) -> str:
-    """What the user was shown, on one line.
-
-    Rich wraps at the console width, so a substring assertion against the
-    raw text is a false negative waiting to happen -- a message can be
-    correct and still fail the check because it broke over two lines.
-    """
-    return " ".join(console.text.split())
 
 
 #: The smallest mapping `load_mapping` accepts, which is what the wizard
