@@ -340,7 +340,7 @@
  *      payload lines. The transcript stays OUT of this repository. Quote
  *      findings into the STATUS block at the top of this file instead.
  */
-// finding: enterprise-reader-answered — Group B ANSWERED (write flag ON); A2/A4/C2-C3 still open
+// finding: enterprise-reader-answered — captured → evidence/probes/enterprise-reader-findings/probe-summary.json
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
