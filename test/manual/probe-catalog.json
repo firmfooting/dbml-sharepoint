@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "probes": [
     {
       "file": "calculated-choice-operand.js",
@@ -19,29 +19,91 @@
           "surface": "formula",
           "pattern": "machine-only",
           "findings": [
-            "C1",
-            "C2",
-            "C3",
-            "C4",
-            "C5",
-            "D1",
-            "D2",
-            "D3",
-            "DAT1",
-            "DAT2",
-            "L1",
-            "L2",
-            "L3",
-            "N1",
-            "NUM1",
-            "NUM2",
-            "P1",
-            "P2",
-            "R1",
-            "R2"
+            {
+              "id": "C1",
+              "depends_on": []
+            },
+            {
+              "id": "C2",
+              "depends_on": []
+            },
+            {
+              "id": "C3",
+              "depends_on": []
+            },
+            {
+              "id": "C4",
+              "depends_on": []
+            },
+            {
+              "id": "C5",
+              "depends_on": []
+            },
+            {
+              "id": "D1",
+              "depends_on": []
+            },
+            {
+              "id": "D2",
+              "depends_on": []
+            },
+            {
+              "id": "D3",
+              "depends_on": []
+            },
+            {
+              "id": "DAT1",
+              "depends_on": []
+            },
+            {
+              "id": "DAT2",
+              "depends_on": []
+            },
+            {
+              "id": "L1",
+              "depends_on": []
+            },
+            {
+              "id": "L2",
+              "depends_on": []
+            },
+            {
+              "id": "L3",
+              "depends_on": []
+            },
+            {
+              "id": "N1",
+              "depends_on": []
+            },
+            {
+              "id": "NUM1",
+              "depends_on": []
+            },
+            {
+              "id": "NUM2",
+              "depends_on": []
+            },
+            {
+              "id": "P1",
+              "depends_on": []
+            },
+            {
+              "id": "P2",
+              "depends_on": []
+            },
+            {
+              "id": "R1",
+              "depends_on": []
+            },
+            {
+              "id": "R2",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "N1"
+          ],
           "depends_on": []
         }
       ]
@@ -64,18 +126,54 @@
           "surface": "formula",
           "pattern": "machine-only",
           "findings": [
-            "BOOL",
-            "CALC",
-            "CHOI",
-            "DATE",
-            "LINK",
-            "LONG",
-            "LOOK",
-            "NUMB",
-            "PERS",
-            "RICH",
-            "TEXT",
-            "TIME"
+            {
+              "id": "BOOL",
+              "depends_on": []
+            },
+            {
+              "id": "CALC",
+              "depends_on": []
+            },
+            {
+              "id": "CHOI",
+              "depends_on": []
+            },
+            {
+              "id": "DATE",
+              "depends_on": []
+            },
+            {
+              "id": "LINK",
+              "depends_on": []
+            },
+            {
+              "id": "LONG",
+              "depends_on": []
+            },
+            {
+              "id": "LOOK",
+              "depends_on": []
+            },
+            {
+              "id": "NUMB",
+              "depends_on": []
+            },
+            {
+              "id": "PERS",
+              "depends_on": []
+            },
+            {
+              "id": "RICH",
+              "depends_on": []
+            },
+            {
+              "id": "TEXT",
+              "depends_on": []
+            },
+            {
+              "id": "TIME",
+              "depends_on": []
+            }
           ],
           "states": [],
           "controls": [],
@@ -101,43 +199,199 @@
           "surface": "query",
           "pattern": "machine-only",
           "findings": [
-            "D01",
-            "D02",
-            "D03",
-            "D04",
-            "D06",
-            "D08",
-            "D12",
-            "D16",
-            "D24",
-            "D32",
-            "D40",
-            "G1",
-            "G2",
-            "N1",
-            "N2",
-            "Q0",
-            "R1",
-            "R2",
-            "T1",
-            "T3",
-            "T4",
-            "V01",
-            "V02",
-            "V03",
-            "V04",
-            "V06",
-            "V08",
-            "V12",
-            "V16",
-            "V24",
-            "V32",
-            "V40",
-            "W1",
-            "W3"
+            {
+              "id": "D01",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D02",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D03",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D04",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D06",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D08",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D12",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D16",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D24",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D32",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "D40",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "G1",
+              "depends_on": []
+            },
+            {
+              "id": "G2",
+              "depends_on": []
+            },
+            {
+              "id": "N1",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "N2",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "Q0",
+              "depends_on": []
+            },
+            {
+              "id": "R1",
+              "depends_on": []
+            },
+            {
+              "id": "R2",
+              "depends_on": []
+            },
+            {
+              "id": "T1",
+              "depends_on": []
+            },
+            {
+              "id": "T3",
+              "depends_on": []
+            },
+            {
+              "id": "T4",
+              "depends_on": []
+            },
+            {
+              "id": "V01",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V02",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V03",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V04",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V06",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V08",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V12",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V16",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V24",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V32",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "V40",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "W1",
+              "depends_on": []
+            },
+            {
+              "id": "W3",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q0",
+            "D01",
+            "N1",
+            "N2",
+            "T3"
+          ],
           "depends_on": []
         },
         {
@@ -145,18 +399,62 @@
           "surface": "query",
           "pattern": "before-action-after",
           "findings": [
-            "E1",
-            "E2",
-            "E3",
-            "E4",
-            "P1",
-            "P2",
-            "R3",
-            "T2",
-            "U1",
-            "U2",
-            "W2",
-            "W4"
+            {
+              "id": "E1",
+              "depends_on": []
+            },
+            {
+              "id": "E2",
+              "depends_on": []
+            },
+            {
+              "id": "E3",
+              "depends_on": []
+            },
+            {
+              "id": "E4",
+              "depends_on": []
+            },
+            {
+              "id": "P1",
+              "depends_on": []
+            },
+            {
+              "id": "P2",
+              "depends_on": []
+            },
+            {
+              "id": "R3",
+              "depends_on": [
+                "R2"
+              ]
+            },
+            {
+              "id": "T2",
+              "depends_on": [
+                "T1"
+              ]
+            },
+            {
+              "id": "U1",
+              "depends_on": []
+            },
+            {
+              "id": "U2",
+              "depends_on": []
+            },
+            {
+              "id": "W2",
+              "depends_on": [
+                "W1"
+              ]
+            },
+            {
+              "id": "W4",
+              "depends_on": [
+                "W3"
+              ]
+            }
           ],
           "states": [
             {
@@ -254,8 +552,11 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "Q0",
+            "R2",
+            "T1",
+            "W1",
+            "W3"
           ],
           "depends_on": [
             "machine-findings"
@@ -283,29 +584,105 @@
           "surface": "formula",
           "pattern": "machine-only",
           "findings": [
-            "C1",
-            "C2",
-            "C3",
-            "C4",
-            "C5",
-            "C6",
-            "CN",
-            "Q1",
-            "Q2",
-            "Q3",
-            "TZ0",
-            "V1",
-            "V2",
-            "V2C",
-            "V3",
-            "V3C",
-            "V4",
-            "V5",
-            "V6",
-            "VN"
+            {
+              "id": "C1",
+              "depends_on": []
+            },
+            {
+              "id": "C2",
+              "depends_on": []
+            },
+            {
+              "id": "C3",
+              "depends_on": []
+            },
+            {
+              "id": "C4",
+              "depends_on": []
+            },
+            {
+              "id": "C5",
+              "depends_on": []
+            },
+            {
+              "id": "C6",
+              "depends_on": [
+                "TZ0"
+              ]
+            },
+            {
+              "id": "CN",
+              "depends_on": []
+            },
+            {
+              "id": "Q1",
+              "depends_on": []
+            },
+            {
+              "id": "Q2",
+              "depends_on": [
+                "Q1"
+              ]
+            },
+            {
+              "id": "Q3",
+              "depends_on": [
+                "Q1"
+              ]
+            },
+            {
+              "id": "TZ0",
+              "depends_on": []
+            },
+            {
+              "id": "V1",
+              "depends_on": []
+            },
+            {
+              "id": "V2",
+              "depends_on": [
+                "V1"
+              ]
+            },
+            {
+              "id": "V2C",
+              "depends_on": [
+                "V1"
+              ]
+            },
+            {
+              "id": "V3",
+              "depends_on": []
+            },
+            {
+              "id": "V3C",
+              "depends_on": []
+            },
+            {
+              "id": "V4",
+              "depends_on": []
+            },
+            {
+              "id": "V5",
+              "depends_on": []
+            },
+            {
+              "id": "V6",
+              "depends_on": []
+            },
+            {
+              "id": "VN",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "TZ0",
+            "VN",
+            "CN",
+            "V2C",
+            "V3C"
+          ],
           "depends_on": []
         },
         {
@@ -313,9 +690,21 @@
           "surface": "formula",
           "pattern": "before-action-after",
           "findings": [
-            "C7",
-            "E1",
-            "Q4"
+            {
+              "id": "C7",
+              "depends_on": [
+                "TZ0",
+                "C6"
+              ]
+            },
+            {
+              "id": "E1",
+              "depends_on": []
+            },
+            {
+              "id": "Q4",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -357,8 +746,9 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "TZ0",
+            "C6",
+            "Q1"
           ],
           "depends_on": [
             "machine-findings"
@@ -384,15 +774,38 @@
           "surface": "library",
           "pattern": "machine-only",
           "findings": [
-            "L1",
-            "L2",
-            "L3",
-            "L5",
-            "L6",
-            "LN"
+            {
+              "id": "L1",
+              "depends_on": []
+            },
+            {
+              "id": "L2",
+              "depends_on": []
+            },
+            {
+              "id": "L3",
+              "depends_on": [
+                "L2"
+              ]
+            },
+            {
+              "id": "L5",
+              "depends_on": []
+            },
+            {
+              "id": "L6",
+              "depends_on": []
+            },
+            {
+              "id": "LN",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "L1",
+            "LN"
+          ],
           "depends_on": []
         },
         {
@@ -400,8 +813,16 @@
           "surface": "library",
           "pattern": "state-matrix",
           "findings": [
-            "L4",
-            "L7"
+            {
+              "id": "L4",
+              "depends_on": [
+                "L2"
+              ]
+            },
+            {
+              "id": "L7",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -421,8 +842,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "L1",
+            "L2"
           ],
           "depends_on": [
             "machine-findings"
@@ -450,20 +871,59 @@
           "surface": "access",
           "pattern": "machine-only",
           "findings": [
-            "A1",
-            "A2",
-            "A3",
-            "A4",
-            "B1",
-            "B2",
-            "B3",
-            "B4",
-            "C1",
-            "C2",
-            "C3"
+            {
+              "id": "A1",
+              "depends_on": []
+            },
+            {
+              "id": "A2",
+              "depends_on": []
+            },
+            {
+              "id": "A3",
+              "depends_on": [
+                "A2"
+              ]
+            },
+            {
+              "id": "A4",
+              "depends_on": [
+                "A2"
+              ]
+            },
+            {
+              "id": "B1",
+              "depends_on": []
+            },
+            {
+              "id": "B2",
+              "depends_on": []
+            },
+            {
+              "id": "B3",
+              "depends_on": []
+            },
+            {
+              "id": "B4",
+              "depends_on": []
+            },
+            {
+              "id": "C1",
+              "depends_on": []
+            },
+            {
+              "id": "C2",
+              "depends_on": []
+            },
+            {
+              "id": "C3",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "A2"
+          ],
           "depends_on": []
         },
         {
@@ -471,7 +931,10 @@
           "surface": "access",
           "pattern": "single-visible-state",
           "findings": [
-            "A5"
+            {
+              "id": "A5",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -483,10 +946,7 @@
               ]
             }
           ],
-          "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
-          ],
+          "controls": [],
           "depends_on": [
             "machine-findings"
           ]
@@ -511,10 +971,15 @@
           "surface": "expression",
           "pattern": "machine-only",
           "findings": [
-            "X0"
+            {
+              "id": "X0",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "X0"
+          ],
           "depends_on": []
         },
         {
@@ -522,12 +987,42 @@
           "surface": "expression",
           "pattern": "state-matrix",
           "findings": [
-            "X1",
-            "X2",
-            "X3",
-            "X4",
-            "X5",
-            "X6"
+            {
+              "id": "X1",
+              "depends_on": [
+                "X0"
+              ]
+            },
+            {
+              "id": "X2",
+              "depends_on": [
+                "X0"
+              ]
+            },
+            {
+              "id": "X3",
+              "depends_on": [
+                "X0"
+              ]
+            },
+            {
+              "id": "X4",
+              "depends_on": [
+                "X0"
+              ]
+            },
+            {
+              "id": "X5",
+              "depends_on": [
+                "X0"
+              ]
+            },
+            {
+              "id": "X6",
+              "depends_on": [
+                "X0"
+              ]
+            }
           ],
           "states": [
             {
@@ -564,8 +1059,7 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "X0"
           ],
           "depends_on": [
             "machine-findings"
@@ -658,9 +1152,7 @@
               ]
             }
           ],
-          "controls": [
-            "ordinary and sealed control pair"
-          ],
+          "controls": [],
           "depends_on": []
         }
       ]
@@ -734,9 +1226,7 @@
               ]
             }
           ],
-          "controls": [
-            "ordinary and sealed control pair"
-          ],
+          "controls": [],
           "depends_on": []
         }
       ]
@@ -761,15 +1251,36 @@
           "surface": "form",
           "pattern": "machine-only",
           "findings": [
-            "Q1",
-            "Q2",
-            "Q3",
-            "Q4",
-            "Q5",
-            "Q7"
+            {
+              "id": "Q1",
+              "depends_on": []
+            },
+            {
+              "id": "Q2",
+              "depends_on": []
+            },
+            {
+              "id": "Q3",
+              "depends_on": []
+            },
+            {
+              "id": "Q4",
+              "depends_on": []
+            },
+            {
+              "id": "Q5",
+              "depends_on": []
+            },
+            {
+              "id": "Q7",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q1",
+            "Q4"
+          ],
           "depends_on": []
         },
         {
@@ -777,7 +1288,10 @@
           "surface": "form",
           "pattern": "before-action-after",
           "findings": [
-            "Q6"
+            {
+              "id": "Q6",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -817,8 +1331,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "Q1",
+            "Q4"
           ],
           "depends_on": [
             "machine-findings"
@@ -867,9 +1381,7 @@
               ]
             }
           ],
-          "controls": [
-            "ordinary and sealed control pair"
-          ],
+          "controls": [],
           "depends_on": []
         }
       ]
@@ -892,33 +1404,107 @@
           "surface": "text",
           "pattern": "machine-only",
           "findings": [
-            "A_AMP",
-            "A_AMPESC",
-            "A_APOS",
-            "A_GE",
-            "A_GT",
-            "A_LT",
-            "A_LTESC",
-            "A_QUOT",
-            "B_AMP",
-            "B_AMPESC",
-            "B_APOS",
-            "B_GE",
-            "B_GT",
-            "B_LT",
-            "B_LTESC",
-            "B_QUOT",
-            "C_AMP",
-            "C_AMPESC",
-            "C_APOS",
-            "C_GE",
-            "C_GT",
-            "C_LT",
-            "C_LTESC",
-            "C_QUOT"
+            {
+              "id": "A_AMP",
+              "depends_on": []
+            },
+            {
+              "id": "A_AMPESC",
+              "depends_on": []
+            },
+            {
+              "id": "A_APOS",
+              "depends_on": []
+            },
+            {
+              "id": "A_GE",
+              "depends_on": []
+            },
+            {
+              "id": "A_GT",
+              "depends_on": []
+            },
+            {
+              "id": "A_LT",
+              "depends_on": []
+            },
+            {
+              "id": "A_LTESC",
+              "depends_on": []
+            },
+            {
+              "id": "A_QUOT",
+              "depends_on": []
+            },
+            {
+              "id": "B_AMP",
+              "depends_on": []
+            },
+            {
+              "id": "B_AMPESC",
+              "depends_on": []
+            },
+            {
+              "id": "B_APOS",
+              "depends_on": []
+            },
+            {
+              "id": "B_GE",
+              "depends_on": []
+            },
+            {
+              "id": "B_GT",
+              "depends_on": []
+            },
+            {
+              "id": "B_LT",
+              "depends_on": []
+            },
+            {
+              "id": "B_LTESC",
+              "depends_on": []
+            },
+            {
+              "id": "B_QUOT",
+              "depends_on": []
+            },
+            {
+              "id": "C_AMP",
+              "depends_on": []
+            },
+            {
+              "id": "C_AMPESC",
+              "depends_on": []
+            },
+            {
+              "id": "C_APOS",
+              "depends_on": []
+            },
+            {
+              "id": "C_GE",
+              "depends_on": []
+            },
+            {
+              "id": "C_GT",
+              "depends_on": []
+            },
+            {
+              "id": "C_LT",
+              "depends_on": []
+            },
+            {
+              "id": "C_LTESC",
+              "depends_on": []
+            },
+            {
+              "id": "C_QUOT",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "A_AMP"
+          ],
           "depends_on": []
         },
         {
@@ -926,14 +1512,38 @@
           "surface": "text",
           "pattern": "before-action-after",
           "findings": [
-            "A_COMBINED",
-            "B_COMBINED",
-            "C_COMBINED",
-            "D_DESC",
-            "D_TITLE",
-            "D_VALMSG",
-            "D_VIEWTITLE",
-            "D_WIDTH"
+            {
+              "id": "A_COMBINED",
+              "depends_on": []
+            },
+            {
+              "id": "B_COMBINED",
+              "depends_on": []
+            },
+            {
+              "id": "C_COMBINED",
+              "depends_on": []
+            },
+            {
+              "id": "D_DESC",
+              "depends_on": []
+            },
+            {
+              "id": "D_TITLE",
+              "depends_on": []
+            },
+            {
+              "id": "D_VALMSG",
+              "depends_on": []
+            },
+            {
+              "id": "D_VIEWTITLE",
+              "depends_on": []
+            },
+            {
+              "id": "D_WIDTH",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -1001,8 +1611,7 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "A_AMP"
           ],
           "depends_on": [
             "machine-findings"
@@ -1028,21 +1637,81 @@
           "surface": "text",
           "pattern": "machine-only",
           "findings": [
-            "G1",
-            "G10",
-            "G11",
-            "G2",
-            "G3",
-            "G4",
-            "G5",
-            "G6",
-            "G7",
-            "G8",
-            "G9",
-            "N1"
+            {
+              "id": "G1",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G10",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G11",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G2",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G3",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G4",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G5",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G6",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G7",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G8",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "G9",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "N1",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "N1"
+          ],
           "depends_on": []
         }
       ]
@@ -1065,15 +1734,46 @@
           "surface": "formula",
           "pattern": "machine-only",
           "findings": [
-            "Q0",
-            "Q1",
-            "Q2",
-            "Q3",
-            "Q4",
-            "Q5"
+            {
+              "id": "Q0",
+              "depends_on": []
+            },
+            {
+              "id": "Q1",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "Q2",
+              "depends_on": [
+                "Q1"
+              ]
+            },
+            {
+              "id": "Q3",
+              "depends_on": [
+                "Q1"
+              ]
+            },
+            {
+              "id": "Q4",
+              "depends_on": [
+                "Q1"
+              ]
+            },
+            {
+              "id": "Q5",
+              "depends_on": [
+                "Q1"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q0",
+            "Q1"
+          ],
           "depends_on": []
         }
       ]
@@ -1096,21 +1796,81 @@
           "surface": "text",
           "pattern": "machine-only",
           "findings": [
-            "L1",
-            "L10",
-            "L11",
-            "L2",
-            "L3",
-            "L4",
-            "L5",
-            "L6",
-            "L7",
-            "L8",
-            "L9",
-            "N1"
+            {
+              "id": "L1",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L10",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L11",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L2",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L3",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L4",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L5",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L6",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L7",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L8",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "L9",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "N1",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "N1"
+          ],
           "depends_on": []
         }
       ]
@@ -1135,15 +1895,42 @@
           "surface": "access",
           "pattern": "machine-only",
           "findings": [
-            "K1",
-            "K2",
-            "K3",
-            "K4",
-            "K5",
-            "K6"
+            {
+              "id": "K1",
+              "depends_on": []
+            },
+            {
+              "id": "K2",
+              "depends_on": [
+                "K1",
+                "K4"
+              ]
+            },
+            {
+              "id": "K3",
+              "depends_on": [
+                "K1",
+                "K4"
+              ]
+            },
+            {
+              "id": "K4",
+              "depends_on": []
+            },
+            {
+              "id": "K5",
+              "depends_on": []
+            },
+            {
+              "id": "K6",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "K1",
+            "K4"
+          ],
           "depends_on": []
         },
         {
@@ -1151,7 +1938,13 @@
           "surface": "access",
           "pattern": "identity-pair",
           "findings": [
-            "K7"
+            {
+              "id": "K7",
+              "depends_on": [
+                "K5",
+                "K6"
+              ]
+            }
           ],
           "states": [
             {
@@ -1186,8 +1979,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "K5",
+            "K6"
           ],
           "depends_on": [
             "machine-findings"
@@ -1213,32 +2006,143 @@
           "surface": "field",
           "pattern": "machine-only",
           "findings": [
-            "C1",
-            "C10",
-            "C11",
-            "C12",
-            "C13",
-            "C2",
-            "C3",
-            "C4",
-            "C5",
-            "C6",
-            "C7",
-            "C9",
-            "F1",
-            "I1",
-            "I1C",
-            "I2",
-            "M1",
-            "M2",
-            "M3",
-            "M4",
-            "M5",
-            "Q0",
-            "V1"
+            {
+              "id": "C1",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C10",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C11",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C12",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C13",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C2",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C3",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C4",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C5",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C6",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C7",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "C9",
+              "depends_on": [
+                "Q0",
+                "M5"
+              ]
+            },
+            {
+              "id": "F1",
+              "depends_on": []
+            },
+            {
+              "id": "I1",
+              "depends_on": [
+                "I1C"
+              ]
+            },
+            {
+              "id": "I1C",
+              "depends_on": []
+            },
+            {
+              "id": "I2",
+              "depends_on": []
+            },
+            {
+              "id": "M1",
+              "depends_on": []
+            },
+            {
+              "id": "M2",
+              "depends_on": []
+            },
+            {
+              "id": "M3",
+              "depends_on": []
+            },
+            {
+              "id": "M4",
+              "depends_on": []
+            },
+            {
+              "id": "M5",
+              "depends_on": []
+            },
+            {
+              "id": "Q0",
+              "depends_on": []
+            },
+            {
+              "id": "V1",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q0",
+            "M5",
+            "I1C"
+          ],
           "depends_on": []
         },
         {
@@ -1246,9 +2150,18 @@
           "surface": "field",
           "pattern": "state-matrix",
           "findings": [
-            "C14",
-            "C8",
-            "X1"
+            {
+              "id": "C14",
+              "depends_on": []
+            },
+            {
+              "id": "C8",
+              "depends_on": []
+            },
+            {
+              "id": "X1",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -1277,8 +2190,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "Q0",
+            "M5"
           ],
           "depends_on": [
             "machine-findings"
@@ -1304,16 +2217,50 @@
           "surface": "scale",
           "pattern": "machine-only",
           "findings": [
-            "CMPIDX",
-            "NATAUT",
-            "NATCRE",
-            "NATEDI",
-            "NATID",
-            "NATMOD",
-            "NULIDX"
+            {
+              "id": "CMPIDX",
+              "depends_on": []
+            },
+            {
+              "id": "NATAUT",
+              "depends_on": [
+                "NATID"
+              ]
+            },
+            {
+              "id": "NATCRE",
+              "depends_on": [
+                "NATID"
+              ]
+            },
+            {
+              "id": "NATEDI",
+              "depends_on": [
+                "NATID"
+              ]
+            },
+            {
+              "id": "NATID",
+              "depends_on": []
+            },
+            {
+              "id": "NATMOD",
+              "depends_on": [
+                "NATID"
+              ]
+            },
+            {
+              "id": "NULIDX",
+              "depends_on": [
+                "CMPIDX"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "NATID",
+            "CMPIDX"
+          ],
           "depends_on": []
         }
       ]
@@ -1336,15 +2283,45 @@
           "surface": "field",
           "pattern": "machine-only",
           "findings": [
-            "PRIM",
-            "DEPCR",
-            "DEPFLAG",
-            "DEPLINK",
-            "DEPPOP",
-            "DEPLIVE"
+            {
+              "id": "PRIM",
+              "depends_on": []
+            },
+            {
+              "id": "DEPCR",
+              "depends_on": [
+                "PRIM"
+              ]
+            },
+            {
+              "id": "DEPFLAG",
+              "depends_on": [
+                "PRIM"
+              ]
+            },
+            {
+              "id": "DEPLINK",
+              "depends_on": [
+                "PRIM"
+              ]
+            },
+            {
+              "id": "DEPPOP",
+              "depends_on": [
+                "PRIM"
+              ]
+            },
+            {
+              "id": "DEPLIVE",
+              "depends_on": [
+                "PRIM"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "PRIM"
+          ],
           "depends_on": []
         }
       ]
@@ -1365,15 +2342,45 @@
           "surface": "access",
           "pattern": "machine-only",
           "findings": [
-            "R1",
-            "R2",
-            "R3",
-            "R4",
-            "R5",
-            "R6"
+            {
+              "id": "R1",
+              "depends_on": []
+            },
+            {
+              "id": "R2",
+              "depends_on": [
+                "R1"
+              ]
+            },
+            {
+              "id": "R3",
+              "depends_on": [
+                "R1"
+              ]
+            },
+            {
+              "id": "R4",
+              "depends_on": [
+                "R1"
+              ]
+            },
+            {
+              "id": "R5",
+              "depends_on": [
+                "R1"
+              ]
+            },
+            {
+              "id": "R6",
+              "depends_on": [
+                "R1"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "R1"
+          ],
           "depends_on": []
         }
       ]
@@ -1396,19 +2403,69 @@
           "surface": "text",
           "pattern": "machine-only",
           "findings": [
-            "N1",
-            "R1",
-            "R2",
-            "R3",
-            "R4",
-            "R5",
-            "R6",
-            "R7",
-            "R8",
-            "R9"
+            {
+              "id": "N1",
+              "depends_on": []
+            },
+            {
+              "id": "R1",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R2",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R3",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R4",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R5",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R6",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R7",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R8",
+              "depends_on": [
+                "N1"
+              ]
+            },
+            {
+              "id": "R9",
+              "depends_on": [
+                "N1"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "N1"
+          ],
           "depends_on": []
         }
       ]
@@ -1433,23 +2490,89 @@
           "surface": "search",
           "pattern": "delayed-reconciliation",
           "findings": [
-            "S1",
-            "S10",
-            "S11",
-            "S12",
-            "S2",
-            "S3",
-            "S4",
-            "S5",
-            "S6",
-            "S6A",
-            "S6C",
-            "S7",
-            "S8",
-            "S9"
+            {
+              "id": "S1",
+              "depends_on": []
+            },
+            {
+              "id": "S10",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S11",
+              "depends_on": []
+            },
+            {
+              "id": "S12",
+              "depends_on": []
+            },
+            {
+              "id": "S2",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S3",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S4",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S5",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S6",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S6A",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S6C",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S7",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S8",
+              "depends_on": [
+                "S1"
+              ]
+            },
+            {
+              "id": "S9",
+              "depends_on": [
+                "S1"
+              ]
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "S1"
+          ],
           "depends_on": []
         }
       ]
@@ -1474,51 +2597,270 @@
           "surface": "scale",
           "pattern": "machine-only",
           "findings": [
-            "ANDIDX",
-            "ANDUNI",
-            "CALCAM",
-            "CALCIDX",
-            "CMPCAM",
-            "CMPIDX",
-            "CMPUNI",
-            "IDXCLR",
-            "IDXSET",
-            "JOINEDT",
-            "JOINMAX",
-            "JOINPER",
-            "JOINPRJ",
-            "JOINSYS",
-            "LKPCAL",
-            "LOOCAM",
-            "LOOKID",
-            "LOOPRJ",
-            "NNIDX",
-            "NNUNI",
-            "NOTEIDX",
-            "NULCAM",
-            "NULIDX",
-            "PERCAM",
-            "PERCAV",
-            "PERPRJ",
-            "PERSID",
-            "RUNCNT",
-            "SEEDCK",
-            "SYSAUT",
-            "SYSCRE",
-            "SYSEDI",
-            "SYSMOD",
-            "TGTCAL",
-            "TGTCND",
-            "TGTENU",
-            "TGTFLT",
-            "TGTORD",
-            "TGTPFX",
-            "TGTSFO",
-            "TGTSTA",
-            "TGTSTO"
+            {
+              "id": "ANDIDX",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "ANDUNI",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "CALCAM",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "CALCIDX",
+              "depends_on": []
+            },
+            {
+              "id": "CMPCAM",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "CMPIDX",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "CMPUNI",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "IDXCLR",
+              "depends_on": []
+            },
+            {
+              "id": "IDXSET",
+              "depends_on": []
+            },
+            {
+              "id": "JOINEDT",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET",
+                "JOINMAX"
+              ]
+            },
+            {
+              "id": "JOINMAX",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "JOINPER",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET",
+                "JOINMAX"
+              ]
+            },
+            {
+              "id": "JOINPRJ",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "JOINSYS",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET",
+                "JOINMAX"
+              ]
+            },
+            {
+              "id": "LKPCAL",
+              "depends_on": []
+            },
+            {
+              "id": "LOOCAM",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "LOOKID",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "LOOPRJ",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "NNIDX",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET",
+                "SEEDCK"
+              ]
+            },
+            {
+              "id": "NNUNI",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET",
+                "SEEDCK"
+              ]
+            },
+            {
+              "id": "NOTEIDX",
+              "depends_on": []
+            },
+            {
+              "id": "NULCAM",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "NULIDX",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "PERCAM",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "PERCAV",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "PERPRJ",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "PERSID",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "RUNCNT",
+              "depends_on": []
+            },
+            {
+              "id": "SEEDCK",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "SYSAUT",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "SYSCRE",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "SYSEDI",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "SYSMOD",
+              "depends_on": [
+                "RUNCNT",
+                "IDXSET"
+              ]
+            },
+            {
+              "id": "TGTCAL",
+              "depends_on": []
+            },
+            {
+              "id": "TGTCND",
+              "depends_on": []
+            },
+            {
+              "id": "TGTENU",
+              "depends_on": []
+            },
+            {
+              "id": "TGTFLT",
+              "depends_on": []
+            },
+            {
+              "id": "TGTORD",
+              "depends_on": []
+            },
+            {
+              "id": "TGTPFX",
+              "depends_on": []
+            },
+            {
+              "id": "TGTSFO",
+              "depends_on": []
+            },
+            {
+              "id": "TGTSTA",
+              "depends_on": []
+            },
+            {
+              "id": "TGTSTO",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "RUNCNT",
+            "IDXSET",
+            "SEEDCK",
+            "CMPIDX",
+            "CMPUNI",
+            "JOINMAX"
+          ],
           "depends_on": []
         },
         {
@@ -1526,12 +2868,30 @@
           "surface": "scale",
           "pattern": "phased-threshold",
           "findings": [
-            "FLAGS",
-            "PIKCAL",
-            "PIKCND",
-            "PIKIDX",
-            "PIKVW",
-            "TGTIDX"
+            {
+              "id": "FLAGS",
+              "depends_on": []
+            },
+            {
+              "id": "PIKCAL",
+              "depends_on": []
+            },
+            {
+              "id": "PIKCND",
+              "depends_on": []
+            },
+            {
+              "id": "PIKIDX",
+              "depends_on": []
+            },
+            {
+              "id": "PIKVW",
+              "depends_on": []
+            },
+            {
+              "id": "TGTIDX",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -1585,8 +2945,9 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "RUNCNT",
+            "IDXSET",
+            "SEEDCK"
           ],
           "depends_on": [
             "machine-findings"
@@ -1597,14 +2958,32 @@
           "surface": "scale",
           "pattern": "machine-only",
           "findings": [
-            "GRDIDX",
-            "GRDNUL",
-            "GRDONLY",
-            "GRDUNI",
-            "TWINCK"
+            {
+              "id": "GRDIDX",
+              "depends_on": []
+            },
+            {
+              "id": "GRDNUL",
+              "depends_on": []
+            },
+            {
+              "id": "GRDONLY",
+              "depends_on": []
+            },
+            {
+              "id": "GRDUNI",
+              "depends_on": []
+            },
+            {
+              "id": "TWINCK",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "GRDONLY",
+            "GRDUNI"
+          ],
           "depends_on": []
         },
         {
@@ -1612,8 +2991,16 @@
           "surface": "scale",
           "pattern": "identity-pair",
           "findings": [
-            "EDTNEG",
-            "EDTPLN"
+            {
+              "id": "EDTNEG",
+              "depends_on": [
+                "EDTPLN"
+              ]
+            },
+            {
+              "id": "EDTPLN",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -1632,8 +3019,7 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "same clause count, differing only in the negation"
+            "EDTPLN"
           ],
           "depends_on": []
         },
@@ -1642,10 +3028,22 @@
           "surface": "scale",
           "pattern": "state-matrix",
           "findings": [
-            "VWGRD",
-            "VWIDX",
-            "VWUGD",
-            "VWUNI"
+            {
+              "id": "VWGRD",
+              "depends_on": []
+            },
+            {
+              "id": "VWIDX",
+              "depends_on": []
+            },
+            {
+              "id": "VWUGD",
+              "depends_on": []
+            },
+            {
+              "id": "VWUNI",
+              "depends_on": []
+            }
           ],
           "states": [
             {
@@ -1678,8 +3076,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "GRDONLY",
+            "GRDUNI"
           ],
           "depends_on": [
             "guard-machine-findings"
@@ -1705,13 +3103,28 @@
           "surface": "view",
           "pattern": "machine-only",
           "findings": [
-            "Q0",
-            "Q1",
-            "Q2",
-            "Q3"
+            {
+              "id": "Q0",
+              "depends_on": []
+            },
+            {
+              "id": "Q1",
+              "depends_on": []
+            },
+            {
+              "id": "Q2",
+              "depends_on": []
+            },
+            {
+              "id": "Q3",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q0",
+            "Q3"
+          ],
           "depends_on": []
         },
         {
@@ -1719,9 +3132,27 @@
           "surface": "view",
           "pattern": "single-visible-state",
           "findings": [
-            "Q4",
-            "Q5",
-            "Q6"
+            {
+              "id": "Q4",
+              "depends_on": [
+                "Q0",
+                "Q3"
+              ]
+            },
+            {
+              "id": "Q5",
+              "depends_on": [
+                "Q0",
+                "Q3"
+              ]
+            },
+            {
+              "id": "Q6",
+              "depends_on": [
+                "Q0",
+                "Q3"
+              ]
+            }
           ],
           "states": [
             {
@@ -1734,8 +3165,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "Q0",
+            "Q3"
           ],
           "depends_on": [
             "machine-findings"
@@ -1761,28 +3192,93 @@
           "surface": "view",
           "pattern": "machine-only",
           "findings": [
-            "C1",
-            "C2",
-            "C3",
-            "C4",
-            "C5",
-            "C6",
-            "C7",
-            "F1",
-            "F2",
-            "F3",
-            "F4",
-            "F5",
-            "F6",
-            "F7",
-            "F8",
-            "Q0",
-            "Q1",
-            "S1",
-            "S2"
+            {
+              "id": "C1",
+              "depends_on": []
+            },
+            {
+              "id": "C2",
+              "depends_on": []
+            },
+            {
+              "id": "C3",
+              "depends_on": []
+            },
+            {
+              "id": "C4",
+              "depends_on": []
+            },
+            {
+              "id": "C5",
+              "depends_on": []
+            },
+            {
+              "id": "C6",
+              "depends_on": []
+            },
+            {
+              "id": "C7",
+              "depends_on": []
+            },
+            {
+              "id": "F1",
+              "depends_on": []
+            },
+            {
+              "id": "F2",
+              "depends_on": []
+            },
+            {
+              "id": "F3",
+              "depends_on": []
+            },
+            {
+              "id": "F4",
+              "depends_on": []
+            },
+            {
+              "id": "F5",
+              "depends_on": []
+            },
+            {
+              "id": "F6",
+              "depends_on": []
+            },
+            {
+              "id": "F7",
+              "depends_on": []
+            },
+            {
+              "id": "F8",
+              "depends_on": []
+            },
+            {
+              "id": "Q0",
+              "depends_on": []
+            },
+            {
+              "id": "Q1",
+              "depends_on": []
+            },
+            {
+              "id": "S1",
+              "depends_on": []
+            },
+            {
+              "id": "S2",
+              "depends_on": []
+            }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "Q0",
+            "Q1",
+            "S2",
+            "F1",
+            "F7",
+            "F8",
+            "C6"
+          ],
           "depends_on": []
         },
         {
@@ -1790,8 +3286,19 @@
           "surface": "view",
           "pattern": "state-matrix",
           "findings": [
-            "P1",
-            "P2"
+            {
+              "id": "P1",
+              "depends_on": [
+                "Q0"
+              ]
+            },
+            {
+              "id": "P2",
+              "depends_on": [
+                "Q0",
+                "Q1"
+              ]
+            }
           ],
           "states": [
             {
@@ -1817,8 +3324,8 @@
             }
           ],
           "controls": [
-            "machine setup/readback",
-            "positive and negative visible controls"
+            "Q0",
+            "Q1"
           ],
           "depends_on": [
             "machine-findings"
