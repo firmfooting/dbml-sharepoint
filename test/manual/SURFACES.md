@@ -255,7 +255,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `datetime-sentinel-probe.js` | `formula` | `Q1`–`Q4` | `query.caml.*` |
 | `multi-value-probe.js` | `field` | `C1`–`C14` | `query.caml.*` |
 | `lookup-acl-probe.js` | `access` | `K5`–`K7` | `field.lookup.*` |
-| `role-definition-probe.js` | `text` | `R7`–`R9` | `access.role-def.*` |
+| `role-definition-probe.js` | `text` | `basepermissions-readback`, `getbyname-absent-status`, `web-assignments-enumerable` (was `R7`–`R9`) | `access.role-def.*` |
 | `threshold-index-probe.js` | `scale` | `VWIDX`, `VWGRD`, `VWUNI`, `VWUGD` | `view.threshold-render.*` |
 | `threshold-index-probe.js` | `scale` | `EDTPLN`, `EDTNEG` | `view.filter-editor.*` |
 
@@ -265,7 +265,7 @@ surface boundary, and are listed for the same reason:
 | Probe | Checks | File under |
 | --- | --- | --- |
 | `list-description-probe.js` | the `group-description-512-ceiling` header finding | `text.group-desc.ceiling-512` |
-| `formatter-xml-probe.js` | `D_WIDTH` | `text.col-fmt.width-attribute` |
+| `formatter-xml-probe.js` | `width-attribute` (was `D_WIDTH`) | `text.col-fmt.width-attribute` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description

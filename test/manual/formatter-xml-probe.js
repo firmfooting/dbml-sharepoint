@@ -72,36 +72,53 @@
  *      Fixed: the addviewfield response and a fresh ViewFields read-back
  *      now gate the rest of D_WIDTH.
  *
- * WHAT IT ASKS
- *   A_*    view CustomFormatter containing &, &amp;, <, &lt;, >, >=, ", '.
- *          A_AMP IS THE CONTROL. It must FAIL and reproduce the SOURCE
- *          signature above. If it does not, every other row in this run
- *          is suspect. The probe says so loudly, at the point it happens
- *          and again beside the results.
- *   B_*    the same eight characters in a COLUMN CustomFormatter, which
- *          the deployer compares WITHOUT decoding first
- *          (_field_reconcile.js.j2's canonicalJson, no xmlDecode), unlike
- *          the view comparison a few lines below it. If the readback here
- *          turns out to be entity-encoded, that comparison is wrong today.
- *   C_*    the same eight characters in a form's ClientFormCustomFormatter
- *          (_forms.js.j2's canonicalFormFormatter, also undecoded).
- *          Untested entirely before run 1.
- *   *_COMBINED   one combined write per surface (A/B/C), made AFTER that
- *          surface's per-token loop, holding every token that loop found
- *          ACCEPTED all at once. Exists only so the eyes-on checklist has
- *          something left to look at. See run 1 defect 5 above. Not a
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The A/B/C/D prefixes each expand to a
+ * scope, and the character mnemonics to question names. The old prefixed
+ * mnemonic is given beside each one, because the runs recorded above quote
+ * the mnemonics.
+ *
+ *   text.view-fmt.*   (A_*) a view CustomFormatter containing &, &amp;, <,
+ *          &lt;, >, >=, ", '. The question names are `ampersand`,
+ *          `ampersand-entity`, `lt`, `lt-entity`, `gt`, `gte`, `quot`,
+ *          `apos`, in that order.
+ *          text.view-fmt.ampersand (A_AMP) IS THE CONTROL. It must FAIL and
+ *          reproduce the SOURCE signature above. If it does not, every other
+ *          row in this run is suspect. The probe says so loudly, at the
+ *          point it happens and again beside the results. It carries no
+ *          `control-` prefix because it is a real measurement of the view
+ *          formatter surface as well as the control; the catalog's
+ *          `controls` list is what declares it one.
+ *   text.col-fmt.*    (B_*) the same eight characters in a COLUMN
+ *          CustomFormatter, which the deployer compares WITHOUT decoding
+ *          first (_field_reconcile.js.j2's canonicalJson, no xmlDecode),
+ *          unlike the view comparison a few lines below it. If the readback
+ *          here turns out to be entity-encoded, that comparison is wrong
+ *          today.
+ *   text.form-fmt.*   (C_*) the same eight characters in a form's
+ *          ClientFormCustomFormatter (_forms.js.j2's canonicalFormFormatter,
+ *          also undecoded). Untested entirely before run 1.
+ *   *.combined-markers  (*_COMBINED) one combined write per scope, made
+ *          AFTER that scope's per-token loop, holding every token that loop
+ *          found ACCEPTED all at once. Exists only so the eyes-on checklist
+ *          has something left to look at. See run 1 defect 5 above. Not a
  *          measurement in its own right; it reads back and confirms a
  *          marker count so a failed combine cannot masquerade as one.
- *   D_TITLE      a field Title containing a bare '&' (tiered-huddle ships
- *                four of these today, unconfirmed).
- *   D_WIDTH      that same ampersand-bearing display name reused as a view
- *                widths key, exercising _views.js.j2's xmlAttr escape path
- *                end to end. ColumnWidth FieldRefs bind by DISPLAY name.
- *   D_VIEWTITLE  a view Title containing a bare '&'.
- *   D_VALMSG     a field ValidationMessage containing a bare '&', compared
- *                by plain string equality, same undecoded shape as B.
- *   D_DESC       a column Description containing a bare '&', same
- *                undecoded comparison.
+ *   text.field-title.metachar   (D_TITLE) a field Title containing a bare
+ *                '&' (tiered-huddle ships four of these today, unconfirmed).
+ *   text.col-fmt.width-attribute  (D_WIDTH) that same ampersand-bearing
+ *                display name reused as a view widths key, exercising
+ *                _views.js.j2's xmlAttr escape path end to end. ColumnWidth
+ *                FieldRefs bind by DISPLAY name. It scopes to col-fmt, not
+ *                view-fmt, because a column width is column formatting
+ *                expressed in the view's XML.
+ *   text.view-title.metachar    (D_VIEWTITLE) a view Title containing a bare
+ *                '&'.
+ *   text.valmsg.metachar        (D_VALMSG) a field ValidationMessage
+ *                containing a bare '&', compared by plain string equality,
+ *                same undecoded shape as the column formatter.
+ *   text.col-desc.metachar      (D_DESC) a column Description containing a
+ *                bare '&', same undecoded comparison.
  *
  * Every A/B/C row folds three observations into one outcome: did the write
  * succeed, what did the readback look like (a heuristic ENCODED/LITERAL
@@ -393,7 +410,7 @@
   // Printed FIRST, before any gate: see threshold-index-probe.js.j2 for why
   // (a stale clipboard and a fix that did not work produce identical
   // transcripts otherwise).
-  log('INFO', 'probe revision df5e40d1. Quote this when reporting results.');
+  log('INFO', 'probe revision 980a6d67. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe FormatterXML';
   const FIELD_FMT = 'ProbeFmtField';
@@ -439,6 +456,21 @@
     C: 'Form ClientFormCustomFormatter',
   };
   const questionFor = (prefix, id) => `${SURFACE_LABEL[prefix]} containing ${CHAR_DESC[id]}`;
+
+  // The A/B/C prefixes expand to check-id scopes, and the character
+  // mnemonics to question names, per the grammar in test/manual/SURFACES.md.
+  const SCOPE_FOR = { A: 'text.view-fmt', B: 'text.col-fmt', C: 'text.form-fmt' };
+  const QUESTION_FOR = {
+    AMP: 'ampersand',
+    AMPESC: 'ampersand-entity',
+    LT: 'lt',
+    LTESC: 'lt-entity',
+    GT: 'gt',
+    GE: 'gte',
+    QUOT: 'quot',
+    APOS: 'apos',
+  };
+  const checkId = (prefix, id) => `${SCOPE_FOR[prefix]}.${QUESTION_FOR[id]}`;
 
   // A view/column formatter payload carrying the token as literal text
   // inside a formatter JSON's txtContent, the same shape a real formatter
@@ -577,38 +609,38 @@
   // write/read/compare blocks by hand is its own source of drift; what
   // matters is that every id that loop can produce is registered here
   // first, which is what makes an aborted run still report the truth.
-  expect('A_AMP', 'View CustomFormatter containing a bare ampersand (THE CONTROL)');
-  expect('A_AMPESC', 'View CustomFormatter containing a pre-escaped &amp; entity');
-  expect('A_LT', 'View CustomFormatter containing a less-than sign');
-  expect('A_LTESC', 'View CustomFormatter containing a pre-escaped &lt; entity');
-  expect('A_GT', 'View CustomFormatter containing a greater-than sign');
-  expect('A_GE', 'View CustomFormatter containing a greater-than-or-equal operator (>=)');
-  expect('A_QUOT', 'View CustomFormatter containing a double quote');
-  expect('A_APOS', 'View CustomFormatter containing a single quote');
-  expect('A_COMBINED', 'Combined write leaving every accepted View CustomFormatter marker visible for the eyes-on check');
-  expect('B_AMP', 'Column CustomFormatter containing a bare ampersand');
-  expect('B_AMPESC', 'Column CustomFormatter containing a pre-escaped &amp; entity');
-  expect('B_LT', 'Column CustomFormatter containing a less-than sign');
-  expect('B_LTESC', 'Column CustomFormatter containing a pre-escaped &lt; entity');
-  expect('B_GT', 'Column CustomFormatter containing a greater-than sign');
-  expect('B_GE', 'Column CustomFormatter containing a greater-than-or-equal operator (>=)');
-  expect('B_QUOT', 'Column CustomFormatter containing a double quote');
-  expect('B_APOS', 'Column CustomFormatter containing a single quote');
-  expect('B_COMBINED', 'Combined write leaving every accepted Column CustomFormatter marker visible for the eyes-on check');
-  expect('C_AMP', 'Form ClientFormCustomFormatter containing a bare ampersand');
-  expect('C_AMPESC', 'Form ClientFormCustomFormatter containing a pre-escaped &amp; entity');
-  expect('C_LT', 'Form ClientFormCustomFormatter containing a less-than sign');
-  expect('C_LTESC', 'Form ClientFormCustomFormatter containing a pre-escaped &lt; entity');
-  expect('C_GT', 'Form ClientFormCustomFormatter containing a greater-than sign');
-  expect('C_GE', 'Form ClientFormCustomFormatter containing a greater-than-or-equal operator (>=)');
-  expect('C_QUOT', 'Form ClientFormCustomFormatter containing a double quote');
-  expect('C_APOS', 'Form ClientFormCustomFormatter containing a single quote');
-  expect('C_COMBINED', 'Combined write leaving every accepted Form ClientFormCustomFormatter marker visible for the eyes-on check');
-  expect('D_TITLE', 'A field Title containing a bare ampersand');
-  expect('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key');
-  expect('D_VIEWTITLE', 'A view Title containing a bare ampersand');
-  expect('D_VALMSG', 'A field ValidationMessage containing a bare ampersand');
-  expect('D_DESC', 'A column Description containing a bare ampersand');
+  expect('text.view-fmt.ampersand', 'View CustomFormatter containing a bare ampersand (THE CONTROL)');
+  expect('text.view-fmt.ampersand-entity', 'View CustomFormatter containing a pre-escaped &amp; entity');
+  expect('text.view-fmt.lt', 'View CustomFormatter containing a less-than sign');
+  expect('text.view-fmt.lt-entity', 'View CustomFormatter containing a pre-escaped &lt; entity');
+  expect('text.view-fmt.gt', 'View CustomFormatter containing a greater-than sign');
+  expect('text.view-fmt.gte', 'View CustomFormatter containing a greater-than-or-equal operator (>=)');
+  expect('text.view-fmt.quot', 'View CustomFormatter containing a double quote');
+  expect('text.view-fmt.apos', 'View CustomFormatter containing a single quote');
+  expect('text.view-fmt.combined-markers', 'Combined write leaving every accepted View CustomFormatter marker visible for the eyes-on check');
+  expect('text.col-fmt.ampersand', 'Column CustomFormatter containing a bare ampersand');
+  expect('text.col-fmt.ampersand-entity', 'Column CustomFormatter containing a pre-escaped &amp; entity');
+  expect('text.col-fmt.lt', 'Column CustomFormatter containing a less-than sign');
+  expect('text.col-fmt.lt-entity', 'Column CustomFormatter containing a pre-escaped &lt; entity');
+  expect('text.col-fmt.gt', 'Column CustomFormatter containing a greater-than sign');
+  expect('text.col-fmt.gte', 'Column CustomFormatter containing a greater-than-or-equal operator (>=)');
+  expect('text.col-fmt.quot', 'Column CustomFormatter containing a double quote');
+  expect('text.col-fmt.apos', 'Column CustomFormatter containing a single quote');
+  expect('text.col-fmt.combined-markers', 'Combined write leaving every accepted Column CustomFormatter marker visible for the eyes-on check');
+  expect('text.form-fmt.ampersand', 'Form ClientFormCustomFormatter containing a bare ampersand');
+  expect('text.form-fmt.ampersand-entity', 'Form ClientFormCustomFormatter containing a pre-escaped &amp; entity');
+  expect('text.form-fmt.lt', 'Form ClientFormCustomFormatter containing a less-than sign');
+  expect('text.form-fmt.lt-entity', 'Form ClientFormCustomFormatter containing a pre-escaped &lt; entity');
+  expect('text.form-fmt.gt', 'Form ClientFormCustomFormatter containing a greater-than sign');
+  expect('text.form-fmt.gte', 'Form ClientFormCustomFormatter containing a greater-than-or-equal operator (>=)');
+  expect('text.form-fmt.quot', 'Form ClientFormCustomFormatter containing a double quote');
+  expect('text.form-fmt.apos', 'Form ClientFormCustomFormatter containing a single quote');
+  expect('text.form-fmt.combined-markers', 'Combined write leaving every accepted Form ClientFormCustomFormatter marker visible for the eyes-on check');
+  expect('text.field-title.metachar', 'A field Title containing a bare ampersand');
+  expect('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key');
+  expect('text.view-title.metachar', 'A view Title containing a bare ampersand');
+  expect('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand');
+  expect('text.col-desc.metachar', 'A column Description containing a bare ampersand');
 
   if (!CONFIRMED) {
     log('INFO', `Would create list '${LIST}' with a text field and a view, seed`);
@@ -752,14 +784,14 @@
   }
 
   // ---- The control's loud failure banner ---------------------------------
-  let controlHeld = null; // null = never reached; true/false once A_AMP runs
+  let controlHeld = null; // null = never reached; true/false once the control runs
   const loudControlFailure = (detail) => {
     controlHeld = false;
     log('FAIL', '='.repeat(70));
-    log('FAIL', `CONTROL (A_AMP) DID NOT REPRODUCE the 2026-08-11 measurement${detail ? `: ${detail}` : '.'}`);
+    log('FAIL', `CONTROL (text.view-fmt.ampersand) DID NOT REPRODUCE the 2026-08-11 measurement${detail ? `: ${detail}` : '.'}`);
     log('FAIL', 'Something has changed since that run: a platform fix, a tenant');
     log('FAIL', 'setting, or a bug in this probe. EVERY OTHER ROW BELOW IS SUSPECT.');
-    log('FAIL', "Read A_AMP's evidence in the RESULTS block before trusting anything else.");
+    log('FAIL', "Read text.view-fmt.ampersand's evidence in the RESULTS block first.");
     log('FAIL', '='.repeat(70));
   };
 
@@ -774,7 +806,7 @@
   ) {
     const acceptedTokens = [];
     for (const [id, token] of CHARS) {
-      const rowId = `${prefix}_${id}`;
+      const rowId = checkId(prefix, id);
       const question = questionFor(prefix, id);
       const payload = buildPayload(token);
       const write = await mergeProp(targetUrl, { [propertyName]: payload });
@@ -817,7 +849,7 @@
     // in the file docblock: without this, only the LAST token tested above
     // is still on the actual view/field/content type by the time an
     // operator reaches the eyes-on checklist.
-    const combinedId = `${prefix}_COMBINED`;
+    const combinedId = `${SCOPE_FOR[prefix]}.combined-markers`;
     const combinedQuestion =
       `Combined write leaving every accepted ${SURFACE_LABEL[prefix]} marker visible for the eyes-on check`;
     if (acceptedTokens.length === 0) {
@@ -855,9 +887,9 @@
     );
   } else {
     for (const [id] of CHARS) {
-      record(`A_${id}`, questionFor('A', id), 'NOT ESTABLISHED', 'the probe view could not be created; see BOOTVIEW');
+      record(checkId('A', id), questionFor('A', id), 'NOT ESTABLISHED', 'the probe view could not be created; see BOOTVIEW');
     }
-    record('A_COMBINED', `Combined write leaving every accepted ${SURFACE_LABEL.A} marker visible for the eyes-on check`,
+    record('text.view-fmt.combined-markers', `Combined write leaving every accepted ${SURFACE_LABEL.A} marker visible for the eyes-on check`,
            'NOT ESTABLISHED', 'the probe view could not be created; see BOOTVIEW');
   }
 
@@ -868,9 +900,9 @@
     );
   } else {
     for (const [id] of CHARS) {
-      record(`B_${id}`, questionFor('B', id), 'NOT ESTABLISHED', 'the probe field could not be created; see BOOTFIELD');
+      record(checkId('B', id), questionFor('B', id), 'NOT ESTABLISHED', 'the probe field could not be created; see BOOTFIELD');
     }
-    record('B_COMBINED', `Combined write leaving every accepted ${SURFACE_LABEL.B} marker visible for the eyes-on check`,
+    record('text.col-fmt.combined-markers', `Combined write leaving every accepted ${SURFACE_LABEL.B} marker visible for the eyes-on check`,
            'NOT ESTABLISHED', 'the probe field could not be created; see BOOTFIELD');
   }
 
@@ -883,9 +915,9 @@
     );
   } else {
     for (const [id] of CHARS) {
-      record(`C_${id}`, questionFor('C', id), 'NOT ESTABLISHED', 'no content type was found; see BOOTCT');
+      record(checkId('C', id), questionFor('C', id), 'NOT ESTABLISHED', 'no content type was found; see BOOTCT');
     }
-    record('C_COMBINED', `Combined write leaving every accepted ${SURFACE_LABEL.C} marker visible for the eyes-on check`,
+    record('text.form-fmt.combined-markers', `Combined write leaving every accepted ${SURFACE_LABEL.C} marker visible for the eyes-on check`,
            'NOT ESTABLISHED', 'no content type was found; see BOOTCT');
   }
 
@@ -900,7 +932,7 @@
       );
     }
     if (!created.ok) {
-      record('D_TITLE', 'A field Title containing a bare ampersand',
+      record('text.field-title.metachar', 'A field Title containing a bare ampersand',
              classifyWriteFailure(created.status, created.text, '&'),
              `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
     } else {
@@ -909,12 +941,12 @@
       const reread = await spGet(
         `${fieldsPath}/getbyinternalnameortitle('${TITLE_FIELD_INTERNAL_NAME}')?$select=Title,InternalName`);
       if (readFailed(reread)) {
-        record('D_TITLE', 'A field Title containing a bare ampersand', 'NOT ESTABLISHED',
+        record('text.field-title.metachar', 'A field Title containing a bare ampersand', 'NOT ESTABLISHED',
                `field created (HTTP ${created.status}) but the read-back failed (HTTP ${reread.status})`);
       } else {
         titleFieldInternalName = reread.body.InternalName;
         titleFieldActualTitle = reread.body.Title;
-        record('D_TITLE', 'A field Title containing a bare ampersand',
+        record('text.field-title.metachar', 'A field Title containing a bare ampersand',
                titleFieldActualTitle === TITLE_WITH_AMP ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: CHANGED ON READBACK',
                `declared ${JSON.stringify(TITLE_WITH_AMP)}; read back ${JSON.stringify(titleFieldActualTitle)}; `
                + `internal name ${JSON.stringify(titleFieldInternalName)}`);
@@ -925,10 +957,10 @@
   // ---- D_WIDTH: that display name reused as a widths key ------------------
   {
     if (!viewCreated) {
-      record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key',
+      record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key',
              'NOT ESTABLISHED', 'the probe view could not be created; see BOOTVIEW');
     } else if (!titleFieldInternalName || titleFieldActualTitle == null) {
-      record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key',
+      record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key',
              'NOT ESTABLISHED', 'the ampersand-titled field could not be created or read back; see D_TITLE');
     } else {
       digest = await getDigest();
@@ -942,7 +974,7 @@
         (viewFieldsBack.ok && viewFieldsBack.body && (viewFieldsBack.body.Items || viewFieldsBack.body.value)) || [];
       const fieldOnView = JSON.stringify(viewFieldsList).includes(titleFieldInternalName);
       if (!addedField.ok || readFailed(viewFieldsBack) || !fieldOnView) {
-        record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
+        record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
                `prerequisite failed: addviewfield returned HTTP ${addedField.status}; ViewFields read-back `
                + `${readFailed(viewFieldsBack) ? `failed (HTTP ${viewFieldsBack.status})`
                                                  : (fieldOnView ? 'included it' : 'did NOT include it')}. `
@@ -954,7 +986,7 @@
         const currentXmlRes = await spGet(`${viewUrl}?$select=ListViewXml`);
         const currentXml = (currentXmlRes.ok && currentXmlRes.body && String(currentXmlRes.body.ListViewXml)) || '';
         if (readFailed(currentXmlRes) || !currentXml.includes('</View>')) {
-          record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
+          record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
                  `could not read a usable ListViewXml (HTTP ${currentXmlRes.status})`);
         } else {
           const columnWidthBlock =
@@ -965,20 +997,20 @@
           digest = await getDigest();
           const setRes = await spPost(`${viewUrl}/setviewxml()`, { viewXml: nextXml }, digest);
           if (!setRes.ok) {
-            record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key',
+            record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key',
                    classifyWriteFailure(setRes.status, setRes.text, '&'),
                    `HTTP ${setRes.status}: ${setRes.text.slice(0, 400)}`);
           } else {
             const afterRes = await spGet(`${viewUrl}?$select=ListViewXml`);
             if (readFailed(afterRes)) {
-              record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
+              record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key', 'NOT ESTABLISHED',
                      `SetViewXml returned HTTP ${setRes.status} but the read-back failed (HTTP ${afterRes.status})`);
             } else {
               const afterXml = String(afterRes.body.ListViewXml || '');
               const block = afterXml.match(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/);
               const nameAttr = block && block[0].match(/Name="([^"]*)"/);
               const decodedName = nameAttr ? xmlDecode(nameAttr[1]) : null;
-              record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key',
+              record('text.col-fmt.width-attribute', 'That ampersand-bearing display name reused as a view widths key',
                      decodedName === titleFieldActualTitle ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: DID NOT ROUND-TRIP',
                      `wrote Name=${JSON.stringify(xmlAttr(titleFieldActualTitle))}; readback block `
                      + `${JSON.stringify(block ? block[0] : null)}, decoded name ${JSON.stringify(decodedName)}`);
@@ -994,18 +1026,18 @@
     digest = await getDigest();
     const created = await spPost(`${listPath}/views`, { Title: VIEW_TITLE_WITH_AMP, ViewQuery: '', RowLimit: 30 }, digest);
     if (!created.ok) {
-      record('D_VIEWTITLE', 'A view Title containing a bare ampersand',
+      record('text.view-title.metachar', 'A view Title containing a bare ampersand',
              classifyWriteFailure(created.status, created.text, '&'),
              `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
     } else {
       const reread = await spGet(
         `${listPath}/views/getbytitle('${encodeURIComponent(VIEW_TITLE_WITH_AMP)}')?$select=Title`);
       if (readFailed(reread)) {
-        record('D_VIEWTITLE', 'A view Title containing a bare ampersand', 'NOT ESTABLISHED',
+        record('text.view-title.metachar', 'A view Title containing a bare ampersand', 'NOT ESTABLISHED',
                `view created (HTTP ${created.status}) but the read-back failed (HTTP ${reread.status})`);
       } else {
         const actual = reread.body.Title;
-        record('D_VIEWTITLE', 'A view Title containing a bare ampersand',
+        record('text.view-title.metachar', 'A view Title containing a bare ampersand',
                actual === VIEW_TITLE_WITH_AMP ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: CHANGED ON READBACK',
                `declared ${JSON.stringify(VIEW_TITLE_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
       }
@@ -1015,26 +1047,26 @@
   // ---- D_VALMSG: a field ValidationMessage containing a bare ampersand ----
   {
     if (!fieldReady) {
-      record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand',
+      record('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand',
              'NOT ESTABLISHED', 'the probe field could not be created; see BOOTFIELD');
     } else {
       // =FALSE guarantees every save attempt fails validation, so the
       // eyes-on checklist's operator reliably sees the message rendered.
       const setVal = await mergeProp(fieldFmtUrl, { ValidationFormula: '=FALSE', ValidationMessage: VALMSG_WITH_AMP });
       if (!setVal.ok) {
-        record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand',
+        record('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand',
                classifyWriteFailure(setVal.status, setVal.text, '&'),
                `HTTP ${setVal.status}: ${setVal.text.slice(0, 400)}`);
       } else {
         const read = await spGet(`${fieldFmtUrl}?$select=ValidationMessage,ValidationFormula`);
         if (readFailed(read)) {
-          record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand', 'NOT ESTABLISHED',
+          record('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand', 'NOT ESTABLISHED',
                  `write returned HTTP ${setVal.status} but the read-back failed (HTTP ${read.status})`);
         } else {
           // Plain string equality (no decode), the exact comparison
           // _field_reconcile.js.j2 uses for ValidationMessage.
           const actual = read.body.ValidationMessage;
-          record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand',
+          record('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand',
                  actual === VALMSG_WITH_AMP ? 'ACCEPTED: UNCHANGED (plain compare)' : 'ACCEPTED: DRIFT (plain compare)',
                  `declared ${JSON.stringify(VALMSG_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
         }
@@ -1045,24 +1077,24 @@
   // ---- D_DESC: a column Description containing a bare ampersand -----------
   {
     if (!fieldReady) {
-      record('D_DESC', 'A column Description containing a bare ampersand',
+      record('text.col-desc.metachar', 'A column Description containing a bare ampersand',
              'NOT ESTABLISHED', 'the probe field could not be created; see BOOTFIELD');
     } else {
       const setDesc = await mergeProp(fieldFmtUrl, { Description: DESC_WITH_AMP });
       if (!setDesc.ok) {
-        record('D_DESC', 'A column Description containing a bare ampersand',
+        record('text.col-desc.metachar', 'A column Description containing a bare ampersand',
                classifyWriteFailure(setDesc.status, setDesc.text, '&'),
                `HTTP ${setDesc.status}: ${setDesc.text.slice(0, 400)}`);
       } else {
         const read = await spGet(`${fieldFmtUrl}?$select=Description`);
         if (readFailed(read)) {
-          record('D_DESC', 'A column Description containing a bare ampersand', 'NOT ESTABLISHED',
+          record('text.col-desc.metachar', 'A column Description containing a bare ampersand', 'NOT ESTABLISHED',
                  `write returned HTTP ${setDesc.status} but the read-back failed (HTTP ${read.status})`);
         } else {
           // Plain equality: normalizeDescription in _field_reconcile.js.j2
           // does not decode either.
           const actual = read.body.Description;
-          record('D_DESC', 'A column Description containing a bare ampersand',
+          record('text.col-desc.metachar', 'A column Description containing a bare ampersand',
                  actual === DESC_WITH_AMP ? 'ACCEPTED: UNCHANGED (plain compare)' : 'ACCEPTED: DRIFT (plain compare)',
                  `declared ${JSON.stringify(DESC_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
         }
@@ -1073,11 +1105,12 @@
   // ---- Report ---------------------------------------------------------
   if (controlHeld === false) {
     log('FAIL', '');
-    log('FAIL', 'REMINDER: the control (A_AMP) did not hold. Every row above is');
-    log('FAIL', 'suspect until that is understood: do not treat this run as settling #179.');
+    log('FAIL', 'REMINDER: the control (text.view-fmt.ampersand) did not hold. Every');
+    log('FAIL', 'row above is suspect until that is understood: do not treat this run');
+    log('FAIL', 'as settling #179.');
   } else if (controlHeld === null) {
-    log('INFO', 'The control (A_AMP) was never reached: the probe view could not be');
-    log('INFO', 'created (see BOOTVIEW). Nothing below is evidence of anything.');
+    log('INFO', 'The control (text.view-fmt.ampersand) was never reached: the probe');
+    log('INFO', 'view could not be created (see BOOTVIEW). Nothing below is evidence.');
   }
   report();
 

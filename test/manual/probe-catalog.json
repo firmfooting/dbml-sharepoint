@@ -1405,105 +1405,105 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "A_AMP",
+              "id": "text.view-fmt.ampersand",
               "depends_on": []
             },
             {
-              "id": "A_AMPESC",
+              "id": "text.view-fmt.ampersand-entity",
               "depends_on": []
             },
             {
-              "id": "A_APOS",
+              "id": "text.view-fmt.apos",
               "depends_on": []
             },
             {
-              "id": "A_GE",
+              "id": "text.view-fmt.gte",
               "depends_on": []
             },
             {
-              "id": "A_GT",
+              "id": "text.view-fmt.gt",
               "depends_on": []
             },
             {
-              "id": "A_LT",
+              "id": "text.view-fmt.lt",
               "depends_on": []
             },
             {
-              "id": "A_LTESC",
+              "id": "text.view-fmt.lt-entity",
               "depends_on": []
             },
             {
-              "id": "A_QUOT",
+              "id": "text.view-fmt.quot",
               "depends_on": []
             },
             {
-              "id": "B_AMP",
+              "id": "text.col-fmt.ampersand",
               "depends_on": []
             },
             {
-              "id": "B_AMPESC",
+              "id": "text.col-fmt.ampersand-entity",
               "depends_on": []
             },
             {
-              "id": "B_APOS",
+              "id": "text.col-fmt.apos",
               "depends_on": []
             },
             {
-              "id": "B_GE",
+              "id": "text.col-fmt.gte",
               "depends_on": []
             },
             {
-              "id": "B_GT",
+              "id": "text.col-fmt.gt",
               "depends_on": []
             },
             {
-              "id": "B_LT",
+              "id": "text.col-fmt.lt",
               "depends_on": []
             },
             {
-              "id": "B_LTESC",
+              "id": "text.col-fmt.lt-entity",
               "depends_on": []
             },
             {
-              "id": "B_QUOT",
+              "id": "text.col-fmt.quot",
               "depends_on": []
             },
             {
-              "id": "C_AMP",
+              "id": "text.form-fmt.ampersand",
               "depends_on": []
             },
             {
-              "id": "C_AMPESC",
+              "id": "text.form-fmt.ampersand-entity",
               "depends_on": []
             },
             {
-              "id": "C_APOS",
+              "id": "text.form-fmt.apos",
               "depends_on": []
             },
             {
-              "id": "C_GE",
+              "id": "text.form-fmt.gte",
               "depends_on": []
             },
             {
-              "id": "C_GT",
+              "id": "text.form-fmt.gt",
               "depends_on": []
             },
             {
-              "id": "C_LT",
+              "id": "text.form-fmt.lt",
               "depends_on": []
             },
             {
-              "id": "C_LTESC",
+              "id": "text.form-fmt.lt-entity",
               "depends_on": []
             },
             {
-              "id": "C_QUOT",
+              "id": "text.form-fmt.quot",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "A_AMP"
+            "text.view-fmt.ampersand"
           ],
           "depends_on": []
         },
@@ -1513,35 +1513,35 @@
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "A_COMBINED",
+              "id": "text.view-fmt.combined-markers",
               "depends_on": []
             },
             {
-              "id": "B_COMBINED",
+              "id": "text.col-fmt.combined-markers",
               "depends_on": []
             },
             {
-              "id": "C_COMBINED",
+              "id": "text.form-fmt.combined-markers",
               "depends_on": []
             },
             {
-              "id": "D_DESC",
+              "id": "text.col-desc.metachar",
               "depends_on": []
             },
             {
-              "id": "D_TITLE",
+              "id": "text.field-title.metachar",
               "depends_on": []
             },
             {
-              "id": "D_VALMSG",
+              "id": "text.valmsg.metachar",
               "depends_on": []
             },
             {
-              "id": "D_VIEWTITLE",
+              "id": "text.view-title.metachar",
               "depends_on": []
             },
             {
-              "id": "D_WIDTH",
+              "id": "text.col-fmt.width-attribute",
               "depends_on": []
             }
           ],
@@ -1611,7 +1611,7 @@
             }
           ],
           "controls": [
-            "A_AMP"
+            "text.view-fmt.ampersand"
           ],
           "depends_on": [
             "machine-findings"
@@ -1638,79 +1638,79 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "G1",
+              "id": "text.group-desc.roundtrip-create",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G10",
+              "id": "text.group-desc.autoaccept-prerequisite",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G11",
+              "id": "text.group-desc.empty",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G2",
+              "id": "text.group-desc.roundtrip-merge",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G3",
+              "id": "text.group-desc.merge-partial",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G4",
+              "id": "text.group-desc.ampersand",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G5",
+              "id": "text.group-desc.whitespace-two-spaces",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G6",
+              "id": "text.group-desc.length-ceiling",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G7",
+              "id": "text.group-desc.membership-flags-create",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G8",
+              "id": "text.group-desc.marker-shape",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "G9",
+              "id": "text.group-desc.membership-flags-merge",
               "depends_on": [
-                "N1"
+                "text.group-desc.control-baseline"
               ]
             },
             {
-              "id": "N1",
+              "id": "text.group-desc.control-baseline",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "N1"
+            "text.group-desc.control-baseline"
           ],
           "depends_on": []
         }
@@ -1797,79 +1797,79 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "L1",
+              "id": "text.list-desc.roundtrip-create",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L10",
+              "id": "text.list-desc.crlf",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L11",
+              "id": "text.list-desc.whitespace-eight-spaces",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L2",
+              "id": "text.list-desc.roundtrip-merge",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L3",
+              "id": "text.list-desc.merge-partial",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L4",
+              "id": "text.list-desc.ampersand",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L5",
+              "id": "text.list-desc.whitespace-two-spaces",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L6",
+              "id": "text.list-desc.newline",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L7",
+              "id": "text.list-desc.length-ceiling",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L8",
+              "id": "text.list-desc.empty",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "L9",
+              "id": "text.list-desc.marker-shape",
               "depends_on": [
-                "N1"
+                "text.list-desc.control-baseline"
               ]
             },
             {
-              "id": "N1",
+              "id": "text.list-desc.control-baseline",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "N1"
+            "text.list-desc.control-baseline"
           ],
           "depends_on": []
         }
@@ -2404,67 +2404,67 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "N1",
+              "id": "text.role-desc.control-baseline",
               "depends_on": []
             },
             {
-              "id": "R1",
+              "id": "text.role-desc.roundtrip-create",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R2",
+              "id": "text.role-desc.roundtrip-merge",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R3",
+              "id": "text.role-desc.merge-partial",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R4",
+              "id": "text.role-desc.length-ceiling",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R5",
+              "id": "text.role-desc.empty",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R6",
+              "id": "text.role-desc.marker-shape",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R7",
+              "id": "access.role-def.basepermissions-readback",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R8",
+              "id": "access.role-def.getbyname-absent-status",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             },
             {
-              "id": "R9",
+              "id": "access.role-def.web-assignments-enumerable",
               "depends_on": [
-                "N1"
+                "text.role-desc.control-baseline"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "N1"
+            "text.role-desc.control-baseline"
           ],
           "depends_on": []
         }
