@@ -268,16 +268,36 @@
   // overwrites. Appending as you go looks equivalent and is not: a probe
   // that aborts early then reports only what it reached, and prints
   // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
   const RESULTS = [];
   const expect = (id, question) => {
-    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
   };
-  const record = (id, question, outcome, evidence) => {
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
     const row = RESULTS.find((r) => r.id === id);
     if (row) {
-      Object.assign(row, { question, outcome, evidence });
+      Object.assign(row, next);
     } else {
-      RESULTS.push({ id, question, outcome, evidence });
+      RESULTS.push({ id, ...next });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
     log(level, `${id}: ${outcome}. ${question}`);
@@ -287,18 +307,16 @@
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
-      console.log(`${r.id.padEnd(6)} ${r.outcome.padEnd(16)} ${r.question}`);
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // Prefix matching keeps qualified unresolved outcomes from counting as answers.
-    // MANUAL and NOT REACHED stay open until a person records the observation.
-    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
-    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
-    const open = RESULTS.filter(isOpen).length;
-    const waiting = RESULTS.filter(
-      (r) => r.outcome.startsWith('MANUAL') || r.outcome.startsWith('NOT REACHED'),
-    ).length;
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation; so does void, which is open for a
+    // reason the control row names.
+    const open = RESULTS.filter((r) => r.state !== 'settled').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
     console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
     if (waiting) {
       console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
@@ -468,6 +486,7 @@
         `evidence about platform indexes here. Observed anyway, for the ` +
         `record: ` +
         describe(column).evidence,
+        'void',
       );
       continue;
     }
@@ -543,13 +562,14 @@
   const items = `web/lists/getbytitle('${odata(big.Title)}')/items`;
   // $top=1 and $select=Id: this reads AT MOST one item id per query and never
   // item content. The question is whether SharePoint answers at all.
-  const ask = async (id, question, filter) => {
+  const ask = async (id, question, filter, state) => {
     const r = await spGet(`${items}?$select=Id&$top=1&$filter=${encodeURIComponent(filter)}`);
     const body = r.body ? JSON.stringify(r.body).slice(0, 400) : '(no JSON body)';
     record(
       id, question,
       r.ok ? 'SERVED' : (isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
       `$filter=${filter} on ${big.ItemCount} items, HTTP ${r.status}: ${body}`,
+      state,
     );
     return r.ok;
   };
@@ -564,9 +584,11 @@
     log('WARN', 'The documented comparison case was refused, so the null result');
     log('WARN', 'below is NOT evidence about null tests. Report both rows together.');
   }
+  // The prose already said the null row was not evidence when the control was
+  // refused; the state says it too, so nothing downstream has to read the WARN.
   await ask(
     'NULIDX', 'Null filter on an indexed column survives the threshold',
-    `${col} eq null`);
+    `${col} eq null`, compared ? undefined : 'void');
 
   report();
   log('INFO', 'Read-only run complete. Nothing on this site was changed.');

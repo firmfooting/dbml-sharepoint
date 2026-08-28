@@ -24,6 +24,25 @@ ALL_PATTERNS = VISIBLE_PATTERNS | {
     "delayed-reconciliation",
     "helper",
 }
+#: The five states in SURFACES.md, emitted beside the prose by every registry.
+STATES = {"settled", "open", "awaiting-capture", "void", "needs-human"}
+#: Visible scenarios with no control check to name. A ratchet, like
+#: _reachability.NOT_YET_REACHED: entries come out as controls arrive, and one
+#: going in needs a reason in the pull request. The three form-visibility
+#: helpers register no checks at all, so they have no id to point at; A5 reads
+#: a site collection feature state that nothing in its probe sets up.
+VISIBLE_SCENARIOS_WITHOUT_A_CONTROL = {
+    ("enterprise-reader-probe.js", "visible-findings"),
+    ("form-visibility-evidence-probe.js", "ui-storage-sequence"),
+    ("form-visibility-interactive.js", "ui-storage-sequence"),
+    ("form-visibility-storage-probe.js", "ui-storage-sequence"),
+}
+#: Every result registry, and the table each one publishes.
+REGISTRIES = [
+    ("templates/_probe_harness.js.j2", "RESULTS"),
+    ("templates/_probe_results_v1.js.j2", "results"),
+    ("projected-lookup-probe.js", "RESULTS"),
+]
 
 
 def _catalog() -> dict[str, Any]:
@@ -59,6 +78,20 @@ def _static_finding_ids(source: str) -> set[str]:
     return ids
 
 
+def _registry_module(relative: str) -> str:
+    """A result registry as standalone JavaScript, with logging stubbed out.
+
+    The registries are fragments of an IIFE and two of the three are Jinja, so
+    the state block is sliced out rather than the file being executed whole.
+    """
+    source = (MANUAL / relative).read_text(encoding="utf-8")
+    block = re.search(
+        r"const OPEN_HEADS.*?(?=\n\s*const report = |\Z)", source, re.DOTALL
+    )
+    assert block is not None, relative
+    return f"const log = () => {{}};\n{block.group(0)}"
+
+
 def _run_javascript(source: str, expression: str) -> Any:
     node = shutil.which("node")
     assert node is not None
@@ -77,7 +110,7 @@ def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     catalogued = {descriptor["file"] for descriptor in descriptors}
     actual = {path.name for path in MANUAL.glob("*.js")}
 
-    assert catalog["schema_version"] == "1.1"
+    assert catalog["schema_version"] == "1.2"
     assert len(descriptors) == 25
     assert catalogued == actual
 
@@ -104,7 +137,7 @@ def test_probe_catalog_declares_every_static_finding_once() -> None:
     for descriptor in _catalog()["probes"]:
         source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
         declared = [
-            finding
+            finding["id"]
             for scenario in descriptor["scenarios"]
             for finding in scenario["findings"]
         ]
@@ -112,23 +145,128 @@ def test_probe_catalog_declares_every_static_finding_once() -> None:
         assert set(declared) == _static_finding_ids(source), descriptor["file"]
 
 
+def test_control_and_dependency_references_name_checks_the_probe_registers() -> None:
+    """A control is a check id, so a control that is not a check is a typo.
+
+    Prose could not be wrong in this way and could not be followed either. The
+    reference is the point of the id.
+    """
+    for descriptor in _catalog()["probes"]:
+        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        registered = _static_finding_ids(source)
+        for scenario in descriptor["scenarios"]:
+            where = f"{descriptor['file']}:{scenario['id']}"
+            controls = scenario["controls"]
+            assert len(controls) == len(set(controls)), where
+            for control in controls:
+                assert control in registered, f"{where} names control {control!r}"
+            for finding in scenario["findings"]:
+                depends_on = finding["depends_on"]
+                assert len(depends_on) == len(set(depends_on)), f"{where}:{finding['id']}"
+                for control in depends_on:
+                    assert control != finding["id"], f"{where}:{finding['id']} on itself"
+                    assert control in registered, (
+                        f"{where}:{finding['id']} depends on {control!r}"
+                    )
+
+
 def test_visible_scenarios_declare_typed_capture_states_and_controls() -> None:
+    without_a_control = set()
     for descriptor in _catalog()["probes"]:
         for scenario in descriptor["scenarios"]:
             assert scenario["pattern"] in ALL_PATTERNS
             states = scenario["states"]
-            if scenario["pattern"] in VISIBLE_PATTERNS:
-                assert states, f"{descriptor['file']}:{scenario['id']}"
-                roles = [state["role"] for state in states]
-                assert len(roles) == len(set(roles))
-                for state in states:
-                    assert state["page"]
-                    assert state["assertions"]
-                assert scenario["controls"], (
-                    f"{descriptor['file']}:{scenario['id']} has no control"
-                )
-            else:
+            if scenario["pattern"] not in VISIBLE_PATTERNS:
                 assert states == []
+                continue
+            assert states, f"{descriptor['file']}:{scenario['id']}"
+            roles = [state["role"] for state in states]
+            assert len(roles) == len(set(roles))
+            for state in states:
+                assert state["page"]
+                assert state["assertions"]
+            if not scenario["controls"]:
+                without_a_control.add((descriptor["file"], scenario["id"]))
+
+    assert without_a_control == VISIBLE_SCENARIOS_WITHOUT_A_CONTROL
+
+
+def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
+    """The case SURFACES.md names: a failed control voids its dependants.
+
+    NATID reading false means a property read cannot answer for any column, so
+    the four system-column rows are not open questions, and NULIDX is not a
+    null-test result when the comparison control was refused.
+    """
+    descriptor = next(
+        probe for probe in _catalog()["probes"]
+        if probe["file"] == "native-index-probe.js"
+    )
+    depends_on = {
+        finding["id"]: finding["depends_on"]
+        for scenario in descriptor["scenarios"]
+        for finding in scenario["findings"]
+    }
+    source = (MANUAL / "native-index-probe.js").read_text(encoding="utf-8")
+
+    assert depends_on == {
+        "CMPIDX": [],
+        "NATID": [],
+        "NATAUT": ["NATID"],
+        "NATCRE": ["NATID"],
+        "NATEDI": ["NATID"],
+        "NATMOD": ["NATID"],
+        "NULIDX": ["CMPIDX"],
+    }
+    assert set(next(
+        scenario["controls"] for scenario in descriptor["scenarios"]
+    )) == {"NATID", "CMPIDX"}
+    assert source.count("'void'") == 2
+
+
+def test_every_registry_emits_a_state_from_the_shared_vocabulary() -> None:
+    heads = [
+        "NOT ESTABLISHED",
+        "SHORT: 3 of 12 disjuncts",
+        "MANUAL",
+        "NOT REACHED",
+        "PASS",
+        "FAIL",
+        "VOID",
+    ]
+    for relative, _ in REGISTRIES:
+        module = f"{_registry_module(relative)}\nconst heads = {json.dumps(heads)};"
+
+        classified = _run_javascript(module, "heads.map(stateFor)")
+
+        # VOID classifying as settled is why record() takes an explicit state:
+        # a probe that voids a row passes it rather than spelling it in prose.
+        assert classified == [
+            "open",
+            "open",
+            "awaiting-capture",
+            "awaiting-capture",
+            "settled",
+            "settled",
+            "settled",
+        ], relative
+        assert set(classified) <= STATES
+
+
+def test_every_registry_seeds_open_and_lets_a_probe_override_the_state() -> None:
+    for relative, table in REGISTRIES:
+        module = (
+            f"{_registry_module(relative)}\n"
+            "expect('A', 'never reached');\n"
+            # Empty evidence: two of the three registries echo it to stdout,
+            # which would land in the JSON this reads back.
+            "record('B', 'voided', 'NOT ESTABLISHED', '', 'void');\n"
+            "record('C', 'answered', 'PASS', '');\n"
+        )
+
+        rows = _run_javascript(module, f"{table}.map((r) => [r.id, r.state])")
+
+        assert rows == [["A", "open"], ["B", "void"], ["C", "settled"]], relative
 
 
 def test_probe_catalog_makes_side_effects_and_cleanup_explicit() -> None:
@@ -472,7 +610,7 @@ def test_form_visibility_q6_recheck_and_catalogue_define_complete_visible_eviden
         scenario for scenario in descriptor["scenarios"]
         if scenario["id"] == "visible-findings"
     )
-    assert visible["findings"] == ["Q6"]
+    assert visible["findings"] == [{"id": "Q6", "depends_on": []}]
     assert [state["role"] for state in visible["states"]] == [
         "panel-before",
         "panel-action",
