@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report suspected vulnerabilities privately via
-[GitHub security advisories](https://github.com/shauneccles/dbml-sharepoint/security/advisories/new)
+[GitHub security advisories](https://github.com/firmfooting/dbml-sharepoint/security/advisories/new)
 rather than opening a public issue. You should get an initial response
 within a week.
 

@@ -149,7 +149,7 @@ is: HTTP 500, *"One or more column references are not allowed, because the
 columns are defined as a data type that is not supported in formulas."* This
 is a finding this repository verified rather than assumed, in keeping with [this
 project's rule against asserting SharePoint behaviour from
-plausibility](https://github.com/shauneccles/dbml-sharepoint/blob/main/AGENTS.md#the-one-rule-that-matters-most).
+plausibility](https://github.com/firmfooting/dbml-sharepoint/blob/main/AGENTS.md#the-one-rule-that-matters-most).
 
 `[Today]`, `[Me]` and any other bracketed token that is not a declared
 column name fail for a related but distinct reason: they are not row
@@ -188,7 +188,7 @@ Support page that states the same-site restriction as its own subject,
 rather than as a side effect of a template- or workflow-scoped article,
 did not turn one up. Rather than publish it with a citation that does not
 really support it, it stays where it already lives, and
-[issue #184](https://github.com/shauneccles/dbml-sharepoint/issues/184)
+[issue #184](https://github.com/firmfooting/dbml-sharepoint/issues/184)
 tracks sourcing it properly, by a probe if Microsoft documentation never
 states it directly.
 
