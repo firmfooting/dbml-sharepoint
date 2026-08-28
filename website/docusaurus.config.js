@@ -9,9 +9,9 @@ const config = {
   title: 'dbml-sharepoint',
   tagline:
     'DBML + YAML in, fail-closed browser-console SharePoint deployment out',
-  url: 'https://shauneccles.github.io',
+  url: 'https://firmfooting.github.io',
   baseUrl: '/dbml-sharepoint/',
-  organizationName: 'shauneccles',
+  organizationName: 'firmfooting',
   projectName: 'dbml-sharepoint',
   onBrokenLinks: 'throw',
 
