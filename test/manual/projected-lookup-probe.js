@@ -26,6 +26,25 @@
  *   DEPLINK  the primary lists it in DependentLookupInternalNames
  *   DEPPOP   setting RelatedRisk to an OPEN risk fills the dependent Title
  *   DEPLIVE  for a CLOSED risk (LiveTitle blank) the dependent still shows Title
+ *
+ * RUN 1, 2026-08-28, revision d583e170, sandbox Team Site, through the test
+ * agent's autonomous lane, with CLEANUP so DEPCR re-ran the create. Seven
+ * questions answered. Two facts fell out:
+ *
+ *   createfieldasxml honours FieldRef. A fresh dependent field was ACCEPTED
+ *   (HTTP 200) and read back IsDependentLookup=true, PrimaryFieldId set,
+ *   LookupField=Title, ReadOnlyField=true, and listed in the primary's
+ *   DependentLookupInternalNames. The open question is answered yes.
+ *
+ *   The projected TEXT is not REST-readable. $select=RelatedRiskTitle returns
+ *   HTTP 400 "The field or property 'RelatedRiskTitle' does not exist";
+ *   $select=RelatedRiskTitleId returns the projected Id; $select=RelatedRisk/
+ *   Title is also rejected. So the dependent field's Id auto-populates and is
+ *   the only part readable at the item level; the projected Title is
+ *   materialised when a view renders it, never on the item. Verification must
+ *   therefore check the field schema and the projected Id, never the projected
+ *   text. verifyDependentField in _field_reconcile.js.j2 already reads the
+ *   schema, which this run confirms is the right (and only) check.
  */
 
 (async () => {
