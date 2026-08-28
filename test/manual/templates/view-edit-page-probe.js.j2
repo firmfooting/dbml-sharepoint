@@ -21,8 +21,9 @@
  *      behind Eq(alpha) the left side already restricts to R1, so a group that
  *      wrongly excluded R2 or R3 returns the same single row and S1 still
  *      reports INERT. The partition is only visible when the group is asked ON
- *      ITS OWN. caml-chain-depth-probe.js T1 has exactly the same blind spot,
- *      for the same reason.
+ *      ITS OWN. `query.caml.tautology-conjunct-inert` on
+ *      caml-chain-depth-probe.js has exactly the same blind spot, for the
+ *      same reason.
  *   Q1 reads the stored ViewQuery back. A view found by title is not proof it
  *      holds the tree that was sent, and SharePoint rewriting a filter on save
  *      is the behaviour this whole line of work is about.
@@ -40,7 +41,8 @@
  * conditions rewrites it to ten on save, silently and permanently. The shape
  * was measured on 2026-08-17 by caml-chain-depth-probe.js: a group in the
  * RIGHT child position is refused, and the tautology Or[IsNotNull(ID),
- * IsNull(ID)] both changes no rows (T1) and triggers the refusal (T2).
+ * IsNull(ID)] both changes no rows (`query.caml.tautology-conjunct-inert`)
+ * and triggers the refusal (`view.filter-editor.tautology-guard-editable`).
  *
  * The problem is that nothing can confirm it took. R1 measured
  * SP.View.ReadOnlyView reading false on an editable view and on a refused one
@@ -299,7 +301,9 @@
   // The exact construct #267 emits. Every item has an ID, so the two halves
   // partition the rows and the conjunct changes nothing; it is a group, so on
   // the right it triggers the refusal. Both halves were measured by
-  // caml-chain-depth-probe.js T1 and T2, and S1 re-measures the first here.
+  // caml-chain-depth-probe.js (`query.caml.tautology-conjunct-inert` and
+  // `view.filter-editor.tautology-guard-editable`), and S1 re-measures the
+  // first here.
   const TAUTOLOGY = '<Or><IsNotNull><FieldRef Name="ID"/></IsNotNull>'
     + '<IsNull><FieldRef Name="ID"/></IsNull></Or>';
   const PLAIN_WHERE = eq('alpha');

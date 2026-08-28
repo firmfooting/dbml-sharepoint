@@ -31,6 +31,90 @@
  * trees, chains over several columns, or any other field type. A result here
  * is evidence about Or over MultiChoice and nothing else.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the runs recorded below quote the mnemonics, and the
+ * fixture views are still titled `Shape E1` and so on for the same reason: a
+ * view title names a fixture, not a question.
+ *
+ * Most of these ask which ROWS a predicate selects, which is `query`. Sixteen
+ * of the forty-six ask about the SP.View object, its filter editor or its
+ * rendered page, which is `view`, and they file there under the keying rule:
+ * a check is keyed to the surface of its own question, not to the surface of
+ * its probe.
+ *
+ *   query.caml.fixture-one-row-per-member    (Q0)  did the 48-member column
+ *                                                  and one row per member
+ *                                                  actually build?
+ *   query.caml-adhoc.or-chain-01 .. -40      (D01..D40) ad-hoc CamlQuery: an
+ *                                                  Or chain of K disjuncts
+ *                                                  returns all K rows
+ *   query.view-query.or-chain-01 .. -40      (V01..V40) the same chain stored
+ *                                                  as a ViewQuery, replayed
+ *                                                  from the XML kept
+ *   query.caml-adhoc.control-padding-chain-shallow
+ *                                            (N1)  a shallow chain of padding
+ *                                                  only returns nothing
+ *   query.caml-adhoc.control-padding-chain-deepest
+ *                                            (N2)  the deepest chain of
+ *                                                  padding returns nothing
+ *   query.caml.tautology-always-true         (T3)  does Or[IsNotNull(ID),
+ *                                                  IsNull(ID)] alone return
+ *                                                  every row?
+ *   query.caml.tautology-conjunct-inert      (T1)  is it inert as a
+ *                                                  right-hand conjunct?
+ *   query.view-query.guarded-tree-stored     (T4)  did the guarded tree
+ *                                                  survive being stored?
+ *   query.caml.wrapper-group-left-inert      (W1)  And[Or[chain12],
+ *                                                  IsNotNull(ID)]: same rows?
+ *   query.caml.wrapper-group-right-inert     (W3)  the same two predicates
+ *                                                  swapped: same rows?
+ *
+ *   view.filter-editor.or-chain-editable     (E1)  a flat Or chain of 12
+ *   view.filter-editor.and-chain-editable    (E2)  a flat And chain of 12
+ *   view.filter-editor.mixed-group-right-editable
+ *                                            (E3)  And[Eq, Or[Eq,Eq]]
+ *   view.filter-editor.or-chain-with-isnull-editable
+ *                                            (E4)  Or[chain11, IsNull]
+ *   view.filter-editor.mixed-group-left-editable
+ *                                            (P1)  Or[And[Eq,Eq], Eq]
+ *   view.filter-editor.smallest-mixed-tree-editable
+ *                                            (P2)  E3's shape over 2 members
+ *   view.filter-editor.wrapper-group-left-editable
+ *                                            (W2)  the shape W1 measured
+ *   view.filter-editor.wrapper-group-right-editable
+ *                                            (W4)  the shape W3 measured
+ *   view.filter-editor.tautology-guard-editable
+ *                                            (T2)  one Eq guarded by the
+ *                                                  tautology group
+ *   view.filter-editor.readonlyview-reports-refusal
+ *                                            (R1)  does ReadOnlyView report
+ *                                                  the refusal state?
+ *   view.filter-editor.readonlyview-settable (R2)  can it be SET over REST?
+ *   view.filter-editor.readonlyview-editable (R3)  if it stuck, does the
+ *                                                  editor still open?
+ *   view.filter-editor.edit-page-fetchable   (G1)  can ViewEdit.aspx be
+ *                                                  fetched from a console?
+ *   view.filter-editor.edit-page-discriminates
+ *                                            (G2)  does that page differ
+ *                                                  between the two states?
+ *   view.filter-editor.ui-chain-40           (U2)  does the editor show all
+ *                                                  forty, and does re-saving
+ *                                                  truncate them?
+ *   view.view-page.chain-40-rows-listed      (U1)  does the RENDERED view
+ *                                                  page list all forty rows?
+ *
+ * THE TEN EDITOR-SHAPE CHECKS ALL END `-editable`, including the six answered
+ * "refused". That is the question each one asks, and an id that recorded the
+ * answer would have to be rewritten the first time a tenant disagreed.
+ *
+ * W1 and W3 stay on `query` while W2 and W4 move to `view`, because W1 and W3
+ * compare row counts from an ad-hoc CamlQuery and never open an editor. G1 and
+ * G2 move to `view` for the mirror reason: they fetch ViewEdit.aspx and return
+ * no rows at all. U1 files under `view-page` rather than `filter-editor`
+ * because it reads the rendered list page, which is a different surface from
+ * the settings page U2 saves from.
+ *
  * WHY A SEPARATE PROBE, and not more rows on multi-value-probe.js: that
  * probe's fixture IS its experiment. Its five-member enum and four rows are
  * what C1 through C14 mean, and widening the enum would change what every one
@@ -481,7 +565,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 62746bbf. Quote this when reporting results.');
+  log('INFO', 'probe revision 2bb8c4bc. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this
@@ -534,52 +618,52 @@
 
   const DEPTHS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 40];
 
-  expect('Q0', 'the fixture actually built: a 48-member MultiChoice and four rows with the sets asked for');
-  expect('D01', 'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns all 1 rows, one per disjunct (CONTROL: no chain at all)');
-  expect('D02', 'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns all 2 rows, one per disjunct');
-  expect('D03', 'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns all 3 rows, one per disjunct');
-  expect('D04', 'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns all 4 rows, one per disjunct');
-  expect('D06', 'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns all 6 rows, one per disjunct');
-  expect('D08', 'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns all 8 rows, one per disjunct');
-  expect('D12', 'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns all 12 rows, one per disjunct');
-  expect('D16', 'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns all 16 rows, one per disjunct');
-  expect('D24', 'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns all 24 rows, one per disjunct');
-  expect('D32', 'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns all 32 rows, one per disjunct');
-  expect('D40', 'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns all 40 rows, one per disjunct');
-  expect('V01', 'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to all 1 rows');
-  expect('V02', 'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to all 2 rows');
-  expect('V03', 'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to all 3 rows');
-  expect('V04', 'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to all 4 rows');
-  expect('V06', 'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to all 6 rows');
-  expect('V08', 'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to all 8 rows');
-  expect('V12', 'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to all 12 rows');
-  expect('V16', 'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to all 16 rows');
-  expect('V24', 'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to all 24 rows');
-  expect('V32', 'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to all 32 rows');
-  expect('V40', 'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to all 40 rows');
-  expect('N1', 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
-  expect('N2', 'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
-  expect('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)');
-  expect('U2', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)');
-  expect('E1', 'EDITABILITY: a flat Or chain of 12, the shape that truncates (manual: look)');
-  expect('E2', 'EDITABILITY: a flat And chain of 12, homogeneous like E1 (manual: look)');
-  expect('E3', 'EDITABILITY: And[Eq, Or[Eq,Eq]], a MIXED tree with no IsNull (manual: look)');
-  expect('E4', 'EDITABILITY: a flat Or chain of 12 carrying one IsNull (manual: look)');
-  expect('P1', 'EDITABILITY: Or[And[Eq,Eq], Eq], the MIRROR of E3 (manual: look)');
-  expect('P2', 'EDITABILITY: the SMALLEST mixed tree, over 2 members (manual: look)');
-  expect('R1', 'does SP.View.ReadOnlyView report the complex-filter state?');
-  expect('R2', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?');
-  expect('R3', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)');
-  expect('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?');
-  expect('W2', 'is that wrapped view refused by the editor? (manual: look)');
-  expect('W3', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?');
-  expect('W4', 'is the FLIPPED wrapper refused by the editor? (manual: look)');
-  expect('G1', 'can the view-edit page be fetched at all from a console?');
-  expect('G2', 'does that page differ between an editable and a refused view?');
-  expect('T3', 'CONTROL: does the tautology ALONE return every row?');
-  expect('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?');
-  expect('T2', 'does that tautology group protect a SINGLE-clause filter? (manual: look)');
-  expect('T4', 'did the guarded tree survive being STORED, before anyone looks at it?');
+  expect('query.caml.fixture-one-row-per-member', 'the fixture actually built: a 48-member MultiChoice and four rows with the sets asked for');
+  expect('query.caml-adhoc.or-chain-01', 'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns all 1 rows, one per disjunct (CONTROL: no chain at all)');
+  expect('query.caml-adhoc.or-chain-02', 'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns all 2 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-03', 'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns all 3 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-04', 'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns all 4 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-06', 'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns all 6 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-08', 'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns all 8 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-12', 'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns all 12 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-16', 'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns all 16 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-24', 'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns all 24 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-32', 'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns all 32 rows, one per disjunct');
+  expect('query.caml-adhoc.or-chain-40', 'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns all 40 rows, one per disjunct');
+  expect('query.view-query.or-chain-01', 'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to all 1 rows');
+  expect('query.view-query.or-chain-02', 'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to all 2 rows');
+  expect('query.view-query.or-chain-03', 'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to all 3 rows');
+  expect('query.view-query.or-chain-04', 'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to all 4 rows');
+  expect('query.view-query.or-chain-06', 'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to all 6 rows');
+  expect('query.view-query.or-chain-08', 'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to all 8 rows');
+  expect('query.view-query.or-chain-12', 'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to all 12 rows');
+  expect('query.view-query.or-chain-16', 'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to all 16 rows');
+  expect('query.view-query.or-chain-24', 'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to all 24 rows');
+  expect('query.view-query.or-chain-32', 'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to all 32 rows');
+  expect('query.view-query.or-chain-40', 'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to all 40 rows');
+  expect('query.caml-adhoc.control-padding-chain-shallow', 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
+  expect('query.caml-adhoc.control-padding-chain-deepest', 'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
+  expect('view.view-page.chain-40-rows-listed', 'RENDERED view at the deepest chain lists the control rows (manual: look)');
+  expect('view.filter-editor.ui-chain-40', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)');
+  expect('view.filter-editor.or-chain-editable', 'EDITABILITY: a flat Or chain of 12, the shape that truncates (manual: look)');
+  expect('view.filter-editor.and-chain-editable', 'EDITABILITY: a flat And chain of 12, homogeneous like E1 (manual: look)');
+  expect('view.filter-editor.mixed-group-right-editable', 'EDITABILITY: And[Eq, Or[Eq,Eq]], a MIXED tree with no IsNull (manual: look)');
+  expect('view.filter-editor.or-chain-with-isnull-editable', 'EDITABILITY: a flat Or chain of 12 carrying one IsNull (manual: look)');
+  expect('view.filter-editor.mixed-group-left-editable', 'EDITABILITY: Or[And[Eq,Eq], Eq], the MIRROR of E3 (manual: look)');
+  expect('view.filter-editor.smallest-mixed-tree-editable', 'EDITABILITY: the SMALLEST mixed tree, over 2 members (manual: look)');
+  expect('view.filter-editor.readonlyview-reports-refusal', 'does SP.View.ReadOnlyView report the complex-filter state?');
+  expect('view.filter-editor.readonlyview-settable', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?');
+  expect('view.filter-editor.readonlyview-editable', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)');
+  expect('query.caml.wrapper-group-left-inert', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?');
+  expect('view.filter-editor.wrapper-group-left-editable', 'is that wrapped view refused by the editor? (manual: look)');
+  expect('query.caml.wrapper-group-right-inert', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?');
+  expect('view.filter-editor.wrapper-group-right-editable', 'is the FLIPPED wrapper refused by the editor? (manual: look)');
+  expect('view.filter-editor.edit-page-fetchable', 'can the view-edit page be fetched at all from a console?');
+  expect('view.filter-editor.edit-page-discriminates', 'does that page differ between an editable and a refused view?');
+  expect('query.caml.tautology-always-true', 'CONTROL: does the tautology ALONE return every row?');
+  expect('query.caml.tautology-conjunct-inert', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?');
+  expect('view.filter-editor.tautology-guard-editable', 'does that tautology group protect a SINGLE-clause filter? (manual: look)');
+  expect('query.view-query.guarded-tree-stored', 'did the guarded tree survive being STORED, before anyone looks at it?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -675,7 +759,7 @@
     Title: LIST, BaseTemplate: 100, AllowContentTypes: false, ContentTypesEnabled: false,
   }, digest);
   if (!made.ok) {
-    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+    record('query.caml.fixture-one-row-per-member', 'the fixture actually built', 'NOT ESTABLISHED',
       `the list could not be created: HTTP ${made.status} ${made.text.slice(0, 200)}. `
       + 'Nothing was created, so there is nothing to clean up.');
     report();
@@ -697,7 +781,7 @@
     FillInChoice: false,
   }, digest, VERBOSE);
   if (!field.ok) {
-    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+    record('query.caml.fixture-one-row-per-member', 'the fixture actually built', 'NOT ESTABLISHED',
       `the MultiChoice column could not be created: HTTP ${field.status} ${field.text.slice(0, 200)}. `
       + 'This is the exact create shape of multi-value-probe.js '
       + 'field.multichoice.create-plain-post (M1), which that probe measured as accepted on '
@@ -762,7 +846,7 @@
     && JSON.stringify(seenTitles) === JSON.stringify(wanted)
     && mismatched.length === 0
     && paddingSeen.length === 0;
-  record('Q0', 'the fixture actually built', fixtureOk ? 'BUILT' : 'NOT ESTABLISHED',
+  record('query.caml.fixture-one-row-per-member', 'the fixture actually built', fixtureOk ? 'BUILT' : 'NOT ESTABLISHED',
     `write shape=${writeShape || 'none accepted'}; rows=${seenRows.length}/${ROWS.length}; `
     + `mismatched=${JSON.stringify(mismatched)}; padding members found on a row=${JSON.stringify(paddingSeen)}; `
     + `seed errors=${JSON.stringify(seedErrors)}. Every depth below is judged against `
@@ -811,7 +895,7 @@
   const adHoc = async (k) => {
     if (!fixtureOk) {
       return { outcome: 'NOT ESTABLISHED',
-        evidence: 'Q0 did not build, so the rows this would be judged against are not the fixture. Fix and re-run.' };
+        evidence: 'query.caml.fixture-one-row-per-member did not build, so the rows this would be judged against are not the fixture. Fix and re-run.' };
     }
     const where = chainOf(k);
     const got = await camlRows(where);
@@ -840,7 +924,7 @@
   // only come from a difference in the XML.
   const stored = async (k) => {
     if (!fixtureOk) {
-      return { outcome: 'NOT ESTABLISHED', evidence: 'Q0 did not build; see that row.' };
+      return { outcome: 'NOT ESTABLISHED', evidence: 'query.caml.fixture-one-row-per-member did not build; see that row.' };
     }
     const where = chainOf(k);
     const title = `Chain ${String(k).padStart(2, '0')}`;
@@ -896,140 +980,140 @@
 
   {
     const r = await adHoc(1);
-    record('D01',
+    record('query.caml-adhoc.or-chain-01',
       'ad-hoc CamlQuery: an Or chain of 1 disjunct(s) returns all 1 rows, one per disjunct (CONTROL)',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(2);
-    record('D02',
+    record('query.caml-adhoc.or-chain-02',
       'ad-hoc CamlQuery: an Or chain of 2 disjunct(s) returns all 2 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(3);
-    record('D03',
+    record('query.caml-adhoc.or-chain-03',
       'ad-hoc CamlQuery: an Or chain of 3 disjunct(s) returns all 3 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(4);
-    record('D04',
+    record('query.caml-adhoc.or-chain-04',
       'ad-hoc CamlQuery: an Or chain of 4 disjunct(s) returns all 4 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(6);
-    record('D06',
+    record('query.caml-adhoc.or-chain-06',
       'ad-hoc CamlQuery: an Or chain of 6 disjunct(s) returns all 6 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(8);
-    record('D08',
+    record('query.caml-adhoc.or-chain-08',
       'ad-hoc CamlQuery: an Or chain of 8 disjunct(s) returns all 8 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(12);
-    record('D12',
+    record('query.caml-adhoc.or-chain-12',
       'ad-hoc CamlQuery: an Or chain of 12 disjunct(s) returns all 12 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(16);
-    record('D16',
+    record('query.caml-adhoc.or-chain-16',
       'ad-hoc CamlQuery: an Or chain of 16 disjunct(s) returns all 16 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(24);
-    record('D24',
+    record('query.caml-adhoc.or-chain-24',
       'ad-hoc CamlQuery: an Or chain of 24 disjunct(s) returns all 24 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(32);
-    record('D32',
+    record('query.caml-adhoc.or-chain-32',
       'ad-hoc CamlQuery: an Or chain of 32 disjunct(s) returns all 32 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await adHoc(40);
-    record('D40',
+    record('query.caml-adhoc.or-chain-40',
       'ad-hoc CamlQuery: an Or chain of 40 disjunct(s) returns all 40 rows, one per disjunct',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(1);
-    record('V01',
+    record('query.view-query.or-chain-01',
       'stored ViewQuery: an Or chain of 1 disjunct(s) survives being saved and replays to all 1 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(2);
-    record('V02',
+    record('query.view-query.or-chain-02',
       'stored ViewQuery: an Or chain of 2 disjunct(s) survives being saved and replays to all 2 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(3);
-    record('V03',
+    record('query.view-query.or-chain-03',
       'stored ViewQuery: an Or chain of 3 disjunct(s) survives being saved and replays to all 3 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(4);
-    record('V04',
+    record('query.view-query.or-chain-04',
       'stored ViewQuery: an Or chain of 4 disjunct(s) survives being saved and replays to all 4 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(6);
-    record('V06',
+    record('query.view-query.or-chain-06',
       'stored ViewQuery: an Or chain of 6 disjunct(s) survives being saved and replays to all 6 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(8);
-    record('V08',
+    record('query.view-query.or-chain-08',
       'stored ViewQuery: an Or chain of 8 disjunct(s) survives being saved and replays to all 8 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(12);
-    record('V12',
+    record('query.view-query.or-chain-12',
       'stored ViewQuery: an Or chain of 12 disjunct(s) survives being saved and replays to all 12 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(16);
-    record('V16',
+    record('query.view-query.or-chain-16',
       'stored ViewQuery: an Or chain of 16 disjunct(s) survives being saved and replays to all 16 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(24);
-    record('V24',
+    record('query.view-query.or-chain-24',
       'stored ViewQuery: an Or chain of 24 disjunct(s) survives being saved and replays to all 24 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(32);
-    record('V32',
+    record('query.view-query.or-chain-32',
       'stored ViewQuery: an Or chain of 32 disjunct(s) survives being saved and replays to all 32 rows',
       r.outcome, r.evidence);
   }
   {
     const r = await stored(40);
-    record('V40',
+    record('query.view-query.or-chain-40',
       'stored ViewQuery: an Or chain of 40 disjunct(s) survives being saved and replays to all 40 rows',
       r.outcome, r.evidence);
   }
 
   // ---- Negative controls -------------------------------------------------
   const negative = async (id, k, question) => {
-    if (!fixtureOk) { record(id, question, 'NOT ESTABLISHED', 'Q0 did not build; see that row.'); return; }
+    if (!fixtureOk) { record(id, question, 'NOT ESTABLISHED', 'query.caml.fixture-one-row-per-member did not build; see that row.'); return; }
     const got = await camlRows(paddingChainOf(k));
     if (!got.ok) { record(id, question, 'NOT ESTABLISHED', `${k} disjunct(s): ${got.error}`); return; }
     const empty = got.titles.length === 0;
@@ -1042,8 +1126,8 @@
         : '. A chain of members NO row holds returned rows, so every positive row above is void: they are '
           + 'consistent with a query that matches everything.'));
   };
-  await negative('N1', 2, 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
-  await negative('N2', DEPTHS[DEPTHS.length - 1],
+  await negative('query.caml-adhoc.control-padding-chain-shallow', 2, 'NEGATIVE CONTROL: a shallow chain of padding only returns NOTHING');
+  await negative('query.caml-adhoc.control-padding-chain-deepest', DEPTHS[DEPTHS.length - 1],
     'NEGATIVE CONTROL: the deepest chain of padding only returns NOTHING');
 
   log('INFO', `write shape=${writeShape}, CamlQuery payload shape=${queryShape}. Both were asked, not assumed.`);
@@ -1070,19 +1154,27 @@
   // that deliberately makes a view uneditable is trading an operator's
   // ability to adjust a filter for protection against silent truncation, and
   // that trade should be made against an observation rather than a guess.
+  // The SHAPE token is the view title, and it stays a mnemonic on purpose. It
+  // names a fixture rather than a question, the runs recorded above quote
+  // 'Shape E1' and 'Shape W4', and a SharePoint view title built out of a
+  // dotted check id would be both long and awkward in the URL it derives.
   const shaped = [
-    ['E1', 'flat Or chain of 12, the shape that truncates', chainOf(12)],
-    ['E2', 'flat And chain of 12, homogeneous like E1',
+    ['view.filter-editor.or-chain-editable', 'E1',
+      'flat Or chain of 12, the shape that truncates', chainOf(12)],
+    ['view.filter-editor.and-chain-editable', 'E2',
+      'flat And chain of 12, homogeneous like E1',
       DISCRIMINATORS.slice(1, 13).reduce(
         (acc, m) => `<And>${acc}<Neq>${ref}<Value Type="Text">${m}</Value></Neq></And>`,
         eq(DISCRIMINATORS[0]))],
-    ['E3', 'And[Eq, Or[Eq,Eq]], MIXED with no IsNull',
+    ['view.filter-editor.mixed-group-right-editable', 'E3',
+      'And[Eq, Or[Eq,Eq]], MIXED with no IsNull',
       `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[1])}${eq(DISCRIMINATORS[2])}</Or></And>`],
-    ['E4', 'flat Or chain of 12 carrying one IsNull',
+    ['view.filter-editor.or-chain-with-isnull-editable', 'E4',
+      'flat Or chain of 12 carrying one IsNull',
       `<Or>${chainOf(11)}<IsNull>${ref}</IsNull></Or>`],
   ];
-  for (const [id, label, where] of shaped) {
-    const title = `Shape ${id}`;
+  for (const [id, shape, label, where] of shaped) {
+    const title = `Shape ${shape}`;
     const d = await getDigest();
     const v = await spPost(`${listPath}/views`, {
       Title: title, ViewQuery: `<Where>${where}</Where>`, RowLimit: 100,
@@ -1121,7 +1213,7 @@
   const viewFlags = await spGet(`${listPath}/views?$select=Title,ReadOnlyView`);
   const flagOf = (title) => ((!readFailed(viewFlags) && viewFlags.body.value) || [])
     .find((v) => v.Title === title)?.ReadOnlyView;
-  record('R1', 'does SP.View.ReadOnlyView report the complex-filter state?',
+  record('view.filter-editor.readonlyview-reports-refusal', 'does SP.View.ReadOnlyView report the complex-filter state?',
     readFailed(viewFlags) ? 'NOT ESTABLISHED' : 'READ',
     readFailed(viewFlags)
       ? `the views could not be read with ReadOnlyView selected: HTTP ${viewFlags.status}. That is itself `
@@ -1146,7 +1238,7 @@
     ? await spGet(`${listPath}/views/getbytitle('${roTitle}')?$select=ReadOnlyView`)
     : null;
   const roStuck = !!roBack && !readFailed(roBack) && roBack.body.ReadOnlyView === true;
-  record('R2', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?',
+  record('view.filter-editor.readonlyview-settable', 'can ReadOnlyView be SET over REST, despite CSOM exposing it get-only?',
     !roMade.ok
       ? 'NOT ESTABLISHED'
       : (roSet.ok ? (roStuck ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK') : 'REFUSED'),
@@ -1156,13 +1248,14 @@
         + `readback ReadOnlyView=${readFailed(roBack) ? 'UNREADABLE' : roBack.body.ReadOnlyView}. `
         + 'REFUSED is a clean answer and closes this avenue. ACCEPTED AND STUCK is the prize. ACCEPTED BUT '
         + 'DID NOT STICK is the dangerous one: a build could then call a view protected on a 204 alone.');
-  record('R3', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)',
+  record('view.filter-editor.readonlyview-editable', 'if ReadOnlyView stuck, does the UI refuse to edit that view? (manual: look)',
     roStuck ? 'MANUAL' : 'NOT REACHED',
     roStuck
       ? `ReadOnlyView stuck on '${roTitle}'. Open it and its view settings and report whether the filter `
         + 'pane appears. A property that reads back true while the pane still edits is worse than nothing, '
         + 'because it looks like protection.'
-      : 'ReadOnlyView did not stick, so there is nothing to look at. R2 carries the answer.');
+      : 'ReadOnlyView did not stick, so there is nothing to look at. '
+      + 'view.filter-editor.readonlyview-settable carries the answer.');
 
   // === P1, P2, W1, W2: pinning the trigger, and manufacturing it =========
   // P1 mirrors E3. If Or[And[..],..] is ALSO refused then the trigger is any
@@ -1187,7 +1280,7 @@
   const flipped = `<And><IsNotNull><FieldRef Name="ID"/></IsNotNull>${chainOf(12)}</And>`;
   const wRows = await camlRows(wrapped);
   const wSame = wRows.ok && same(wRows.titles, expectedFor(12));
-  record('W1', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?',
+  record('query.caml.wrapper-group-left-inert', 'a manufactured wrapper: does And[Or[chain12], IsNotNull(ID)] return the SAME rows?',
     !wRows.ok ? 'QUERY REFUSED' : (wSame ? 'SAME ROWS' : 'DIFFERENT ROWS'),
     !wRows.ok
       ? `${wRows.error}`
@@ -1199,13 +1292,15 @@
 
   const fRows = await camlRows(flipped);
   const fSame = fRows.ok && same(fRows.titles, expectedFor(12));
-  record('W3', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?',
+  record('query.caml.wrapper-group-right-inert', 'the wrapper FLIPPED, And[IsNotNull(ID), Or[chain12]]: same rows?',
     !fRows.ok ? 'QUERY REFUSED' : (fSame ? 'SAME ROWS' : 'DIFFERENT ROWS'),
     !fRows.ok
       ? `${fRows.error}`
       : `${fRows.titles.length} row(s) against 12. `
         + (fSame
-          ? 'Semantically identical to W1, so if W4 is refused where W2 was not, POSITION is the trigger and '
+          ? 'Semantically identical to query.caml.wrapper-group-left-inert, so if '
+          + 'view.filter-editor.wrapper-group-right-editable is refused where '
+          + 'view.filter-editor.wrapper-group-left-editable was not, POSITION is the trigger and '
           + 'the tool can protect a filter by emitting the group on the right.'
           : `Got ${JSON.stringify(fRows.titles)}, so flipping changed the meaning and this is not a free swap.`));
 
@@ -1232,54 +1327,64 @@
   const allRows = await camlRows(tautology);
   const everyTitle = ROWS.map((r) => r.title).sort();
   const partitions = allRows.ok && same(allRows.titles, everyTitle);
-  record('T3', 'CONTROL: does the tautology ALONE return every row?',
+  record('query.caml.tautology-always-true', 'CONTROL: does the tautology ALONE return every row?',
     !allRows.ok ? 'NOT ESTABLISHED' : (partitions ? 'PARTITIONS' : 'DOES NOT PARTITION'),
     !allRows.ok
       ? `${allRows.error}`
       : `${allRows.titles.length} of ${everyTitle.length} row(s). `
         + (partitions
           ? 'IsNotNull(ID) and IsNull(ID) cover every row including R00, so conjoining the group cannot '
-            + 'remove one. This is the claim #267 rests on, and T1 is structurally unable to make it.'
+            + 'remove one. This is the claim #267 rests on, and query.caml.tautology-conjunct-inert is '
+            + 'structurally unable to make it.'
           : `Missing ${JSON.stringify(everyTitle.filter((x) => !allRows.titles.includes(x)))}. The group `
             + 'does NOT cover every row, so conjoining it would silently drop rows from any filter it is '
-            + 'added to, and #267 must not emit it. T1 can still read INERT here, which is why this row '
+            + 'added to, and #267 must not emit it. query.caml.tautology-conjunct-inert can still read INERT '
+            + 'here, which is why this row '
             + 'exists.'));
 
   const tRows = await camlRows(guarded);
   const tSame = tRows.ok && same(tRows.titles, expectedFor(1));
-  record('T1', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?',
+  record('query.caml.tautology-conjunct-inert', 'is Or[IsNotNull(ID), IsNull(ID)] inert as a right-hand conjunct?',
     !tRows.ok ? 'QUERY REFUSED' : (tSame ? 'INERT' : 'NOT INERT'),
     !tRows.ok
       ? `${tRows.error}`
       : `${tRows.titles.length} row(s) against the 1 a bare Eq returns: ${JSON.stringify(tRows.titles)}. `
         + (tSame
           ? 'The tautology changes nothing HERE, which is weaker than it reads: the left Eq already '
-            + 'restricts to R01, so this row cannot see a group that wrongly excluded any other row. T3 '
-            + 'is the row that can. Whether it PROTECTS is T2.'
+            + 'restricts to R01, so this row cannot see a group that wrongly excluded any other row. '
+            + 'query.caml.tautology-always-true is the row that can. Whether it PROTECTS is '
+            + 'view.filter-editor.tautology-guard-editable.'
           : 'It changed the result even against the one row the Eq admits, so it must not be emitted.'));
 
   const shapedMore = [
-    ['P1', 'Or[And[Eq,Eq], Eq], the MIRROR of E3',
+    ['view.filter-editor.mixed-group-left-editable', 'P1',
+      'Or[And[Eq,Eq], Eq], the MIRROR of E3',
       `<Or><And>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</And>${eq(DISCRIMINATORS[2])}</Or>`],
-    ['P2', 'the SMALLEST mixed tree, over 2 members',
+    ['view.filter-editor.smallest-mixed-tree-editable', 'P2',
+      'the SMALLEST mixed tree, over 2 members',
       `<And>${eq(DISCRIMINATORS[0])}<Or>${eq(DISCRIMINATORS[0])}${eq(DISCRIMINATORS[1])}</Or></And>`],
-    ['W2', 'the manufactured wrapper from W1, group on the LEFT', wrapped],
-    ['W4', 'the wrapper FLIPPED, group on the RIGHT', flipped],
+    ['view.filter-editor.wrapper-group-left-editable', 'W2',
+      'the manufactured wrapper from query.caml.wrapper-group-left-inert, group on the LEFT',
+      wrapped],
+    ['view.filter-editor.wrapper-group-right-editable', 'W4',
+      'the wrapper FLIPPED, group on the RIGHT', flipped],
   ];
   // T2 is only worth looking at if T1 measured the group INERT. A view
   // built on a group that changes the rows would answer a different
   // question and read as a success.
   if (tSame) {
     shapedMore.push(
-      ['T2', 'a SINGLE clause guarded by a tautology group on the right', guarded]);
+      ['view.filter-editor.tautology-guard-editable', 'T2',
+        'a SINGLE clause guarded by a tautology group on the right', guarded]);
   } else {
-    record('T2', 'does that tautology group protect a SINGLE-clause filter? (manual: look)',
+    record('view.filter-editor.tautology-guard-editable', 'does that tautology group protect a SINGLE-clause filter? (manual: look)',
       'NOT ESTABLISHED',
-      'T1 did not measure the tautology inert, so there is nothing to look at: a view built on a '
+      'query.caml.tautology-conjunct-inert did not measure the tautology inert, so there is nothing '
+      + 'to look at: a view built on a '
       + 'group that changes the rows would be reporting on a different filter.');
   }
-  for (const [id, label, where] of shapedMore) {
-    const title = `Shape ${id}`;
+  for (const [id, shape, label, where] of shapedMore) {
+    const title = `Shape ${shape}`;
     const d = await getDigest();
     const v = await spPost(`${listPath}/views`, {
       Title: title, ViewQuery: `<Where>${where}</Where>`, RowLimit: 100,
@@ -1334,14 +1439,14 @@
   const pageA = listGuid && editableId ? await fetchEditPage(editableId) : null;
   const pageB = listGuid && refusedId ? await fetchEditPage(refusedId) : null;
 
-  record('G1', 'can the view-edit page be fetched at all from a console?',
+  record('view.filter-editor.edit-page-fetchable', 'can the view-edit page be fetched at all from a console?',
     !listGuid || !editableId ? 'NOT ESTABLISHED' : (pageA.ok ? 'FETCHED' : 'REFUSED'),
     !listGuid || !editableId
       ? `list id=${listGuid}, 'Shape E1' view id=${editableId}. Without both there is no page to ask for.`
       : `HTTP ${pageA.status}, ${pageA.length} chars${pageA.redirected ? `, REDIRECTED to ${pageA.finalUrl}` : ''}`
         + `${pageA.error ? `, threw ${pageA.error}` : ''}. A redirect to a login or to the modern settings `
         + 'surface means the classic page is not what an authenticated fetch gets, and this avenue closes '
-        + 'here rather than at G2.');
+        + 'here rather than at view.filter-editor.edit-page-discriminates.');
 
   // Candidates only. Each is REPORTED for both pages, never asserted, and the
   // English display strings are included precisely so the transcript records
@@ -1356,7 +1461,7 @@
   const bothFetched = !!pageA?.ok && !!pageB?.ok;
   const differs = bothFetched
     && (pageA.length !== pageB.length || markerReport(pageA) !== markerReport(pageB));
-  record('G2', 'does that page differ between an editable and a refused view?',
+  record('view.filter-editor.edit-page-discriminates', 'does that page differ between an editable and a refused view?',
     !bothFetched ? 'NOT ESTABLISHED' : (differs ? 'DIFFERS' : 'INDISTINGUISHABLE'),
     !bothFetched
       ? `editable page ok=${!!pageA?.ok}, refused page ok=${!!pageB?.ok}. Both are needed to compare.`
@@ -1383,15 +1488,17 @@
   const storedT2 = storedFor('Shape T2');
   const t2Held = storedT2 !== null
     && normalise(storedT2) === normalise(`<Where>${guarded}</Where>`);
-  record('T4', 'did the guarded tree survive being STORED, before anyone looks at it?',
+  record('query.view-query.guarded-tree-stored', 'did the guarded tree survive being STORED, before anyone looks at it?',
     storedT2 === null ? 'NOT ESTABLISHED' : (t2Held ? 'SURVIVED' : 'REWRITTEN'),
     storedT2 === null
       ? 'the Shape T2 view could not be read back, so nobody knows which tree the manual look is about.'
       : `stored: ${storedT2}. `
         + (t2Held
-          ? 'Matches what was sent, ignoring whitespace, so T2 is a verdict on the tree #267 emits.'
-          : 'SharePoint stored something OTHER than what was sent, so T2 would be a verdict on a tree '
-            + 'nobody chose. Report this before T2.'));
+          ? 'Matches what was sent, ignoring whitespace, so '
+            + 'view.filter-editor.tautology-guard-editable is a verdict on the tree #267 emits.'
+          : 'SharePoint stored something OTHER than what was sent, so '
+            + 'view.filter-editor.tautology-guard-editable would be a verdict on a tree nobody chose. '
+            + 'Report this before that row.'));
 
   // === U1 and U2: the third surface ======================================
   // Run 1 measured two surfaces and both agreed to 40. An operator then
@@ -1417,7 +1524,7 @@
   const viewMeta = await spGet(`${listPath}/views?$select=Title,ServerRelativeUrl`);
   const deepestUrl = ((!readFailed(viewMeta) && viewMeta.body.value) || [])
     .find((v) => v.Title === deepestView)?.ServerRelativeUrl || null;
-  record('U1', 'RENDERED view at the deepest chain lists the control rows (manual: look)',
+  record('view.view-page.chain-40-rows-listed', 'RENDERED view at the deepest chain lists the control rows (manual: look)',
     deepestUrl ? 'MANUAL' : 'NOT ESTABLISHED',
     deepestUrl
       ? `OPEN ${window.location.origin}${deepestUrl} and report which rows it LISTS. `
@@ -1426,7 +1533,7 @@
         + 'Anything else means the page disagrees with the stored query, and the grammar must bound the '
         + 'chain however well GetItems behaved.'
       : `the view '${deepestView}' could not be found, so there is nothing to open.`);
-  record('U2', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)',
+  record('view.filter-editor.ui-chain-40', 'the UI filter editor shows every condition, and re-saving does not truncate (manual: look)',
     deepestUrl ? 'MANUAL' : 'NOT ESTABLISHED',
     deepestUrl
       ? `On that same view, open the filter editor and COUNT the conditions it shows against the `
@@ -1440,7 +1547,7 @@
   // nothing to look at once the list is gone. Earlier revisions recycled on a
   // clean run, which would have destroyed the evidence for the one surface
   // this probe cannot reach on its own.
-  log('INFO', `KEEPING '${LIST}' so U1 and U2 can be looked at.`);
+  log('INFO', `KEEPING '${LIST}' so the two rendered-page rows can be looked at.`);
   if (anyDisagreement) {
     log('INFO', 'At least one depth disagreed as well, so this run is worth opening either way.');
   }
