@@ -449,7 +449,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 6059d82f. Quote this when reporting results.');
+  log('INFO', 'probe revision 94eb0c81. Quote this when reporting results.');
 
   // Set to the list named at the end of a previous run to drain and remove it.
   // The probe leaves its list behind so P1 and P2 can be looked at, and a
