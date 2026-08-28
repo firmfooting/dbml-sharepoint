@@ -1411,7 +1411,8 @@ looks unassigned. A role definition is site-scoped, and this tool assigns
 levels at LIST scope, through
 `web/lists/getbytitle(...)/roleassignments/addroleassignment`. The probe
 that measured role-definition usage
-(`test/manual/role-definition-probe.js`, question R9) measured WEB scope
+(`test/manual/role-definition-probe.js`, question
+`access.role-def.web-assignments-enumerable`) measured WEB scope
 only, so a usage count built from it cannot see the list-scope assignments
 that matter here. A gate keyed on that count would clear itself for exactly
 the case it exists to catch: a level already assigned across lists this

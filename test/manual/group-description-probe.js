@@ -99,6 +99,43 @@
  * settled questions costs nothing and would catch a tenant-specific
  * answer, which two runs against ONE site cannot rule out.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the runs recorded above quote the mnemonics.
+ *
+ *   text.group-desc.control-baseline        (N1)  does reading a group that
+ *                                                 is not there actually fail?
+ *   text.group-desc.roundtrip-create        (G1)  byte-identical from CREATE
+ *   text.group-desc.roundtrip-merge         (G2)  byte-identical from MERGE
+ *   text.group-desc.merge-partial           (G3)  does a MERGE that omits
+ *                                                 Description preserve it?
+ *   text.group-desc.ampersand               (G4)  does '&' survive?
+ *   text.group-desc.whitespace-two-spaces   (G5)  do two spaces survive?
+ *   text.group-desc.length-ceiling          (G6)  what comes back at 1000+?
+ *   text.group-desc.membership-flags-create (G7)  do the four membership
+ *                                                 flags read back as written
+ *                                                 at CREATE?
+ *   text.group-desc.marker-shape            (G8)  does a provenance marker
+ *                                                 of the shape lists use
+ *                                                 survive?
+ *   text.group-desc.membership-flags-merge  (G9)  the same three independent
+ *                                                 flags through MERGE
+ *   text.group-desc.autoaccept-prerequisite (G10) is AutoAccept refused only
+ *                                                 when its prerequisite is
+ *                                                 off, or always?
+ *   text.group-desc.empty                   (G11) is an empty one accepted?
+ *
+ * The question names are shared with `list-description-probe.js` and
+ * `role-definition-probe.js` on purpose, and the SCOPE is what keeps the
+ * three batteries apart: a result about a group description is not evidence
+ * about a list description, and nothing in the id should imply that it is.
+ *
+ * The membership-flag and AutoAccept questions ride along on this probe
+ * because the group it creates is already there to be written to, not
+ * because they are text questions. They stay under `text.group-desc` for
+ * now rather than moving to the `access` surface, because re-keying them
+ * is a separate decision from re-spelling them.
+ *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER.
  *   2. Open a browser console on any page of that site.
@@ -328,7 +365,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision c9bef58d. Quote this when reporting results.');
+  log('INFO', 'probe revision 10f52e87. Quote this when reporting results.');
 
   // RUN-UNIQUE, and that is a safety property rather than tidiness.
   //
@@ -355,18 +392,18 @@
   const SPACES = 'dbmlsp probe two  spaces';
   const LONG = `dbmlsp probe long ${'x'.repeat(1000)}`;
 
-  expect('N1', 'CONTROL: does reading a group that does not exist actually fail?');
-  expect('G1', 'Does a plain Description written at CREATE read back byte-identical?');
-  expect('G2', 'Does a Description written by MERGE read back byte-identical?');
-  expect('G3', 'Does a MERGE that OMITS Description preserve the previous one?');
-  expect('G4', 'Does an ampersand survive the round trip?');
-  expect('G5', 'Does a run of two spaces survive the round trip?');
-  expect('G6', 'What length comes back when 1000+ characters go out?');
-  expect('G7', 'Do the four membership flags read back as written at CREATE?');
-  expect('G8', 'Does a provenance marker of the shape lists use survive?');
-  expect('G9', 'Do the three independent membership flags read back as written by MERGE?');
-  expect('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?');
-  expect('G11', 'Is an EMPTY description accepted?');
+  expect('text.group-desc.control-baseline', 'CONTROL: does reading a group that does not exist actually fail?');
+  expect('text.group-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?');
+  expect('text.group-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?');
+  expect('text.group-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?');
+  expect('text.group-desc.ampersand', 'Does an ampersand survive the round trip?');
+  expect('text.group-desc.whitespace-two-spaces', 'Does a run of two spaces survive the round trip?');
+  expect('text.group-desc.length-ceiling', 'What length comes back when 1000+ characters go out?');
+  expect('text.group-desc.membership-flags-create', 'Do the four membership flags read back as written at CREATE?');
+  expect('text.group-desc.marker-shape', 'Does a provenance marker of the shape lists use survive?');
+  expect('text.group-desc.membership-flags-merge', 'Do the three independent membership flags read back as written by MERGE?');
+  expect('text.group-desc.autoaccept-prerequisite', 'Is AutoAccept refused only when its prerequisite is off, or always?');
+  expect('text.group-desc.empty', 'Is an EMPTY description accepted?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN: nothing has been touched.');
@@ -401,7 +438,7 @@
   // this probe did not create and it stops rather than touching it.
   const absent = await readGroup();
   if (absent.ok) {
-    record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+    record('text.group-desc.control-baseline', 'CONTROL: does reading a group that does not exist actually fail?',
       'NOT ESTABLISHED (name already taken)',
       `'${GROUP}' already exists on this site. Nothing was written or deleted. Re-run to get a different name, or delete that group by hand if a previous run left it.`);
     report();
@@ -412,13 +449,13 @@
   // would otherwise certify the prerequisite that gives every comparison
   // below its meaning. A throttled request must not stand in for absence.
   if (absent.status !== 404) {
-    record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+    record('text.group-desc.control-baseline', 'CONTROL: does reading a group that does not exist actually fail?',
       `NOT ESTABLISHED (HTTP ${absent.status})`,
       'the control needs a clean 404 for a name that is not there; this status does not establish absence, so nothing below would mean anything');
     report();
     return;
   }
-  record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+  record('text.group-desc.control-baseline', 'CONTROL: does reading a group that does not exist actually fail?',
     'PASS',
     'HTTP 404 for a group that is not there, so a successful read below means something');
 
@@ -442,11 +479,11 @@
 
   const afterCreate = await readGroup();
   if (readFailed(afterCreate)) {
-    record('G1', 'Does a plain Description written at CREATE read back byte-identical?',
+    record('text.group-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?',
       `NOT ESTABLISHED (HTTP ${afterCreate.status})`, 'the group was created but could not be read back');
   } else {
     const got = afterCreate.body.Description;
-    record('G1', 'Does a plain Description written at CREATE read back byte-identical?',
+    record('text.group-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?',
       got === PLAIN ? 'PASS' : 'FAIL',
       `sent ${JSON.stringify(PLAIN)}, read ${JSON.stringify(got)}`);
   }
@@ -461,7 +498,7 @@
       OnlyAllowMembersViewMembership: true,
     };
     const wrong = Object.keys(wanted).filter((k) => g[k] !== wanted[k]);
-    record('G7', 'Do the four membership flags read back as written at CREATE?',
+    record('text.group-desc.membership-flags-create', 'Do the four membership flags read back as written at CREATE?',
       wrong.length === 0 ? 'PASS' : 'FAIL',
       wrong.length === 0
         ? 'all four match what was sent'
@@ -497,7 +534,7 @@
   };
 
   // ---- G2: a description written by the reconcile path ------------------
-  await mergeAndRead('G2', 'Does a Description written by MERGE read back byte-identical?',
+  await mergeAndRead('text.group-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?',
     { Description: MERGED }, MERGED);
 
   // ---- G3: is MERGE partial, or does omitting a field clear it? ---------
@@ -517,17 +554,17 @@
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!partial.ok) {
-    record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+    record('text.group-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
       `NOT ESTABLISHED (HTTP ${partial.status})`, partial.text.slice(0, 200));
   } else {
     const back = await readGroup();
     if (readFailed(back)) {
-      record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      record('text.group-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
         `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the group back');
     } else {
       const got = back.body.Description;
       const landed = back.body.AllowRequestToJoinLeave === true;
-      record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      record('text.group-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
         !landed
           ? 'NOT ESTABLISHED (the MERGE changed nothing)'
           : (got === MERGED ? 'PASS' : 'FAIL'),
@@ -540,20 +577,20 @@
   }
 
   // ---- G4/G5: characters the LIST surface refuses -----------------------
-  await mergeAndRead('G4', 'Does an ampersand survive the round trip?',
+  await mergeAndRead('text.group-desc.ampersand', 'Does an ampersand survive the round trip?',
     { Description: AMPERSAND }, AMPERSAND);
-  await mergeAndRead('G5', 'Does a run of two spaces survive the round trip?',
+  await mergeAndRead('text.group-desc.whitespace-two-spaces', 'Does a run of two spaces survive the round trip?',
     { Description: SPACES }, SPACES);
 
   // ---- G6: length, OBSERVED rather than asserted ------------------------
-  await mergeAndRead('G6', 'What length comes back when 1000+ characters go out?',
+  await mergeAndRead('text.group-desc.length-ceiling', 'What length comes back when 1000+ characters go out?',
     { Description: LONG }, LONG,
     (got) => (got === LONG
       ? 'PASS'
       : (typeof got === 'string' ? `OBSERVED (came back ${got.length} of ${LONG.length})` : 'FAIL')));
 
   // ---- G8: the marker shape #211 would use ------------------------------
-  await mergeAndRead('G8', 'Does a provenance marker of the shape lists use survive?',
+  await mergeAndRead('text.group-desc.marker-shape', 'Does a provenance marker of the shape lists use survive?',
     { Description: MARKER }, MARKER);
 
   // ---- G9: the flags through the RECONCILE path -------------------------
@@ -581,13 +618,13 @@
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!flipRes.ok) {
-    record('G9', 'Do the three independent membership flags read back as written by MERGE?',
+    record('text.group-desc.membership-flags-merge', 'Do the three independent membership flags read back as written by MERGE?',
       isRefusal(flipRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${flipRes.status})`,
       `the MERGE came back HTTP ${flipRes.status}: ${flipRes.text.slice(0, 200)}`);
   } else {
     const back9 = await readGroup();
     if (readFailed(back9)) {
-      record('G9', 'Do the three independent membership flags read back as written by MERGE?',
+      record('text.group-desc.membership-flags-merge', 'Do the three independent membership flags read back as written by MERGE?',
         `NOT ESTABLISHED (HTTP ${back9.status})`, 'the MERGE succeeded but the group could not be read back');
     } else {
       // AutoAccept is EXCLUDED from the comparison, and that is a finding
@@ -602,7 +639,7 @@
       delete independent.AutoAcceptRequestToJoinLeave;
       const wrong9 = Object.keys(independent).filter((k) => back9.body[k] !== independent[k]);
       const coerced = back9.body.AutoAcceptRequestToJoinLeave === false;
-      record('G9', 'Do the three independent membership flags read back as written by MERGE?',
+      record('text.group-desc.membership-flags-merge', 'Do the three independent membership flags read back as written by MERGE?',
         wrong9.length === 0 ? 'PASS' : 'FAIL',
         wrong9.length === 0
           ? `all three took, so the reconcile path persists flags${coerced ? '; AutoAccept read false as G10 predicts, its prerequisite being off' : '; NOTE AutoAccept did NOT coerce this time, which contradicts G10. Report it'}`
@@ -638,17 +675,17 @@
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!cohRes.ok) {
-    record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+    record('text.group-desc.autoaccept-prerequisite', 'Is AutoAccept refused only when its prerequisite is off, or always?',
       isRefusal(cohRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${cohRes.status})`,
       `the MERGE came back HTTP ${cohRes.status}: ${cohRes.text.slice(0, 200)}`);
   } else {
     const back10 = await readGroup();
     if (readFailed(back10)) {
-      record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+      record('text.group-desc.autoaccept-prerequisite', 'Is AutoAccept refused only when its prerequisite is off, or always?',
         `NOT ESTABLISHED (HTTP ${back10.status})`, 'could not read the group back');
     } else {
       const took = back10.body.AutoAcceptRequestToJoinLeave === true;
-      record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+      record('text.group-desc.autoaccept-prerequisite', 'Is AutoAccept refused only when its prerequisite is off, or always?',
         took ? 'PASS' : 'FAIL',
         took
           ? 'with AllowRequestToJoinLeave TRUE the flag took, so G9 saw a dependent setting being coerced, not a lost write'
@@ -670,12 +707,12 @@
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!emptyRes.ok) {
-    record('G11', 'Is an EMPTY description accepted?',
+    record('text.group-desc.empty', 'Is an EMPTY description accepted?',
       isRefusal(emptyRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${emptyRes.status})`,
       `HTTP ${emptyRes.status}: ${emptyRes.text.slice(0, 200)}`);
   } else {
     const back11 = await readGroup();
-    record('G11', 'Is an EMPTY description accepted?',
+    record('text.group-desc.empty', 'Is an EMPTY description accepted?',
       readFailed(back11) ? `NOT ESTABLISHED (HTTP ${back11.status})` : 'PASS',
       readFailed(back11)
         ? 'the MERGE succeeded but the group could not be read back'

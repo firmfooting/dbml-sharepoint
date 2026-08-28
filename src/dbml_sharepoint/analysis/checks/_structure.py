@@ -181,8 +181,9 @@ def _note_whitespace_is_measured(
     Collapsing is one behaviour rather than a per-length one: a normaliser
     that shortens a run shortens the shortest run there is, and two came back
     uncollapsed. A different CHARACTER is a different question, which is why
-    tabs and non-breaking spaces stay refused. L11 in the probe sends a longer
-    run so the next run settles it by observation instead.
+    tabs and non-breaking spaces stay refused.
+    ``text.list-desc.whitespace-eight-spaces`` in the probe sends a longer run
+    so the next run settles it by observation instead.
     """
     if table is None:
         return []

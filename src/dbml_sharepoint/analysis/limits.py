@@ -146,7 +146,8 @@ MAX_GROUP_DESCRIPTION = 512
 #:
 #: MEASURED 2026-08-14 by test/manual/role-definition-probe.js, run 1
 #: (revision 709c2549) and confirmed in run 2 (revision 4dd7de1c) against a
-#: live tenant. R4 sent 1018 characters and got HTTP 500:
+#: live tenant. `text.role-desc.length-ceiling` (R4 in those runs) sent 1018
+#: characters and got HTTP 500:
 #:
 #:     "The parameter Description cannot be bigger than 512 characters."
 #:

@@ -19,8 +19,33 @@
  * permission and no list it did not create. If the name is already taken it
  * stops without writing or deleting.
  *
- * L7 REPORTS A LOWER BOUND, not the absence of a limit. It sends one length
- * and does not search for a ceiling.
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the runs recorded below quote the mnemonics.
+ *
+ *   text.list-desc.control-baseline        (N1)  does reading a list that is
+ *                                                not there actually fail?
+ *   text.list-desc.roundtrip-create        (L1)  byte-identical from CREATE
+ *   text.list-desc.roundtrip-merge         (L2)  byte-identical from MERGE
+ *   text.list-desc.merge-partial           (L3)  does a MERGE that omits
+ *                                                Description preserve it?
+ *   text.list-desc.ampersand               (L4)  does '&' survive?
+ *   text.list-desc.whitespace-two-spaces   (L5)  do two spaces survive?
+ *   text.list-desc.newline                 (L6)  does an LF survive?
+ *   text.list-desc.length-ceiling          (L7)  what comes back at 1000+?
+ *   text.list-desc.empty                   (L8)  is an empty one accepted?
+ *   text.list-desc.marker-shape            (L9)  does the composed
+ *                                                note-plus-marker survive?
+ *   text.list-desc.crlf                    (L10) does a CRLF survive?
+ *   text.list-desc.whitespace-eight-spaces (L11) do eight spaces survive?
+ *
+ * The question names are shared with `group-description-probe.js` and
+ * `role-definition-probe.js` on purpose, and the SCOPE is what keeps the three
+ * batteries apart: a result about a list description is not evidence about a
+ * group description, and nothing in the id should imply that it is.
+ *
+ * length-ceiling REPORTS A LOWER BOUND here, not the absence of a limit. It
+ * sends one length and does not search for a ceiling.
  *
  * RUN 1, 2026-08-14, revision 25d4b223, one Microsoft 365 group-connected
  * Team Site. Ten questions, ten answered, all PASS.
@@ -276,7 +301,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 7a865ec8. Quote this when reporting results.');
+  log('INFO', 'probe revision 813bb434. Quote this when reporting results.');
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
@@ -299,18 +324,18 @@
   // The shape the tool writes: a note, then MARKER_TEMPLATE from list_description.py.
   const COMPOSED = 'Risks and issues for the service. Provisioned by dbml-sharepoint from probe/Risk.';
 
-  expect('N1', 'CONTROL: does reading a list that does not exist actually fail?');
-  expect('L1', 'Does a plain Description read back byte-identical from CREATE?');
-  expect('L2', 'Does a Description written by MERGE read back byte-identical?');
-  expect('L3', 'Does a MERGE that OMITS Description preserve the previous one?');
-  expect('L4', 'Does an ampersand survive, or come back as &amp;?');
-  expect('L5', 'Does a run of two spaces survive, or get collapsed?');
-  expect('L6', 'Does a line break survive, or get rewritten?');
-  expect('L7', 'What comes back when 1000+ characters go out?');
-  expect('L8', 'Is an EMPTY description accepted?');
-  expect('L9', 'Does the composed note-plus-marker shape survive intact?');
-  expect('L10', 'Does a CRLF survive, given a bare LF does?');
-  expect('L11', 'Does a LONGER run of spaces survive, given two do?');
+  expect('text.list-desc.control-baseline', 'CONTROL: does reading a list that does not exist actually fail?');
+  expect('text.list-desc.roundtrip-create', 'Does a plain Description read back byte-identical from CREATE?');
+  expect('text.list-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?');
+  expect('text.list-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?');
+  expect('text.list-desc.ampersand', 'Does an ampersand survive, or come back as &amp;?');
+  expect('text.list-desc.whitespace-two-spaces', 'Does a run of two spaces survive, or get collapsed?');
+  expect('text.list-desc.newline', 'Does a line break survive, or get rewritten?');
+  expect('text.list-desc.length-ceiling', 'What comes back when 1000+ characters go out?');
+  expect('text.list-desc.empty', 'Is an EMPTY description accepted?');
+  expect('text.list-desc.marker-shape', 'Does the composed note-plus-marker shape survive intact?');
+  expect('text.list-desc.crlf', 'Does a CRLF survive, given a bare LF does?');
+  expect('text.list-desc.whitespace-eight-spaces', 'Does a LONGER run of spaces survive, given two do?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -341,20 +366,20 @@
   // ---- N1: negative control and existence check in one read -------------
   const absent = await readList();
   if (absent.ok) {
-    record('N1', 'CONTROL: does reading a list that does not exist actually fail?',
+    record('text.list-desc.control-baseline', 'CONTROL: does reading a list that does not exist actually fail?',
       'NOT ESTABLISHED (name already taken)',
       `'${LIST}' already exists. Nothing was written or deleted. Re-run for a different name.`);
     report();
     return;
   }
   if (absent.status !== 404) {
-    record('N1', 'CONTROL: does reading a list that does not exist actually fail?',
+    record('text.list-desc.control-baseline', 'CONTROL: does reading a list that does not exist actually fail?',
       `NOT ESTABLISHED (HTTP ${absent.status})`,
       'the control needs a clean 404; 401/403 are about who is asking and 408/429 about the moment, and none of them establish absence');
     report();
     return;
   }
-  record('N1', 'CONTROL: does reading a list that does not exist actually fail?',
+  record('text.list-desc.control-baseline', 'CONTROL: does reading a list that does not exist actually fail?',
     'PASS', 'HTTP 404 for a list that is not there, so a successful read below means something');
 
   // ---- L1: create ------------------------------------------------------
@@ -373,11 +398,11 @@
   }
   const afterCreate = await readList();
   if (readFailed(afterCreate)) {
-    record('L1', 'Does a plain Description read back byte-identical from CREATE?',
+    record('text.list-desc.roundtrip-create', 'Does a plain Description read back byte-identical from CREATE?',
       `NOT ESTABLISHED (HTTP ${afterCreate.status})`, 'created but could not be read back');
   } else {
     const got = afterCreate.body.Description;
-    record('L1', 'Does a plain Description read back byte-identical from CREATE?',
+    record('text.list-desc.roundtrip-create', 'Does a plain Description read back byte-identical from CREATE?',
       got === PLAIN ? 'PASS' : 'FAIL',
       `sent ${JSON.stringify(PLAIN)}, read ${JSON.stringify(got)}`);
   }
@@ -404,7 +429,7 @@
   };
 
   const l2Read = await mergeAndRead(
-    'L2', 'Does a Description written by MERGE read back byte-identical?', MERGED);
+    'text.list-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?', MERGED);
 
   // ---- L3: partial MERGE ------------------------------------------------
   // L3 asks whether an omitted Description is preserved, and compares against
@@ -412,7 +437,7 @@
   // throttled L2 leaves PLAIN there, and L3 would then report FAIL for a
   // setup that never happened.
   if (l2Read !== MERGED) {
-    record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+    record('text.list-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
       'NOT ESTABLISHED (L2 did not set up the value)',
       `this question compares against ${JSON.stringify(MERGED)}, which L2 was supposed to leave in place. L2 read ${JSON.stringify(l2Read)} instead, so a comparison here would report on the setup rather than on SharePoint.`);
   } else {
@@ -426,18 +451,18 @@
       { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
     );
     if (!partial.ok) {
-      record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      record('text.list-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
         `NOT ESTABLISHED (HTTP ${partial.status})`, partial.text.slice(0, 220));
     } else {
       // getbytitle follows the NEW title once the rename lands.
       const back = await spGet(`web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`);
       if (readFailed(back)) {
-        record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        record('text.list-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
           `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the list back after the rename');
       } else {
         const landed = back.body.Title === RENAMED;
         const got = back.body.Description;
-        record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        record('text.list-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
           !landed ? 'NOT ESTABLISHED (the MERGE changed nothing)'
             : (got === MERGED ? 'PASS' : 'FAIL'),
           !landed
@@ -471,31 +496,31 @@
 
   // ---- L4/L5/L6: the three the build refuses today ----------------------
   // Each reports the returned value, so a transformation is visible rather than only a failure.
-  await mergeAndRead('L4', 'Does an ampersand survive, or come back as &amp;?', AMPERSAND,
+  await mergeAndRead('text.list-desc.ampersand', 'Does an ampersand survive, or come back as &amp;?', AMPERSAND,
     (got) => (got === AMPERSAND ? 'PASS'
       : (typeof got === 'string' && got.includes('&amp;') ? 'FAIL (escaped to &amp;)' : 'FAIL')));
-  await mergeAndRead('L5', 'Does a run of two spaces survive, or get collapsed?', SPACES,
+  await mergeAndRead('text.list-desc.whitespace-two-spaces', 'Does a run of two spaces survive, or get collapsed?', SPACES,
     (got) => (got === SPACES ? 'PASS'
       : (typeof got === 'string' && got.includes(' two spaces') ? 'FAIL (run collapsed)' : 'FAIL')));
-  await mergeAndRead('L6', 'Does a line break survive, or get rewritten?', NEWLINE,
+  await mergeAndRead('text.list-desc.newline', 'Does a line break survive, or get rewritten?', NEWLINE,
     (got) => (got === NEWLINE ? 'PASS'
       : (typeof got === 'string' && got.includes('\r\n') ? 'FAIL (rewritten to CRLF)' : 'FAIL')));
 
   // ---- L7: length, OBSERVED ---------------------------------------------
   // Says "lower bound" in the outcome, because a bare PASS here reads as "no limit".
-  await mergeAndRead('L7', 'What comes back when 1000+ characters go out?', LONG,
+  await mergeAndRead('text.list-desc.length-ceiling', 'What comes back when 1000+ characters go out?', LONG,
     (got) => (got === LONG
       ? `PASS (lower bound only: ${LONG.length} accepted, no ceiling searched for)`
       : (typeof got === 'string' ? `OBSERVED (came back ${got.length} of ${LONG.length})` : 'FAIL')));
 
   // ---- L8/L9 -------------------------------------------------------------
-  await mergeAndRead('L8', 'Is an EMPTY description accepted?', '',
+  await mergeAndRead('text.list-desc.empty', 'Is an EMPTY description accepted?', '',
     (got) => (got === '' ? 'PASS' : `FAIL (read ${JSON.stringify(got)})`));
-  await mergeAndRead('L9', 'Does the composed note-plus-marker shape survive intact?', COMPOSED);
+  await mergeAndRead('text.list-desc.marker-shape', 'Does the composed note-plus-marker shape survive intact?', COMPOSED);
 
   // ---- L10: the one byte run 1 never sent -------------------------------
   // Reports which half survived, so a stripped CR is distinguishable from a failure.
-  await mergeAndRead('L10', 'Does a CRLF survive, given a bare LF does?', CRLF_TEXT,
+  await mergeAndRead('text.list-desc.crlf', 'Does a CRLF survive, given a bare LF does?', CRLF_TEXT,
     (got) => {
       if (got === CRLF_TEXT) return 'PASS';
       if (typeof got !== 'string') return 'FAIL';
@@ -504,7 +529,7 @@
       return 'FAIL';
     });
 
-  await mergeAndRead('L11', 'Does a LONGER run of spaces survive, given two do?',
+  await mergeAndRead('text.list-desc.whitespace-eight-spaces', 'Does a LONGER run of spaces survive, given two do?',
     LONG_SPACES,
     (got) => (got === LONG_SPACES ? 'PASS'
       : (typeof got === 'string' && got.includes('eight spaces')
