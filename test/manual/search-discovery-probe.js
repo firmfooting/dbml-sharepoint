@@ -729,6 +729,7 @@
  *      quoting one without the other answers nothing. The transcript stays
  *      OUT of this repository.
  */
+// finding: search-discovery-answered — S1-S10 ANSWERED on two sites (S10 the central question); S11/S12 NOT ESTABLISHED
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and

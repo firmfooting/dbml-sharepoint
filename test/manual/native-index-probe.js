@@ -111,6 +111,7 @@
  *     shape, which also means the deployer's per-field view of the 20-index
  *     budget is an approximation of SharePoint's own accounting.
  */
+// finding: native-index-null-only — the index recommender refuses to recommend an index for a null-only filter (is_null idiom)
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and

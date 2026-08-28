@@ -90,6 +90,7 @@
  *
  * WHEN FINISHED: delete both lists as the site owner.
  */
+// finding: lookup-acl-boundary — whether a lookup field's ACL boundary holds (can a user with the target restricted still open it) is the central unanswered question; K5/K6/K7 settle it
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
