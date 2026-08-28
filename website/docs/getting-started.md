@@ -10,9 +10,9 @@ sidebar_position: 2
 **Not on PyPI yet.** Install from the repository:
 
 ```bash
-uv tool install git+https://github.com/shauneccles/dbml-sharepoint
+uv tool install git+https://github.com/firmfooting/dbml-sharepoint
 # or, into an existing environment:
-pip install git+https://github.com/shauneccles/dbml-sharepoint
+pip install git+https://github.com/firmfooting/dbml-sharepoint
 ```
 
 Either puts the `dbml-sharepoint` command on your path. Check it with
@@ -24,7 +24,7 @@ need to use them, no clone required.
 Working from a clone instead, if you are contributing:
 
 ```bash
-git clone https://github.com/shauneccles/dbml-sharepoint
+git clone https://github.com/firmfooting/dbml-sharepoint
 cd dbml-sharepoint
 uv sync
 uv run dbml-sharepoint version

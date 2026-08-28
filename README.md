@@ -21,12 +21,12 @@ schema.dbml + mapping.yaml + release.yaml
    SharePoint Online lists, ready to use
 ```
 
-**Documentation: [shauneccles.github.io/dbml-sharepoint][docs]**. It covers
+**Documentation: [firmfooting.github.io/dbml-sharepoint][docs]**. It covers
 getting started, concepts, per-artifact contracts, the full mapping /
 DBML / CLI reference, a generated API reference, and the development
 philosophy.
 
-[docs]: https://shauneccles.github.io/dbml-sharepoint/
+[docs]: https://firmfooting.github.io/dbml-sharepoint/
 
 ## Why
 
@@ -59,8 +59,8 @@ philosophy.
 **Not published to PyPI yet.** Install from the repository:
 
 ```bash
-uv tool install git+https://github.com/shauneccles/dbml-sharepoint
-# or: pip install git+https://github.com/shauneccles/dbml-sharepoint
+uv tool install git+https://github.com/firmfooting/dbml-sharepoint
+# or: pip install git+https://github.com/firmfooting/dbml-sharepoint
 ```
 
 The solution templates are part of the package, so an install is all you
@@ -69,7 +69,7 @@ need to use them, no clone required.
 Or work from a clone, if you are contributing:
 
 ```bash
-git clone https://github.com/shauneccles/dbml-sharepoint
+git clone https://github.com/firmfooting/dbml-sharepoint
 cd dbml-sharepoint
 uv sync
 uv run dbml-sharepoint version
@@ -243,7 +243,7 @@ compose `clear_generated` -> validate -> manifest -> `emit_bundle` rather
 than re-implementing emission.
 
 Full documentation lives at
-[shauneccles.github.io/dbml-sharepoint](https://shauneccles.github.io/dbml-sharepoint/),
+[firmfooting.github.io/dbml-sharepoint](https://firmfooting.github.io/dbml-sharepoint/),
 built from [`website/`](website): a Docusaurus site; `cd website &&
 npm install && npm start` to browse it locally.
 
