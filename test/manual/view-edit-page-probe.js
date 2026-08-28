@@ -493,6 +493,7 @@
   expect('C4', 'how many condition slots does the editor markup carry?');
   expect('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?');
   expect('C6', 'CONTROL: does a page that is NOT the editor read as protected?');
+  expect('C7', 'does the trailing markup after the final `</html>` carry a document or control token?');
   expect('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
   expect('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
 
@@ -1072,6 +1073,60 @@
             + 'protected view. This is one shape of failure, not all of them: a response truncated after '
             + 'the sentinel and before the controls is still unmeasured, and a length or completeness test '
             + 'is what would close that.'));
+
+  // ---- C7: the tail after the document close -----------------------------
+  // C6 closes on "a length or completeness test is what would close that".
+  // The deploy's completeness test accepts trailing markup after `</html>`
+  // but bounds it: the tail may be anything, except a document or control
+  // token (`<input`, `<body`, `</body>` or a second `<html`). That bound is
+  // the one thing the fix could not verify without a live page, because it
+  // rests on what SharePoint actually serves after the close, not on what a
+  // test fixture assumes. Report the real tail instead of asserting it is
+  // short and harmless.
+  const tailOf = (page) => {
+    if (!page || !page.ok) return null;
+    const idx = page.text.lastIndexOf('</html>');
+    if (idx < 0) return { hasClose: false, length: page.text.length, tail: '', tokens: {} };
+    const tail = page.text.slice(idx + '</html>'.length);
+    const has = (tok) => tail.includes(tok);
+    return {
+      hasClose: true,
+      length: tail.length,
+      tail,
+      tokens: {
+        '<input': has('<input'),
+        '<body': has('<body'),
+        '</body>': has('</body>'),
+        '<html': has('<html'),
+      },
+    };
+  };
+  const TAIL_CAP = 300;
+  const tailShow = (t) => {
+    if (!t) return 'no page';
+    if (!t.hasClose) return `no </html> anywhere in ${t.length} chars`;
+    const s = t.tail;
+    const shown = s.length <= 2 * TAIL_CAP
+      ? JSON.stringify(s)
+      : `${JSON.stringify(s.slice(0, TAIL_CAP))} ... ${JSON.stringify(s.slice(-TAIL_CAP))}`;
+    return `${t.length} chars after the final </html>; tokens=${JSON.stringify(t.tokens)}; tail=${shown}`;
+  };
+  const tailGuarded = tailOf(pageGuarded);
+  const tailPlain = tailOf(pagePlain);
+  const tailUnfiltered = tailOf(pageUnfiltered);
+  const tailBanned = (t) => !!t && t.hasClose && Object.values(t.tokens).some(Boolean);
+  record('C7', 'does the trailing markup after the final `</html>` carry a document or control token?',
+    !tailGuarded ? 'NOT ESTABLISHED' : (tailBanned(tailGuarded) ? 'TOKENS PRESENT' : 'CLEAN'),
+    !tailGuarded
+      ? 'the guarded page was not fetched, so there is no tail to inspect.'
+      : `guarded: ${tailShow(tailGuarded)}. plain: ${tailShow(tailPlain)}. unfiltered: ${tailShow(tailUnfiltered)}. `
+        + (tailBanned(tailGuarded)
+          ? 'The tail carries a document or control token, so the completeness test would reject a real '
+            + 'complete page and a deploy would report a view it did see as unverified. The tail bound must '
+            + 'be revised before the check ships.'
+          : 'The tail carries no document or control token, so the completeness test accepts a real complete '
+            + 'page and the tail bound holds for this tenant. One tenant is a reference point, not a '
+            + 'constant; a second tenant would settle it.'));
 
   // ---- P1, P2: the ground truth ------------------------------------------
   record('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
