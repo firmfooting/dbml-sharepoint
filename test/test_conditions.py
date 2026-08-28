@@ -517,7 +517,13 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
     """
     probe = MANUAL / "datetime-sentinel-probe.js"
     text = probe.read_text(encoding="utf-8")
-    for marker in ("NOW()", "IncludeTimeValue", "C6", "C7", "ViewQuery"):
+    for marker in (
+        "NOW()",
+        "IncludeTimeValue",
+        "query.view-query.today-include-time-roundtrip",
+        "query.view-query.today-include-time-selects",
+        "ViewQuery",
+    ):
         assert marker in text, f"the probe of record no longer mentions {marker}"
 
 

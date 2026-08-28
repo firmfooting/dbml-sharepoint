@@ -13,11 +13,22 @@
  * SOURCE
  *   https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists
  *
- * WHAT IT ASKS
- *   LOOK  Lookup        PERS  Person       LONG  plain multi-line text
- *   RICH  rich text     LINK  Hyperlink    BOOL  Yes/No
- *   CHOI  Choice        DATE  Date only    TIME  Date and time
- *   NUMB  Number        TEXT  single text  CALC  another calculated field
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the run recorded below quotes the mnemonics.
+ *
+ *   formula.calc.operand-lookup     (LOOK)  Lookup
+ *   formula.calc.operand-person     (PERS)  Person
+ *   formula.calc.operand-multiline  (LONG)  plain multi-line text
+ *   formula.calc.operand-richtext   (RICH)  rich text
+ *   formula.calc.operand-hyperlink  (LINK)  Hyperlink
+ *   formula.calc.operand-boolean    (BOOL)  Yes/No
+ *   formula.calc.operand-choice     (CHOI)  Choice
+ *   formula.calc.operand-date       (DATE)  Date only
+ *   formula.calc.operand-datetime   (TIME)  Date and time
+ *   formula.calc.operand-number     (NUMB)  Number
+ *   formula.calc.operand-text       (TEXT)  single line of text
+ *   formula.calc.operand-calculated (CALC)  another calculated field
  *
  * Each row records the createfieldasxml HTTP status and SharePoint error
  * body. Creation is the relevant gate: the deployment currently dies there,
@@ -80,18 +91,18 @@
 
 {% include "_probe_results_v1.js.j2" %}
   const QUESTIONS = [
-    ['LOOK', 'Lookup operand in a calculated formula'],
-    ['PERS', 'Person operand in a calculated formula'],
-    ['LONG', 'Plain multi-line-text operand in a calculated formula'],
-    ['RICH', 'Rich-text operand in a calculated formula'],
-    ['LINK', 'Hyperlink operand in a calculated formula'],
-    ['BOOL', 'Yes/No operand in a calculated formula'],
-    ['CHOI', 'Choice operand in a calculated formula'],
-    ['DATE', 'Date-only operand in a calculated formula'],
-    ['TIME', 'Date-and-time operand in a calculated formula'],
-    ['NUMB', 'Number operand in a calculated formula'],
-    ['TEXT', 'Single-line-text operand in a calculated formula'],
-    ['CALC', 'Calculated-column operand in another calculated formula'],
+    ['formula.calc.operand-lookup', 'Lookup operand in a calculated formula'],
+    ['formula.calc.operand-person', 'Person operand in a calculated formula'],
+    ['formula.calc.operand-multiline', 'Plain multi-line-text operand in a calculated formula'],
+    ['formula.calc.operand-richtext', 'Rich-text operand in a calculated formula'],
+    ['formula.calc.operand-hyperlink', 'Hyperlink operand in a calculated formula'],
+    ['formula.calc.operand-boolean', 'Yes/No operand in a calculated formula'],
+    ['formula.calc.operand-choice', 'Choice operand in a calculated formula'],
+    ['formula.calc.operand-date', 'Date-only operand in a calculated formula'],
+    ['formula.calc.operand-datetime', 'Date-and-time operand in a calculated formula'],
+    ['formula.calc.operand-number', 'Number operand in a calculated formula'],
+    ['formula.calc.operand-text', 'Single-line-text operand in a calculated formula'],
+    ['formula.calc.operand-calculated', 'Calculated-column operand in another calculated formula'],
   ];
   // Literal registrations are deliberate: test_probes statically proves that
   // every record('ID', ...) of a DECLARED QUESTION has a matching upfront
@@ -99,18 +110,18 @@
   // disappear. BOOT-prefixed ids are exempt there by design. They report a
   // bootstrap failure rather than answering a question, so there is no
   // question for them to hide.
-  expect('LOOK', 'Lookup operand in a calculated formula');
-  expect('PERS', 'Person operand in a calculated formula');
-  expect('LONG', 'Plain multi-line-text operand in a calculated formula');
-  expect('RICH', 'Rich-text operand in a calculated formula');
-  expect('LINK', 'Hyperlink operand in a calculated formula');
-  expect('BOOL', 'Yes/No operand in a calculated formula');
-  expect('CHOI', 'Choice operand in a calculated formula');
-  expect('DATE', 'Date-only operand in a calculated formula');
-  expect('TIME', 'Date-and-time operand in a calculated formula');
-  expect('NUMB', 'Number operand in a calculated formula');
-  expect('TEXT', 'Single-line-text operand in a calculated formula');
-  expect('CALC', 'Calculated-column operand in another calculated formula');
+  expect('formula.calc.operand-lookup', 'Lookup operand in a calculated formula');
+  expect('formula.calc.operand-person', 'Person operand in a calculated formula');
+  expect('formula.calc.operand-multiline', 'Plain multi-line-text operand in a calculated formula');
+  expect('formula.calc.operand-richtext', 'Rich-text operand in a calculated formula');
+  expect('formula.calc.operand-hyperlink', 'Hyperlink operand in a calculated formula');
+  expect('formula.calc.operand-boolean', 'Yes/No operand in a calculated formula');
+  expect('formula.calc.operand-choice', 'Choice operand in a calculated formula');
+  expect('formula.calc.operand-date', 'Date-only operand in a calculated formula');
+  expect('formula.calc.operand-datetime', 'Date-and-time operand in a calculated formula');
+  expect('formula.calc.operand-number', 'Number operand in a calculated formula');
+  expect('formula.calc.operand-text', 'Single-line-text operand in a calculated formula');
+  expect('formula.calc.operand-calculated', 'Calculated-column operand in another calculated formula');
 
 {% include "_probe_core_v2.js.j2" %}
 {% include "_probe_list_fixture_v1.js.j2" %}
@@ -234,17 +245,17 @@
     '</Field>';
 
   const attempts = [
-    ['LOOK', 'ProbeLookup', 'CalcLookup', '=[ProbeLookup]', 'Text'],
-    ['PERS', 'ProbePerson', 'CalcPerson', '=[ProbePerson]', 'Text'],
-    ['LONG', 'ProbeLong', 'CalcLong', '=[ProbeLong]', 'Text'],
-    ['RICH', 'ProbeRich', 'CalcRich', '=[ProbeRich]', 'Text'],
-    ['LINK', 'ProbeLink', 'CalcLink', '=[ProbeLink]', 'Text'],
-    ['BOOL', 'ProbeBool', 'CalcBool', '=IF([ProbeBool],"yes","no")', 'Text'],
-    ['CHOI', 'ProbeChoice', 'CalcChoice', '=[ProbeChoice]', 'Text'],
-    ['DATE', 'ProbeDate', 'CalcDate', '=[ProbeDate]', 'DateTime'],
-    ['TIME', 'ProbeTime', 'CalcTime', '=[ProbeTime]', 'DateTime'],
-    ['NUMB', 'ProbeNumber', 'CalcNumber', '=[ProbeNumber]', 'Number'],
-    ['TEXT', 'ProbeText', 'CalcText', '=[ProbeText]', 'Text'],
+    ['formula.calc.operand-lookup', 'ProbeLookup', 'CalcLookup', '=[ProbeLookup]', 'Text'],
+    ['formula.calc.operand-person', 'ProbePerson', 'CalcPerson', '=[ProbePerson]', 'Text'],
+    ['formula.calc.operand-multiline', 'ProbeLong', 'CalcLong', '=[ProbeLong]', 'Text'],
+    ['formula.calc.operand-richtext', 'ProbeRich', 'CalcRich', '=[ProbeRich]', 'Text'],
+    ['formula.calc.operand-hyperlink', 'ProbeLink', 'CalcLink', '=[ProbeLink]', 'Text'],
+    ['formula.calc.operand-boolean', 'ProbeBool', 'CalcBool', '=IF([ProbeBool],"yes","no")', 'Text'],
+    ['formula.calc.operand-choice', 'ProbeChoice', 'CalcChoice', '=[ProbeChoice]', 'Text'],
+    ['formula.calc.operand-date', 'ProbeDate', 'CalcDate', '=[ProbeDate]', 'DateTime'],
+    ['formula.calc.operand-datetime', 'ProbeTime', 'CalcTime', '=[ProbeTime]', 'DateTime'],
+    ['formula.calc.operand-number', 'ProbeNumber', 'CalcNumber', '=[ProbeNumber]', 'Number'],
+    ['formula.calc.operand-text', 'ProbeText', 'CalcText', '=[ProbeText]', 'Text'],
   ];
 
   const questionFor = (id) => QUESTIONS.find(([candidate]) => candidate === id)[1];
@@ -275,11 +286,13 @@
   // supported operand and produces a simple, type-stable base field.
   const baseReady = await fieldExists('CalcNumber');
   if (!baseReady) {
-    record('CALC', questionFor('CALC'), 'NOT ESTABLISHED',
+    record('formula.calc.operand-calculated', questionFor('formula.calc.operand-calculated'),
+           'NOT ESTABLISHED',
            'CalcNumber was not created, so no calculated source exists');
   } else {
     sourceReady.add('CalcNumber');
-    await attempt('CALC', 'CalcNumber', 'CalcCalculated', '=[CalcNumber]', 'Number');
+    await attempt('formula.calc.operand-calculated', 'CalcNumber', 'CalcCalculated',
+                  '=[CalcNumber]', 'Number');
   }
 
   console.table(results);

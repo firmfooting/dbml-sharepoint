@@ -31,28 +31,44 @@
  * reads back byte-identical, passes every deploy phase and then filters the
  * wrong rows or never fires. Documentation alone has been wrong here before.
  *
- * WHAT IT ASKS
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the runs recorded below quote the mnemonics.
  *
- *   TZ0  what time zone does the SITE run in, and does it match this
+ * Three blocks file under a surface other than this probe's, applying the
+ * keying rule: a check is keyed to the surface of its own question. The CAML
+ * rows are `query` questions asked by the probe that already has a datetime
+ * column and two comparable rows; E1 writes ClientValidationFormula, which
+ * only the browser evaluates; and Q1-Q4 are about quoting a text literal,
+ * with no time in them at all.
+ *
+ *   formula.datetime.control-site-time-zone  (TZ0)
+ *        what time zone does the SITE run in, and does it match this
  *        browser? <Today/> renders in the SERVER's zone, so every same-day
  *        question below is read through this row. Not a pass/fail.
  *
  *   -- Validation formulas ------------------------------------------------
- *   VN   NEGATIVE CONTROL: is a ValidationFormula naming a column that
+ *   formula.datetime.control-missing-column-refused  (VN)
+ *        NEGATIVE CONTROL: is a ValidationFormula naming a column that
  *        does not exist REFUSED? If garbage is accepted, no refusal below
  *        means anything.
- *   V1   is NOW() in a ValidationFormula refused, as the docs imply?
- *   V2   ...and if it is ACCEPTED, does it actually reject a future
+ *   formula.datetime.now-function-accepted  (V1)
+ *        is NOW() in a ValidationFormula refused, as the docs imply?
+ *   formula.datetime.now-function-rejects-future  (V2)
+ *        ...and if it is ACCEPTED, does it actually reject a future
  *        timestamp, or is it accepted-but-inert? Accepted-and-inert is the
  *        worst outcome available and the one worth knowing about.
- *   V2C  CONTROL for V2: under the SAME uncleared rule, does a value the
+ *   formula.datetime.control-now-function-allows-past  (V2C)
+ *        CONTROL for V2: under the SAME uncleared rule, does a value the
  *        rule should ALLOW save? A rule that refuses everything refuses the
  *        future stamp too, which reads exactly like enforcement.
- *   V3   THE DECISIVE ROW. Under `=[ProbeWhen] <= TODAY()`, is an item
+ *   formula.datetime.today-rejects-earlier-today  (V3)
+ *        THE DECISIVE ROW. Under `=[ProbeWhen] <= TODAY()`, is an item
  *        stamped EARLIER TODAY rejected? Five shipped templates assume yes.
  *        If it saves, every `today+1` allowance in the library is an
  *        unnecessary 24-hour hole.
- *   V3C  CONTROL for V3, and the one that matters most, because V3 is the
+ *   formula.datetime.control-today-allows-yesterday  (V3C)
+ *        CONTROL for V3, and the one that matters most, because V3 is the
  *        row the library leans on.
  *   V2C, V3C AND Q4's CONTROL WERE ADDED AFTER THE RUN OF RECORD AND HAVE
  *   NOT BEEN RUN. They are additive: V1-V6 and Q1-Q4 keep their formulas,
@@ -63,10 +79,13 @@
  *   refused a particular value, not that it discriminates. Both controls
  *   delete their own row afterwards, because the CAML questions below count
  *   rows and one of those counts is quoted as evidence.
- *   V4   Under `<= TODAY()+1`, does an item stamped LATER TODAY save? This
+ *   formula.datetime.today-plus-one-allows-later-today  (V4)
+ *        Under `<= TODAY()+1`, does an item stamped LATER TODAY save? This
  *        is the shipped idiom's positive case.
- *   V5   Under `<= TODAY()+1`, is an item stamped TWO DAYS out rejected?
- *   V6   Under `<= TODAY()+1`, what is the exact ceiling: does TOMORROW
+ *   formula.datetime.today-plus-one-rejects-two-days-out  (V5)
+ *        Under `<= TODAY()+1`, is an item stamped TWO DAYS out rejected?
+ *   formula.datetime.today-plus-one-ceiling-tomorrow-night  (V6)
+ *        Under `<= TODAY()+1`, what is the exact ceiling: does TOMORROW
  *        23:00 save? This decides whether the allowance is about 24 hours
  *        or about 48, which is what the comments in five templates should
  *        say and currently do not. The stamp is built in the BROWSER's zone,
@@ -79,26 +98,36 @@
  *        V3 already settles whether the allowance is needed at all.
  *
  *
- *   -- CAML view filters ---------------------------------------------------
- *   CN   NEGATIVE CONTROL: is a CAML query containing a bogus <Nowww/>
+ *   -- CAML view filters, which file under `query` -------------------------
+ *   query.caml.control-bogus-element-refused  (CN)
+ *        NEGATIVE CONTROL: is a CAML query containing a bogus <Nowww/>
  *        element refused? If SharePoint accepts nonsense in a ViewQuery,
  *        C1 through C5 prove nothing.
- *   C1   does a VIEW whose ViewQuery contains <Now/> save, and read back
+ *   query.view-query.now-element-roundtrip  (C1)
+ *        does a VIEW whose ViewQuery contains <Now/> save, and read back
  *        still containing it? This is the deploy surface: deploy.js writes
  *        ViewQuery and verifies by read-back.
- *   C2   does <Now/> WITHOUT IncludeTimeValue discriminate an item stamped
+ *   query.caml-adhoc.now-element-discriminates  (C2)
+ *        does <Now/> WITHOUT IncludeTimeValue discriminate an item stamped
  *        earlier today from one stamped later today?
- *   C3   does <Now/> WITH IncludeTimeValue='TRUE' discriminate them?
- *   C4   does <Today/> WITH IncludeTimeValue='TRUE' behave as midnight, or
+ *   query.caml-adhoc.now-element-include-time-discriminates  (C3)
+ *        does <Now/> WITH IncludeTimeValue='TRUE' discriminate them?
+ *   query.caml-adhoc.today-element-include-time-discriminates  (C4)
+ *        does <Today/> WITH IncludeTimeValue='TRUE' behave as midnight, or
  *        as the current instant? Widely-repeated blog advice says the
  *        latter; Learn implies the former. They give OPPOSITE answers for
  *        an item stamped earlier today, so one of them is wrong.
- *   C5   BASELINE: <Today/> without IncludeTimeValue, which is what the
+ *   query.caml-adhoc.today-element-date-granular  (C5)
+ *        BASELINE: <Today/> without IncludeTimeValue, which is what the
  *        tool emits today. Confirms date granularity is what seven shipped
  *        views are actually getting.
- *   C6   does a SAVED VIEW whose ViewQuery uses <Today/> +
- *   C7   IncludeTimeValue keep that query, and return the rows C4 saw?
- *        C2-C5 all ask through `getitems` with an ad-hoc CamlQuery. The
+ *   query.view-query.today-include-time-roundtrip  (C6)
+ *   query.view-query.today-include-time-selects  (C7)
+ *        does a SAVED VIEW whose ViewQuery uses <Today/> +
+ *        IncludeTimeValue keep that query, and return the rows C4 saw?
+ *        C2-C5 all ask through `getitems` with an ad-hoc CamlQuery, which
+ *        is why they take the `caml-adhoc` scope and C1, C6 and C7 take
+ *        `view-query`. The
  *        deploy writes a view's stored ViewQuery instead; C1 already
  *        watched SharePoint rewrite that XML on save, and the only element
  *        ever observed inside a real saved view was <Now/>, which does not
@@ -113,8 +142,9 @@
  *        filter matched. An empty result is only evidence when a non-empty
  *        one would have been visible.
  *
- *   -- The client-side expression target ------------------------------------
- *   E1   is @now accepted and stored in a ClientValidationFormula
+ *   -- The client-side expression target, which files under `expression` ----
+ *   expression.client-validation.now-sentinel-stored  (E1)
+ *        is @now accepted and stored in a ClientValidationFormula
  *        (conditional show/hide)? conditions.py refuses the `today`
  *        sentinel there for want of "a verified client-side equivalent".
  *
@@ -127,16 +157,23 @@
  *   same list and the same MERGE machinery this probe already has, and a
  *   separate paste for three questions would simply never be run.
  *
- *   Q1   is a ValidationFormula whose literal doubles an embedded " ("")
+ *   formula.validation.doubled-quote-literal-accepted  (Q1)
+ *        is a ValidationFormula whose literal doubles an embedded " ("")
  *        accepted and stored?
- *   Q2   ...and does it match the RIGHT value, i.e. does it reject an item
+ *   formula.validation.doubled-quote-literal-rejects-match  (Q2)
+ *        ...and does it match the RIGHT value, i.e. does it reject an item
  *        holding exactly He said "hi"? Accepted is not parsed: a formula
  *        that reads the literal as something else would still save.
- *   Q3   ...and does it leave a DIFFERENT value alone? Q2 alone cannot
+ *   formula.validation.doubled-quote-literal-allows-other  (Q3)
+ *        ...and does it leave a DIFFERENT value alone? Q2 alone cannot
  *        distinguish "escaped correctly" from "rejects everything".
- *   Q4   what happens to the backslash convention instead? If both are
+ *   formula.validation.backslash-quote-literal  (Q4)
+ *        what happens to the backslash convention instead? If both are
  *        accepted, the tool's choice is safe; if backslash is accepted and
  *        mis-parses, that is a hazard worth naming in the code.
+ *        These four take the `validation` scope rather than `datetime`:
+ *        they are about the ValidationFormula literal grammar, and the
+ *        only thing they share with the rest of this probe is the list.
  *
  * READ VN AND CN FIRST. They are the only rows establishing that this probe
  * can tell acceptance from refusal on each surface. If either NEGATIVE
@@ -190,34 +227,34 @@
 
   // Declared before anything can fail, so an abort reports the questions it
   // never reached instead of only the ones it managed to ask.
-  expect('TZ0', 'Site time zone, and whether this browser shares it');
-  expect('VN', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused');
-  expect('V1', 'NOW() in a ValidationFormula');
-  expect('V2', 'If NOW() was accepted, does it reject a future timestamp');
-  expect('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save');
-  expect('V3', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected');
-  expect('V3C', 'CONTROL: under the same TODAY() rule, does a value from yesterday save');
-  expect('V4', 'Under <= TODAY()+1, an item stamped LATER TODAY saves');
-  expect('V5', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected');
-  expect('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)');
-  expect('CN', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused');
-  expect('C1', 'A view ViewQuery containing <Now/> saves and reads back intact');
-  expect('C2', '<Now/> WITHOUT IncludeTimeValue discriminates within one day');
-  expect('C3', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day");
-  expect('C4', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant");
-  expect('C5', 'BASELINE: <Today/> without IncludeTimeValue is date-granular');
-  expect('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query');
-  expect('C7', '...and that SAVED VIEW returns the instant-discriminated rows');
-  expect('E1', '@now is accepted and stored in a ClientValidationFormula');
-  expect('Q1', 'A validation literal doubling an embedded " is accepted');
-  expect('Q2', '...and rejects an item holding exactly that value');
-  expect('Q3', '...and leaves a different value alone');
-  expect('Q4', 'The backslash convention instead: accepted, and does it parse');
+  expect('formula.datetime.control-site-time-zone', 'Site time zone, and whether this browser shares it');
+  expect('formula.datetime.control-missing-column-refused', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused');
+  expect('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula');
+  expect('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp');
+  expect('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save');
+  expect('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected');
+  expect('formula.datetime.control-today-allows-yesterday', 'CONTROL: under the same TODAY() rule, does a value from yesterday save');
+  expect('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves');
+  expect('formula.datetime.today-plus-one-rejects-two-days-out', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected');
+  expect('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)');
+  expect('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused');
+  expect('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact');
+  expect('query.caml-adhoc.now-element-discriminates', '<Now/> WITHOUT IncludeTimeValue discriminates within one day');
+  expect('query.caml-adhoc.now-element-include-time-discriminates', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day");
+  expect('query.caml-adhoc.today-element-include-time-discriminates', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant");
+  expect('query.caml-adhoc.today-element-date-granular', 'BASELINE: <Today/> without IncludeTimeValue is date-granular');
+  expect('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query');
+  expect('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows');
+  expect('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula');
+  expect('formula.validation.doubled-quote-literal-accepted', 'A validation literal doubling an embedded " is accepted');
+  expect('formula.validation.doubled-quote-literal-rejects-match', '...and rejects an item holding exactly that value');
+  expect('formula.validation.doubled-quote-literal-allows-other', '...and leaves a different value alone');
+  expect('formula.validation.backslash-quote-literal', 'The backslash convention instead: accepted, and does it parse');
 
   await resetList(LIST);
   let digest = await getDigest();
 
-  // ---- TZ0: whose clock are we reading? -------------------------------
+  // ---- control-site-time-zone (TZ0): whose clock are we reading? ------
   // <Today/> renders in the SERVER's local zone, not the browser's. If the
   // two differ, an item this browser calls "later today" may be tomorrow to
   // SharePoint, and the same-day rows would be answering a question nobody
@@ -244,10 +281,10 @@
       + `this browser ${browserOffsetMin >= 0 ? '+' : ''}${browserOffsetMin}min; `
       + `site-local hour now ~${serverHours.map((h) => h.toFixed(1)).join(' or ')}`;
     const shares = [standardMin, daylightMin].includes(browserOffsetMin);
-    record('TZ0', 'Site time zone, and whether this browser shares it',
+    record('formula.datetime.control-site-time-zone', 'Site time zone, and whether this browser shares it',
            shares ? 'SAME ZONE' : 'DIFFERENT ZONE', tzEvidence);
   } else {
-    record('TZ0', 'Site time zone, and whether this browser shares it', 'NOT ESTABLISHED',
+    record('formula.datetime.control-site-time-zone', 'Site time zone, and whether this browser shares it', 'NOT ESTABLISHED',
            `could not read web/RegionalSettings/TimeZone (HTTP ${tz.status}), so `
            + 'the same-day rows below cannot be interpreted safely');
   }
@@ -257,9 +294,11 @@
   const SAME_DAY_OK = serverHours.length > 0
     && serverHours.every((h) => h >= 4 && h <= 20);
   if (!SAME_DAY_OK) {
-    log('INFO', 'TIME-OF-DAY GATE CLOSED: the same-day questions (V3, V4, C2, C3,');
-    log('INFO', 'C4, C5) cannot be answered safely at this hour. They will be');
-    log('INFO', 'reported NOT ESTABLISHED. Re-run between 04:00 and 20:00 site time.');
+    log('INFO', 'TIME-OF-DAY GATE CLOSED: the same-day questions (the three');
+    log('INFO', 'query.caml-adhoc.*-discriminates rows, today-element-date-granular,');
+    log('INFO', 'today-rejects-earlier-today and today-plus-one-allows-later-today)');
+    log('INFO', 'cannot be answered safely at this hour. They will be reported NOT');
+    log('INFO', 'ESTABLISHED. Re-run between 04:00 and 20:00 site time.');
   }
 
   // ---- Bootstrap ------------------------------------------------------
@@ -390,9 +429,9 @@
     }
   };
 
-  // ---- VN: NEGATIVE CONTROL for the validation surface ----------------
+  // ---- control-missing-column-refused (VN): the validation control ----
   const bogus = await setValidation('=[NoSuchColumnHere]>0');
-  record('VN', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused',
+  record('formula.datetime.control-missing-column-refused', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused',
          bogus.ok ? 'FAIL' : isRefusal(bogus.status) ? 'PASS' : 'NOT ESTABLISHED',
          bogus.ok
            ? 'a formula referencing a non-existent column was ACCEPTED. This probe '
@@ -405,14 +444,14 @@
                + bogus.text.slice(0, 200));
   await clearValidation();
 
-  // ---- V1 / V2: NOW() -------------------------------------------------
+  // ---- now-function-* (V1 / V2): NOW() --------------------------------
   const nowFormula = await setValidation(`=[${FIELD}]<=NOW()`);
   if (!nowFormula.ok) {
-    record('V1', 'NOW() in a ValidationFormula', 'REFUSED',
+    record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'REFUSED',
            `HTTP ${nowFormula.status}: ${nowFormula.text.slice(0, 300)}`);
-    record('V2', 'If NOW() was accepted, does it reject a future timestamp',
+    record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
            'NOT APPLICABLE', 'NOW() was refused at V1, so there is nothing to evaluate');
-    record('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save',
+    record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
            'NOT APPLICABLE', 'NOW() was refused at V1, so there is no rule to control');
   } else {
     // Accepted is the surprising branch. Read it back before believing it:
@@ -423,21 +462,21 @@
     // and L7 follow: "SharePoint threw the formula away" is a claim, and a
     // throttled GET is not evidence for it.
     if (!back.ok || back.body === null) {
-      record('V1', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
+      record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
              `the MERGE returned HTTP ${nowFormula.status}, but the read-back failed `
              + `(HTTP ${back.status}), so whether the formula was kept is unobserved, `
              + 'and V2 below is then evaluating under a rule this run cannot confirm '
              + 'is in force.');
     } else {
       const stored = back.body.ValidationFormula;
-      record('V1', 'NOW() in a ValidationFormula',
+      record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula',
              stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
              `HTTP ${nowFormula.status}; reads back ${JSON.stringify(stored)}`);
     }
     // Inert is the outcome that would fool a deploy: it saves, it reads back
     // equal, every phase passes, and the rule never fires.
     const future = await trySave('V2 future by three hours', LATER_TODAY);
-    record('V2', 'If NOW() was accepted, does it reject a future timestamp',
+    record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
            future.saved ? 'ACCEPTED BUT INERT' : 'ENFORCED',
            future.saved
              ? `a timestamp three hours in the future SAVED despite the rule. ${future.detail}`
@@ -449,7 +488,7 @@
     // keeps, and the control needs no assumption about how NOW() handles
     // zones, which is the very thing under test.
     const past = await trySave('V2C yesterday under NOW()', YESTERDAY);
-    record('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save',
+    record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
            past.saved ? 'PASS' : 'FAIL',
            past.saved
              ? `a timestamp 27 hours in the past saved, so the rule discriminates `
@@ -457,23 +496,23 @@
              : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
                + 'everything and V2 above proves nothing about enforcement. '
                + past.detail);
-    await dropControl(past.id, 'V2C');
+    await dropControl(past.id, 'formula.datetime.control-now-function-allows-past');
   }
   await clearValidation();
 
-  // ---- V3: the assumption five templates make -------------------------
+  // ---- today-rejects-earlier-today (V3): five templates assume this ---
   if (!SAME_DAY_OK) {
-    record('V3', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
+    record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
            'NOT ESTABLISHED', 'time-of-day gate closed (see TZ0)');
   } else {
     const todayRule = await setValidation(`=[${FIELD}]<=TODAY()`);
     if (!todayRule.ok) {
-      record('V3', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
+      record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
              'NOT ESTABLISHED',
              `could not set the rule: HTTP ${todayRule.status} ${todayRule.text.slice(0, 200)}`);
     } else {
       const earlier = await trySave('V3 earlier today', EARLIER_TODAY);
-      record('V3', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
+      record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
              earlier.saved ? 'SAVED: assumption WRONG' : 'REJECTED: assumption HOLDS',
              earlier.saved
                ? 'a timestamp from earlier TODAY was accepted under <= TODAY(). Five '
@@ -488,7 +527,7 @@
       // same-day gate. Read the pair together: V3 alone cannot tell a
       // midnight boundary from a rule that refuses every value.
       const yesterday = await trySave('V3C yesterday under TODAY()', YESTERDAY);
-      record('V3C', 'CONTROL: under the same TODAY() rule, does a value from yesterday save',
+      record('formula.datetime.control-today-allows-yesterday', 'CONTROL: under the same TODAY() rule, does a value from yesterday save',
              yesterday.saved ? 'PASS' : 'FAIL',
              yesterday.saved
                ? 'a timestamp 27 hours in the past saved under the same rule, so the '
@@ -497,25 +536,27 @@
                  + `hours; it does NOT by itself pin it at midnight. ${yesterday.detail}`
                : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
                  + 'everything and V3 above establishes nothing. ' + yesterday.detail);
-      await dropControl(yesterday.id, 'V3C');
+      await dropControl(yesterday.id, 'formula.datetime.control-today-allows-yesterday');
     }
     await clearValidation();
   }
 
-  // ---- V4 / V5 / V6: the shipped idiom, and its exact ceiling ---------
+  // ---- today-plus-one-* (V4 / V5 / V6): the shipped idiom's ceiling ---
   const allowance = await setValidation(`=[${FIELD}]<=TODAY()+1`);
   if (!allowance.ok) {
-    for (const id of ['V4', 'V5', 'V6']) {
+    for (const id of ['formula.datetime.today-plus-one-allows-later-today',
+                      'formula.datetime.today-plus-one-rejects-two-days-out',
+                      'formula.datetime.today-plus-one-ceiling-tomorrow-night']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
              `could not set <= TODAY()+1: HTTP ${allowance.status} ${allowance.text.slice(0, 200)}`);
     }
   } else {
     if (!SAME_DAY_OK) {
-      record('V4', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
+      record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
              'NOT ESTABLISHED', 'time-of-day gate closed (see TZ0)');
     } else {
       const later = await trySave('V4 later today', LATER_TODAY);
-      record('V4', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
+      record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
              later.saved ? 'PASS' : 'FAIL',
              later.saved
                ? 'the shipped idiom accepts a same-day timestamp, as intended. ' + later.detail
@@ -524,7 +565,7 @@
     }
 
     const twoDays = await trySave('V5 two days out', TWO_DAYS);
-    record('V5', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected',
+    record('formula.datetime.today-plus-one-rejects-two-days-out', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected',
            twoDays.saved ? 'FAIL' : 'PASS',
            twoDays.saved
              ? 'the allowance is wider than one day. It did NOT reject +51 hours. ' + twoDays.detail
@@ -534,7 +575,7 @@
     // does not" and are silent on tomorrow. This is the row that lets them
     // say something true about the actual ceiling.
     if (!V6_SAFE) {
-      record('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+      record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
              'NOT ESTABLISHED',
              `${TOMORROW_2300} is 23:00 tomorrow in THIS browser's zone, and the `
              + 'site offsets in TZ0 do not both put it exactly one site-local day '
@@ -542,7 +583,7 @@
              + 'neither is recorded. Re-run from a machine in the site zone.');
     } else {
       const tomorrowNight = await trySave('V6 tomorrow 23:00', TOMORROW_2300);
-      record('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+      record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
              tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
              `${TOMORROW_2300} (23:00 tomorrow here, and site-local tomorrow under `
              + 'both candidate offsets in TZ0) '
@@ -610,13 +651,13 @@
     return 'INVERTED: later-today returned but earlier-today did not';
   };
 
-  // ---- CN: NEGATIVE CONTROL for the CAML surface ----------------------
+  // ---- control-bogus-element-refused (CN): the CAML control -----------
   if (!camlReady) {
-    record('CN', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
+    record('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
            'NOT ESTABLISHED', 'the fixture rows could not be created');
   } else {
     const junk = await caml(ltWhen('<Nowww/>', false), false);
-    record('CN', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
+    record('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
            junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
            junk.ok
              ? `a query containing <Nowww/> was ACCEPTED and returned ${junk.titles.length} `
@@ -629,7 +670,7 @@
                  + junk.text.slice(0, 200));
   }
 
-  // ---- C1: the deploy surface -----------------------------------------
+  // ---- now-element-roundtrip (C1): the deploy surface -----------------
   // deploy.js writes ViewQuery and verifies by read-back, so "saves and
   // survives the round trip" is the question that decides whether a `now`
   // sentinel could be shipped at all.
@@ -669,31 +710,31 @@
   const viewQuery = `<Where>${ltWhen('<Now/>', true)}</Where>`;
   const madeView = await createView(VIEW, viewQuery);
   if (!madeView.ok) {
-    record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
+    record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
            'REFUSED', `HTTP ${madeView.status}: ${madeView.text.slice(0, 300)}`);
   } else {
     const back = await spGet(
       `web/lists/getbytitle('${LIST}')/views/getbytitle('${VIEW}')?$select=ViewQuery`);
     if (readFailed(back)) {
-      record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
+      record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
              'NOT ESTABLISHED',
              `the view was created (HTTP ${madeView.status}) but the ViewQuery `
              + `read-back failed (HTTP ${back.status}). "SharePoint rewrote it" is a `
              + 'claim, and nothing was read.');
     } else {
       const stored = back.body.ViewQuery || '';
-      record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
+      record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
              stored.includes('<Now') ? 'PASS' : 'ACCEPTED THEN REWRITTEN',
              `sent ${JSON.stringify(viewQuery)}; stored ${JSON.stringify(stored)}`);
     }
   }
 
-  // ---- C2-C5: what the comparison actually does -----------------------
+  // ---- query.caml-adhoc.* (C2-C5): what the comparison actually does --
   const camlRows = [
-    ['C2', '<Now/> WITHOUT IncludeTimeValue discriminates within one day', '<Now/>', false],
-    ['C3', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day", '<Now/>', true],
-    ['C4', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant", '<Today/>', true],
-    ['C5', 'BASELINE: <Today/> without IncludeTimeValue is date-granular', '<Today/>', false],
+    ['query.caml-adhoc.now-element-discriminates', '<Now/> WITHOUT IncludeTimeValue discriminates within one day', '<Now/>', false],
+    ['query.caml-adhoc.now-element-include-time-discriminates', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day", '<Now/>', true],
+    ['query.caml-adhoc.today-element-include-time-discriminates', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant", '<Today/>', true],
+    ['query.caml-adhoc.today-element-date-granular', 'BASELINE: <Today/> without IncludeTimeValue is date-granular', '<Today/>', false],
   ];
   for (const [id, question, inner, includeTime] of camlRows) {
     if (!camlReady || !SAME_DAY_OK) {
@@ -715,7 +756,7 @@
            `${r.viewXml} -> ${JSON.stringify(r.titles)}`);
   }
 
-  // ---- C6 / C7: the surface the deploy actually writes ----------------
+  // ---- today-include-time-* (C6 / C7): where the deploy writes --------
   // C2-C5 asked their questions through `getitems` with an ad-hoc
   // CamlQuery. That is NOT what deploy.js writes: it writes a view's stored
   // ViewQuery, and C1 has already shown SharePoint rewrites that XML on
@@ -723,7 +764,7 @@
   // been observed somewhere else. These two close that gap.
   const REAL_VIEW = 'dbmlsp probe today includetime view';
   if (!camlReady || !SAME_DAY_OK) {
-    for (const id of ['C6', 'C7']) {
+    for (const id of ['query.view-query.today-include-time-roundtrip', 'query.view-query.today-include-time-selects']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
              !camlReady ? 'the fixture rows could not be created'
                         : 'time-of-day gate closed (see TZ0)');
@@ -732,16 +773,16 @@
     const realQuery = `<Where>${ltWhen('<Today/>', true)}</Where>`;
     const madeReal = await createView(REAL_VIEW, realQuery);
     if (!madeReal.ok) {
-      record('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+      record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
              'REFUSED', `HTTP ${madeReal.status}: ${madeReal.text.slice(0, 300)}`);
-      record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+      record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
              'NOT APPLICABLE', 'the view could not be created');
     } else {
       const back = await spGet(
         `web/lists/getbytitle('${LIST}')/views/getbytitle('${REAL_VIEW}')?$select=ViewQuery`);
       const stored = back.ok && back.body ? (back.body.ViewQuery || '') : '';
       const kept = stored.includes('IncludeTimeValue') && stored.includes('<Today');
-      record('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+      record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
              kept ? 'PASS' : 'REWRITTEN: the attribute did not survive',
              `sent ${JSON.stringify(realQuery)}; stored ${JSON.stringify(stored)}`);
 
@@ -751,17 +792,17 @@
       // SharePoint drops IncludeTimeValue on the way in, C6 catches it; if
       // it keeps the attribute but stops honouring it, only this does.
       if (!stored) {
-        record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+        record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
                'NOT ESTABLISHED', 'the stored ViewQuery could not be read back');
       } else {
         const r = await caml(stored.replace(/^<Where>/, '').replace(/<\/Where>$/, ''), true);
         if (!r.ok) {
-          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+          record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
                  'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 240)}`);
         } else {
           const e = has(r.titles, 'CAML earlier today');
           const l = has(r.titles, 'CAML later today');
-          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+          record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
                  e && !l ? 'DISCRIMINATES: matches C4'
                          : e && l ? 'BOTH RETURNED: does NOT match C4'
                                   : !e && !l ? 'NEITHER RETURNED: does NOT match C4'
@@ -776,7 +817,7 @@
     }
   }
 
-  // ---- E1: the client-side expression target --------------------------
+  // ---- now-sentinel-stored (E1): the client-side expression target ----
   // Storage only. Whether a show/hide rule FIRES is a rendering behaviour
   // no headless probe can see, and form-visibility-interactive.js exists
   // precisely because this project learned that the hard way. A PASS here
@@ -786,19 +827,19 @@
     { ClientValidationFormula: `=if(@now > [$${FIELD}], 'true', 'false')` },
     await getDigest(), { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
   if (!clientRule.ok) {
-    record('E1', '@now is accepted and stored in a ClientValidationFormula',
+    record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
            'REFUSED', `HTTP ${clientRule.status}: ${clientRule.text.slice(0, 300)}`);
   } else {
     const back = await spGet(
       `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
     if (readFailed(back)) {
-      record('E1', '@now is accepted and stored in a ClientValidationFormula',
+      record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
              'NOT ESTABLISHED',
              `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
              + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
     } else {
       const stored = back.body.ClientValidationFormula;
-      record('E1', '@now is accepted and stored in a ClientValidationFormula',
+      record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
              stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
              `reads back ${JSON.stringify(stored)}. STORAGE ONLY: whether the rule `
              + 'actually fires needs an eyes-on check in the form designer, exactly as '
@@ -806,7 +847,7 @@
     }
   }
 
-  // ---- Q1-Q4: escaping a double quote in a validation literal ---------
+  // ---- *-quote-literal (Q1-Q4): escaping a double quote in a literal --
   // The subject is a CHOICE column, because that is where an awkward value
   // realistically comes from: a template author writes an enum member with
   // an apostrophe or a quote in it and the tool renders it into a rule.
@@ -839,7 +880,10 @@
   };
 
   if (!quoteReady) {
-    for (const id of ['Q1', 'Q2', 'Q3', 'Q4']) {
+    for (const id of ['formula.validation.doubled-quote-literal-accepted',
+                      'formula.validation.doubled-quote-literal-rejects-match',
+                      'formula.validation.doubled-quote-literal-allows-other',
+                      'formula.validation.backslash-quote-literal']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
              `could not create the '${QFIELD}' Choice column`);
     }
@@ -848,10 +892,11 @@
     const doubled = `=[${QFIELD}]<>"He said ""hi"""`;
     const setDoubled = await setQuoteRule(doubled);
     if (!setDoubled.ok) {
-      record('Q1', 'A validation literal doubling an embedded " is accepted', 'REFUSED',
+      record('formula.validation.doubled-quote-literal-accepted', 'A validation literal doubling an embedded " is accepted', 'REFUSED',
              `sent ${JSON.stringify(doubled)}; HTTP ${setDoubled.status}: `
              + setDoubled.text.slice(0, 260));
-      for (const id of ['Q2', 'Q3']) {
+      for (const id of ['formula.validation.doubled-quote-literal-rejects-match',
+                        'formula.validation.doubled-quote-literal-allows-other']) {
         record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE',
                'the doubled-quote formula was refused at Q1');
       }
@@ -859,7 +904,7 @@
       const back = await spGet(
         `${fieldsPath}/getbyinternalnameortitle('${QFIELD}')?$select=ValidationFormula`);
       const stored = readFailed(back) ? null : back.body.ValidationFormula;
-      record('Q1', 'A validation literal doubling an embedded " is accepted',
+      record('formula.validation.doubled-quote-literal-accepted', 'A validation literal doubling an embedded " is accepted',
              readFailed(back) ? 'NOT ESTABLISHED'
                               : stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
              readFailed(back)
@@ -871,7 +916,7 @@
       // or truncated at the first quote, the rule would still save happily
       // and simply never match the value it was written for.
       const rejected = await addQuoteItem('Q2 quoted value', QUOTED);
-      record('Q2', '...and rejects an item holding exactly that value',
+      record('formula.validation.doubled-quote-literal-rejects-match', '...and rejects an item holding exactly that value',
              rejected.saved ? 'FAIL: literal did NOT match' : 'PASS: literal matched',
              rejected.saved
                ? `an item set to ${JSON.stringify(QUOTED)} SAVED under a rule that `
@@ -881,7 +926,7 @@
 
       // Without this, "rejects everything" would read as a pass above.
       const allowed = await addQuoteItem('Q3 plain value', PLAIN);
-      record('Q3', '...and leaves a different value alone',
+      record('formula.validation.doubled-quote-literal-allows-other', '...and leaves a different value alone',
              allowed.saved ? 'PASS' : 'FAIL: rule rejects everything',
              allowed.saved
                ? `a different value saved, so Q2 was a real match rather than a `
@@ -896,7 +941,7 @@
     const backslash = `=[${QFIELD}]<>"He said \\"hi\\""`;
     const setBackslash = await setQuoteRule(backslash);
     if (!setBackslash.ok) {
-      record('Q4', 'The backslash convention instead: accepted, and does it parse',
+      record('formula.validation.backslash-quote-literal', 'The backslash convention instead: accepted, and does it parse',
              'REFUSED: doubling is the only convention',
              `sent ${JSON.stringify(backslash)}; HTTP ${setBackslash.status}: `
              + setBackslash.text.slice(0, 260));
@@ -906,7 +951,7 @@
       // rule that refuses everything refuses QUOTED too, and without this
       // that reads identically to "the escape parsed correctly".
       const control = await addQuoteItem('Q4 plain value under backslash rule', PLAIN);
-      record('Q4', 'The backslash convention instead: accepted, and does it parse',
+      record('formula.validation.backslash-quote-literal', 'The backslash convention instead: accepted, and does it parse',
              hit.saved ? 'ACCEPTED BUT DOES NOT MATCH'
                        : control.saved ? 'ACCEPTED AND MATCHES' : 'NOT ESTABLISHED',
              hit.saved
@@ -923,28 +968,36 @@
 
   report();
   console.log('\nHOW TO READ THIS RUN');
-  console.log('  VN and CN must both be PASS. If either is FAIL, the surface it');
-  console.log('  guards proved nothing and its rows are unproven, not wrong.');
-  console.log('  V2C and V3C are POSITIVE CONTROLS, and V2/V3 are only evidence');
-  console.log('  when their control PASSED: a rule that refuses everything refuses');
-  console.log('  the future stamp too, and that reads the same as enforcement.');
-  console.log('  V3 decides whether the today+1 allowance in five templates is');
-  console.log('  necessary. V6 decides whether it is a 24-hour or 48-hour window,');
-  console.log('  and only answers when TZ0 says this browser shares the site day.');
-  console.log('  C2/C3 decide whether a `now` sentinel could do anything a view');
-  console.log('  cannot already do; C5 confirms what seven shipped views get today.');
-  console.log('  C6/C7 are the ones that lift the CAML gate in conditions.py.');
+  console.log('  The two control- rows, formula.datetime.control-missing-column-');
+  console.log('  refused and query.caml.control-bogus-element-refused, must both be');
+  console.log('  PASS. If either is FAIL, the surface it guards proved nothing and');
+  console.log('  its rows are unproven, not wrong.');
+  console.log('  control-now-function-allows-past and control-today-allows-');
+  console.log('  yesterday are POSITIVE CONTROLS, and now-function-rejects-future');
+  console.log('  and today-rejects-earlier-today are only evidence when their');
+  console.log('  control PASSED: a rule that refuses everything refuses the future');
+  console.log('  stamp too, and that reads the same as enforcement.');
+  console.log('  today-rejects-earlier-today decides whether the today+1 allowance');
+  console.log('  in five templates is necessary. today-plus-one-ceiling-tomorrow-');
+  console.log('  night decides whether it is a 24-hour or 48-hour window, and only');
+  console.log('  answers when control-site-time-zone says this browser shares the');
+  console.log('  site day.');
+  console.log('  The two query.caml-adhoc.now-element-* rows decide whether a `now`');
+  console.log('  sentinel could do anything a view cannot already do; today-element-');
+  console.log('  date-granular confirms what seven shipped views get today.');
+  console.log('  The two query.view-query.today-include-time-* rows are the ones');
+  console.log('  that lift the CAML gate in conditions.py.');
   if (controlRowLeaked) {
     console.log('');
     console.log('  A CONTROL ROW COULD NOT BE DELETED (see the FAIL above). The CAML');
-    console.log('  rows count items, so C2-C7 counted one row that should not have');
-    console.log('  been there. Treat them as NOT ESTABLISHED, delete the list, and');
-    console.log('  re-run before reporting anything from this run.');
+    console.log('  rows count items, so every query.* row counted one row that should');
+    console.log('  not have been there. Treat them as NOT ESTABLISHED, delete the');
+    console.log('  list, and re-run before reporting anything from this run.');
   }
   console.log('\n============ ONE EYES-ON CHECK ============');
   console.log(`  Open the list and click the view "${REAL_VIEW}".`);
-  console.log('  C7 re-ran the stored query over REST; this confirms the same');
-  console.log('  thing in the surface a person actually uses.');
+  console.log('  today-include-time-selects re-ran the stored query over REST;');
+  console.log('  this confirms the same thing in the surface a person uses.');
   console.log('  Expected: it lists "CAML earlier today" and "CAML yesterday",');
   console.log('  and does NOT list "CAML later today".');
   console.log('  what you see: ____________________________________');

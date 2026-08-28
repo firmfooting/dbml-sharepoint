@@ -6,6 +6,35 @@
  * it compares. The committed catalogue defines its six findings, write scope
  * and cleanup policy. Historical conclusions belong in evidence, not here.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the evidence recorded against this probe quotes them.
+ *
+ *   formula.validation.fixture-url-column-seeded  (Q0) the probe list, its URL
+ *                                                      column and a control
+ *                                                      row are set up
+ *   formula.validation.url-operand-accepted       (Q1) SharePoint ACCEPTS a
+ *                                                      ValidationFormula
+ *                                                      referencing a URL
+ *                                                      column
+ *   formula.validation.url-rule-refuses-violation (Q2) the rule FIRES: a
+ *                                                      violating row is
+ *                                                      refused
+ *   formula.validation.url-rule-passes-compliant  (Q3) the rule PASSES a
+ *                                                      compliant row
+ *   formula.validation.url-isblank-sees-empty-description
+ *                                                 (Q4) ISBLANK sees a Url with
+ *                                                      an EMPTY description as
+ *                                                      present
+ *   formula.validation.url-equality-matches-url   (Q5) an equality comparison
+ *                                                      matches the Url rather
+ *                                                      than the Description
+ *
+ * `hyperlinkOperandVerdict` in `_hyperlink_results_v1.js.j2` still takes
+ * `Q1`/`Q2`/`Q3` as its parameter names. Those are the shared reduction's own
+ * argument names, not check ids, and renaming them would move a contract this
+ * probe does not own.
+ *
  * Set CONFIRMED=true only after the script prints the intended web. Set
  * CLEANUP_AT_END=true on a later run to remove a retained fixture.
  */
@@ -23,12 +52,12 @@
   // ------------------------------------------------------------------------
 
 {% include "_probe_results_v1.js.j2" %}
-  expect('Q0', 'the probe list, its URL column and a control row are set up');
-  expect('Q1', 'SharePoint ACCEPTS a ValidationFormula referencing a URL column');
-  expect('Q2', 'the rule FIRES: a violating row is refused');
-  expect('Q3', 'the rule PASSES a compliant row (not simply refusing everything)');
-  expect('Q4', 'ISBLANK sees a Url with an EMPTY description as present');
-  expect('Q5', 'an equality comparison matches the Url rather than the Description');
+  expect('formula.validation.fixture-url-column-seeded', 'the probe list, its URL column and a control row are set up');
+  expect('formula.validation.url-operand-accepted', 'SharePoint ACCEPTS a ValidationFormula referencing a URL column');
+  expect('formula.validation.url-rule-refuses-violation', 'the rule FIRES: a violating row is refused');
+  expect('formula.validation.url-rule-passes-compliant', 'the rule PASSES a compliant row (not simply refusing everything)');
+  expect('formula.validation.url-isblank-sees-empty-description', 'ISBLANK sees a Url with an EMPTY description as present');
+  expect('formula.validation.url-equality-matches-url', 'an equality comparison matches the Url rather than the Description');
 
 {% include "_probe_core_v2.js.j2" %}
 {% include "_probe_list_fixture_v1.js.j2" %}
@@ -75,12 +104,12 @@
   try {
     const prepared = await prepareOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION, CLEANUP_AT_END);
     if (!prepared.ok) {
-      record('Q0', 'setup', 'ABORTED', prepared.error);
+      record('formula.validation.fixture-url-column-seeded', 'setup', 'ABORTED', prepared.error);
       throw new Error('fixture ownership or reset failed');
     }
     if (prepared.existing) {
       record(
-        'Q0',
+        'formula.validation.fixture-url-column-seeded',
         'setup',
         'ABORTED',
         `The owned fixture '${PROBE_LIST}' is retained for evidence. Re-run with CLEANUP_AT_END=true to recycle it before a fresh run.`,
@@ -89,7 +118,7 @@
       return { usable: false, results };
     }
 
-    // === Q0: setup =======================================================
+    // === fixture-url-column-seeded (Q0): setup ============================
     const made = await post('web/lists', {
       __metadata: { type: 'SP.List' },
       BaseTemplate: 100,
@@ -97,7 +126,8 @@
       Description: OWNERSHIP_DESCRIPTION,
     });
     if (!made.ok) {
-      record('Q0', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
+      record('formula.validation.fixture-url-column-seeded', 'setup', 'ABORTED',
+             `could not create the probe list: HTTP ${made.status} ${made.error}`);
       throw new Error('setup failed');
     }
     createdList = true;
@@ -108,7 +138,8 @@
       Title: 'Doc',
     });
     if (!field.ok) {
-      record('Q0', 'setup', 'ABORTED', `could not add the Doc URL column: HTTP ${field.status} ${field.error}`);
+      record('formula.validation.fixture-url-column-seeded', 'setup', 'ABORTED',
+             `could not add the Doc URL column: HTTP ${field.status} ${field.error}`);
       throw new Error('setup failed');
     }
     itemType = await entityTypeFor(PROBE_LIST);
@@ -117,19 +148,19 @@
     // rule fired or could mean the list was broken all along.
     const control = await tryCreate('control row, no rule set', { Title: 'control' });
     record(
-      'Q0',
+      'formula.validation.fixture-url-column-seeded',
       'the probe list, its URL column and a control row are set up',
       control.ok ? 'READY' : 'ABORTED',
       control.ok ? 'Doc is FieldTypeKind 11 (URL)' : `control row refused: HTTP ${control.status} ${control.error}`,
     );
     if (!control.ok) throw new Error('setup failed');
 
-    // === Q1: will SharePoint STORE the formula? ==========================
+    // === url-operand-accepted (Q1): will SharePoint STORE the formula? ===
     // The audit-actions shape, reduced to its hyperlink half.
     const blankRule = '=NOT(ISBLANK([Doc]))';
     const set1 = await setRule(blankRule, 'Doc is required.');
     record(
-      'Q1',
+      'formula.validation.url-operand-accepted',
       'SharePoint ACCEPTS a ValidationFormula referencing a URL column',
       classifyAttempt(set1, 'ACCEPTED', 'REFUSED'),
       describeAttempt(
@@ -140,13 +171,13 @@
     );
 
     if (set1.ok) {
-      // === Q2: does it FIRE? ============================================
+      // === url-rule-refuses-violation (Q2): does it FIRE? ===============
       // THE question. An ACCEPTED row here means the rule is stored,
       // reads back byte-identical, and does nothing, the silent failure
       // that made audit-actions' evidence requirement untrustworthy.
       const violating = await tryCreate('Doc empty, rule requires it', { Title: 'violating' });
       record(
-        'Q2',
+        'formula.validation.url-rule-refuses-violation',
         'the rule FIRES: a violating row is refused',
         classifyAttempt(violating, 'DID NOT FIRE', 'FIRED'),
         describeAttempt(
@@ -156,14 +187,14 @@
         ),
       );
 
-      // === Q3: does it pass a compliant row? ============================
+      // === url-rule-passes-compliant (Q3): a compliant row? =============
       // Guards against the opposite error, a rule that refuses everything
       // would also "fire" on Q2 while being equally useless.
       const compliant = await tryCreate('Doc filled', {
         Title: 'compliant', Doc: urlValue(EVIDENCE),
       });
       record(
-        'Q3',
+        'formula.validation.url-rule-passes-compliant',
         'the rule PASSES a compliant row (not simply refusing everything)',
         classifyAttempt(compliant, 'PASSED', 'REFUSED EVERYTHING'),
         describeAttempt(
@@ -173,7 +204,7 @@
         ),
       );
 
-      // === Q4: Url present, Description empty ===========================
+      // === url-isblank-sees-empty-description (Q4): Description empty ===
       // The half-populated case a real author produces by pasting a link
       // without typing a label. If ISBLANK reads the DESCRIPTION, this row
       // is refused despite carrying a perfectly good URL.
@@ -181,7 +212,7 @@
         Title: 'no-description', Doc: urlValue(OTHER, ''),
       });
       record(
-        'Q4',
+        'formula.validation.url-isblank-sees-empty-description',
         'ISBLANK sees a Url with an EMPTY description as present',
         classifyAttempt(noDescription, 'SEES THE URL', 'SEES THE DESCRIPTION'),
         describeAttempt(
@@ -191,7 +222,7 @@
         ),
       );
 
-      // === Q5: which half does an equality comparison see? ==============
+      // === url-equality-matches-url (Q5): which half is compared? =======
       // Set a rule matching the URL exactly, then offer a row whose
       // DESCRIPTION is that string and whose Url is different. Accepted
       // means the comparison saw the description.
@@ -199,7 +230,7 @@
       const set2 = await setRule(eqRule, 'Doc must be the evidence URL.');
       if (!set2.ok) {
         record(
-          'Q5',
+          'formula.validation.url-equality-matches-url',
           'an equality comparison matches the Url rather than the Description',
           isSharePointBehavioralRefusal(set2) ? 'NOT APPLICABLE' : 'NOT ESTABLISHED',
           describeAttempt(
@@ -223,33 +254,47 @@
               : byUrl.ok && byDescription.ok ? 'MATCHES EITHER'
                 : 'MATCHES NEITHER';
         record(
-          'Q5',
+          'formula.validation.url-equality-matches-url',
           'an equality comparison matches the Url rather than the Description',
           observed,
           `url-match row ${describeDisposition(byUrl)}; description-match row ${describeDisposition(byDescription)}`,
         );
       }
     } else {
-      for (const id of ['Q2', 'Q3', 'Q4', 'Q5']) {
+      for (const id of [
+        'formula.validation.url-rule-refuses-violation',
+        'formula.validation.url-rule-passes-compliant',
+        'formula.validation.url-isblank-sees-empty-description',
+        'formula.validation.url-equality-matches-url',
+      ]) {
         record(
           id,
           results.find((r) => r.id === id).question,
           isSharePointBehavioralRefusal(set1) ? 'NOT APPLICABLE' : 'NOT ESTABLISHED',
           isSharePointBehavioralRefusal(set1)
-            ? 'SharePoint refused the formula at Q1, so the conditional downstream question has no executable subject'
-            : `Q1 failed without a semantic response (HTTP ${set1.status} ${set1.error})`,
+            ? 'SharePoint refused the formula at url-operand-accepted, so the conditional downstream question has no executable subject'
+            : 'url-operand-accepted failed without a semantic response '
+              + `(HTTP ${set1.status} ${set1.error})`,
         );
       }
     }
 
     // === Verdict =========================================================
     const q = (id) => results.find((r) => r.id === id)?.observed;
-    const verdict = hyperlinkOperandVerdict({ Q1: q('Q1'), Q2: q('Q2'), Q3: q('Q3') });
+    const verdict = hyperlinkOperandVerdict({
+      Q1: q('formula.validation.url-operand-accepted'),
+      Q2: q('formula.validation.url-rule-refuses-violation'),
+      Q3: q('formula.validation.url-rule-passes-compliant'),
+    });
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
     log(
       'VERDICT',
-      `accepted=${q('Q1')} fires=${q('Q2')} discriminates=${q('Q3')} `
-      + `blank_reads=${q('Q4')} equality_reads=${q('Q5')} => operand_usable=${verdict.operandUsable}`,
+      `accepted=${q('formula.validation.url-operand-accepted')} `
+      + `fires=${q('formula.validation.url-rule-refuses-violation')} `
+      + `discriminates=${q('formula.validation.url-rule-passes-compliant')} `
+      + `blank_reads=${q('formula.validation.url-isblank-sees-empty-description')} `
+      + `equality_reads=${q('formula.validation.url-equality-matches-url')} `
+      + `=> operand_usable=${verdict.operandUsable}`,
     );
     log('INFO', verdict.guidance);
     return { operandUsable: verdict.operandUsable, results };
