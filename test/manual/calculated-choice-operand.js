@@ -77,6 +77,7 @@
  *
  * WHEN FINISHED: delete both lists it created. Everything lives in them.
  */
+// finding: calculated-choice-lookup-operand — L1 Lookup operand and N1 Person negative control: whether Choice/Lookup operands are refused like the Person operand is
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
