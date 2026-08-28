@@ -576,7 +576,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -1896,40 +1896,40 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "K1",
+              "id": "access.lookup-acl.control-target-denied",
               "depends_on": []
             },
             {
-              "id": "K2",
+              "id": "access.lookup-acl.display-value-to-denied-reader",
               "depends_on": [
-                "K1",
-                "K4"
+                "access.lookup-acl.control-target-denied",
+                "access.lookup-acl.control-source-readable"
               ]
             },
             {
-              "id": "K3",
+              "id": "access.lookup-acl.expand-reaches-other-columns",
               "depends_on": [
-                "K1",
-                "K4"
+                "access.lookup-acl.control-target-denied",
+                "access.lookup-acl.control-source-readable"
               ]
             },
             {
-              "id": "K4",
+              "id": "access.lookup-acl.control-source-readable",
               "depends_on": []
             },
             {
-              "id": "K5",
+              "id": "field.lookup.calculated-display-field",
               "depends_on": []
             },
             {
-              "id": "K6",
+              "id": "field.lookup.empty-label-linked-readback",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "K1",
-            "K4"
+            "access.lookup-acl.control-target-denied",
+            "access.lookup-acl.control-source-readable"
           ],
           "depends_on": []
         },
@@ -1939,10 +1939,10 @@
           "pattern": "identity-pair",
           "findings": [
             {
-              "id": "K7",
+              "id": "field.lookup.picker-omits-empty-label",
               "depends_on": [
-                "K5",
-                "K6"
+                "field.lookup.calculated-display-field",
+                "field.lookup.empty-label-linked-readback"
               ]
             }
           ],
@@ -1979,8 +1979,8 @@
             }
           ],
           "controls": [
-            "K5",
-            "K6"
+            "field.lookup.calculated-display-field",
+            "field.lookup.empty-label-linked-readback"
           ],
           "depends_on": [
             "machine-findings"
@@ -2007,141 +2007,141 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "C1",
+              "id": "query.caml-adhoc.multichoice-eq",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C10",
+              "id": "query.caml-adhoc.multichoice-neq-isnull-wrapper",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C11",
+              "id": "query.caml-adhoc.multichoice-and-membership",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C12",
+              "id": "query.caml-adhoc.multichoice-or-membership",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C13",
+              "id": "query.caml-adhoc.multichoice-eq-empty-value",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C2",
+              "id": "query.caml-adhoc.multichoice-eq-delimited-value",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C3",
+              "id": "query.caml-adhoc.multichoice-contains",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C4",
+              "id": "query.caml-adhoc.multichoice-includes",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C5",
+              "id": "query.caml-adhoc.multichoice-notincludes",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C6",
+              "id": "query.caml-adhoc.multichoice-isnull",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C7",
+              "id": "query.caml-adhoc.multichoice-isnotnull",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "C9",
+              "id": "query.caml-adhoc.multichoice-neq",
               "depends_on": [
-                "Q0",
-                "M5"
+                "field.multichoice.fixture-list-seeded",
+                "field.multichoice.item-rewrite-member-order"
               ]
             },
             {
-              "id": "F1",
+              "id": "formula.calc.operand-multichoice",
               "depends_on": []
             },
             {
-              "id": "I1",
+              "id": "field.multichoice.indexed-property",
               "depends_on": [
-                "I1C"
+                "field.multichoice.control-single-value-indexed"
               ]
             },
             {
-              "id": "I1C",
+              "id": "field.multichoice.control-single-value-indexed",
               "depends_on": []
             },
             {
-              "id": "I2",
+              "id": "field.multichoice.enforce-unique-values",
               "depends_on": []
             },
             {
-              "id": "M1",
+              "id": "field.multichoice.create-plain-post",
               "depends_on": []
             },
             {
-              "id": "M2",
+              "id": "field.multichoice.create-readback-type",
               "depends_on": []
             },
             {
-              "id": "M3",
+              "id": "field.multichoice.item-write-shape",
               "depends_on": []
             },
             {
-              "id": "M4",
+              "id": "field.multichoice.item-read-shape",
               "depends_on": []
             },
             {
-              "id": "M5",
+              "id": "field.multichoice.item-rewrite-member-order",
               "depends_on": []
             },
             {
-              "id": "Q0",
+              "id": "field.multichoice.fixture-list-seeded",
               "depends_on": []
             },
             {
-              "id": "V1",
+              "id": "formula.validation.multichoice-operand",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "Q0",
-            "M5",
-            "I1C"
+            "field.multichoice.fixture-list-seeded",
+            "field.multichoice.item-rewrite-member-order",
+            "field.multichoice.control-single-value-indexed"
           ],
           "depends_on": []
         },
@@ -2151,15 +2151,15 @@
           "pattern": "state-matrix",
           "findings": [
             {
-              "id": "C14",
+              "id": "query.view-query.multichoice-chain-selects",
               "depends_on": []
             },
             {
-              "id": "C8",
+              "id": "query.view-query.multichoice-membership-selects",
               "depends_on": []
             },
             {
-              "id": "X1",
+              "id": "field.multichoice.severity-formatter-render",
               "depends_on": []
             }
           ],
@@ -2190,8 +2190,8 @@
             }
           ],
           "controls": [
-            "Q0",
-            "M5"
+            "field.multichoice.fixture-list-seeded",
+            "field.multichoice.item-rewrite-member-order"
           ],
           "depends_on": [
             "machine-findings"
@@ -2343,43 +2343,43 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "R1",
+              "id": "access.role-def.control-roledefinitions-readable",
               "depends_on": []
             },
             {
-              "id": "R2",
+              "id": "access.role-def.read-level-basepermissions",
               "depends_on": [
-                "R1"
+                "access.role-def.control-roledefinitions-readable"
               ]
             },
             {
-              "id": "R3",
+              "id": "access.role-def.read-level-customised",
               "depends_on": [
-                "R1"
+                "access.role-def.control-roledefinitions-readable"
               ]
             },
             {
-              "id": "R4",
+              "id": "access.role-binding.web-scope-by-group",
               "depends_on": [
-                "R1"
+                "access.role-def.control-roledefinitions-readable"
               ]
             },
             {
-              "id": "R5",
+              "id": "access.role-binding.list-scope-by-group",
               "depends_on": [
-                "R1"
+                "access.role-def.control-roledefinitions-readable"
               ]
             },
             {
-              "id": "R6",
+              "id": "access.group.site-group-census",
               "depends_on": [
-                "R1"
+                "access.role-def.control-roledefinitions-readable"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "R1"
+            "access.role-def.control-roledefinitions-readable"
           ],
           "depends_on": []
         }

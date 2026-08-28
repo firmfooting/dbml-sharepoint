@@ -37,27 +37,45 @@
  *     worse failure than a long picker, and it is the reason this asks
  *     rather than recommends.
  *
- * WHAT IT ASKS
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the prose below and every run reported against
+ * this probe quote the mnemonics.
+ *
  *   -- Question A, needs the second account ------------------------------
- *   K1   CONTROL: is the second account actually denied the TARGET list?
+ *   access.lookup-acl.control-target-denied           (K1)
+ *        CONTROL: is the second account actually denied the TARGET list?
  *        If it can still open the target, every row below means nothing.
- *   K2   THE ONE THAT MATTERS. Reading the SOURCE item as the denied
+ *   access.lookup-acl.display-value-to-denied-reader  (K2)
+ *        THE ONE THAT MATTERS. Reading the SOURCE item as the denied
  *        account, does the lookup's display value come back?
- *   K3   ...and does $expand reach the target row's OTHER columns, or only
+ *   access.lookup-acl.expand-reaches-other-columns    (K3)
+ *        ...and does $expand reach the target row's OTHER columns, or only
  *        the display field? A denied reader who can expand is a bigger
  *        hole than one who sees a title.
- *   K4   CONTROL: can the denied account read the SOURCE list at all? If
+ *   access.lookup-acl.control-source-readable         (K4)
+ *        CONTROL: can the denied account read the SOURCE list at all? If
  *        not, K2 and K3 are silent for the wrong reason.
  *
  *   -- Question B, answered by the site owner ----------------------------
- *   K5   does SharePoint accept a CALCULATED column as a lookup's display
+ *   field.lookup.calculated-display-field             (K5)
+ *        does SharePoint accept a CALCULATED column as a lookup's display
  *        field (LookupFieldName)?
- *   K6   ...and with the label empty for a row, what does an item ALREADY
+ *   field.lookup.empty-label-linked-readback          (K6)
+ *        ...and with the label empty for a row, what does an item ALREADY
  *        LINKED to that row read back as? This is the risky one: a theme that
  *        closes must not blank the link on the events behind it.
- *   K7   EYES-ON: does the New form's picker actually omit the row whose
+ *   field.lookup.picker-omits-empty-label             (K7)
+ *        EYES-ON: does the New form's picker actually omit the row whose
  *        calculated label is empty? A picker is a rendering surface and no
  *        REST call can answer it.
+ *
+ * K5 to K7 file under `field`, not `access`, because a check is keyed to the
+ * surface of its own question rather than the surface of its probe. Whether a
+ * calculated column can be a lookup's display field, and what an existing
+ * link reads back as when that label empties, are questions about the column
+ * type. They are asked here because question A already needs the pair of
+ * lists, and nothing about them is an access result.
  *
  * READ K1 AND K4 FIRST. K2 is evidence only when the account is provably
  * denied the target AND provably allowed the source.
@@ -322,13 +340,13 @@
   const SIDE = 'dbmlsp-probe-target-second-column';
   const CLOSED_TITLE = 'dbmlsp-probe-closed-row';
 
-  expect('K1', 'CONTROL: is the second account actually denied the TARGET list?');
-  expect('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?');
-  expect('K3', 'Does $expand on the lookup reach the target row\'s other columns?');
-  expect('K4', 'CONTROL: can the denied account read the SOURCE list at all?');
-  expect('K5', 'Does SharePoint accept a CALCULATED column as a lookup display field?');
-  expect('K6', 'With the label empty, what does an ALREADY LINKED item read back as?');
-  expect('K7', 'EYES-ON: does the picker omit the row whose calculated label is empty?');
+  expect('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?');
+  expect('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?');
+  expect('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?');
+  expect('access.lookup-acl.control-source-readable', 'CONTROL: can the denied account read the SOURCE list at all?');
+  expect('field.lookup.calculated-display-field', 'Does SharePoint accept a CALCULATED column as a lookup display field?');
+  expect('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?');
+  expect('field.lookup.picker-omits-empty-label', 'EYES-ON: does the picker omit the row whose calculated label is empty?');
 
   if (!CONFIRMED) {
     log('INFO', `MODE is '${MODE}'.`);
@@ -369,29 +387,29 @@
     // withheld from an account that was never actually refused anything.
     const deniedTarget = target.status === 401 || target.status === 403;
     if (!me.ok) {
-      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
              `could not read web/currentuser (HTTP ${me.status}), so this run cannot `
              + 'even say who it is running as, let alone whether they are privileged.');
     } else if (isAdmin) {
-      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
              `this account is a site collection administrator (${who}). SharePoint `
              + 'does not apply broken inheritance to one, so nothing below can be '
              + 'read as evidence. Re-run pass 2 as a non-privileged account.');
     } else if (target.ok) {
-      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'FAIL',
              `the account READ ${TARGET} (HTTP ${target.status}), so inheritance was `
              + 'not broken as intended and K2/K3 prove nothing about a denied reader');
     } else if (!deniedTarget) {
-      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
              `the target read failed with HTTP ${target.status}, which is not an access `
              + 'denial. A throttled or erroring request is not evidence that the ACL '
              + 'holds. Re-run.');
     } else {
-      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'PASS',
              `refused with HTTP ${target.status}, so the account is denied the `
              + `target list. Running as: ${who}`);
@@ -408,7 +426,7 @@
     // the page limit, reads as a clean security result.
     const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
     const fixtureLinked = Boolean(fixture && fixture[`${LOOKUP}Id`]);
-    record('K4', 'CONTROL: can the denied account read the SOURCE list at all?',
+    record('access.lookup-acl.control-source-readable', 'CONTROL: can the denied account read the SOURCE list at all?',
            !source.ok ? 'FAIL' : fixtureLinked ? 'PASS' : 'NOT ESTABLISHED',
            !source.ok
              ? `refused with HTTP ${source.status}. K2 and K3 are silent for the `
@@ -423,9 +441,9 @@
                  + 'Re-run the setup pass.');
 
     if (!me.ok || !source.ok || !fixtureLinked || isAdmin || target.ok || !deniedTarget) {
-      record('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
+      record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
              'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
-      record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
+      record('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?',
              'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
     } else {
       const expanded = await spGet(
@@ -434,13 +452,13 @@
       const raw = expanded.ok ? JSON.stringify(expanded.body) : '';
       const denied = expanded.status === 401 || expanded.status === 403;
       if (!expanded.ok && !denied) {
-        record('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
+        record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
                'NOT ESTABLISHED',
                `the $expand read failed with HTTP ${expanded.status}, which is neither `
                + 'a denial nor an answer');
       } else {
         const leaked = raw.includes(SECRET);
-        record('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
+        record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
                leaked ? 'LOOKUP VALUE IS VISIBLE' : 'LOOKUP VALUE IS WITHHELD',
                leaked
                  ? 'the target Title came back to an account denied the target list: '
@@ -460,7 +478,7 @@
       // an ACL result, which K1 and K2 above already avoid.
       const sideRefused = isRefusal(side.status)
         || side.status === 401 || side.status === 403;
-      record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
+      record('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?',
              side.ok
                ? sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
                  : sideRaw.includes(SECRET) ? 'DISPLAY FIELD ONLY'
@@ -540,12 +558,12 @@
 
   const targetList = await ensureList(TARGET);
   if (!targetList) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `the target list could not be created (see the FAIL above)`);
   }
   const sourceList = await ensureList(SOURCE);
   if (!sourceList) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `the source list could not be created (see the FAIL above)`);
   }
 
@@ -578,7 +596,7 @@
   const closedRow = await spPost(`web/lists/getbytitle('${TARGET}')/items`,
                                  { Title: CLOSED_TITLE, ProbeStatus: 'Open' }, digest);
   if (!openRow.ok || !closedRow.ok) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `could not create the target rows: HTTP ${openRow.status}/${closedRow.status}`);
   }
   const openId = openRow.body.Id;
@@ -601,7 +619,7 @@
   // The ordinary lookup, on Title. This is the one question A is about.
   const plainLookup = await addLookup(LOOKUP, 'Title');
   if (!plainLookup.ok) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `could not add the lookup column: HTTP ${plainLookup.status} `
                 + plainLookup.text.slice(0, 240));
   }
@@ -614,7 +632,7 @@
   // The calculated label column has to exist before any of this means
   // anything: if addField refused IT, addfield refusing the lookup says
   // nothing about calculated display fields.
-  record('K5', 'Does SharePoint accept a CALCULATED column as a lookup display field?',
+  record('field.lookup.calculated-display-field', 'Does SharePoint accept a CALCULATED column as a lookup display field?',
          !labelMade.ok ? 'NOT ESTABLISHED'
            : calcLookup.ok ? 'ACCEPTED'
            : isRefusal(calcLookup.status) ? 'REFUSED' : 'NOT ESTABLISHED',
@@ -639,7 +657,7 @@
     [`${LOOKUP}Id`]: openId,
   }, digest);
   if (!sourceRow.ok) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `could not create the linked source row: HTTP ${sourceRow.status} `
                 + sourceRow.text.slice(0, 240));
   }
@@ -654,9 +672,9 @@
   // Linking to a row that was already empty would answer a different and
   // much less interesting question.
   if (!calcLookup.ok) {
-    record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+    record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
            'NOT ESTABLISHED', 'the calculated lookup column was refused at K5');
-    record('K7', 'EYES-ON: does the picker omit the row whose calculated label is empty?',
+    record('field.lookup.picker-omits-empty-label', 'EYES-ON: does the picker omit the row whose calculated label is empty?',
            'NOT ESTABLISHED', 'the calculated lookup column was refused at K5');
   } else {
     digest = await getDigest();
@@ -665,7 +683,7 @@
       [`${PICK}Id`]: closedId,
     }, digest);
     if (!linkedToClosed.ok) {
-      record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+      record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
              'NOT ESTABLISHED',
              `could not link a row through '${PICK}' to the target row: HTTP `
              + `${linkedToClosed.status}: ${linkedToClosed.text.slice(0, 240)}`);
@@ -681,7 +699,7 @@
       const labelWasRendering =
         !readFailed(before) && JSON.stringify(before.body).includes(CLOSED_TITLE);
       if (!labelWasRendering) {
-        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+        record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
                'NOT ESTABLISHED',
                `the link was made, but the label was NOT rendering before the target `
                + `was closed (HTTP ${before.status}; body `
@@ -700,7 +718,7 @@
         { ProbeStatus: 'Closed' }, digest,
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
       if (!closed.ok) {
-        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+        record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
                'NOT ESTABLISHED',
                `the link was made, but closing the target failed (HTTP ${closed.status}), `
                + `so the label never emptied and there is no transition to observe: `
@@ -712,7 +730,7 @@
         `web/lists/getbytitle('${SOURCE}')/items(${linkedToClosed.body.Id})`
         + `?$select=Title,${PICK}Id,${PICK}/${LABEL}&$expand=${PICK}`);
       if (!readBack.ok || !readBack.body) {
-        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+        record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
                'NOT ESTABLISHED',
                `the read-back failed with HTTP ${readBack.status}, so this run has no `
                + 'evidence either way');
@@ -720,7 +738,7 @@
         const body = JSON.stringify(readBack.body);
         const keepsId = body.includes(`"${PICK}Id"`);
         const showsTitle = body.includes(CLOSED_TITLE);
-        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+        record('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?',
                showsTitle ? 'LABEL STILL RENDERS' : 'LABEL READS EMPTY',
                `${showsTitle
                    ? 'the closed row title came back anyway'
@@ -739,7 +757,7 @@
     `web/lists/getbytitle('${TARGET}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)`,
     {}, digest);
   if (!broke.ok) {
-    return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+    return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `breakroleinheritance failed: HTTP ${broke.status} ${broke.text.slice(0, 240)}`);
   }
   log('OK', `Broke inheritance on '${TARGET}' with NO copied assignments.`);

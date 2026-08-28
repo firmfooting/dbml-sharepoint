@@ -351,7 +351,9 @@ views:
     # straight into a build error. Lifecycle Status is indexed, so the warning
     # does not fire.
     # Source: https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
-    # Live control: test/manual/multi-value-probe.js I1/I1C, 2026-08-17.
+    # Live control: test/manual/multi-value-probe.js
+    # field.multichoice.indexed-property and its
+    # field.multichoice.control-single-value-indexed, 2026-08-17.
     #
     # The paired index suppresses the warning but does not prove this nonselective view past the threshold.
     # This family relies on the bounded inventory contract in 50-govern/governance.md.
