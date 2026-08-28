@@ -1,8 +1,9 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "probes": [
     {
       "file": "calculated-choice-operand.js",
+      "surface": "formula",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -15,6 +16,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "formula",
           "pattern": "machine-only",
           "findings": [
             "C1",
@@ -46,6 +48,7 @@
     },
     {
       "file": "calculated-operand-probe.js",
+      "surface": "formula",
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
@@ -58,6 +61,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "formula",
           "pattern": "machine-only",
           "findings": [
             "BOOL",
@@ -81,6 +85,7 @@
     },
     {
       "file": "caml-chain-depth-probe.js",
+      "surface": "query",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -93,6 +98,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "query",
           "pattern": "machine-only",
           "findings": [
             "D01",
@@ -136,6 +142,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "query",
           "pattern": "before-action-after",
           "findings": [
             "E1",
@@ -258,6 +265,7 @@
     },
     {
       "file": "datetime-sentinel-probe.js",
+      "surface": "formula",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -272,6 +280,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "formula",
           "pattern": "machine-only",
           "findings": [
             "C1",
@@ -301,6 +310,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "formula",
           "pattern": "before-action-after",
           "findings": [
             "C7",
@@ -358,6 +368,7 @@
     },
     {
       "file": "document-library-probe.js",
+      "surface": "library",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -370,6 +381,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "library",
           "pattern": "machine-only",
           "findings": [
             "L1",
@@ -385,6 +397,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "library",
           "pattern": "state-matrix",
           "findings": [
             "L4",
@@ -419,6 +432,7 @@
     },
     {
       "file": "enterprise-reader-probe.js",
+      "surface": "access",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -433,6 +447,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "access",
           "pattern": "machine-only",
           "findings": [
             "A1",
@@ -453,6 +468,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "access",
           "pattern": "single-visible-state",
           "findings": [
             "A5"
@@ -479,6 +495,7 @@
     },
     {
       "file": "expression-text-operators-probe.js",
+      "surface": "expression",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -491,6 +508,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "expression",
           "pattern": "machine-only",
           "findings": [
             "X0"
@@ -501,6 +519,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "expression",
           "pattern": "state-matrix",
           "findings": [
             "X1",
@@ -556,6 +575,7 @@
     },
     {
       "file": "form-visibility-evidence-probe.js",
+      "surface": "expression",
       "harness": "helper",
       "authority": "allow-legacy-writes",
       "writes": [
@@ -570,6 +590,7 @@
       "scenarios": [
         {
           "id": "ui-storage-sequence",
+          "surface": "expression",
           "pattern": "before-action-after",
           "findings": [],
           "states": [
@@ -646,6 +667,7 @@
     },
     {
       "file": "form-visibility-interactive.js",
+      "surface": "form",
       "harness": "helper",
       "authority": "interactive",
       "writes": [
@@ -658,6 +680,7 @@
       "scenarios": [
         {
           "id": "ui-storage-sequence",
+          "surface": "form",
           "pattern": "before-action-after",
           "findings": [],
           "states": [
@@ -720,6 +743,7 @@
     },
     {
       "file": "form-visibility-probe.js",
+      "surface": "form",
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
@@ -734,6 +758,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "form",
           "pattern": "machine-only",
           "findings": [
             "Q1",
@@ -749,6 +774,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "form",
           "pattern": "before-action-after",
           "findings": [
             "Q6"
@@ -802,6 +828,7 @@
     },
     {
       "file": "form-visibility-storage-probe.js",
+      "surface": "form",
       "harness": "helper",
       "authority": "read-only",
       "writes": [],
@@ -814,6 +841,7 @@
       "scenarios": [
         {
           "id": "ui-storage-sequence",
+          "surface": "form",
           "pattern": "before-action-after",
           "findings": [],
           "states": [
@@ -848,6 +876,7 @@
     },
     {
       "file": "formatter-xml-probe.js",
+      "surface": "text",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -860,6 +889,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "text",
           "pattern": "machine-only",
           "findings": [
             "A_AMP",
@@ -893,6 +923,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "text",
           "pattern": "before-action-after",
           "findings": [
             "A_COMBINED",
@@ -981,6 +1012,7 @@
     },
     {
       "file": "group-description-probe.js",
+      "surface": "text",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -993,6 +1025,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "text",
           "pattern": "machine-only",
           "findings": [
             "G1",
@@ -1016,6 +1049,7 @@
     },
     {
       "file": "hyperlink-validation-operand-probe.js",
+      "surface": "formula",
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
@@ -1028,6 +1062,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "formula",
           "pattern": "machine-only",
           "findings": [
             "Q0",
@@ -1045,6 +1080,7 @@
     },
     {
       "file": "list-description-probe.js",
+      "surface": "text",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1057,6 +1093,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "text",
           "pattern": "machine-only",
           "findings": [
             "L1",
@@ -1080,6 +1117,7 @@
     },
     {
       "file": "lookup-acl-probe.js",
+      "surface": "access",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1094,6 +1132,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "access",
           "pattern": "machine-only",
           "findings": [
             "K1",
@@ -1109,6 +1148,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "access",
           "pattern": "identity-pair",
           "findings": [
             "K7"
@@ -1157,6 +1197,7 @@
     },
     {
       "file": "multi-value-probe.js",
+      "surface": "field",
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
@@ -1169,6 +1210,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "field",
           "pattern": "machine-only",
           "findings": [
             "C1",
@@ -1201,6 +1243,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "field",
           "pattern": "state-matrix",
           "findings": [
             "C14",
@@ -1245,6 +1288,7 @@
     },
     {
       "file": "native-index-probe.js",
+      "surface": "scale",
       "harness": "shared-v1",
       "authority": "read-only",
       "writes": [],
@@ -1257,6 +1301,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "scale",
           "pattern": "machine-only",
           "findings": [
             "CMPIDX",
@@ -1275,6 +1320,7 @@
     },
     {
       "file": "projected-lookup-probe.js",
+      "surface": "field",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1287,6 +1333,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "field",
           "pattern": "machine-only",
           "findings": [
             "PRIM",
@@ -1304,6 +1351,7 @@
     },
     {
       "file": "reader-bindings-probe.js",
+      "surface": "access",
       "harness": "shared-v1",
       "authority": "read-only",
       "writes": [],
@@ -1314,6 +1362,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "access",
           "pattern": "machine-only",
           "findings": [
             "R1",
@@ -1331,6 +1380,7 @@
     },
     {
       "file": "role-definition-probe.js",
+      "surface": "text",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1343,6 +1393,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "text",
           "pattern": "machine-only",
           "findings": [
             "N1",
@@ -1364,6 +1415,7 @@
     },
     {
       "file": "search-discovery-probe.js",
+      "surface": "search",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1378,6 +1430,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "search",
           "pattern": "delayed-reconciliation",
           "findings": [
             "S1",
@@ -1403,6 +1456,7 @@
     },
     {
       "file": "threshold-index-probe.js",
+      "surface": "scale",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1417,6 +1471,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "scale",
           "pattern": "machine-only",
           "findings": [
             "ANDIDX",
@@ -1468,6 +1523,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "scale",
           "pattern": "phased-threshold",
           "findings": [
             "FLAGS",
@@ -1538,6 +1594,7 @@
         },
         {
           "id": "guard-machine-findings",
+          "surface": "scale",
           "pattern": "machine-only",
           "findings": [
             "GRDIDX",
@@ -1552,6 +1609,7 @@
         },
         {
           "id": "editor-row-findings",
+          "surface": "scale",
           "pattern": "identity-pair",
           "findings": [
             "EDTNEG",
@@ -1581,6 +1639,7 @@
         },
         {
           "id": "guard-view-findings",
+          "surface": "scale",
           "pattern": "state-matrix",
           "findings": [
             "VWGRD",
@@ -1630,6 +1689,7 @@
     },
     {
       "file": "view-aggregations-probe.js",
+      "surface": "view",
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
@@ -1642,6 +1702,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "view",
           "pattern": "machine-only",
           "findings": [
             "Q0",
@@ -1655,6 +1716,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "view",
           "pattern": "single-visible-state",
           "findings": [
             "Q4",
@@ -1683,6 +1745,7 @@
     },
     {
       "file": "view-edit-page-probe.js",
+      "surface": "view",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -1695,6 +1758,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
+          "surface": "view",
           "pattern": "machine-only",
           "findings": [
             "C1",
@@ -1723,6 +1787,7 @@
         },
         {
           "id": "visible-findings",
+          "surface": "view",
           "pattern": "state-matrix",
           "findings": [
             "P1",

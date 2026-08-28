@@ -9,6 +9,9 @@ from typing import Any, cast
 from _paths import MANUAL
 
 CATALOG = MANUAL / "probe-catalog.json"
+SURFACES = MANUAL / "SURFACES.md"
+#: A numbered surface heading in SURFACES.md, e.g. "### 1. `formula`: ...".
+SURFACE_HEADING = re.compile(r"^### \d+\. `([a-z]+)`:", re.MULTILINE)
 VISIBLE_PATTERNS = {
     "single-visible-state",
     "state-matrix",
@@ -25,6 +28,25 @@ ALL_PATTERNS = VISIBLE_PATTERNS | {
 
 def _catalog() -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(CATALOG.read_text(encoding="utf-8")))
+
+
+def _surface_registry() -> dict[str, set[str]]:
+    """The surface list and its probe membership, read from the authority file.
+
+    SURFACES.md is the sole authority for the eleven surfaces, so the catalogue
+    is checked against what that file says rather than against a second copy of
+    the list kept here.
+    """
+    text = SURFACES.read_text(encoding="utf-8")
+    headings = list(SURFACE_HEADING.finditer(text))
+    registry: dict[str, set[str]] = {}
+    for position, heading in enumerate(headings):
+        following = headings[position + 1].start() if position + 1 < len(headings) else len(text)
+        section = text[heading.start():following]
+        listed = re.search(r"^Probes: (.+?)\n\n", section, re.MULTILINE | re.DOTALL)
+        assert listed is not None, f"{heading.group(1)} lists no probes"
+        registry[heading.group(1)] = set(re.findall(r"`([^`]+\.js)`", listed.group(1)))
+    return registry
 
 
 def _static_finding_ids(source: str) -> set[str]:
@@ -55,9 +77,27 @@ def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     catalogued = {descriptor["file"] for descriptor in descriptors}
     actual = {path.name for path in MANUAL.glob("*.js")}
 
-    assert catalog["schema_version"] == "1.0"
+    assert catalog["schema_version"] == "1.1"
     assert len(descriptors) == 25
     assert catalogued == actual
+
+
+def test_probe_catalog_declares_the_surface_the_registry_files_each_probe_under() -> None:
+    registry = _surface_registry()
+    descriptors = _catalog()["probes"]
+
+    assert len(registry) == 11
+    assert set().union(*registry.values()) == {
+        descriptor["file"] for descriptor in descriptors
+    }
+    for descriptor in descriptors:
+        surface = descriptor.get("surface")
+        assert surface in registry, f"{descriptor['file']} declares surface {surface!r}"
+        assert descriptor["file"] in registry[surface], descriptor["file"]
+        for scenario in descriptor["scenarios"]:
+            assert scenario.get("surface") == surface, (
+                f"{descriptor['file']}:{scenario['id']}"
+            )
 
 
 def test_probe_catalog_declares_every_static_finding_once() -> None:
