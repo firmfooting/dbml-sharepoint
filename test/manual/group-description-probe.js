@@ -110,7 +110,7 @@
  * settings > Site permissions. The name carries a run-unique suffix, so it
  * will not collide with anything the site already had.
  */
-// finding: group-description-round-trip — G1/G2 group Description round-trips byte-identical through both write paths; G6 refuses >512 chars rather than truncating; G7 membership flags round-trip at create
+// finding: group-description-round-trip — captured → evidence/probes/group-description-findings/probe-summary.json
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and

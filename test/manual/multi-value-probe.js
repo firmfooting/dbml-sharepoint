@@ -6,7 +6,6 @@
  * operands and rendered severity formatting. The catalogue owns the finding
  * inventory and visible state matrix. Historical runs belong in evidence.
  */
-// finding: multi-value-chained-predicate — M5 re-write round-trip/member-order and C1..C10 chained-predicate storage are NOT ESTABLISHED (unavailable controls)
 (async () => {
   // ---- Operator settings -------------------------------------------------
   const CONFIRMED = false;
