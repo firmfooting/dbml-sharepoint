@@ -15,48 +15,81 @@
  * website/docs/reference/dbml.md warns about for person and lookup
  * operands.
  *
- * WHAT IT ASKS
- *   C1  does the calculated column CREATE over two Choice operands?
- *   C2  does it RENDER a value on a saved item? (creating is not working)
- *   C3  what does SharePoint store in Formula, versus what was sent?
- *   C4  does a Choice value containing & " < survive concatenation?
- *   C5  what happens when one operand is blank?
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the runs recorded below quote the mnemonics.
  *
- *   D1  the same, but referencing operands by DISPLAY name WITH SPACES.
- *   D2  what is stored for that form? A bracketed name containing spaces
- *   D3  cannot have its brackets stripped without becoming ambiguous, so
- *       it may store and compare differently to C1/C3. This is the shape
- *       the tool actually emits: the build rewrites [RaisedAtTier] to
- *       [Raised At Tier] before deploying, so C1 alone tests a formula
- *       deploy.js never sends.
+ *   formula.choice.calc-column-accepted   (C1)  does the calculated column
+ *                                               CREATE over two Choice
+ *                                               operands?
+ *   formula.choice.calc-column-renders    (C2)  does it RENDER a value on a
+ *                                               saved item? (creating is not
+ *                                               working)
+ *   formula.choice.formula-as-stored      (C3)  what does SharePoint store in
+ *                                               Formula, versus what was sent?
+ *   formula.choice.metachar-value-renders (C4)  does a Choice value containing
+ *                                               & " < survive concatenation?
+ *   formula.choice.blank-operand-renders  (C5)  what happens when one operand
+ *                                               is blank?
  *
- *   NUM1  ResultType Number over a Choice operand: accepted?
- *   NUM2  ...and does it compute the branch the Choice selects?
- *   DAT1  ResultType DateTime over Choice + Date operands: accepted?
- *   DAT2  ...and does the date offset compute?
+ *   formula.choice.spaced-display-name-accepted  (D1)  the same, but
+ *   formula.choice.spaced-display-name-as-stored (D2)  referencing operands by
+ *   formula.choice.spaced-display-name-renders   (D3)  DISPLAY name WITH
+ *       SPACES. A bracketed name containing spaces cannot have its brackets
+ *       stripped without becoming ambiguous, so it may store and compare
+ *       differently to C1/C3. This is the shape the tool actually emits: the
+ *       build rewrites [RaisedAtTier] to [Raised At Tier] before deploying,
+ *       so C1 alone tests a formula deploy.js never sends.
+ *
+ *   formula.choice.number-result-accepted   (NUM1)  ResultType Number over a
+ *                                                   Choice operand: accepted?
+ *   formula.choice.number-result-computes   (NUM2)  ...and does it compute the
+ *                                                   branch the Choice selects?
+ *   formula.choice.datetime-result-accepted (DAT1)  ResultType DateTime over
+ *                                                   Choice + Date operands:
+ *                                                   accepted?
+ *   formula.choice.datetime-result-computes (DAT2)  ...and does the date
+ *                                                   offset compute?
  *       Both are declarable today (calculated_number, calculated_date) and
  *       are where this template goes next: a priority that sets a response
  *       time, or an escalation score derived from a choice.
  *
- *   R1  the retirement fold appends " (retired)" to a column's DISPLAY
- *   R2  title, and calculated formulas resolve operands BY display title.
- *       Does an existing formula survive that rename, and can a new one
- *       reference a title containing parentheses at all?
+ *   formula.choice.retitled-operand-survives        (R1)  the retirement fold
+ *   formula.choice.retitled-operand-referenced-anew (R2)  appends " (retired)"
+ *       to a column's DISPLAY title, and calculated formulas resolve operands
+ *       BY display title. Does an existing formula survive that rename, and
+ *       can a new one reference a title containing parentheses at all?
  *
- *   L1  is a Lookup operand refused in a calculated formula, as N1's
- *       Person operand is? The refusal message names no type list, so
- *       Lookup has to be asked rather than assumed.
- *   P1  a Person column in a COLUMN VALIDATION formula
- *   L2  a Lookup column in a COLUMN VALIDATION formula
- *   P2  a Person column in a CONDITIONAL VISIBILITY formula
- *   L3  a Lookup column in a CONDITIONAL VISIBILITY formula
+ *   formula.calc.lookup-operand-accepted  (L1)  is a Lookup operand refused in
+ *       a calculated formula, as N1's Person operand is? The refusal message
+ *       names no type list, so Lookup has to be asked rather than assumed.
+ *       Scoped `calc` rather than `choice` because the operand is not a
+ *       Choice; `calculated-operand-probe.js` asks the same question of every
+ *       type as `formula.calc.operand-lookup`, and this row predates it.
+ *   formula.validation.person-operand              (P1)  a Person column in a
+ *                                                        COLUMN VALIDATION
+ *                                                        formula
+ *   formula.validation.lookup-operand              (L2)  a Lookup column in a
+ *                                                        COLUMN VALIDATION
+ *                                                        formula
+ *   expression.client-validation.person-operand    (P2)  a Person column in a
+ *                                                        CONDITIONAL
+ *                                                        VISIBILITY formula
+ *   expression.client-validation.lookup-operand    (L3)  a Lookup column in a
+ *                                                        CONDITIONAL
+ *                                                        VISIBILITY formula
  *       analysis/conditions.py forbids person in validation but permits
  *       lookup there, and permits both in conditional visibility, none of
  *       it evidenced. A rule that forbids what SharePoint allows is merely
  *       restrictive; one that PERMITS what SharePoint refuses fails at
  *       deploy time, part-way through provisioning.
+ *       P2 and L3 write ClientValidationFormula, which only the browser
+ *       evaluates, so under the keying rule they file under `expression`
+ *       while P1 and L2 stay under `formula`. SURFACES.md names this pair as
+ *       the empirical discriminator for that boundary.
  *
- *   N1  NEGATIVE CONTROL: is a Person operand refused?
+ *   formula.calc.control-person-operand-refused (N1)  NEGATIVE CONTROL: is a
+ *                                                     Person operand refused?
  *
  * SECOND LIST: the lookup questions need something to point at, so this
  * also creates "<list> Target" with one row. CLEANUP removes both.
@@ -328,26 +361,40 @@
 
   // Declared before anything can fail, so an abort reports the questions
   // it never reached instead of only the ones it managed to ask.
-  expect('C1', 'Calculated column over two Choice operands is accepted');
-  expect('C2', 'Renders a value for two ordinary Choice values');
-  expect('C3', 'Formula as SharePoint stored it');
-  expect('C4', 'Renders a Choice value containing & " <');
-  expect('C5', 'Behaviour when one operand is blank');
-  expect('D1', 'Accepts operands referenced by DISPLAY name containing spaces');
-  expect('D2', 'Spaced display-name formula as SharePoint stored it');
-  expect('D3', 'Renders a value through spaced display-name operands');
-  expect('NUM1', 'ResultType Number over a Choice operand is accepted');
-  expect('NUM2', 'Number result computes the branch the Choice selects');
-  expect('DAT1', 'ResultType DateTime over Choice + Date operands is accepted');
-  expect('DAT2', 'Date result computes the offset the Choice selects');
-  expect('R1', 'An existing calculated column survives its operand being re-titled "(retired)"');
-  expect('R2', 'A NEW calculated column can reference a display name containing "(retired)"');
-  expect('L1', 'A Lookup operand in a CALCULATED formula');
-  expect('P1', 'A Person column in a COLUMN VALIDATION formula');
-  expect('L2', 'A Lookup column in a COLUMN VALIDATION formula');
-  expect('P2', 'A Person column in a CONDITIONAL VISIBILITY formula');
-  expect('L3', 'A Lookup column in a CONDITIONAL VISIBILITY formula');
-  expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
+  expect('formula.choice.calc-column-accepted',
+         'Calculated column over two Choice operands is accepted');
+  expect('formula.choice.calc-column-renders',
+         'Renders a value for two ordinary Choice values');
+  expect('formula.choice.formula-as-stored', 'Formula as SharePoint stored it');
+  expect('formula.choice.metachar-value-renders', 'Renders a Choice value containing & " <');
+  expect('formula.choice.blank-operand-renders', 'Behaviour when one operand is blank');
+  expect('formula.choice.spaced-display-name-accepted',
+         'Accepts operands referenced by DISPLAY name containing spaces');
+  expect('formula.choice.spaced-display-name-as-stored',
+         'Spaced display-name formula as SharePoint stored it');
+  expect('formula.choice.spaced-display-name-renders',
+         'Renders a value through spaced display-name operands');
+  expect('formula.choice.number-result-accepted',
+         'ResultType Number over a Choice operand is accepted');
+  expect('formula.choice.number-result-computes',
+         'Number result computes the branch the Choice selects');
+  expect('formula.choice.datetime-result-accepted',
+         'ResultType DateTime over Choice + Date operands is accepted');
+  expect('formula.choice.datetime-result-computes',
+         'Date result computes the offset the Choice selects');
+  expect('formula.choice.retitled-operand-survives',
+         'An existing calculated column survives its operand being re-titled "(retired)"');
+  expect('formula.choice.retitled-operand-referenced-anew',
+         'A NEW calculated column can reference a display name containing "(retired)"');
+  expect('formula.calc.lookup-operand-accepted', 'A Lookup operand in a CALCULATED formula');
+  expect('formula.validation.person-operand', 'A Person column in a COLUMN VALIDATION formula');
+  expect('formula.validation.lookup-operand', 'A Lookup column in a COLUMN VALIDATION formula');
+  expect('expression.client-validation.person-operand',
+         'A Person column in a CONDITIONAL VISIBILITY formula');
+  expect('expression.client-validation.lookup-operand',
+         'A Lookup column in a CONDITIONAL VISIBILITY formula');
+  expect('formula.calc.control-person-operand-refused',
+         'NEGATIVE CONTROL: a Person operand is refused');
 
   // Removes a previous run's lists so every question below is answered by
   // actually creating something. No-op unless CLEANUP is on.
@@ -449,34 +496,36 @@
   if (!(await fieldExists('ProbeRoute'))) {
     const made = await addField(
       calcXml('ProbeRoute', ROUTE_FORMULA, ['RaisedAtTier', 'TargetTier']));
-    record('C1', 'Calculated column over two Choice operands is accepted',
+    record('formula.choice.calc-column-accepted',
+           'Calculated column over two Choice operands is accepted',
            made.ok ? 'PASS' : 'FAIL',
            made.ok
              ? `HTTP ${made.status} on createfieldasxml`
              : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
   } else {
-    record('C1', 'Calculated column over two Choice operands is accepted', 'PASS',
+    record('formula.choice.calc-column-accepted',
+           'Calculated column over two Choice operands is accepted', 'PASS',
            'column already present from an earlier run of this probe');
   }
 
   // ---- C3: what did SharePoint actually store? ------------------------
   const route = await spGet(`${fieldsPath}/getbyinternalnameortitle('ProbeRoute')`);
   if (route.ok) {
-    record('C3', 'Formula as SharePoint stored it', 'INFO',
+    record('formula.choice.formula-as-stored', 'Formula as SharePoint stored it', 'INFO',
            `sent ${JSON.stringify(ROUTE_FORMULA)} / ` +
            `stored ${JSON.stringify(route.body.Formula)}`);
   } else {
-    record('C3', 'Formula as SharePoint stored it', 'NOT ESTABLISHED',
+    record('formula.choice.formula-as-stored', 'Formula as SharePoint stored it', 'NOT ESTABLISHED',
            'the calculated column does not exist to read back');
   }
 
   // ---- C2 / C4 / C5: does it RENDER? ----------------------------------
   const cases = [
-    ['C2', 'Renders a value for two ordinary Choice values',
+    ['formula.choice.calc-column-renders', 'Renders a value for two ordinary Choice values',
      { Title: 'c2', RaisedAtTier: 'Tier 1', TargetTier: 'Tier 3' }, 'Tier 1 -> Tier 3'],
-    ['C4', 'Renders a Choice value containing & " <',
+    ['formula.choice.metachar-value-renders', 'Renders a Choice value containing & " <',
      { Title: 'c4', RaisedAtTier: NASTY, TargetTier: 'Tier 2' }, `${NASTY} -> Tier 2`],
-    ['C5', 'Behaviour when one operand is blank',
+    ['formula.choice.blank-operand-renders', 'Behaviour when one operand is blank',
      { Title: 'c5', RaisedAtTier: 'Tier 1' }, null],
   ];
 
@@ -514,16 +563,19 @@
   if (!(await fieldExists('SpacedRoute'))) {
     const made = await addField(
       calcXml('SpacedRoute', SPACED_FORMULA, ['SpacedFrom', 'SpacedTo']));
-    record('D1', 'Accepts operands referenced by DISPLAY name containing spaces',
+    record('formula.choice.spaced-display-name-accepted',
+           'Accepts operands referenced by DISPLAY name containing spaces',
            made.ok ? 'PASS' : 'FAIL',
            made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
   } else {
-    record('D1', 'Accepts operands referenced by DISPLAY name containing spaces',
+    record('formula.choice.spaced-display-name-accepted',
+           'Accepts operands referenced by DISPLAY name containing spaces',
            'PASS', 'already present from an earlier run');
   }
   const spaced = await spGet(`${fieldsPath}/getbyinternalnameortitle('SpacedRoute')`);
   if (spaced.ok) {
-    record('D2', 'Spaced display-name formula as SharePoint stored it', 'INFO',
+    record('formula.choice.spaced-display-name-as-stored',
+           'Spaced display-name formula as SharePoint stored it', 'INFO',
            `sent ${JSON.stringify(SPACED_FORMULA)} / stored ${JSON.stringify(spaced.body.Formula)}`);
   }
 
@@ -535,11 +587,13 @@
   if (!(await fieldExists('ProbeScore'))) {
     const made = await addField(
       calcXml('ProbeScore', NUM_FORMULA, ['ProbePriority'], 'Number'));
-    record('NUM1', 'ResultType Number over a Choice operand is accepted',
+    record('formula.choice.number-result-accepted',
+           'ResultType Number over a Choice operand is accepted',
            made.ok ? 'PASS' : 'FAIL',
            made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
   } else {
-    record('NUM1', 'ResultType Number over a Choice operand is accepted', 'PASS',
+    record('formula.choice.number-result-accepted',
+           'ResultType Number over a Choice operand is accepted', 'PASS',
            'already present from an earlier run');
   }
 
@@ -548,11 +602,13 @@
     const made = await addField(
       calcXml('ProbeDue', DATE_FORMULA, ['ProbeRaised', 'ProbePriority'], 'DateTime',
               ' Format="DateOnly"'));
-    record('DAT1', 'ResultType DateTime over Choice + Date operands is accepted',
+    record('formula.choice.datetime-result-accepted',
+           'ResultType DateTime over Choice + Date operands is accepted',
            made.ok ? 'PASS' : 'FAIL',
            made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
   } else {
-    record('DAT1', 'ResultType DateTime over Choice + Date operands is accepted', 'PASS',
+    record('formula.choice.datetime-result-accepted',
+           'ResultType DateTime over Choice + Date operands is accepted', 'PASS',
            'already present from an earlier run');
   }
 
@@ -564,7 +620,11 @@
     ProbePriority: 'High', ProbeRaised: '2026-03-02T00:00:00Z',
   }, digest);
   if (!combo.ok) {
-    for (const id of ['D3', 'NUM2', 'DAT2']) {
+    for (const id of [
+      'formula.choice.spaced-display-name-renders',
+      'formula.choice.number-result-computes',
+      'formula.choice.datetime-result-computes',
+    ]) {
       record(id, RESULTS.find((r) => r.id === id).question, 'FAIL',
              `item create HTTP ${combo.status}: ${combo.text.slice(0, 300)}`);
     }
@@ -572,17 +632,20 @@
     const read = await spGet(
       `${itemsPath}(${combo.body.Id})?$select=SpacedRoute,ProbeScore,ProbeDue`);
     const got = read.ok ? read.body : {};
-    record('D3', 'Renders a value through spaced display-name operands',
+    record('formula.choice.spaced-display-name-renders',
+           'Renders a value through spaced display-name operands',
            got.SpacedRoute === 'Tier 1 -> Tier 3' ? 'PASS' : 'FAIL',
            `expected "Tier 1 -> Tier 3", got ${JSON.stringify(got.SpacedRoute)}`);
-    record('NUM2', 'Number result computes the branch the Choice selects',
+    record('formula.choice.number-result-computes',
+           'Number result computes the branch the Choice selects',
            Number(got.ProbeScore) === 3 ? 'PASS' : 'FAIL',
            `Priority "High" should score 3, got ${JSON.stringify(got.ProbeScore)}`);
     // Compared on the date part only: the stored value carries a timezone
     // and an exact-string match would fail for a reason that is not the
     // question being asked.
     const due = String(got.ProbeDue || '').slice(0, 10);
-    record('DAT2', 'Date result computes the offset the Choice selects',
+    record('formula.choice.datetime-result-computes',
+           'Date result computes the offset the Choice selects',
            due === '2026-03-03' ? 'PASS' : 'FAIL',
            `raised 2026-03-02 + High(1 day) should be 2026-03-03, got ` +
            `${JSON.stringify(got.ProbeDue)} (date part ${JSON.stringify(due)})`);
@@ -604,7 +667,8 @@
     { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!retitle.ok) {
-    record('R1', 'An existing calculated column survives its operand being re-titled "(retired)"',
+    record('formula.choice.retitled-operand-survives',
+           'An existing calculated column survives its operand being re-titled "(retired)"',
            'NOT ESTABLISHED', `could not re-title: HTTP ${retitle.status}`);
   } else {
     digest = await getDigest();
@@ -613,14 +677,16 @@
       ? await spGet(`${itemsPath}(${row.body.Id})?$select=RetireRoute`)
       : { ok: false };
     const after = await spGet(`${fieldsPath}/getbyinternalnameortitle('RetireRoute')`);
-    record('R1', 'An existing calculated column survives its operand being re-titled "(retired)"',
+    record('formula.choice.retitled-operand-survives',
+           'An existing calculated column survives its operand being re-titled "(retired)"',
            readBack.ok && readBack.body.RetireRoute === 'Tier 2 fixed' ? 'PASS' : 'FAIL',
            `after rename the stored formula is ${JSON.stringify(after.ok ? after.body.Formula : null)}; ` +
            `computed value ${JSON.stringify(readBack.ok ? readBack.body.RetireRoute : null)}`);
 
     const newRef = await addField(
       calcXml('RetiredRef', '=[Retire Me (retired)]&" x"', ['RetireMe']));
-    record('R2', 'A NEW calculated column can reference a display name containing "(retired)"',
+    record('formula.choice.retitled-operand-referenced-anew',
+           'A NEW calculated column can reference a display name containing "(retired)"',
            newRef.ok ? 'PASS' : 'FAIL',
            newRef.ok ? `HTTP ${newRef.status}` : `HTTP ${newRef.status}: ${newRef.text.slice(0, 300)}`);
   }
@@ -662,17 +728,19 @@
   // Person operand is refused, but the error names no type list, so Lookup
   // has to be asked separately rather than assumed to behave the same.
   if (!lookupReady) {
-    record('L1', 'A Lookup operand in a CALCULATED formula', 'NOT ESTABLISHED',
+    record('formula.calc.lookup-operand-accepted',
+           'A Lookup operand in a CALCULATED formula', 'NOT ESTABLISHED',
            'the lookup column could not be created');
   } else if (!(await fieldExists('LookupCalc'))) {
     const made = await addField(calcXml('LookupCalc', '=[ProbeLookup]&" x"', ['ProbeLookup']));
-    record('L1', 'A Lookup operand in a CALCULATED formula',
+    record('formula.calc.lookup-operand-accepted', 'A Lookup operand in a CALCULATED formula',
            made.ok ? 'ACCEPTED' : 'REFUSED',
            made.ok
              ? `HTTP ${made.status}: SharePoint ALLOWS this; the README says it does not`
              : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
   } else {
-    record('L1', 'A Lookup operand in a CALCULATED formula', 'ACCEPTED',
+    record('formula.calc.lookup-operand-accepted',
+           'A Lookup operand in a CALCULATED formula', 'ACCEPTED',
            'already present from an earlier run');
   }
 
@@ -691,16 +759,20 @@
   };
 
   const stores = [
-    ['P1', 'A Person column in a COLUMN VALIDATION formula', 'ProbeOwner',
+    ['formula.validation.person-operand',
+     'A Person column in a COLUMN VALIDATION formula', 'ProbeOwner',
      { ValidationFormula: '=NOT(ISBLANK([ProbeOwner]))' }, 'ValidationFormula',
      'the tool FORBIDS this today'],
-    ['L2', 'A Lookup column in a COLUMN VALIDATION formula', 'ProbeLookup',
+    ['formula.validation.lookup-operand',
+     'A Lookup column in a COLUMN VALIDATION formula', 'ProbeLookup',
      { ValidationFormula: '=NOT(ISBLANK([ProbeLookup]))' }, 'ValidationFormula',
      'the tool FORBIDS this today, via _lookup_problem rather than the type map'],
-    ['P2', 'A Person column in a CONDITIONAL VISIBILITY formula', 'ProbeOwner',
+    ['expression.client-validation.person-operand',
+     'A Person column in a CONDITIONAL VISIBILITY formula', 'ProbeOwner',
      { ClientValidationFormula: "=if([$ProbeOwner] != '', 'true', 'false')" },
      'ClientValidationFormula', 'the tool PERMITS this today'],
-    ['L3', 'A Lookup column in a CONDITIONAL VISIBILITY formula', 'ProbeLookup',
+    ['expression.client-validation.lookup-operand',
+     'A Lookup column in a CONDITIONAL VISIBILITY formula', 'ProbeLookup',
      { ClientValidationFormula: "=if([$ProbeLookup] != '', 'true', 'false')" },
      'ClientValidationFormula', 'the tool PERMITS this today'],
   ];
@@ -732,14 +804,16 @@
   if (!(await fieldExists('ProbeNegative'))) {
     const negative = await addField(
       calcXml('ProbeNegative', '=[ProbeOwner]&" x"', ['ProbeOwner']));
-    record('N1', 'NEGATIVE CONTROL: a Person operand is refused',
+    record('formula.calc.control-person-operand-refused',
+           'NEGATIVE CONTROL: a Person operand is refused',
            negative.ok ? 'FAIL' : 'PASS',
            negative.ok
              ? 'Person operand was ACCEPTED. This probe cannot detect a refusal, '
                + 'so treat every other row as unproven'
              : `refused with HTTP ${negative.status}: ${negative.text.slice(0, 300)}`);
   } else {
-    record('N1', 'NEGATIVE CONTROL: a Person operand is refused', 'NOT ESTABLISHED',
+    record('formula.calc.control-person-operand-refused',
+           'NEGATIVE CONTROL: a Person operand is refused', 'NOT ESTABLISHED',
            'ProbeNegative already exists, so this run did not test the refusal. '
            + 'Delete the list and re-run for a clean control.');
   }

@@ -135,9 +135,11 @@ Probes: `expression-text-operators-probe.js`,
 > owns `formula`: it refuses at provisioning, field-set and save. Only the
 > browser owns `expression`, and the server never parses it. This is the only
 > surface boundary that needs an explicit tie-breaker; the rest separate on
-> subject matter. The empirical discriminator is `P1`/`P2` and `L2`/`L3`: the
-> same Person and Lookup columns are refused by `ValidationFormula` and accepted
-> by `ClientValidationFormula` in the same run.
+> subject matter. The empirical discriminator is the `person-operand` pair,
+> `formula.validation.person-operand` against
+> `expression.client-validation.person-operand`, and the same pair for
+> `lookup-operand`: the same Person and Lookup columns are refused by
+> `ValidationFormula` and accepted by `ClientValidationFormula` in the same run.
 
 #### Settled
 
@@ -252,7 +254,9 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | Probe | Probe surface | Checks | File under |
 | --- | --- | --- | --- |
 | `caml-chain-depth-probe.js` | `query` | `E*`, `P*`, `R*`, `U*`, `W*` | `view.filter-editor.*` |
-| `datetime-sentinel-probe.js` | `formula` | `Q1`–`Q4` | `query.caml.*` |
+| `calculated-choice-operand.js` | `formula` | `person-operand`, `lookup-operand` (was `P2`, `L3`) | `expression.client-validation.*` |
+| `datetime-sentinel-probe.js` | `formula` | `control-bogus-element-refused`, `now-element-*`, `today-element-*`, `today-include-time-*` (was `CN`, `C1`–`C7`) | `query.caml.*`, `query.caml-adhoc.*`, `query.view-query.*` |
+| `datetime-sentinel-probe.js` | `formula` | `now-sentinel-stored` (was `E1`) | `expression.client-validation.*` |
 | `multi-value-probe.js` | `field` | `C1`–`C14` | `query.caml.*` |
 | `lookup-acl-probe.js` | `access` | `K5`–`K7` | `field.lookup.*` |
 | `role-definition-probe.js` | `text` | `basepermissions-readback`, `getbyname-absent-status`, `web-assignments-enumerable` (was `R7`–`R9`) | `access.role-def.*` |
@@ -266,6 +270,9 @@ surface boundary, and are listed for the same reason:
 | --- | --- | --- |
 | `list-description-probe.js` | the `group-description-512-ceiling` header finding | `text.group-desc.ceiling-512` |
 | `formatter-xml-probe.js` | `width-attribute` (was `D_WIDTH`) | `text.col-fmt.width-attribute` |
+| `calculated-choice-operand.js` | `lookup-operand-accepted`, `control-person-operand-refused` (was `L1`, `N1`) | `formula.calc.*` |
+| `calculated-choice-operand.js` | `person-operand`, `lookup-operand` (was `P1`, `L2`) | `formula.validation.*` |
+| `datetime-sentinel-probe.js` | the four `*-quote-literal` questions (was `Q1`–`Q4`) | `formula.validation.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
