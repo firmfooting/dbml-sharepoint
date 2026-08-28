@@ -2710,10 +2710,10 @@
     }
 
     // WEB SCOPE ONLY, and this count NEVER decides whether to adopt. This
-    // tool assigns its levels at LIST scope through _acls.js.j2, and R9 of
-    // role-definition-probe.js measured web scope alone, so a zero here does
-    // not mean unused. It is reported to tell the operator what they are
-    // looking at.
+    // tool assigns its levels at LIST scope through _acls.js.j2, and
+    // access.role-def.web-assignments-enumerable of role-definition-probe.js
+    // measured web scope alone, so a zero here does not mean unused. It is
+    // reported to tell the operator what they are looking at.
     async function countWebAssignmentsUsing(levelId) {
       let total = 0;
       let url = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
@@ -2730,9 +2730,9 @@
         for (const row of json.d.results) {
           // Verbose is expected to render an expanded navigation property as
           // `{ results: [...] }`. That is inferred from _acls.js.j2's own
-          // expanded reads under verbose, not measured here: R9
-          // (role-definition-probe.js) probed this same URL under
-          // odata=nometadata, whose shape differs. Tolerating a bare array
+          // expanded reads under verbose, not measured here:
+          // access.role-def.web-assignments-enumerable probed this same URL
+          // under odata=nometadata, whose shape differs. Tolerating a bare array
           // too, like the probe's own bindingsOf, means a wrong inference
           // only degrades the refusal message below; an unreadable row still
           // throws rather than counting as clean.
@@ -2740,8 +2740,9 @@
           const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
           if (!Array.isArray(bindings)) {
             // A row whose bindings cannot be read is usage this cannot see.
-            // R9 took the same position and recorded NOT ESTABLISHED rather
-            // than counting it as clean.
+            // access.role-def.web-assignments-enumerable took the same
+            // position and recorded NOT ESTABLISHED rather than counting it
+            // as clean.
             throw new Error('A role assignment returned bindings this script cannot read; the usage report would be incomplete');
           }
           if (bindings.some((b) => String(b.Id) === String(levelId))) total += 1;
@@ -2751,7 +2752,8 @@
       return total;
     }
 
-    // R7 (test/manual/role-definition-probe.js, 2026-08-14): Description and
+    // access.role-def.basepermissions-readback
+    // (test/manual/role-definition-probe.js, 2026-08-14): Description and
     // both bitmap halves round-trip exactly as written, so this compare is
     // exact rather than fuzzy. Bitmap halves are compared as strings: the
     // tenant represents SP.BasePermissions.High/Low as Int64, which OData
@@ -2804,8 +2806,9 @@
       // already assigned on, including lists this deploy never reads.
       // MARKER ONLY, deliberately, and a usage count never clears this
       // gate: `_acls.js.j2` assigns every level at LIST scope, and only
-      // web-scope usage can be measured (role-definition-probe.js R9),
-      // so a web-scope zero does not mean the level is unused.
+      // web-scope usage can be measured
+      // (access.role-def.web-assignments-enumerable), so a web-scope zero
+      // does not mean the level is unused.
       if (typeof lvl.expected_marker !== 'string' || lvl.expected_marker === '') {
         return {
           kind: 'refuse',
@@ -2983,9 +2986,11 @@
       const got = (await resp.json()).d || {};
       // The tenant forces auto-accept off when requests-to-join is off,
       // measured against a contradictory pair sent deliberately
-      // (test/manual/group-description-probe.js G9, then confirmed non-
-      // ambiguous by G10, 2026-08-13/14), so the expected value is the
-      // coerced one, not the one sent.
+      // (test/manual/group-description-probe.js,
+      // text.group-desc.membership-flags-merge, then confirmed
+      // non-ambiguous by text.group-desc.autoaccept-prerequisite,
+      // 2026-08-13/14), so the expected value is the coerced one, not
+      // the one sent.
       const expectedAutoAccept = grp.allow_request_to_join_leave
         ? grp.auto_accept_request_to_join_leave
         : false;

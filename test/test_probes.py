@@ -24,8 +24,12 @@ TEMPLATES = MANUAL / "templates"
 # Everything except tab, newline and carriage return.
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 PLACEHOLDER_HOSTS = re.compile(r"https://(example|contoso|tenant|yourtenant|x)\.")
-RECORD_CALL = re.compile(r"^\s*record\(\s*'([A-Z0-9]+)'", re.MULTILINE)
-EXPECT_CALL = re.compile(r"^\s*expect\(\s*'([A-Z0-9]+)'", re.MULTILINE)
+# Matches the whole id, not a leading run of it: check ids are dotted lowercase
+# (`text.list-desc.ampersand`) since the surface grammar landed, and the legacy
+# mnemonics that remain can carry an underscore. A class that stopped at the
+# first `.` or `_` would report an id no probe actually registers.
+RECORD_CALL = re.compile(r"^\s*record\(\s*'([A-Za-z0-9][A-Za-z0-9._-]*)'", re.MULTILINE)
+EXPECT_CALL = re.compile(r"^\s*expect\(\s*'([A-Za-z0-9][A-Za-z0-9._-]*)'", re.MULTILINE)
 
 
 def _load_renderer() -> ModuleType:

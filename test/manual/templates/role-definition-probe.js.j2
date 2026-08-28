@@ -185,6 +185,45 @@
  * than truncates. PER-LIST usage remains the one open question, deliberately
  * not asked here.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the runs recorded above quote the mnemonics.
+ *
+ *   text.role-desc.control-baseline           (N1) does the $filter probe
+ *                                                  report a level that is
+ *                                                  not there as absent?
+ *   text.role-desc.roundtrip-create           (R1) byte-identical from CREATE
+ *   text.role-desc.roundtrip-merge            (R2) byte-identical from MERGE
+ *   text.role-desc.merge-partial              (R3) does a MERGE that omits
+ *                                                  Description preserve it?
+ *   text.role-desc.length-ceiling             (R4) what comes back at 1000+?
+ *   text.role-desc.empty                      (R5) is an empty one accepted?
+ *   text.role-desc.marker-shape               (R6) does the marker shape
+ *                                                  lists and groups use
+ *                                                  survive?
+ *   access.role-def.basepermissions-readback  (R7) does BasePermissions read
+ *                                                  back as written?
+ *   access.role-def.getbyname-absent-status   (R8) what does getbyname
+ *                                                  return for an ABSENT
+ *                                                  level?
+ *   access.role-def.web-assignments-enumerable (R9) can the role assignments
+ *                                                  referencing a level be
+ *                                                  enumerated?
+ *
+ * The seven text questions share their question names with
+ * `list-description-probe.js` and `group-description-probe.js` on purpose,
+ * and the SCOPE is what keeps the three batteries apart: a result about a
+ * role definition's description is not evidence about a list description,
+ * and nothing in the id should imply that it is.
+ *
+ * R7 to R9 file under `access`, not `text`, because a check is keyed to the
+ * surface of its own question rather than the surface of its probe. A
+ * permission bitmap, a lookup status code and an assignment enumeration are
+ * access questions that happen to be asked by the probe that already has a
+ * role definition to hand. They still depend on this probe's own
+ * `text.role-desc.control-baseline`, and a dependency that crosses surfaces
+ * that way is allowed.
+ *
  * OPEN QUESTIONS FOR A FUTURE RUN
  *
  *   - CASE SENSITIVITY OF `$filter=Name eq '...'`. Not documented on
@@ -229,16 +268,16 @@
   const BASE_LOW = '196609';
   const BASE_HIGH = '0';
 
-  expect('N1', 'CONTROL: does the $filter probe report a level that does not exist as absent?');
-  expect('R1', 'Does a plain Description written at CREATE read back byte-identical?');
-  expect('R2', 'Does a Description written by MERGE read back byte-identical?');
-  expect('R3', 'Does a MERGE that OMITS Description preserve the previous one?');
-  expect('R4', 'What length comes back when 1000+ characters go out?');
-  expect('R5', 'Is an EMPTY description accepted?');
-  expect('R6', 'Does a provenance marker of the shape lists and groups use survive?');
-  expect('R7', 'Does BasePermissions read back as written?');
-  expect('R8', 'What does getbyname actually return for an ABSENT level?');
-  expect('R9', 'Can the role assignments referencing a level be enumerated?');
+  expect('text.role-desc.control-baseline', 'CONTROL: does the $filter probe report a level that does not exist as absent?');
+  expect('text.role-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?');
+  expect('text.role-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?');
+  expect('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?');
+  expect('text.role-desc.length-ceiling', 'What length comes back when 1000+ characters go out?');
+  expect('text.role-desc.empty', 'Is an EMPTY description accepted?');
+  expect('text.role-desc.marker-shape', 'Does a provenance marker of the shape lists and groups use survive?');
+  expect('access.role-def.basepermissions-readback', 'Does BasePermissions read back as written?');
+  expect('access.role-def.getbyname-absent-status', 'What does getbyname actually return for an ABSENT level?');
+  expect('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -272,7 +311,7 @@
   // this probe did not create and it stops rather than touching it.
   const absent = await filterLevel(LEVEL);
   if (readFailed(absent)) {
-    record('N1', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
+    record('text.role-desc.control-baseline', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
       `NOT ESTABLISHED (HTTP ${absent.status})`,
       'the control needs a clean read for a name that is not there; nothing below would mean anything');
     report();
@@ -280,13 +319,13 @@
   }
   const absentRows = (absent.body && (absent.body.value || absent.body.results)) || [];
   if (absentRows.length !== 0) {
-    record('N1', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
+    record('text.role-desc.control-baseline', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
       'NOT ESTABLISHED (name already taken)',
       `'${LEVEL}' already exists on this site. Nothing was written or deleted. Re-run for a different name, or delete that level by hand if a previous run left it.`);
     report();
     return;
   }
-  record('N1', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
+  record('text.role-desc.control-baseline', 'CONTROL: does the $filter probe report a level that does not exist as absent?',
     'PASS',
     `HTTP ${absent.status} with zero rows for a name that is not there, so a hit below means something`);
 
@@ -295,7 +334,7 @@
   // deployer's comment claims HTTP 500 here. If that is wrong the comment
   // should say so; if it is right, the $filter form stays necessary.
   const byNameAbsent = await spGet(`web/roledefinitions/getbyname('${encodeURIComponent(LEVEL)}')?$select=Id`);
-  record('R8', 'What does getbyname actually return for an ABSENT level?',
+  record('access.role-def.getbyname-absent-status', 'What does getbyname actually return for an ABSENT level?',
     byNameAbsent.status === 500 ? 'PASS (500, as the deployer comment claims)'
       : byNameAbsent.status === 404 ? 'FAIL (404, so the comment is wrong and $filter may be unnecessary)'
         : `NOT ESTABLISHED (HTTP ${byNameAbsent.status})`,
@@ -350,11 +389,11 @@
   try {
   const afterCreate = await readLevelById(levelId);
   if (readFailed(afterCreate)) {
-    record('R1', 'Does a plain Description written at CREATE read back byte-identical?',
+    record('text.role-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?',
       `NOT ESTABLISHED (HTTP ${afterCreate.status})`, 'the level was created but could not be read back');
   } else {
     const got = afterCreate.body.Description;
-    record('R1', 'Does a plain Description written at CREATE read back byte-identical?',
+    record('text.role-desc.roundtrip-create', 'Does a plain Description written at CREATE read back byte-identical?',
       got === PLAIN ? 'PASS' : 'FAIL',
       `sent ${JSON.stringify(PLAIN)}, read ${JSON.stringify(got)}`);
   }
@@ -363,7 +402,7 @@
     const bp = afterCreate.body.BasePermissions || {};
     const sameLow = String(bp.Low) === String(BASE_LOW);
     const sameHigh = String(bp.High) === String(BASE_HIGH);
-    record('R7', 'Does BasePermissions read back as written?',
+    record('access.role-def.basepermissions-readback', 'Does BasePermissions read back as written?',
       sameLow && sameHigh ? 'PASS' : 'FAIL',
       `sent High=${BASE_HIGH} Low=${BASE_LOW}, read High=${bp.High} Low=${bp.Low}`);
   }
@@ -403,7 +442,7 @@
   };
 
   // ---- R2: MERGE path round trip ----------------------------------------
-  await askDescription('R2', 'Does a Description written by MERGE read back byte-identical?',
+  await askDescription('text.role-desc.roundtrip-merge', 'Does a Description written by MERGE read back byte-identical?',
     MERGED, { Description: MERGED });
 
   // ---- R3: is MERGE partial? --------------------------------------------
@@ -423,7 +462,7 @@
     // Recorded and stepped over, never returned from: the remaining questions
     // do not depend on R3, and an early return here would be a second way to
     // skip the cleanup this probe promises.
-    record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+    record('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
       `NOT ESTABLISHED (HTTP ${beforeOmit.status})`,
       'the level could not be read before the MERGE, so no control value could be chosen');
   }
@@ -433,13 +472,13 @@
     ? { ok: false, status: 0, text: 'skipped: no pre-MERGE Order could be read' }
     : await mergeDescription({ Order: ORDER_AFTER });
   if (!omitRes.ok) {
-    record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+    record('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
       isRefusal(omitRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${omitRes.status})`,
       `HTTP ${omitRes.status}: ${omitRes.text.slice(0, 200)}`);
   } else {
     const backOmit = await readLevelById(levelId);
     if (readFailed(backOmit)) {
-      record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      record('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
         `NOT ESTABLISHED (HTTP ${backOmit.status})`,
         'the MERGE succeeded but the level could not be read back');
     } else {
@@ -451,11 +490,11 @@
       if (!orderMoved) {
         // The premise failed, so the question is UNANSWERED rather than
         // answered yes. A preserved Description here proves nothing.
-        record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        record('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
           'NOT ESTABLISHED (the control field did not move)',
           `Order read ${ORDER_BEFORE} before the MERGE, the request carried ${ORDER_AFTER}, and it read back ${gotOrder}. This MERGE cannot be shown to have done anything, so a surviving Description would be equally explained by the whole request being ignored. Description read ${JSON.stringify(gotDesc)}`);
       } else {
-        record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        record('text.role-desc.merge-partial', 'Does a MERGE that OMITS Description preserve the previous one?',
           gotDesc === MERGED ? 'PASS' : 'FAIL',
           gotDesc === MERGED
             ? `Description survived a MERGE that did not carry it, and the same call DID move Order from an OBSERVED ${ORDER_BEFORE} to ${gotOrder}, so the request was not ignored. Description read ${JSON.stringify(gotDesc)}`
@@ -465,10 +504,10 @@
   }
 
   // ---- R4: length, REPORTED not asserted --------------------------------
-  const longBack = await askDescription('R4', 'What length comes back when 1000+ characters go out?',
+  const longBack = await askDescription('text.role-desc.length-ceiling', 'What length comes back when 1000+ characters go out?',
     null, { Description: LONG });
   if (longBack !== null) {
-    record('R4', 'What length comes back when 1000+ characters go out?',
+    record('text.role-desc.length-ceiling', 'What length comes back when 1000+ characters go out?',
       longBack.length === LONG.length ? `PASS (${longBack.length} of ${LONG.length})` : `SHORT (${longBack.length} of ${LONG.length})`,
       longBack.length === LONG.length
         ? `sent ${LONG.length} characters and read the same number back, so the accepted length is at least ${LONG.length}`
@@ -476,11 +515,11 @@
   }
 
   // ---- R6: the marker shape ---------------------------------------------
-  await askDescription('R6', 'Does a provenance marker of the shape lists and groups use survive?',
+  await askDescription('text.role-desc.marker-shape', 'Does a provenance marker of the shape lists and groups use survive?',
     MARKER, { Description: MARKER });
 
   // ---- R5: empty ---------------------------------------------------------
-  await askDescription('R5', 'Is an EMPTY description accepted?', '', { Description: '' });
+  await askDescription('text.role-desc.empty', 'Is an EMPTY description accepted?', '', { Description: '' });
 
   // ---- R9: what would an adoption affect? --------------------------------
   // Read-only. Answers whether #224's gate can NAME the damage rather than
@@ -512,11 +551,11 @@
     }
   }
   if (readFailed(assignments)) {
-    record('R9', 'Can the role assignments referencing a level be enumerated?',
+    record('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?',
       `NOT ESTABLISHED (HTTP ${assignments.status})`,
       'the web role assignments could not be read, so the gate cannot report what an adoption would affect');
   } else if (truncated) {
-    record('R9', 'Can the role assignments referencing a level be enumerated?',
+    record('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?',
       'NOT ESTABLISHED (enumeration truncated)',
       `read ${rows.length} row(s) over ${pages} page(s) and then could not follow the continuation. A partial enumeration cannot establish that usage is reportable, because the assignments it did not reach are exactly the ones a gate would miss.`);
   } else {
@@ -536,7 +575,7 @@
       (b) => b.some((d) => d && (d.Id !== undefined || d.Name !== undefined)),
     ).length;
     if (rows.length === 0) {
-      record('R9', 'Can the role assignments referencing a level be enumerated?',
+      record('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?',
         'NOT ESTABLISHED (no role assignments on this web)',
         'this web reported no role assignments at all, which is unusual; the question is unanswered rather than answered no');
     } else if (identified !== rows.length) {
@@ -544,11 +583,11 @@
       // some assignments and not others reports an incomplete list of what an
       // adoption would affect, and an incomplete list read as a complete one
       // is worse than no list.
-      record('R9', 'Can the role assignments referencing a level be enumerated?',
+      record('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?',
         'NOT ESTABLISHED (identity coverage incomplete)',
         `read ${rows.length} row(s) over ${pages} page(s); ${parsed.length} had a parseable RoleDefinitionBindings collection and ${identified} exposed a level Id or Name. A gate needs all of them, because the rows it cannot identify are the usage it would fail to report.`);
     } else {
-      record('R9', 'Can the role assignments referencing a level be enumerated?',
+      record('access.role-def.web-assignments-enumerable', 'Can the role assignments referencing a level be enumerated?',
         'PASS',
         `read ${rows.length} web-scope role assignment(s) over ${pages} page(s) with no continuation left, and every one exposed a level Id or Name a gate could match on. Web-scope usage is therefore reportable. PER-LIST usage is a separate and much more expensive question this run does not answer.`);
     }
