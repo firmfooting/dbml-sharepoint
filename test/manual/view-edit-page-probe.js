@@ -210,6 +210,36 @@
  * Still ONE tenant: a second tenant, not a second run, is what would make ten
  * a constant worth asserting in limits.py.
  *
+ * RUN 3, 2026-08-28, revision 6059d82f, the sandbox Team Site, run through the
+ * test agent's autonomous lane rather than a manual paste. Twenty-one
+ * questions, NINETEEN answered, two open (P1 and P2, the operator ground
+ * truth). This run closes the three rows that were open after run 2 and adds
+ * one:
+ *
+ *   S2 PARTITIONS. The tautology alone returns every row, so conjoining the
+ *      group cannot remove one. This is the claim #267 rests on, measured
+ *      directly rather than inferred from S1, which is structurally unable to
+ *      make it.
+ *   Q1 SURVIVED. The guarded tree read back from the stored ViewQuery matches
+ *      what was sent, so the pages below belong to the trees under test.
+ *   C6 FALSE POSITIVE, and it is the expected shape. A request for a view
+ *      that does not exist answers HTTP 200 with `ViewEdit` and `ctl00`
+ *      present, `ViewFilter` ABSENT, and no `FieldPicker1`, so a weak sentinel
+ *      reads that page as protected. The guard already uses `ViewFilter` as
+ *      its only sentinel precisely because of this, so the shipped check
+ *      rejects the page. This run confirms the sentinel choice rather than
+ *      finding a new defect.
+ *   C7 CLEAN, the trailing-markup question this run was added to settle. The
+ *      only content after the final `</html>` is one nonce'd `<script>` block
+ *      of IIS timing counters, about 250 characters, carrying no `<input`, no
+ *      `<body`, no `</body>` and no second `<html`. So the completeness test's
+ *      tail bound accepts a real complete page, and the bound holds for this
+ *      tenant.
+ *
+ * C1 USABLE, C2 AGREE, C3 STABLE and C5 FOUND all held on this run, and F8
+ * VARIES as before (the CssLink request id, known noise). P1 and P2 remain the
+ * operator's to answer; everything above them is machine-measured.
+ *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
  *   2. Open a browser console on any page of that site.
