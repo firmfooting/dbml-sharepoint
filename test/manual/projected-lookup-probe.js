@@ -109,14 +109,28 @@
     return gone.ok;
   };
 
+  // STATE is the five-value vocabulary in test/manual/SURFACES.md, carried
+  // beside the prose. An explicit state passed to record() wins over the
+  // classifier, which is the default for rows nobody has ruled on yet.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
   const RESULTS = [];
   const expect = (id, question) => {
-    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
   };
-  const record = (id, question, outcome, evidence) => {
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
     const row = RESULTS.find((r) => r.id === id);
-    if (row) Object.assign(row, { question, outcome, evidence });
-    else RESULTS.push({ id, question, outcome, evidence });
+    if (row) Object.assign(row, next);
+    else RESULTS.push({ id, ...next });
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
     log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
@@ -124,13 +138,11 @@
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
-      console.log(`${r.id.padEnd(8)} ${r.outcome.padEnd(16)} ${r.question}`);
+      console.log(`${r.id.padEnd(8)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
-    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
-    const open = RESULTS.filter(isOpen).length;
+    const open = RESULTS.filter((r) => r.state !== 'settled').length;
     console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
     if (open) console.log('A question with no observation is NOT a pass. Report it as open.');
     console.log('Copy this whole block back verbatim.');

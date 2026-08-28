@@ -273,6 +273,7 @@
         `evidence about platform indexes here. Observed anyway, for the ` +
         `record: ` +
         describe(column).evidence,
+        'void',
       );
       continue;
     }
@@ -348,13 +349,14 @@
   const items = `web/lists/getbytitle('${odata(big.Title)}')/items`;
   // $top=1 and $select=Id: this reads AT MOST one item id per query and never
   // item content. The question is whether SharePoint answers at all.
-  const ask = async (id, question, filter) => {
+  const ask = async (id, question, filter, state) => {
     const r = await spGet(`${items}?$select=Id&$top=1&$filter=${encodeURIComponent(filter)}`);
     const body = r.body ? JSON.stringify(r.body).slice(0, 400) : '(no JSON body)';
     record(
       id, question,
       r.ok ? 'SERVED' : (isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
       `$filter=${filter} on ${big.ItemCount} items, HTTP ${r.status}: ${body}`,
+      state,
     );
     return r.ok;
   };
@@ -369,9 +371,11 @@
     log('WARN', 'The documented comparison case was refused, so the null result');
     log('WARN', 'below is NOT evidence about null tests. Report both rows together.');
   }
+  // The prose already said the null row was not evidence when the control was
+  // refused; the state says it too, so nothing downstream has to read the WARN.
   await ask(
     'NULIDX', 'Null filter on an indexed column survives the threshold',
-    `${col} eq null`);
+    `${col} eq null`, compared ? undefined : 'void');
 
   report();
   log('INFO', 'Read-only run complete. Nothing on this site was changed.');

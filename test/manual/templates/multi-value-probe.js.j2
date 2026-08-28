@@ -448,6 +448,9 @@
           + 'reporting what the question needs on this tenant and BOTH index rows are void, exactly the '
           + 'outcome native-index-probe.js hit with its ID control on 2026-07-30. An UNREADABLE control voids '
           + 'them for a different reason than one that read back false; I1C says which.',
+      // VOID is not one of the outcome heads the classifier knows, so the
+      // state is passed rather than left to be read off the prose.
+      controlHeld ? undefined : 'void',
     );
 
     // === I2: uniqueness ====================================================

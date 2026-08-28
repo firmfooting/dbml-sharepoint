@@ -497,16 +497,36 @@
   // overwrites. Appending as you go looks equivalent and is not: a probe
   // that aborts early then reports only what it reached, and prints
   // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
   const RESULTS = [];
   const expect = (id, question) => {
-    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
   };
-  const record = (id, question, outcome, evidence) => {
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
     const row = RESULTS.find((r) => r.id === id);
     if (row) {
-      Object.assign(row, { question, outcome, evidence });
+      Object.assign(row, next);
     } else {
-      RESULTS.push({ id, question, outcome, evidence });
+      RESULTS.push({ id, ...next });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
     log(level, `${id}: ${outcome}. ${question}`);
@@ -516,18 +536,16 @@
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
-      console.log(`${r.id.padEnd(6)} ${r.outcome.padEnd(16)} ${r.question}`);
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // Prefix matching keeps qualified unresolved outcomes from counting as answers.
-    // MANUAL and NOT REACHED stay open until a person records the observation.
-    const OPEN_PREFIXES = ['NOT ESTABLISHED', 'SHORT', 'MANUAL', 'NOT REACHED'];
-    const isOpen = (r) => OPEN_PREFIXES.some((p) => r.outcome.startsWith(p));
-    const open = RESULTS.filter(isOpen).length;
-    const waiting = RESULTS.filter(
-      (r) => r.outcome.startsWith('MANUAL') || r.outcome.startsWith('NOT REACHED'),
-    ).length;
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation; so does void, which is open for a
+    // reason the control row names.
+    const open = RESULTS.filter((r) => r.state !== 'settled').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
     console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
     if (waiting) {
       console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
@@ -540,7 +558,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision a7f0971c. Quote this when reporting results.');
+  log('INFO', 'probe revision 1042a97c. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // All three are obvious placeholders. Each group refuses to run against

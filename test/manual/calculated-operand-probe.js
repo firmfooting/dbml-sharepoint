@@ -79,6 +79,18 @@
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint calculated-operand probe. Safe to recycle.';
 
   // Shared result registry v1. Register findings before any network work.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. An explicit state passed to record() always wins; the
+  // classifier is the default for the rows nobody has ruled on yet.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (observed) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => observed.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => observed.startsWith(p))) return 'open';
+    return 'settled';
+  };
   const results = [];
   const expect = (id, question) => {
     results.push({
@@ -86,14 +98,18 @@
       question,
       observed: 'NOT ESTABLISHED',
       detail: 'the run did not reach this question',
+      state: 'open',
     });
   };
-  const record = (id, question, observed, detail) => {
+  const record = (id, question, observed, detail, state) => {
+    const next = {
+      question, observed, detail: detail || '', state: state || stateFor(observed),
+    };
     const row = results.find((candidate) => candidate.id === id);
     if (row) {
-      Object.assign(row, { question, observed, detail: detail || '' });
+      Object.assign(row, next);
     } else {
-      results.push({ id, question, observed, detail: detail || '' });
+      results.push({ id, ...next });
     }
     log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
@@ -149,7 +165,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 5158247d; core v2; results v1.`);
+  log('INFO', `probe revision 51481fa5; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
