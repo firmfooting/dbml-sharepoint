@@ -174,8 +174,8 @@
  * only that SharePoint kept the text. The A/B/C_COMBINED writes exist so
  * one look answers it; the checklist this prints is unanswered so far.
  */
-// finding: view-formatter-xml-metacharacter — a bare '&' or '<' in a view CustomFormatter is refused (HTTP 500 XmlException); escaped &amp;/&lt; and '>', '>=', '"', "'" are accepted and round-trip
-// finding: column-formatter-literal-readback — column CustomFormatter and form ClientFormCustomFormatter read back every character literal, not XML-stored
+// finding: view-formatter-xml-metacharacter — captured → evidence/probes/formatter-xml-findings/probe-summary.json
+// finding: column-formatter-literal-readback — captured → evidence/probes/formatter-xml-findings/probe-summary.json
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and

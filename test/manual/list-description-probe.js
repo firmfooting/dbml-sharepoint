@@ -59,9 +59,9 @@
  * WHEN FINISHED: the probe deletes the list it created. If it aborted early,
  * delete the list whose name it printed in its first line.
  */
-// finding: list-description-entity-note-refusal — entity_note_may_not_round_trip refused an ampersand, a line break and a run of spaces in table notes
-// finding: group-description-512-ceiling — a group refuses a description over 512 characters; a list accepts the same text
-// finding: list-description-whitespace-unmeasured — a whitespace run containing a tab or non-breaking space is still refused by entity_note_whitespace_unmeasured
+// finding: list-description-entity-note-refusal — captured → evidence/probes/list-description-findings/probe-summary.json
+// finding: group-description-512-ceiling — captured → evidence/probes/list-description-findings/probe-summary.json
+// finding: list-description-whitespace-unmeasured — captured → evidence/probes/list-description-findings/probe-summary.json
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
