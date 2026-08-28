@@ -5263,6 +5263,7 @@ def test_no_path_through_the_guard_check_can_report_a_clean_run() -> None:
 #   drifted    complete and editable, but the controls carry other names
 #   truncated  HTTP 200 cut after the sentinel and before the controls
 #   trailing   refused shape, then trailing markup after the document close
+#   interior   cut before the controls, past an `</html>` literal in script
 #   stub       complete and sentinelled, but a fraction of a page's size
 #   redirect   HTTP 200 from somewhere else, as a login redirect answers
 _SETTINGS_PAGE_JS = (
@@ -5285,6 +5286,8 @@ _SETTINGS_PAGE_JS = (
     "    drifted: editorPage(['FilterField1', 'FilterOperator1'], '</body></html>'),\n"
     "    truncated: '<html><head><title>ViewFilter</title></head><body>',\n"
     "    trailing: editorPage([], '</body></html><script>window.telem=1</script>'),\n"
+    "    interior: '<html><head><title>ViewFilter</title></head><body>'\n"
+    "      + '<script>var CLOSE = \"</html>\";</script>' + FILLER,\n"
     "    stub: '<html><head><title>ViewFilter</title></head><body>x</body></html>',\n"
     "    unknown: editorPage([], '</body></html>'),\n"
     "    redirect: '<html><body>sign in</body></html>',\n"
@@ -5549,6 +5552,28 @@ def test_trailing_markup_after_the_document_close_is_still_a_refusal(
     )
     assert _refusal_errors(summary) == [], summary.get("errors")
     assert summary.get("aborted") is None, summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_html_close_inside_page_script_is_not_a_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Containing `</html>` is not the same as having closed the document.
+
+    The page carries the literal in its own script, ahead of the editor, and
+    is then cut before the controls and before the real close. Accepting the
+    literal as proof of a whole document reports a view protected on a page
+    whose controls simply never arrived, which is the one wrong answer this
+    check exists to prevent.
+    """
+    summary, read, _ = _run_view_guard_deploy(
+        tmp_path, {"All Items": "editable", "Open": "interior"},
+    )
+    assert read == ["All Items", "Open", "Recent"], read
+    errors = _refusal_errors(summary)
+    assert [e["view"] for e in errors] == ["Open"], errors
+    assert "complete=false" in errors[0]["error"]
+    assert summary.get("aborted"), summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
