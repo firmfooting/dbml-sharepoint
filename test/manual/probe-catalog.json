@@ -20,89 +20,89 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "C1",
+              "id": "formula.choice.calc-column-accepted",
               "depends_on": []
             },
             {
-              "id": "C2",
+              "id": "formula.choice.calc-column-renders",
               "depends_on": []
             },
             {
-              "id": "C3",
+              "id": "formula.choice.formula-as-stored",
               "depends_on": []
             },
             {
-              "id": "C4",
+              "id": "formula.choice.metachar-value-renders",
               "depends_on": []
             },
             {
-              "id": "C5",
+              "id": "formula.choice.blank-operand-renders",
               "depends_on": []
             },
             {
-              "id": "D1",
+              "id": "formula.choice.spaced-display-name-accepted",
               "depends_on": []
             },
             {
-              "id": "D2",
+              "id": "formula.choice.spaced-display-name-as-stored",
               "depends_on": []
             },
             {
-              "id": "D3",
+              "id": "formula.choice.spaced-display-name-renders",
               "depends_on": []
             },
             {
-              "id": "DAT1",
+              "id": "formula.choice.datetime-result-accepted",
               "depends_on": []
             },
             {
-              "id": "DAT2",
+              "id": "formula.choice.datetime-result-computes",
               "depends_on": []
             },
             {
-              "id": "L1",
+              "id": "formula.calc.lookup-operand-accepted",
               "depends_on": []
             },
             {
-              "id": "L2",
+              "id": "formula.validation.lookup-operand",
               "depends_on": []
             },
             {
-              "id": "L3",
+              "id": "expression.client-validation.lookup-operand",
               "depends_on": []
             },
             {
-              "id": "N1",
+              "id": "formula.calc.control-person-operand-refused",
               "depends_on": []
             },
             {
-              "id": "NUM1",
+              "id": "formula.choice.number-result-accepted",
               "depends_on": []
             },
             {
-              "id": "NUM2",
+              "id": "formula.choice.number-result-computes",
               "depends_on": []
             },
             {
-              "id": "P1",
+              "id": "formula.validation.person-operand",
               "depends_on": []
             },
             {
-              "id": "P2",
+              "id": "expression.client-validation.person-operand",
               "depends_on": []
             },
             {
-              "id": "R1",
+              "id": "formula.choice.retitled-operand-survives",
               "depends_on": []
             },
             {
-              "id": "R2",
+              "id": "formula.choice.retitled-operand-referenced-anew",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "N1"
+            "formula.calc.control-person-operand-refused"
           ],
           "depends_on": []
         }
@@ -127,51 +127,51 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "BOOL",
+              "id": "formula.calc.operand-boolean",
               "depends_on": []
             },
             {
-              "id": "CALC",
+              "id": "formula.calc.operand-calculated",
               "depends_on": []
             },
             {
-              "id": "CHOI",
+              "id": "formula.calc.operand-choice",
               "depends_on": []
             },
             {
-              "id": "DATE",
+              "id": "formula.calc.operand-date",
               "depends_on": []
             },
             {
-              "id": "LINK",
+              "id": "formula.calc.operand-hyperlink",
               "depends_on": []
             },
             {
-              "id": "LONG",
+              "id": "formula.calc.operand-multiline",
               "depends_on": []
             },
             {
-              "id": "LOOK",
+              "id": "formula.calc.operand-lookup",
               "depends_on": []
             },
             {
-              "id": "NUMB",
+              "id": "formula.calc.operand-number",
               "depends_on": []
             },
             {
-              "id": "PERS",
+              "id": "formula.calc.operand-person",
               "depends_on": []
             },
             {
-              "id": "RICH",
+              "id": "formula.calc.operand-richtext",
               "depends_on": []
             },
             {
-              "id": "TEXT",
+              "id": "formula.calc.operand-text",
               "depends_on": []
             },
             {
-              "id": "TIME",
+              "id": "formula.calc.operand-datetime",
               "depends_on": []
             }
           ],
@@ -585,103 +585,103 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "C1",
+              "id": "query.view-query.now-element-roundtrip",
               "depends_on": []
             },
             {
-              "id": "C2",
+              "id": "query.caml-adhoc.now-element-discriminates",
               "depends_on": []
             },
             {
-              "id": "C3",
+              "id": "query.caml-adhoc.now-element-include-time-discriminates",
               "depends_on": []
             },
             {
-              "id": "C4",
+              "id": "query.caml-adhoc.today-element-include-time-discriminates",
               "depends_on": []
             },
             {
-              "id": "C5",
+              "id": "query.caml-adhoc.today-element-date-granular",
               "depends_on": []
             },
             {
-              "id": "C6",
+              "id": "query.view-query.today-include-time-roundtrip",
               "depends_on": [
-                "TZ0"
+                "formula.datetime.control-site-time-zone"
               ]
             },
             {
-              "id": "CN",
+              "id": "query.caml.control-bogus-element-refused",
               "depends_on": []
             },
             {
-              "id": "Q1",
+              "id": "formula.validation.doubled-quote-literal-accepted",
               "depends_on": []
             },
             {
-              "id": "Q2",
+              "id": "formula.validation.doubled-quote-literal-rejects-match",
               "depends_on": [
-                "Q1"
+                "formula.validation.doubled-quote-literal-accepted"
               ]
             },
             {
-              "id": "Q3",
+              "id": "formula.validation.doubled-quote-literal-allows-other",
               "depends_on": [
-                "Q1"
+                "formula.validation.doubled-quote-literal-accepted"
               ]
             },
             {
-              "id": "TZ0",
+              "id": "formula.datetime.control-site-time-zone",
               "depends_on": []
             },
             {
-              "id": "V1",
+              "id": "formula.datetime.now-function-accepted",
               "depends_on": []
             },
             {
-              "id": "V2",
+              "id": "formula.datetime.now-function-rejects-future",
               "depends_on": [
-                "V1"
+                "formula.datetime.now-function-accepted"
               ]
             },
             {
-              "id": "V2C",
+              "id": "formula.datetime.control-now-function-allows-past",
               "depends_on": [
-                "V1"
+                "formula.datetime.now-function-accepted"
               ]
             },
             {
-              "id": "V3",
+              "id": "formula.datetime.today-rejects-earlier-today",
               "depends_on": []
             },
             {
-              "id": "V3C",
+              "id": "formula.datetime.control-today-allows-yesterday",
               "depends_on": []
             },
             {
-              "id": "V4",
+              "id": "formula.datetime.today-plus-one-allows-later-today",
               "depends_on": []
             },
             {
-              "id": "V5",
+              "id": "formula.datetime.today-plus-one-rejects-two-days-out",
               "depends_on": []
             },
             {
-              "id": "V6",
+              "id": "formula.datetime.today-plus-one-ceiling-tomorrow-night",
               "depends_on": []
             },
             {
-              "id": "VN",
+              "id": "formula.datetime.control-missing-column-refused",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "TZ0",
-            "VN",
-            "CN",
-            "V2C",
-            "V3C"
+            "formula.datetime.control-site-time-zone",
+            "formula.datetime.control-missing-column-refused",
+            "query.caml.control-bogus-element-refused",
+            "formula.datetime.control-now-function-allows-past",
+            "formula.datetime.control-today-allows-yesterday"
           ],
           "depends_on": []
         },
@@ -691,18 +691,18 @@
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "C7",
+              "id": "query.view-query.today-include-time-selects",
               "depends_on": [
-                "TZ0",
-                "C6"
+                "formula.datetime.control-site-time-zone",
+                "query.view-query.today-include-time-roundtrip"
               ]
             },
             {
-              "id": "E1",
+              "id": "expression.client-validation.now-sentinel-stored",
               "depends_on": []
             },
             {
-              "id": "Q4",
+              "id": "formula.validation.backslash-quote-literal",
               "depends_on": []
             }
           ],
@@ -746,9 +746,9 @@
             }
           ],
           "controls": [
-            "TZ0",
-            "C6",
-            "Q1"
+            "formula.datetime.control-site-time-zone",
+            "query.view-query.today-include-time-roundtrip",
+            "formula.validation.doubled-quote-literal-accepted"
           ],
           "depends_on": [
             "machine-findings"
@@ -1735,44 +1735,44 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "Q0",
+              "id": "formula.validation.fixture-url-column-seeded",
               "depends_on": []
             },
             {
-              "id": "Q1",
+              "id": "formula.validation.url-operand-accepted",
               "depends_on": [
-                "Q0"
+                "formula.validation.fixture-url-column-seeded"
               ]
             },
             {
-              "id": "Q2",
+              "id": "formula.validation.url-rule-refuses-violation",
               "depends_on": [
-                "Q1"
+                "formula.validation.url-operand-accepted"
               ]
             },
             {
-              "id": "Q3",
+              "id": "formula.validation.url-rule-passes-compliant",
               "depends_on": [
-                "Q1"
+                "formula.validation.url-operand-accepted"
               ]
             },
             {
-              "id": "Q4",
+              "id": "formula.validation.url-isblank-sees-empty-description",
               "depends_on": [
-                "Q1"
+                "formula.validation.url-operand-accepted"
               ]
             },
             {
-              "id": "Q5",
+              "id": "formula.validation.url-equality-matches-url",
               "depends_on": [
-                "Q1"
+                "formula.validation.url-operand-accepted"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "Q0",
-            "Q1"
+            "formula.validation.fixture-url-column-seeded",
+            "formula.validation.url-operand-accepted"
           ],
           "depends_on": []
         }

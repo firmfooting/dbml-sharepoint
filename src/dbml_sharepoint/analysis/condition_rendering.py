@@ -567,11 +567,12 @@ _ISO_DATE_LITERAL = re.compile(
 #       comparison really is running against the instant.
 #
 #       Verified where it SHIPS, not merely where it was convenient to ask.
-#       C2-C5 used an ad-hoc CamlQuery; the deploy writes a view's stored
-#       ViewQuery, and SharePoint rewrites that XML on save. So C6 read the
-#       stored query back (the attribute survived) and C7 re-ran THAT XML
-#       and got the same two rows, confirmed a third time by eye, in the
-#       view itself.
+#       datetime-sentinel-probe.js's `query.caml-adhoc.*` rows used an ad-hoc
+#       CamlQuery; the deploy writes a view's stored ViewQuery, and SharePoint
+#       rewrites that XML on save. So query.view-query.today-include-time-
+#       roundtrip read the stored query back (the attribute survived) and
+#       query.view-query.today-include-time-selects re-ran THAT XML and got
+#       the same two rows, confirmed a third time by eye, in the view itself.
 #
 #       CORROBORATED BY SHAREPOINT'S OWN UI, from a direction the probe
 #       cannot reach. Opening the <Now/> view's filter panel shows an EMPTY
