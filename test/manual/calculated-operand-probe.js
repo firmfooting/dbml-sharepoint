@@ -66,8 +66,8 @@
  * already handled, but a reader scanning the console for 404s will not find
  * them.
  */
-// finding: calculated-operand-refusal — five operand types (Lookup, Person, Note, rich text, Hyperlink) are refused in a calculated formula with HTTP 500; the build refuses them via _FORBIDDEN_CALCULATED_OPERANDS
-// finding: getbyinternalnameortitle-http400 — a GET for a missing field answers HTTP 400, not 404
+// finding: calculated-operand-refusal — captured → evidence/probes/calculated-operand-findings/probe-summary.json
+// finding: getbyinternalnameortitle-http400 — captured → evidence/probes/calculated-operand-findings/probe-summary.json
 (async () => {
   const CONFIRMED = false;
   const ALLOW_WRITES = false;
