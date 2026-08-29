@@ -331,8 +331,10 @@ def main() -> None:
         # NOT ESTABLISHED for a reason nobody remembers.
         print(
             "WARNING: --owner-id and/or --parent-id were not supplied (or were "
-            "not positive), so the Person and Lookup columns are blank. PERSID "
-            "and LOOKID cannot be answered from these files.",
+            "not positive), so the Person and Lookup columns are blank. The "
+            "`odata-comparison-indexed-person` and "
+            "`odata-comparison-indexed-lookup` checks cannot be answered from "
+            "these files.",
         )
     # Derived, never hand-listed. A hand-written list of the columns needing
     # conversion omitted ClosedAt, and ten rows silently failed to load.

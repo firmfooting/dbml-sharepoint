@@ -243,7 +243,7 @@ def test_the_threshold_probe_measures_the_guard_this_tool_emits() -> None:
     probe = (PACKAGE.parent.parent / "test" / "manual" / "threshold-index-probe.js")
     assert CAML_VIEW_FILTER_GUARD in probe.read_text(encoding="utf-8"), (
         f"{probe.name} does not contain CAML_VIEW_FILTER_GUARD verbatim, so "
-        f"its GRDIDX/GRDNUL/GRDUNI/GRDONLY rows are measuring some other "
+        f"its four `scale.threshold.guard*` rows are measuring some other "
         f"string. Re-render the probe after changing the constant."
     )
 

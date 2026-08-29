@@ -133,9 +133,10 @@ def test_all_items_hidden_reads_the_entity_key() -> None:
 
 
 def test_a_lookup_projection_costs_no_join() -> None:
-    """The module docstring's JOINPRJ claim, now that projections are
-    declarable. A lookup column bears one join; each of its additional-field
-    projections is a generated dependent field -- not a DBML column -- so
+    """The module docstring's `scale.join.projected-field-costs-a-join`
+    claim, now that projections are declarable. A lookup column bears one
+    join; each of its additional-field projections is a generated dependent
+    field -- not a DBML column -- so
     `join_bearing_columns` never sees it. A view showing a lookup and five of
     its target's fields therefore costs ONE, not six, and no projection can
     push a view over the 12-join ceiling on its own.

@@ -212,28 +212,34 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # in Microsoft's documented operator list for the REST service at all.
 #
 # ONE CAVEAT ON THE PAIRING, stated because an earlier version of this comment
-# overclaimed it: CMPCAM compares an indexed TEXT column and NULCAM tests an
-# indexed DATETIME one, so the two differ in field type as well as in operator.
-# Both match the same 60 of 6,000, so selectivity is held constant, but a
-# divergence between them alone could not distinguish IsNull behaviour from
-# field-type behaviour.
+# overclaimed it: the checks named here are threshold-index-probe.js ids under
+# `scale.index`, each followed by the mnemonic the recorded runs quote.
+# `caml-comparison-indexed-text` (CMPCAM) compares an indexed TEXT column and
+# `caml-isnull-indexed-datetime` (NULCAM) tests an indexed DATETIME one, so the
+# two differ in field type as well as in operator. Both match the same 60 of
+# 6,000, so selectivity is held constant, but a divergence between them alone
+# could not distinguish IsNull behaviour from field-type behaviour.
 #
-# It does not have to. The conclusion below rests on NNIDX and NNUNI, which are
-# two DateTime columns holding identical values on the same rows and differing
-# ONLY in the index, and on NULIDX, the same presence test over the same
-# column on the OData path. Making CMPCAM and NULCAM a true one-variable pair
-# needs an equality population on the DateTime column, which is a generator
-# change rather than a probe one.
+# It does not have to. The conclusion below rests on
+# `caml-isnotnull-indexed-datetime` (NNIDX) and
+# `caml-isnotnull-unindexed-datetime` (NNUNI), which are two DateTime columns
+# holding identical values on the same rows and differing ONLY in the index,
+# and on `odata-null-indexed-datetime` (NULIDX), the same presence test over
+# the same column on the OData path. Making `caml-comparison-indexed-text` and
+# `caml-isnull-indexed-datetime` a true one-variable pair needs an equality
+# population on the DateTime column, which is a generator change rather than a
+# probe one.
 #
 # ANSWERED 2026-07-31, revision 1799a1e8, at 6,000 items on one site: YES, a
 # CAML <IsNull> on an INDEXED DateTime column IS served past the threshold.
-# NULCAM returned HTTP 200 with exactly its 60 expected rows, while the negative
-# control (an UNINDEXED Text comparison of identical selectivity, 60 of 6,000)
-# was refused HTTP 500 SPQueryThrottledException, "the attempted operation is
-# prohibited because it exceeds the list view threshold", and the positive
-# control on an indexed column was served. Controls valid in both directions, so
-# the null test is not riding on a threshold that failed to engage. OData
-# `ClosedAt eq null` was served at 60 rows too, a second code path agreeing.
+# `caml-isnull-indexed-datetime` returned HTTP 200 with exactly its 60 expected
+# rows, while the negative control (an UNINDEXED Text comparison of identical
+# selectivity, 60 of 6,000) was refused HTTP 500 SPQueryThrottledException,
+# "the attempted operation is prohibited because it exceeds the list view
+# threshold", and the positive control on an indexed column was served.
+# Controls valid in both directions, so the null test is not riding on a
+# threshold that failed to engage. OData `ClosedAt eq null` was served at 60
+# rows too, a second code path agreeing.
 #
 # The remedy below therefore recommends an index for a null-only filter.
 #

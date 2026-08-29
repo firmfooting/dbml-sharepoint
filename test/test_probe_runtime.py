@@ -236,8 +236,15 @@ def _run_probe(**changes: Any) -> dict[str, str]:
 #: rather than spelled into each test, because the gate is the thing under
 #: test and a row quietly dropping out of it is the regression.
 _GUARD_ROWS = (
-    "TWINCK", "GRDIDX", "GRDNUL", "GRDUNI", "GRDONLY",
-    "VWIDX", "VWGRD", "VWUNI", "VWUGD",
+    "scale.index.fixture-twins-match-same-rows",
+    "scale.threshold.guarded-comparison-indexed-text",
+    "scale.threshold.guarded-isnull-indexed-datetime",
+    "scale.threshold.guarded-comparison-unindexed-text",
+    "scale.threshold.guard-alone-every-row",
+    "view.threshold-render.indexed-filter",
+    "view.threshold-render.indexed-filter-guarded",
+    "view.threshold-render.unindexed-filter",
+    "view.threshold-render.unindexed-filter-guarded",
 )
 
 
@@ -250,34 +257,36 @@ def test_a_healthy_run_answers_the_guard_questions() -> None:
     probe that had stopped measuring anything.
     """
     rows = _run_probe()
-    assert rows["IDXSET"] == "CONFIRMED"
-    assert rows["TWINCK"] == "AGREE"
-    assert rows["GRDIDX"] == "UNCHANGED (both served)"
-    assert rows["GRDNUL"] == "UNCHANGED (both served)"
-    assert rows["VWIDX"] == "MANUAL (unobserved)"
+    assert rows["scale.index.fixture-indexes-set"] == "CONFIRMED"
+    assert rows["scale.index.fixture-twins-match-same-rows"] == "AGREE"
+    guarded = "UNCHANGED (both served)"
+    assert rows["scale.threshold.guarded-comparison-indexed-text"] == guarded
+    assert rows["scale.threshold.guarded-isnull-indexed-datetime"] == guarded
+    assert rows["view.threshold-render.indexed-filter"] == "MANUAL (unobserved)"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_failed_index_control_leaves_every_guard_row_unestablished() -> None:
-    """IDXSET voiding the table must void the guard rows with it.
+    """`fixture-indexes-set` voiding the table must void the guard rows with it.
 
     Run of 2026-08-17: SharePoint had indexed Shadow between runs, so the
     negative control had expired. `measureGuard` gated only on ItemCount, so
-    GRDIDX and GRDNUL still answered "UNCHANGED (both served)" one screen
-    below IDXSET reporting TABLE VOID, and the four rendered views were still
-    handed to an operator labelled INDEXED and UNINDEXED.
+    the two guarded comparisons still answered "UNCHANGED (both served)" one
+    screen below `fixture-indexes-set` reporting TABLE VOID, and the four
+    rendered views were still handed to an operator labelled INDEXED and
+    UNINDEXED.
 
     Nothing there is established. The labels those rows are ABOUT are the
-    labels IDXSET just said are wrong.
+    labels `fixture-indexes-set` just said are wrong.
     """
     rows = _run_probe(indexed={"Shadow": True}, mergeSticks=False)
-    assert rows["IDXCLR"] == "DID NOT STICK"
-    assert rows["IDXSET"] == "MISLABELLED, TABLE VOID"
+    assert rows["scale.index.negative-control-clearable"] == "DID NOT STICK"
+    assert rows["scale.index.fixture-indexes-set"] == "MISLABELLED, TABLE VOID"
     answered = [row for row in _GUARD_ROWS if not rows[row].startswith("NOT ESTABLISHED")]
     assert not answered, (
         f"the index control failed and {answered} still answered. Every one of "
         f"them is an indexed-versus-unindexed comparison, so the labels it "
-        f"rests on are the ones IDXSET reported wrong."
+        f"rests on are the ones `fixture-indexes-set` reported wrong."
     )
 
 
@@ -293,17 +302,18 @@ def test_a_failed_index_control_leaves_every_guard_row_unestablished() -> None:
 def test_twins_that_could_not_be_read_are_not_recorded_as_disagreeing(
     why: str, shadow: dict[str, Any],
 ) -> None:
-    """TWINCK asks whether the twins match the same rows, and an unreadable
-    half does not answer it either way.
+    """`fixture-twins-match-same-rows` asks whether the twins match the same
+    rows, and an unreadable half does not answer it either way.
 
-    DISAGREE is an answer: report() counts it, and GRDUNI reads it as the seed
-    having drifted, which sends an operator to reconcile a fixture that may be
-    fine. A refused request and a response whose rows carry no ID say only
-    that the comparison could not be made.
+    DISAGREE is an answer: report() counts it, and the unindexed guarded
+    comparison reads it as the seed having drifted, which sends an operator to
+    reconcile a fixture that may be fine. A refused request and a response
+    whose rows carry no ID say only that the comparison could not be made.
     """
     rows = _run_probe(render=[{"contains": ["Name='Shadow'"], **shadow}])
-    assert rows["TWINCK"].startswith("NOT ESTABLISHED"), (
-        f"{why}, and TWINCK recorded {rows['TWINCK']!r}. Nothing was compared, "
+    twins = rows["scale.index.fixture-twins-match-same-rows"]
+    assert twins.startswith("NOT ESTABLISHED"), (
+        f"{why}, and the twin check recorded {twins!r}. Nothing was compared, "
         f"so nothing disagreed."
     )
 
@@ -319,11 +329,17 @@ def test_an_unreadable_negative_control_is_not_reported_as_needing_no_clear() ->
     an unverified one is the quietest way this table goes wrong.
     """
     rows = _run_probe(
-        # Armed off the RUNCNT log line rather than a read count: clearControl
-        # makes the first read of Shadow after that row is recorded.
-        failReadsAfter={"marker": "RUNCNT:", "field": "Shadow", "count": 1},
+        # Armed off the item-count log line rather than a read count:
+        # clearControl makes the first read of Shadow after that row is
+        # recorded.
+        failReadsAfter={
+            "marker": "scale.threshold.fixture-item-count:",
+            "field": "Shadow",
+            "count": 1,
+        },
     )
-    assert rows["IDXCLR"].startswith("NOT ESTABLISHED"), (
-        f"the Shadow read failed and IDXCLR recorded {rows['IDXCLR']!r}. A "
+    clear = rows["scale.index.negative-control-clearable"]
+    assert clear.startswith("NOT ESTABLISHED"), (
+        f"the Shadow read failed and the clear check recorded {clear!r}. A "
         f"failed read is not a reading of Indexed=false."
     )

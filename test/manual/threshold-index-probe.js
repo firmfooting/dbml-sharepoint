@@ -110,56 +110,128 @@
  * says so in its own evidence, because a comment nobody copies out of the
  * console is not a safeguard.
  *
- * WHAT IT ASKS
- *   RUNCNT  live ItemCount matches a declared checkpoint
- *   IDXSET  the four intended indexes really are set, and Shadow is not
- *           (SortBait is excluded because it is EXPECTED to turn over; see COLUMNS)
- *   FLAGS   Indexed/AutoIndexed for all six columns, every run
- *   CMPIDX  OData comparison, INDEXED Text        (positive control)
- *   CMPUNI  OData comparison, UNINDEXED twin      (negative control)
- *   NULIDX  OData null test, INDEXED DateTime
- *   CMPCAM  CAML  comparison, INDEXED Text
- *   GRDIDX  CAML  comparison, INDEXED Text, GUARDED   (#272)
- *   GRDNUL  CAML  <IsNull>, INDEXED DateTime, GUARDED (#272)
- *   GRDUNI  CAML  comparison, UNINDEXED twin, GUARDED (#272 negative control)
- *   GRDONLY CAML  the guard ALONE, matching every row (#272 negative control)
- *   NULCAM  CAML  <IsNull>, INDEXED DateTime      (the question as _views.py asks it)
- *   PERSID  OData comparison, INDEXED Person
- *   LOOKID  OData comparison, INDEXED Lookup
- *   PERCAM  CAML  Eq, INDEXED Person, LookupId form
- *   PERCAV  CAML  Eq, INDEXED Person, projected-value form
- *   LOOCAM  CAML  Eq, INDEXED Lookup, LookupId form
- *   NNIDX   CAML  <IsNotNull>, INDEXED DateTime
- *   NNUNI   CAML  <IsNotNull>, UNINDEXED DateTime  (is an index NECESSARY?)
- *   LOOPRJ  CAML  Eq, INDEXED Lookup, PROJECTING it   (the real view shape)
- *   PERPRJ  CAML  Eq, INDEXED Person, PROJECTING it   (the real view shape)
- *   JOINMAX how many Lookup columns can one view PROJECT?   (issue #44)
- *   JOINSYS does Created By count as a join?
- *   JOINEDT does Modified By count as a join?
- *   JOINPER does a Person column count as a join?
- *   JOINPRJ does a lookup's additional-field projection cost its own join?
- *   ANDIDX  CAML  And, INDEXED condition FIRST     (does filter ORDER decide?)
- *   ANDUNI  CAML  And, UNINDEXED condition FIRST   (same 60 rows, reversed)
- *   CALCAM  CAML  Eq on a CALCULATED column   (OData refuses this by type)
- *   SEEDCK  the seeded rows really hold both values, read via an INDEXED filter
- *   TGTIDX  is the lookup target's ShowField indexed on this run?
- *   TGTENU  enumerate the lookup target, unordered   (what a picker opens with)
- *   TGTORD  enumerate it ordered by ShowField
- *   TGTPFX  type-ahead against it
- *   LKPCAL  can a Lookup show a CALCULATED column from its target?
- *   TGTCAL  order the target by that calculated label
- *   TGTSFO  INDEXED filter first, THEN order  (the variant that can work)
- *   PIKIDX  picker choices on an INDEXED ShowField   (the form's own call)
- *   PIKCAL  picker choices on a CALCULATED ShowField
- *   PIKCND  picker choices on the status-driven label
- *   PIKVW   does the picker honour the target's DEFAULT VIEW filter?
- *   TGTSTA  the INDEXED status filter on the target
- *   TGTCND  order by the STATUS-DRIVEN conditional label
- *   TGTFLT  type-ahead against that conditional label
- *   TGTSTO  INDEXED status filter first, THEN order by Title
- *   CALCIDX can a Calculated column carry an index?
- *   NOTEIDX can a Multi-line Text column carry an index?
- *   SYSCRE  Created     SYSMOD  Modified     SYSAUT  Author     SYSEDI  Editor
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`, grouped below by scope. The old mnemonic each one
+ * replaces is given beside it, because the runs recorded above quote the mnemonics
+ * and the fixture views are still titled `Threshold VWIDX` and so on: a view title
+ * names a fixture rather than a question.
+ *
+ *   Under `scale.threshold`:
+ *     fixture-item-count                 (RUNCNT)   live ItemCount matches a declared
+ *                                                   checkpoint
+ *     guarded-comparison-indexed-text    (GRDIDX)   CAML comparison, INDEXED Text, GUARDED
+ *                                                   (#272)
+ *     guarded-isnull-indexed-datetime    (GRDNUL)   CAML <IsNull>, INDEXED DateTime,
+ *                                                   GUARDED (#272)
+ *     guarded-comparison-unindexed-text  (GRDUNI)   CAML comparison, UNINDEXED twin,
+ *                                                   GUARDED (#272 negative control)
+ *     guard-alone-every-row              (GRDONLY)  CAML the guard ALONE, matching every
+ *                                                   row (#272 negative control)
+ *
+ *   Under `scale.index`:
+ *     fixture-indexes-set                    (IDXSET)   the four intended indexes really
+ *                                                       are set, and Shadow is not
+ *                                                       (SortBait is excluded because it is
+ *                                                       EXPECTED to turn over; see COLUMNS)
+ *     negative-control-clearable             (IDXCLR)   can Shadow be un-indexed again, and
+ *                                                       does the clear stick?
+ *     indexed-autoindexed-flags              (FLAGS)    Indexed/AutoIndexed for all six
+ *                                                       columns, every run
+ *     odata-comparison-indexed-text          (CMPIDX)   OData comparison, INDEXED Text
+ *                                                       (positive control)
+ *     odata-comparison-unindexed-text        (CMPUNI)   OData comparison, UNINDEXED twin
+ *                                                       (negative control)
+ *     odata-null-indexed-datetime            (NULIDX)   OData null test, INDEXED DateTime
+ *     caml-comparison-indexed-text           (CMPCAM)   CAML comparison, INDEXED Text
+ *     caml-isnull-indexed-datetime           (NULCAM)   CAML <IsNull>, INDEXED DateTime
+ *                                                       (the question as _views.py asks it)
+ *     odata-comparison-indexed-person        (PERSID)   OData comparison, INDEXED Person
+ *     odata-comparison-indexed-lookup        (LOOKID)   OData comparison, INDEXED Lookup
+ *     caml-eq-indexed-person-lookupid        (PERCAM)   CAML Eq, INDEXED Person, LookupId
+ *                                                       form
+ *     caml-eq-indexed-person-value           (PERCAV)   CAML Eq, INDEXED Person, projected-
+ *                                                       value form
+ *     caml-eq-indexed-lookup-lookupid        (LOOCAM)   CAML Eq, INDEXED Lookup, LookupId
+ *                                                       form
+ *     caml-isnotnull-indexed-datetime        (NNIDX)    CAML <IsNotNull>, INDEXED DateTime
+ *     caml-isnotnull-unindexed-datetime      (NNUNI)    CAML <IsNotNull>, UNINDEXED
+ *                                                       DateTime (is an index NECESSARY?)
+ *     caml-eq-indexed-lookup-projected       (LOOPRJ)   CAML Eq, INDEXED Lookup, PROJECTING
+ *                                                       it (the real view shape)
+ *     caml-eq-indexed-person-projected       (PERPRJ)   CAML Eq, INDEXED Person, PROJECTING
+ *                                                       it (the real view shape)
+ *     caml-and-indexed-first                 (ANDIDX)   CAML And, INDEXED condition FIRST
+ *                                                       (does filter ORDER decide?)
+ *     caml-and-unindexed-first               (ANDUNI)   CAML And, UNINDEXED condition FIRST
+ *                                                       (same 60 rows, reversed)
+ *     caml-eq-calculated                     (CALCAM)   CAML Eq on a CALCULATED column
+ *                                                       (OData refuses this by type)
+ *     fixture-notnull-seed-intact            (SEEDCK)   the seeded rows really hold both
+ *                                                       values, read via an INDEXED filter
+ *     fixture-twins-match-same-rows          (TWINCK)   do the indexed and unindexed twins
+ *                                                       still select the same rows?
+ *     fixture-target-showfield-indexed       (TGTIDX)   is the lookup target's ShowField
+ *                                                       indexed on this run?
+ *     target-enumerable-unordered            (TGTENU)   enumerate the lookup target,
+ *                                                       unordered (what a picker opens
+ *                                                       with)
+ *     target-ordered-by-showfield            (TGTORD)   enumerate it ordered by ShowField
+ *     target-type-ahead                      (TGTPFX)   type-ahead against it
+ *     calculated-showfield-allowed           (LKPCAL)   can a Lookup show a CALCULATED
+ *                                                       column from its target?
+ *     target-ordered-by-calculated           (TGTCAL)   order the target by that calculated
+ *                                                       label
+ *     target-filter-then-order-showfield     (TGTSFO)   INDEXED filter first, THEN order
+ *                                                       (the variant that can work)
+ *     picker-indexed-showfield               (PIKIDX)   picker choices on an INDEXED
+ *                                                       ShowField (the form's own call)
+ *     picker-calculated-showfield            (PIKCAL)   picker choices on a CALCULATED
+ *                                                       ShowField
+ *     picker-conditional-showfield           (PIKCND)   picker choices on the status-driven
+ *                                                       label
+ *     picker-honours-default-view            (PIKVW)    does the picker honour the target's
+ *                                                       DEFAULT VIEW filter?
+ *     target-status-filter                   (TGTSTA)   the INDEXED status filter on the
+ *                                                       target
+ *     target-ordered-by-conditional          (TGTCND)   order by the STATUS-DRIVEN
+ *                                                       conditional label
+ *     target-type-ahead-conditional          (TGTFLT)   type-ahead against that conditional
+ *                                                       label
+ *     target-status-filter-then-order-title  (TGTSTO)   INDEXED status filter first, THEN
+ *                                                       order by Title
+ *     calculated-indexable                   (CALCIDX)  can a Calculated column carry an
+ *                                                       index?
+ *     multiline-text-indexable               (NOTEIDX)  can a Multi-line Text column carry
+ *                                                       an index?
+ *
+ *   Under `scale.native-idx`:
+ *     created-threshold-filter   (SYSCRE)  OData comparison on Created
+ *     modified-threshold-filter  (SYSMOD)  OData comparison on Modified
+ *     author-threshold-filter    (SYSAUT)  OData comparison on Author
+ *     editor-threshold-filter    (SYSEDI)  OData comparison on Editor
+ *
+ *   Under `scale.join`:
+ *     lookup-column-ceiling         (JOINMAX)  how many Lookup columns can one view
+ *                                              PROJECT? (issue #44)
+ *     created-by-counts-as-join     (JOINSYS)  does Created By count as a join?
+ *     modified-by-counts-as-join    (JOINEDT)  does Modified By count as a join?
+ *     person-counts-as-join         (JOINPER)  does a Person column count as a join?
+ *     projected-field-costs-a-join  (JOINPRJ)  does a lookup's additional-field projection
+ *                                              cost its own join?
+ *
+ *   Under `view.threshold-render`:
+ *     indexed-filter            (VWIDX)  RENDERED view, INDEXED filter, unguarded
+ *     indexed-filter-guarded    (VWGRD)  RENDERED view, INDEXED filter, GUARDED
+ *     unindexed-filter          (VWUNI)  RENDERED view, UNINDEXED filter, unguarded
+ *     unindexed-filter-guarded  (VWUGD)  RENDERED view, UNINDEXED filter, GUARDED
+ *
+ *   Under `view.filter-editor`:
+ *     plain-clause-rows    (EDTPLN)  filter editor rows for THREE PLAIN clauses (control)
+ *     negated-clause-rows  (EDTNEG)  filter editor rows for THREE NEGATED clauses
+ *
+ * The last six file under `view`, not `scale`, because a check is keyed to the surface
+ * of its own question. They ask what the rendered view page and the filter editor do,
+ * and the two `view.filter-editor` ones are independent of list size.
  *
  * BOTH OData AND CAML, deliberately. analysis/checks/_views.py asks about a
  * CAML <IsNull>, because that is what a SharePoint VIEW renders. OData $filter
@@ -621,7 +693,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision efc1d18a. Quote this when reporting results.');
+  log('INFO', 'probe revision 530fede7. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -651,65 +723,65 @@
   // Enough headroom to COUNT the matches rather than just prove one exists.
   const PAGE = 200;
 
-  expect('RUNCNT', 'Live ItemCount matches a declared checkpoint');
-  expect('IDXSET', 'The intended indexes are set and the controls are not');
-  expect('IDXCLR', 'Can the negative control be un-indexed again?');
-  expect('FLAGS', 'Indexed/AutoIndexed for all six columns');
-  expect('CMPIDX', 'OData comparison, INDEXED Text (positive control)');
-  expect('CMPUNI', 'OData comparison, UNINDEXED twin of Bucket (negative control)');
-  expect('NULIDX', 'OData null test, INDEXED DateTime');
-  expect('CMPCAM', 'CAML comparison, INDEXED Text');
-  expect('TWINCK', 'Do the indexed and unindexed twins still match the same rows?');
-  expect('VWIDX', 'RENDERED view, INDEXED filter, unguarded (manual: look)');
-  expect('VWGRD', 'RENDERED view, INDEXED filter, GUARDED (manual: look)');
-  expect('VWUNI', 'RENDERED view, UNINDEXED filter, unguarded (manual: look)');
-  expect('VWUGD', 'RENDERED view, UNINDEXED filter, GUARDED (manual: look)');
-  expect('EDTPLN', 'Filter editor rows for THREE PLAIN clauses (control)');
-  expect('EDTNEG', 'Filter editor rows for THREE NEGATED clauses');
-  expect('GRDIDX', 'CAML comparison, INDEXED Text, GUARDED as #272 emits it');
-  expect('GRDNUL', 'CAML IsNull, INDEXED DateTime, GUARDED as #272 emits it');
-  expect('GRDUNI', 'CAML comparison, UNINDEXED twin, GUARDED (control)');
-  expect('GRDONLY', 'CAML the guard ALONE, matching every row (control)');
-  expect('NULCAM', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)');
-  expect('PERSID', 'OData comparison, INDEXED Person');
-  expect('LOOKID', 'OData comparison, INDEXED Lookup');
-  expect('SYSCRE', 'OData comparison on Created');
-  expect('SYSMOD', 'OData comparison on Modified');
-  expect('SYSAUT', 'OData comparison on Author');
-  expect('SYSEDI', 'OData comparison on Editor');
-  expect('SEEDCK', 'The seeded rows really do hold both values');
-  expect('LKPCAL', 'Can a Lookup show a CALCULATED column from its target?');
-  expect('TGTCAL', 'Order the lookup target by the CALCULATED label');
-  expect('TGTSFO', 'INDEXED filter first, THEN order by ShowField');
-  expect('TGTSTA', 'The INDEXED status filter on the lookup target');
-  expect('PIKIDX', 'Picker choices on an INDEXED ShowField');
-  expect('PIKCAL', 'Picker choices on a CALCULATED ShowField');
-  expect('PIKCND', 'Picker choices on the STATUS-DRIVEN label');
-  expect('PIKVW', "Does the picker honour the target's DEFAULT VIEW filter?");
-  expect('TGTCND', 'Order the target by the STATUS-DRIVEN conditional label');
-  expect('TGTFLT', 'Type-ahead against the STATUS-DRIVEN conditional label');
-  expect('TGTSTO', 'INDEXED status filter first, THEN order by Title');
-  expect('JOINMAX', 'How many Lookup columns can one view project?');
-  expect('JOINSYS', 'Does Created By count as a join?');
-  expect('JOINEDT', 'Does Modified By count as a join?');
-  expect('JOINPER', 'Does a Person column count as a join?');
-  expect('JOINPRJ', "Does a lookup's additional-field projection cost its own join?");
-  expect('ANDIDX', 'CAML And, INDEXED condition FIRST');
-  expect('ANDUNI', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)');
-  expect('CALCAM', 'CAML Eq on a CALCULATED column (OData refuses this by type)');
-  expect('TGTIDX', "The lookup target's ShowField index state");
-  expect('TGTENU', 'Enumerate the lookup target, unordered');
-  expect('TGTORD', 'Enumerate the lookup target ordered by ShowField');
-  expect('TGTPFX', 'Type-ahead against the lookup target');
-  expect('CALCIDX', 'Can a Calculated column be indexed?');
-  expect('NOTEIDX', 'Can a Multi-line Text column be indexed?');
-  expect('LOOPRJ', 'CAML Eq on INDEXED Lookup, PROJECTING the lookup (the real view shape)');
-  expect('PERPRJ', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)');
-  expect('PERCAM', 'CAML Eq on INDEXED Person, LookupId form');
-  expect('PERCAV', 'CAML Eq on INDEXED Person, projected-value form');
-  expect('LOOCAM', 'CAML Eq on INDEXED Lookup, LookupId form');
-  expect('NNIDX', 'CAML IsNotNull, INDEXED DateTime');
-  expect('NNUNI', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)');
+  expect('scale.threshold.fixture-item-count', 'Live ItemCount matches a declared checkpoint');
+  expect('scale.index.fixture-indexes-set', 'The intended indexes are set and the controls are not');
+  expect('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?');
+  expect('scale.index.indexed-autoindexed-flags', 'Indexed/AutoIndexed for all six columns');
+  expect('scale.index.odata-comparison-indexed-text', 'OData comparison, INDEXED Text (positive control)');
+  expect('scale.index.odata-comparison-unindexed-text', 'OData comparison, UNINDEXED twin of Bucket (negative control)');
+  expect('scale.index.odata-null-indexed-datetime', 'OData null test, INDEXED DateTime');
+  expect('scale.index.caml-comparison-indexed-text', 'CAML comparison, INDEXED Text');
+  expect('scale.index.fixture-twins-match-same-rows', 'Do the indexed and unindexed twins still match the same rows?');
+  expect('view.threshold-render.indexed-filter', 'RENDERED view, INDEXED filter, unguarded (manual: look)');
+  expect('view.threshold-render.indexed-filter-guarded', 'RENDERED view, INDEXED filter, GUARDED (manual: look)');
+  expect('view.threshold-render.unindexed-filter', 'RENDERED view, UNINDEXED filter, unguarded (manual: look)');
+  expect('view.threshold-render.unindexed-filter-guarded', 'RENDERED view, UNINDEXED filter, GUARDED (manual: look)');
+  expect('view.filter-editor.plain-clause-rows', 'Filter editor rows for THREE PLAIN clauses (control)');
+  expect('view.filter-editor.negated-clause-rows', 'Filter editor rows for THREE NEGATED clauses');
+  expect('scale.threshold.guarded-comparison-indexed-text', 'CAML comparison, INDEXED Text, GUARDED as #272 emits it');
+  expect('scale.threshold.guarded-isnull-indexed-datetime', 'CAML IsNull, INDEXED DateTime, GUARDED as #272 emits it');
+  expect('scale.threshold.guarded-comparison-unindexed-text', 'CAML comparison, UNINDEXED twin, GUARDED (control)');
+  expect('scale.threshold.guard-alone-every-row', 'CAML the guard ALONE, matching every row (control)');
+  expect('scale.index.caml-isnull-indexed-datetime', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)');
+  expect('scale.index.odata-comparison-indexed-person', 'OData comparison, INDEXED Person');
+  expect('scale.index.odata-comparison-indexed-lookup', 'OData comparison, INDEXED Lookup');
+  expect('scale.native-idx.created-threshold-filter', 'OData comparison on Created');
+  expect('scale.native-idx.modified-threshold-filter', 'OData comparison on Modified');
+  expect('scale.native-idx.author-threshold-filter', 'OData comparison on Author');
+  expect('scale.native-idx.editor-threshold-filter', 'OData comparison on Editor');
+  expect('scale.index.fixture-notnull-seed-intact', 'The seeded rows really do hold both values');
+  expect('scale.index.calculated-showfield-allowed', 'Can a Lookup show a CALCULATED column from its target?');
+  expect('scale.index.target-ordered-by-calculated', 'Order the lookup target by the CALCULATED label');
+  expect('scale.index.target-filter-then-order-showfield', 'INDEXED filter first, THEN order by ShowField');
+  expect('scale.index.target-status-filter', 'The INDEXED status filter on the lookup target');
+  expect('scale.index.picker-indexed-showfield', 'Picker choices on an INDEXED ShowField');
+  expect('scale.index.picker-calculated-showfield', 'Picker choices on a CALCULATED ShowField');
+  expect('scale.index.picker-conditional-showfield', 'Picker choices on the STATUS-DRIVEN label');
+  expect('scale.index.picker-honours-default-view', "Does the picker honour the target's DEFAULT VIEW filter?");
+  expect('scale.index.target-ordered-by-conditional', 'Order the target by the STATUS-DRIVEN conditional label');
+  expect('scale.index.target-type-ahead-conditional', 'Type-ahead against the STATUS-DRIVEN conditional label');
+  expect('scale.index.target-status-filter-then-order-title', 'INDEXED status filter first, THEN order by Title');
+  expect('scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?');
+  expect('scale.join.created-by-counts-as-join', 'Does Created By count as a join?');
+  expect('scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?');
+  expect('scale.join.person-counts-as-join', 'Does a Person column count as a join?');
+  expect('scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?");
+  expect('scale.index.caml-and-indexed-first', 'CAML And, INDEXED condition FIRST');
+  expect('scale.index.caml-and-unindexed-first', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)');
+  expect('scale.index.caml-eq-calculated', 'CAML Eq on a CALCULATED column (OData refuses this by type)');
+  expect('scale.index.fixture-target-showfield-indexed', "The lookup target's ShowField index state");
+  expect('scale.index.target-enumerable-unordered', 'Enumerate the lookup target, unordered');
+  expect('scale.index.target-ordered-by-showfield', 'Enumerate the lookup target ordered by ShowField');
+  expect('scale.index.target-type-ahead', 'Type-ahead against the lookup target');
+  expect('scale.index.calculated-indexable', 'Can a Calculated column be indexed?');
+  expect('scale.index.multiline-text-indexable', 'Can a Multi-line Text column be indexed?');
+  expect('scale.index.caml-eq-indexed-lookup-projected', 'CAML Eq on INDEXED Lookup, PROJECTING the lookup (the real view shape)');
+  expect('scale.index.caml-eq-indexed-person-projected', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)');
+  expect('scale.index.caml-eq-indexed-person-lookupid', 'CAML Eq on INDEXED Person, LookupId form');
+  expect('scale.index.caml-eq-indexed-person-value', 'CAML Eq on INDEXED Person, projected-value form');
+  expect('scale.index.caml-eq-indexed-lookup-lookupid', 'CAML Eq on INDEXED Lookup, LookupId form');
+  expect('scale.index.caml-isnotnull-indexed-datetime', 'CAML IsNotNull, INDEXED DateTime');
+  expect('scale.index.caml-isnotnull-unindexed-datetime', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)');
 
   const odata = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
 
@@ -1283,7 +1355,7 @@
   // first paste is how a real warning stops being read.
   const onCheckpoint = CHECKPOINTS.includes(count);
   record(
-    'RUNCNT', 'Live ItemCount matches a declared checkpoint',
+    'scale.threshold.fixture-item-count', 'Live ItemCount matches a declared checkpoint',
     count < 0 ? 'NOT ESTABLISHED'
       : count === 0 ? 'NOT LOADED YET'
       : onCheckpoint ? 'ON CHECKPOINT' : 'OFF CHECKPOINT',
@@ -1316,7 +1388,7 @@
     // one read as unindexed, and recorded NOT NEEDED with an evidence line
     // saying "Shadow is already unindexed", which this run had not seen.
     if (readFailed(before)) {
-      record('IDXCLR', 'Can the negative control be un-indexed again?',
+      record('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?',
              'NOT ESTABLISHED',
              `[${stamp}] Shadow's index state could not be read (HTTP `
              + `${before.status}), so whether the negative control needs `
@@ -1326,14 +1398,14 @@
     }
     const wasIndexed = before.body.Indexed === true;
     if (!wasIndexed) {
-      record('IDXCLR', 'Can the negative control be un-indexed again?',
+      record('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?',
              'NOT NEEDED',
              `[${stamp}] Shadow is already unindexed, so the negative control `
              + 'stands and nothing was written.');
       return;
     }
     if (!ALLOW_WRITES) {
-      record('IDXCLR', 'Can the negative control be un-indexed again?',
+      record('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?',
              'NOT ESTABLISHED',
              `[${stamp}] Shadow is indexed and ALLOW_WRITES is false, so the `
              + 'control cannot be restored. Every indexed-versus-unindexed row '
@@ -1343,7 +1415,7 @@
     const cleared = await setIndexed('Shadow', false);
     const after = await readField('Shadow');
     const nowIndexed = readFailed(after) || after.body.Indexed !== false;
-    record('IDXCLR', 'Can the negative control be un-indexed again?',
+    record('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?',
            nowIndexed ? 'DID NOT STICK' : 'CLEARED',
            `[${stamp}] Shadow read Indexed=true; MERGE Indexed:false -> HTTP `
            + `${cleared.status}; readback Indexed=`
@@ -1380,7 +1452,7 @@
     }
   }
   record(
-    'IDXSET', 'The intended indexes are set and the controls are not',
+    'scale.index.fixture-indexes-set', 'The intended indexes are set and the controls are not',
     wrong.length ? 'MISLABELLED, TABLE VOID' : 'CONFIRMED',
     wrong.length
       ? `[${stamp}] ${wrong.join('; ')}. Every indexed/unindexed row below is ` +
@@ -1390,7 +1462,7 @@
         'EXPECTED to turn over, and no filter here reads it.',
   );
   record(
-    'FLAGS', 'Indexed/AutoIndexed for all six columns',
+    'scale.index.indexed-autoindexed-flags', 'Indexed/AutoIndexed for all six columns',
     flags.length ? 'OBSERVED' : 'NOT ESTABLISHED',
     `[${stamp}] ${flags.join(' | ')}. AutoIndexed means nothing on its own: ` +
     'only a CHANGE across the before/after-sort pair establishes what sets it. ' +
@@ -1577,17 +1649,17 @@
   const showField = await spGet(
     `web/lists/getbytitle('${odata(PARENT)}')/fields/getbyinternalnameortitle('Title')`);
   const showIndexed = !readFailed(showField) && showField.body.Indexed === true;
-  record('TGTIDX', "The lookup target's ShowField index state",
+  record('scale.index.fixture-target-showfield-indexed', "The lookup target's ShowField index state",
          typeof (showField.body || {}).Indexed === 'boolean' ? 'OBSERVED' : 'NOT ESTABLISHED',
          `[target holds ${parentSize}] Title: Indexed=${showIndexed}. Set ` +
          'INDEX_SHOWFIELD and re-paste to take the other half of the pair; the ' +
          'three rows below are only comparable across two runs that differ here.');
 
-  await askTarget('TGTENU', 'Enumerate the lookup target, unordered',
+  await askTarget('scale.index.target-enumerable-unordered', 'Enumerate the lookup target, unordered',
                   '$select=Id,Title&$top=100');
-  await askTarget('TGTORD', 'Enumerate the lookup target ordered by ShowField',
+  await askTarget('scale.index.target-ordered-by-showfield', 'Enumerate the lookup target ordered by ShowField',
                   '$select=Id,Title&$top=100&$orderby=Title asc');
-  await askTarget('TGTPFX', 'Type-ahead against the lookup target',
+  await askTarget('scale.index.target-type-ahead', 'Type-ahead against the lookup target',
                   `$select=Id,Title&$top=100&$filter=${encodeURIComponent("startswith(Title,'Parent 0001')")}`);
 
   // ---- Can a conditional ShowField make a large target pickable? -------
@@ -1636,17 +1708,17 @@
         Options: 8,
       },
     }, await getDigest());
-    record('LKPCAL', 'Can a Lookup show a CALCULATED column from its target?',
+    record('scale.index.calculated-showfield-allowed', 'Can a Lookup show a CALCULATED column from its target?',
            made.ok ? 'ACCEPTED' : 'REFUSED',
            `HTTP ${made.status}: ${made.text.slice(0, 300)}. A refusal ends the ` +
            'conditional-label idea here; an acceptance leaves TGTCAL to say ' +
            'whether the picker could actually enumerate by it.');
   } else {
-    record('LKPCAL', 'Can a Lookup show a CALCULATED column from its target?',
+    record('scale.index.calculated-showfield-allowed', 'Can a Lookup show a CALCULATED column from its target?',
            'ACCEPTED', 'The field already exists from an earlier paste.');
   }
 
-  await askTarget('TGTCAL', 'Order the lookup target by the CALCULATED label',
+  await askTarget('scale.index.target-ordered-by-calculated', 'Order the lookup target by the CALCULATED label',
                   '$select=Id,PickLabel&$top=100&$orderby=PickLabel asc');
 
   // ---- The conditional label, driven by an INDEXED status column -------
@@ -1729,7 +1801,7 @@
     `${targetItems}?$select=Id&$top=${PAGE}&$filter=${encodeURIComponent("PickStatus eq 'Active'")}`);
   const activeCount = (!readFailed(activeNow) && activeNow.body.value)
     ? activeNow.body.value.length : -1;
-  record('TGTSTA', "The INDEXED status filter on the lookup target",
+  record('scale.index.target-status-filter', "The INDEXED status filter on the lookup target",
          activeCount > 0 ? `SERVED (${activeCount} row(s), capped at ${PAGE})`
            : classify(activeNow),
          `[target holds ${parentSize}] $filter=PickStatus eq 'Active', HTTP ` +
@@ -1786,9 +1858,9 @@
                    `, so anything above that is an UNFILTERED picker)` : '') +
            `: ${(r.text || '').slice(0, 220)}`);
   };
-  await askPicker('PIKIDX', 'Picker choices on an INDEXED ShowField', 'Title');
-  await askPicker('PIKCAL', 'Picker choices on a CALCULATED ShowField', 'PickLabel');
-  await askPicker('PIKCND', 'Picker choices on the STATUS-DRIVEN label', 'PickCond');
+  await askPicker('scale.index.picker-indexed-showfield', 'Picker choices on an INDEXED ShowField', 'Title');
+  await askPicker('scale.index.picker-calculated-showfield', 'Picker choices on a CALCULATED ShowField', 'PickLabel');
+  await askPicker('scale.index.picker-conditional-showfield', 'Picker choices on the STATUS-DRIVEN label', 'PickCond');
 
   // ---- Can a FILTERED DEFAULT VIEW restrict what the picker offers? ----
   // The question behind this: a Lookup into a large operational list offers
@@ -1844,7 +1916,7 @@
   }
   const defaulted = await spGet(
     `${parentViews}/getbytitle('${odata(activeView)}')?$select=DefaultView`);
-  record('PIKVW', "Does the picker honour the target's DEFAULT VIEW filter?",
+  record('scale.index.picker-honours-default-view', "Does the picker honour the target's DEFAULT VIEW filter?",
          readFailed(defaulted) ? 'NOT ESTABLISHED'
            : defaulted.body.DefaultView ? 'MEASURED (read PIKIDX above)'
            : 'NOT MEASURED (the filtered view is not default yet)',
@@ -1856,16 +1928,16 @@
          'only native remedy is a smaller target list. Set FILTER_TARGET_VIEW, ' +
          'paste, then paste again to read PIKIDX under it.');
 
-  await askTarget('TGTCND', 'Order the target by the STATUS-DRIVEN conditional label',
+  await askTarget('scale.index.target-ordered-by-conditional', 'Order the target by the STATUS-DRIVEN conditional label',
                   '$select=Id,PickCond&$top=100&$orderby=PickCond asc');
-  await askTarget('TGTFLT', 'Type-ahead against the STATUS-DRIVEN conditional label',
+  await askTarget('scale.index.target-type-ahead-conditional', 'Type-ahead against the STATUS-DRIVEN conditional label',
                   '$select=Id,PickCond&$top=100'
                   + `&$filter=${encodeURIComponent("startswith(PickCond,'Parent')")}`);
-  await askTarget('TGTSTO', 'INDEXED status filter first, THEN order by Title',
+  await askTarget('scale.index.target-status-filter-then-order-title', 'INDEXED status filter first, THEN order by Title',
                   '$select=Id,Title,PickCond&$top=100'
                   + `&$filter=${encodeURIComponent("PickStatus eq 'Active'")}`
                   + '&$orderby=Title asc');
-  await askTarget('TGTSFO', 'INDEXED filter first, THEN order by ShowField',
+  await askTarget('scale.index.target-filter-then-order-showfield', 'INDEXED filter first, THEN order by ShowField',
                   '$select=Id,Title&$top=100'
                   + `&$filter=${encodeURIComponent("startswith(Title,'Parent 0001')")}`
                   + '&$orderby=Title asc');
@@ -1911,11 +1983,11 @@
                + 'alone would have reported this column as indexed.'
              : '') + ` ${(flagged.text || '').slice(0, 200)}`);
   };
-  await canIndex('CALCIDX', 'Can a Calculated column be indexed?', 'CalcBait',
+  await canIndex('scale.index.calculated-indexable', 'Can a Calculated column be indexed?', 'CalcBait',
                  '<Field Type="Calculated" DisplayName="CalcBait" Name="CalcBait" '
                  + 'ResultType="Text"><Formula>=CONCATENATE("c-",Title)</Formula>'
                  + '<FieldRefs><FieldRef Name="Title"/></FieldRefs></Field>');
-  await canIndex('NOTEIDX', 'Can a Multi-line Text column be indexed?', 'NoteBait',
+  await canIndex('scale.index.multiline-text-indexable', 'Can a Multi-line Text column be indexed?', 'NoteBait',
                  '<Field Type="Note" DisplayName="NoteBait" Name="NoteBait" '
                  + 'NumLines="3" RichText="FALSE"/>');
 
@@ -1933,33 +2005,33 @@
     : '';
   if (blocked) {
     for (const [id, question] of [
-      ['CMPIDX', 'OData comparison, INDEXED Text (positive control)'],
-      ['CMPUNI', 'OData comparison, UNINDEXED twin of Bucket (negative control)'],
-      ['NULIDX', 'OData null test, INDEXED DateTime'],
-      ['CMPCAM', 'CAML comparison, INDEXED Text'],
-      ['NULCAM', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)'],
-      ['PERSID', 'OData comparison, INDEXED Person'],
-      ['LOOKID', 'OData comparison, INDEXED Lookup'],
-      ['SYSCRE', 'OData comparison on Created'],
-      ['SYSMOD', 'OData comparison on Modified'],
-      ['SYSAUT', 'OData comparison on Author'],
-      ['SYSEDI', 'OData comparison on Editor'],
-      ['PERCAM', 'CAML Eq on INDEXED Person, LookupId form'],
-      ['PERCAV', 'CAML Eq on INDEXED Person, projected-value form'],
-      ['LOOCAM', 'CAML Eq on INDEXED Lookup, LookupId form'],
-      ['NNIDX', 'CAML IsNotNull, INDEXED DateTime'],
-      ['NNUNI', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)'],
-      ['SEEDCK', 'The seeded rows really do hold both values'],
-      ['JOINMAX', 'How many Lookup columns can one view project?'],
-      ['JOINSYS', 'Does Created By count as a join?'],
-      ['JOINEDT', 'Does Modified By count as a join?'],
-      ['JOINPER', 'Does a Person column count as a join?'],
-      ['JOINPRJ', "Does a lookup's additional-field projection cost its own join?"],
-      ['ANDIDX', 'CAML And, INDEXED condition FIRST'],
-      ['ANDUNI', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)'],
-      ['CALCAM', 'CAML Eq on a CALCULATED column (OData refuses this by type)'],
-      ['LOOPRJ', 'CAML Eq on INDEXED Lookup, PROJECTING the lookup (the real view shape)'],
-      ['PERPRJ', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)'],
+      ['scale.index.odata-comparison-indexed-text', 'OData comparison, INDEXED Text (positive control)'],
+      ['scale.index.odata-comparison-unindexed-text', 'OData comparison, UNINDEXED twin of Bucket (negative control)'],
+      ['scale.index.odata-null-indexed-datetime', 'OData null test, INDEXED DateTime'],
+      ['scale.index.caml-comparison-indexed-text', 'CAML comparison, INDEXED Text'],
+      ['scale.index.caml-isnull-indexed-datetime', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)'],
+      ['scale.index.odata-comparison-indexed-person', 'OData comparison, INDEXED Person'],
+      ['scale.index.odata-comparison-indexed-lookup', 'OData comparison, INDEXED Lookup'],
+      ['scale.native-idx.created-threshold-filter', 'OData comparison on Created'],
+      ['scale.native-idx.modified-threshold-filter', 'OData comparison on Modified'],
+      ['scale.native-idx.author-threshold-filter', 'OData comparison on Author'],
+      ['scale.native-idx.editor-threshold-filter', 'OData comparison on Editor'],
+      ['scale.index.caml-eq-indexed-person-lookupid', 'CAML Eq on INDEXED Person, LookupId form'],
+      ['scale.index.caml-eq-indexed-person-value', 'CAML Eq on INDEXED Person, projected-value form'],
+      ['scale.index.caml-eq-indexed-lookup-lookupid', 'CAML Eq on INDEXED Lookup, LookupId form'],
+      ['scale.index.caml-isnotnull-indexed-datetime', 'CAML IsNotNull, INDEXED DateTime'],
+      ['scale.index.caml-isnotnull-unindexed-datetime', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)'],
+      ['scale.index.fixture-notnull-seed-intact', 'The seeded rows really do hold both values'],
+      ['scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?'],
+      ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?'],
+      ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?'],
+      ['scale.join.person-counts-as-join', 'Does a Person column count as a join?'],
+      ['scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?"],
+      ['scale.index.caml-and-indexed-first', 'CAML And, INDEXED condition FIRST'],
+      ['scale.index.caml-and-unindexed-first', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)'],
+      ['scale.index.caml-eq-calculated', 'CAML Eq on a CALCULATED column (OData refuses this by type)'],
+      ['scale.index.caml-eq-indexed-lookup-projected', 'CAML Eq on INDEXED Lookup, PROJECTING the lookup (the real view shape)'],
+      ['scale.index.caml-eq-indexed-person-projected', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)'],
     ]) {
       record(id, question, 'NOT ESTABLISHED',
              `[${stamp}] not measured: ${blocked}.`);
@@ -2090,7 +2162,7 @@
       `${items}?$select=Id,NotNullIdx,NotNullUni&$top=${PAGE}` +
       `&$filter=${encodeURIComponent(`Bucket eq '${RARE_BUCKET}'`)}`);
     if (readFailed(r) || !r.body.value) {
-      record('SEEDCK', 'The seeded rows really do hold both values',
+      record('scale.index.fixture-notnull-seed-intact', 'The seeded rows really do hold both values',
              'NOT ESTABLISHED',
              `[${stamp}] could not read the seed set back: HTTP ${r.status}.`);
       return;
@@ -2101,7 +2173,7 @@
     const intact = rows.length === matched
                    && withIdx === matched && withUni === matched;
     record(
-      'SEEDCK', 'The seeded rows really do hold both values',
+      'scale.index.fixture-notnull-seed-intact', 'The seeded rows really do hold both values',
       intact ? 'DATA INTACT' : 'DATA INCOMPLETE',
       `[${stamp}] read through the INDEXED Bucket filter: ${rows.length} row(s), ` +
       `NotNullIdx set on ${withIdx}, NotNullUni set on ${withUni}, expected ` +
@@ -2116,38 +2188,38 @@
   };
   if (seedOk) await verifySeed();
 
-  await ask('CMPIDX', 'OData comparison, INDEXED Text (positive control)',
+  await ask('scale.index.odata-comparison-indexed-text', 'OData comparison, INDEXED Text (positive control)',
             `Bucket eq '${RARE_BUCKET}'`, matched);
-  await ask('CMPUNI', 'OData comparison, UNINDEXED twin of Bucket (negative control)',
+  await ask('scale.index.odata-comparison-unindexed-text', 'OData comparison, UNINDEXED twin of Bucket (negative control)',
             `Shadow eq '${RARE_BUCKET}'`, matched);
   // `eq null` is NOT in Microsoft's documented operator list for the SharePoint
   // REST service, and the only Microsoft-hosted statement found says OData
   // there does not support filtering on null, with CAML as the workaround. So
   // this row may well be a 400 at every checkpoint, which is why NULCAM
   // exists, and why the first checkpoint annotates a broken filter as broken.
-  await ask('NULIDX', 'OData null test, INDEXED DateTime',
+  await ask('scale.index.odata-null-indexed-datetime', 'OData null test, INDEXED DateTime',
             'ClosedAt eq null', matched);
   // Not asked at all when OWNER_ID is unset. `OwnerId eq 0` matches nothing,
   // returns 200, and would be a SERVED, the exact false positive the constant
   // exists to prevent, so the query does not get to run.
   if (ownerId) {
-    await ask('PERSID', 'OData comparison, INDEXED Person',
+    await ask('scale.index.odata-comparison-indexed-person', 'OData comparison, INDEXED Person',
               `OwnerId eq ${ownerId}`, matched);
   } else {
-    record('PERSID', 'OData comparison, INDEXED Person', 'NOT ESTABLISHED',
+    record('scale.index.odata-comparison-indexed-person', 'OData comparison, INDEXED Person', 'NOT ESTABLISHED',
            'No owner id: OWNER_ID is 0 and none could be discovered from the ' +
            'rows. Asking for `OwnerId eq 0` would match nothing, return HTTP ' +
            '200 and read as SERVED, so nothing was sent.');
   }
-  await ask('LOOKID', `OData comparison, INDEXED Lookup (target holds ${parentSize})`,
+  await ask('scale.index.odata-comparison-indexed-lookup', `OData comparison, INDEXED Lookup (target holds ${parentSize})`,
             `ParentId eq ${parentItemId}`, matched);
 
   await askCaml(
-    'CMPCAM', 'CAML comparison, INDEXED Text',
+    'scale.index.caml-comparison-indexed-text', 'CAML comparison, INDEXED Text',
     `<Where><Eq><FieldRef Name='Bucket'/><Value Type='Text'>${RARE_BUCKET}</Value></Eq></Where>`,
     matched);
   await askCaml(
-    'NULCAM', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)',
+    'scale.index.caml-isnull-indexed-datetime', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)',
     "<Where><IsNull><FieldRef Name='ClosedAt'/></IsNull></Where>", matched);
 
 
@@ -2229,14 +2301,14 @@
     if (!readFailed(await readField(`Join${n}`))) available.push(`Join${n}`);
   }
   if (!available.length) {
-    record('JOINMAX', 'How many Lookup columns can one view project?',
+    record('scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?',
            'NOT ESTABLISHED',
            `[${stamp}] no Join* columns exist. Set PROBE_JOINS and re-paste; ` +
            'this creates up to ' + JOIN_COLUMNS + ' empty lookups on the fixture.');
     for (const [id, question] of [
-      ['JOINSYS', 'Does Created By count as a join?'],
-      ['JOINEDT', 'Does Modified By count as a join?'],
-      ['JOINPER', 'Does a Person column count as a join?'],
+      ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?'],
+      ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?'],
+      ['scale.join.person-counts-as-join', 'Does a Person column count as a join?'],
     ]) {
       record(id, question, 'NOT ESTABLISHED',
              `[${stamp}] not measured: JOINMAX has no ceiling to work from.`);
@@ -2250,7 +2322,7 @@
       failure = `HTTP ${r.status}: ${r.text}`;
       break;
     }
-    record('JOINMAX', 'How many Lookup columns can one view project?',
+    record('scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?',
            worked === available.length
              ? `NO CEILING FOUND (${worked} projected, all that exist)`
              : `CEILING ${worked}`,
@@ -2272,9 +2344,9 @@
     // if the pair contributes two, and says nothing about which one did it.
     const atCeiling = available.slice(0, worked);
     const suspects = [
-      ['JOINSYS', 'Does Created By count as a join?', 'Author'],
-      ['JOINEDT', 'Does Modified By count as a join?', 'Editor'],
-      ['JOINPER', 'Does a Person column count as a join?', 'Owner'],
+      ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?', 'Author'],
+      ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?', 'Editor'],
+      ['scale.join.person-counts-as-join', 'Does a Person column count as a join?', 'Owner'],
     ];
     for (const [id, question, column] of suspects) {
       if (!worked) {
@@ -2315,7 +2387,7 @@
     }
     const dependent = !readFailed(await readField('ParentStatus'));
     if (!worked || worked < 2 || !dependent) {
-      record('JOINPRJ', "Does a lookup's additional-field projection cost its own join?",
+      record('scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?",
              'NOT ESTABLISHED',
              `[${stamp}] ` + (dependent
                ? 'no ceiling to work from.'
@@ -2329,7 +2401,7 @@
       // it is absent from the returned row it was dropped, and the view
       // rendered because it was never asked to do the extra work.
       const projected = withBoth.ok && withBoth.present('ParentStatus');
-      record('JOINPRJ', "Does a lookup's additional-field projection cost its own join?",
+      record('scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?",
              !withPrimary.ok ? 'NOT ESTABLISHED (the control did not render)'
                : !withBoth.ok ? 'ITS OWN JOIN'
                : projected ? 'FREE (it rides on its primary)'
@@ -2381,10 +2453,10 @@
   const AND_UNI_FIRST =
     `<Eq><FieldRef Name='Shadow'/><Value Type='Text'>${RARE_BUCKET}</Value></Eq>`;
   await askCaml(
-    'ANDIDX', 'CAML And, INDEXED condition FIRST',
+    'scale.index.caml-and-indexed-first', 'CAML And, INDEXED condition FIRST',
     `<Where><And>${AND_IDX_FIRST}${AND_UNI_FIRST}</And></Where>`, matched);
   await askCaml(
-    'ANDUNI', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)',
+    'scale.index.caml-and-unindexed-first', 'CAML And, UNINDEXED condition FIRST (same rows, reversed)',
     `<Where><And>${AND_UNI_FIRST}${AND_IDX_FIRST}</And></Where>`, matched);
 
   // ---- Can CAML do what OData refuses on a Calculated column? ---------
@@ -2405,7 +2477,7 @@
   // columns are not indexable). A SERVED here is therefore also a second
   // reading on whether selectivity alone can carry a query.
   await askCaml(
-    'CALCAM', 'CAML Eq on a CALCULATED column (OData refuses this by type)',
+    'scale.index.caml-eq-calculated', 'CAML Eq on a CALCULATED column (OData refuses this by type)',
     "<Where><Eq><FieldRef Name='CalcBait'/>"
     + "<Value Type='Text'>c-Row 000003</Value></Eq></Where>", 1);
 
@@ -2418,7 +2490,7 @@
   // only be about the second.
   if (ownerId) {
     await askCaml(
-      'PERCAM', 'CAML Eq on INDEXED Person, LookupId form',
+      'scale.index.caml-eq-indexed-person-lookupid', 'CAML Eq on INDEXED Person, LookupId form',
       `<Where><Eq><FieldRef Name='Owner' LookupId='TRUE'/>` +
       `<Value Type='Integer'>${ownerId}</Value></Eq></Where>`, matched);
     // The display name for OWNER_ID, read rather than assumed. It is NOT
@@ -2427,26 +2499,26 @@
     const owner = await spGet(`web/getuserbyid(${ownerId})?$select=Id,Title`);
     if (!readFailed(owner) && owner.body.Title) {
       await askCaml(
-        'PERCAV', 'CAML Eq on INDEXED Person, projected-value form',
+        'scale.index.caml-eq-indexed-person-value', 'CAML Eq on INDEXED Person, projected-value form',
         `<Where><Eq><FieldRef Name='Owner'/>` +
         `<Value Type='Text'>${owner.body.Title}</Value></Eq></Where>`, matched);
     } else {
-      record('PERCAV', 'CAML Eq on INDEXED Person, projected-value form',
+      record('scale.index.caml-eq-indexed-person-value', 'CAML Eq on INDEXED Person, projected-value form',
              'NOT ESTABLISHED',
              `[${stamp}] could not read the display name for user ${ownerId} ` +
              `(HTTP ${owner.status}), so no projected-value filter was sent.`);
     }
   } else {
     for (const [id, question] of [
-      ['PERCAM', 'CAML Eq on INDEXED Person, LookupId form'],
-      ['PERCAV', 'CAML Eq on INDEXED Person, projected-value form'],
+      ['scale.index.caml-eq-indexed-person-lookupid', 'CAML Eq on INDEXED Person, LookupId form'],
+      ['scale.index.caml-eq-indexed-person-value', 'CAML Eq on INDEXED Person, projected-value form'],
     ]) {
       record(id, question, 'NOT ESTABLISHED',
              'No owner id: OWNER_ID is 0 and none could be discovered.');
     }
   }
   await askCaml(
-    'LOOCAM', `CAML Eq on INDEXED Lookup, LookupId form (target holds ${parentSize})`,
+    'scale.index.caml-eq-indexed-lookup-lookupid', `CAML Eq on INDEXED Lookup, LookupId form (target holds ${parentSize})`,
     `<Where><Eq><FieldRef Name='Parent' LookupId='TRUE'/>` +
     `<Value Type='Integer'>${parentItemId}</Value></Eq></Where>`, matched);
 
@@ -2463,19 +2535,19 @@
   // threshold charges for, which is also the difference between these two
   // rows and LOOCAM/PERCAM above.
   await askCaml(
-    'LOOPRJ',
+    'scale.index.caml-eq-indexed-lookup-projected',
     `CAML Eq on INDEXED Lookup, PROJECTING it into a ${parentSize}-item target`,
     `<Where><Eq><FieldRef Name='Parent' LookupId='TRUE'/>` +
     `<Value Type='Integer'>${parentItemId}</Value></Eq></Where>`,
     matched, ['Title', 'Parent']);
   if (ownerId) {
     await askCaml(
-      'PERPRJ', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)',
+      'scale.index.caml-eq-indexed-person-projected', 'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)',
       `<Where><Eq><FieldRef Name='Owner' LookupId='TRUE'/>` +
       `<Value Type='Integer'>${ownerId}</Value></Eq></Where>`,
       matched, ['Title', 'Owner']);
   } else {
-    record('PERPRJ',
+    record('scale.index.caml-eq-indexed-person-projected',
            'CAML Eq on INDEXED Person, PROJECTING the person (the real view shape)',
            'NOT ESTABLISHED',
            'No owner id: OWNER_ID is 0 and none could be discovered.');
@@ -2497,8 +2569,8 @@
   //                                    recording anything.
   if (!seedOk) {
     for (const [id, question] of [
-      ['NNIDX', 'CAML IsNotNull, INDEXED DateTime'],
-      ['NNUNI', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)'],
+      ['scale.index.caml-isnotnull-indexed-datetime', 'CAML IsNotNull, INDEXED DateTime'],
+      ['scale.index.caml-isnotnull-unindexed-datetime', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)'],
     ]) {
       record(id, question, 'NOT ESTABLISHED',
              `[${stamp}] the is-not-null pair is not seeded to ${matched} ` +
@@ -2506,11 +2578,11 @@
     }
   } else {
     await askCaml(
-      'NNIDX', 'CAML IsNotNull, INDEXED DateTime',
+      'scale.index.caml-isnotnull-indexed-datetime', 'CAML IsNotNull, INDEXED DateTime',
       "<Where><IsNotNull><FieldRef Name='NotNullIdx'/></IsNotNull></Where>",
       matched);
     await askCaml(
-      'NNUNI', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)',
+      'scale.index.caml-isnotnull-unindexed-datetime', 'CAML IsNotNull, UNINDEXED DateTime (is an index NECESSARY?)',
       "<Where><IsNotNull><FieldRef Name='NotNullUni'/></IsNotNull></Where>",
       matched);
   }
@@ -2526,10 +2598,10 @@
     'is attributable to result-set size and is NOT evidence about indexing. ' +
     'Only a SERVED is informative here.';
   for (const [id, question, filter] of [
-    ['SYSCRE', 'OData comparison on Created', "Created ge datetime'2020-01-01T00:00:00Z'"],
-    ['SYSMOD', 'OData comparison on Modified', "Modified ge datetime'2020-01-01T00:00:00Z'"],
-    ['SYSAUT', 'OData comparison on Author', `AuthorId ne 0`],
-    ['SYSEDI', 'OData comparison on Editor', `EditorId ne 0`],
+    ['scale.native-idx.created-threshold-filter', 'OData comparison on Created', "Created ge datetime'2020-01-01T00:00:00Z'"],
+    ['scale.native-idx.modified-threshold-filter', 'OData comparison on Modified', "Modified ge datetime'2020-01-01T00:00:00Z'"],
+    ['scale.native-idx.author-threshold-filter', 'OData comparison on Author', `AuthorId ne 0`],
+    ['scale.native-idx.editor-threshold-filter', 'OData comparison on Editor', `EditorId ne 0`],
   ]) {
     const r = await spGet(
       `${items}?$select=Id&$top=${PAGE}&$filter=${encodeURIComponent(filter)}`);
@@ -2694,7 +2766,7 @@
     let twinComplete = null;
     const TWINCK_Q = 'Do the indexed and unindexed twins still match the same rows?';
     if (guardBlocked) {
-      record('TWINCK', TWINCK_Q,
+      record('scale.index.fixture-twins-match-same-rows', TWINCK_Q,
              'NOT ESTABLISHED', `[${stamp}] not measured: ${guardBlocked}.`);
     } else {
       const bucketRows = await rawCaml(`<Where>${IDX_LEAF}</Where>`);
@@ -2720,7 +2792,7 @@
       // it sends an operator to reconcile a seed that may be perfectly fine.
       // A refused request and a response carrying no row ID say only that the
       // comparison could not be made, which is what NOT ESTABLISHED is for.
-      record('TWINCK', TWINCK_Q,
+      record('scale.index.fixture-twins-match-same-rows', TWINCK_Q,
         !readable ? 'NOT ESTABLISHED' : twinsAgree ? 'AGREE' : 'DISAGREE',
         `[${stamp}] Bucket: HTTP ${bucketRows.status}, ${bucketRows.rows} row(s). `
         + `Shadow: HTTP ${shadowRows.status}, ${shadowRows.rows} row(s). `
@@ -2738,9 +2810,9 @@
 
     // The two measurements. Both twins are on INDEXED columns and are expected
     // to be served, so a change here is the guard's doing.
-    await guardPair('GRDIDX', 'CAML comparison, INDEXED Text, GUARDED as #272 emits it',
+    await guardPair('scale.threshold.guarded-comparison-indexed-text', 'CAML comparison, INDEXED Text, GUARDED as #272 emits it',
                     IDX_LEAF, true);
-    await guardPair('GRDNUL', 'CAML IsNull, INDEXED DateTime, GUARDED as #272 emits it',
+    await guardPair('scale.threshold.guarded-isnull-indexed-datetime', 'CAML IsNull, INDEXED DateTime, GUARDED as #272 emits it',
                     NUL_LEAF, true);
     // The control: the UNINDEXED twin, and deliberately NOT a guardPair. On
     // this surface the threshold does not throw, it TRUNCATES: GRDONLY came
@@ -2750,13 +2822,13 @@
     // negative control it is and the guard question on this twin stays open.
     const GRDUNI_Q = 'CAML comparison, UNINDEXED twin, GUARDED (control)';
     if (guardBlocked) {
-      record('GRDUNI', GRDUNI_Q, 'NOT ESTABLISHED',
+      record('scale.threshold.guarded-comparison-unindexed-text', GRDUNI_Q, 'NOT ESTABLISHED',
              `[${stamp}] not measured: ${guardBlocked}.`);
     } else if (twinsAgree !== true) {
       // Stopped rather than measured. TWINCK did not read the twins as
       // matching, so Shadow differs from Bucket in more than the index and
       // nothing sent against it here would be a control for anything.
-      record('GRDUNI', GRDUNI_Q, 'NOT ESTABLISHED',
+      record('scale.threshold.guarded-comparison-unindexed-text', GRDUNI_Q, 'NOT ESTABLISHED',
         `[${stamp}] not measured: TWINCK did not read the twins as matching the `
         + 'same rows, so this pair differs in more than the index. Reconcile the '
         + 'seed and re-run.');
@@ -2768,11 +2840,11 @@
         + `${wrapped.rows} row(s) (${wrapped.paging}). The INDEXED twin read `
         + `${twinComplete} row(s) moments earlier. `;
       if (!bare.ok || twinComplete === null) {
-        record('GRDUNI', GRDUNI_Q, 'NOT ESTABLISHED', shape
+        record('scale.threshold.guarded-comparison-unindexed-text', GRDUNI_Q, 'NOT ESTABLISHED', shape
           + 'There is no complete answer to hold this against, so whether the '
           + `unindexed half was served whole is not established. ${bare.text}`);
       } else if (bare.rows !== twinComplete) {
-        record('GRDUNI', GRDUNI_Q,
+        record('scale.threshold.guarded-comparison-unindexed-text', GRDUNI_Q,
           'NOT ESTABLISHED (PARTIAL: the unindexed twin was truncated)', shape
           + 'The unindexed half came back SHORT of the complete answer. That is '
           + 'the throttle this control exists to catch, and it is also why the '
@@ -2784,7 +2856,7 @@
         // nothing. The comparison is printed as an observation, not a verdict.
         const sameRows = wrapped.ok && wrapped.ids !== null && bare.ids !== null
           && wrapped.ids.join(',') === bare.ids.join(',');
-        record('GRDUNI', GRDUNI_Q,
+        record('scale.threshold.guarded-comparison-unindexed-text', GRDUNI_Q,
           'NOT ESTABLISHED (the unindexed twin was served whole)', shape
           + 'Nothing was truncated, so this control did not control anything: it '
           + 'cannot show the threshold biting, and GRDIDX being served is then a '
@@ -2798,11 +2870,11 @@
     // treats it as satisfiable without scanning, which would make it a filter
     // rather than the inert conjunct every other row assumes.
     if (guardBlocked) {
-      record('GRDONLY', 'CAML the guard ALONE, matching every row (control)',
+      record('scale.threshold.guard-alone-every-row', 'CAML the guard ALONE, matching every row (control)',
              'NOT ESTABLISHED', `[${stamp}] not measured: ${guardBlocked}.`);
     } else {
       const alone = await rawCaml(`<Where>${GUARD}</Where>`);
-      record('GRDONLY', 'CAML the guard ALONE, matching every row (control)',
+      record('scale.threshold.guard-alone-every-row', 'CAML the guard ALONE, matching every row (control)',
              alone.ok ? 'SERVED' : 'REFUSED',
              `[${stamp}] HTTP ${alone.status}, ${alone.rows} row(s) of ${count}. `
              + (alone.ok
@@ -2840,8 +2912,13 @@
     // against THIS revision's question. The same read-back catches SharePoint
     // rewriting a filter it was handed, which for the guarded shapes is the
     // #272 failure itself.
-    const openableView = async (id, question, where) => {
-      const title = `Threshold ${id}`;
+    // The SHAPE token is the view title and it stays a mnemonic on purpose. It
+    // names a fixture rather than a question, the runs recorded above quote
+    // 'Threshold VWIDX' and 'Threshold EDTPLN', and a SharePoint view title
+    // built out of a dotted check id would be both long and awkward in the URL
+    // it derives.
+    const openableView = async (id, shape, question, where) => {
+      const title = `Threshold ${shape}`;
       const listPath = `web/lists/getbytitle('${odata(LIST)}')`;
       const d = await getDigest();
       const made = await spPost(`${listPath}/views`, {
@@ -2894,16 +2971,20 @@
     };
 
     const VIEW_SHAPES = [
-      ['VWIDX', 'RENDERED view, INDEXED filter, unguarded (manual: look)',
+      ['view.threshold-render.indexed-filter', 'VWIDX',
+       'RENDERED view, INDEXED filter, unguarded (manual: look)',
        `<Where>${IDX_LEAF}</Where>`],
-      ['VWGRD', 'RENDERED view, INDEXED filter, GUARDED (manual: look)',
+      ['view.threshold-render.indexed-filter-guarded', 'VWGRD',
+       'RENDERED view, INDEXED filter, GUARDED (manual: look)',
        guarded(IDX_LEAF)],
-      ['VWUNI', 'RENDERED view, UNINDEXED filter, unguarded (manual: look)',
+      ['view.threshold-render.unindexed-filter', 'VWUNI',
+       'RENDERED view, UNINDEXED filter, unguarded (manual: look)',
        `<Where>${UNI_LEAF}</Where>`],
-      ['VWUGD', 'RENDERED view, UNINDEXED filter, GUARDED (manual: look)',
+      ['view.threshold-render.unindexed-filter-guarded', 'VWUGD',
+       'RENDERED view, UNINDEXED filter, GUARDED (manual: look)',
        guarded(UNI_LEAF)],
     ];
-    for (const [id, question, where] of VIEW_SHAPES) {
+    for (const [id, shape, question, where] of VIEW_SHAPES) {
       if (guardBlocked) {
         record(id, question, 'NOT ESTABLISHED', `[${stamp}] not measured: ${guardBlocked}.`);
         continue;
@@ -2913,7 +2994,7 @@
                `[${stamp}] ALLOW_WRITES is false, so no view was created.`);
         continue;
       }
-      const url = await openableView(id, question, where);
+      const url = await openableView(id, shape, question, where);
       if (!url) continue;
       // 'MANUAL (unobserved)' rather than 'MANUAL', because a created view is
       // not an answer. report() holds any MANUAL open, and this says in the
@@ -2953,17 +3034,19 @@
       + `<Neq><FieldRef Name="Bucket"/><Value Type="Text">${v}</Value></Neq></Or>`;
     const foldAnd = (parts) => parts.reduce((a, b) => `<And>${a}${b}</And>`);
     const EDITOR_SHAPES = [
-      ['EDTPLN', 'Filter editor rows for THREE PLAIN clauses (control)', eqLeaf, 3],
-      ['EDTNEG', 'Filter editor rows for THREE NEGATED clauses', neqLeaf, 6],
+      ['view.filter-editor.plain-clause-rows', 'EDTPLN',
+       'Filter editor rows for THREE PLAIN clauses (control)', eqLeaf, 3],
+      ['view.filter-editor.negated-clause-rows', 'EDTNEG',
+       'Filter editor rows for THREE NEGATED clauses', neqLeaf, 6],
     ];
-    for (const [id, question, leaf, fieldRefs] of EDITOR_SHAPES) {
+    for (const [id, shape, question, leaf, fieldRefs] of EDITOR_SHAPES) {
       if (!ALLOW_WRITES) {
         record(id, question, 'NOT ESTABLISHED',
                `[${stamp}] ALLOW_WRITES is false, so no view was created.`);
         continue;
       }
       const where = `<Where>${foldAnd(EDT_VALUES.map(leaf))}</Where>`;
-      const url = await openableView(id, question, where);
+      const url = await openableView(id, shape, question, where);
       if (!url) continue;
       record(id, question, 'MANUAL (unobserved)',
         `[${stamp}] OPEN ${url}, then Settings > Edit current view, and report ONE `
