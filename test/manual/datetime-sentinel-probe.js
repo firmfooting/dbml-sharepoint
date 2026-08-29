@@ -670,9 +670,10 @@
     // accepted-then-discarded is a distinct and worse outcome than either.
     const back = await spGet(
       `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ValidationFormula`);
-    // A failed read-back is not a discard. Same rule the library probe's L6
-    // and L7 follow: "SharePoint threw the formula away" is a claim, and a
-    // throttled GET is not evidence for it.
+    // A failed read-back is not a discard. Same rule the library probe's
+    // `view-fileleafref` and `header-fileleafref` (L6, L7) follow:
+    // "SharePoint threw the formula away" is a claim, and a throttled GET is
+    // not evidence for it.
     if (!back.ok || back.body === null) {
       record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
              `the MERGE returned HTTP ${nowFormula.status}, but the read-back failed `

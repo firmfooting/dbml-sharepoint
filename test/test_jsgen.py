@@ -3774,7 +3774,8 @@ def test_every_declared_view_filter_is_emitted_protected() -> None:
 def test_a_view_with_no_filter_gains_no_where_clause() -> None:
     """An unfiltered view must stay editable.
 
-    Measured 2026-08-17 (view-edit-page-probe.js F7): an unfiltered view's
+    Measured 2026-08-17 (view-edit-page-probe.js
+    `view.filter-editor.control-unfiltered-view`, F7): an unfiltered view's
     edit page carries the filter editor's controls, so it reads as
     unprotected and must remain so. Guarding it would also invent a <Where>
     for a view whose author declared none.

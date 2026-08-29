@@ -27,28 +27,40 @@
  * run against a tenant. It is currently a build error taken on suspicion
  * (a reasonable place to stand, but not an answered question).
  *
- * WHAT IT ASKS
- *   LN   NEGATIVE CONTROL: is a POST to /items naming a column that does
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the prose below and every run reported against this
+ * probe quote the mnemonics.
+ *
+ *   library.file-vs-item.control-missing-column-refused  (LN)
+ *        NEGATIVE CONTROL: is a POST to /items naming a column that does
  *        not exist REFUSED? Establishes this probe can see a failed item
  *        write at all. Without it, L2 refusing proves nothing.
- *   L1   does a document library create at all (BaseTemplate 101)?
- *   L2   THE ONE THAT MATTERS. Does POST /items on a library succeed?
+ *   library.doc-lib.fixture-library-created              (L1)
+ *        does a document library create at all (BaseTemplate 101)?
+ *   library.file-vs-item.fileless-item-post              (L2)
+ *        THE ONE THAT MATTERS. Does POST /items on a library succeed?
  *        Refused outright would be the happy answer: demo data simply
  *        cannot be generated and the build error stands on evidence.
- *   L3   ...and if it SUCCEEDS, what was created? FileSystemObjectType,
+ *   library.file-vs-item.fileless-item-readback          (L3)
+ *        ...and if it SUCCEEDS, what was created? FileSystemObjectType,
  *        FileRef, FileLeafRef and Title are read back. A "ghost" (an item
  *        with no file) is the outcome the build error was guessing at,
  *        and this is what proves or disproves it.
- *   L4   ...and does that ghost APPEAR to a user? An invisible row and a
+ *   library.file-vs-item.fileless-item-visible           (L4)
+ *        ...and does that ghost APPEAR to a user? An invisible row and a
  *        visible broken one are very different problems: one is untidy,
  *        the other puts a document-shaped nothing in front of staff.
- *   L5   after uploading a REAL file, is Title actually empty? This is the
+ *   library.file-vs-item.title-after-upload              (L5)
+ *        after uploading a REAL file, is Title actually empty? This is the
  *        assumption behind refusing the `[$Title]` header line. If
  *        SharePoint populates it after all, the header could ship as-is.
- *   L6   can a library VIEW carry FileLeafRef through REST? The tool
+ *   library.doc-lib.view-fileleafref                     (L6)
+ *        can a library VIEW carry FileLeafRef through REST? The tool
  *        refuses it; this establishes whether that is a TOOL limit that
  *        could be lifted, or a platform one that cannot.
- *   L7   does a library content type accept a ClientFormCustomFormatter
+ *   library.doc-lib.header-fileleafref                   (L7)
+ *        does a library content type accept a ClientFormCustomFormatter
  *        whose title line reads [$FileLeafRef] instead of [$Title]?
  *        STORAGE ONLY: whether it renders needs eyes, and the checklist
  *        at the end asks for them.
@@ -316,22 +328,22 @@
     return;
   }
 
-  expect('LN', 'NEGATIVE CONTROL: an item POST naming a missing column is refused');
-  expect('L1', 'A document library is created (BaseTemplate 101)');
-  expect('L2', 'POST /items on a document library');
-  expect('L3', 'What a fileless item POST actually created');
-  expect('L4', 'Whether that item is visible to a user');
-  expect('L5', 'Is Title populated after a real file upload');
-  expect('L6', 'Can a library view carry FileLeafRef through REST');
-  expect('L7', 'A library content type accepts a header referencing [$FileLeafRef]');
+  expect('library.file-vs-item.control-missing-column-refused', 'NEGATIVE CONTROL: an item POST naming a missing column is refused');
+  expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.file-vs-item.fileless-item-post', 'POST /items on a document library');
+  expect('library.file-vs-item.fileless-item-readback', 'What a fileless item POST actually created');
+  expect('library.file-vs-item.fileless-item-visible', 'Whether that item is visible to a user');
+  expect('library.file-vs-item.title-after-upload', 'Is Title populated after a real file upload');
+  expect('library.doc-lib.view-fileleafref', 'Can a library view carry FileLeafRef through REST');
+  expect('library.doc-lib.header-fileleafref', 'A library content type accepts a header referencing [$FileLeafRef]');
 
   await resetList(LIB);
   let digest = await getDigest();
 
-  // ---- L1: the library ------------------------------------------------
+  // ---- fixture-library-created (L1): the library ----------------------
   const existing = await spGet(listPath);
   if (existing.ok) {
-    record('L1', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
+    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
            'reusing an existing library. Set CLEANUP = true for a clean answer');
   } else {
     const made = await spPost('web/lists', {
@@ -339,17 +351,17 @@
       BaseTemplate: 101,
       Description: 'dbml-sharepoint probe library. Safe to delete.',
     }, digest);
-    record('L1', 'A document library is created (BaseTemplate 101)',
+    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
            made.ok ? 'PASS' : 'FAIL',
            made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
     if (!made.ok) return report();
   }
 
-  // ---- LN: NEGATIVE CONTROL -------------------------------------------
+  // ---- control-missing-column-refused (LN): NEGATIVE CONTROL ----------
   digest = await getDigest();
   const junk = await spPost(`${listPath}/items`,
                             { NoSuchColumnAtAll: 'x' }, digest);
-  record('LN', 'NEGATIVE CONTROL: an item POST naming a missing column is refused',
+  record('library.file-vs-item.control-missing-column-refused', 'NEGATIVE CONTROL: an item POST naming a missing column is refused',
          junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? 'an item POST naming a column that does not exist was ACCEPTED. This '
@@ -361,7 +373,7 @@
                + 'refusing the write. L2 is unproven rather than answered: '
                + junk.text.slice(0, 200));
 
-  // ---- L2 / L3 / L4: the fileless item --------------------------------
+  // ---- the fileless item (L2/L3/L4) -----------------------------------
   // This is the exact shape demogen would emit for a library: a plain
   // /items POST carrying a Title and nothing else.
   digest = await getDigest();
@@ -375,7 +387,7 @@
     // an outage lands in the same branch. What makes it evidence is the
     // MESSAGE, so the message is what the verdict turns on.
     const saysWhy = /SPFileCollection|document library/i.test(ghost.text || '');
-    record('L2', 'POST /items on a document library',
+    record('library.file-vs-item.fileless-item-post', 'POST /items on a document library',
            saysWhy ? 'REFUSED, AND SAYS WHY'
                    : isRefusal(ghost.status) ? 'REFUSED' : 'NOT ESTABLISHED',
            saysWhy
@@ -391,20 +403,21 @@
                  + 'server refusing the content (a throttle or an outage lands here '
                  + 'too), so this run has not established what a library does with '
                  + 'a fileless POST. Re-run.');
-    for (const id of ['L3', 'L4']) {
+    for (const id of ['library.file-vs-item.fileless-item-readback',
+                      'library.file-vs-item.fileless-item-visible']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE',
              'no item was created at L2');
     }
   } else {
     const id = ghost.body && ghost.body.Id;
-    record('L2', 'POST /items on a document library', 'ACCEPTED',
+    record('library.file-vs-item.fileless-item-post', 'POST /items on a document library', 'ACCEPTED',
            `HTTP ${ghost.status}, item ${id}. SharePoint did NOT refuse a fileless `
            + 'item, so the question becomes what it created (L3) and whether anyone '
            + 'can see it (L4)');
     const back = await spGet(
       `${listPath}/items(${id})?$select=Id,Title,FileSystemObjectType,FileRef,FileLeafRef`);
     const row = back.ok ? back.body : null;
-    record('L3', 'What a fileless item POST actually created',
+    record('library.file-vs-item.fileless-item-readback', 'What a fileless item POST actually created',
            row ? 'READ BACK' : 'NOT ESTABLISHED',
            row ? JSON.stringify(row) : `could not re-read item ${id} (HTTP ${back.status})`);
 
@@ -418,7 +431,7 @@
     if (rendered.ok && rendered.body && Array.isArray(rendered.body.Row)) {
       visible = rendered.body.Row.some((r) => String(r.ID) === String(id));
     }
-    record('L4', 'Whether that item is visible to a user',
+    record('library.file-vs-item.fileless-item-visible', 'Whether that item is visible to a user',
            visible === null ? 'NOT ESTABLISHED' : visible ? 'VISIBLE' : 'HIDDEN FROM THE VIEW',
            visible === null
              ? `RenderListDataAsStream did not answer: HTTP ${rendered.status} `
@@ -430,7 +443,7 @@
                  + 'rendering, which is untidy rather than user-facing');
   }
 
-  // ---- L5: does a real file populate Title? ---------------------------
+  // ---- title-after-upload (L5): does a real file populate Title? ------
   // The harness's spPost JSON-encodes its payload, which is wrong for a
   // file body, so this one call is a direct fetch.
   digest = await getDigest();
@@ -453,7 +466,7 @@
     uploaded = { ok: false, status: 0, text: String(err) };
   }
   if (!uploaded.ok) {
-    record('L5', 'Is Title populated after a real file upload', 'NOT ESTABLISHED',
+    record('library.file-vs-item.title-after-upload', 'Is Title populated after a real file upload', 'NOT ESTABLISHED',
            `upload failed: HTTP ${uploaded.status} ${uploaded.text.slice(0, 260)}`);
   } else {
     const items = await spGet(
@@ -462,7 +475,7 @@
     const row = items.ok && items.body && items.body.value ? items.body.value[0] : null;
     const title = row ? row.Title : undefined;
     const empty = title === null || title === '' || title === undefined;
-    record('L5', 'Is Title populated after a real file upload',
+    record('library.file-vs-item.title-after-upload', 'Is Title populated after a real file upload',
            row ? (empty ? 'TITLE IS EMPTY, assumption HOLDS'
                         : 'TITLE IS POPULATED, assumption WRONG')
                : 'NOT ESTABLISHED',
@@ -477,7 +490,7 @@
              : `could not find the uploaded file's item (HTTP ${items.status})`);
   }
 
-  // ---- L6: FileLeafRef in a view --------------------------------------
+  // ---- view-fileleafref (L6): FileLeafRef in a view -------------------
   // The tool refuses this at build time. The question is whether that is a
   // tool decision that could be revisited, or a platform refusal.
   const VIEW = 'dbmlsp probe docview';
@@ -486,7 +499,7 @@
     Title: VIEW, ViewQuery: '', RowLimit: 30,
   }, digest);
   if (!madeView.ok) {
-    record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
+    record('library.doc-lib.view-fileleafref', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
            `could not create a view: HTTP ${madeView.status} ${madeView.text.slice(0, 220)}`);
   } else {
     digest = await getDigest();
@@ -499,14 +512,14 @@
     // throttled GET print "REFUSED" (a claim about the platform) on no
     // observation at all, and report() would count the question answered.
     if (readFailed(back)) {
-      record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
+      record('library.doc-lib.view-fileleafref', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
              `addviewfield('FileLeafRef') returned HTTP ${added.status}, but the `
              + `view-fields read-back failed (HTTP ${back.status}), so this run has `
              + 'no evidence either way.');
     } else {
       const fields = back.body.Items || back.body.value || [];
       const present = JSON.stringify(fields).includes('FileLeafRef');
-      record('L6', 'Can a library view carry FileLeafRef through REST',
+      record('library.doc-lib.view-fileleafref', 'Can a library view carry FileLeafRef through REST',
              !added.ok ? 'REFUSED'
                        : present ? 'PLATFORM ALLOWS IT' : 'ACCEPTED THEN DISCARDED',
              !added.ok
@@ -521,7 +534,7 @@
     }
   }
 
-  // ---- L7: a header that names the file -------------------------------
+  // ---- header-fileleafref (L7): a header that names the file ----------
   // Storage only. Whether the header RENDERS is the checklist's job below.
   const header = {
     elmType: 'div',
@@ -546,7 +559,7 @@
     .find((c) => ctIdOf(c).startsWith('0x01') && !ctIdOf(c).startsWith('0x0120'));
   const ctId = ct ? ctIdOf(ct) : null;
   if (!ctId) {
-    record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+    record('library.doc-lib.header-fileleafref', 'A library content type accepts a header referencing [$FileLeafRef]',
            'NOT ESTABLISHED',
            `could not find a non-folder content type on the library (HTTP ${cts.status})`);
   } else {
@@ -555,20 +568,20 @@
       ClientFormCustomFormatter: JSON.stringify({ header }),
     }, digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     if (!set.ok) {
-      record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+      record('library.doc-lib.header-fileleafref', 'A library content type accepts a header referencing [$FileLeafRef]',
              'REFUSED', `HTTP ${set.status}: ${set.text.slice(0, 260)}`);
     } else {
       const back = await spGet(
         `${listPath}/contenttypes('${ctId}')?$select=ClientFormCustomFormatter`);
       // Same rule as L6: a read-back that failed is not a discard.
       if (readFailed(back)) {
-        record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+        record('library.doc-lib.header-fileleafref', 'A library content type accepts a header referencing [$FileLeafRef]',
                'NOT ESTABLISHED',
                `the MERGE returned HTTP ${set.status}, but the read-back failed (HTTP `
                + `${back.status}), so whether it was stored is unobserved.`);
       } else {
         const stored = back.body.ClientFormCustomFormatter;
-        record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+        record('library.doc-lib.header-fileleafref', 'A library content type accepts a header referencing [$FileLeafRef]',
                stored && String(stored).includes('FileLeafRef')
                  ? 'STORED' : 'ACCEPTED THEN DISCARDED',
                `on content type '${ct.Name}' (${ctId}), reads back `

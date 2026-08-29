@@ -161,7 +161,9 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # That -1 was arithmetic until 2026-07-29, when it was watched:
             # row 4 of the probe's eyes-on table leaves the box EMPTY, and
             # both negative candidates were VISIBLE for it
-            # (test/manual/expression-text-operators-probe.js, X2 and X6).
+            # (test/manual/expression-text-operators-probe.js,
+            # `expression.client-validation.not-contains-indexof` and
+            # `.not-begins-with-indexof`, X2 and X6 in that run).
             # The open form showed the same two columns before anything was
             # typed, so the answer was seen twice in one run.
             #
@@ -222,8 +224,9 @@ VALIDATION = "validation"
 # `view.filter-editor.wrapper-group-right-editable` and
 # `view.filter-editor.tautology-guard-editable`, W2/W4/T2 in those runs), and
 # the two halves return every row when asked alone, so conjoining them removes
-# nothing (`query.caml.tautology-always-true`, 41 of 41;
-# view-edit-page-probe.js S2).
+# nothing (`query.caml.tautology-always-true`, 41 of 41; and
+# `query.caml.tautology-alone-partitions`, S2 in the view-edit-page-probe.js
+# runs, which asks the same thing of a three-row fixture).
 CAML_VIEW_FILTER_GUARD = (
     "<Or>"
     '<IsNotNull><FieldRef Name="ID"/></IsNotNull>'
@@ -321,7 +324,9 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # It stays here because storage cannot establish anything on this target.
 # SharePoint does not validate ClientValidationFormula on write. A call to
 # a function that does not exist is accepted and read back byte-identical
-# (test/manual/expression-text-operators-probe.js, X0), so the only proof
+# (test/manual/expression-text-operators-probe.js,
+# `expression.client-validation.control-unknown-function-refused`, X0 in
+# those runs), so the only proof
 # a rendering works is a person watching a column appear and disappear.
 # Anything added to CAPABILITIES[EXPRESSION] without that belongs here
 # first.

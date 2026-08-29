@@ -31,17 +31,29 @@
  * console half of this probe narrows the candidates; only your eyes can
  * finish it.
  *
- * WHAT IT ASKS (console half)
- *   X0   NEGATIVE CONTROL: is a formula calling a function that does not
+ * WHAT IT ASKS (console half). Ids follow the grammar in
+ * `test/manual/SURFACES.md`: `<surface>.<scope>.<question>`. The old mnemonic
+ * each one replaces is given beside it, because the prose below and every run
+ * reported against this probe quote the mnemonics.
+ *
+ *   expression.client-validation.control-unknown-function-refused  (X0)
+ *        NEGATIVE CONTROL: is a formula calling a function that does not
  *        exist REFUSED? If SharePoint stores nonsense, then "accepted"
  *        below means nothing and only the eyes-on half is evidence.
- *   X1   indexOf(...) >= 0            candidate for `contains`
- *   X2   indexOf(...) < 0             candidate for `not_contains`
- *   X3   indexOf(...) == 0            candidate for `begins_with`
- *   X4   startsWith(...)              does this function exist at all?
- *   X5   substring(...) == '...'      documented-functions-only fallback
+ *   expression.client-validation.contains-indexof          (X1)
+ *        indexOf(...) >= 0            candidate for `contains`
+ *   expression.client-validation.not-contains-indexof      (X2)
+ *        indexOf(...) < 0             candidate for `not_contains`
+ *   expression.client-validation.begins-with-indexof       (X3)
+ *        indexOf(...) == 0            candidate for `begins_with`
+ *   expression.client-validation.begins-with-startswith    (X4)
+ *        startsWith(...)              does this function exist at all?
+ *   expression.client-validation.begins-with-substring     (X5)
+ *        substring(...) == '...'      documented-functions-only fallback
  *        for `begins_with`, in case X3 or X4 misbehave
- *   X6   indexOf(...) != 0            candidate for `not_begins_with`
+ *   expression.client-validation.not-begins-with-indexof   (X6)
+ *        indexOf(...) != 0            candidate for `not_begins_with`
+ *
  *   Each asks: accepted? and does it read back BYTE-IDENTICAL, or did
  *   SharePoint normalise it (which reconciliation would then have to
  *   canonicalise, as the calculated-formula comparison already does)?
@@ -108,17 +120,17 @@
   // ran. X6 was added afterwards and run in a second pass the same day; it
   // came back discriminating (see the header).
   const CANDIDATES = [
-    ['X1', 'ShowContains', 'contains',
+    ['expression.client-validation.contains-indexof', 'ShowContains', 'contains',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') >= 0`],
-    ['X2', 'ShowNotContains', 'not_contains',
+    ['expression.client-validation.not-contains-indexof', 'ShowNotContains', 'not_contains',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') < 0`],
-    ['X3', 'ShowBeginsWith', 'begins_with via indexOf',
+    ['expression.client-validation.begins-with-indexof', 'ShowBeginsWith', 'begins_with via indexOf',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') == 0`],
-    ['X4', 'ShowStartsWith', 'begins_with via startsWith()',
+    ['expression.client-validation.begins-with-startswith', 'ShowStartsWith', 'begins_with via startsWith()',
      `=startsWith([$${SUBJECT}], '${NEEDLE}')`],
-    ['X5', 'ShowSubstring', 'begins_with via substring()',
+    ['expression.client-validation.begins-with-substring', 'ShowSubstring', 'begins_with via substring()',
      `=substring([$${SUBJECT}], 0, ${NEEDLE.length}) == '${NEEDLE}'`],
-    ['X6', 'ShowNotBeginsWith', 'not_begins_with',
+    ['expression.client-validation.not-begins-with-indexof', 'ShowNotBeginsWith', 'not_begins_with',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') != 0`],
   ];
 
@@ -167,7 +179,7 @@
     return;
   }
 
-  expect('X0', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused');
+  expect('expression.client-validation.control-unknown-function-refused', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused');
   for (const [id, , label] of CANDIDATES) {
     expect(id, `Candidate for ${label}: accepted, and stored byte-identical?`);
   }
@@ -236,14 +248,14 @@
     };
   };
 
-  // ---- X0: NEGATIVE CONTROL -------------------------------------------
+  // ---- control-unknown-function-refused (X0): NEGATIVE CONTROL --------
   // If SharePoint stores a call to a function that cannot exist, then it is
   // not parsing these formulas at write time at all, and every "ACCEPTED"
   // below is a statement about storage rather than about validity.
   const junkFormula = "=dbmlspNoSuchFunction([$" + SUBJECT + "], 'x')";
   const junk = await setExpression('ShowNegative', junkFormula);
   const junkStored = junk.ok ? (await readExpression('ShowNegative')).value : null;
-  record('X0', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
+  record('expression.client-validation.control-unknown-function-refused', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
          junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
@@ -256,7 +268,7 @@
                + 'refusing the formula, so this control established nothing: '
                + junk.text.slice(0, 200));
 
-  // ---- X1-X6: the candidates ------------------------------------------
+  // ---- the candidates (X1-X6) -----------------------------------------
   for (const [id, field, label, formula] of CANDIDATES) {
     const set = await setExpression(field, formula);
     if (!set.ok) {

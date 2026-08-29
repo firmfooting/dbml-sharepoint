@@ -12,6 +12,11 @@ CATALOG = MANUAL / "probe-catalog.json"
 SURFACES = MANUAL / "SURFACES.md"
 #: A numbered surface heading in SURFACES.md, e.g. "### 1. `formula`: ...".
 SURFACE_HEADING = re.compile(r"^### \d+\. `([a-z]+)`:", re.MULTILINE)
+#: A quoted `<surface>.<scope>.<question>` id, for the probes that build their
+#: checks from a table rather than writing each expect() out. Matching the
+#: grammar rather than a mnemonic shape keeps a table entry that is not an id
+#: (a column name, a human label) out of the set.
+CHECK_ID_LITERAL = r"['\"]([a-z][a-z0-9]*\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*)['\"]"
 VISIBLE_PATTERNS = {
     "single-visible-state",
     "state-matrix",
@@ -74,7 +79,7 @@ def _static_finding_ids(source: str) -> set[str]:
     ids -= {finding for finding in ids if finding.startswith("BOOT")}
     if "const CANDIDATES = [" in source:
         candidate_block = source.split("const CANDIDATES = [", 1)[1].split("];", 1)[0]
-        ids |= set(re.findall(r"['\"](X[1-9][0-9]*)['\"]", candidate_block))
+        ids |= set(re.findall(CHECK_ID_LITERAL, candidate_block))
     return ids
 
 
@@ -603,7 +608,7 @@ def test_form_visibility_q6_recheck_and_catalogue_define_complete_visible_eviden
     ).read_text(encoding="utf-8")
     recheck = template.split("if (RECHECK_ONLY)", 1)[1].split("// === Setup ===", 1)[0]
 
-    assert re.search(r"record\(\s*'Q6'", recheck)
+    assert re.search(r"record\(\s*'form\.panel\.edit-columns-writes-attributes'", recheck)
     assert "record(`RECHECK." not in recheck
     descriptor = next(
         probe for probe in _catalog()["probes"]
@@ -613,7 +618,9 @@ def test_form_visibility_q6_recheck_and_catalogue_define_complete_visible_eviden
         scenario for scenario in descriptor["scenarios"]
         if scenario["id"] == "visible-findings"
     )
-    assert visible["findings"] == [{"id": "Q6", "depends_on": []}]
+    assert visible["findings"] == [
+        {"id": "form.panel.edit-columns-writes-attributes", "depends_on": []}
+    ]
     assert [state["role"] for state in visible["states"]] == [
         "panel-before",
         "panel-action",
