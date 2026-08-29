@@ -200,197 +200,197 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "D01",
+              "id": "query.caml-adhoc.or-chain-01",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D02",
+              "id": "query.caml-adhoc.or-chain-02",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D03",
+              "id": "query.caml-adhoc.or-chain-03",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D04",
+              "id": "query.caml-adhoc.or-chain-04",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D06",
+              "id": "query.caml-adhoc.or-chain-06",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D08",
+              "id": "query.caml-adhoc.or-chain-08",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D12",
+              "id": "query.caml-adhoc.or-chain-12",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D16",
+              "id": "query.caml-adhoc.or-chain-16",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D24",
+              "id": "query.caml-adhoc.or-chain-24",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D32",
+              "id": "query.caml-adhoc.or-chain-32",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "D40",
+              "id": "query.caml-adhoc.or-chain-40",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "G1",
+              "id": "view.filter-editor.edit-page-fetchable",
               "depends_on": []
             },
             {
-              "id": "G2",
+              "id": "view.filter-editor.edit-page-discriminates",
               "depends_on": []
             },
             {
-              "id": "N1",
+              "id": "query.caml-adhoc.control-padding-chain-shallow",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "N2",
+              "id": "query.caml-adhoc.control-padding-chain-deepest",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "Q0",
+              "id": "query.caml.fixture-one-row-per-member",
               "depends_on": []
             },
             {
-              "id": "R1",
+              "id": "view.filter-editor.readonlyview-reports-refusal",
               "depends_on": []
             },
             {
-              "id": "R2",
+              "id": "view.filter-editor.readonlyview-settable",
               "depends_on": []
             },
             {
-              "id": "T1",
+              "id": "query.caml.tautology-conjunct-inert",
               "depends_on": []
             },
             {
-              "id": "T3",
+              "id": "query.caml.tautology-always-true",
               "depends_on": []
             },
             {
-              "id": "T4",
+              "id": "query.view-query.guarded-tree-stored",
               "depends_on": []
             },
             {
-              "id": "V01",
+              "id": "query.view-query.or-chain-01",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V02",
+              "id": "query.view-query.or-chain-02",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V03",
+              "id": "query.view-query.or-chain-03",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V04",
+              "id": "query.view-query.or-chain-04",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V06",
+              "id": "query.view-query.or-chain-06",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V08",
+              "id": "query.view-query.or-chain-08",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V12",
+              "id": "query.view-query.or-chain-12",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V16",
+              "id": "query.view-query.or-chain-16",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V24",
+              "id": "query.view-query.or-chain-24",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V32",
+              "id": "query.view-query.or-chain-32",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "V40",
+              "id": "query.view-query.or-chain-40",
               "depends_on": [
-                "Q0"
+                "query.caml.fixture-one-row-per-member"
               ]
             },
             {
-              "id": "W1",
+              "id": "query.caml.wrapper-group-left-inert",
               "depends_on": []
             },
             {
-              "id": "W3",
+              "id": "query.caml.wrapper-group-right-inert",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "Q0",
-            "D01",
-            "N1",
-            "N2",
-            "T3"
+            "query.caml.fixture-one-row-per-member",
+            "query.caml-adhoc.or-chain-01",
+            "query.caml-adhoc.control-padding-chain-shallow",
+            "query.caml-adhoc.control-padding-chain-deepest",
+            "query.caml.tautology-always-true"
           ],
           "depends_on": []
         },
@@ -400,59 +400,59 @@
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "E1",
+              "id": "view.filter-editor.or-chain-editable",
               "depends_on": []
             },
             {
-              "id": "E2",
+              "id": "view.filter-editor.and-chain-editable",
               "depends_on": []
             },
             {
-              "id": "E3",
+              "id": "view.filter-editor.mixed-group-right-editable",
               "depends_on": []
             },
             {
-              "id": "E4",
+              "id": "view.filter-editor.or-chain-with-isnull-editable",
               "depends_on": []
             },
             {
-              "id": "P1",
+              "id": "view.filter-editor.mixed-group-left-editable",
               "depends_on": []
             },
             {
-              "id": "P2",
+              "id": "view.filter-editor.smallest-mixed-tree-editable",
               "depends_on": []
             },
             {
-              "id": "R3",
+              "id": "view.filter-editor.readonlyview-editable",
               "depends_on": [
-                "R2"
+                "view.filter-editor.readonlyview-settable"
               ]
             },
             {
-              "id": "T2",
+              "id": "view.filter-editor.tautology-guard-editable",
               "depends_on": [
-                "T1"
+                "query.caml.tautology-conjunct-inert"
               ]
             },
             {
-              "id": "U1",
+              "id": "view.view-page.chain-40-rows-listed",
               "depends_on": []
             },
             {
-              "id": "U2",
+              "id": "view.filter-editor.ui-chain-40",
               "depends_on": []
             },
             {
-              "id": "W2",
+              "id": "view.filter-editor.wrapper-group-left-editable",
               "depends_on": [
-                "W1"
+                "query.caml.wrapper-group-left-inert"
               ]
             },
             {
-              "id": "W4",
+              "id": "view.filter-editor.wrapper-group-right-editable",
               "depends_on": [
-                "W3"
+                "query.caml.wrapper-group-right-inert"
               ]
             }
           ],
@@ -552,11 +552,11 @@
             }
           ],
           "controls": [
-            "Q0",
-            "R2",
-            "T1",
-            "W1",
-            "W3"
+            "query.caml.fixture-one-row-per-member",
+            "view.filter-editor.readonlyview-settable",
+            "query.caml.tautology-conjunct-inert",
+            "query.caml.wrapper-group-left-inert",
+            "query.caml.wrapper-group-right-inert"
           ],
           "depends_on": [
             "machine-findings"

@@ -3754,8 +3754,10 @@ def test_every_declared_view_filter_is_emitted_protected() -> None:
 
     A view the editor opens is one an operator can truncate to ten conditions
     by pressing Save, with nothing in the build or the deploy able to see it
-    happen. Measured 2026-08-17: caml-chain-depth-probe.js U2 watched a save
-    rewrite forty conditions to ten, and W2 against W4 isolated a group in the
+    happen. Measured 2026-08-17 on caml-chain-depth-probe.js:
+    `view.filter-editor.ui-chain-40` watched a save rewrite forty conditions to
+    ten, and `view.filter-editor.wrapper-group-left-editable` against
+    `view.filter-editor.wrapper-group-right-editable` isolated a group in the
     right child as what the editor refuses.
     """
     filtered = 0

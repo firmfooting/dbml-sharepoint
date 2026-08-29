@@ -117,8 +117,11 @@ would break that registry, and a defaulted one would let a future view
 path emit an unguarded filter with nothing to say so.
 
 The editor refuses a filter whose right child is a group, and a view it
-cannot open it cannot truncate (measured 2026-08-17,
-caml-chain-depth-probe.js W2, W4, T2).
+cannot open it cannot truncate (measured 2026-08-17 on
+`caml-chain-depth-probe.js`, by
+`view.filter-editor.wrapper-group-left-editable`,
+`view.filter-editor.wrapper-group-right-editable` and
+`view.filter-editor.tautology-guard-editable`).
 
 ### `caml_condition_count`
 
