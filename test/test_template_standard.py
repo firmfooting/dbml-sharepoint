@@ -2082,7 +2082,6 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
                 f"must use {want!r} -- two families on one site reconcile the "
                 f"same group object."
             )
->>>>>>> a4dda68 (feat(permissions): reserve the dbml Enterprise Automation site group)
 
 @pytest.mark.parametrize("template", _all_templates())
 def test_no_family_prefixes_a_shared_group(template: str) -> None:

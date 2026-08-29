@@ -3562,7 +3562,7 @@
       // for EVERY family. Comparing the exact marker this declaration
       // expects (grp.expected_marker) closes that: a group family B
       // declares cannot be satisfied by a marker family A left on it.
-      // The two tool-owned groups still work here, because every family
+      // The tool-owned groups still work here, because every family
       // computes the same expected_marker for them.
       //
       // Empty expected_marker would make indexOf('') return 0 for every
