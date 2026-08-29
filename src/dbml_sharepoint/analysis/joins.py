@@ -17,13 +17,14 @@ about, and the two are distinguishable in a transcript: this one refuses with
 
 MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2, at 6,000
 items with the filter held constant at the same 60-row indexed query so the join
-count was the only variable:
+count was the only variable. The ids are under `scale.join`, and the mnemonic
+each one replaced follows it because the recorded transcripts quote the mnemonic:
 
-    JOINMAX  a DBML `ref` column          12 render, 13 REFUSED
-    JOINPER  a `person` column            at the ceiling, adding one REFUSED
-    JOINSYS  Author (Created By)          at the ceiling, REFUSED
-    JOINEDT  Editor (Modified By)         at the ceiling, REFUSED
-    JOINPRJ  a lookup's dependent field   at the ceiling, SERVED and READ BACK
+    lookup-column-ceiling         (JOINMAX)  a DBML `ref`: 12 render, 13 REFUSED
+    person-counts-as-join         (JOINPER)  at the ceiling, adding one REFUSED
+    created-by-counts-as-join     (JOINSYS)  Author: at the ceiling, REFUSED
+    modified-by-counts-as-join    (JOINEDT)  Editor: at the ceiling, REFUSED
+    projected-field-costs-a-join  (JOINPRJ)  at the ceiling, SERVED and READ BACK
 
 Each suspect was tested at the ceiling PLUS EXACTLY ONE column, because that is
 the only shape that discriminates: against a ceiling of 12, adding one column to
@@ -43,12 +44,14 @@ no Lookup exists to join through. Same exclusion as the lookup ShowField work,
 off the same `cross_site_pairs`.
 
 A LOOKUP'S ADDITIONAL-FIELD PROJECTIONS cost nothing extra, measured free twice,
-JOINPRJ on runs 35700faa and f663165e, and on the later run the dependent field
-was verified PRESENT in the returned row (31 keys) rather than assumed. A view
-that silently dropped the field would have rendered too, which is how the earlier
-LOOPRJ question misled. So a lookup showing five of its target's fields costs
-ONE, not six. Projections ARE declarable now: the `lookup_projections` mapping
-key generates each dependent field as ``<column><target>`` (e.g.
+`scale.join.projected-field-costs-a-join` (JOINPRJ in those transcripts) on runs
+35700faa and f663165e, and on the later run the dependent field was verified
+PRESENT in the returned row (31 keys) rather than assumed. A view that silently
+dropped the field would have rendered too, which is how the earlier
+`scale.index.caml-eq-indexed-lookup-projected` (LOOPRJ) question misled. So a
+lookup showing five of its target's fields costs ONE, not six. Projections ARE
+declarable now: the `lookup_projections` mapping key generates each dependent
+field as ``<column><target>`` (e.g.
 `RelatedRiskTitle`), and that generated name is not a DBML column, so
 `join_bearing_columns` never sees it and nothing here has to exclude it.
 `test/test_joins.py::test_a_lookup_projection_costs_no_join` is the test this

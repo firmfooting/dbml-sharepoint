@@ -194,9 +194,10 @@ def test_visible_scenarios_declare_typed_capture_states_and_controls() -> None:
 def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
     """The case SURFACES.md names: a failed control voids its dependants.
 
-    NATID reading false means a property read cannot answer for any column, so
-    the four system-column rows are not open questions, and NULIDX is not a
-    null-test result when the comparison control was refused.
+    `control-index-readable` reading false means a property read cannot answer
+    for any column, so the four system-column rows are not open questions, and
+    `odata-null-found-list` is not a null-test result when the comparison
+    control was refused.
     """
     descriptor = next(
         probe for probe in _catalog()["probes"]
@@ -209,18 +210,20 @@ def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
     }
     source = (MANUAL / "native-index-probe.js").read_text(encoding="utf-8")
 
+    control = "scale.native-idx.control-index-readable"
+    comparison = "scale.index.odata-comparison-found-list"
     assert depends_on == {
-        "CMPIDX": [],
-        "NATID": [],
-        "NATAUT": ["NATID"],
-        "NATCRE": ["NATID"],
-        "NATEDI": ["NATID"],
-        "NATMOD": ["NATID"],
-        "NULIDX": ["CMPIDX"],
+        comparison: [],
+        control: [],
+        "scale.native-idx.author-property": [control],
+        "scale.native-idx.created-property": [control],
+        "scale.native-idx.editor-property": [control],
+        "scale.native-idx.modified-property": [control],
+        "scale.index.odata-null-found-list": [comparison],
     }
     assert set(next(
         scenario["controls"] for scenario in descriptor["scenarios"]
-    )) == {"NATID", "CMPIDX"}
+    )) == {control, comparison}
     assert source.count("'void'") == 2
 
 

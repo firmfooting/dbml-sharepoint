@@ -376,9 +376,9 @@ def _display_column(
     MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
     at 6,500 items in the target, GetLookupFieldChoices served an indexed
     ShowField (2,000 choices) and refused both calculated ones with
-    SPQueryThrottledException; and CALCIDX set Indexed=true on a
-    calculated column, the MERGE was ACCEPTED, and the flag read back
-    false.
+    SPQueryThrottledException; and `scale.index.calculated-indexable`
+    (CALCIDX in that run) set Indexed=true on a calculated column, the
+    MERGE was ACCEPTED, and the flag read back false.
 
     A warning rather than an error because a list that stays small has no
     problem, and that is a common, legitimate case.

@@ -26,12 +26,29 @@
  *   https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
  *   https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
  *
- * WHAT IT ASKS
- *   NATID   ID          the CONTROL; read its answer FIRST (see below)
- *   NATCRE  Created   NATMOD  Modified
- *   NATAUT  Author    NATEDI  Editor
- *   CMPIDX  indexed column, COMPARISON filter, list past the threshold
- *   NULIDX  indexed column, NULL filter, the same list
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the run recorded below quotes the mnemonics.
+ *
+ *   scale.native-idx.control-index-readable  (NATID)  ID; the CONTROL, and
+ *                                                     read its answer FIRST
+ *   scale.native-idx.created-property        (NATCRE) Created
+ *   scale.native-idx.modified-property       (NATMOD) Modified
+ *   scale.native-idx.author-property         (NATAUT) Author
+ *   scale.native-idx.editor-property         (NATEDI) Editor
+ *   scale.index.odata-comparison-found-list  (CMPIDX) indexed column,
+ *                                                     COMPARISON filter, on a
+ *                                                     list past the threshold
+ *   scale.index.odata-null-found-list        (NULIDX) indexed column, NULL
+ *                                                     filter, the same list
+ *
+ * The last two file under `scale.index`, not `scale.native-idx`, because a
+ * check is keyed to the surface and scope of its own question. They filter on
+ * whatever indexed column the largest list this web already has happens to
+ * carry, and `SP.Field.Indexed` cannot say whether that index is the
+ * platform's or its owner's. `found-list` names the method that separates
+ * them from threshold-index-probe.js, which asks the same two questions
+ * against a fixture it built.
  *
  * TWO METHODS, AND ONE OF THEM IS WEAKER THAN IT LOOKS.
  *
@@ -339,19 +356,22 @@
 
   const SYSTEM_COLUMNS = ['ID', 'Created', 'Modified', 'Author', 'Editor'];
   const QUESTION_FOR_COLUMN = {
-    ID: 'NATID', Created: 'NATCRE', Modified: 'NATMOD',
-    Author: 'NATAUT', Editor: 'NATEDI',
+    ID: 'scale.native-idx.control-index-readable',
+    Created: 'scale.native-idx.created-property',
+    Modified: 'scale.native-idx.modified-property',
+    Author: 'scale.native-idx.author-property',
+    Editor: 'scale.native-idx.editor-property',
   };
   // Read first, and the only reason the other four are asked at all.
   const CONTROL = 'ID';
 
-  expect('NATID', 'Does the Indexed property expose a platform index? (control)');
-  expect('NATCRE', 'Created carries a platform-maintained index');
-  expect('NATMOD', 'Modified carries a platform-maintained index');
-  expect('NATAUT', 'Author carries a platform-maintained index');
-  expect('NATEDI', 'Editor carries a platform-maintained index');
-  expect('CMPIDX', 'Comparison filter on an indexed column survives the threshold');
-  expect('NULIDX', 'Null filter on an indexed column survives the threshold');
+  expect('scale.native-idx.control-index-readable', 'Does the Indexed property expose a platform index? (control)');
+  expect('scale.native-idx.created-property', 'Created carries a platform-maintained index');
+  expect('scale.native-idx.modified-property', 'Modified carries a platform-maintained index');
+  expect('scale.native-idx.author-property', 'Author carries a platform-maintained index');
+  expect('scale.native-idx.editor-property', 'Editor carries a platform-maintained index');
+  expect('scale.index.odata-comparison-found-list', 'Comparison filter on an indexed column survives the threshold');
+  expect('scale.index.odata-null-found-list', 'Null filter on an indexed column survives the threshold');
 
   const odata = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
 
@@ -513,9 +533,11 @@
       `no visible generic list on this web exceeds ${LIST_VIEW_THRESHOLD} items ` +
       `(largest is ${largest}). Both threshold questions need a list already ` +
       `past it; this probe will not create one.`;
-    record('CMPIDX', 'Comparison filter on an indexed column survives the threshold',
+    record('scale.index.odata-comparison-found-list',
+           'Comparison filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
-    record('NULIDX', 'Null filter on an indexed column survives the threshold',
+    record('scale.index.odata-null-found-list',
+           'Null filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
     report();
     return;
@@ -527,9 +549,11 @@
     `?$select=InternalName,Indexed,TypeAsString,Hidden&$top=5000`);
   if (readFailed(fields)) {
     const why = `could not read fields of '${big.Title}': HTTP ${fields.status}`;
-    record('CMPIDX', 'Comparison filter on an indexed column survives the threshold',
+    record('scale.index.odata-comparison-found-list',
+           'Comparison filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
-    record('NULIDX', 'Null filter on an indexed column survives the threshold',
+    record('scale.index.odata-null-found-list',
+           'Null filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
     report();
     return;
@@ -549,9 +573,11 @@
     const why =
       `'${big.Title}' has no indexed, visible, non-lookup column to test with. ` +
       `Add an index to a Text, Number, Choice or Date column on it and re-run.`;
-    record('CMPIDX', 'Comparison filter on an indexed column survives the threshold',
+    record('scale.index.odata-comparison-found-list',
+           'Comparison filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
-    record('NULIDX', 'Null filter on an indexed column survives the threshold',
+    record('scale.index.odata-null-found-list',
+           'Null filter on an indexed column survives the threshold',
            'NOT ESTABLISHED', why);
     report();
     return;
@@ -578,7 +604,8 @@
   // case is itself refused on this list, the null result below says nothing
   // about null tests. It says this list cannot be queried by filter at all.
   const compared = await ask(
-    'CMPIDX', 'Comparison filter on an indexed column survives the threshold',
+    'scale.index.odata-comparison-found-list',
+    'Comparison filter on an indexed column survives the threshold',
     `${col} ne null`);
   if (!compared) {
     log('WARN', 'The documented comparison case was refused, so the null result');
@@ -587,7 +614,8 @@
   // The prose already said the null row was not evidence when the control was
   // refused; the state says it too, so nothing downstream has to read the WARN.
   await ask(
-    'NULIDX', 'Null filter on an indexed column survives the threshold',
+    'scale.index.odata-null-found-list',
+    'Null filter on an indexed column survives the threshold',
     `${col} eq null`, compared ? undefined : 'void');
 
   report();

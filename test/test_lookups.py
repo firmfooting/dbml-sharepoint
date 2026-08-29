@@ -89,9 +89,9 @@ def test_a_declared_display_column_wins() -> None:
 
 
 def test_a_calculated_display_column_is_excluded() -> None:
-    """It cannot carry an index. CALCIDX sets Indexed=true, the MERGE is
-    accepted and the flag reads back false. Including it would make the caller
-    count an index that cannot exist."""
+    """It cannot carry an index. `scale.index.calculated-indexable` sets
+    Indexed=true, the MERGE is accepted and the flag reads back false.
+    Including it would make the caller count an index that cannot exist."""
     declared = _plain(_entity("Event", "EventRef"))
     assert lookup_display_columns(
         _schema(), declared, {"Event": {"EventRef"}}, set(),
