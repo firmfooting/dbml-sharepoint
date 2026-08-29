@@ -576,7 +576,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00\u201320:00"
+        "site time 04:00–20:00"
       ],
       "scenarios": [
         {
@@ -2218,48 +2218,48 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "CMPIDX",
+              "id": "scale.index.odata-comparison-found-list",
               "depends_on": []
             },
             {
-              "id": "NATAUT",
+              "id": "scale.native-idx.author-property",
               "depends_on": [
-                "NATID"
+                "scale.native-idx.control-index-readable"
               ]
             },
             {
-              "id": "NATCRE",
+              "id": "scale.native-idx.created-property",
               "depends_on": [
-                "NATID"
+                "scale.native-idx.control-index-readable"
               ]
             },
             {
-              "id": "NATEDI",
+              "id": "scale.native-idx.editor-property",
               "depends_on": [
-                "NATID"
+                "scale.native-idx.control-index-readable"
               ]
             },
             {
-              "id": "NATID",
+              "id": "scale.native-idx.control-index-readable",
               "depends_on": []
             },
             {
-              "id": "NATMOD",
+              "id": "scale.native-idx.modified-property",
               "depends_on": [
-                "NATID"
+                "scale.native-idx.control-index-readable"
               ]
             },
             {
-              "id": "NULIDX",
+              "id": "scale.index.odata-null-found-list",
               "depends_on": [
-                "CMPIDX"
+                "scale.index.odata-comparison-found-list"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "NATID",
-            "CMPIDX"
+            "scale.native-idx.control-index-readable",
+            "scale.index.odata-comparison-found-list"
           ],
           "depends_on": []
         }
@@ -2598,268 +2598,268 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "ANDIDX",
+              "id": "scale.index.caml-and-indexed-first",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "ANDUNI",
+              "id": "scale.index.caml-and-unindexed-first",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "CALCAM",
+              "id": "scale.index.caml-eq-calculated",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "CALCIDX",
+              "id": "scale.index.calculated-indexable",
               "depends_on": []
             },
             {
-              "id": "CMPCAM",
+              "id": "scale.index.caml-comparison-indexed-text",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "CMPIDX",
+              "id": "scale.index.odata-comparison-indexed-text",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "CMPUNI",
+              "id": "scale.index.odata-comparison-unindexed-text",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "IDXCLR",
+              "id": "scale.index.negative-control-clearable",
               "depends_on": []
             },
             {
-              "id": "IDXSET",
+              "id": "scale.index.fixture-indexes-set",
               "depends_on": []
             },
             {
-              "id": "JOINEDT",
+              "id": "scale.join.modified-by-counts-as-join",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET",
-                "JOINMAX"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.join.lookup-column-ceiling"
               ]
             },
             {
-              "id": "JOINMAX",
+              "id": "scale.join.lookup-column-ceiling",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "JOINPER",
+              "id": "scale.join.person-counts-as-join",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET",
-                "JOINMAX"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.join.lookup-column-ceiling"
               ]
             },
             {
-              "id": "JOINPRJ",
+              "id": "scale.join.projected-field-costs-a-join",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "JOINSYS",
+              "id": "scale.join.created-by-counts-as-join",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET",
-                "JOINMAX"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.join.lookup-column-ceiling"
               ]
             },
             {
-              "id": "LKPCAL",
+              "id": "scale.index.calculated-showfield-allowed",
               "depends_on": []
             },
             {
-              "id": "LOOCAM",
+              "id": "scale.index.caml-eq-indexed-lookup-lookupid",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "LOOKID",
+              "id": "scale.index.odata-comparison-indexed-lookup",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "LOOPRJ",
+              "id": "scale.index.caml-eq-indexed-lookup-projected",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "NNIDX",
+              "id": "scale.index.caml-isnotnull-indexed-datetime",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET",
-                "SEEDCK"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.index.fixture-notnull-seed-intact"
               ]
             },
             {
-              "id": "NNUNI",
+              "id": "scale.index.caml-isnotnull-unindexed-datetime",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET",
-                "SEEDCK"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.index.fixture-notnull-seed-intact"
               ]
             },
             {
-              "id": "NOTEIDX",
+              "id": "scale.index.multiline-text-indexable",
               "depends_on": []
             },
             {
-              "id": "NULCAM",
+              "id": "scale.index.caml-isnull-indexed-datetime",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "NULIDX",
+              "id": "scale.index.odata-null-indexed-datetime",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "PERCAM",
+              "id": "scale.index.caml-eq-indexed-person-lookupid",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "PERCAV",
+              "id": "scale.index.caml-eq-indexed-person-value",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "PERPRJ",
+              "id": "scale.index.caml-eq-indexed-person-projected",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "PERSID",
+              "id": "scale.index.odata-comparison-indexed-person",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "RUNCNT",
+              "id": "scale.threshold.fixture-item-count",
               "depends_on": []
             },
             {
-              "id": "SEEDCK",
+              "id": "scale.index.fixture-notnull-seed-intact",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "SYSAUT",
+              "id": "scale.native-idx.author-threshold-filter",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "SYSCRE",
+              "id": "scale.native-idx.created-threshold-filter",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "SYSEDI",
+              "id": "scale.native-idx.editor-threshold-filter",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "SYSMOD",
+              "id": "scale.native-idx.modified-threshold-filter",
               "depends_on": [
-                "RUNCNT",
-                "IDXSET"
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set"
               ]
             },
             {
-              "id": "TGTCAL",
+              "id": "scale.index.target-ordered-by-calculated",
               "depends_on": []
             },
             {
-              "id": "TGTCND",
+              "id": "scale.index.target-ordered-by-conditional",
               "depends_on": []
             },
             {
-              "id": "TGTENU",
+              "id": "scale.index.target-enumerable-unordered",
               "depends_on": []
             },
             {
-              "id": "TGTFLT",
+              "id": "scale.index.target-type-ahead-conditional",
               "depends_on": []
             },
             {
-              "id": "TGTORD",
+              "id": "scale.index.target-ordered-by-showfield",
               "depends_on": []
             },
             {
-              "id": "TGTPFX",
+              "id": "scale.index.target-type-ahead",
               "depends_on": []
             },
             {
-              "id": "TGTSFO",
+              "id": "scale.index.target-filter-then-order-showfield",
               "depends_on": []
             },
             {
-              "id": "TGTSTA",
+              "id": "scale.index.target-status-filter",
               "depends_on": []
             },
             {
-              "id": "TGTSTO",
+              "id": "scale.index.target-status-filter-then-order-title",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "RUNCNT",
-            "IDXSET",
-            "SEEDCK",
-            "CMPIDX",
-            "CMPUNI",
-            "JOINMAX"
+            "scale.threshold.fixture-item-count",
+            "scale.index.fixture-indexes-set",
+            "scale.index.fixture-notnull-seed-intact",
+            "scale.index.odata-comparison-indexed-text",
+            "scale.index.odata-comparison-unindexed-text",
+            "scale.join.lookup-column-ceiling"
           ],
           "depends_on": []
         },
@@ -2869,27 +2869,27 @@
           "pattern": "phased-threshold",
           "findings": [
             {
-              "id": "FLAGS",
+              "id": "scale.index.indexed-autoindexed-flags",
               "depends_on": []
             },
             {
-              "id": "PIKCAL",
+              "id": "scale.index.picker-calculated-showfield",
               "depends_on": []
             },
             {
-              "id": "PIKCND",
+              "id": "scale.index.picker-conditional-showfield",
               "depends_on": []
             },
             {
-              "id": "PIKIDX",
+              "id": "scale.index.picker-indexed-showfield",
               "depends_on": []
             },
             {
-              "id": "PIKVW",
+              "id": "scale.index.picker-honours-default-view",
               "depends_on": []
             },
             {
-              "id": "TGTIDX",
+              "id": "scale.index.fixture-target-showfield-indexed",
               "depends_on": []
             }
           ],
@@ -2945,9 +2945,9 @@
             }
           ],
           "controls": [
-            "RUNCNT",
-            "IDXSET",
-            "SEEDCK"
+            "scale.threshold.fixture-item-count",
+            "scale.index.fixture-indexes-set",
+            "scale.index.fixture-notnull-seed-intact"
           ],
           "depends_on": [
             "machine-findings"
@@ -2959,30 +2959,30 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "GRDIDX",
+              "id": "scale.threshold.guarded-comparison-indexed-text",
               "depends_on": []
             },
             {
-              "id": "GRDNUL",
+              "id": "scale.threshold.guarded-isnull-indexed-datetime",
               "depends_on": []
             },
             {
-              "id": "GRDONLY",
+              "id": "scale.threshold.guard-alone-every-row",
               "depends_on": []
             },
             {
-              "id": "GRDUNI",
+              "id": "scale.threshold.guarded-comparison-unindexed-text",
               "depends_on": []
             },
             {
-              "id": "TWINCK",
+              "id": "scale.index.fixture-twins-match-same-rows",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "GRDONLY",
-            "GRDUNI"
+            "scale.threshold.guard-alone-every-row",
+            "scale.threshold.guarded-comparison-unindexed-text"
           ],
           "depends_on": []
         },
@@ -2992,13 +2992,13 @@
           "pattern": "identity-pair",
           "findings": [
             {
-              "id": "EDTNEG",
+              "id": "view.filter-editor.negated-clause-rows",
               "depends_on": [
-                "EDTPLN"
+                "view.filter-editor.plain-clause-rows"
               ]
             },
             {
-              "id": "EDTPLN",
+              "id": "view.filter-editor.plain-clause-rows",
               "depends_on": []
             }
           ],
@@ -3019,7 +3019,7 @@
             }
           ],
           "controls": [
-            "EDTPLN"
+            "view.filter-editor.plain-clause-rows"
           ],
           "depends_on": []
         },
@@ -3029,19 +3029,19 @@
           "pattern": "state-matrix",
           "findings": [
             {
-              "id": "VWGRD",
+              "id": "view.threshold-render.indexed-filter-guarded",
               "depends_on": []
             },
             {
-              "id": "VWIDX",
+              "id": "view.threshold-render.indexed-filter",
               "depends_on": []
             },
             {
-              "id": "VWUGD",
+              "id": "view.threshold-render.unindexed-filter-guarded",
               "depends_on": []
             },
             {
-              "id": "VWUNI",
+              "id": "view.threshold-render.unindexed-filter",
               "depends_on": []
             }
           ],
@@ -3076,8 +3076,8 @@
             }
           ],
           "controls": [
-            "GRDONLY",
-            "GRDUNI"
+            "scale.threshold.guard-alone-every-row",
+            "scale.threshold.guarded-comparison-unindexed-text"
           ],
           "depends_on": [
             "guard-machine-findings"

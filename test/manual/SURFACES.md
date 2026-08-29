@@ -264,8 +264,8 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `multi-value-probe.js` | `field` | `operand-multichoice` (was `F1`) | `formula.calc.*` |
 | `lookup-acl-probe.js` | `access` | `calculated-display-field`, `empty-label-linked-readback`, `picker-omits-empty-label` (was `K5`–`K7`) | `field.lookup.*` |
 | `role-definition-probe.js` | `text` | `basepermissions-readback`, `getbyname-absent-status`, `web-assignments-enumerable` (was `R7`–`R9`) | `access.role-def.*` |
-| `threshold-index-probe.js` | `scale` | `VWIDX`, `VWGRD`, `VWUNI`, `VWUGD` | `view.threshold-render.*` |
-| `threshold-index-probe.js` | `scale` | `EDTPLN`, `EDTNEG` | `view.filter-editor.*` |
+| `threshold-index-probe.js` | `scale` | `indexed-filter`, `indexed-filter-guarded`, `unindexed-filter`, `unindexed-filter-guarded` (was `VWIDX`, `VWGRD`, `VWUNI`, `VWUGD`) | `view.threshold-render.*` |
+| `threshold-index-probe.js` | `scale` | `plain-clause-rows`, `negated-clause-rows` (was `EDTPLN`, `EDTNEG`) | `view.filter-editor.*` |
 
 Two probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
@@ -277,6 +277,7 @@ surface boundary, and are listed for the same reason:
 | `calculated-choice-operand.js` | `lookup-operand-accepted`, `control-person-operand-refused` (was `L1`, `N1`) | `formula.calc.*` |
 | `calculated-choice-operand.js` | `person-operand`, `lookup-operand` (was `P1`, `L2`) | `formula.validation.*` |
 | `datetime-sentinel-probe.js` | the four `*-quote-literal` questions (was `Q1`–`Q4`) | `formula.validation.*` |
+| `native-index-probe.js` | `odata-comparison-found-list`, `odata-null-found-list` (was `CMPIDX`, `NULIDX`) | `scale.index.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
@@ -293,14 +294,18 @@ different questions and take different ids. They do not merge.
 | --- | --- | --- |
 | Is `Created` natively indexed | read the `Indexed` property | `scale.native-idx.created-property` |
 | Is `Created` natively indexed | filter on it past the threshold | `scale.native-idx.created-threshold-filter` |
-| Compound filter on an indexed column | native index | `scale.native-idx.compound-filter` |
-| Compound filter on an indexed column | explicitly created index | `scale.index.compound-filter` |
+| OData comparison on an indexed column past the threshold | a fixture the probe built and indexed itself | `scale.index.odata-comparison-indexed-text` |
+| OData comparison on an indexed column past the threshold | whichever list this web already had | `scale.index.odata-comparison-found-list` |
 
-`native-index-probe.js` and `threshold-index-probe.js` both emit `CMPIDX` and
-`NULIDX` today, and their four system-column checks (`NATCRE`/`SYSCRE` and
-siblings) ask about the same four columns. Under the bare ids these read as
-collisions. Under the grammar the scope separates them, and the catalogue can
-show one settled beside the other open, which it cannot do today.
+`native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
+`NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
+ask about the same four columns. Under the bare ids those read as collisions.
+Under the grammar the question separates them. The system-column pair splits by
+method: `created-property` reads `SP.Field.Indexed`, `created-threshold-filter`
+filters past the threshold. The filter pair splits by fixture: `found-list`
+names a list the probe did not build, and `SP.Field.Indexed` cannot say whether
+that list's index is the platform's or its owner's, so it does not settle the
+`native-idx` question the fixture version settles.
 
 ## Emitted result shape
 
@@ -324,7 +329,7 @@ the enum they were being asked to be.
 
 A check may declare `depends_on: [<check-id>, ...]`. If any named check is a
 `control-` check whose outcome is a failure, this check's state is `void`.
-`native-index-probe.js` is the case that motivates it: `NATID` becomes
-`scale.native-idx.control-index-readable`, its outcome is
+`native-index-probe.js` is the case that motivates it:
+`scale.native-idx.control-index-readable` (was `NATID`), its outcome is
 `CONTROL FAILED, METHOD VOID`, and its four dependants stop publishing as
 ordinary open questions with the explanation suppressed.

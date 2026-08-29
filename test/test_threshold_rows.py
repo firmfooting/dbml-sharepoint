@@ -185,8 +185,9 @@ def test_file_names_encode_the_resulting_list_total() -> None:
 def test_the_written_files_hold_every_row_exactly_once(tmp_path: Path) -> None:
     """The assertion an earlier draft was missing. Per-file counts and the
     grand total can all be right while rows are duplicated and omitted in
-    equal measure. Only the union catches it, and the probe's RUNCNT guard
-    would read the resulting list as ON CHECKPOINT and trust the whole run."""
+    equal measure. Only the union catches it, and the probe's
+    `scale.threshold.fixture-item-count` guard would read the resulting list
+    as ON CHECKPOINT and trust the whole run."""
     m = _load()
     m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
     titles = [r["Title"] for r in _union(tmp_path)]
