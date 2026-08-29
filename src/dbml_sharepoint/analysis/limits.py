@@ -290,8 +290,9 @@ MAX_VIEW_ROW_LIMIT = 5000
 #:
 #: Measured 2026-08-17 by two routes: `view.filter-editor.ui-chain-40` (U2 in
 #: those runs, on `caml-chain-depth-probe.js`) watched a save rewrite a
-#: forty-condition filter to ten, and `view-edit-page-probe.js` C4 read ten
-#: `FieldPicker` and ten `OperatorPicker` controls out of the page markup.
+#: forty-condition filter to ten, and `view.filter-editor.condition-slot-count`
+#: (C4 in those runs, on `view-edit-page-probe.js`) read ten `FieldPicker` and
+#: ten `OperatorPicker` controls out of the page markup.
 #: Microsoft documents no such ceiling (Learn, checked 2026-08-17).
 #: Measured on one tenant. A second tenant would settle it; another run
 #: would not.

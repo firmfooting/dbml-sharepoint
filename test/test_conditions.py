@@ -2508,8 +2508,9 @@ def test_the_guard_is_the_construct_that_was_measured() -> None:
     (`view.filter-editor.wrapper-group-left-editable`,
     `view.filter-editor.wrapper-group-right-editable` and
     `view.filter-editor.tautology-guard-editable`) and matching every row when
-    asked alone (`query.caml.tautology-always-true`, 41 of 41;
-    view-edit-page-probe.js S2).
+    asked alone (`query.caml.tautology-always-true`, 41 of 41; and
+    `query.caml.tautology-alone-partitions`, S2 in the view-edit-page-probe.js
+    runs, which asks the same thing of a three-row fixture).
     """
     assert CAML_VIEW_FILTER_GUARD == (
         "<Or>"

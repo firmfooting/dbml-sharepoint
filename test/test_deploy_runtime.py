@@ -5502,8 +5502,9 @@ def test_a_truncated_settings_page_is_not_a_confirmation(tmp_path: Path) -> None
     """A response cut after the sentinel and before the controls has neither.
 
     Absence of the controls is the whole predicate, so a page that stopped
-    early reads exactly like a protected one. view-edit-page-probe.js C6
-    records this shape as unmeasured and names a length or completeness test
+    early reads exactly like a protected one. view-edit-page-probe.js
+    `view.filter-editor.control-non-editor-page` (C6) records this shape as
+    unmeasured and names a length or completeness test
     as what closes it, which is what the check now requires.
     """
     summary, read, _ = _run_view_guard_deploy(
