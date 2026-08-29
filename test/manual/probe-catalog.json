@@ -872,57 +872,57 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "A1",
+              "id": "access.principal.reader-resolves-readonly",
               "depends_on": []
             },
             {
-              "id": "A2",
+              "id": "access.effective-perms.control-caller-readable",
               "depends_on": []
             },
             {
-              "id": "A3",
+              "id": "access.effective-perms.web-scope-useremoteapis",
               "depends_on": [
-                "A2"
+                "access.effective-perms.control-caller-readable"
               ]
             },
             {
-              "id": "A4",
+              "id": "access.effective-perms.list-scope-viewlistitems",
               "depends_on": [
-                "A2"
+                "access.effective-perms.control-caller-readable"
               ]
             },
             {
-              "id": "B1",
+              "id": "access.principal.ensureuser-everyone",
               "depends_on": []
             },
             {
-              "id": "B2",
+              "id": "access.principal.ensureuser-everyone-except-external-users",
               "depends_on": []
             },
             {
-              "id": "B3",
+              "id": "access.principal.ensureuser-all-authenticated-users",
               "depends_on": []
             },
             {
-              "id": "B4",
+              "id": "access.principal.ensureuser-all-forms-users",
               "depends_on": []
             },
             {
-              "id": "C1",
+              "id": "access.group.members-at-top-5000",
               "depends_on": []
             },
             {
-              "id": "C2",
+              "id": "access.group.members-no-top-next-link",
               "depends_on": []
             },
             {
-              "id": "C3",
+              "id": "access.group.members-next-link-second-page",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "A2"
+            "access.effective-perms.control-caller-readable"
           ],
           "depends_on": []
         },
@@ -932,7 +932,7 @@
           "pattern": "single-visible-state",
           "findings": [
             {
-              "id": "A5",
+              "id": "access.effective-perms.lockdown-feature-active",
               "depends_on": []
             }
           ],
@@ -2284,43 +2284,43 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "PRIM",
+              "id": "field.lookup.control-primary-lookup-created",
               "depends_on": []
             },
             {
-              "id": "DEPCR",
+              "id": "field.lookup.dependent-fieldref-accepted",
               "depends_on": [
-                "PRIM"
+                "field.lookup.control-primary-lookup-created"
               ]
             },
             {
-              "id": "DEPFLAG",
+              "id": "field.lookup.isdependentlookup-readback",
               "depends_on": [
-                "PRIM"
+                "field.lookup.control-primary-lookup-created"
               ]
             },
             {
-              "id": "DEPLINK",
+              "id": "field.lookup.primary-lists-dependent",
               "depends_on": [
-                "PRIM"
+                "field.lookup.control-primary-lookup-created"
               ]
             },
             {
-              "id": "DEPPOP",
+              "id": "field.lookup.dependent-fill-live-label",
               "depends_on": [
-                "PRIM"
+                "field.lookup.control-primary-lookup-created"
               ]
             },
             {
-              "id": "DEPLIVE",
+              "id": "field.lookup.dependent-fill-blank-label",
               "depends_on": [
-                "PRIM"
+                "field.lookup.control-primary-lookup-created"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "PRIM"
+            "field.lookup.control-primary-lookup-created"
           ],
           "depends_on": []
         }

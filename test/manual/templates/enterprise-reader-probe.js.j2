@@ -220,25 +220,34 @@
  * pointed at. That is question group A, and nobody has looked.
  *
  * ---- WHAT IT ASKS -----------------------------------------------------
+ * Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the prose below and every run reported against
+ * this probe quote the mnemonics.
  *
  * GROUP A, the decisive one. Read-only; runs with the write flag OFF.
- *   A1  Does the nominated account resolve READ-ONLY in this site's User
+ *   access.principal.reader-resolves-readonly        (A1)
+ *       Does the nominated account resolve READ-ONLY in this site's User
  *       Information List, and to what claims LoginName? A prerequisite for
  *       A2/A3, recorded as its own row so an unresolvable account reads as
  *       "not asked" rather than as a permission finding.
- *   A2  CONTROL: does getusereffectivepermissions work AT ALL for the
+ *   access.effective-perms.control-caller-readable   (A2)
+ *       CONTROL: does getusereffectivepermissions work AT ALL for the
  *       account pasting this, at web scope? Without it, a blank A3 is
  *       indistinguishable from an endpoint the caller cannot use. It
  *       OBSERVES the decode; it asserts nothing about which bits come back.
  *       ITS OUTCOME IS THREADED INTO A3 AND A4. While this row is open
  *       those two record NOT ESTABLISHED (control open) whatever they read.
- *   A3  The reader's effective permissions at WEB scope, decoded into
+ *   access.effective-perms.web-scope-useremoteapis   (A3)
+ *       The reader's effective permissions at WEB scope, decoded into
  *       named permissions. HEADLINE OBSERVATION: is UseRemoteAPIs present?
  *       A finding only if A2 held; otherwise supporting detail.
- *   A4  The reader's effective permissions at LIST scope for the nominated
+ *   access.effective-perms.list-scope-viewlistitems  (A4)
+ *       The reader's effective permissions at LIST scope for the nominated
  *       list, decoded. HEADLINE OBSERVATION: is ViewListItems present?
  *       A finding only if A2 held; otherwise supporting detail.
- *   A5  Is the 'Limited-access user permission lockdown mode' site
+ *   access.effective-perms.lockdown-feature-active   (A5)
+ *       Is the 'Limited-access user permission lockdown mode' site
  *       collection feature active? See the LOCKDOWN MODE note below. The
  *       feature GUID is documented, the REST spelling for reading it is
  *       not, so this row is best-effort and says so in its own evidence.
@@ -257,6 +266,11 @@
  *   exact failure if it refuses. Each row also reports whether the three
  *   needles the deploy template ships today would have matched what came
  *   back, an observation about the existing guard, not a requirement.
+ *
+ *     access.principal.ensureuser-everyone                       (B1)
+ *     access.principal.ensureuser-everyone-except-external-users (B2)
+ *     access.principal.ensureuser-all-authenticated-users        (B3)
+ *     access.principal.ensureuser-all-forms-users                (B4)
  *
  *   NOTHING HERE IS A PREDICTION. If a claim resolves, that is the answer.
  *   If it refuses, that is equally the answer, and the status and body are
@@ -280,6 +294,10 @@
  *   returned a short page and a `d.__next`; C3 follows that `__next` and
  *   reports whether a further page of different members arrives.
  *
+ *     access.group.members-at-top-5000                           (C1)
+ *     access.group.members-no-top-next-link                      (C2)
+ *     access.group.members-next-link-second-page                 (C3)
+ *
  *   C2 CAN ONLY ANSWER ON A GROUP BIGGER THAN THE SERVER PAGE SIZE, which
  *   SharePoint does not document. On a small group it records NOT
  *   ESTABLISHED and says so. See the C2/C3 note in STATUS above for the
@@ -293,6 +311,14 @@
  *   search-discovery-probe.js.j2 for the part of the question that CAN be
  *   measured, server-driven paging on a list-items collection, against a
  *   fixture that already exists.
+ *
+ * Two scope choices, since neither was obvious. A1 and B1..B4 file under
+ * `access.principal`, a scope added to `test/manual/SURFACES.md` with this
+ * commit: resolving a display name or a UPN to a principal is not a role
+ * definition, a binding, a group or an ACL, and it is what those five rows
+ * ask. A5 files under `access.effective-perms` rather than a scope of its
+ * own, because lockdown mode is asked here only as the thing that strips
+ * UseRemoteAPIs from Limited Access, which is A3's subject.
  *
  * ---- WHAT THE WRITE FLAG GUARDS ---------------------------------------
  * ALLOW_WRITES gates GROUP B AND NOTHING ELSE. Groups A and C are pure
@@ -381,18 +407,18 @@
   const PLACEHOLDER = /CHANGE ME|reporting-service-account@contoso\.com/;
 
   // ---- Registration ----------------------------------------------------
-  expect('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?');
-  expect('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?');
-  expect('A3', 'The reader\'s effective permissions at WEB scope: is UseRemoteAPIs present?');
-  expect('A4', 'The reader\'s effective permissions at LIST scope: is ViewListItems present?');
-  expect('A5', 'Is the limited-access user permission lockdown mode site collection feature active?');
-  expect('B1', 'What does web/ensureuser return for the display name "Everyone"?');
-  expect('B2', 'What does web/ensureuser return for "Everyone except external users"?');
-  expect('B3', 'What does web/ensureuser return for "All Authenticated Users"?');
-  expect('B4', 'What does web/ensureuser return for "All Forms Users"?');
-  expect('C1', 'How many members does web/sitegroups(id)/users return at $top=5000, as the deploy reads it?');
-  expect('C2', 'With NO $top, does web/sitegroups(id)/users return a short page and a d.__next?');
-  expect('C3', 'Does following d.__next return a further page of DIFFERENT members?');
+  expect('access.principal.reader-resolves-readonly', 'Does the nominated account resolve read-only, and to what claims LoginName?');
+  expect('access.effective-perms.control-caller-readable', 'CONTROL: does getusereffectivepermissions work at all for the account running this?');
+  expect('access.effective-perms.web-scope-useremoteapis', 'The reader\'s effective permissions at WEB scope: is UseRemoteAPIs present?');
+  expect('access.effective-perms.list-scope-viewlistitems', 'The reader\'s effective permissions at LIST scope: is ViewListItems present?');
+  expect('access.effective-perms.lockdown-feature-active', 'Is the limited-access user permission lockdown mode site collection feature active?');
+  expect('access.principal.ensureuser-everyone', 'What does web/ensureuser return for the display name "Everyone"?');
+  expect('access.principal.ensureuser-everyone-except-external-users', 'What does web/ensureuser return for "Everyone except external users"?');
+  expect('access.principal.ensureuser-all-authenticated-users', 'What does web/ensureuser return for "All Authenticated Users"?');
+  expect('access.principal.ensureuser-all-forms-users', 'What does web/ensureuser return for "All Forms Users"?');
+  expect('access.group.members-at-top-5000', 'How many members does web/sitegroups(id)/users return at $top=5000, as the deploy reads it?');
+  expect('access.group.members-no-top-next-link', 'With NO $top, does web/sitegroups(id)/users return a short page and a d.__next?');
+  expect('access.group.members-next-link-second-page', 'Does following d.__next return a further page of DIFFERENT members?');
 
   if (!CONFIRMED) {
     log('INFO', 'Would READ, writing nothing: the nominated account\'s effective');
@@ -537,11 +563,11 @@
   let readerLogin = READER_LOGIN_NAME;
   {
     if (readerLogin) {
-      record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
+      record('access.principal.reader-resolves-readonly', 'Does the nominated account resolve read-only, and to what claims LoginName?',
              'OBSERVED: supplied by the operator',
              `READER_LOGIN_NAME was set, so no lookup was needed: ${JSON.stringify(readerLogin)}`);
     } else if (PLACEHOLDER.test(READER_UPN)) {
-      record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
+      record('access.principal.reader-resolves-readonly', 'Does the nominated account resolve read-only, and to what claims LoginName?',
              'NOT ESTABLISHED (prerequisite)',
              'READER_UPN is still the placeholder. Set it to the service account UPN and paste again.');
     } else {
@@ -575,7 +601,7 @@
       }
       if (match && typeof match.LoginName === 'string' && match.LoginName !== '') {
         readerLogin = match.LoginName;
-        record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
+        record('access.principal.reader-resolves-readonly', 'Does the nominated account resolve read-only, and to what claims LoginName?',
                'OBSERVED: resolved',
                `via ${via}: LoginName ${JSON.stringify(match.LoginName)}, Title `
                + `${JSON.stringify(match.Title)}, PrincipalType ${JSON.stringify(match.PrincipalType)}`);
@@ -584,7 +610,7 @@
           ? `$filter read ${readFailed(filtered) ? httpDetail(filtered) : 'succeeded but matched nobody'}; `
             + `enumeration ${readFailed(enumerated) ? httpDetail(enumerated) : 'succeeded but matched nobody'}`
           : `$filter read ${readFailed(filtered) ? httpDetail(filtered) : 'succeeded but matched nobody'}`;
-        record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
+        record('access.principal.reader-resolves-readonly', 'Does the nominated account resolve read-only, and to what claims LoginName?',
                'NOT ESTABLISHED (prerequisite)',
                `${detail}. The account may simply never have been added to this site. That is not a `
                + 'permission finding. Add it (or run the deploy with --enterprise-reader), or paste its '
@@ -639,7 +665,7 @@
     const me = await spGet('web/currentuser?$select=LoginName,Title');
     if (readFailed(me) || typeof me.body.LoginName !== 'string') {
       controlWhy = `web/currentuser could not be read: ${httpDetail(me)}`;
-      record('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
+      record('access.effective-perms.control-caller-readable', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
              'NOT ESTABLISHED', `could not read web/currentuser: ${httpDetail(me)}`);
     } else {
       callerLogin = me.body.LoginName;
@@ -648,7 +674,7 @@
         controlWhy = mine.unknownShape
           ? 'A2 got HTTP 200 but no High/Low it could recognise'
           : `A2 got ${httpDetail(mine.res)}`;
-        record('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
+        record('access.effective-perms.control-caller-readable', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
                mine.unknownShape ? 'NOT ESTABLISHED (unrecognised response shape)' : failureOutcome(mine.res),
                `${mine.unknownShape ? 'HTTP 200 but no High/Low found in ' + JSON.stringify(mine.res.body).slice(0, 400)
                                     : httpDetail(mine.res)}. `
@@ -656,7 +682,7 @@
                + 'endpoint has not been shown to work for the caller at all. They will say so themselves.');
       } else {
         controlHeld = true;
-        record('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
+        record('access.effective-perms.control-caller-readable', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
                'OBSERVED: the endpoint answered',
                `for the CALLER ${JSON.stringify(me.body.Title)}: ${describePerms(mine)}`);
       }
@@ -688,11 +714,11 @@
   {
     const question = 'The reader\'s effective permissions at WEB scope: is UseRemoteAPIs present?';
     if (!readerLogin) {
-      record('A3', question, 'NOT ESTABLISHED (prerequisite)', 'the account did not resolve; see A1');
+      record('access.effective-perms.web-scope-useremoteapis', question, 'NOT ESTABLISHED (prerequisite)', 'the account did not resolve; see A1');
     } else {
       const r = await readEffectivePermissions('web', readerLogin);
       if (!r.ok) {
-        record('A3', question,
+        record('access.effective-perms.web-scope-useremoteapis', question,
                r.unknownShape ? 'NOT ESTABLISHED (unrecognised response shape)' : failureOutcome(r.res),
                r.unknownShape
                  ? `HTTP 200 but no High/Low found in ${JSON.stringify(r.res.body).slice(0, 400)}`
@@ -701,10 +727,10 @@
         const has = r.names.includes('UseRemoteAPIs');
         const headline = `UseRemoteAPIs ${has ? 'PRESENT' : 'ABSENT'}`;
         if (!controlHeld) {
-          record('A3', question, 'NOT ESTABLISHED (control open)',
+          record('access.effective-perms.web-scope-useremoteapis', question, 'NOT ESTABLISHED (control open)',
                  controlOpenEvidence(readerLogin, headline, describePerms(r)));
         } else {
-          record('A3', question, `OBSERVED: ${headline}`, describePerms(r));
+          record('access.effective-perms.web-scope-useremoteapis', question, `OBSERVED: ${headline}`, describePerms(r));
         }
       }
     }
@@ -714,10 +740,10 @@
   {
     const question = 'The reader\'s effective permissions at LIST scope: is ViewListItems present?';
     if (PLACEHOLDER.test(LIST_TITLE)) {
-      record('A4', question, 'NOT ESTABLISHED (prerequisite)',
+      record('access.effective-perms.list-scope-viewlistitems', question, 'NOT ESTABLISHED (prerequisite)',
              'LIST_TITLE is still the placeholder. Set it to a list this bundle provisioned.');
     } else if (!readerLogin) {
-      record('A4', question, 'NOT ESTABLISHED (prerequisite)', 'the account did not resolve; see A1');
+      record('access.effective-perms.list-scope-viewlistitems', question, 'NOT ESTABLISHED (prerequisite)', 'the account did not resolve; see A1');
     } else {
       // Confirm the list exists FIRST, so a typo reads as a typo. Without
       // this, a 404 for a misspelled title and a genuine refusal look the
@@ -725,7 +751,7 @@
       const listRes = await spGet(
         `web/lists/getbytitle('${odataLiteral(LIST_TITLE)}')?$select=Title,HasUniqueRoleAssignments`);
       if (readFailed(listRes)) {
-        record('A4', question, 'NOT ESTABLISHED (prerequisite)',
+        record('access.effective-perms.list-scope-viewlistitems', question, 'NOT ESTABLISHED (prerequisite)',
                `no list titled ${JSON.stringify(LIST_TITLE)} could be read here: ${httpDetail(listRes)}`);
       } else {
         // Recorded, not required: whether the list actually broke
@@ -736,7 +762,7 @@
         const r = await readEffectivePermissions(
           `web/lists/getbytitle('${odataLiteral(LIST_TITLE)}')`, readerLogin);
         if (!r.ok) {
-          record('A4', question,
+          record('access.effective-perms.list-scope-viewlistitems', question,
                  r.unknownShape ? 'NOT ESTABLISHED (unrecognised response shape)' : failureOutcome(r.res),
                  r.unknownShape
                    ? `HTTP 200 but no High/Low found in ${JSON.stringify(r.res.body).slice(0, 400)}`
@@ -747,10 +773,10 @@
           const detail = `list ${JSON.stringify(LIST_TITLE)}, `
             + `HasUniqueRoleAssignments=${JSON.stringify(unique)}; ${describePerms(r)}`;
           if (!controlHeld) {
-            record('A4', question, 'NOT ESTABLISHED (control open)',
+            record('access.effective-perms.list-scope-viewlistitems', question, 'NOT ESTABLISHED (control open)',
                    controlOpenEvidence(readerLogin, headline, detail));
           } else {
-            record('A4', question, `OBSERVED: ${headline}`, detail);
+            record('access.effective-perms.list-scope-viewlistitems', question, `OBSERVED: ${headline}`, detail);
           }
         }
       }
@@ -768,7 +794,7 @@
     const res = await spGet('site/features?$select=DefinitionId&$top=500');
     const rows = (!readFailed(res) && Array.isArray(res.body && res.body.value)) ? res.body.value : null;
     if (rows === null) {
-      record('A5', question, 'NOT ESTABLISHED',
+      record('access.effective-perms.lockdown-feature-active', question, 'NOT ESTABLISHED',
              `${readFailed(res) ? httpDetail(res)
                                 : `HTTP ${res.status} but no feature array in ${JSON.stringify(res.body).slice(0, 300)}`}`
              + '. This is NOT evidence that lockdown mode is off. The REST spelling used here is not '
@@ -780,7 +806,7 @@
         .map((f) => String((f && (f.DefinitionId || (f.DefinitionId === 0 ? 0 : ''))) || '').toLowerCase())
         .filter((id) => id !== '');
       const active = ids.includes(LOCKDOWN_ID);
-      record('A5', question,
+      record('access.effective-perms.lockdown-feature-active', question,
              `OBSERVED: lockdown mode ${active ? 'ACTIVE' : 'NOT LISTED AS ACTIVE'}`,
              `read ${rows.length} site collection feature(s); looked for ${LOCKDOWN_ID} `
              + '(ViewFormPagesLockDown, per Learn\'s SPMT supported site features table). '
@@ -800,17 +826,17 @@
     if (PLACEHOLDER.test(GROUP_NAME)) {
       const why = 'GROUP_NAME is still the placeholder. Set it to a site group, and see C2: only a group '
         + 'with MORE members than the server page size can answer C2 and C3.';
-      record('C1', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
-      record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
-      record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('access.group.members-at-top-5000', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('access.group.members-no-top-next-link', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
     } else {
       const grpRes = await spGetVerbose(`web/sitegroups/getbyname('${odataLiteral(GROUP_NAME)}')?$select=Id`);
       const groupId = (grpRes.ok && grpRes.body && grpRes.body.d && grpRes.body.d.Id);
       if (!Number.isInteger(groupId)) {
         const why = `could not resolve site group ${JSON.stringify(GROUP_NAME)}: ${httpDetail(grpRes)}`;
-        record('C1', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
-        record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
-        record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('access.group.members-at-top-5000', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('access.group.members-no-top-next-link', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
       } else {
         // C1: read exactly the way the deploy templates read it. Its row
         // count is the YARDSTICK C2 needs: without it, C2 cannot tell a
@@ -831,12 +857,12 @@
           // what `web/ensureuser` returns for a display name: being refused
           // is the finding. C1 asks for a ROW COUNT and a `d.__next`. A read
           // that returned neither answered nothing, whatever the status.
-          record('C1', C1_Q, `NOT ESTABLISHED (HTTP ${allRes.status})`, why);
-          record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
-          record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+          record('access.group.members-at-top-5000', C1_Q, `NOT ESTABLISHED (HTTP ${allRes.status})`, why);
+          record('access.group.members-no-top-next-link', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+          record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
         } else {
           const allNext = allRes.body.d.__next;
-          record('C1', C1_Q, `OBSERVED: ${all.length} member(s)`,
+          record('access.group.members-at-top-5000', C1_Q, `OBSERVED: ${all.length} member(s)`,
                  `${all.length} member(s) came back at $top=5000, in the d.results shape both deploy `
                  + `templates assume; d.__next on that read: ${JSON.stringify(
                    typeof allNext === 'string' && allNext !== '')}. This is the count C2 compares against.`);
@@ -857,8 +883,8 @@
             const why = `the no-$top read failed or was not in the d.results shape: ${httpDetail(firstRes)}`;
             // Same reason as C1 above: C2 asks whether the SERVER hands back
             // a `d.__next`, so a read that did not come back cannot answer it.
-            record('C2', C2_Q, `NOT ESTABLISHED (HTTP ${firstRes.status})`, why);
-            record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+            record('access.group.members-no-top-next-link', C2_Q, `NOT ESTABLISHED (HTTP ${firstRes.status})`, why);
+            record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else if (firstPage.length >= all.length) {
             // The whole membership fitted in one server page, so the
             // server never had to page and an absent __next is expected.
@@ -874,8 +900,8 @@
               + 'work. This row stays open. For the part of the question that CAN be measured, see '
               + 'S11/S12 in search-discovery-probe.js.j2, which pages a list-items collection against an '
               + 'existing 6,000-row fixture. Do NOT read this row as "the endpoint does not page".';
-            record('C2', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
-            record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+            record('access.group.members-no-top-next-link', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
+            record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else {
             const next = firstRes.body.d.__next;
             // The site host is stripped before printing. __next is an
@@ -906,7 +932,7 @@
             // The server truncated: fewer rows than C1 counted, with no
             // $top asked for. So this run CAN discriminate, and both
             // outcomes are real answers about the endpoint.
-            record('C2', C2_Q,
+            record('access.group.members-no-top-next-link', C2_Q,
                    `OBSERVED: server paged at ${firstPage.length} of ${all.length}; d.__next `
                    + `${present ? 'PRESENT' : 'ABSENT'}`,
                    `no $top was sent; ${firstPage.length} row(s) came back against the ${all.length} C1 `
@@ -920,7 +946,7 @@
             // C3: follow it. The deploy passes d.__next straight back to
             // fetch, so this does too, rather than rebuilding a URL.
             if (!present) {
-              record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)',
+              record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)',
                      'there was no d.__next to follow; see C2, which records what that means.');
             } else {
               const res2 = await fetch(next, { headers: { Accept: 'application/json;odata=verbose' } });
@@ -929,7 +955,7 @@
               try { body2 = JSON.parse(text2); } catch { /* not JSON */ }
               const page2 = (res2.ok && body2 && body2.d && Array.isArray(body2.d.results)) ? body2.d.results : null;
               if (page2 === null) {
-                record('C3', C3_Q,
+                record('access.group.members-next-link-second-page', C3_Q,
                        isRefusal(res2.status) ? `REFUSED (HTTP ${res2.status})` : `NOT ESTABLISHED (HTTP ${res2.status})`,
                        `following d.__next returned HTTP ${res2.status}: ${text2.slice(0, 400)}`);
               } else {
@@ -938,7 +964,7 @@
                 // if the order changed, and that would read as success.
                 const seen = new Set(firstPage.map((u) => u.Id));
                 const fresh = page2.filter((u) => !seen.has(u.Id)).length;
-                record('C3', C3_Q,
+                record('access.group.members-next-link-second-page', C3_Q,
                        `OBSERVED: page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
                        `page 1 held ${firstPage.length} row(s); page 2 held ${page2.length}, of which `
                        + `${fresh} carried an Id page 1 did not; page 2 __next present: `
@@ -954,10 +980,10 @@
 
   // ================= GROUP B: WRITE-GATED ==============================
   const CLAIM_NAMES = [
-    ['B1', 'Everyone'],
-    ['B2', 'Everyone except external users'],
-    ['B3', 'All Authenticated Users'],
-    ['B4', 'All Forms Users'],
+    ['access.principal.ensureuser-everyone', 'Everyone'],
+    ['access.principal.ensureuser-everyone-except-external-users', 'Everyone except external users'],
+    ['access.principal.ensureuser-all-authenticated-users', 'All Authenticated Users'],
+    ['access.principal.ensureuser-all-forms-users', 'All Forms Users'],
   ];
   const claimQuestion = (display) => `What does web/ensureuser return for the display name "${display}"?`;
 

@@ -202,7 +202,9 @@
  *   S1 GATES EVERY OTHER SEARCH ROW. If the control does not hold, the
  *       rest record NOT ESTABLISHED (control open) and carry whatever they
  *       read as supporting detail only, the same downgrade
- *       enterprise-reader-probe.js.j2 now applies to its A3 and A4, added
+ *       enterprise-reader-probe.js.j2 now applies to its
+ *       `access.effective-perms.web-scope-useremoteapis` (A3) and
+ *       `access.effective-perms.list-scope-viewlistitems` (A4), added
  *       there because a row that contradicts its own control had recorded
  *       itself as OBSERVED.
  *
@@ -947,7 +949,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 6af1f9b6. Quote this when reporting results.');
+  log('INFO', 'probe revision 9e21fe4e. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately. See the harness.
@@ -1307,10 +1309,12 @@
   // ---- The control's verdict, threaded into every search row -----------
   // Set by S1 below. A row that contradicts its own control must not read
   // as a finding: enterprise-reader-probe.js.j2 recorded exactly that on
-  // 2026-08-12 (an A3 reading OBSERVED while A2, the same endpoint for
-  // the same login, had been refused), and a caveat in prose beside a row
-  // that says OBSERVED loses to the row. So the downgrade is mechanical
-  // here rather than written out in each evidence string.
+  // 2026-08-12 (`access.effective-perms.web-scope-useremoteapis` (A3)
+  // reading OBSERVED while `access.effective-perms.control-caller-readable`
+  // (A2), the same endpoint for the same login, had been refused), and a
+  // caveat in prose beside a row that says OBSERVED loses to the row. So
+  // the downgrade is mechanical here rather than written out in each
+  // evidence string.
   //
   // NOTHING IS THROWN AWAY. Whatever the row read is still printed, as
   // supporting detail for a re-run to compare against.

@@ -131,7 +131,9 @@
         // like a guard and catch nothing, which is worse than an
         // acknowledged gap.
         //
-        // They were SOUGHT on 2026-08-12: rows B3 and B4 of that probe
+        // They were SOUGHT on 2026-08-12: that probe's
+        // `access.principal.ensureuser-all-authenticated-users` and
+        // `access.principal.ensureuser-all-forms-users` rows (B3 and B4)
         // asked `web/ensureuser` for both display names and it REFUSED
         // both, HTTP 400 SPException "The specified user ... could not be
         // found", under odata=nometadata and odata=verbose alike. So on
