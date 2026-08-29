@@ -35,7 +35,10 @@ from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_rendering import _NULL_INCLUSIVE_NEGATIVES, normalise
-from dbml_sharepoint.analysis.group_description import description_budget
+from dbml_sharepoint.analysis.group_description import (
+    TOOL_OWNED_GROUP_NAMES,
+    description_budget,
+)
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
@@ -1856,7 +1859,9 @@ def test_the_administrators_group_holds_full_control_everywhere(
         )
 
 
-#: The two groups that are ONE object per site rather than one per family.
+#: The groups EVERY family declares, and which are ONE object per site rather
+#: than one per family. `OPTIONAL_SHARED_GROUPS` below is the same kind of
+#: object, declared by a family only when it has something for it.
 #:
 #: Two families deployed to the same site reconcile the same group, and the
 #: security phase rewrites description, owner_group and every behaviour flag on
@@ -1877,7 +1882,7 @@ def test_the_administrators_group_holds_full_control_everywhere(
 #: `test_no_family_prefixes_a_shared_group` matches on these rather than on
 #: the keys of SHARED_GROUPS for exactly that reason.
 SHARED_GROUP_SUFFIXES: tuple[str, ...] = (
-    "Enterprise Readers", "List Administrators",
+    "Enterprise Readers", "List Administrators", "Enterprise Automation",
 )
 
 SHARED_GROUPS: dict[str, dict[str, object]] = {
@@ -1917,25 +1922,73 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
     },
 }
 
+#: The tool-owned group a family declares only when it has something for it.
+#:
+#: Reserved rather than shipped: it carries no site-wide grant, so a family
+#: declaring it and granting it nothing would create a group with no access on
+#: every site that family reaches. It is still ONE object per site, so the
+#: values two families would have to agree on are pinned here now, before a
+#: first family invents them.
+#:
+#: `only_allow_members_view_membership` is TRUE, following the administrators
+#: group rather than the readers group: the membership names the identity an
+#: automation connects as, and hiding it is the narrower of the two
+#: directions. Widening it later needs an argument; this way round does not.
+OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
+    "dbml Enterprise Automation": {
+        "description": (
+            "Automation identities that write to declared lists. Empty by "
+            "default; membership is operator-owned."
+        ),
+        "owner_group": "Site Owners",
+        "allow_members_edit_membership": False,
+        "allow_request_to_join_leave": False,
+        "auto_accept_request_to_join_leave": False,
+        "only_allow_members_view_membership": True,
+        "require_empty_at_deploy": False,
+        "enroll_operator_during_deploy": False,
+        "enroll_enterprise_reader": False,
+    },
+}
+
+#: Every group this tool names for itself, shipped by all families or not.
+TOOL_OWNED_GROUPS: dict[str, dict[str, object]] = (
+    SHARED_GROUPS | OPTIONAL_SHARED_GROUPS
+)
+
+
+def test_the_pinned_groups_are_exactly_the_tool_owned_names() -> None:
+    """The spelling authority, checked against names written out here.
+
+    `TOOL_OWNED_GROUP_NAMES` decides which groups get the family-less marker,
+    and so which are one object per site rather than one per family. A name
+    added there with no canonical values pinned above is a group two families
+    could still declare differently, which is the failure the sweeps below
+    exist to catch; a name pinned above and missing there gets a marker naming
+    one family on a group that spans them.
+    """
+    assert set(TOOL_OWNED_GROUPS) == TOOL_OWNED_GROUP_NAMES
+
 
 def test_shared_groups_cover_every_site_group_field() -> None:
-    """`SHARED_GROUPS` pins fleet-wide values field by field, so it is only as
-    protective as its own coverage of `SiteGroup`.
+    """The pins fix fleet-wide values field by field, so they are only as
+    protective as their own coverage of `SiteGroup`.
 
-    A field added to `SiteGroup` later that `SHARED_GROUPS` does not pin is
-    invisible to `test_every_family_declares_the_shared_groups_identically`:
-    two families could set it differently and the fleet sweep above would
-    stay green, because it only ever compares the fields this dict names.
-    Adding a field to `SiteGroup` must be a deliberate decision about whether
-    families are allowed to differ on it -- if not, it belongs in
-    `SHARED_GROUPS` too, and this test is what forces that decision to be
-    made rather than defaulted into.
+    A field added to `SiteGroup` later that the pins do not name is invisible
+    to `test_every_family_declares_the_shared_groups_identically`: two
+    families could set it differently and the fleet sweep above would stay
+    green, because it only ever compares the fields these dicts name. Adding
+    a field to `SiteGroup` must be a deliberate decision about whether
+    families are allowed to differ on it -- if not, it belongs in the pins
+    too, and this test is what forces that decision to be made rather than
+    defaulted into.
     """
     expected_fields = {f.name for f in fields(SiteGroup)} - {"name"}
-    for group_name, declared in SHARED_GROUPS.items():
+    for group_name, declared in TOOL_OWNED_GROUPS.items():
         assert set(declared) == expected_fields, (
-            f"SHARED_GROUPS[{group_name!r}] covers {sorted(declared)}, but "
-            f"SiteGroup (excluding name) has {sorted(expected_fields)}"
+            f"the pinned declaration of {group_name!r} covers "
+            f"{sorted(declared)}, but SiteGroup (excluding name) has "
+            f"{sorted(expected_fields)}"
         )
 
 
@@ -1998,6 +2051,39 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
     )
 
 
+
+def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
+    template: str,
+) -> None:
+    """The same guard as the sweep above, minus the presence half.
+
+    `dbml Enterprise Automation` is one object per site exactly as the other
+    two are, so two families declaring it differently overwrite each other's
+    settings on the last paste. It differs only in that a family with no
+    automation to grant declares nothing, which is why presence is not
+    asserted here.
+
+    Nothing declares it today, so this passes over an empty set. That is the
+    point of writing it now: the first family that does declare it cannot
+    invent its own values, and would otherwise have nothing to conform to.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    declared = {g.name: g for g in mapping.permissions.groups}
+
+    for name, expected in OPTIONAL_SHARED_GROUPS.items():
+        group = declared.get(name)
+        if group is None:
+            continue
+        for field, want in expected.items():
+            assert getattr(group, field) == want, (
+                f"{template}: tool-owned group {name!r} has {field}="
+                f"{getattr(group, field)!r}, but every family declaring it "
+                f"must use {want!r} -- two families on one site reconcile the "
+                f"same group object."
+            )
+>>>>>>> a4dda68 (feat(permissions): reserve the dbml Enterprise Automation site group)
+
 @pytest.mark.parametrize("template", _all_templates())
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
     """The complement, so the rule above cannot pass while the old names survive.
@@ -2016,13 +2102,13 @@ def test_no_family_prefixes_a_shared_group(template: str) -> None:
     assert mapping.permissions is not None
     stragglers = [
         g.name for g in mapping.permissions.groups
-        if g.name not in SHARED_GROUPS
+        if g.name not in TOOL_OWNED_GROUPS
         and any(g.name.endswith(suffix) for suffix in SHARED_GROUP_SUFFIXES)
     ]
     assert not stragglers, (
         f"{template}: still declares prefixed {stragglers}; the shared "
         f"groups are one object per SITE and must be named exactly "
-        f"{sorted(SHARED_GROUPS)}."
+        f"{sorted(TOOL_OWNED_GROUPS)}."
     )
 
 
