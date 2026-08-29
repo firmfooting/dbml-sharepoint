@@ -561,7 +561,8 @@
 
   const cts = await spGet(`${listPath}/contenttypes?$select=Id,Name&$top=20`);
   // Accessor stays Id.StringValue: this harness runs odata=nometadata, the
-  // spelling document-library-probe.js.j2's L7 proved works under it.
+  // spelling document-library-probe.js.j2's `header-fileleafref` (L7) proved
+  // works under it.
   const ctIdOf = (ct) => String((ct && ct.Id && ct.Id.StringValue) || (ct && ct.Id) || '');
   const ct = ((cts.ok && cts.body && cts.body.value) || [])
     .find((c) => ctIdOf(c).startsWith('0x01') && !ctIdOf(c).startsWith('0x0120'));

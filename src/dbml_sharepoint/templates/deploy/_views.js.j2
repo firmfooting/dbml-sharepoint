@@ -425,15 +425,16 @@
   // The editor's own form controls, as the `name` ATTRIBUTE the probe read.
   // A bare substring would also match the word in page script, and would then
   // report a protected view as editable and abort the run.
-  // Measured 2026-08-17, view-edit-page-probe.js C1 and C2: both are present
-  // on an editable page and on an unfiltered one, and absent from a refused
-  // one. Two of them because C2's result is that they agree; disagreement is
-  // the signal that the markup moved.
+  // Measured 2026-08-17, view-edit-page-probe.js `pinned-control-discriminates`
+  // and `second-control-agrees` (C1 and C2): both are present on an editable
+  // page and on an unfiltered one, and absent from a refused one. Two of them
+  // because C2's result is that they agree; disagreement is the signal that
+  // the markup moved.
   const EDITOR_CONTROLS = ['name="FieldPicker1"', 'name="OperatorPicker1"'];
-  // C6: a request for a view that does not exist answers HTTP 200 on this URL
-  // with no editor controls, and with `ViewEdit` and `ctl00` present and
-  // `ViewFilter` absent. So this is the only one of the three that can gate
-  // an absence test.
+  // `control-non-editor-page` (C6): a request for a view that does not exist
+  // answers HTTP 200 on this URL with no editor controls, and with `ViewEdit`
+  // and `ctl00` present and `ViewFilter` absent. So this is the only one of
+  // the three that can gate an absence test.
   const EDITOR_PAGE_SENTINEL = 'ViewFilter';
   // A response cut short after the sentinel and before the controls carries
   // neither, and absence is the whole predicate, so a page that stopped early
@@ -577,7 +578,8 @@
     // sentinel in place would otherwise report every view protected, which is
     // the one wrong answer nothing downstream can see. An unfiltered view is
     // editable and carries both markers (measured 2026-08-17,
-    // view-edit-page-probe.js C1 and F7), so it says whether the markers
+    // view-edit-page-probe.js `pinned-control-discriminates` and
+    // `control-unfiltered-view`, C1 and F7), so it says whether the markers
     // still exist on this tenant's build today.
     const filteredLists = new Set(filtered.map((view) => view.list));
     const unfiltered = SCHEMA.views.filter((view) => !isFiltered(view));

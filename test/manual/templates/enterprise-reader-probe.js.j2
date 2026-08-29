@@ -153,7 +153,8 @@
  *     needs a site group with more members than the server page size, and
  *     adding one to a site's permissions would expose many real people to
  *     development work. That objection is accepted and settled. The
- *     nearest measurable substitute is S11/S12 in
+ *     nearest measurable substitute is `query.odata.continuation-link-emitted`
+ *     and `-followed` (S11/S12) in
  *     search-discovery-probe.js.j2, which pages the LIST-ITEMS collection
  *     against an existing 6,000-row fixture: it can establish whether this
  *     tenant's REST emits server-driven paging AT ALL, but it does not
@@ -307,7 +308,8 @@
  *   DO NOT CREATE OR ENROL A LARGE GROUP TO SATISFY THIS. That has been
  *   declined and the reason stands: it would expose many real people to
  *   development work. Run C against whatever groups already exist, accept
- *   NOT ESTABLISHED when they are small, and read S11/S12 in
+ *   NOT ESTABLISHED when they are small, and read
+ *   `query.odata.continuation-link-emitted` and `-followed` (S11/S12) in
  *   search-discovery-probe.js.j2 for the part of the question that CAN be
  *   measured, server-driven paging on a list-items collection, against a
  *   fixture that already exists.
@@ -898,7 +900,8 @@
               + 'size, which SharePoint does not document. DO NOT BUILD ONE: enrolling a large group to '
               + 'satisfy this has been declined, because it would expose many real people to development '
               + 'work. This row stays open. For the part of the question that CAN be measured, see '
-              + 'S11/S12 in search-discovery-probe.js.j2, which pages a list-items collection against an '
+              + '`query.odata.continuation-link-emitted` and `-followed` (S11/S12) in '
+              + 'search-discovery-probe.js.j2, which pages a list-items collection against an '
               + 'existing 6,000-row fixture. Do NOT read this row as "the endpoint does not page".';
             record('access.group.members-no-top-next-link', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
             record('access.group.members-next-link-second-page', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);

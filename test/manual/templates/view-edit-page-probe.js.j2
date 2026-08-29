@@ -243,6 +243,40 @@
  * VARIES as before (the CssLink request id, known noise). P1 and P2 remain the
  * operator's to answer; everything above them is machine-measured.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The prose above, and every run reported
+ * against this probe, quote the old mnemonics, so both are given.
+ *
+ *   Q0  view.filter-editor.fixture-rows-seeded
+ *   S1  query.caml.guarded-single-clause-inert
+ *   S2  query.caml.tautology-alone-partitions
+ *   Q1  query.view-query.guarded-single-clause-stored
+ *   F1  view.filter-editor.both-pages-fetchable
+ *   F2  view.filter-editor.english-markers-on-guarded
+ *   F3  view.filter-editor.editable-only-ids
+ *   F4  view.filter-editor.refused-only-ids
+ *   F5  view.filter-editor.differing-name-attributes
+ *   F6  view.filter-editor.ui-culture-readable
+ *   F7  view.filter-editor.control-unfiltered-view
+ *   F8  view.filter-editor.control-page-deterministic
+ *   C1  view.filter-editor.pinned-control-discriminates
+ *   C2  view.filter-editor.second-control-agrees
+ *   C3  view.filter-editor.predicate-stable-on-refetch
+ *   C4  view.filter-editor.condition-slot-count
+ *   C5  view.filter-editor.sentinel-on-every-page
+ *   C6  view.filter-editor.control-non-editor-page
+ *   C7  view.filter-editor.trailing-markup-tokens
+ *   P1  view.filter-editor.ground-truth-plain-editable
+ *   P2  view.filter-editor.ground-truth-guarded-refused
+ *
+ * S1, S2 and Q1 file under `query`, not `view`: they ask what a CAML tree
+ * returns and whether it survived storage, which is true of the tree wherever
+ * it is read. SURFACES.md records the straddle. They stay distinct from
+ * caml-chain-depth-probe.js's `tautology-conjunct-inert`,
+ * `tautology-always-true` and `guarded-tree-stored`, which ask the same
+ * questions of a twelve-clause chain on a forty-eight-member list rather than
+ * of one clause on three rows.
+ *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
  *   2. Open a browser console on any page of that site.
@@ -315,27 +349,27 @@
     { Title: 'R3', [COL]: 'gamma' },
   ];
 
-  expect('Q0', 'the fixture actually built');
-  expect('S1', 'does the guarded filter return the same rows as the plain one?');
-  expect('S2', 'CONTROL: does the tautology ALONE return every row?');
-  expect('Q1', 'did the guarded tree survive being STORED as a ViewQuery?');
-  expect('F1', 'can the view edit page be fetched for both views?');
-  expect('F8', 'CONTROL: is one page the same across two fetches?');
-  expect('F2', 'do the English refusal markers appear on the shape #267 emits?');
-  expect('F3', 'which id attributes are on the EDITABLE page and not the refused one?');
-  expect('F4', 'which id attributes are on the REFUSED page and not the editable one?');
-  expect('F5', 'which name attributes differ between the two pages?');
-  expect('F6', 'can the tenant UI culture be read, so non-English can be told apart?');
-  expect('F7', 'CONTROL: how does a view with NO filter compare?');
-  expect('C1', 'is the pinned control name absent from the refused page and present on both others?');
-  expect('C2', 'does the second candidate agree with the first?');
-  expect('C3', 'is the predicate the same across a second fetch of all three pages?');
-  expect('C4', 'how many condition slots does the editor markup carry?');
-  expect('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?');
-  expect('C6', 'CONTROL: does a page that is NOT the editor read as protected?');
-  expect('C7', 'does the trailing markup after the final `</html>` carry a document or control token?');
-  expect('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
-  expect('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
+  expect('view.filter-editor.fixture-rows-seeded', 'the fixture actually built');
+  expect('query.caml.guarded-single-clause-inert', 'does the guarded filter return the same rows as the plain one?');
+  expect('query.caml.tautology-alone-partitions', 'CONTROL: does the tautology ALONE return every row?');
+  expect('query.view-query.guarded-single-clause-stored', 'did the guarded tree survive being STORED as a ViewQuery?');
+  expect('view.filter-editor.both-pages-fetchable', 'can the view edit page be fetched for both views?');
+  expect('view.filter-editor.control-page-deterministic', 'CONTROL: is one page the same across two fetches?');
+  expect('view.filter-editor.english-markers-on-guarded', 'do the English refusal markers appear on the shape #267 emits?');
+  expect('view.filter-editor.editable-only-ids', 'which id attributes are on the EDITABLE page and not the refused one?');
+  expect('view.filter-editor.refused-only-ids', 'which id attributes are on the REFUSED page and not the editable one?');
+  expect('view.filter-editor.differing-name-attributes', 'which name attributes differ between the two pages?');
+  expect('view.filter-editor.ui-culture-readable', 'can the tenant UI culture be read, so non-English can be told apart?');
+  expect('view.filter-editor.control-unfiltered-view', 'CONTROL: how does a view with NO filter compare?');
+  expect('view.filter-editor.pinned-control-discriminates', 'is the pinned control name absent from the refused page and present on both others?');
+  expect('view.filter-editor.second-control-agrees', 'does the second candidate agree with the first?');
+  expect('view.filter-editor.predicate-stable-on-refetch', 'is the predicate the same across a second fetch of all three pages?');
+  expect('view.filter-editor.condition-slot-count', 'how many condition slots does the editor markup carry?');
+  expect('view.filter-editor.sentinel-on-every-page', 'is there a sentinel on every page, so a failed fetch cannot read as protected?');
+  expect('view.filter-editor.control-non-editor-page', 'CONTROL: does a page that is NOT the editor read as protected?');
+  expect('view.filter-editor.trailing-markup-tokens', 'does the trailing markup after the final `</html>` carry a document or control token?');
+  expect('view.filter-editor.ground-truth-plain-editable', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)');
+  expect('view.filter-editor.ground-truth-guarded-refused', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -385,7 +419,7 @@
     Title: LIST, BaseTemplate: 100, AllowContentTypes: false, ContentTypesEnabled: false,
   }, digest);
   if (!made.ok) {
-    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+    record('view.filter-editor.fixture-rows-seeded', 'the fixture actually built', 'NOT ESTABLISHED',
       `the list could not be created: HTTP ${made.status} ${made.text.slice(0, 200)}. `
       + 'Nothing was created, so there is nothing to clean up.');
     report();
@@ -409,7 +443,7 @@
     __metadata: { type: 'SP.FieldText' }, Title: COL, FieldTypeKind: 2, MaxLength: 64,
   }, digest, VERBOSE);
   if (!field.ok) {
-    record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
+    record('view.filter-editor.fixture-rows-seeded', 'the fixture actually built', 'NOT ESTABLISHED',
       `the Text column could not be created: HTTP ${field.status} ${field.text.slice(0, 200)}.`);
     await abandon('the column could not be created');
     return;
@@ -436,7 +470,7 @@
   const wantPairs = asPairs(ROWS);
   const fixtureOk = seedErrors.length === 0
     && JSON.stringify(seenPairs) === JSON.stringify(wantPairs);
-  record('Q0', 'the fixture actually built',
+  record('view.filter-editor.fixture-rows-seeded', 'the fixture actually built',
     fixtureOk ? 'BUILT' : 'NOT ESTABLISHED',
     `rows=${seenRows.length}/${ROWS.length}; seed errors=${JSON.stringify(seedErrors)}; `
     + `read back ${JSON.stringify(seenPairs)} against ${JSON.stringify(wantPairs)}. Exactly one row `
@@ -447,7 +481,7 @@
     return;
   }
 
-  // ---- S1: the two views must MEAN the same thing -----------------------
+  // ---- guarded-single-clause-inert (S1): the two views must MEAN the same ---
   // Without this the pages differ for a reason that has nothing to do with
   // editability, and F3 to F5 attribute it to the wrong cause.
   let queryShape = null;
@@ -483,7 +517,7 @@
     && JSON.stringify(plainRows.titles) === JSON.stringify(CONTROL)
     && JSON.stringify(guardedRows.titles) === JSON.stringify(CONTROL);
   const sameMeaning = hitsControl;
-  record('S1', 'does the guarded filter return the same rows as the plain one?',
+  record('query.caml.guarded-single-clause-inert', 'does the guarded filter return the same rows as the plain one?',
     !bothQueried ? 'NOT ESTABLISHED' : (sameMeaning ? 'INERT' : 'NOT INERT'),
     !bothQueried
       ? `plain: ${plainRows.error || 'ok'}; guarded: ${guardedRows.error || 'ok'}. Both are needed.`
@@ -498,7 +532,7 @@
             + 'questions. Report this one first.'));
 
 
-  // ---- S2: the tautology has to be a tautology --------------------------
+  // ---- tautology-alone-partitions (S2): the tautology has to be one -----
   // S1 cannot see this. Conjoined behind Eq(alpha) the left side already
   // restricts to R1, so a tautology that wrongly excluded R2 or R3 would give
   // exactly the same answer and S1 would still say INERT. The partition is
@@ -508,7 +542,7 @@
   const allTitles = ROWS.map((r) => r.Title).sort();
   const partitions = tautRows.ok
     && JSON.stringify(tautRows.titles) === JSON.stringify(allTitles);
-  record('S2', 'CONTROL: does the tautology ALONE return every row?',
+  record('query.caml.tautology-alone-partitions', 'CONTROL: does the tautology ALONE return every row?',
     !tautRows.ok ? 'NOT ESTABLISHED' : (partitions ? 'PARTITIONS' : 'DOES NOT PARTITION'),
     !tautRows.ok
       ? `${tautRows.error}`
@@ -537,7 +571,7 @@
   }
 
 
-  // ---- Q1: read the stored ViewQuery back --------------------------------
+  // ---- guarded-single-clause-stored (Q1): read the stored ViewQuery back ---
   // Finding a view by title says a view exists, not that it holds the tree
   // that was sent. SharePoint rewriting a filter on save is the behaviour this
   // whole line of work is about, so taking the POST's 200 as proof of the
@@ -551,7 +585,7 @@
   const plainHeld = norm(storedPlain) === norm(`<Where>${PLAIN_WHERE}</Where>`);
   const guardedHeld = norm(storedGuarded) === norm(`<Where>${GUARDED_WHERE}</Where>`);
   const treesHeld = plainHeld && guardedHeld;
-  record('Q1', 'did the guarded tree survive being STORED as a ViewQuery?',
+  record('query.view-query.guarded-single-clause-stored', 'did the guarded tree survive being STORED as a ViewQuery?',
     (storedPlain === null || storedGuarded === null) ? 'NOT ESTABLISHED'
       : (treesHeld ? 'SURVIVED' : 'REWRITTEN'),
     (storedPlain === null || storedGuarded === null)
@@ -574,7 +608,7 @@
   const guardedView = viewBy('Guarded');
   const unfilteredView = viewBy('Unfiltered');
 
-  // ---- F1: is the page reachable at all? --------------------------------
+  // ---- both-pages-fetchable (F1): is the page reachable at all? ---------
   // A raw page fetch, not an _api call, so the harness helpers do not apply.
   // same-origin credentials so it carries the operator's session, which is
   // what a deploy running in the operator's browser would also have.
@@ -613,7 +647,7 @@
     const refused = [pagePlain, pageGuarded].some((p) => p && isRefusal(p.status));
     return refused ? 'REFUSED' : 'NOT ESTABLISHED (transient)';
   };
-  record('F1', 'can the view edit page be fetched for both views?',
+  record('view.filter-editor.both-pages-fetchable', 'can the view edit page be fetched for both views?',
     !haveIds ? 'NOT ESTABLISHED' : pageOutcome(),
     !haveIds
       ? `list id=${listGuid}, Plain=${plainView?.Id || null}, Guarded=${guardedView?.Id || null}. `
@@ -628,7 +662,7 @@
         + 'approach closes here rather than at F3. A transient failure is held OPEN rather than recorded '
         + 'as a refusal, because a throttle is not the endpoint saying no.');
 
-  // ---- F8: is a page even deterministic? --------------------------------
+  // ---- control-page-deterministic (F8): is a page even deterministic? ---
   // Runs before the diffs it validates. Two fetches of the SAME page, so any
   // difference is markup that varies per request rather than per view.
   const pagePlainAgain = bothFetched ? await fetchEditPage(plainView.Id) : null;
@@ -654,7 +688,7 @@
   const driftA = replayOk ? minus(idsPlain, idsPlain2) : [];
   const driftB = replayOk ? minus(idsPlain2, idsPlain) : [];
   const stable = replayOk && driftA.length === 0 && driftB.length === 0;
-  record('F8', 'CONTROL: is one page the same across two fetches?',
+  record('view.filter-editor.control-page-deterministic', 'CONTROL: is one page the same across two fetches?',
     !replayOk ? 'NOT ESTABLISHED' : (stable ? 'STABLE' : 'VARIES'),
     !replayOk
       ? 'the second fetch of the plain view\'s page did not succeed, so nothing below has a control.'
@@ -667,7 +701,7 @@
             + 'F3 and F4 must be read as including this much noise. Any candidate marker has to be checked '
             + 'against this list first.'));
 
-  // ---- F2: the English markers, on the shape #267 emits ------------------
+  // ---- english-markers-on-guarded (F2): the markers on the shape #267 emits ---
   // G2 measured And[IsNotNull(ID), Or[chain12]]. #267 emits And[leaf,
   // tautology] for the 138 single-clause views, which is a different tree.
   const MARKERS = ['complex filter', 'cannot be edited', 'CannotEditFilter', 'ViewFilter'];
@@ -679,7 +713,7 @@
   const discriminating = bothFetched
     ? MARKERS.filter((m) => mGuarded.includes(m) && !mPlain.includes(m))
     : [];
-  record('F2', 'do the English refusal markers appear on the shape #267 emits?',
+  record('view.filter-editor.english-markers-on-guarded', 'do the English refusal markers appear on the shape #267 emits?',
     !bothFetched ? 'NOT ESTABLISHED' : (discriminating.length ? 'PRESENT' : 'ABSENT'),
     !bothFetched
       ? 'both pages are needed to say whether a marker discriminates.'
@@ -692,14 +726,14 @@
           : 'NOTHING discriminates. Either this tree is not refused, which contradicts T2 and P2 will say '
             + 'so, or the refusal is expressed differently for it. Read P2 before concluding either.'));
 
-  // ---- F3, F4, F5: what actually differs --------------------------------
+  // ---- what actually differs (F3/F4/F5) ---------------------------------
   // Reported, never asserted. The point is to find a candidate, and a probe
   // that asserted one would answer NOT ESTABLISHED whenever the guess was
   // wrong, which is indistinguishable from the page being unreadable.
   const idsGuarded = bothFetched ? attrValues(pageGuarded.text, 'id') : new Set();
   const onlyEditable = bothFetched ? minus(idsPlain, idsGuarded) : [];
   const onlyRefused = bothFetched ? minus(idsGuarded, idsPlain) : [];
-  record('F3', 'which id attributes are on the EDITABLE page and not the refused one?',
+  record('view.filter-editor.editable-only-ids', 'which id attributes are on the EDITABLE page and not the refused one?',
     !bothFetched ? 'NOT ESTABLISHED' : (onlyEditable.length ? 'FOUND' : 'NONE'),
     !bothFetched
       ? 'both pages are needed.'
@@ -708,7 +742,7 @@
         + 'the filter editor itself. A predicate reading "this control is ABSENT, therefore protected" is '
         + 'language-independent in a way the refusal sentence is not. Pick one, then confirm it over a '
         + 'second run before anything relies on it.');
-  record('F4', 'which id attributes are on the REFUSED page and not the editable one?',
+  record('view.filter-editor.refused-only-ids', 'which id attributes are on the REFUSED page and not the editable one?',
     !bothFetched ? 'NOT ESTABLISHED' : (onlyRefused.length ? 'FOUND' : 'NONE'),
     !bothFetched
       ? 'both pages are needed.'
@@ -717,7 +751,7 @@
 
   const namesPlain = bothFetched ? attrValues(pagePlain.text, 'name') : new Set();
   const namesGuarded = bothFetched ? attrValues(pageGuarded.text, 'name') : new Set();
-  record('F5', 'which name attributes differ between the two pages?',
+  record('view.filter-editor.differing-name-attributes', 'which name attributes differ between the two pages?',
     !bothFetched ? 'NOT ESTABLISHED' : 'REPORTED',
     !bothFetched
       ? 'both pages are needed.'
@@ -726,7 +760,7 @@
         + 'Form control names survive markup changes better than generated ids do, so a candidate here is '
         + 'worth more than one from F3.');
 
-  // ---- F6: can non-English be told apart from a failure? ----------------
+  // ---- ui-culture-readable (F6): can non-English be told apart? ---------
   // The decision is to ship English-only and warn when the marker is absent.
   // That warning is only honest if "not English" can be distinguished from
   // "the protection did not take", which look identical at the marker.
@@ -741,7 +775,7 @@
   // the attribute as a fallback would authorise the language branch on the
   // wrong surface. It is reported, never relied on.
   const cultureReadable = !!ctxCulture || !!ctxLanguage;
-  record('F6', 'can the tenant UI culture be read, so non-English can be told apart?',
+  record('view.filter-editor.ui-culture-readable', 'can the tenant UI culture be read, so non-English can be told apart?',
     !cultureReadable ? 'NOT ESTABLISHED' : 'READABLE',
     `_spPageContextInfo.currentUICultureName=${JSON.stringify(ctxCulture)}, `
     + `currentLanguage=${JSON.stringify(ctxLanguage)}. OBSERVED ONLY, not part of the verdict: `
@@ -756,13 +790,13 @@
         + 'meant to report. An <html lang> present here does not rescue it: that is the web\'s region, '
         + 'not the language the strings come back in.'));
 
-  // ---- F7: the negative control -----------------------------------------
+  // ---- control-unfiltered-view (F7): the negative control ---------------
   // An unfiltered view is editable. Any predicate that calls it protected
   // would report success for every view this tool never filtered.
   const pageUnfiltered = (haveIds && unfilteredView)
     ? await fetchEditPage(unfilteredView.Id) : null;
   const unfOk = !!pageUnfiltered?.ok;
-  record('F7', 'CONTROL: how does a view with NO filter compare?',
+  record('view.filter-editor.control-unfiltered-view', 'CONTROL: how does a view with NO filter compare?',
     !unfOk ? 'NOT ESTABLISHED' : 'REPORTED',
     !unfOk
       ? `the unfiltered view's page was not fetched (view=${unfilteredView?.Id || null}).`
@@ -772,7 +806,7 @@
         + 'It must read as UNPROTECTED under whatever predicate is chosen. If it looks like the refused '
         + 'page, the predicate is detecting something other than the refusal.');
 
-  // ---- C1..C5: pin the candidate and try to break it ---------------------
+  // ---- pin the candidate and try to break it (C1..C5) --------------------
   // F3 to F5 are discovery and report everything. These five take the one
   // candidate that survived and ask whether it behaves like a predicate.
   const namesUnfiltered = unfOk ? attrValues(pageUnfiltered.text, 'name') : null;
@@ -797,7 +831,7 @@
     ? `${v.name}: editable=${v.onEditable}, unfiltered=${v.onUnfiltered}, refused=${v.onRefused}`
     : 'not measured');
 
-  record('C1', 'is the pinned control name absent from the refused page and present on both others?',
+  record('view.filter-editor.pinned-control-discriminates', 'is the pinned control name absent from the refused page and present on both others?',
     !threePages ? 'NOT ESTABLISHED' : (v1.usable ? 'USABLE' : 'NOT USABLE'),
     !threePages
       ? 'all three pages are needed: the predicate is a three-way, not a comparison of two.'
@@ -809,7 +843,7 @@
             + 'that never arrived.'
           : 'It does not satisfy the three-way, so it is not the predicate. C2 may still be.'));
 
-  record('C2', 'does the second candidate agree with the first?',
+  record('view.filter-editor.second-control-agrees', 'does the second candidate agree with the first?',
     !threePages ? 'NOT ESTABLISHED' : ((v1.usable === v2.usable) ? 'AGREE' : 'DISAGREE'),
     !threePages
       ? 'all three pages are needed.'
@@ -840,7 +874,7 @@
   const s1 = stableFor(CANDIDATES[0]);
   const s2 = stableFor(CANDIDATES[1]);
   const replayed = s1 !== null && s2 !== null;
-  record('C3', 'is the predicate the same across a second fetch of all three pages?',
+  record('view.filter-editor.predicate-stable-on-refetch', 'is the predicate the same across a second fetch of all three pages?',
     !replayed ? 'NOT ESTABLISHED' : ((s1 === (v1 && v1.usable) && s2 === (v2 && v2.usable)) ? 'STABLE' : 'VARIES'),
     !replayed
       ? 'one of the three pages did not come back on the second fetch, so there is no replay to compare.'
@@ -858,7 +892,7 @@
   const slotCount = (names, prefix) => [...names].filter((n) => new RegExp(`^${prefix}\\d+$`).test(n)).length;
   const fieldSlots = bothFetched ? slotCount(namesPlain, 'FieldPicker') : null;
   const opSlots = bothFetched ? slotCount(namesPlain, 'OperatorPicker') : null;
-  record('C4', 'how many condition slots does the editor markup carry?',
+  record('view.filter-editor.condition-slot-count', 'how many condition slots does the editor markup carry?',
     !bothFetched ? 'NOT ESTABLISHED' : `${fieldSlots} SLOTS`,
     !bothFetched
       ? 'the editable page is needed.'
@@ -872,7 +906,7 @@
     ? SENTINELS.filter((s) => pagePlain.text.includes(s)
       && pageGuarded.text.includes(s) && pageUnfiltered.text.includes(s))
     : [];
-  record('C5', 'is there a sentinel on every page, so a failed fetch cannot read as protected?',
+  record('view.filter-editor.sentinel-on-every-page', 'is there a sentinel on every page, so a failed fetch cannot read as protected?',
     !threePages ? 'NOT ESTABLISHED' : (onAll.length ? 'FOUND' : 'NONE'),
     !threePages
       ? 'all three pages are needed.'
@@ -885,7 +919,7 @@
             + 'of the page. The predicate must not be built until a sentinel is found.'));
 
 
-  // ---- C6: the way an absence test fails --------------------------------
+  // ---- control-non-editor-page (C6): the way an absence test fails ------
   // C5 shows a sentinel on three pages that all rendered. It cannot show the
   // sentinel is ABSENT from a page that did not, which is the claim the guard
   // actually depends on. So ask for a view that does not exist and report what
@@ -900,7 +934,7 @@
   // asked for. It must NOT come out protected.
   const bogusReadsProtected = !!bogus && bogus.ok
     && bogusSentinels.length > 0 && !bogusHasControl;
-  record('C6', 'CONTROL: does a page that is NOT the editor read as protected?',
+  record('view.filter-editor.control-non-editor-page', 'CONTROL: does a page that is NOT the editor read as protected?',
     !bogus ? 'NOT ESTABLISHED' : (bogusReadsProtected ? 'FALSE POSITIVE' : 'REJECTED'),
     !bogus
       ? 'the list ids were not available, so no bogus request was made.'
@@ -914,7 +948,7 @@
             + 'the sentinel and before the controls is still unmeasured, and a length or completeness test '
             + 'is what would close that.'));
 
-  // ---- C7: the tail after the document close -----------------------------
+  // ---- trailing-markup-tokens (C7): the tail after the document close ----
   // C6 closes on "a length or completeness test is what would close that".
   // The deploy's completeness test accepts trailing markup after `</html>`
   // but bounds it: the tail may be anything, except a document or control
@@ -955,7 +989,7 @@
   const tailPlain = tailOf(pagePlain);
   const tailUnfiltered = tailOf(pageUnfiltered);
   const tailBanned = (t) => !!t && t.hasClose && Object.values(t.tokens).some(Boolean);
-  record('C7', 'does the trailing markup after the final `</html>` carry a document or control token?',
+  record('view.filter-editor.trailing-markup-tokens', 'does the trailing markup after the final `</html>` carry a document or control token?',
     !tailGuarded ? 'NOT ESTABLISHED' : (tailBanned(tailGuarded) ? 'TOKENS PRESENT' : 'CLEAN'),
     !tailGuarded
       ? 'the guarded page was not fetched, so there is no tail to inspect.'
@@ -968,8 +1002,8 @@
             + 'page and the tail bound holds for this tenant. One tenant is a reference point, not a '
             + 'constant; a second tenant would settle it.'));
 
-  // ---- P1, P2: the ground truth ------------------------------------------
-  record('P1', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
+  // ---- the ground truth (P1/P2) ------------------------------------------
+  record('view.filter-editor.ground-truth-plain-editable', 'GROUND TRUTH: does the plain view open its filter pane? (manual: look)',
     plainView ? 'MANUAL' : 'NOT ESTABLISHED',
     plainView
       ? `OPEN ${window.location.origin}${plainView.ServerRelativeUrl}, then its view settings, and report `
@@ -977,7 +1011,7 @@
         + 'and if it is not then the comparison has no editable side and every row above is measuring two '
         + 'refused pages.'
       : 'the Plain view was not created, so there is nothing to open.');
-  record('P2', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)',
+  record('view.filter-editor.ground-truth-guarded-refused', 'GROUND TRUTH: is the guarded view refused by the editor? (manual: look)',
     guardedView ? 'MANUAL' : 'NOT ESTABLISHED',
     guardedView
       ? `OPEN ${window.location.origin}${guardedView.ServerRelativeUrl}, then its view settings, and report `

@@ -42,7 +42,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # /items, and SharePoint refuses that on a library outright:
         # HTTP 500, "To add an item to a document library, use
         # SPFileCollection.Add()" (probed 2026-07-29,
-        # test/manual/document-library-probe.js, L2).
+        # test/manual/document-library-probe.js,
+        # `library.file-vs-item.fileless-item-post`, L2 in that run).
         #
         # So the paste fails, loudly, in front of whoever was being shown
         # the demo. Refusing at build turns that into a failed build.

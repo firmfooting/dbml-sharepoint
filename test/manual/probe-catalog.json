@@ -775,36 +775,36 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "L1",
+              "id": "library.doc-lib.fixture-library-created",
               "depends_on": []
             },
             {
-              "id": "L2",
+              "id": "library.file-vs-item.fileless-item-post",
               "depends_on": []
             },
             {
-              "id": "L3",
+              "id": "library.file-vs-item.fileless-item-readback",
               "depends_on": [
-                "L2"
+                "library.file-vs-item.fileless-item-post"
               ]
             },
             {
-              "id": "L5",
+              "id": "library.file-vs-item.title-after-upload",
               "depends_on": []
             },
             {
-              "id": "L6",
+              "id": "library.doc-lib.view-fileleafref",
               "depends_on": []
             },
             {
-              "id": "LN",
+              "id": "library.file-vs-item.control-missing-column-refused",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "L1",
-            "LN"
+            "library.doc-lib.fixture-library-created",
+            "library.file-vs-item.control-missing-column-refused"
           ],
           "depends_on": []
         },
@@ -814,13 +814,13 @@
           "pattern": "state-matrix",
           "findings": [
             {
-              "id": "L4",
+              "id": "library.file-vs-item.fileless-item-visible",
               "depends_on": [
-                "L2"
+                "library.file-vs-item.fileless-item-post"
               ]
             },
             {
-              "id": "L7",
+              "id": "library.doc-lib.header-fileleafref",
               "depends_on": []
             }
           ],
@@ -842,8 +842,8 @@
             }
           ],
           "controls": [
-            "L1",
-            "L2"
+            "library.doc-lib.fixture-library-created",
+            "library.file-vs-item.fileless-item-post"
           ],
           "depends_on": [
             "machine-findings"
@@ -972,13 +972,13 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "X0",
+              "id": "expression.client-validation.control-unknown-function-refused",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "X0"
+            "expression.client-validation.control-unknown-function-refused"
           ],
           "depends_on": []
         },
@@ -988,39 +988,39 @@
           "pattern": "state-matrix",
           "findings": [
             {
-              "id": "X1",
+              "id": "expression.client-validation.contains-indexof",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             },
             {
-              "id": "X2",
+              "id": "expression.client-validation.not-contains-indexof",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             },
             {
-              "id": "X3",
+              "id": "expression.client-validation.begins-with-indexof",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             },
             {
-              "id": "X4",
+              "id": "expression.client-validation.begins-with-startswith",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             },
             {
-              "id": "X5",
+              "id": "expression.client-validation.begins-with-substring",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             },
             {
-              "id": "X6",
+              "id": "expression.client-validation.not-begins-with-indexof",
               "depends_on": [
-                "X0"
+                "expression.client-validation.control-unknown-function-refused"
               ]
             }
           ],
@@ -1059,7 +1059,7 @@
             }
           ],
           "controls": [
-            "X0"
+            "expression.client-validation.control-unknown-function-refused"
           ],
           "depends_on": [
             "machine-findings"
@@ -1252,34 +1252,34 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "Q1",
+              "id": "form.new-form.setter-persists-without-update",
               "depends_on": []
             },
             {
-              "id": "Q2",
+              "id": "form.edit-form.independent-of-new-form",
               "depends_on": []
             },
             {
-              "id": "Q3",
+              "id": "form.new-form.setter-reshows-hidden",
               "depends_on": []
             },
             {
-              "id": "Q4",
+              "id": "form.new-form.setter-on-sealed-field",
               "depends_on": []
             },
             {
-              "id": "Q5",
+              "id": "form.new-form.setter-on-calculated-column",
               "depends_on": []
             },
             {
-              "id": "Q7",
+              "id": "form.new-form.attribute-at-creation",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "Q1",
-            "Q4"
+            "form.new-form.setter-persists-without-update",
+            "form.new-form.setter-on-sealed-field"
           ],
           "depends_on": []
         },
@@ -1289,7 +1289,7 @@
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "Q6",
+              "id": "form.panel.edit-columns-writes-attributes",
               "depends_on": []
             }
           ],
@@ -1331,8 +1331,8 @@
             }
           ],
           "controls": [
-            "Q1",
-            "Q4"
+            "form.new-form.setter-persists-without-update",
+            "form.new-form.setter-on-sealed-field"
           ],
           "depends_on": [
             "machine-findings"
@@ -2491,87 +2491,87 @@
           "pattern": "delayed-reconciliation",
           "findings": [
             {
-              "id": "S1",
+              "id": "search.discovery.control-endpoint-answers",
               "depends_on": []
             },
             {
-              "id": "S10",
+              "id": "search.discovery.security-trimming",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S11",
+              "id": "query.odata.continuation-link-emitted",
               "depends_on": []
             },
             {
-              "id": "S12",
+              "id": "query.odata.continuation-link-followed",
               "depends_on": []
             },
             {
-              "id": "S2",
+              "id": "search.discovery.stslist-returns-rows",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S3",
+              "id": "search.managed-prop.default-row-properties",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S4",
+              "id": "search.discovery.title-match-exactness",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S5",
+              "id": "search.managed-prop.description-returned",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S6",
+              "id": "search.managed-prop.description-marker-spelling",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S6A",
+              "id": "search.managed-prop.description-filterable",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S6C",
+              "id": "search.crawl.description-edit-reindexed",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S7",
+              "id": "search.discovery.rowlimit-ceiling",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S8",
+              "id": "search.discovery.stssite-fallback",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             },
             {
-              "id": "S9",
+              "id": "search.crawl.recent-content-indexed",
               "depends_on": [
-                "S1"
+                "search.discovery.control-endpoint-answers"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "S1"
+            "search.discovery.control-endpoint-answers"
           ],
           "depends_on": []
         }
@@ -3104,26 +3104,26 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "Q0",
+              "id": "view.totals.fixture-two-rows-seeded",
               "depends_on": []
             },
             {
-              "id": "Q1",
+              "id": "view.totals.patch-accepted",
               "depends_on": []
             },
             {
-              "id": "Q2",
+              "id": "view.totals.setviewxml-block",
               "depends_on": []
             },
             {
-              "id": "Q3",
+              "id": "view.totals.property-readback",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "Q0",
-            "Q3"
+            "view.totals.fixture-two-rows-seeded",
+            "view.totals.property-readback"
           ],
           "depends_on": []
         },
@@ -3133,24 +3133,24 @@
           "pattern": "single-visible-state",
           "findings": [
             {
-              "id": "Q4",
+              "id": "view.totals.row-renders",
               "depends_on": [
-                "Q0",
-                "Q3"
+                "view.totals.fixture-two-rows-seeded",
+                "view.totals.property-readback"
               ]
             },
             {
-              "id": "Q5",
+              "id": "view.totals.binds-by-internal-name",
               "depends_on": [
-                "Q0",
-                "Q3"
+                "view.totals.fixture-two-rows-seeded",
+                "view.totals.property-readback"
               ]
             },
             {
-              "id": "Q6",
+              "id": "view.totals.two-columns-in-order",
               "depends_on": [
-                "Q0",
-                "Q3"
+                "view.totals.fixture-two-rows-seeded",
+                "view.totals.property-readback"
               ]
             }
           ],
@@ -3165,8 +3165,8 @@
             }
           ],
           "controls": [
-            "Q0",
-            "Q3"
+            "view.totals.fixture-two-rows-seeded",
+            "view.totals.property-readback"
           ],
           "depends_on": [
             "machine-findings"
@@ -3193,91 +3193,91 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "C1",
+              "id": "view.filter-editor.pinned-control-discriminates",
               "depends_on": []
             },
             {
-              "id": "C2",
+              "id": "view.filter-editor.second-control-agrees",
               "depends_on": []
             },
             {
-              "id": "C3",
+              "id": "view.filter-editor.predicate-stable-on-refetch",
               "depends_on": []
             },
             {
-              "id": "C4",
+              "id": "view.filter-editor.condition-slot-count",
               "depends_on": []
             },
             {
-              "id": "C5",
+              "id": "view.filter-editor.sentinel-on-every-page",
               "depends_on": []
             },
             {
-              "id": "C6",
+              "id": "view.filter-editor.control-non-editor-page",
               "depends_on": []
             },
             {
-              "id": "C7",
+              "id": "view.filter-editor.trailing-markup-tokens",
               "depends_on": []
             },
             {
-              "id": "F1",
+              "id": "view.filter-editor.both-pages-fetchable",
               "depends_on": []
             },
             {
-              "id": "F2",
+              "id": "view.filter-editor.english-markers-on-guarded",
               "depends_on": []
             },
             {
-              "id": "F3",
+              "id": "view.filter-editor.editable-only-ids",
               "depends_on": []
             },
             {
-              "id": "F4",
+              "id": "view.filter-editor.refused-only-ids",
               "depends_on": []
             },
             {
-              "id": "F5",
+              "id": "view.filter-editor.differing-name-attributes",
               "depends_on": []
             },
             {
-              "id": "F6",
+              "id": "view.filter-editor.ui-culture-readable",
               "depends_on": []
             },
             {
-              "id": "F7",
+              "id": "view.filter-editor.control-unfiltered-view",
               "depends_on": []
             },
             {
-              "id": "F8",
+              "id": "view.filter-editor.control-page-deterministic",
               "depends_on": []
             },
             {
-              "id": "Q0",
+              "id": "view.filter-editor.fixture-rows-seeded",
               "depends_on": []
             },
             {
-              "id": "Q1",
+              "id": "query.view-query.guarded-single-clause-stored",
               "depends_on": []
             },
             {
-              "id": "S1",
+              "id": "query.caml.guarded-single-clause-inert",
               "depends_on": []
             },
             {
-              "id": "S2",
+              "id": "query.caml.tautology-alone-partitions",
               "depends_on": []
             }
           ],
           "states": [],
           "controls": [
-            "Q0",
-            "Q1",
-            "S2",
-            "F1",
-            "F7",
-            "F8",
-            "C6"
+            "view.filter-editor.fixture-rows-seeded",
+            "query.view-query.guarded-single-clause-stored",
+            "query.caml.tautology-alone-partitions",
+            "view.filter-editor.both-pages-fetchable",
+            "view.filter-editor.control-unfiltered-view",
+            "view.filter-editor.control-page-deterministic",
+            "view.filter-editor.control-non-editor-page"
           ],
           "depends_on": []
         },
@@ -3287,16 +3287,16 @@
           "pattern": "state-matrix",
           "findings": [
             {
-              "id": "P1",
+              "id": "view.filter-editor.ground-truth-plain-editable",
               "depends_on": [
-                "Q0"
+                "view.filter-editor.fixture-rows-seeded"
               ]
             },
             {
-              "id": "P2",
+              "id": "view.filter-editor.ground-truth-guarded-refused",
               "depends_on": [
-                "Q0",
-                "Q1"
+                "view.filter-editor.fixture-rows-seeded",
+                "query.view-query.guarded-single-clause-stored"
               ]
             }
           ],
@@ -3324,8 +3324,8 @@
             }
           ],
           "controls": [
-            "Q0",
-            "Q1"
+            "view.filter-editor.fixture-rows-seeded",
+            "query.view-query.guarded-single-clause-stored"
           ],
           "depends_on": [
             "machine-findings"

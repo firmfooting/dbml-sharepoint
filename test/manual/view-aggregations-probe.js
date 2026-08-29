@@ -4,6 +4,19 @@
  * Creates one owned list and settles storage/readback of view aggregations.
  * The catalogue defines the rendered totals state required for Q4-Q6.
  * Historical runs belong in evidence rather than this executable source.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it, because the prose here and every run reported against this probe
+ * quote the mnemonics.
+ *
+ *   view.totals.fixture-two-rows-seeded  (Q0)
+ *   view.totals.patch-accepted           (Q1)
+ *   view.totals.setviewxml-block         (Q2)
+ *   view.totals.property-readback        (Q3)
+ *   view.totals.row-renders              (Q4)
+ *   view.totals.binds-by-internal-name   (Q5)
+ *   view.totals.two-columns-in-order     (Q6)
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -56,13 +69,13 @@
     }
     log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
-  expect('Q0', 'two rows actually seeded, so the manual check has something to total');
-  expect('Q1', 'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted');
-  expect('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block');
-  expect('Q3', 'the written property reads back unchanged');
-  expect('Q4', 'a totals row actually RENDERS (manual: open the view URL and look)');
-  expect('Q5', 'Aggregations binds by INTERNAL name, not display title (manual: look)');
-  expect('Q6', 'two totalled columns both render, in declaration order (manual: look)');
+  expect('view.totals.fixture-two-rows-seeded', 'two rows actually seeded, so the manual check has something to total');
+  expect('view.totals.patch-accepted', 'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted');
+  expect('view.totals.setviewxml-block', 'GetViewXml/SetViewXml carries an <Aggregations> block');
+  expect('view.totals.property-readback', 'the written property reads back unchanged');
+  expect('view.totals.row-renders', 'a totals row actually RENDERS (manual: open the view URL and look)');
+  expect('view.totals.binds-by-internal-name', 'Aggregations binds by INTERNAL name, not display title (manual: look)');
+  expect('view.totals.two-columns-in-order', 'two totalled columns both render, in declaration order (manual: look)');
 
   // Shared probe core v2: context guard, bounded transport and REST helpers.
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
@@ -83,7 +96,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision a6dfa267; core v2; results v1.`);
+  log('INFO', `probe revision 5dced6f7; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -283,12 +296,11 @@
   try {
     const prepared = await prepareOwnedList(PROBE_LIST, OWNERSHIP_DESCRIPTION, CLEANUP_AT_END);
     if (!prepared.ok) {
-      record('Q0', 'setup', 'ABORTED', prepared.error);
+      record('view.totals.fixture-two-rows-seeded', 'setup', 'ABORTED', prepared.error);
       throw new Error('fixture ownership or reset failed');
     }
     if (prepared.existing) {
-      record(
-        'Q0',
+      record('view.totals.fixture-two-rows-seeded',
         'setup',
         'ABORTED',
         `The owned fixture '${PROBE_LIST}' is retained for visible evidence. Re-run with CLEANUP_AT_END=true to recycle it before a fresh run.`,
@@ -309,7 +321,7 @@
       ListExperienceOptions: 2,
     });
     if (!made.ok) {
-      record('Q1', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
+      record('view.totals.patch-accepted', 'setup', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
       throw new Error('setup failed');
     }
     createdList = true;
@@ -321,7 +333,7 @@
       Title: AGG_FIELD,
     });
     if (!field.ok) {
-      record('Q1', 'setup', 'ABORTED', `could not add ${AGG_FIELD}: HTTP ${field.status} ${field.error}`);
+      record('view.totals.patch-accepted', 'setup', 'ABORTED', `could not add ${AGG_FIELD}: HTTP ${field.status} ${field.error}`);
       throw new Error('setup failed');
     }
     // Seed, and CHECK. The first version of this probe fired these two
@@ -342,8 +354,7 @@
     }
     const counted = await get(`${listPath}/ItemCount`);
     const rowCount = counted.ok ? Number(counted.d.ItemCount) : NaN;
-    record(
-      'Q0',
+    record('view.totals.fixture-two-rows-seeded',
       'two rows actually seeded, so the manual check has something to total',
       rowCount === 2 ? 'SEEDED' : 'FAILED',
       seedErrors.length
@@ -361,7 +372,7 @@
       RowLimit: 30,
     });
     if (!view.ok) {
-      record('Q1', 'setup', 'ABORTED', `could not create the view: HTTP ${view.status} ${view.error}`);
+      record('view.totals.patch-accepted', 'setup', 'ABORTED', `could not create the view: HTTP ${view.status} ${view.error}`);
       throw new Error('setup failed');
     }
     const views = await get(`${listPath}/views?$select=Id,Title,ServerRelativeUrl,Aggregations,AggregationsStatus`);
@@ -383,20 +394,19 @@
 
     const AGG_XML = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`;
 
-    // === Q1: REST PATCH of the SP.View properties ========================
+    // === patch-accepted (Q1): REST PATCH of the SP.View properties =======
     const patched = await post(
       `${listPath}/views('${viewId}')`,
       { __metadata: { type: 'SP.View' }, Aggregations: AGG_XML, AggregationsStatus: 'On' },
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
     );
-    record(
-      'Q1',
+    record('view.totals.patch-accepted',
       'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted',
       patched.ok ? 'ACCEPTED' : 'REFUSED',
       patched.ok ? `HTTP ${patched.status}` : `HTTP ${patched.status} (${patched.error})`,
     );
 
-    // === Q2: the SetViewXml path, guarded exactly as widths are ==========
+    // === setviewxml-block (Q2): the SetViewXml path, guarded as widths are ===
     // Only attempted if the PATCH was refused: if PATCH works it is the
     // simpler mechanism and the one the deployer should use.
     let xmlWorked = false;
@@ -405,7 +415,7 @@
       const xmlGet = await get(`${listPath}/views('${viewId}')?$select=ListViewXml`);
       const currentXml = xmlGet.d?.ListViewXml || '';
       if (!currentXml) {
-        record('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'NOT ESTABLISHED', 'could not read ListViewXml');
+        record('view.totals.setviewxml-block', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'NOT ESTABLISHED', 'could not read ListViewXml');
       } else {
         const block = `<Aggregations Value="On">${AGG_XML}</Aggregations>`;
         const strip = (xml) => xml.replace(/<Aggregations[\s\S]*?<\/Aggregations>/, '');
@@ -415,7 +425,7 @@
         // Same guard the deployer's width splice uses: refuse if anything
         // outside the spliced region would change.
         if (strip(nextXml) !== strip(currentXml)) {
-          record('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'ABORTED', 'splice guard tripped: non-Aggregations content would change');
+          record('view.totals.setviewxml-block', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'ABORTED', 'splice guard tripped: non-Aggregations content would change');
         } else {
           const set = await post(
             `${listPath}/views('${viewId}')`,
@@ -423,8 +433,7 @@
             { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
           );
           xmlWorked = set.ok;
-          record(
-            'Q2',
+          record('view.totals.setviewxml-block',
             'GetViewXml/SetViewXml carries an <Aggregations> block',
             set.ok ? 'ACCEPTED' : 'REFUSED',
             set.ok ? `HTTP ${set.status}` : `HTTP ${set.status} (${set.error})`,
@@ -432,18 +441,17 @@
         }
       }
     } else {
-      record('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'NOT ATTEMPTED', 'the PATCH in Q1 was accepted, so the simpler mechanism wins');
+      record('view.totals.setviewxml-block', 'GetViewXml/SetViewXml carries an <Aggregations> block', 'NOT ATTEMPTED', 'the PATCH in Q1 was accepted, so the simpler mechanism wins');
     }
 
-    // === Q3: read it back ================================================
+    // === property-readback (Q3): read it back ============================
     const after = await get(`${listPath}/views('${viewId}')?$select=Aggregations,AggregationsStatus`);
     const gotAgg = after.d?.Aggregations || '(null)';
     const gotStatus = after.d?.AggregationsStatus || '(null)';
     // Compared on the normalised form (normalizeAgg above) because SharePoint
     // stores the XML with a space before self-closing `/>` and quote changes.
     const matches = normalizeAgg(gotAgg) === normalizeAgg(AGG_XML) && gotStatus === 'On';
-    record(
-      'Q3',
+    record('view.totals.property-readback',
       'the written property reads back unchanged',
       matches ? 'ROUND-TRIPPED' : 'MISMATCH',
       `Aggregations=${gotAgg} AggregationsStatus=${gotStatus}`,
@@ -453,7 +461,7 @@
     const visibleSetupReady = rowCount === 2 && !!viewId && !!viewUrl
       && amountOnView.ok && initialViewFields.ok && amountMembershipHeld;
 
-    // === Q5/Q6: the naming question, and two columns at once =============
+    // === the naming question, and two columns at once (Q5/Q6) ============
     //
     // WHY Q5 MATTERS MORE THAN THE REST. The sibling ColumnWidth property
     // binds by DISPLAY title. Internal names are accepted and silently
@@ -560,8 +568,7 @@
         fieldTitle: renamedField.d?.Title,
         expectedFieldTitle: SECOND_DISPLAY,
       });
-      record(
-        'Q4',
+      record('view.totals.row-renders',
         'a totals row actually RENDERS',
         q4ManualOutcome,
         q4ManualOutcome === 'MANUAL'
@@ -572,8 +579,7 @@
             + `rename-response=${renamed.ok}, final-title=${JSON.stringify(renamedField.d?.Title)}, `
             + `mechanism=${mechanism}, aggregation-readback=${matches}`,
       );
-      record(
-        'Q5',
+      record('view.totals.binds-by-internal-name',
         'Aggregations binds by INTERNAL name, not display title',
         manualOutcome,
         manualOutcome === 'MANUAL'
@@ -588,8 +594,7 @@
             + `write=${wrote.ok}, aggregation=${JSON.stringify(back.d?.Aggregations)}, `
             + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
-      record(
-        'Q6',
+      record('view.totals.two-columns-in-order',
         'two totalled columns both render, in declaration order',
         manualOutcome,
         manualOutcome === 'MANUAL'
@@ -603,9 +608,9 @@
             + `status=${JSON.stringify(back.d?.AggregationsStatus)}`,
       );
     } else {
-      record('Q4', 'a totals row actually RENDERS', 'NOT ESTABLISHED', `controls not established: could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
-      record('Q5', 'Aggregations binds by INTERNAL name, not display title', 'NOT ESTABLISHED', `could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
-      record('Q6', 'two totalled columns both render, in declaration order', 'NOT ESTABLISHED', 'the second column could not be created');
+      record('view.totals.row-renders', 'a totals row actually RENDERS', 'NOT ESTABLISHED', `controls not established: could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
+      record('view.totals.binds-by-internal-name', 'Aggregations binds by INTERNAL name, not display title', 'NOT ESTABLISHED', `could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
+      record('view.totals.two-columns-in-order', 'two totalled columns both render, in declaration order', 'NOT ESTABLISHED', 'the second column could not be created');
     }
 
     // === Verdict =========================================================

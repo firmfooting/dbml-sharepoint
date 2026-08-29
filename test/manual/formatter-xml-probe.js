@@ -410,7 +410,7 @@
   // Printed FIRST, before any gate: see threshold-index-probe.js.j2 for why
   // (a stale clipboard and a fix that did not work produce identical
   // transcripts otherwise).
-  log('INFO', 'probe revision 980a6d67. Quote this when reporting results.');
+  log('INFO', 'probe revision f81af03f. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe FormatterXML';
   const FIELD_FMT = 'ProbeFmtField';
@@ -773,7 +773,8 @@
 
   const cts = await spGet(`${listPath}/contenttypes?$select=Id,Name&$top=20`);
   // Accessor stays Id.StringValue: this harness runs odata=nometadata, the
-  // spelling document-library-probe.js.j2's L7 proved works under it.
+  // spelling document-library-probe.js.j2's `header-fileleafref` (L7) proved
+  // works under it.
   const ctIdOf = (ct) => String((ct && ct.Id && ct.Id.StringValue) || (ct && ct.Id) || '');
   const ct = ((cts.ok && cts.body && cts.body.value) || [])
     .find((c) => ctIdOf(c).startsWith('0x01') && !ctIdOf(c).startsWith('0x0120'));

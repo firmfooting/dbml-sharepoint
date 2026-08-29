@@ -320,6 +320,30 @@
  *
  * ---- WHAT IT ASKS -----------------------------------------------------
  *
+ * Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The prose below, and every run reported
+ * against this probe, quote the old mnemonics, so both are given.
+ *
+ *   S1   search.discovery.control-endpoint-answers
+ *   S2   search.discovery.stslist-returns-rows
+ *   S3   search.managed-prop.default-row-properties
+ *   S4   search.discovery.title-match-exactness
+ *   S5   search.managed-prop.description-returned
+ *   S6   search.managed-prop.description-marker-spelling
+ *   S6A  search.managed-prop.description-filterable
+ *   S6C  search.crawl.description-edit-reindexed
+ *   S7   search.discovery.rowlimit-ceiling
+ *   S8   search.discovery.stssite-fallback
+ *   S9   search.crawl.recent-content-indexed
+ *   S10  search.discovery.security-trimming
+ *   S11  query.odata.continuation-link-emitted
+ *   S12  query.odata.continuation-link-followed
+ *
+ * S11 and S12 file under `query`, not `search`. They ask about OData
+ * server-driven paging on a list-items collection, where the search index is
+ * not involved at all; the keying rule files a check under the surface of its
+ * own question. SURFACES.md records the straddle.
+ *
  * READ-ONLY. These run with the write flag OFF and write nothing.
  *
  *   S1  CONTROL, AND IT GATES THE REST. Does `_api/search/query` answer
@@ -949,7 +973,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 9e21fe4e. Quote this when reporting results.');
+  log('INFO', 'probe revision 1a5c0eb3. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately. See the harness.
@@ -1007,20 +1031,20 @@
   // Every question, up front, before anything can throw. A probe that
   // registers as it goes reports only what it reached and prints "0 not
   // established" over questions it never asked.
-  expect('S1', 'CONTROL: does _api/search/query answer this caller at all, for a trivial query?');
-  expect('S2', 'Does contentclass:STS_List return rows, how many, and what total is reported?');
-  expect('S3', 'For the first STS_List row: EVERY property name returned, and its value.');
-  expect('S4', 'Querying for a list title: EVERY title that comes back, not just the expected one.');
-  expect('S5', 'Is a list Description returned at all by an STS_List query?');
-  expect('S6A', 'Is Description FILTERABLE here: does Description:"<phrase>" return the list that carries it?');
-  expect('S6', 'Which marker SPELLING in a Description is findable, as a quoted phrase and bare?');
-  expect('S6C', 'Is the INDEXED description current with the live one, and does an EDIT get reindexed?');
-  expect('S7', 'The row-limit ceiling: returned row count against reported total, and behaviour at a high limit.');
-  expect('S8', 'Does the contentclass:"STS_Site" fallback work, and what identity comes back per site?');
-  expect('S9', 'Crawl latency: is recently created content in the index yet, at this run timestamp?');
-  expect('S10', 'Is the result set security-trimmed for the querying identity?');
-  expect('S11', 'With NO $top, how many list items come back, and is there a server-driven continuation link?');
-  expect('S12', 'Does following that continuation link return a further page of DIFFERENT items?');
+  expect('search.discovery.control-endpoint-answers', 'CONTROL: does _api/search/query answer this caller at all, for a trivial query?');
+  expect('search.discovery.stslist-returns-rows', 'Does contentclass:STS_List return rows, how many, and what total is reported?');
+  expect('search.managed-prop.default-row-properties', 'For the first STS_List row: EVERY property name returned, and its value.');
+  expect('search.discovery.title-match-exactness', 'Querying for a list title: EVERY title that comes back, not just the expected one.');
+  expect('search.managed-prop.description-returned', 'Is a list Description returned at all by an STS_List query?');
+  expect('search.managed-prop.description-filterable', 'Is Description FILTERABLE here: does Description:"<phrase>" return the list that carries it?');
+  expect('search.managed-prop.description-marker-spelling', 'Which marker SPELLING in a Description is findable, as a quoted phrase and bare?');
+  expect('search.crawl.description-edit-reindexed', 'Is the INDEXED description current with the live one, and does an EDIT get reindexed?');
+  expect('search.discovery.rowlimit-ceiling', 'The row-limit ceiling: returned row count against reported total, and behaviour at a high limit.');
+  expect('search.discovery.stssite-fallback', 'Does the contentclass:"STS_Site" fallback work, and what identity comes back per site?');
+  expect('search.crawl.recent-content-indexed', 'Crawl latency: is recently created content in the index yet, at this run timestamp?');
+  expect('search.discovery.security-trimming', 'Is the result set security-trimmed for the querying identity?');
+  expect('query.odata.continuation-link-emitted', 'With NO $top, how many list items come back, and is there a server-driven continuation link?');
+  expect('query.odata.continuation-link-followed', 'Does following that continuation link return a further page of DIFFERENT items?');
 
   if (!CONFIRMED) {
     log('INFO', 'Would READ, writing nothing: several _api/search/query GETs (a');
@@ -1332,7 +1356,7 @@
            + `about the question it was asked. Supporting detail only: ${outcome}; ${evidence}`);
   };
 
-  // ================= S1: THE CONTROL ===================================
+  // ================= control-endpoint-answers (S1): THE CONTROL ========
   // depends on: the endpoint spelling and this caller's session.
   // observes:   the status, the response shape, and the counts.
   //
@@ -1357,19 +1381,19 @@
       controlWhy = q.unknownShape
         ? `S1 got HTTP ${q.res.status} but no result set it could recognise`
         : `S1 got HTTP ${q.res.status}`;
-      record('S1', S1_Q, queryOutcome(q),
+      record('search.discovery.control-endpoint-answers', S1_Q, queryOutcome(q),
              `${queryFailure(q)} ${whoRan}. EVERY OTHER SEARCH ROW IN THIS RUN IS NOW ABOUT THE `
              + 'ENDPOINT, NOT ABOUT the question it was asked, and S2-S9 will say so themselves rather '
              + 'than leaving it to this sentence. S11 and S12 are unaffected. They do not use search.');
     } else {
       searchAnswers = true;
-      record('S1', S1_Q, 'OBSERVED: the endpoint answered',
+      record('search.discovery.control-endpoint-answers', S1_Q, 'OBSERVED: the endpoint answered',
              `${describeQuery(q)}. ${whoRan}. A row count of 0 is still an answer to THIS question: it `
              + 'says the endpoint served the caller. What it does not say is anything about the index.');
     }
   }
 
-  // ================= S2 / S3: CAN SEARCH ENUMERATE LISTS? ==============
+  // ================= CAN SEARCH ENUMERATE LISTS? (S2/S3) ===============
   // Deliberately sent with NO selectproperties. Naming the properties we
   // want would decide what comes back, and what comes back BY DEFAULT is
   // exactly what S3 is asking. Constraining the answer and then reporting
@@ -1386,17 +1410,17 @@
     listQuery = q;
     if (!q.ok) {
       const detail = queryFailure(q);
-      searchRecord('S2', S2_Q, queryOutcome(q),
+      searchRecord('search.discovery.stslist-returns-rows', S2_Q, queryOutcome(q),
              `${detail}. This is the decisive unknown, so be careful reading it: the query FAILING is `
              + 'not the same as STS_List not being a content class. Check S1 first, then S8. If the '
              + 'documented STS_Site query works and this one does not, THAT is the finding.');
-      record('S3', S3_Q, 'NOT ESTABLISHED (prerequisite)', 'S2 returned no result set to inspect.');
+      record('search.managed-prop.default-row-properties', S3_Q, 'NOT ESTABLISHED (prerequisite)', 'S2 returned no result set to inspect.');
     } else {
-      searchRecord('S2', S2_Q, `OBSERVED: ${q.rows.length} row(s) returned`,
+      searchRecord('search.discovery.stslist-returns-rows', S2_Q, `OBSERVED: ${q.rows.length} row(s) returned`,
              `${describeQuery(q)}. rowlimit was 10, so a returned count of 10 is the LIMIT talking, `
              + 'not the population. The reported total is the number to read, and S7 pushes on it.');
       if (q.rows.length === 0) {
-        record('S3', S3_Q, 'NOT ESTABLISHED (prerequisite)',
+        record('search.managed-prop.default-row-properties', S3_Q, 'NOT ESTABLISHED (prerequisite)',
                'the STS_List query returned no rows, so there was no row to dump. See S2, and note '
                + 'that an empty result set on a caller who can see everything is itself worth '
                + 'reporting, but it is not an answer to S3.');
@@ -1441,7 +1465,7 @@
             + `requested on its own: ${perName.join('; ')}`;
         }
 
-        searchRecord('S3', S3_Q, `OBSERVED: ${names.length} propert${names.length === 1 ? 'y' : 'ies'} on the first row`,
+        searchRecord('search.managed-prop.default-row-properties', S3_Q, `OBSERVED: ${names.length} propert${names.length === 1 ? 'y' : 'ies'} on the first row`,
                `${describeQuery(q)}\n      --- every cell on row 1, site host redacted ---\n${dumpRow(firstListRow)}\n`
                + `      --- end of dump ---\n      property NAMES: ${names.join(', ')}\n`
                + `      Of the names the design would like: PRESENT ${present.join(', ') || '(none)'}; `
@@ -1454,7 +1478,7 @@
     }
   }
 
-  // ================= S4: TOKENISATION AND TITLES =======================
+  // ================= title-match-exactness (S4): TOKENISATION ==========
   // The question is NOT "did my list come back". It is "WHAT came back",
   // because Learn documents that text managed properties are word-broken
   // and that exact matching is an opt-in per-property setting. A query for
@@ -1463,7 +1487,7 @@
   {
     const S4_Q = 'Querying for a list title: EVERY title that comes back, not just the expected one.';
     if (PLACEHOLDER.test(LIST_TITLE)) {
-      record('S4', S4_Q, 'NOT ESTABLISHED (prerequisite)',
+      record('search.discovery.title-match-exactness', S4_Q, 'NOT ESTABLISHED (prerequisite)',
              'LIST_TITLE is still the placeholder. Set it to a real list title on this tenant, '
              + 'ideally one that is a prefix of another list\'s title, which is the case that decides '
              + 'whether a title can be a key at all.');
@@ -1493,7 +1517,7 @@
         lines.push(`        of those, ${exact} equal${exact === 1 ? 's' : ''} LIST_TITLE character for `
                    + `character; ${titles.length - exact} do not. The ones that do NOT are the finding.`);
       }
-      searchRecord('S4', S4_Q,
+      searchRecord('search.discovery.title-match-exactness', S4_Q,
              anyAnswered ? 'OBSERVED: see every title returned, per query variant' : 'NOT ESTABLISHED (no variant answered)',
              `LIST_TITLE was ${JSON.stringify(LIST_TITLE)}.\n${lines.join('\n')}\n`
              + '      Read this against Learn: text managed properties are word-broken, and "Complete '
@@ -1522,11 +1546,11 @@
   // are indistinguishable from a search result set alone.
   const described = localRows ? localRows.filter((l) => nonEmpty(l.Description)) : [];
 
-  // ================= S5: IS DESCRIPTION RETURNED? ======================
+  // ================= description-returned (S5): IS IT RETURNED? ========
   {
     const S5_Q = 'Is a list Description returned at all by an STS_List query?';
     if (localRows === null) {
-      record('S5', S5_Q, 'NOT ESTABLISHED (prerequisite)',
+      record('search.managed-prop.description-returned', S5_Q, 'NOT ESTABLISHED (prerequisite)',
              `could not read web/lists to establish whether any list here HAS a description: `
              + `${httpDetail(localLists)}.${privilegeNote(localLists)} Without that, an empty `
              + 'Description column in the search result cannot be told from there being nothing to '
@@ -1534,7 +1558,7 @@
              + 'question in its own right (the Power BI SharePoint Online List connector does '
              + 'exactly that read), so quote this line if it refused.');
     } else if (described.length === 0) {
-      record('S5', S5_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
+      record('search.managed-prop.description-returned', S5_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
              `${localRows.length} visible list(s) on this site were read directly from web/lists and `
              + 'NOT ONE has a non-empty Description. So there is nothing for search to have crawled, '
              + 'and this run cannot answer S5. THIS IS NOT "descriptions are not crawled": recording '
@@ -1545,7 +1569,7 @@
       const explicit = await runQuery('contentclass:STS_List',
                                       "&rowlimit=50&selectproperties='Title,Description'");
       if (!q.ok && !explicit.ok) {
-        searchRecord('S5', S5_Q, queryOutcome(q), `neither the default nor the explicit-select query `
+        searchRecord('search.managed-prop.description-returned', S5_Q, queryOutcome(q), `neither the default nor the explicit-select query `
                + `answered: ${queryFailure(q)}`);
       } else {
         const summarise = (label, result) => {
@@ -1557,7 +1581,7 @@
             + `CELL; ${withValue.length} carried a non-empty value. Up to three verbatim: `
             + `${JSON.stringify(samples)}`;
         };
-        searchRecord('S5', S5_Q, 'OBSERVED: see the per-query counts',
+        searchRecord('search.managed-prop.description-returned', S5_Q, 'OBSERVED: see the per-query counts',
                `PREREQUISITE MET: ${described.length} of ${localRows.length} visible list(s) on this `
                + `site have a description, so there IS something to find. Their titles, for cross-`
                + `reference: ${JSON.stringify(described.slice(0, 10).map((l) => show(l.Title, 80)))}\n`
@@ -1568,7 +1592,7 @@
     }
   }
 
-  // ================= S7: THE ROW-LIMIT CEILING =========================
+  // ================= rowlimit-ceiling (S7): THE ROW-LIMIT CEILING ======
   // Learn gives 500 as the documented boundary for rows in a result set,
   // raisable to 10,000 via MaxRowLimit, with StartRow capped at 50,000.
   // That is CONTEXT, not an expectation: this row asserts nothing about
@@ -1609,7 +1633,7 @@
       lines.push(`      paging via startrow: not answered. Page 1 ${page1.ok ? 'ok' : queryFailure(page1)}; `
                  + `page 2 ${page2.ok ? 'ok' : queryFailure(page2)}`);
     }
-    searchRecord('S7', S7_Q,
+    searchRecord('search.discovery.rowlimit-ceiling', S7_Q,
            answered ? `OBSERVED: ${answered} of ${limits.length} row limits answered` : 'NOT ESTABLISHED (no row limit answered)',
            `${lines.join('\n')}\n      For context only, and asserted nowhere above: Learn documents 500 `
            + 'as the boundary for rows in a result set (raisable to 10,000 via MaxRowLimit) and caps '
@@ -1619,7 +1643,7 @@
                 + 'reaches it, the ceiling is what the fleet design has to page against.'}`);
   }
 
-  // ================= S8: THE DOCUMENTED FALLBACK =======================
+  // ================= stssite-fallback (S8): THE DOCUMENTED FALLBACK ====
   // Measured EVEN IF S2 SUCCEEDED. This is the mechanism Learn actually
   // samples and it is the design's plan B; a plan B nobody measured is not
   // a plan. Same two-part treatment as S3: dump the DEFAULT cell set, then
@@ -1630,12 +1654,12 @@
     const q = await runQuery('contentclass:"STS_Site"', '&rowlimit=10');
     siteQuery = q;
     if (!q.ok) {
-      searchRecord('S8', S8_Q, queryOutcome(q),
+      searchRecord('search.discovery.stssite-fallback', S8_Q, queryOutcome(q),
              `${queryFailure(q)}. Note what this would mean if S2 also failed: the DOCUMENTED, `
              + 'Microsoft-sampled query did not work either, which points at the endpoint or this '
              + 'caller rather than at STS_List.');
     } else if (q.rows.length === 0) {
-      searchRecord('S8', S8_Q, 'OBSERVED: 0 rows',
+      searchRecord('search.discovery.stssite-fallback', S8_Q, 'OBSERVED: 0 rows',
              `${describeQuery(q)}. The query was accepted and returned nothing. On a caller who can `
              + 'see many sites that is worth reporting; it is not, on its own, a fact about STS_Site.');
     } else {
@@ -1647,7 +1671,7 @@
         ? sampled.rows.map((row, i) => `        site ${i + 1}: `
             + SAMPLED.map((p) => `${p}=${nonEmpty(cellValue(row, p)) ? show(cellValue(row, p), 100) : '(empty)'}`).join(', ')).join('\n')
         : `        the Learn-sampled select did not answer: ${queryFailure(sampled)}`;
-      searchRecord('S8', S8_Q, `OBSERVED: ${q.rows.length} site row(s) returned`,
+      searchRecord('search.discovery.stssite-fallback', S8_Q, `OBSERVED: ${q.rows.length} site row(s) returned`,
              `${describeQuery(q)}\n      --- every cell on site row 1, site host redacted ---\n`
              + `${dumpRow(q.rows[0])}\n      --- end of dump ---\n`
              + `      property NAMES: ${cellNames(q.rows[0]).join(', ')}\n`
@@ -1658,7 +1682,7 @@
     }
   }
 
-  // ================= S9: CRAWL LATENCY =================================
+  // ================= recent-content-indexed (S9): CRAWL LATENCY ========
   // ONE RUN CANNOT ANSWER THIS. What one run can do is stamp a timestamp
   // and record whether known-recent content is in the index yet, so a
   // SECOND run bounds it from the other side. The row says so itself,
@@ -1668,11 +1692,11 @@
   {
     const S9_Q = 'Crawl latency: is recently created content in the index yet, at this run timestamp?';
     if (localRows === null) {
-      record('S9', S9_Q, 'NOT ESTABLISHED (prerequisite)',
+      record('search.crawl.recent-content-indexed', S9_Q, 'NOT ESTABLISHED (prerequisite)',
              `could not read web/lists to find the most recently created list: ${httpDetail(localLists)}. `
              + `Run timestamp was ${RUN_AT}.`);
     } else if (localRows.length === 0) {
-      record('S9', S9_Q, 'NOT ESTABLISHED (prerequisite)',
+      record('search.crawl.recent-content-indexed', S9_Q, 'NOT ESTABLISHED (prerequisite)',
              `no visible list on this site to test with. Run timestamp was ${RUN_AT}.`);
     } else {
       const newest = localRows.slice().sort(
@@ -1683,7 +1707,7 @@
         ? q.rows.map((r) => show(cellValue(r, 'Title'), 120))
         : null;
       const hit = titles ? titles.some((t) => t === newest.Title) : false;
-      searchRecord('S9', S9_Q, `OBSERVED: at ${RUN_AT}, the newest list here is ${hit ? 'IN' : 'NOT IN'} the result set`,
+      searchRecord('search.crawl.recent-content-indexed', S9_Q, `OBSERVED: at ${RUN_AT}, the newest list here is ${hit ? 'IN' : 'NOT IN'} the result set`,
              `run timestamp ${RUN_AT}. The most recently created visible list on this site is `
              + `${JSON.stringify(show(newest.Title, 80))}, Created ${JSON.stringify(newest.Created)}, `
              + `about ${Number.isFinite(ageHours) ? ageHours.toFixed(1) : '?'} hour(s) before this run. `
@@ -1695,7 +1719,7 @@
     }
   }
 
-  // ================= S10: SECURITY TRIMMING ============================
+  // ================= security-trimming (S10): SECURITY TRIMMING ========
   // TWO RUNS, TWO MEANINGS, and only one of them is an answer. See the S10
   // section in the docblock. From a privileged caller this row still
   // refuses, in the same words it always did. From the list-only reporting
@@ -1726,13 +1750,13 @@
       + `${located.length > 40 ? ` (and ${located.length - 40} more)` : ''}`;
 
     if (!callerOk) {
-      record('S10', S10_Q, 'NOT ESTABLISHED (the caller could not be identified)',
+      record('search.discovery.security-trimming', S10_Q, 'NOT ESTABLISHED (the caller could not be identified)',
              `${whoRan}. Without knowing WHICH identity ran the queries, a result set says nothing `
              + 'about trimming. The same rows mean opposite things depending on who asked for them. '
              + `RUNNING_AS_READER was ${RUNNING_AS_READER}, but this row will not answer on the flag `
              + `alone. ${seenLine}`);
     } else if (!RUNNING_AS_READER) {
-      record('S10', S10_Q, 'NOT ESTABLISHED (not answerable from a privileged account)',
+      record('search.discovery.security-trimming', S10_Q, 'NOT ESTABLISHED (not answerable from a privileged account)',
              `${whoRan}, and RUNNING_AS_READER is false, so this is an OPERATOR run. IT CANNOT ANSWER `
              + 'THIS AND DID NOT TRY. A trimmed result set and an untrimmed one are IDENTICAL to a '
              + 'caller who can see everything: both return everything that account may see. So a full '
@@ -1746,7 +1770,7 @@
       // MEASURED 2026-08-12: this is the branch the first run hit, and
       // before this branch existed it fell into the one below and blamed
       // the account. The refusal is identical; only the diagnosis changed.
-      record('S10', S10_Q, 'NOT ESTABLISHED (pasted on the caller\'s own personal site)',
+      record('search.discovery.security-trimming', S10_Q, 'NOT ESTABLISHED (pasted on the caller\'s own personal site)',
              `${whoRan}, and ${siteKind}. IsSiteAdmin IS TRUE HERE AND THAT IS EXPECTED AND UNIVERSAL: `
              + 'A USER IS ALWAYS SITE COLLECTION ADMINISTRATOR OF THEIR OWN ONEDRIVE. So this bit says '
              + 'NOTHING about tenant-wide privilege, IT IS NOT EVIDENCE THAT THIS ACCOUNT HAS BROAD '
@@ -1761,14 +1785,14 @@
              + 'LANDS ON YOUR OWN ONEDRIVE, which is how this run ended up here. S1-S9 are unaffected: '
              + `search trims on the identity, not on the site pasted into. ${seenLine}`);
     } else if (callerIsSiteAdmin === true) {
-      record('S10', S10_Q, 'NOT ESTABLISHED (the flag contradicts the caller)',
+      record('search.discovery.security-trimming', S10_Q, 'NOT ESTABLISHED (the flag contradicts the caller)',
              `RUNNING_AS_READER was set to true, but ${whoRan}. IsSiteAdmin is true, so this is not `
              + 'the list-only reporting identity. Filing a site collection administrator\'s result set '
              + 'as a least-privilege measurement is exactly the fabrication this row exists to refuse, '
              + 'so it refuses. Either paste this as the service account, or set RUNNING_AS_READER back '
              + `to false and read the operator wording instead. ${seenLine}`);
     } else if (!searchAnswers && privilegeRefusal(controlStatus)) {
-      record('S10', S10_Q,
+      record('search.discovery.security-trimming', S10_Q,
              `OBSERVED: the reporting identity was REFUSED the search endpoint (HTTP ${controlStatus})`,
              `${whoRan}. S1, a trivial query, came back HTTP ${controlStatus} (${controlWhy}). THAT IS `
              + 'AN ANSWER, not a failed run: this identity cannot call _api/search/query on this site '
@@ -1779,14 +1803,14 @@
              + 'assume the endpoint is available to the identity it would run as. Nothing in S2-S9 can '
              + `be read as a search finding on this run; see their own rows. ${seenLine}`);
     } else if (!searchAnswers) {
-      record('S10', S10_Q, 'NOT ESTABLISHED (control open)',
+      record('search.discovery.security-trimming', S10_Q, 'NOT ESTABLISHED (control open)',
              `${whoRan}, running as the reader. S1 did not hold and not because of an identity `
              + `refusal (${controlWhy}), so the empty or partial result set below is about the `
              + 'endpoint, not about trimming. A caller who is served nothing because the endpoint is '
              + 'broken and a caller who is served nothing because it may see nothing produce the same '
              + `rows. Re-run before reading anything into it. ${seenLine}`);
     } else {
-      record('S10', S10_Q,
+      record('search.discovery.security-trimming', S10_Q,
              `OBSERVED (the trimmed view for this identity: ${listRows.length} STS_List row(s), `
              + `${siteRows.length} STS_Site row(s))`,
              `${whoRan}, RUNNING_AS_READER is true and IsSiteAdmin came back `
@@ -1814,7 +1838,7 @@
     }
   }
 
-  // ================= S11 / S12: SERVER-DRIVEN PAGING ===================
+  // ================= SERVER-DRIVEN PAGING (S11/S12) ====================
   // NOT A SEARCH QUESTION, and deliberately so. See the S11/S12 section in
   // the docblock: `_security_principals.js.j2` and `_reader_enrolment.js.j2`
   // both page with `$top=5000` and follow `d.__next`, and nobody has
@@ -1879,8 +1903,8 @@
         + 'been renamed, or this caller may not be able to read it. PASTE THIS INTO THE SITE THAT '
         + 'HOLDS IT, or point PAGING_FIXTURE_LIST at another large list and say which. THIS IS NOT '
         + '"paging does not work"; nothing was measured.';
-      record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: the fixture list could not be read)', why);
-      record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('query.odata.continuation-link-emitted', S11_Q, 'NOT ESTABLISHED (prerequisite: the fixture list could not be read)', why);
+      record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
     } else if (visibleRows === null || visibleRows === 0) {
       // PREREQUISITE, NEVER A FINDING, and this is the branch that stops a
       // trimmed caller producing a truncation verdict.
@@ -1893,8 +1917,8 @@
         + `      ${TRIMMING_NOTE} So the plain reading is that this caller simply has NO GRANT on this `
         + 'fixture\'s items. NOTHING ABOUT PAGING WAS MEASURED, and the 6,000-row read was not even '
         + `attempted.\n      ${OPERATOR_NOTE}\n      ${SCOPE_NOTE}`;
-      record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: this caller cannot read the fixture\'s items)', why);
-      record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('query.odata.continuation-link-emitted', S11_Q, 'NOT ESTABLISHED (prerequisite: this caller cannot read the fixture\'s items)', why);
+      record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
     } else {
       const itemCount = fixture.body.ItemCount;
       // NO $top AT ALL, the only form that can answer this. `$top` is
@@ -1939,8 +1963,8 @@
       if (verboseRows === null && nometaRows === null) {
         const why = `neither flavour returned an item collection from ${JSON.stringify(PAGING_FIXTURE_LIST)}.\n`
           + `      ${perFlavour}\n      Nothing about paging was measured. ${SCOPE_NOTE}`;
-        record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: the items could not be read)', why);
-        record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('query.odata.continuation-link-emitted', S11_Q, 'NOT ESTABLISHED (prerequisite: the items could not be read)', why);
+        record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
       } else {
         // Follow the VERBOSE link if there is one. That is the construct
         // both deploy templates depend on. Fall back to the nometadata
@@ -1958,20 +1982,20 @@
           // wording by any path. That is the whole defect this fixes, and a
           // caller whose one-item read succeeded while the full read came
           // back empty is stranger still, not more conclusive.
-          record('S11', S11_Q, 'NOT ESTABLISHED (zero items came back: this caller may see none of them)',
+          record('query.odata.continuation-link-emitted', S11_Q, 'NOT ESTABLISHED (zero items came back: this caller may see none of them)',
                  `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)} and `
                  + 'the no-$top read returned ZERO rows. THIS IS NOT A TRUNCATION FINDING and must not be '
                  + `quoted as one.\n      THE LEADING HYPOTHESIS IS ITEM-LEVEL TRIMMING. ${TRIMMING_NOTE} `
                  + 'Said plainly: THIS CALLER MAY SIMPLY HAVE NO GRANT ON THIS FIXTURE\'S ITEMS, and an '
                  + 'empty page with no continuation link is exactly what that looks like.\n'
                  + `      ${perFlavour}\n      ${OPERATOR_NOTE}\n      ${SCOPE_NOTE}\n      ${TRUNCATION_NOTE}`);
-          record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+          record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)',
                  'S11 got no items back, so there is no page to continue from; see its row.');
         } else if (wholeList) {
           // The server never had to page, so an absent link is expected and
           // says nothing. Recording it as a finding is the mistake the
           // 2026-08-11 enterprise-reader run made and had to withdraw.
-          record('S11', S11_Q,
+          record('query.odata.continuation-link-emitted', S11_Q,
                  'NOT ESTABLISHED (the collection was not larger than the server page size)',
                  `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)} `
                  + `and the no-$top read returned ${returned} row(s), the whole list. The server never `
@@ -1979,10 +2003,10 @@
                  + `pages.\n      ${perFlavour}\n      Point PAGING_FIXTURE_LIST at a list with more `
                  + `items than the server page size, which SharePoint does not document. Do NOT read `
                  + `this row as "the endpoint does not page". ${SCOPE_NOTE}`);
-          record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+          record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)',
                  'S11 could not discriminate, so there is nothing to follow; see its row.');
         } else {
-          record('S11', S11_Q,
+          record('query.odata.continuation-link-emitted', S11_Q,
                  `OBSERVED: ${returned} of ItemCount ${JSON.stringify(itemCount)} row(s) with no $top; `
                  + `continuation link ${link === null ? 'ABSENT' : `PRESENT via ${linkKind}`}`,
                  `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)}. `
@@ -1997,7 +2021,7 @@
                  + `      ${SCOPE_NOTE}\n      ${TRUNCATION_NOTE}`);
 
           if (link === null) {
-            record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+            record('query.odata.continuation-link-followed', S12_Q, 'NOT ESTABLISHED (prerequisite)',
                    'there was no continuation link to follow; see S11, which records what that does and '
                    + 'does not mean.');
           } else {
@@ -2015,7 +2039,7 @@
                  || (Array.isArray(body2.value) && body2.value) || null)
               : null;
             if (page2 === null) {
-              record('S12', S12_Q, outcomeFor({ status: res2.status }),
+              record('query.odata.continuation-link-followed', S12_Q, outcomeFor({ status: res2.status }),
                      `following ${linkKind} returned HTTP ${res2.status}: ${show(text2, 400)}`
                      + `${privilegeNote({ status: res2.status })}`);
             } else {
@@ -2025,7 +2049,7 @@
               const seen = new Set((pageOne || []).map((r) => r.Id));
               const fresh = page2.filter((r) => !seen.has(r.Id)).length;
               const next2 = body2.d ? body2.d.__next : (body2['odata.nextLink'] || body2['@odata.nextLink']);
-              record('S12', S12_Q,
+              record('query.odata.continuation-link-followed', S12_Q,
                      `OBSERVED: page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
                      `followed ${linkKind}. Page 1 held ${(pageOne || []).length} row(s); page 2 held `
                      + `${page2.length}, of which ${fresh} carried an Id page 1 did not. A further link `
@@ -2152,26 +2176,26 @@
   const phraseAnswered = census.filter((e) => e.byPhrase !== null);
   const phraseHits = phraseAnswered.filter((e) => e.byPhrase === true);
 
-  // ================= S6A: IS DESCRIPTION FILTERABLE HERE? ==============
+  // ================= description-filterable (S6A): IS IT FILTERABLE HERE? ===
   // depends on: this site having at least one list with a description.
   // observes:   whether a phrase out of a live description brings its list
   //             back through a Description: restriction, and whether the
   //             same phrase matches with no restriction at all.
   {
     if (localRows === null) {
-      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite)',
+      record('search.managed-prop.description-filterable', S6A_Q, 'NOT ESTABLISHED (prerequisite)',
              'web/lists could not be read, so there was no LIVE description to take a phrase out of: '
              + `${httpDetail(localLists)}${privilegeNote(localLists)} Nothing is concluded about whether `
              + 'Description can carry a query restriction.');
     } else if (described.length === 0) {
-      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
+      record('search.managed-prop.description-filterable', S6A_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
              `${localRows.length} visible list(s) were read from web/lists and NOT ONE has a non-empty `
              + 'Description, so there was nothing to query for. THIS IS AN UNMET PREREQUISITE AND NOT '
              + '"Description is not filterable": recording it the second way would be a fabricated '
              + 'verdict about a managed property. Run this on a site whose lists have descriptions, or '
              + 'as an identity that can see some, and paste again.');
     } else if (census.length === 0) {
-      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite: no usable list in the sample)',
+      record('search.managed-prop.description-filterable', S6A_Q, 'NOT ESTABLISHED (prerequisite: no usable list in the sample)',
              `${described.length} list(s) here carry a description but none could be sampled: `
              + `${censusUnusable} had a double quote in the title, which cannot be put into a KQL phrase `
              + 'without changing how the query parses. Nothing was measured.');
@@ -2180,7 +2204,7 @@
         + `${e.phrase === null
              ? 'no usable phrase: the description held fewer than two words of three or more characters'
              : `phrase ${JSON.stringify(e.phrase)}; the query did not answer: ${e.phraseFailure}`}`);
-      searchRecord('S6A', S6A_Q, 'NOT ESTABLISHED (no phrase query answered)',
+      searchRecord('search.managed-prop.description-filterable', S6A_Q, 'NOT ESTABLISHED (no phrase query answered)',
              `${census.length} list(s) were sampled and not one Description restriction came back with a `
              + `result set.\n${lines.join('\n')}`);
     } else {
@@ -2209,7 +2233,7 @@
                : `phrase ${JSON.stringify(e.phrase)} → ${e.phraseRows} row(s), and this list `
                  + `${e.byPhrase ? 'WAS' : 'was NOT'} among them`}`);
 
-      searchRecord('S6A', S6A_Q,
+      searchRecord('search.managed-prop.description-filterable', S6A_Q,
              `OBSERVED: ${phraseHits.length} of ${phraseAnswered.length} sampled list(s) came back from `
              + 'a Description restriction',
              `PREREQUISITE MET: ${described.length} of ${localRows.length} visible list(s) on this site `
@@ -2230,7 +2254,7 @@
     }
   }
 
-  // ================= S6: WHICH SPELLING SURVIVES WORD-BREAKING? ========
+  // ================= description-marker-spelling (S6): WHICH SPELLING SURVIVES? ===
   // SIX candidate spellings of the SAME marker, all in ONE description, so
   // a SINGLE CRAWL answers the whole matrix. Spelling them one per list
   // would cost one crawl interval each, and this tenant's interval is
@@ -2357,13 +2381,13 @@
 
   {
     if (markerBody === null) {
-      record('S6', S6_Q,
+      record('search.managed-prop.description-marker-spelling', S6_Q,
              cleanupRan ? 'NOT ESTABLISHED (cleanup run)' : 'NOT ESTABLISHED (no probe list to measure)',
              `${markerProblem}`);
     } else if (SPELLINGS.some(([, token]) => !markerDescription.includes(token))) {
       const missing = SPELLINGS.filter(([, token]) => !markerDescription.includes(token))
         .map(([label]) => label);
-      record('S6', S6_Q, 'NOT ESTABLISHED (prerequisite: the stored description is missing spellings)',
+      record('search.managed-prop.description-marker-spelling', S6_Q, 'NOT ESTABLISHED (prerequisite: the stored description is missing spellings)',
              `the list exists but its Description read back as ${show(markerDescription, 300)}, which `
              + `does not carry these candidate(s): ${missing.join('; ')}. The likeliest cause by far is `
              + 'an earlier run with a DIFFERENT MARKER_BASE. Either restore that base, or set CLEANUP = '
@@ -2402,7 +2426,7 @@
         lines.push(`      ${label}: ${JSON.stringify(token)}\n        ${parts.join('\n        ')}`);
       }
       const young = !Number.isFinite(ageHours) || ageHours < 24;
-      searchRecord('S6', S6_Q,
+      searchRecord('search.managed-prop.description-marker-spelling', S6_Q,
              hits > 0
                ? `OBSERVED: the probe list came back for ${hits} of ${answered} query form(s) that answered`
                : `NOT ESTABLISHED (no spelling matched yet${young ? '; the list is too new to read as an answer' : ''})`,
@@ -2429,7 +2453,7 @@
     }
   }
 
-  // ================= S6C: THE MIGRATION QUESTION =======================
+  // ================= description-edit-reindexed (S6C): THE MIGRATION QUESTION ===
   // Every already-deployed site would get its marker by RE-PASTE, which
   // EDITS an existing list rather than creating one. That is a different
   // code path, and S9 and S6 only ever measure CREATION.
@@ -2560,7 +2584,7 @@
         + `of ${looked.length} looked up`);
     }
     if (stampsAsked) outcomeParts.push(`${stampsFound} of ${stampsAsked} edit stamp(s) findable`);
-    searchRecord('S6C', S6C_Q,
+    searchRecord('search.crawl.description-edit-reindexed', S6C_Q,
            outcomeParts.length
              ? `OBSERVED: ${outcomeParts.join('; ')}`
              : 'NOT ESTABLISHED (nothing could be compared: see the evidence)',

@@ -29,7 +29,8 @@
  *
  * That the conjunct removes no ROWS is measured
  * (`query.caml.tautology-always-true`, 41 of 41, on
- * caml-chain-depth-probe.js; view-edit-page-probe.js S2). Whether it changes
+ * caml-chain-depth-probe.js; and `query.caml.tautology-alone-partitions`, S2
+ * in the view-edit-page-probe.js runs). Whether it changes
  * what SharePoint will SERVE past the list view threshold is a different
  * question, and both of those fixtures are far below it: 41 rows and 3.
  *
@@ -693,7 +694,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision 530fede7. Quote this when reporting results.');
+  log('INFO', 'probe revision 25cade7c. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read

@@ -266,6 +266,9 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `role-definition-probe.js` | `text` | `basepermissions-readback`, `getbyname-absent-status`, `web-assignments-enumerable` (was `R7`–`R9`) | `access.role-def.*` |
 | `threshold-index-probe.js` | `scale` | `indexed-filter`, `indexed-filter-guarded`, `unindexed-filter`, `unindexed-filter-guarded` (was `VWIDX`, `VWGRD`, `VWUNI`, `VWUGD`) | `view.threshold-render.*` |
 | `threshold-index-probe.js` | `scale` | `plain-clause-rows`, `negated-clause-rows` (was `EDTPLN`, `EDTNEG`) | `view.filter-editor.*` |
+| `search-discovery-probe.js` | `search` | `continuation-link-emitted`, `continuation-link-followed` (was `S11`, `S12`) | `query.odata.*` |
+| `view-edit-page-probe.js` | `view` | `guarded-single-clause-inert`, `tautology-alone-partitions` (was `S1`, `S2`) | `query.caml.*` |
+| `view-edit-page-probe.js` | `view` | `guarded-single-clause-stored` (was `Q1`) | `query.view-query.*` |
 
 Two probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
@@ -296,6 +299,10 @@ different questions and take different ids. They do not merge.
 | Is `Created` natively indexed | filter on it past the threshold | `scale.native-idx.created-threshold-filter` |
 | OData comparison on an indexed column past the threshold | a fixture the probe built and indexed itself | `scale.index.odata-comparison-indexed-text` |
 | OData comparison on an indexed column past the threshold | whichever list this web already had | `scale.index.odata-comparison-found-list` |
+| Is a tautology inert as a right-hand conjunct | one clause beside it, on a three-row list | `query.caml.guarded-single-clause-inert` |
+| Is a tautology inert as a right-hand conjunct | a twelve-clause chain, past the threshold | `query.caml.tautology-conjunct-inert` |
+| Does the tautology alone return every row | a three-row list, where "every" is countable by eye | `query.caml.tautology-alone-partitions` |
+| Does the tautology alone return every row | a forty-eight-member list built for the chain | `query.caml.tautology-always-true` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
