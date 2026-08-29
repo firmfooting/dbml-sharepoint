@@ -624,7 +624,9 @@ def test_multi_value_c14_exposes_a_capturable_view_and_retains_machine_replay() 
     template = (
         MANUAL / "templates" / "multi-value-probe.js.j2"
     ).read_text(encoding="utf-8")
-    c14 = template.split("// === C14:", 1)[1].split("// === V1:", 1)[0]
+    c14 = template.split("// === multichoice-chain-selects (C14):", 1)[1].split(
+        "// === multichoice-operand (V1):", 1
+    )[0]
 
     assert "$select=Title,ViewQuery,ServerRelativeUrl" in c14
     assert "const chainColumnOnView = chainStored" in c14

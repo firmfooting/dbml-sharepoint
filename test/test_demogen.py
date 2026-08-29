@@ -246,7 +246,9 @@ def _multi_value_js(members: list[str]) -> str:
 
 
 def test_a_multi_value_demo_value_plans_the_measured_write_shape() -> None:
-    """Measured 2026-08-17 as M3 by `test/manual/multi-value-probe.js`, run 3.
+    """Measured 2026-08-17 as `field.multichoice.item-write-shape`, run 3.
+
+    The row `test/manual/multi-value-probe.js` once called M3.
 
     The bare array a plain literal would have emitted is UNMEASURED: the probe
     tried its four candidates most-likely-first and broke on the first
@@ -268,12 +270,12 @@ def test_a_multi_value_demo_value_plans_the_measured_write_shape() -> None:
 
 
 def test_an_empty_multi_value_demo_value_omits_the_field() -> None:
-    """Omission is the only measured route to the `null` M4 read back.
+    """Omission is the only measured route to the `null` read back.
 
-    `multi-value-probe.js:586` seeds its empty row behind
-    `if (row.values.length)`, so the field never reached the payload and the
-    column read back `null` on 2026-08-17. Writing `null` is a shape nobody
-    has sent.
+    `multi-value-probe.js` seeds its empty row behind
+    `if (row.values.length)`, so the field never reached the payload and
+    `field.multichoice.item-read-shape` (once M4) read the column back as
+    `null` on 2026-08-17. Writing `null` is a shape nobody has sent.
     """
     from dbml_sharepoint.generators.demogen import _field_plan
 

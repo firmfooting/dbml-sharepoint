@@ -5,6 +5,48 @@
  * indexing, CAML membership/null behavior, stored views, unsupported formula
  * operands and rendered severity formatting. The catalogue owns the finding
  * inventory and visible state matrix. Historical runs belong in evidence.
+ *
+ * Ids follow the grammar in `test/manual/SURFACES.md`,
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is given
+ * beside it below, because the comments in this file and every run reported
+ * against this probe quote the mnemonics:
+ *
+ *   field.multichoice.fixture-list-seeded              (Q0)
+ *   field.multichoice.create-plain-post                (M1)
+ *   field.multichoice.create-readback-type             (M2)
+ *   field.multichoice.item-write-shape                 (M3)
+ *   field.multichoice.item-read-shape                  (M4)
+ *   field.multichoice.item-rewrite-member-order        (M5)
+ *   field.multichoice.indexed-property                 (I1)
+ *   field.multichoice.control-single-value-indexed     (I1C)
+ *   field.multichoice.enforce-unique-values            (I2)
+ *   field.multichoice.severity-formatter-render        (X1)
+ *   query.caml-adhoc.multichoice-eq                    (C1)
+ *   query.caml-adhoc.multichoice-eq-delimited-value    (C2)
+ *   query.caml-adhoc.multichoice-contains              (C3)
+ *   query.caml-adhoc.multichoice-includes              (C4)
+ *   query.caml-adhoc.multichoice-notincludes           (C5)
+ *   query.caml-adhoc.multichoice-isnull                (C6)
+ *   query.caml-adhoc.multichoice-isnotnull             (C7)
+ *   query.caml-adhoc.multichoice-neq                   (C9)
+ *   query.caml-adhoc.multichoice-neq-isnull-wrapper    (C10)
+ *   query.caml-adhoc.multichoice-and-membership        (C11)
+ *   query.caml-adhoc.multichoice-or-membership         (C12)
+ *   query.caml-adhoc.multichoice-eq-empty-value        (C13)
+ *   query.view-query.multichoice-membership-selects    (C8)
+ *   query.view-query.multichoice-chain-selects         (C14)
+ *   formula.validation.multichoice-operand             (V1)
+ *   formula.calc.operand-multichoice                   (F1)
+ *
+ * Only the field questions file under this probe's own surface. A check is
+ * keyed to the surface of its own question, and the C rows ask what CAML
+ * does, not what the column type is. The scope splits them by the surface
+ * that carries the query: C1 to C7 and C9 to C13 go through an ad-hoc
+ * `CamlQuery` on `GetItems`, while C8 and C14 store a view `ViewQuery`,
+ * which is the contrast the pair exists to draw. V1 and F1 ask whether a
+ * formula accepts the column as an operand, which is a `formula` question
+ * and sits beside the same question asked of every other type by
+ * `calculated-operand-probe.js` and `calculated-choice-operand.js`.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -97,32 +139,32 @@
         detail: 'Storage changed the predicate result after all machine controls succeeded.',
       };
   };
-  expect('Q0', 'the fixture actually built: two fields, four rows, seeded sets as asked');
-  expect('M1', 'a MultiChoice field is created by a plain POST to /fields');
-  expect('M2', 'the created field reads back as MultiChoice');
-  expect('M3', 'which item WRITE shape SharePoint accepts');
-  expect('M4', 'what an item value READS BACK as');
-  expect('M5', 'a re-write round-trips, and member order survives');
-  expect('I1', 'Indexed:true on a MultiChoice: accepted? and what does it read back as?');
-  expect('I1C', 'CONTROL: Indexed:true on the SINGLE-value Choice, where Learn says it is supported');
-  expect('I2', 'EnforceUniqueValues:true on a MultiChoice: accepted? readback?');
-  expect('C1', 'CAML <Eq> "View" returns which rows');
-  expect('C2', 'CAML <Eq> "View;#Edit" returns which rows');
-  expect('C3', 'CAML <Contains> "View" returns which rows');
-  expect('C4', 'CAML <Includes> "View" returns which rows');
-  expect('C5', 'CAML <NotIncludes> "View" returns which rows');
-  expect('C6', 'CAML <IsNull> returns which rows');
-  expect('C7', 'CAML <IsNotNull> returns which rows');
-  expect('C8', 'the winning predicate survives being STORED as a view ViewQuery (manual: look)');
-  expect('C9', 'CAML <Neq> "View" returns which rows');
-  expect('C10', 'CAML <Or><Neq><IsNull> "View" -- the deployer\'s own neq wrapper -- returns which rows');
-  expect('C11', 'CAML <And> over two membership tests: does it mean "contains BOTH"?');
-  expect('C12', 'CAML <Or> over two membership tests: does it mean "contains EITHER"?');
-  expect('C13', 'CAML <Eq> against an EMPTY value: is it itself a null test?');
-  expect('C14', 'a chained any_of predicate survives being STORED as a view ViewQuery');
-  expect('V1', 'a ValidationFormula may reference a MultiChoice column');
-  expect('F1', 'a calculated column formula may reference a MultiChoice column');
-  expect('X1', 'the severity formatter this repo generates, on an array (manual: look)');
+  expect('field.multichoice.fixture-list-seeded', 'the fixture actually built: two fields, four rows, seeded sets as asked');
+  expect('field.multichoice.create-plain-post', 'a MultiChoice field is created by a plain POST to /fields');
+  expect('field.multichoice.create-readback-type', 'the created field reads back as MultiChoice');
+  expect('field.multichoice.item-write-shape', 'which item WRITE shape SharePoint accepts');
+  expect('field.multichoice.item-read-shape', 'what an item value READS BACK as');
+  expect('field.multichoice.item-rewrite-member-order', 'a re-write round-trips, and member order survives');
+  expect('field.multichoice.indexed-property', 'Indexed:true on a MultiChoice: accepted? and what does it read back as?');
+  expect('field.multichoice.control-single-value-indexed', 'CONTROL: Indexed:true on the SINGLE-value Choice, where Learn says it is supported');
+  expect('field.multichoice.enforce-unique-values', 'EnforceUniqueValues:true on a MultiChoice: accepted? readback?');
+  expect('query.caml-adhoc.multichoice-eq', 'CAML <Eq> "View" returns which rows');
+  expect('query.caml-adhoc.multichoice-eq-delimited-value', 'CAML <Eq> "View;#Edit" returns which rows');
+  expect('query.caml-adhoc.multichoice-contains', 'CAML <Contains> "View" returns which rows');
+  expect('query.caml-adhoc.multichoice-includes', 'CAML <Includes> "View" returns which rows');
+  expect('query.caml-adhoc.multichoice-notincludes', 'CAML <NotIncludes> "View" returns which rows');
+  expect('query.caml-adhoc.multichoice-isnull', 'CAML <IsNull> returns which rows');
+  expect('query.caml-adhoc.multichoice-isnotnull', 'CAML <IsNotNull> returns which rows');
+  expect('query.view-query.multichoice-membership-selects', 'the winning predicate survives being STORED as a view ViewQuery (manual: look)');
+  expect('query.caml-adhoc.multichoice-neq', 'CAML <Neq> "View" returns which rows');
+  expect('query.caml-adhoc.multichoice-neq-isnull-wrapper', 'CAML <Or><Neq><IsNull> "View" -- the deployer\'s own neq wrapper -- returns which rows');
+  expect('query.caml-adhoc.multichoice-and-membership', 'CAML <And> over two membership tests: does it mean "contains BOTH"?');
+  expect('query.caml-adhoc.multichoice-or-membership', 'CAML <Or> over two membership tests: does it mean "contains EITHER"?');
+  expect('query.caml-adhoc.multichoice-eq-empty-value', 'CAML <Eq> against an EMPTY value: is it itself a null test?');
+  expect('query.view-query.multichoice-chain-selects', 'a chained any_of predicate survives being STORED as a view ViewQuery');
+  expect('formula.validation.multichoice-operand', 'a ValidationFormula may reference a MultiChoice column');
+  expect('formula.calc.operand-multichoice', 'a calculated column formula may reference a MultiChoice column');
+  expect('field.multichoice.severity-formatter-render', 'the severity formatter this repo generates, on an array (manual: look)');
 
   // Shared probe core v2: context guard, bounded transport and REST helpers.
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
@@ -143,7 +185,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 3719d274; core v2; results v1.`);
+  log('INFO', `probe revision 061d4de5; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -366,14 +408,14 @@
       Description: PROBE_DESCRIPTION,
     });
     if (!made.ok) {
-      record('Q0', 'the fixture actually built', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
+      record('field.multichoice.fixture-list-seeded', 'the fixture actually built', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
       throw new Error('setup failed');
     }
     createdList = true;
     listDefaultUrl = made.d?.DefaultViewUrl || null;
     log('INFO', `Created '${PROBE_LIST}'.`);
 
-    // === M1: the deployer's own create path, unchanged =====================
+    // === create-plain-post (M1): the deployer's own create path, unchanged ====
     // This is deliberately the SAME shape jsgen._field_body builds for a
     // single-value Choice (POST the whole body to /fields), with only
     // FieldTypeKind and __metadata.type changed. If a MultiChoice needs the
@@ -387,7 +429,7 @@
       FillInChoice: false,
     });
     record(
-      'M1',
+      'field.multichoice.create-plain-post',
       'a MultiChoice field is created by a plain POST to /fields',
       createdMulti.ok ? 'ACCEPTED' : 'REFUSED',
       createdMulti.ok
@@ -395,7 +437,7 @@
         : `HTTP ${createdMulti.status}: ${createdMulti.error}`,
     );
     if (!createdMulti.ok) {
-      record('Q0', 'the fixture actually built', 'ABORTED', 'the MultiChoice field could not be created, so nothing below can be asked');
+      record('field.multichoice.fixture-list-seeded', 'the fixture actually built', 'ABORTED', 'the MultiChoice field could not be created, so nothing below can be asked');
       throw new Error('setup failed');
     }
 
@@ -434,12 +476,12 @@
     }
     log('INFO', `Added to the default view: ${onDefaultView.join(' ')}`);
 
-    // === M2: what did we actually get? =====================================
+    // === create-readback-type (M2): what did we actually get? ================
     const shape = await get(
       `${fieldPath(MULTI)}?$select=InternalName,TypeAsString,FieldTypeKind,Choices,FillInChoice,Indexed,EnforceUniqueValues`,
     );
     record(
-      'M2',
+      'field.multichoice.create-readback-type',
       'the created field reads back as MultiChoice',
       shape.ok ? 'READ' : 'UNREADABLE',
       shape.ok
@@ -449,7 +491,7 @@
         : `HTTP ${shape.status}: ${shape.error}`,
     );
 
-    // === M3: which write shape does SharePoint take? =======================
+    // === item-write-shape (M3): which write shape does SharePoint take? ======
     // R2 is the seeding row for this question because it has two members, and
     // a one-member set cannot distinguish a collection from a scalar.
     const itemType = await entityTypeFor(PROBE_LIST);
@@ -471,7 +513,7 @@
       winningError += `${candidate.name}: HTTP ${attempt.status} ${attempt.error}; `;
     }
     record(
-      'M3',
+      'field.multichoice.item-write-shape',
       'which item WRITE shape SharePoint accepts',
       winningShape ? `ACCEPTED: ${winningShape.name}` : 'ALL FOUR REFUSED',
       winningShape
@@ -480,7 +522,7 @@
         : winningError,
     );
     if (!winningShape) {
-      record('Q0', 'the fixture actually built', 'ABORTED', 'no write shape was accepted, so no fixture exists and no C row means anything');
+      record('field.multichoice.fixture-list-seeded', 'the fixture actually built', 'ABORTED', 'no write shape was accepted, so no fixture exists and no C row means anything');
       throw new Error('setup failed');
     }
 
@@ -497,7 +539,7 @@
       if (!seeded.ok) seedErrors.push(`${row.title}: HTTP ${seeded.status} ${seeded.error}`);
     }
 
-    // === M4: what does it read back as? ====================================
+    // === item-read-shape (M4): what does it read back as? ====================
     // Both content types, because the deployer speaks verbose and the reporting
     // layer's Power Query speaks nometadata, and they need not agree.
     // `Id` is selected because M5 re-writes R2 by id. The first run of this
@@ -519,7 +561,7 @@
       : `nometadata: REQUEST FAILED HTTP ${backNoMeta.status}: ${backNoMeta.error} `
         + '(not observed to be empty, not observed at all)';
     record(
-      'M4',
+      'field.multichoice.item-read-shape',
       'what an item value READS BACK as',
       backVerbose.ok && backNoMeta.ok && verboseRows.length
         ? 'READ'
@@ -530,7 +572,7 @@
       + ` || ${noMetaDetail}`,
     );
 
-    // === Q0: the fixture control ===========================================
+    // === fixture-list-seeded (Q0): the fixture control =======================
     // Asserted, because everything below DEPENDS on it. The seeded sets are
     // compared to what was asked for, by member and ignoring order, because
     // order is M5's question, not this one.
@@ -560,7 +602,7 @@
     const fixtureUsable = multiTypeOk && !seedErrors.length && !wrongRows.length
       && verboseRows.length === ROWS.length;
     record(
-      'Q0',
+      'field.multichoice.fixture-list-seeded',
       'the fixture actually built: two fields, four rows, seeded sets as asked',
       (fixtureUsable && createdSingle.ok) ? 'BUILT' : 'FAILED',
       `rows=${verboseRows.length}/${ROWS.length} ${MULTI} TypeAsString=${show(shape.d?.TypeAsString)} `
@@ -575,7 +617,7 @@
       log('ERROR', 'The fixture is not what the C rows assume. Every predicate result below is meaningless until this is fixed.');
     }
 
-    // === M5: idempotent re-write, and order ================================
+    // === item-rewrite-member-order (M5): idempotent re-write, and order ======
     // The deployer's ONLY array comparator (Choices, in _field_reconcile) is
     // order-sensitive. If SharePoint normalises member order on write, a
     // re-run comparing exactly would see permanent drift.
@@ -630,12 +672,12 @@
           + 'C1..C10 read R2, so their rows are NOT ESTABLISHED from this run.');
       }
     }
-    record('M5', 'a re-write round-trips, and member order survives', m5observed, m5detail + r2RestoreNote);
+    record('field.multichoice.item-rewrite-member-order', 'a re-write round-trips, and member order survives', m5observed, m5detail + r2RestoreNote);
     // What the CAML rows actually depend on: the seeded fixture AND R2 having
     // been put back after M5 mutated it.
     const camlFixtureUsable = fixtureUsable && r2Restored;
 
-    // === I1 / I1C: the index question, and its control =====================
+    // === indexed-property (I1 / I1C): the index question, and its control ====
     // The GET is kept, not flattened to a placeholder. A readback that never
     // arrived is not an observation of `false`: folding a transport failure
     // into the value would let it print as ACCEPTED BUT DID NOT STICK, which
@@ -660,7 +702,7 @@
     // failure for evidence about the property.
     const controlHeld = singleIndex.wrote.ok && singleIndex.back.ok && singleIndex.back.d?.Indexed === true;
     record(
-      'I1C',
+      'field.multichoice.control-single-value-indexed',
       'CONTROL: Indexed:true on the SINGLE-value Choice, where Learn says it is supported',
       controlHeld
         ? 'STUCK'
@@ -669,7 +711,7 @@
       + `readback Indexed=${indexReadback(singleIndex)}`,
     );
     record(
-      'I1',
+      'field.multichoice.indexed-property',
       'Indexed:true on a MultiChoice: accepted? and what does it read back as?',
       controlHeld
         ? (multiIndex.wrote.ok
@@ -697,7 +739,7 @@
       controlHeld ? undefined : 'void',
     );
 
-    // === I2: uniqueness ====================================================
+    // === enforce-unique-values (I2): uniqueness ==============================
     // Learn lists "Choice (multi-valued)" as unable to enforce unique values.
     // Whether REST refuses it or silently drops it decides whether the
     // validator's refusal is a convenience or a necessity.
@@ -723,7 +765,7 @@
         + `with Indexed:true: ${uniquePaired.ok ? `HTTP ${uniquePaired.status}` : `REFUSED HTTP ${uniquePaired.status} ${uniquePaired.error}`}. `
       : `alone: HTTP ${uniqueAlone.status} (no paired attempt needed). `;
     record(
-      'I2',
+      'field.multichoice.enforce-unique-values',
       'EnforceUniqueValues:true on a MultiChoice: accepted? readback?',
       uniqueWrite.ok
         // An unreadable readback is not the same answer as a readback of
@@ -760,7 +802,7 @@
         + 'V1\'s save test will not run against an unknown field state.');
     }
 
-    // === C1..C7: which rows does each predicate actually return? ===========
+    // === query.caml-adhoc.* (C1..C7): which rows does each predicate return? =
     //
     // NOTHING HERE IS ASSERTED. Each row records the titles that came back and
     // the probe prints, beside them, the interpretation each possible answer
@@ -773,32 +815,32 @@
     const ref = `<FieldRef Name="${MULTI}"/>`;
     const textValue = (v) => `<Value Type="Text">${v}</Value>`;
     const predicates = [
-      ['C1', 'Eq "View"', `<Eq>${ref}${textValue('View')}</Eq>`,
+      ['query.caml-adhoc.multichoice-eq', 'Eq "View"', `<Eq>${ref}${textValue('View')}</Eq>`,
         'R1 only means Eq compares the WHOLE SET; R1+R2 means Eq behaves as "includes"; nothing means Eq is unusable here'],
-      ['C2', 'Eq "View;#Edit"', `<Eq>${ref}${textValue('View;#Edit')}</Eq>`,
+      ['query.caml-adhoc.multichoice-eq-delimited-value', 'Eq "View;#Edit"', `<Eq>${ref}${textValue('View;#Edit')}</Eq>`,
         'R2 only would mean the stored value is the ;#-delimited string and Eq matches it literally'],
-      ['C3', 'Contains "View"', `<Contains>${ref}${textValue('View')}</Contains>`,
+      ['query.caml-adhoc.multichoice-contains', 'Contains "View"', `<Contains>${ref}${textValue('View')}</Contains>`,
         'Learn documents Contains for Text/Note only. R1+R2 means it works anyway; nothing means it does not'],
-      ['C4', 'Includes "View"', `<Includes>${ref}${textValue('View')}</Includes>`,
+      ['query.caml-adhoc.multichoice-includes', 'Includes "View"', `<Includes>${ref}${textValue('View')}</Includes>`,
         'Learn documents Includes for multi-value LOOKUP only. R1+R2 means it also serves MultiChoice, which is '
         + 'the answer the condition grammar needs; nothing means the grammar has no membership operator at all'],
-      ['C5', 'NotIncludes "View"', `<NotIncludes>${ref}${textValue('View')}</NotIncludes>`,
+      ['query.caml-adhoc.multichoice-notincludes', 'NotIncludes "View"', `<NotIncludes>${ref}${textValue('View')}</NotIncludes>`,
         'R3 only means the empty row R4 is EXCLUDED (three-valued, like every other CAML negative); R3+R4 means '
         + 'it is included. The deployer already wraps `neq` in <Or><IsNull> for exactly this reason'],
-      ['C6', 'IsNull', `<IsNull>${ref}</IsNull>`, 'R4 only is the expected shape of a working null test'],
-      ['C7', 'IsNotNull', `<IsNotNull>${ref}</IsNotNull>`, 'R1+R2+R3 is the expected shape'],
+      ['query.caml-adhoc.multichoice-isnull', 'IsNull', `<IsNull>${ref}</IsNull>`, 'R4 only is the expected shape of a working null test'],
+      ['query.caml-adhoc.multichoice-isnotnull', 'IsNotNull', `<IsNotNull>${ref}</IsNotNull>`, 'R1+R2+R3 is the expected shape'],
       // Added after the first live run, which left NEGATION with no working
       // predicate at all: <NotIncludes> returned nothing, and <Eq> turned out
       // to mean "includes" -- so its negation is the obvious candidate and was
       // never asked. If this also returns nothing, the condition grammar must
       // REFUSE every negative operator on a multi-value column by name, rather
       // than emit a filter that silently shows an empty view.
-      ['C9', 'Neq "View"', `<Neq>${ref}${textValue('View')}</Neq>`,
+      ['query.caml-adhoc.multichoice-neq', 'Neq "View"', `<Neq>${ref}${textValue('View')}</Neq>`,
         'R3 only means Neq is the negative membership operator and excludes the empty row R4, like every other '
         + 'CAML negative; R3+R4 means it includes it; nothing means negation is unavailable and must be refused'],
       // The mirror of C9 in the shape the deployer actually emits for `neq`.
       // If C9 works but this does not, the wrapper is the problem, not Neq.
-      ['C10', 'Or[Neq "View", IsNull]',
+      ['query.caml-adhoc.multichoice-neq-isnull-wrapper', 'Or[Neq "View", IsNull]',
         `<Or><Neq>${ref}${textValue('View')}</Neq><IsNull>${ref}</IsNull></Or>`,
         'R3+R4 is what the deployer\'s existing `neq` wrapper is for -- it exists so a null row is not silently '
         + 'dropped by a negative. Anything else means the wrapper does not compose with a multi-value column'],
@@ -813,12 +855,12 @@
       // here. Composition over a set is not the same question as composition
       // over a scalar, and a grammar that offers `and` on a multi-value
       // column without measuring it would be guessing which of the two it is.
-      ['C11', 'And[Eq "View", Eq "Edit"]',
+      ['query.caml-adhoc.multichoice-and-membership', 'And[Eq "View", Eq "Edit"]',
         `<And><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Edit')}</Eq></And>`,
         'R2 only means And over two membership tests is "contains BOTH", which is the useful reading and the '
         + 'one the grammar would expose. Nothing means SharePoint cannot conjoin two predicates over the same '
         + 'multi-value column at all, and `and` must be refused on one'],
-      ['C12', 'Or[Eq "View", Eq "Export"]',
+      ['query.caml-adhoc.multichoice-or-membership', 'Or[Eq "View", Eq "Export"]',
         `<Or><Eq>${ref}${textValue('View')}</Eq><Eq>${ref}${textValue('Export')}</Eq></Or>`,
         'R1+R2+R3 means Or is "contains EITHER". Anything narrower means Or does not distribute over membership '
         + 'the way it does over a scalar equality, and the grammar must say so rather than emit it'],
@@ -827,7 +869,7 @@
       // the same ROWS as C6, but not necessarily the same PREDICATE: the pane
       // may have rewritten it to <IsNull/>. Which one it is decides what the
       // renderer must emit for `col eq ''`, so it is asked directly here.
-      ['C13', 'Eq "" (empty value)', `<Eq>${ref}${textValue('')}</Eq>`,
+      ['query.caml-adhoc.multichoice-eq-empty-value', 'Eq "" (empty value)', `<Eq>${ref}${textValue('')}</Eq>`,
         'R4 means an empty-valued Eq is itself a null test on this type, so `col eq \'\'` may render literally. '
         + 'Nothing means only <IsNull> tests null and the renderer must translate, which is what the UI pane '
         + 'appears to do. Either way C6 remains the operator the grammar should emit'],
@@ -848,7 +890,7 @@
     // broken compound, and the verdict line would report it as
     // caml_membership. C1 wins first in practice; this makes that structural
     // rather than a consequence of array order.
-    const MEMBERSHIP_CANDIDATES = new Set(['C1', 'C2', 'C3', 'C4', 'C5']);
+    const MEMBERSHIP_CANDIDATES = new Set(['query.caml-adhoc.multichoice-eq', 'query.caml-adhoc.multichoice-eq-delimited-value', 'query.caml-adhoc.multichoice-contains', 'query.caml-adhoc.multichoice-includes', 'query.caml-adhoc.multichoice-notincludes']);
     let membershipWinner = null;
     for (const [id, label, where, meaning] of predicates) {
       const got = await camlRows(where);
@@ -874,7 +916,7 @@
       }
     }
 
-    // === C8: does it survive being STORED? =================================
+    // === multichoice-membership-selects (C8): does it survive being STORED? ==
     // Every C row above used an ad-hoc CamlQuery. The deployer writes a VIEW's
     // ViewQuery, and SharePoint rewrites that XML on save. datetime-sentinel-
     // probe.js found an element that worked in one position and silently
@@ -901,7 +943,7 @@
         ? await post(`${listPath}/views/getbytitle('${odataName(VIEW_TITLE)}')/viewfields/addviewfield('${odataName(MULTI)}')`)
         : { ok: false, status: 0, error: 'the view was never created' };
       record(
-        'C8',
+        'query.view-query.multichoice-membership-selects',
         'the winning predicate survives being STORED as a view ViewQuery (manual: look)',
         view.ok && stored && columnOnView.ok && camlFixtureUsable ? 'MANUAL' : 'NOT ESTABLISHED',
         view.ok && stored && columnOnView.ok
@@ -922,7 +964,7 @@
       );
     } else {
       record(
-        'C8',
+        'query.view-query.multichoice-membership-selects',
         'the winning predicate survives being STORED as a view ViewQuery',
         'NOT REACHED',
         'no predicate above returned exactly the two View-bearing rows, so there was nothing to confirm. '
@@ -930,7 +972,7 @@
       );
     }
 
-    // === C14: does a CHAINED predicate survive storage? ====================
+    // === multichoice-chain-selects (C14): does a CHAINED predicate survive? ==
     // C8 stored ONE <Eq>. But <Includes> returned nothing here, so this
     // grammar has no set operator and tells authors to build one out of
     // all_of/any_of instead -- the refusal message says so in as many words.
@@ -994,7 +1036,7 @@
       viewUrl: chainViewUrl,
     });
     record(
-      'C14',
+      'query.view-query.multichoice-chain-selects',
       'a chained any_of predicate survives being STORED as a view ViewQuery',
       c14Outcome.observed,
       c14Outcome.observed === 'NOT ESTABLISHED'
@@ -1018,7 +1060,7 @@
               + 'answers a different question.'),
     );
 
-    // === V1: validation formula operand ====================================
+    // === multichoice-operand (V1): validation formula operand ================
     // mapping.md already records that validation formulas refuse Lookup and
     // Person operands. Multi-value is not documented either way.
     //
@@ -1067,7 +1109,7 @@
         + 'save could be a leftover uniqueness constraint rather than the validation formula';
     }
     record(
-      'V1',
+      'formula.validation.multichoice-operand',
       'a ValidationFormula may reference a MultiChoice column',
       validation.ok ? 'ACCEPTED' : 'REFUSED',
       validation.ok
@@ -1084,7 +1126,7 @@
       });
     }
 
-    // === F1: calculated-column operand =====================================
+    // === operand-multichoice (F1): calculated-column operand =================
     // The same question calculated-operand-probe.js asked of every other type
     // on 2026-07-30, asked of the one type that did not exist then.
     // Same discipline as V1: a field-creation 200 says the formula was taken,
@@ -1107,7 +1149,7 @@
       ? await get(`${listPath}/items?$select=Title,${odataName(CALC_FIELD)}&$orderby=Id`)
       : null;
     record(
-      'F1',
+      'formula.calc.operand-multichoice',
       'a calculated column formula may reference a MultiChoice column',
       calc.ok ? 'ACCEPTED' : 'REFUSED',
       calc.ok
@@ -1120,7 +1162,7 @@
         : `HTTP ${calc.status}: ${calc.error}`,
     );
 
-    // === X1: the formatter this repository actually generates ==============
+    // === severity-formatter-render (X1): the formatter this repo generates ===
     // Not an invented formatter, but the exact shape analysis/styles.py::_severity
     // emits, with the =if(@currentField == 'X', ...) chain its _condition()
     // builds. Learn documents @currentField on a MultiChoice as an ARRAY, so
@@ -1186,7 +1228,7 @@
     // formatter write that succeeds over an invisible column establishes
     // nothing about rendering.
     record(
-      'X1',
+      'field.multichoice.severity-formatter-render',
       'the severity formatter this repo generates, on an array (manual: look)',
       formatted.ok && formatterHeld && multiOnDefaultView.ok
         ? 'MANUAL'
@@ -1223,16 +1265,16 @@
 
     // === Verdict ===========================================================
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
-    const fixtureOk = results.find((r) => r.id === 'Q0')?.observed === 'BUILT';
+    const fixtureOk = results.find((r) => r.id === 'field.multichoice.fixture-list-seeded')?.observed === 'BUILT';
     log(
       'VERDICT',
       `fixture=${fixtureOk ? 'ok' : 'FAILED'} `
-      + `create=${results.find((r) => r.id === 'M1').observed} `
+      + `create=${results.find((r) => r.id === 'field.multichoice.create-plain-post').observed} `
       + `write_shape=${winningShape ? winningShape.name : 'none'} `
-      + `indexed=${results.find((r) => r.id === 'I1').observed} `
-      + `unique=${results.find((r) => r.id === 'I2').observed} `
-      + `validation=${results.find((r) => r.id === 'V1').observed} `
-      + `calculated=${results.find((r) => r.id === 'F1').observed}`,
+      + `indexed=${results.find((r) => r.id === 'field.multichoice.indexed-property').observed} `
+      + `unique=${results.find((r) => r.id === 'field.multichoice.enforce-unique-values').observed} `
+      + `validation=${results.find((r) => r.id === 'formula.validation.multichoice-operand').observed} `
+      + `calculated=${results.find((r) => r.id === 'formula.calc.operand-multichoice').observed}`,
     );
     // The VERDICT lines are what gets pasted back, so a value here is read as
     // the finding whatever the table beside it says. `membershipWinner` is

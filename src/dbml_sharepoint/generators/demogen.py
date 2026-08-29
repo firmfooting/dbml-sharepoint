@@ -86,10 +86,12 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any] |
                 f"got {value!r}.",
             )
         if not value:
-            # An empty list OMITS the field. `multi-value-probe.js:586` seeded
-            # its empty row behind `if (row.values.length)` and M4 measured
-            # that column reading back `null` (2026-08-17), so omission is the
-            # only route to an unset column that anything has sent.
+            # An empty list OMITS the field. `multi-value-probe.js` seeded its
+            # empty row behind `if (row.values.length)` under
+            # `field.multichoice.fixture-list-seeded`, and
+            # `field.multichoice.item-read-shape` (once M4) measured that column
+            # reading back `null` (2026-08-17), so omission is the only route to
+            # an unset column that anything has sent.
             return None
         return {
             "name": name,

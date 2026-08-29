@@ -47,6 +47,35 @@
  * deploy, so on a fresh site it reported NOT ESTABLISHED and told the
  * operator to go and guess. The census costs the same number of requests.
  *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the prose here and the runs below quote the
+ * mnemonics.
+ *
+ *   access.role-def.control-roledefinitions-readable  (R1) CONTROL: can this
+ *                                                          caller read
+ *                                                          web/roledefinitions
+ *                                                          at all?
+ *   access.role-def.read-level-basepermissions        (R2) what BasePermissions
+ *                                                          does THIS site's
+ *                                                          built-in Read carry?
+ *   access.role-def.read-level-customised             (R3) is a custom level
+ *                                                          wearing the name?
+ *   access.role-binding.web-scope-by-group            (R4) which groups hold a
+ *                                                          WEB-scope role
+ *                                                          assignment, and what?
+ *   access.role-binding.list-scope-by-group           (R5) which groups hold a
+ *                                                          LIST-scope one, and
+ *                                                          on what?
+ *   access.group.site-group-census                    (R6) what groups does
+ *                                                          this site have?
+ *
+ * All six are `access` questions, which is the surface this probe files
+ * under, but they sit in three different scopes because they are about three
+ * different things: what a level CAN do, what a principal HOLDS, and which
+ * principals exist. R1 to R3 share the `role-def` scope with
+ * `role-definition-probe.js` and ask different questions of it.
+ *
  * RUN 1, 2026-08-14, revision f0927e57, one Microsoft 365 group-connected
  * Team Site. Six questions, FOUR answered and two NOT ESTABLISHED, which is
  * the probe reporting its own failure rather than passing vacuously.
@@ -328,7 +357,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 3aecaf6b. Quote this when reporting results.');
+  log('INFO', 'probe revision 1ad24692. Quote this when reporting results.');
 
 
   // Learn's stock `Read`, for R3 to compare against. From "Permission levels
@@ -343,12 +372,12 @@
   // comparison that needs no external constant.
   const STOCK_READ_NOTE = 'compared against this site\'s own role definitions, not a remembered bitmap';
 
-  expect('R1', 'CONTROL: can this caller read web/roledefinitions at all?');
-  expect('R2', 'What BasePermissions does THIS site\'s built-in Read carry?');
-  expect('R3', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?');
-  expect('R4', 'Which groups hold a WEB-scope role assignment, and what?');
-  expect('R5', 'Which groups hold a LIST-scope role assignment, and on what?');
-  expect('R6', 'What groups does this site have, and what does each already hold?');
+  expect('access.role-def.control-roledefinitions-readable', 'CONTROL: can this caller read web/roledefinitions at all?');
+  expect('access.role-def.read-level-basepermissions', 'What BasePermissions does THIS site\'s built-in Read carry?');
+  expect('access.role-def.read-level-customised', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?');
+  expect('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?');
+  expect('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?');
+  expect('access.group.site-group-census', 'What groups does this site have, and what does each already hold?');
 
   if (!CONFIRMED) {
     log('INFO', 'PLAN. Nothing has been touched, and nothing would be.');
@@ -360,32 +389,32 @@
     return;
   }
 
-  // ---- R1: the control, before any absence is believed -------------------
+  // ---- control-roledefinitions-readable (R1): before any absence is believed --
   const defs = await spGet('web/roledefinitions?$select=Id,Name,Description,BasePermissions,RoleTypeKind&$top=100');
   if (readFailed(defs) || !Array.isArray(defs.body && defs.body.value)) {
-    record('R1', 'CONTROL: can this caller read web/roledefinitions at all?',
+    record('access.role-def.control-roledefinitions-readable', 'CONTROL: can this caller read web/roledefinitions at all?',
       `NOT ESTABLISHED (HTTP ${defs.status})`,
       'without this read, an empty binding list below would be indistinguishable from no access, which is the most dangerous wrong answer this probe could give. Re-run as a site owner.');
     report();
     return;
   }
   const rows = defs.body.value;
-  record('R1', 'CONTROL: can this caller read web/roledefinitions at all?',
+  record('access.role-def.control-roledefinitions-readable', 'CONTROL: can this caller read web/roledefinitions at all?',
     'PASS', `${rows.length} role definition(s) readable, so an empty result below means empty`);
 
-  // ---- R2: what Read actually is on this site ----------------------------
+  // ---- read-level-basepermissions (R2): what Read actually is on this site ----
   const read = rows.find((r) => r.Name === 'Read');
   if (!read) {
-    record('R2', 'What BasePermissions does THIS site\'s built-in Read carry?',
+    record('access.role-def.read-level-basepermissions', 'What BasePermissions does THIS site\'s built-in Read carry?',
       'NOT ESTABLISHED (no level named Read)',
       `this site's levels are: ${rows.map((r) => r.Name).join(', ')}. A site with no 'Read' is itself a finding for #199. The validator exempts that name and the ACL phase resolves it by name.`);
   } else {
-    record('R2', 'What BasePermissions does THIS site\'s built-in Read carry?',
+    record('access.role-def.read-level-basepermissions', 'What BasePermissions does THIS site\'s built-in Read carry?',
       'PASS',
       `Read: RoleTypeKind=${read.RoleTypeKind}, High=${read.BasePermissions && read.BasePermissions.High}, Low=${read.BasePermissions && read.BasePermissions.Low}, Description=${JSON.stringify(read.Description)}`);
   }
 
-  // ---- R3: is it plausibly customised? -----------------------------------
+  // ---- read-level-customised (R3): is it plausibly customised? ---------------
   // RoleTypeKind is the tell that needs no remembered constant: SharePoint
   // stamps a built-in with its type (Reader is 2). A level NAMED Read whose
   // type is None (0) is a CUSTOM level wearing the name, which is exactly
@@ -393,14 +422,14 @@
   // site the mapping did not create.
   if (read) {
     const customType = read.RoleTypeKind === 0;
-    record('R3', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?',
+    record('access.role-def.read-level-customised', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?',
       customType ? 'FAIL' : 'PASS',
       customType
         ? `RoleTypeKind=0 means SharePoint does not consider this a built-in: a CUSTOM level is wearing the name 'Read' on this site, and the deploy would bind to it. ${STOCK_READ_NOTE}`
         : `RoleTypeKind=${read.RoleTypeKind}, so SharePoint still regards this as the built-in Reader level. Its bitmap is reported in R2 and should be compared across tenants before anything relies on a specific value. ${STOCK_READ_NOTE}`);
   }
 
-  // ---- R6: survey every group on the site --------------------------------
+  // ---- site-group-census (R6): survey every group on the site ---------------
   // Run 1 asked about ONE named group and learned nothing, because the name
   // it defaulted to only exists AFTER a deploy of the branch that introduced
   // it. R4 and R5 came back NOT ESTABLISHED and the operator was told to go
@@ -413,40 +442,40 @@
   // census answers that where a single lookup cannot.
   const groups = await spGet('web/sitegroups?$select=Id,Title&$top=200');
   if (readFailed(groups) || !Array.isArray(groups.body && groups.body.value)) {
-    record('R6', 'What groups does this site have, and what does each already hold?',
+    record('access.group.site-group-census', 'What groups does this site have, and what does each already hold?',
       `NOT ESTABLISHED (HTTP ${groups.status})`, 'could not enumerate site groups');
-    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
+    record('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?',
       'NOT ESTABLISHED (no group list)', 'R6 could not enumerate the groups');
-    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
+    record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
       'NOT ESTABLISHED (no group list)', 'R6 could not enumerate the groups');
     report();
     return;
   }
   const byId = new Map(groups.body.value.map((g) => [g.Id, g.Title]));
   const named = (id) => byId.get(id) || `principal ${id}`;
-  record('R6', 'What groups does this site have, and what does each already hold?',
+  record('access.group.site-group-census', 'What groups does this site have, and what does each already hold?',
     'PASS',
     `${byId.size} site group(s): ${[...byId.values()].join(', ')}`);
 
-  // ---- R4: web-scope bindings, for every group ---------------------------
+  // ---- web-scope-by-group (R4): web-scope bindings, for every group ---------
   // The binding the ACL phase never looks at and never removes: it reconciles
   // web/lists/.../roleassignments only.
   const webAsg = await spGet('web/roleassignments?$expand=RoleDefinitionBindings&$top=200');
   if (readFailed(webAsg) || !Array.isArray(webAsg.body && webAsg.body.value)) {
-    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
+    record('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?',
       `NOT ESTABLISHED (HTTP ${webAsg.status})`, 'could not enumerate web role assignments');
   } else {
     const held = webAsg.body.value
       .filter((a) => byId.has(a.PrincipalId))
       .map((a) => `${named(a.PrincipalId)}: ${(a.RoleDefinitionBindings || []).map((b) => b.Name).join('+')}`);
-    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
+    record('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?',
       'PASS',
       held.length
         ? `${held.join('; ')}. Anything here beyond a derived Limited Access is inherited by every account enrolled into that group, and nothing in the deploy removes it.`
         : 'no site group holds a web-scope role assignment');
   }
 
-  // ---- R5: list-scope bindings, for every group, on every list -----------
+  // ---- list-scope-by-group (R5): list-scope bindings, on every list ---------
   // HasUniqueRoleAssignments is what makes this readable. A list that
   // INHERITS returns the web's assignments verbatim, so run 1 reported every
   // group against nearly every list -- ~110 entries, of which the handful
@@ -455,7 +484,7 @@
   // scope, which R4 already reports. Inherited lists are counted, not listed.
   const lists = await spGet("web/lists?$select=Id,Title,Hidden,HasUniqueRoleAssignments&$top=500");
   if (readFailed(lists) || !Array.isArray(lists.body && lists.body.value)) {
-    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
+    record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
       `NOT ESTABLISHED (HTTP ${lists.status})`, 'could not enumerate lists');
   } else {
     const visible = lists.body.value.filter((l) => !l.Hidden);
@@ -475,7 +504,7 @@
     // The unreadable count is REPORTED, not swallowed. A list this caller
     // cannot read the ACL of is a list this probe cannot clear, and a
     // summary that omitted it would overstate what was checked.
-    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
+    record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
       'PASS',
       `${unique.length} of ${visible.length} visible list(s) have UNIQUE permissions and were inspected; `
       + `the other ${visible.length - unique.length} inherit from the web, so their bindings are R4's, not their own`

@@ -1643,8 +1643,9 @@ def test_an_empty_member_name_is_refused_on_a_multi_value_column() -> None:
 
     `_TEXT_OPS` carries `contains` and `begins_with` and NOT the membership
     operators, so nothing refused this. It reached `to_caml` and rendered
-    `<Eq>` against an empty value, which multi-value-probe.js C13 measured on
-    2026-08-17 as matching NO rows on a MultiChoice.
+    `<Eq>` against an empty value, which multi-value-probe.js
+    `query.caml-adhoc.multichoice-eq-empty-value` measured on 2026-08-17 as
+    matching NO rows on a MultiChoice.
 
     That measurement is why this is a defect rather than a tidiness rule, and
     why it reads differently from its text-operator sibling: an empty needle

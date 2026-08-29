@@ -8,7 +8,9 @@
  *
  * WHY. `<Includes>` and `<NotIncludes>`, the only two operators Microsoft
  * documents for multi-value columns, return NOTHING against a MultiChoice
- * (test/manual/multi-value-probe.js, C4 and C5, measured 2026-08-10 and
+ * (test/manual/multi-value-probe.js,
+ * query.caml-adhoc.multichoice-includes and .multichoice-notincludes, the
+ * rows once called C4 and C5, measured 2026-08-10 and
  * re-confirmed 2026-08-17). So this tool has no set operator, and
  * `MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED` tells the author to build one:
  * "combine several with all_of/any_of". That is the shipped remedy.
@@ -23,7 +25,8 @@
  * queries." This probe does not doubt that as a statement about a query
  * server. It doubts that it covers the VIEW SAVE, which is a different
  * surface: SharePoint rewrites ViewQuery XML, and a rewrite that still parses
- * and returns different rows is silent. multi-value-probe.js C8 stored one
+ * and returns different rows is silent. multi-value-probe.js
+ * query.view-query.multichoice-membership-selects (C8) stored one
  * <Eq> and nothing deeper; datetime-sentinel-probe.js already found an
  * element that worked in one position and returned nothing in the other.
  *
@@ -459,7 +462,8 @@
   // run 1 of this probe is why that is written down rather than assumed. Sent
   // without them, SharePoint types the payload as base `SP.Field` and answers
   // 400 "The property 'Choices' does not exist on type 'SP.Field'". The shape
-  // below is multi-value-probe.js M1's verbatim, which is known to work.
+  // below is verbatim from multi-value-probe.js
+  // field.multichoice.create-plain-post (M1), which is known to work.
   digest = await getDigest();
   const field = await spPost(`${listPath}/fields`, {
     __metadata: { type: 'SP.FieldMultiChoice' },
@@ -471,15 +475,17 @@
   if (!field.ok) {
     record('Q0', 'the fixture actually built', 'NOT ESTABLISHED',
       `the MultiChoice column could not be created: HTTP ${field.status} ${field.text.slice(0, 200)}. `
-      + 'This is multi-value-probe.js M1\'s exact create shape, which that probe measured as accepted on '
+      + 'This is the exact create shape of multi-value-probe.js '
+      + 'field.multichoice.create-plain-post (M1), which that probe measured as accepted on '
       + '2026-08-17, so a refusal here is a difference between the two runs and not a fact about '
       + 'MultiChoice.');
     await abandon('the column could not be created');
     return;
   }
 
-  // WHICH WRITE SHAPE, asked rather than assumed. multi-value-probe.js M3
-  // established `collection-metadata` under odata=verbose; this harness talks
+  // WHICH WRITE SHAPE, asked rather than assumed. multi-value-probe.js
+  // field.multichoice.item-write-shape (M3) established `collection-metadata`
+  // under odata=verbose; this harness talks
   // nometadata, where a bare array is the more likely spelling. Trying in
   // order and reporting the winner costs one request and removes a guess.
   //
@@ -630,8 +636,8 @@
     }
     const storedXml = String(back.ViewQuery || '');
     // SharePoint rewrites the XML COSMETICALLY on save, measured 2026-08-17
-    // by multi-value-probe.js C14: `<FieldRef Name="Evt"/>` came back as
-    // `<FieldRef Name="Evt" />`. A raw string comparison is therefore false
+    // by multi-value-probe.js query.view-query.multichoice-chain-selects
+    // (C14): `<FieldRef Name="Evt"/>` came back as `<FieldRef Name="Evt" />`. A raw string comparison is therefore false
     // on every row, and "REWRITTEN" would be printed for a run where nothing
     // structural happened, which is a signal that has been spent before it is
     // read. Whitespace is normalised so REWRITTEN means the tree changed.

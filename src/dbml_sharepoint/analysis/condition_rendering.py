@@ -776,11 +776,13 @@ def _check(leaf: Leaf, target: str, at: str) -> None:
         # Same code as the text operators above, deliberately different
         # reasoning, and the difference is the whole point. An empty needle
         # matches EVERY value under `contains`; measured on a live tenant on
-        # 2026-08-17 (multi-value-probe.js C13), CAML <Eq> against an empty
-        # value on a MultiChoice matches NONE. So this one is not merely
-        # undiscriminating, it renders a view that is empty forever, builds
-        # clean and deploys clean. `_TEXT_OPS` does not cover `includes`, so
-        # nothing refused this until C13 said what the empty case does.
+        # 2026-08-17 by multi-value-probe.js
+        # `query.caml-adhoc.multichoice-eq-empty-value` (once C13), CAML <Eq>
+        # against an empty value on a MultiChoice matches NONE. So this one is
+        # not merely undiscriminating, it renders a view that is empty forever,
+        # builds clean and deploys clean. `_TEXT_OPS` does not cover
+        # `includes`, so nothing refused this until that row said what the
+        # empty case does.
         raise _reject(
             ConditionRefusalKind.NEEDLE_EMPTY,
             target,
