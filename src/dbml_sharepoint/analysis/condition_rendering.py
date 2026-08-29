@@ -217,9 +217,13 @@ VALIDATION = "validation"
 # Conjoined onto a VIEW's filter so the classic filter editor refuses to open
 # it, which is what stops an operator truncating the filter. See #267 and
 # MAX_FILTER_EDITOR_CONDITIONS.
-# Measured 2026-08-17: the editor refuses this shape (caml-chain-depth-probe.js
-# W2, W4, T2), and the two halves return every row when asked alone, so
-# conjoining them removes nothing (T3, 41 of 41; view-edit-page-probe.js S2).
+# Measured 2026-08-17 on `caml-chain-depth-probe.js`: the editor refuses this
+# shape (`view.filter-editor.wrapper-group-left-editable`,
+# `view.filter-editor.wrapper-group-right-editable` and
+# `view.filter-editor.tautology-guard-editable`, W2/W4/T2 in those runs), and
+# the two halves return every row when asked alone, so conjoining them removes
+# nothing (`query.caml.tautology-always-true`, 41 of 41;
+# view-edit-page-probe.js S2).
 CAML_VIEW_FILTER_GUARD = (
     "<Or>"
     '<IsNotNull><FieldRef Name="ID"/></IsNotNull>'
@@ -1114,8 +1118,11 @@ def to_caml_protected(condition: Condition, column_types: dict[str, str]) -> str
     path emit an unguarded filter with nothing to say so.
 
     The editor refuses a filter whose right child is a group, and a view it
-    cannot open it cannot truncate (measured 2026-08-17,
-    caml-chain-depth-probe.js W2, W4, T2).
+    cannot open it cannot truncate (measured 2026-08-17 on
+    `caml-chain-depth-probe.js`, by
+    `view.filter-editor.wrapper-group-left-editable`,
+    `view.filter-editor.wrapper-group-right-editable` and
+    `view.filter-editor.tautology-guard-editable`).
     """
     return f"<And>{to_caml(condition, column_types)}{CAML_VIEW_FILTER_GUARD}</And>"
 

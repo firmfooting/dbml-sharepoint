@@ -27,9 +27,10 @@
  *
  *     <And>{the declared filter}<Or><IsNotNull ID/><IsNull ID/></Or></And>
  *
- * That the conjunct removes no ROWS is measured (caml-chain-depth-probe.js
- * T3, 41 of 41; view-edit-page-probe.js S2). Whether it changes what
- * SharePoint will SERVE past the list view threshold is a different
+ * That the conjunct removes no ROWS is measured
+ * (`query.caml.tautology-always-true`, 41 of 41, on
+ * caml-chain-depth-probe.js; view-edit-page-probe.js S2). Whether it changes
+ * what SharePoint will SERVE past the list view threshold is a different
  * question, and both of those fixtures are far below it: 41 rows and 3.
  *
  * It matters because the conjunct is on ID, which is not the declared
@@ -620,7 +621,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision a5b3b971. Quote this when reporting results.');
+  log('INFO', 'probe revision efc1d18a. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -2937,7 +2938,8 @@
     // there without anybody adding a guard.
     //
     // EDTPLN is the control: the same three clauses without the negation, a
-    // shape caml-chain-depth-probe.js U2 already found the editor opens.
+    // shape `view.filter-editor.ui-chain-40` on caml-chain-depth-probe.js
+    // already found the editor opens.
     // Three is well under the ten-row ceiling on purpose, so "6", "3" and
     // "refused" are three different answers rather than one truncation.
     // Independent of list size, so NOT behind guardBlocked.

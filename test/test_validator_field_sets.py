@@ -669,9 +669,10 @@ def test_a_document_library_reports_the_kind_not_the_base_template() -> None:
 # comparison move together, so setting the constant to 9 or to 11 left every
 # test below green and the constant unpinned.
 #
-# Measured 2026-08-17: caml-chain-depth-probe.js U2 watched a save rewrite a
-# forty-condition filter to ten, and view-edit-page-probe.js C4 read ten
-# FieldPicker controls out of the editor markup.
+# Measured 2026-08-17: caml-chain-depth-probe.js
+# `view.filter-editor.ui-chain-40` watched a save rewrite a forty-condition
+# filter to ten, and view-edit-page-probe.js C4 read ten FieldPicker controls
+# out of the editor markup.
 _MEASURED_EDITOR_SLOTS = 10
 
 

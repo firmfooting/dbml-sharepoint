@@ -2405,9 +2405,12 @@ def test_the_multi_value_operand_refusal_still_covers_the_formula_targets() -> N
 def test_a_view_filter_is_wrapped_so_the_editor_refuses_it() -> None:
     """The emitted <Where> body must end with a group in the RIGHT child.
 
-    Measured 2026-08-17 (caml-chain-depth-probe.js W2, W4, T2): the filter
-    editor refuses a filter whose right child is a non-leaf, and a view it
-    will not open is one an operator cannot truncate by pressing Save.
+    Measured 2026-08-17 on caml-chain-depth-probe.js, by
+    `view.filter-editor.wrapper-group-left-editable`,
+    `view.filter-editor.wrapper-group-right-editable` and
+    `view.filter-editor.tautology-guard-editable`: the filter editor refuses a
+    filter whose right child is a non-leaf, and a view it will not open is one
+    an operator cannot truncate by pressing Save.
     """
     condition = parse_condition([{"field": "Status", "op": "eq", "value": "Open"}], "ctx")
     assert to_caml_protected(condition, {"Status": "Text"}) == (
@@ -2502,8 +2505,11 @@ def test_the_guard_is_the_construct_that_was_measured() -> None:
     filtered view in every family.
 
     This is the construct measured on 2026-08-17: refused by the editor
-    (caml-chain-depth-probe.js W2, W4, T2) and matching every row when asked
-    alone (T3, 41 of 41; view-edit-page-probe.js S2).
+    (`view.filter-editor.wrapper-group-left-editable`,
+    `view.filter-editor.wrapper-group-right-editable` and
+    `view.filter-editor.tautology-guard-editable`) and matching every row when
+    asked alone (`query.caml.tautology-always-true`, 41 of 41;
+    view-edit-page-probe.js S2).
     """
     assert CAML_VIEW_FILTER_GUARD == (
         "<Or>"

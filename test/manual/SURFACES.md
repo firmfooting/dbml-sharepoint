@@ -253,7 +253,8 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 
 | Probe | Probe surface | Checks | File under |
 | --- | --- | --- | --- |
-| `caml-chain-depth-probe.js` | `query` | `E*`, `P*`, `R*`, `U*`, `W*` | `view.filter-editor.*` |
+| `caml-chain-depth-probe.js` | `query` | the ten `-editable` shape checks, `readonlyview-*`, `edit-page-*`, `ui-chain-40` (was `E*`, `P*`, `R*`, `T2`, `U2`, `W2`, `W4`, `G*`) | `view.filter-editor.*` |
+| `caml-chain-depth-probe.js` | `query` | `chain-40-rows-listed` (was `U1`) | `view.view-page.*` |
 | `calculated-choice-operand.js` | `formula` | `person-operand`, `lookup-operand` (was `P2`, `L3`) | `expression.client-validation.*` |
 | `datetime-sentinel-probe.js` | `formula` | `control-bogus-element-refused`, `now-element-*`, `today-element-*`, `today-include-time-*` (was `CN`, `C1`–`C7`) | `query.caml.*`, `query.caml-adhoc.*`, `query.view-query.*` |
 | `datetime-sentinel-probe.js` | `formula` | `now-sentinel-stored` (was `E1`) | `expression.client-validation.*` |
