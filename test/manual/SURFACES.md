@@ -206,12 +206,12 @@ Probes: `list-description-probe.js`, `group-description-probe.js`,
 
 ### 8. `access`: identities, groups, permission levels, ACLs
 
-Role definitions and their base permissions, group membership, effective
-permissions, per-item and per-list ACLs, what a permission level can actually
-do.
+Role definitions and their base permissions, group membership, resolving a name
+to a principal, effective permissions, per-item and per-list ACLs, what a
+permission level can actually do.
 
-Scopes: `role-def`, `role-binding`, `group`, `item-acl`, `list-acl`,
-`lookup-acl`, `effective-perms`
+Scopes: `role-def`, `role-binding`, `group`, `principal`, `item-acl`,
+`list-acl`, `lookup-acl`, `effective-perms`
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `lookup-acl-probe.js`

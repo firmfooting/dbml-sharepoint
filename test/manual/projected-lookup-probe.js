@@ -18,14 +18,30 @@
  * GUID. Whether createfieldasxml honours FieldRef in SharePoint Online is the
  * open question. This probe writes.
  *
- * WHAT IT ASKS
- *   BOOT     target + source lists, Status choice, LiveTitle calc, two items
- *   PRIM     primary RelatedRisk lookup created (ShowField=LiveTitle)
- *   DEPCR    dependent field (FieldRef -> primary) accepted by createfieldasxml
- *   DEPFLAG  the created field reads back IsDependentLookup=true
- *   DEPLINK  the primary lists it in DependentLookupInternalNames
- *   DEPPOP   setting RelatedRisk to an OPEN risk fills the dependent Title
- *   DEPLIVE  for a CLOSED risk (LiveTitle blank) the dependent still shows Title
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. The old mnemonic each one replaces is
+ * given beside it, because the prose below and every run reported against
+ * this probe quote the mnemonics.
+ *
+ *   BOOT
+ *        target + source lists, Status choice, LiveTitle calc, two items
+ *   field.lookup.control-primary-lookup-created  (PRIM)
+ *        primary RelatedRisk lookup created (ShowField=LiveTitle)
+ *   field.lookup.dependent-fieldref-accepted     (DEPCR)
+ *        dependent field (FieldRef -> primary) accepted by createfieldasxml
+ *   field.lookup.isdependentlookup-readback      (DEPFLAG)
+ *        the created field reads back IsDependentLookup=true
+ *   field.lookup.primary-lists-dependent         (DEPLINK)
+ *        the primary lists it in DependentLookupInternalNames
+ *   field.lookup.dependent-fill-live-label       (DEPPOP)
+ *        setting RelatedRisk to an OPEN risk fills the dependent Title
+ *   field.lookup.dependent-fill-blank-label      (DEPLIVE)
+ *        for a CLOSED risk (LiveTitle blank) the dependent still shows Title
+ *
+ * The probe's own surface is `field` and every question is a question about
+ * the lookup column type, so nothing here files elsewhere. `BOOT` keeps its
+ * mnemonic: it reports a bootstrap failure rather than a question, and
+ * BOOT-prefixed ids are exempt from the grammar by design.
  *
  * RUN 1, 2026-08-28, revision d583e170, sandbox Team Site, through the test
  * agent's autonomous lane, with CLEANUP so DEPCR re-ran the create. Seven
@@ -171,12 +187,12 @@
   }
 
   expect('BOOT', 'target + source lists, Status choice, LiveTitle calc and two target rows exist');
-  expect('PRIM', 'primary RelatedRisk lookup created (ShowField=LiveTitle)');
-  expect('DEPCR', 'dependent field with FieldRef -> primary accepted by createfieldasxml');
-  expect('DEPFLAG', 'the created field reads back IsDependentLookup=true');
-  expect('DEPLINK', 'the primary lists the dependent in DependentLookupInternalNames');
-  expect('DEPPOP', 'setting RelatedRisk to an OPEN risk fills the dependent Title');
-  expect('DEPLIVE', 'for a CLOSED risk (LiveTitle blank) the dependent still shows the real Title');
+  expect('field.lookup.control-primary-lookup-created', 'primary RelatedRisk lookup created (ShowField=LiveTitle)');
+  expect('field.lookup.dependent-fieldref-accepted', 'dependent field with FieldRef -> primary accepted by createfieldasxml');
+  expect('field.lookup.isdependentlookup-readback', 'the created field reads back IsDependentLookup=true');
+  expect('field.lookup.primary-lists-dependent', 'the primary lists the dependent in DependentLookupInternalNames');
+  expect('field.lookup.dependent-fill-live-label', 'setting RelatedRisk to an OPEN risk fills the dependent Title');
+  expect('field.lookup.dependent-fill-blank-label', 'for a CLOSED risk (LiveTitle blank) the dependent still shows the real Title');
 
   await resetList(SOURCE);
   await resetList(TARGET);
@@ -261,19 +277,19 @@
       `<Field Type="Lookup" DisplayName="Related Risk" Name="RelatedRisk"`
       + ` List="{${target.id}}" ShowField="LiveTitle"/>`);
     if (!made.ok) {
-      record('PRIM', 'create the primary RelatedRisk lookup', 'FAIL',
+      record('field.lookup.control-primary-lookup-created', 'create the primary RelatedRisk lookup', 'FAIL',
              `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
       return report();
     }
   }
   const primaryField = await spGet(`${sourceFields}/getbyinternalnameortitle('RelatedRisk')`);
   if (readFailed(primaryField)) {
-    record('PRIM', 'read back the primary RelatedRisk field', 'FAIL',
+    record('field.lookup.control-primary-lookup-created', 'read back the primary RelatedRisk field', 'FAIL',
            `HTTP ${primaryField.status}`);
     return report();
   }
   const primaryId = primaryField.body.Id;
-  record('PRIM', 'primary RelatedRisk lookup created (ShowField=LiveTitle)', 'PASS',
+  record('field.lookup.control-primary-lookup-created', 'primary RelatedRisk lookup created (ShowField=LiveTitle)', 'PASS',
          `field Id ${primaryId}`);
 
   // ---- Dependent field via FieldRef ----------------------------------
@@ -281,21 +297,21 @@
     const made = await addField(sourceFields,
       `<Field Type="Lookup" DisplayName="Related Risk Title" Name="RelatedRiskTitle"`
       + ` List="{${target.id}}" ShowField="Title" FieldRef="{${primaryId}}" ReadOnly="TRUE"/>`);
-    record('DEPCR', 'dependent field with FieldRef -> primary accepted by createfieldasxml',
+    record('field.lookup.dependent-fieldref-accepted', 'dependent field with FieldRef -> primary accepted by createfieldasxml',
            made.ok ? 'ACCEPTED' : 'REFUSED',
            made.ok ? `created; HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
   } else {
-    record('DEPCR', 'dependent field with FieldRef -> primary accepted by createfieldasxml',
+    record('field.lookup.dependent-fieldref-accepted', 'dependent field with FieldRef -> primary accepted by createfieldasxml',
            'ACCEPTED', 'field already exists from an earlier run');
   }
 
   const depField = await spGet(`${sourceFields}/getbyinternalnameortitle('RelatedRiskTitle')`);
   if (readFailed(depField)) {
-    record('DEPFLAG', 'the created field reads back IsDependentLookup=true', 'NOT ESTABLISHED',
+    record('field.lookup.isdependentlookup-readback', 'the created field reads back IsDependentLookup=true', 'NOT ESTABLISHED',
            `could not read the field: HTTP ${depField.status}`);
   } else {
     const depLookup = depField.body.IsDependentLookup;
-    record('DEPFLAG', 'the created field reads back IsDependentLookup=true',
+    record('field.lookup.isdependentlookup-readback', 'the created field reads back IsDependentLookup=true',
            depLookup === true ? 'PASS' : (depLookup === false ? 'FAIL' : 'NOT ESTABLISHED'),
            `IsDependentLookup=${depLookup}; PrimaryFieldId=${depField.body.PrimaryFieldId || '(absent)'}; `
            + `TypeAsString=${depField.body.TypeAsString}`);
@@ -303,7 +319,7 @@
 
   const primaryAfter = await spGet(`${sourceFields}/getbyinternalnameortitle('RelatedRisk')`);
   const primNames = (primaryAfter.ok && primaryAfter.body && primaryAfter.body.DependentLookupInternalNames) || null;
-  record('DEPLINK', 'the primary lists the dependent in DependentLookupInternalNames',
+  record('field.lookup.primary-lists-dependent', 'the primary lists the dependent in DependentLookupInternalNames',
          (primNames && primNames.length) ? 'PASS' : 'FAIL',
          `DependentLookupInternalNames=${JSON.stringify(primNames)}`);
 
@@ -326,14 +342,14 @@
   };
 
   const openRes = await setAndRead(openId);
-  record('DEPPOP', 'setting RelatedRisk to an OPEN risk auto-fills the dependent (Id propagates)',
+  record('field.lookup.dependent-fill-live-label', 'setting RelatedRisk to an OPEN risk auto-fills the dependent (Id propagates)',
          (openRes.ok && openRes.depId === openId) ? 'PASS' : 'FAIL',
          `primaryId=${openRes.primaryId} dependentId=${openRes.depId} (expect ${openId}) `
          + `dependentText=${openRes.depText} ${openRes.detail || ''}`);
 
   const closedRes = await setAndRead(closedId);
   const dependentReal = (closedRes.ok && closedRes.depId === closedId);
-  record('DEPLIVE', 'for a CLOSED risk (LiveTitle blank) the dependent still carries the real Title',
+  record('field.lookup.dependent-fill-blank-label', 'for a CLOSED risk (LiveTitle blank) the dependent still carries the real Title',
          dependentReal ? 'PASS' : 'FAIL',
          `primaryId=${closedRes.primaryId} dependentId=${closedRes.depId} (expect ${closedId}) `
          + `dependentText=${closedRes.depText} ${closedRes.detail || ''}`);
