@@ -154,8 +154,9 @@ NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 # The settings grammar is a closed set and `multi` is not in it.
 MULTI_VALUE_SUFFIX = "[]"
 
-# THE ITEM WRITE SHAPE, measured as M3 by `test/manual/multi-value-probe.js`
-# on run 3, 2026-08-17: a multi-value column takes
+# THE ITEM WRITE SHAPE, measured as `field.multichoice.item-write-shape` (the
+# row once called M3) by `test/manual/multi-value-probe.js` on run 3,
+# 2026-08-17: a multi-value column takes
 # `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [..]}`.
 # Learn's list-item REST page documents no multi-value example at all, so the
 # probe tried four candidate shapes most-likely-first and recorded which one

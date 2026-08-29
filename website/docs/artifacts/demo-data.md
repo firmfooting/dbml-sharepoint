@@ -40,11 +40,13 @@ grammar):
 - A list of enum members on a [multi-value
   column](../reference/dbml.md#multi-value-columns) is written as
   `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [...]}`,
-  the write shape measured as M3 by `test/manual/multi-value-probe.js`
-  and recorded under run 3 on 2026-08-17. Every member is validated
+  the write shape `test/manual/multi-value-probe.js` measured as
+  `field.multichoice.item-write-shape`, recorded under run 3 on
+  2026-08-17. Every member is validated
   against the enum, and a member repeated within one value is refused.
   An empty list leaves the column unset by omitting the field from the
-  payload rather than writing `null`, since M4 measured an unset
+  payload rather than writing `null`, since
+  `field.multichoice.item-read-shape` measured an unset
   multi-value column reading back `null` rather than `[]` and omission
   is the only route to that read-back anybody has measured.
 

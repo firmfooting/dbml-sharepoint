@@ -1786,11 +1786,12 @@ A scalar where a list is required is refused
 value (`demo_multi_value_duplicate_member`), because nothing has measured
 what a repeat reads back as. The seeder writes the list as
 `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [...]}`,
-the write shape measured as M3 by `test/manual/multi-value-probe.js` and
-recorded under run 3 on 2026-08-17.
+the write shape `test/manual/multi-value-probe.js` measured as
+`field.multichoice.item-write-shape`, recorded under run 3 on 2026-08-17.
 
 An empty list is accepted and leaves the column unset. It omits the field
-from the payload rather than writing `null`: M4 measured an unset
+from the payload rather than writing `null`:
+`field.multichoice.item-read-shape` measured an unset
 multi-value column reading back `null` rather than `[]`, and omitting the
 field is the only route to that read-back anybody has measured.
 
