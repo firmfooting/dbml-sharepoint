@@ -5,7 +5,11 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
-from dbml_sharepoint.analysis.report_columns import report_columns_for
+from dbml_sharepoint.analysis.report_columns import (
+    report_columns_for,
+    system_person_columns,
+)
+from dbml_sharepoint.analysis.typemap import is_person
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -94,9 +98,19 @@ def check(vc: ValidationContext) -> list[Finding]:
             # `display_name_mode: auto` reaches this with no override at all --
             # `auto_display_name` splits `SiteUrl` to `Site Url`, `SiteName` to
             # `Site Name` and `ListTitle` to `List Title`.
+            reporting = bundle.mapping.reporting
+            person_columns: tuple[str, ...] = ()
+            if reporting.users_table:
+                person_columns = tuple(
+                    col.name for col in table.columns
+                    if is_person(col.type) and col.name not in xcols
+                )
+                if reporting.system_columns:
+                    person_columns += system_person_columns()
             reserved = set(report_columns_for(
                 table.name,
-                system_columns=bundle.mapping.reporting.system_columns,
+                system_columns=reporting.system_columns,
+                person_columns=person_columns,
             ))
             for display_title, sources in sorted(resolved.items()):
                 if display_title in reserved:

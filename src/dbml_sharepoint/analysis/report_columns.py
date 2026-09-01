@@ -16,6 +16,9 @@ reaches it with no override at all: `auto_display_name` splits `SiteUrl` to
 `Site Url`, `SiteName` to `Site Name` and `ListTitle` to `List Title`.
 """
 
+from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
+from dbml_sharepoint.analysis.typemap import is_person
+
 #: Added to the row table for every entity, before the model-facing rename.
 #: `Site Url` and `Site Name` say which SITE a row came from; `List Title`
 #: says which LIST, which is the other half of the same problem once a model
@@ -37,6 +40,28 @@ REPORT_SYSTEM_COLUMNS: tuple[str, ...] = ("Author", "Created", "Editor", "Modifi
 #: Modified are already theirs.
 SYSTEM_DISPLAY_TITLES: dict[str, str] = {"Author": "Created By", "Editor": "Modified By"}
 
+#: The namespace the users dimension keys itself under. A leading underscore
+#: like the query's own name, so no list title can produce the same key.
+USERS_KEY_LIST = "_Users"
+
+
+def system_person_columns() -> tuple[str, ...]:
+    """The system columns that are person columns, in reporting order."""
+    return tuple(
+        name for name in REPORT_SYSTEM_COLUMNS
+        if is_person(SYSTEM_COLUMN_TYPES[name])
+    )
+
+
+def person_key_column(column: str) -> str:
+    """The `... Key` a person column carries when the users table is on.
+
+    A schema column keeps its internal name, as a lookup key does. A system
+    column takes its display title, because `Author` and `Editor` never
+    reach a report author under those names.
+    """
+    return f"{SYSTEM_DISPLAY_TITLES.get(column, column)}{REPORT_KEY_SUFFIX}"
+
 
 def system_report_columns() -> tuple[str, ...]:
     """The model-facing names the system columns take under display-name
@@ -54,14 +79,22 @@ def system_report_columns() -> tuple[str, ...]:
     return tuple(names)
 
 
-def report_columns_for(entity: str, *, system_columns: bool = False) -> tuple[str, ...]:
+def report_columns_for(
+    entity: str,
+    *,
+    system_columns: bool = False,
+    person_columns: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     """Every reporting column present when `entity`'s rename runs.
 
     With `reporting.system_columns` on, the six system column names are in
     the table too, renamed in the same step as the schema columns, so a
     schema column landing on one of them fails the refresh the same way.
+    `person_columns` are the columns that carry a `... Key` when the users
+    table is on; pass none when it is off.
     """
     columns = (*REPORT_FIXED_COLUMNS, f"{entity}{REPORT_KEY_SUFFIX}")
     if system_columns:
         columns += system_report_columns()
+    columns += tuple(person_key_column(name) for name in person_columns)
     return columns

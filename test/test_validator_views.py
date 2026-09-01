@@ -1180,6 +1180,39 @@ def test_the_auto_split_alone_reaches_a_reporting_column() -> None:
     ).message
 
 
+def test_person_keys_are_reserved_only_when_the_users_table_is_on() -> None:
+    """With `reporting.users_table` on, every person column gains a
+    `<Column> Key` in the same table, so a display title landing on that
+    name fails the refresh the way `Site Url` does."""
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    schema = make_schema(
+        make_table(
+            "Project",
+            column("Title", required=True),
+            person("Owner"),
+            column("Status", "nvarchar"),
+        ),
+    )
+    on = make_bundle(
+        entities=["Project"], display_name_mode="auto",
+        display_name_overrides={"Project": {"Status": "Owner Key"}},
+        reporting=ReportingOptions(users_table=True),
+    )
+    errors = [f for f in validate_against_mapping(schema, on) if f.severity == "error"]
+    assert "'Owner Key'" in only(
+        errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    ).message
+    off = make_bundle(
+        entities=["Project"], display_name_mode="auto",
+        display_name_overrides={"Project": {"Status": "Owner Key"}},
+    )
+    none_of(
+        validate_against_mapping(schema, off),
+        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    )
+
+
 def test_system_columns_reserve_their_model_names_only_when_switched_on() -> None:
     """With `reporting.system_columns` on, the pack adds Created By, Created,
     Modified By and Modified under SharePoint's own display titles, in the
