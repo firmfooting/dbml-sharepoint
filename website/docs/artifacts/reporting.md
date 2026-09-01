@@ -11,14 +11,17 @@ deployed lists.
 ## Contents
 
 - **One Power Query (M) file per list**, plus dictionary, model-info and
-  user-added-column audit queries. Paste each one into a blank query in
-  Power BI or Excel and load it. There is nothing to configure. Each
-  query is self-contained, including the site it reads and the lookup of
-  that site's own display title (see below).
+  user-added-column audit queries, and `_Users.pq` when the mapping's
+  [`reporting.users_table`](../reference/mapping.md#reporting) is on.
+  Paste each one into a blank query in Power BI or Excel and load it.
+  There is nothing to configure. Each query is self-contained, including
+  the site it reads and the lookup of that site's own display title (see
+  below).
 - **`sql/views.sql`**: a SQLCMD views script for warehouse-landed
   copies of the lists.
 - **`guide.md`**: includes the Power BI relationship table
-  (which columns join which lists, matching the declared lookups).
+  (which columns join which lists, matching the declared lookups, and
+  every person column to `_Users` when the users table is on).
 - **`data-dictionary.md`**: every list and column with types,
   descriptions and enum values, generated from the same schema the
   deploy used.
@@ -98,6 +101,16 @@ Every expand step is now guarded: the column is expanded when the record
 is there and added as typed nulls when it is not, so the shape of the
 table is the same either way and the rest of the query (typing, keys,
 display-name renames) does not care.
+
+## Only the declared columns load
+
+Measured on a live tenant on 2026-09-02: the items endpoint answers with
+an uppercase `ID` beside the `Id` a query asks for, identical on every
+row, whatever the `$select` says. Power Query keeps both because its
+column names are case-sensitive; the Power BI model's are not, so it
+loaded the second as `ID 2` in every list table. Every query now selects
+exactly its declared columns after the typing step, so anything
+SharePoint adds unasked stops there. `_Users.pq` does the same.
 
 ## Where the site URL comes from
 
@@ -208,12 +221,17 @@ reporting:
 
 They arrive after the list's own columns, in the same shape as a declared
 person or date-time column: `AuthorId` and `AuthorTitle`, `Created`,
-`EditorId` and `EditorTitle`, `Modified`, typed the same way and expanded
-through the same empty-list-safe step. Under `display_names` they take
-SharePoint's own titles (`Created By Id`, `Created By Title`, `Created`,
-and the Modified three), and the validator reserves those names the way
-it reserves `Site Url`. The SQL views then expect each landed table to
-carry `Author`, `Editor`, `Created` and `Modified` too.
+`EditorId` and `EditorTitle`, `Modified`, typed the same way (`Created`
+and `Modified` as `type datetimezone`) and expanded through the same
+empty-list-safe step. Under `display_names` they take SharePoint's own
+titles (`Created By Id`, `Created By Title`, `Created`, and the Modified
+three), and the validator reserves those names the way it reserves
+`Site Url`. The SQL views cast `Author` and `Editor` as `NVARCHAR(255)`
+and `Created` and `Modified` as `DATETIMEOFFSET`, so each landed table
+must carry those four internal names; the landing drift audit treats
+them as expected. The dictionary lists them per list as person (system)
+and date and time (system). The mapping reference has the
+[full contract](../reference/mapping.md#reporting).
 
 ## The users table
 
@@ -227,11 +245,24 @@ reporting:
 ```
 
 `_Users.pq` reads `/_api/web/siteuserinfolist`: one row per person,
-SharePoint group or domain group the site has ever resolved, with name,
-email, account, department, job title, office, a deleted flag and the
-principal kind, keyed by `User Key` in the same site-qualified shape as
-every list table. Every person column gains a null-guarded `... Key`
-that joins it, and `guide.md` lists those relationships.
+SharePoint group or domain group the site has ever resolved. Its columns
+are `Id`, `Name`, `Email`, `Account`, `Department`, `Job Title`,
+`Office`, `Deleted`, `Principal Kind` (Person, SharePoint group, Domain
+group or Other, from the content type id), `Site Url`, `Site Name` and
+`User Key`, the last in the same site-qualified shape as every list
+table. Department and job title come from the user profile and are blank
+until it has synced. There is no `List Title`: it is not a list of the
+schema, and the dictionary gives it a section of its own.
+
+Every person column gains a null-guarded `... Key` that joins it, and
+`guide.md` lists one relationship per person column. A schema column
+keeps its internal name in the key (`RiskOwner Key`), as a lookup key
+does; Created By and Modified By, when the system columns are on, take
+their display titles (`Created By Key`). The validator reserves the key
+names the way it reserves `Site Url`. Site user ids are per site
+collection, so the key carries the site and the same person on two sites
+is two rows; the email is on the row for anyone who needs a cross-site
+people table.
 
 Power BI allows one active relationship between two tables, so a list
 with three person columns gets one active relationship to `_Users` and
@@ -239,6 +270,10 @@ two inactive ones. Reach the inactive ones from measures with
 `USERELATIONSHIP`, or reference `_Users` once per role and give each copy
 its own active relationship, which is what Microsoft recommends when a
 visual slices by more than one role at once. The guide says the same.
+
+SQL is untouched. Person columns land in the warehouse as display text,
+so nothing there could join by id, and a view joining on names would be
+a silent wrong count.
 
 Measured 2026-09-02 on a live tenant by a site admin: the list is
 readable, every field the query selects exists, a person column's ids
