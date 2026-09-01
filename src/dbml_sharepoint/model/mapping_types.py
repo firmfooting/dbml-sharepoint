@@ -446,6 +446,9 @@ class ReportingOptions:
     # Created By, Created, Modified By and Modified on every list query,
     # SQL view and dictionary entry.
     system_columns: bool = False
+    # A `_Users.pq` dimension over the site's user information list, and a
+    # `... Key` on every person column that joins it.
+    users_table: bool = False
 
 
 @dataclass

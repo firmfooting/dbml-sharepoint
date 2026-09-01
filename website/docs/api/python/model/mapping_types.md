@@ -428,6 +428,7 @@ PermissionsConfig(levels: list[dbml_sharepoint.model.mapping_types.CustomPermiss
 @dataclass(frozen=True)
 class ReportingOptions:
     system_columns: bool = False
+    users_table: bool = False
 ```
 
 The `reporting:` section: what the reporting pack adds beyond the

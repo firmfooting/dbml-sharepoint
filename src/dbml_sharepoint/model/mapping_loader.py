@@ -562,15 +562,19 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
 
 def _parse_reporting(block: Any) -> ReportingOptions:
     section = _require_mapping(block, "reporting")
-    _reject_unknown_keys(section, {"system_columns"}, "reporting")
-    value = section.get("system_columns", False)
-    # YAML reads "yes" and 1 as truthy, so anything but a real boolean would
-    # switch the feature on by accident and never say so.
-    if not isinstance(value, bool):
-        raise ValueError(
-            f"reporting.system_columns: expected true or false, got {value!r}",
-        )
-    return ReportingOptions(system_columns=value)
+    switches = ("system_columns", "users_table")
+    _reject_unknown_keys(section, set(switches), "reporting")
+    values: dict[str, bool] = {}
+    for name in switches:
+        value = section.get(name, False)
+        # YAML reads "yes" and 1 as truthy, so anything but a real boolean
+        # would switch the feature on by accident and never say so.
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"reporting.{name}: expected true or false, got {value!r}",
+            )
+        values[name] = value
+    return ReportingOptions(**values)
 
 
 def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:

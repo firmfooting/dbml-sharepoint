@@ -1724,6 +1724,131 @@ def test_the_system_column_list_is_the_deploy_side_fact() -> None:
     assert set(REPORT_SYSTEM_COLUMNS) == set(SYSTEM_COLUMN_TYPES) - {"ID"}
 
 
+# --- The users dimension --------------------------------------------------
+#
+# Opt-in through `reporting.users_table`: one `_Users.pq` over the site's user
+# information list, and a `... Key` on every person column that joins it.
+#
+# MEASURED 2026-09-02 on a live tenant, read by a site admin: the list is
+# readable at /_api/web/siteuserinfolist, every field named below exists on
+# it (133 fields in all), a real person column's ids resolve to its rows with
+# the same Title, and ContentTypeId starts 0x010A for a person, 0x010B for a
+# SharePoint group and 0x010C for a domain group. A reader-tier account was
+# NOT measured.
+
+_USERS_SELECT = (
+    "$select=Id,Title,EMail,UserName,Department,JobTitle,Office,Deleted,ContentTypeId"
+)
+
+
+def _users_on(*, system_columns: bool = False) -> tuple[Schema, MappingBundle]:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    schema, _ = _expanding()
+    bundle = make_bundle(
+        entities=["Project", "Task"],
+        reporting=ReportingOptions(
+            users_table=True, system_columns=system_columns,
+        ),
+    )
+    return schema, bundle
+
+
+def test_the_users_table_is_off_unless_the_mapping_asks() -> None:
+    schema, bundle = _expanding()
+    queries = generate_powerquery(schema, bundle, "default")
+    assert "_Users.pq" not in queries
+    assert '"Owner Key"' not in queries["APP_Task.pq"]
+    assert "_Users" not in generate_reporting_md(schema, bundle, "default")
+    assert "_Users" not in generate_data_dictionary(schema, bundle, "default")
+
+
+def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> None:
+    schema, bundle = _users_on()
+    users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
+    assert 'SiteRoot & "/_api/web/siteuserinfolist/items"' in users
+    assert _USERS_SELECT in users
+    for typed in (
+        '{"Id", Int64.Type}', '{"Title", type text}', '{"EMail", type text}',
+        '{"Department", type text}', '{"Deleted", type logical}',
+        '{"ContentTypeId", type text}',
+    ):
+        assert typed in users, typed
+    # The same key shape as every list table, namespaced so it can never
+    # collide with a list's own key.
+    assert _added_column_expression(users, "User Key") == (
+        'each SiteRoot & "|" & "_Users" & "|" & Number.ToText([Id])'
+    )
+    # Which kind of principal a row is: groups sit in the same list.
+    kind = _added_column_expression(users, "Principal Kind")
+    for prefix, label in (
+        ("0x010A", "Person"), ("0x010B", "SharePoint group"), ("0x010C", "Domain group"),
+    ):
+        assert f'Text.StartsWith([ContentTypeId], "{prefix}") then "{label}"' in kind, label
+    assert "[ContentTypeId] = null" in kind
+    # Site provenance, so appended sites slice like the list tables do.
+    assert '"Site Url", each SiteRoot, type text' in users
+    assert '"Site Name", each SiteName, type text' in users
+    # Only the declared columns go on; SharePoint adds `ID` beside `Id`.
+    assert "Table.SelectColumns(" in users
+    # Model-facing names, always: there is no schema to keep internal names for.
+    for internal, display in (
+        ("Title", "Name"), ("EMail", "Email"), ("UserName", "Account"),
+        ("JobTitle", "Job Title"),
+    ):
+        assert f'{{"{internal}", "{display}"}}' in users, internal
+    assert "2026-09-02" in users
+    assert "siteuserinfolist" in users.split("let")[0], "the header names the source"
+
+
+def test_person_columns_carry_a_key_that_joins_the_users_table() -> None:
+    schema, bundle = _users_on(system_columns=True)
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert _added_column_expression(task, "Owner Key") == (
+        "each if [OwnerId] = null then null "
+        'else SiteRoot & "|" & "_Users" & "|" & Number.ToText([OwnerId])'
+    )
+    # The system person columns get keys under their display titles.
+    assert _added_column_expression(task, "Created By Key") == (
+        "each if [AuthorId] = null then null "
+        'else SiteRoot & "|" & "_Users" & "|" & Number.ToText([AuthorId])'
+    )
+    assert '"Modified By Key"' in task
+    # Never renamed: they are already model-facing.
+    renamed = (
+        task.split("RenamedForModel = Table.RenameColumns(")[1]
+        if "RenamedForModel" in task else ""
+    )
+    assert '"Owner Key"' not in renamed
+
+
+def test_the_guide_lists_every_person_relationship_and_the_one_active_rule() -> None:
+    schema, bundle = _users_on(system_columns=True)
+    md = generate_reporting_md(schema, bundle, "default")
+    assert "| APP_Task | Owner Key | _Users | User Key |" in md
+    assert "| APP_Task | Created By Key | _Users | User Key |" in md
+    assert "| APP_Project | Modified By Key | _Users | User Key |" in md
+    assert "one active relationship" in md
+    assert "USERELATIONSHIP" in md
+    assert "Reference" in md
+    assert "`reporting.users_table`" in md
+    # The unmeasured part is said, not assumed.
+    assert "reader" in md.lower() and "403" in md
+
+
+def test_the_users_table_is_in_the_dictionary() -> None:
+    schema, bundle = _users_on()
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "## _Users" in md
+    for name in (
+        "Name", "Email", "Account", "Department", "Job Title", "Office",
+        "Deleted", "Principal Kind", "User Key",
+    ):
+        assert f"| {name} |" in md, name
+    rows = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
+    assert '"_Users"' in rows
+
+
 # --- The row key must name the LIST, not only the site ----------------------
 #
 # Measured 2026-08-11: the key was `SiteRoot & "|" & Number.ToText([Id])`,

@@ -215,6 +215,38 @@ and the Modified three), and the validator reserves those names the way
 it reserves `Site Url`. The SQL views then expect each landed table to
 carry `Author`, `Editor`, `Created` and `Modified` too.
 
+## The users table
+
+Person columns carry a site-user id and a display name, and nothing more,
+because the site's user list is not part of any schema. With one more
+switch the pack reads it anyway:
+
+```yaml
+reporting:
+  users_table: true
+```
+
+`_Users.pq` reads `/_api/web/siteuserinfolist`: one row per person,
+SharePoint group or domain group the site has ever resolved, with name,
+email, account, department, job title, office, a deleted flag and the
+principal kind, keyed by `User Key` in the same site-qualified shape as
+every list table. Every person column gains a null-guarded `... Key`
+that joins it, and `guide.md` lists those relationships.
+
+Power BI allows one active relationship between two tables, so a list
+with three person columns gets one active relationship to `_Users` and
+two inactive ones. Reach the inactive ones from measures with
+`USERELATIONSHIP`, or reference `_Users` once per role and give each copy
+its own active relationship, which is what Microsoft recommends when a
+visual slices by more than one role at once. The guide says the same.
+
+Measured 2026-09-02 on a live tenant by a site admin: the list is
+readable, every field the query selects exists, a person column's ids
+resolve to its rows with the same title, and the content type id says
+which kind of principal a row is. A reader-tier account has not been
+measured; a 403 on refresh means the reporting account needs read access
+to the site's user information list.
+
 ## Schema-only reports
 
 `dbml-sharepoint report` emits the same queries without needing a site

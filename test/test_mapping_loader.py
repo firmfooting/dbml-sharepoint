@@ -2481,3 +2481,24 @@ def test_reporting_switch_must_be_a_boolean(tmp_path: Path) -> None:
     """))
     with pytest.raises(ValueError, match="system_columns"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_reporting_users_table_parsed(tmp_path: Path) -> None:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          users_table: true
+    """))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.reporting == ReportingOptions(users_table=True)
+    assert bundle.mapping.reporting.system_columns is False
+
+
+def test_reporting_users_table_must_be_a_boolean(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          users_table: 1
+    """))
+    with pytest.raises(ValueError, match="users_table"):
+        load_mapping(tmp_path / "m.yaml")
