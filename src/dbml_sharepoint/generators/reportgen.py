@@ -597,11 +597,26 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         lines.append(f'            {{"{name}", {m_type}}},')
     # M list literals do not allow a trailing comma.
     lines[-1] = lines[-1].rstrip(",")
+    # Whatever SharePoint adds unasked rides through every step above, so the
+    # declared set is selected here. `multi_value_joins` is the one output
+    # column not in `m_types` (the join step types it), and a selection built
+    # from `m_types` alone would drop it silently.
+    declared = [name for name, _ in plan.m_types] + plan.multi_value_joins
     lines += [
         "        }",
         "    ),",
+        "    // MEASURED on a live tenant, 2026-09-02: /items answers with an",
+        "    // uppercase `ID` beside the `Id` the $select asked for, the same",
+        "    // value on every row, and nothing above removes it. Power Query",
+        "    // keeps both, since its column names are case-sensitive; the Power",
+        "    // BI model's are not, and it loads the second as \"ID 2\". Only the",
+        "    // declared columns go on from here, whatever else SharePoint adds.",
+        "    Declared = Table.SelectColumns(",
+        "        Typed,",
+        "        {" + ", ".join(f'"{name}"' for name in declared) + "}",
+        "    ),",
         '    WithItemURL = Table.AddColumn(',
-        '        Typed, "ItemURL",',
+        '        Declared, "ItemURL",',
         f'        each SiteRoot & "{plan.item_url_path}" & Number.ToText([Id]),',
         "        type text",
         "    ),",
