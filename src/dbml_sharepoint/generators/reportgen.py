@@ -42,6 +42,8 @@ from dbml_sharepoint.analysis.report_columns import (
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
     SYSTEM_DISPLAY_TITLES,
+    USERS_KEY_LIST,
+    person_key_column,
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
@@ -100,6 +102,12 @@ class _ListPlan:
     # set for the user-added-column audit; cross-site names ride
     # ``skipped``.
     field_internal_names: list[str] = field(default_factory=list)
+    # Person columns in select order, system ones included when they are
+    # on. Each carries a `... Key` into the users dimension when
+    # `users_table` is on; the flag is carried here so the renderer needs
+    # no mapping.
+    person_columns: list[str] = field(default_factory=list)
+    users_table: bool = False
 
 
 def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> list[Table]:
@@ -193,6 +201,7 @@ def _build_plans(
             entity=table.name,
             list_title=prefix + table.name,
             item_url_path=_item_url_path(bundle, table.name, prefix + table.name),
+            users_table=bundle.mapping.reporting.users_table,
         )
         for col in table.columns:
             if (table.name, col.name) in cross_site_keys:
@@ -384,6 +393,7 @@ def _plan_person(plan: _ListPlan, name: str) -> None:
     plan.m_types.append((f"{name}Id", "Int64.Type"))
     plan.m_types.append((f"{name}Title", "type text"))
     plan.sql_columns.append((name, "NVARCHAR(255)"))
+    plan.person_columns.append(name)
 
 
 def _plan_datetime(plan: _ListPlan, name: str, *, date_only: bool) -> None:
@@ -486,6 +496,21 @@ def _site_url_binding_m(site_url: str | None) -> list[str]:
 #
 # Indented for a top-level `let` binding (four spaces); both consumers bind it
 # at that level.
+_SITE_NAME_M: list[str] = [
+    "    // The site's own display title, read from the site rather than",
+    "    // configured, so a renamed site shows its new name next refresh.",
+    "    // Falls back to the URL: the name is a slicer label and the rows",
+    "    // are the data, so this must not be able to fail the refresh.",
+    "    SiteName =",
+    "        try",
+    "            OData.Feed(",
+    '                SiteRoot & "/_api/web?$select=Title",',
+    "                null,",
+    '                [Implementation = "2.0"]',
+    "            )[Title]",
+    "        otherwise SiteRoot,",
+]
+
 _SITE_ROOT_M: list[str] = [
     "    // The site root, derived from SiteUrl rather than trusted as typed.",
     "    //",
@@ -551,18 +576,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         #
         # The cost is one extra request per query per refresh instead of one
         # per site. `_api/web?$select=Title` is a single tiny read.
-        "    // The site's own display title, read from the site rather than",
-        "    // configured, so a renamed site shows its new name next refresh.",
-        "    // Falls back to the URL: the name is a slicer label and the rows",
-        "    // are the data, so this must not be able to fail the refresh.",
-        "    SiteName =",
-        "        try",
-        "            OData.Feed(",
-        '                SiteRoot & "/_api/web?$select=Title",',
-        "                null,",
-        '                [Implementation = "2.0"]',
-        "            )[Title]",
-        "        otherwise SiteRoot,",
+        *_SITE_NAME_M,
         "    Source = OData.Feed(",
         f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
         f'            & "{query_string}"',
@@ -717,6 +731,23 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
             "    )",
         ]
         prev = step
+    if plan.users_table:
+        # One key per person column into `_Users`, in the same shape as a
+        # lookup key and null-guarded for the same reason. Namespaced under
+        # USERS_KEY_LIST rather than a list title because the users
+        # dimension is not a list of this schema.
+        for i, name in enumerate(plan.person_columns, start=1):
+            step = f"WithUserKey{i}"
+            lines[-1] += ","
+            lines += [
+                f"    {step} = Table.AddColumn(",
+                f'        {prev}, "{person_key_column(name)}",',
+                f"        each if [{name}Id] = null then null",
+                f"              else {_row_key_m(USERS_KEY_LIST, f'[{name}Id]')},",
+                "        type text",
+                "    )",
+            ]
+            prev = step
     if plan.renames:
         lines[-1] += ","
         lines += [
@@ -765,10 +796,122 @@ def generate_powerquery(
     ``report`` command has no site to name), the queries read a ``SiteUrl``
     text parameter instead, and are otherwise identical.
     """
-    return {
+    queries = {
         f"{plan.list_title}.pq": _render_m(plan, site_url=site_url)
         for plan in _build_plans(schema, bundle, site_role)
     }
+    if bundle.mapping.reporting.users_table:
+        queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(site_url=site_url)
+    return queries
+
+
+#: (internal name, M type, model-facing name) for the users dimension. The
+#: internal names are the user information list's own, MEASURED 2026-09-02.
+_USERS_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("Id", "Int64.Type", "Id"),
+    ("Title", "type text", "Name"),
+    ("EMail", "type text", "Email"),
+    ("UserName", "type text", "Account"),
+    ("Department", "type text", "Department"),
+    ("JobTitle", "type text", "Job Title"),
+    ("Office", "type text", "Office"),
+    ("Deleted", "type logical", "Deleted"),
+)
+
+#: ContentTypeId prefixes on the user information list, MEASURED 2026-09-02.
+_PRINCIPAL_KINDS: tuple[tuple[str, str], ...] = (
+    ("0x010A", "Person"),
+    ("0x010B", "SharePoint group"),
+    ("0x010C", "Domain group"),
+)
+
+
+def _render_users_m(*, site_url: str | None = None) -> str:
+    """The `_Users` dimension: the site's user information list, one row per
+    principal the site has ever resolved, keyed like every list table."""
+    select = ",".join(name for name, _, _ in _USERS_COLUMNS) + ",ContentTypeId"
+    kind_expression = "each if [ContentTypeId] = null then \"Other\""
+    for prefix, label in _PRINCIPAL_KINDS:
+        kind_expression += (
+            f' else if Text.StartsWith([ContentTypeId], "{prefix}") then "{label}"'
+        )
+    kind_expression += ' else "Other"'
+    typed = ", ".join(
+        f'{{"{name}", {m_type}}}' for name, m_type, _ in _USERS_COLUMNS
+    ) + ', {"ContentTypeId", type text}'
+    declared = ", ".join(f'"{name}"' for name, _, _ in _USERS_COLUMNS)
+    renames = ", ".join(
+        f'{{"{name}", "{display}"}}'
+        for name, _, display in _USERS_COLUMNS if display != name
+    )
+    lines = [
+        f"// {USERS_KEY_LIST}: generated by dbml-sharepoint; regenerate rather than hand-edit.",
+        "// The site's user information list (/_api/web/siteuserinfolist) as a",
+        "// dimension: one row per person, SharePoint group or domain group the",
+        "// site has ever resolved, keyed like every list table (User Key), so",
+        "// the `... Key` on any person column joins here. See guide.md for the",
+        "// one-active-relationship rule when a list has several person columns.",
+        *([
+            "// Requires the same SiteUrl text parameter as the list queries.",
+        ] if site_url is None else []),
+        "let",
+        *_site_url_binding_m(site_url),
+        *_SITE_ROOT_M,
+        *_SITE_NAME_M,
+        "    // MEASURED on a live tenant, 2026-09-02, by a site admin: these are",
+        "    // the list's own internal names, a person column's ids resolve to",
+        "    // its rows with the same Title, and ContentTypeId starts 0x010A for",
+        "    // a person, 0x010B for a SharePoint group and 0x010C for a domain",
+        "    // group. A reader-tier account was NOT measured: a 403 here means",
+        "    // the reporting account needs read access to this list.",
+        "    Source = OData.Feed(",
+        '        SiteRoot & "/_api/web/siteuserinfolist/items"',
+        f'            & "?$select={select}",',
+        "        null,",
+        '        [Implementation = "2.0"]',
+        "    ),",
+        "    Typed = Table.TransformColumnTypes(",
+        "        Source,",
+        f"        {{{typed}}}",
+        "    ),",
+        "    // Groups sit in the same list as people; this says which is which,",
+        "    // so a report can keep the people and drop the rest.",
+        "    WithKind = Table.AddColumn(",
+        '        Typed, "Principal Kind",',
+        f"        {kind_expression},",
+        "        type text",
+        "    ),",
+        "    // Only the declared columns go on: SharePoint adds an uppercase `ID`",
+        "    // beside `Id`, which a case-insensitive model would load as \"ID 2\".",
+        "    Declared = Table.SelectColumns(",
+        "        WithKind,",
+        f'        {{{declared}, "Principal Kind"}}',
+        "    ),",
+        "    WithSiteUrl = Table.AddColumn(",
+        f'        Declared, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
+        "    ),",
+        "    WithSiteName = Table.AddColumn(",
+        f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
+        "    ),",
+        "    // Site user ids are per site collection, so the key carries the",
+        "    // site, and the same person on two sites is two rows. Email is on",
+        "    // the row for anyone who needs a cross-site people table.",
+        "    WithUserKey = Table.AddColumn(",
+        f'        WithSiteName, "User{REPORT_KEY_SUFFIX}",',
+        f"        each {_row_key_m(USERS_KEY_LIST, '[Id]')},",
+        "        type text",
+        "    ),",
+        "    // Model-facing names, always: there is no schema whose internal",
+        "    // names a report author would recognise here.",
+        "    RenamedForModel = Table.RenameColumns(",
+        "        WithUserKey,",
+        f"        {{{renames}}}",
+        "    )",
+        "in",
+        "    RenamedForModel",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ SQL views
@@ -871,6 +1014,37 @@ def generate_sql_views(
 # ------------------------------------------------------------ reporting guide
 
 
+def _users_guide_paragraphs() -> list[str]:
+    """What the guide says about `_Users` and the person keys, once."""
+    return [
+        (f"Person columns carry the site-user id (`...Id`), the display name "
+         f"(`...Title`) and a `... Key` that joins **`{USERS_KEY_LIST}`** "
+         "(`reporting.users_table` in the mapping): the site's user "
+         "information list as one row per person, SharePoint group or "
+         "domain group the site has ever resolved, with name, email, "
+         "account, department, job title, office, a deleted flag and the "
+         "principal kind. Department and job title come from the user "
+         "profile and are blank until it has synced."),
+        "",
+        ("**Power BI allows one active relationship between two tables.** "
+         "A list with several person columns therefore gets one active "
+         f"relationship to `{USERS_KEY_LIST}` and the rest inactive. Either "
+         "reach the inactive ones from measures with `USERELATIONSHIP`, or "
+         f"reference `{USERS_KEY_LIST}` once per role (right-click, "
+         "*Reference*, rename the copy to `Responsible User` and so on) and "
+         "give each copy its own active relationship, which is what "
+         "Microsoft recommends when a visual has to slice by more than one "
+         "role at once."),
+        "",
+        ("Site user ids are per site collection, so `User Key` carries the "
+         "site and the same person on two sites is two rows; the email is "
+         "on the row for anyone who needs a cross-site people table. The "
+         "list was read by a site admin when this was measured; a 403 on "
+         "refresh means the reporting (reader) account needs read access "
+         "to the site's user information list."),
+    ]
+
+
 def generate_reporting_md(
     schema: Schema, bundle: MappingBundle, site_role: str,
     *,
@@ -885,6 +1059,7 @@ def generate_reporting_md(
     """
     plans = _build_plans(schema, bundle, site_role)
     system_columns = bundle.mapping.reporting.system_columns
+    users_table = bundle.mapping.reporting.users_table
     setup_step = (
         ("1. **Manage Parameters -> New parameter**: a *Text* parameter named "
          "`SiteUrl` holding the **site** URL, e.g. "
@@ -991,11 +1166,19 @@ def generate_reporting_md(
                 f"| {plan.list_title} | {_fk_key_column(fk_col)} "
                 f"| {target_title} | {target_entity} Key |",
             )
+        if plan.users_table:
+            for name in plan.person_columns:
+                lines.append(
+                    f"| {plan.list_title} | {person_key_column(name)} "
+                    f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |",
+                )
     lines += [
         "",
-        ("Person columns carry the site-user id (`...Id`) and display name "
-         "(`...Title`) but no relationship target. The site user list is not "
-         "part of this schema."),
+        *(_users_guide_paragraphs() if users_table else [
+            ("Person columns carry the site-user id (`...Id`) and display "
+             "name (`...Title`) but no relationship target. The site user "
+             "list is not part of this schema."),
+        ]),
         *(
             ["",
              ("Every list also carries SharePoint's **Created By**, "
@@ -1455,6 +1638,26 @@ def generate_data_dictionary(
             details.append("Versioning: off.")
         lines += ["", " ".join(details)]
 
+    if mapping.reporting.users_table:
+        lines += [
+            "",
+            f"## {USERS_KEY_LIST}: the site's user information list",
+            "",
+            ("Not a list of this schema. One row per person, SharePoint group "
+             "or domain group the site has ever resolved, read from "
+             "`/_api/web/siteuserinfolist`, carrying `Site Url` and "
+             "`Site Name` like every list table. Every person column's "
+             "`... Key` joins `User Key` here; guide.md has the relationships "
+             "and the one-active rule."),
+            "",
+            "| Column | SharePoint type | Description |",
+            "|---|---|---|",
+            *(
+                f"| {name} | {_md_cell(type_cell)} | {_md_cell(description)} |"
+                for name, type_cell, _r, _u, _d, _re, _s, _p, _ru, description
+                in _users_dictionary_rows()
+            ),
+        ]
     lines += [
         "",
         "## Helper columns (query layer only)",
@@ -1492,7 +1695,35 @@ def _dictionary_rows(
             table, bundle, enum_names, enum_members, cross_site_keys,
         ):
             rows.append((prefix + table.name, *row))
+    if bundle.mapping.reporting.users_table:
+        rows += [(USERS_KEY_LIST, *row) for row in _users_dictionary_rows()]
     return rows
+
+
+def _users_dictionary_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
+    """Dictionary rows for the `_Users` dimension, in its column order."""
+    described = [
+        ("Id", "Counter (site user id)",
+         "The site user id a person column carries as `...Id`."),
+        ("Name", "Text (system)", "Display name."),
+        ("Email", "Text (system)", "Work email, when the profile carries one."),
+        ("Account", "Text (system)", "Account name, when the profile carries one."),
+        ("Department", "Text (system)",
+         "From the user profile, synced from Microsoft Entra; blank until synced."),
+        ("Job Title", "Text (system)",
+         "From the user profile, synced from Microsoft Entra; blank until synced."),
+        ("Office", "Text (system)", "From the user profile; blank until synced."),
+        ("Deleted", "Yes/No (system)",
+         "Set once the account has left the site; the row stays so older items still resolve."),
+        ("Principal Kind", "Derived from ContentTypeId",
+         "Person, SharePoint group, Domain group or Other."),
+        (f"User{REPORT_KEY_SUFFIX}", f"Site Url, `{USERS_KEY_LIST}` and the id",
+         "The join target for every `... Key` a person column carries."),
+    ]
+    return [
+        (name, type_cell, "-", "-", "-", "-", "-", "Always", "-", description)
+        for name, type_cell, description in described
+    ]
 
 
 def _render_m_table(
