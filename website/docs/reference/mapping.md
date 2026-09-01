@@ -716,32 +716,64 @@ reporting:
   users_table: true
 ```
 
-Switches for the generated reporting pack (`dbml-sharepoint report`, and
-the `reporting/` directory of a build). Everything here is off unless
-declared, so a pack regenerated from an unchanged mapping keeps its shape.
+Switches for the generated reporting pack: the `reporting/` directory of
+a build and the output of `dbml-sharepoint report`. Both keys take a real
+boolean; `"yes"` and `1` are refused rather than read as true. Everything
+here is off unless declared, so a pack regenerated from an unchanged
+mapping keeps its shape, and neither switch touches the deployed lists.
+The [reporting pack](../artifacts/reporting.md) page describes the
+generated queries in full.
 
-`system_columns` adds SharePoint's Created By, Created, Modified By and
-Modified to every generated Power Query list query, SQL view and data
-dictionary entry, after the list's own columns and in the same shape as a
-declared person or date-time column. Under `display_names`, they take
-SharePoint's own titles: `Created By Id`, `Created By Title`, `Created`,
-`Modified By Id`, `Modified By Title` and `Modified`, which the validator
-then reserves the same way it reserves `Site Url`. The SQL views expect
-the landed tables to carry `Author`, `Editor`, `Created` and `Modified`
-as well; a missing one fails the view by name.
+### `system_columns`
 
-`users_table` emits one more query, `_Users.pq`, over the site's user
-information list: one row per person, SharePoint group or domain group
-the site has ever resolved, with name, email, account, department, job
-title, office, a deleted flag and the principal kind, keyed by `User Key`
-in the same site-qualified shape as every list table. Every person column
-(and Created By and Modified By, with `system_columns`) gains a `... Key`
-that joins it, and the guide lists those relationships along with Power
-BI's one-active-relationship rule. The validator reserves the key names
-the way it reserves `Site Url`. SQL is untouched: person columns land
-there as display text, so nothing could join by id. The list was measured
-readable by a site admin; a reporting reader account has not been
-measured, and a 403 on refresh means it needs read access to that list.
+SharePoint's Created By, Created, Modified By and Modified on every list,
+after the list's own columns:
+
+- **Power Query:** `AuthorId` and `AuthorTitle`, `Created`, `EditorId`
+  and `EditorTitle`, `Modified`, typed and expanded the way a declared
+  person or date-time column is (`Created` and `Modified` as
+  `type datetimezone`). Under `display_names` they take SharePoint's own
+  titles: `Created By Id`, `Created By Title`, `Created`,
+  `Modified By Id`, `Modified By Title`, `Modified`.
+- **SQL views:** `Author` and `Editor` as `NVARCHAR(255)`, `Created` and
+  `Modified` as `DATETIMEOFFSET`. The landed tables must carry those four
+  internal names; a missing one fails the view by name. The landing drift
+  audit treats them as expected.
+- **Dictionary:** four rows per list, typed as person (system) and date
+  and time (system), in the in-report dictionary too.
+- **Validator:** the six model-facing names are reserved the way
+  `Site Url` is, because a schema column renamed onto one of them fails
+  the refresh rather than the build.
+
+### `users_table`
+
+One more query, `_Users.pq`, over the site's user information list, and
+a key on every person column that joins it:
+
+- **`_Users.pq`:** one row per person, SharePoint group or domain group
+  the site has ever resolved, with `Id`, `Name`, `Email`, `Account`,
+  `Department`, `Job Title`, `Office`, `Deleted`, `Principal Kind`
+  (Person, SharePoint group, Domain group or Other), `Site Url`,
+  `Site Name` and `User Key`. Department and job title come from the
+  user profile and are blank until it has synced.
+- **Person keys:** every person column gains a null-guarded `... Key` in
+  the same site-qualified shape as a lookup key. A schema column keeps
+  its internal name (`RiskOwner Key`); Created By and Modified By, with
+  `system_columns`, take their display titles (`Created By Key`).
+- **Guide:** one relationship row per person column, and Power BI's
+  one-active-relationship rule with the two ways through it,
+  `USERELATIONSHIP` from measures or a referencing copy of `_Users` per
+  role.
+- **Dictionary:** a `_Users` section, and the same rows in the in-report
+  dictionary.
+- **Validator:** the key names are reserved the way `Site Url` is.
+- **SQL:** untouched. Person columns land there as display text, so
+  nothing could join by id.
+
+Measured 2026-09-02 by a site admin: the list is readable and every
+selected field exists on it. A reporting reader account has not been
+measured; a 403 on refreshing `_Users` means it needs read access to
+that list.
 
 ## `column_formatting`
 

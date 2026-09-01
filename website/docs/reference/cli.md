@@ -266,7 +266,10 @@ dressed every genuine loader bug up as a bad mapping file. Closed by #141.
 ## `report`
 
 Emit the reporting pack only (no site URL required): `powerquery/`,
-`sql/views.sql`, `guide.md`, `data-dictionary.md`.
+`sql/views.sql`, `guide.md`, `data-dictionary.md`. The pack's shape
+follows the mapping's [`reporting`](mapping.md#reporting) section: the
+system columns and the `_Users` dimension are there only when it asks
+for them.
 
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
