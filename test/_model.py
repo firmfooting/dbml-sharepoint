@@ -44,6 +44,7 @@ from dbml_sharepoint.model.mapping_types import (
     MappingBundle,
     PermissionsConfig,
     PolymorphicPattern,
+    ReportingOptions,
     RetentionPolicy,
     RetiredColumn,
     RetirementStrip,
@@ -217,6 +218,7 @@ class MappingSections(TypedDict, total=False):
     demo_items: dict[str, list[DemoItem]]
     display_name_mode: str | None
     display_name_overrides: dict[str, dict[str, str]]
+    reporting: ReportingOptions
     column_style_specs: dict[str, dict[str, dict[str, Any]]]
     column_formatting: dict[str, dict[str, dict[str, Any]]]
     form_formatting: dict[str, FormFormatting]

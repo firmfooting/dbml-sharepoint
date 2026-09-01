@@ -194,6 +194,27 @@ way. The title adds no failure mode the query does not already have, and
 it saves a round trip to the site on every refresh.
 :::
 
+## System columns
+
+Every list carries SharePoint's Created By, Created, Modified By and
+Modified, and a report often wants them. They are off by default, so a
+pack regenerated from an unchanged mapping keeps its shape, and one line
+in the mapping turns them on for every list:
+
+```yaml
+reporting:
+  system_columns: true
+```
+
+They arrive after the list's own columns, in the same shape as a declared
+person or date-time column: `AuthorId` and `AuthorTitle`, `Created`,
+`EditorId` and `EditorTitle`, `Modified`, typed the same way and expanded
+through the same empty-list-safe step. Under `display_names` they take
+SharePoint's own titles (`Created By Id`, `Created By Title`, `Created`,
+and the Modified three), and the validator reserves those names the way
+it reserves `Site Url`. The SQL views then expect each landed table to
+carry `Author`, `Editor`, `Created` and `Modified` too.
+
 ## Schema-only reports
 
 `dbml-sharepoint report` emits the same queries without needing a site

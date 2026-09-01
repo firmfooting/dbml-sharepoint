@@ -1606,6 +1606,124 @@ def test_the_empty_list_run_is_recorded_where_the_guard_lives() -> None:
     assert "wasn't found" in task
 
 
+# --- System columns: Created By, Created, Modified By, Modified -------------
+#
+# Opt-in through `reporting.system_columns`. They ride the same arms as a
+# declared person or date-time column, and the names come from the deploy
+# side's SYSTEM_COLUMN_TYPES so the two sides cannot disagree about which
+# system columns exist.
+
+
+def _system_columns_on(*, display_names: bool = False) -> tuple[Schema, MappingBundle]:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    schema, _ = _expanding()
+    bundle = make_bundle(
+        entities=["Project", "Task"],
+        display_name_mode="auto" if display_names else None,
+        reporting=ReportingOptions(system_columns=True),
+    )
+    return schema, bundle
+
+
+def test_system_columns_are_off_unless_the_mapping_asks() -> None:
+    schema, bundle = _expanding()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "AuthorId" not in task
+    assert "Editor" not in task
+    assert '{"Created", ' not in task
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "[Author]" not in sql
+    assert "[Modified]" not in sql
+
+
+def test_system_columns_ride_the_person_and_datetime_arms() -> None:
+    schema, bundle = _system_columns_on()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    # After the schema's own columns, in the order Created By, Created,
+    # Modified By, Modified.
+    assert ',AuthorId,Author/Title,Created,EditorId,Editor/Title,Modified"' in task
+    assert ',Author,Editor"' in task
+    for typed in (
+        '{"AuthorId", Int64.Type}', '{"AuthorTitle", type text}',
+        '{"Created", type datetimezone}',
+        '{"EditorId", Int64.Type}', '{"EditorTitle", type text}',
+        '{"Modified", type datetimezone}',
+    ):
+        assert typed in task, typed
+    # The display titles come through the same empty-list-safe expansion as
+    # a declared person column, fallback included.
+    for record_col, out in (("Author", "AuthorTitle"), ("Editor", "EditorTitle")):
+        assert f'"{record_col}", {{"Title"}}, {{"{out}"}})' in task, out
+        assert f'"{out}", each null, type text' in task, out
+
+
+def test_system_columns_take_sharepoint_display_titles_for_the_model() -> None:
+    schema, bundle = _system_columns_on(display_names=True)
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    renamed = task.split("RenamedForModel = Table.RenameColumns(")[1]
+    for internal, display in (
+        ("AuthorId", "Created By Id"), ("AuthorTitle", "Created By Title"),
+        ("EditorId", "Modified By Id"), ("EditorTitle", "Modified By Title"),
+    ):
+        assert f'{{"{internal}", "{display}"}}' in renamed, internal
+    # Never the auto-split of the internal name...
+    assert '"Author Id"' not in renamed
+    assert '"Editor Title"' not in renamed
+    # ...and Created and Modified already are their display titles.
+    assert '{"Created", ' not in renamed
+    assert '{"Modified", ' not in renamed
+
+
+def test_system_columns_land_in_the_sql_view_and_its_audit() -> None:
+    schema, bundle = _system_columns_on()
+    sql = generate_sql_views(schema, bundle, "default")
+    for expected in (
+        "CAST(t.[Author] AS NVARCHAR(255)) AS [Author]",
+        "CAST(t.[Created] AS DATETIMEOFFSET) AS [Created]",
+        "CAST(t.[Editor] AS NVARCHAR(255)) AS [Editor]",
+        "CAST(t.[Modified] AS DATETIMEOFFSET) AS [Modified]",
+    ):
+        assert expected in sql, expected
+    # A landed system column is expected, not drift.
+    audit = generate_dictionary_sql(schema, bundle, "default")
+    for name in ("Author", "Created", "Editor", "Modified"):
+        assert f"(N'APP_Task', N'{name}')" in audit, name
+
+
+def test_system_columns_are_in_the_dictionary_when_on() -> None:
+    schema, bundle = _system_columns_on()
+    md = generate_data_dictionary(schema, bundle, "default")
+    for row in (
+        "| Author | Person (system: Created By) |",
+        "| Created | Date and time (system) |",
+        "| Editor | Person (system: Modified By) |",
+        "| Modified | Date and time (system) |",
+    ):
+        assert row in md, row
+    schema, bundle = _expanding()
+    assert "(system" not in generate_data_dictionary(schema, bundle, "default")
+
+
+def test_the_guide_names_the_system_columns_and_their_landing_contract() -> None:
+    schema, bundle = _system_columns_on()
+    md = generate_reporting_md(schema, bundle, "default")
+    assert "`reporting.system_columns`" in md
+    assert "`Author`, `Editor`, `Created` and `Modified`" in md
+    schema, bundle = _expanding()
+    assert "system_columns" not in generate_reporting_md(schema, bundle, "default")
+
+
+def test_the_system_column_list_is_the_deploy_side_fact() -> None:
+    """One list of system columns, owned by `analysis/column_projection`.
+    A second copy here is the two sides disagreeing about which columns a
+    list has, which is the split the shared module exists to prevent."""
+    from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
+    from dbml_sharepoint.analysis.report_columns import REPORT_SYSTEM_COLUMNS
+
+    assert set(REPORT_SYSTEM_COLUMNS) == set(SYSTEM_COLUMN_TYPES) - {"ID"}
+
+
 # --- The row key must name the LIST, not only the site ----------------------
 #
 # Measured 2026-08-11: the key was `SiteRoot & "|" & Number.ToText([Id])`,

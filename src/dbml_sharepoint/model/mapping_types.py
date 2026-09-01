@@ -437,6 +437,17 @@ class PermissionsConfig:
     default_policy_site_role: str | None = None
 
 
+@dataclass(frozen=True)
+class ReportingOptions:
+    """The `reporting:` section: what the reporting pack adds beyond the
+    schema's own columns. Everything defaults off, so a pack regenerated
+    from an unchanged mapping keeps its shape."""
+
+    # Created By, Created, Modified By and Modified on every list query,
+    # SQL view and dictionary entry.
+    system_columns: bool = False
+
+
 @dataclass
 class Mapping:
     """The full schema/sharepoint-mapping.yaml structure."""
@@ -490,6 +501,8 @@ class Mapping:
     # {entity: {column: "Display"}} overrides winning. None = feature off.
     display_name_mode: str | None = None
     display_name_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    # reporting section: switches for the generated reporting pack.
+    reporting: ReportingOptions = field(default_factory=ReportingOptions)
     # Raw style specs (dicts with a 'style' key) as declared, kept beside
     # the expanded formatter JSON so the validator can check map keys
     # against enum members after load-time expansion.

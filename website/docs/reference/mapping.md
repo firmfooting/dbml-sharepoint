@@ -708,6 +708,27 @@ Settle titles before the first deploy. Renaming a deployed column is not
 harmful, but a title changed in the SharePoint UI instead of here is drift:
 the next re-paste detects it, reverts it and reports having done so.
 
+## `reporting`
+
+```yaml
+reporting:
+  system_columns: true
+```
+
+Switches for the generated reporting pack (`dbml-sharepoint report`, and
+the `reporting/` directory of a build). Everything here is off unless
+declared, so a pack regenerated from an unchanged mapping keeps its shape.
+
+`system_columns` adds SharePoint's Created By, Created, Modified By and
+Modified to every generated Power Query list query, SQL view and data
+dictionary entry, after the list's own columns and in the same shape as a
+declared person or date-time column. Under `display_names`, they take
+SharePoint's own titles: `Created By Id`, `Created By Title`, `Created`,
+`Modified By Id`, `Modified By Title` and `Modified`, which the validator
+then reserves the same way it reserves `Site Url`. The SQL views expect
+the landed tables to carry `Author`, `Editor`, `Created` and `Modified`
+as well; a missing one fails the view by name.
+
 ## `column_formatting`
 
 The fleet style standard: parameterised styles that expand at build time

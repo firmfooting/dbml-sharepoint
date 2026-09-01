@@ -2439,3 +2439,45 @@ def test_a_bare_entities_key_names_entities(tmp_path: Path) -> None:
     path = write_mapping(tmp_path, "entities:\n")
     with pytest.raises(ValueError, match="entities"):
         load_mapping(path)
+
+
+# --- reporting -------------------------------------------------------------
+
+
+def test_reporting_parsed(tmp_path: Path) -> None:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          system_columns: true
+    """))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.reporting == ReportingOptions(system_columns=True)
+
+
+def test_reporting_absent_defaults_off() -> None:
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
+    assert bundle.mapping.reporting == ReportingOptions()
+    assert bundle.mapping.reporting.system_columns is False
+
+
+def test_reporting_unknown_key_rejected(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          system_colums: true
+    """))
+    with pytest.raises(ValueError, match="reporting"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_reporting_switch_must_be_a_boolean(tmp_path: Path) -> None:
+    """YAML reads `"yes"` and `1` as truthy, so a string or a number here
+    would turn the feature on by accident and never say so."""
+    write_mapping(tmp_path, _views_yaml("""
+        reporting:
+          system_columns: "yes"
+    """))
+    with pytest.raises(ValueError, match="system_columns"):
+        load_mapping(tmp_path / "m.yaml")
