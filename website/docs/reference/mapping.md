@@ -713,6 +713,7 @@ the next re-paste detects it, reverts it and reports having done so.
 ```yaml
 reporting:
   system_columns: true
+  users_table: true
 ```
 
 Switches for the generated reporting pack (`dbml-sharepoint report`, and
@@ -728,6 +729,19 @@ SharePoint's own titles: `Created By Id`, `Created By Title`, `Created`,
 then reserves the same way it reserves `Site Url`. The SQL views expect
 the landed tables to carry `Author`, `Editor`, `Created` and `Modified`
 as well; a missing one fails the view by name.
+
+`users_table` emits one more query, `_Users.pq`, over the site's user
+information list: one row per person, SharePoint group or domain group
+the site has ever resolved, with name, email, account, department, job
+title, office, a deleted flag and the principal kind, keyed by `User Key`
+in the same site-qualified shape as every list table. Every person column
+(and Created By and Modified By, with `system_columns`) gains a `... Key`
+that joins it, and the guide lists those relationships along with Power
+BI's one-active-relationship rule. The validator reserves the key names
+the way it reserves `Site Url`. SQL is untouched: person columns land
+there as display text, so nothing could join by id. The list was measured
+readable by a site admin; a reporting reader account has not been
+measured, and a 403 on refresh means it needs read access to that list.
 
 ## `column_formatting`
 
