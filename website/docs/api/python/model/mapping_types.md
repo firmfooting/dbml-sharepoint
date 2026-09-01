@@ -422,6 +422,18 @@ class PermissionsConfig:
 
 PermissionsConfig(levels: list[dbml_sharepoint.model.mapping_types.CustomPermissionLevel], groups: list[dbml_sharepoint.model.mapping_types.SiteGroup], default_policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy | None, overrides: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], default_policy_site_role: str | None = None)
 
+### `ReportingOptions`
+
+```python
+@dataclass(frozen=True)
+class ReportingOptions:
+    system_columns: bool = False
+```
+
+The `reporting:` section: what the reporting pack adds beyond the
+schema's own columns. Everything defaults off, so a pack regenerated
+from an unchanged mapping keeps its shape.
+
 ### `Mapping`
 
 ```python
@@ -449,6 +461,7 @@ class Mapping:
     demo_items: dict[str, list[dbml_sharepoint.model.mapping_types.DemoItem]] = field(default_factory=dict)
     display_name_mode: str | None = None
     display_name_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    reporting: ReportingOptions = field(default_factory=ReportingOptions)
     column_style_specs: dict[str, dict[str, dict[str, typing.Any]]] = field(default_factory=dict)
     column_formatting: dict[str, dict[str, dict[str, typing.Any]]] = field(default_factory=dict)
     form_formatting: dict[str, dbml_sharepoint.model.mapping_types.FormFormatting] = field(default_factory=dict)

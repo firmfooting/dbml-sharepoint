@@ -501,7 +501,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN: (
         "A column's resolved display title is one of the columns the "
         "reporting pack adds to the same list: `Site Url`, `Site Name`, "
-        "`List Title`, or `<Entity> Key`. The generated Power Query adds "
+        "`List Title`, `<Entity> Key`, or, with `reporting.system_columns` "
+        "on, `Created By Id`, `Created By Title`, `Created`, "
+        "`Modified By Id`, `Modified By Title` and `Modified`. "
+        "The generated Power Query adds "
         "those columns and THEN runs `Table.RenameColumns` to give every "
         "schema column its display title. Renaming a column onto a name the "
         "table already carries is an error in M, so this does not produce a "

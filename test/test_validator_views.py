@@ -1178,3 +1178,44 @@ def test_the_auto_split_alone_reaches_a_reporting_column() -> None:
     assert "'Site Url'" in only(
         errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
     ).message
+
+
+def test_system_columns_reserve_their_model_names_only_when_switched_on() -> None:
+    """With `reporting.system_columns` on, the pack adds Created By, Created,
+    Modified By and Modified under SharePoint's own display titles, in the
+    same rename step as the schema columns. A schema column whose display
+    title lands on one of those six names fails the refresh the same way a
+    `Site Url` collision does. With the switch off those columns do not
+    exist, so the same override is a plain display title."""
+    from dbml_sharepoint.model.mapping_types import ReportingOptions
+
+    schema = make_schema(
+        make_table(
+            "Project",
+            column("Title", required=True),
+            column("Status", "nvarchar"),
+        ),
+    )
+    for override in (
+        "Created By Id", "Created By Title", "Created",
+        "Modified By Id", "Modified By Title", "Modified",
+    ):
+        on = make_bundle(
+            entities=["Project"], display_name_mode="auto",
+            display_name_overrides={"Project": {"Status": override}},
+            reporting=ReportingOptions(system_columns=True),
+        )
+        errors = [
+            f for f in validate_against_mapping(schema, on) if f.severity == "error"
+        ]
+        assert f"{override!r}" in only(
+            errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+        ).message, override
+        off = make_bundle(
+            entities=["Project"], display_name_mode="auto",
+            display_name_overrides={"Project": {"Status": override}},
+        )
+        none_of(
+            validate_against_mapping(schema, off),
+            FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+        )

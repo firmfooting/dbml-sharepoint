@@ -31,6 +31,7 @@ _FORBIDDEN_PROJECTION_IMPORTS = (
 #: Every file the move repointed, and the names each one takes from here.
 _INTENDED_IMPORTERS: dict[str, set[str]] = {
     "generators/jsgen.py": {"SYSTEM_COLUMN_TYPES", "effective_column_types"},
+    "generators/reportgen.py": {"SYSTEM_COLUMN_TYPES"},
     "analysis/checks/_views.py": {"SYSTEM_COLUMN_TYPES", "effective_column_types"},
     "analysis/checks/_formatting.py": {"effective_column_types"},
     "analysis/checks/_retirement.py": {"effective_column_types"},
