@@ -1744,3 +1744,70 @@ def test_the_guide_says_what_the_key_is_made_of() -> None:
     md = generate_reporting_md(schema, bundle, "default")
     assert "**`List Title`**" in md
     assert "**list title**" in md
+
+
+# --- Only the declared columns reach the model ------------------------------
+#
+# MEASURED 2026-09-02 on a live tenant, at the Source step of a generated
+# query in Power BI Desktop: `/items?$select=Id,...` answers with an uppercase
+# `ID` beside the `Id` that was asked for, identical on every row. No step
+# removed it, Power Query keeps both because its column names are
+# case-sensitive, and the Power BI model, whose names are not, loaded the
+# second one as "ID 2" in every list table of a production report.
+
+_TYPING_STEP = re.compile(
+    r"(?P<step>\w+) = Table\.TransformColumnTypes\(\s*\w+,\s*\{(?P<body>.*?)\n\s*\}\s*\)",
+    re.DOTALL,
+)
+_SELECT_STEP = re.compile(
+    r"(?P<step>\w+) = Table\.SelectColumns\(\s*(?P<prev>\w+),\s*\{(?P<body>[^}]*)\}",
+)
+
+
+def _typed_columns(query: str) -> list[str]:
+    typed = _TYPING_STEP.search(query)
+    assert typed is not None, "no typing step"
+    return re.findall(r'\{"([^"]+)",', typed["body"])
+
+
+def test_powerquery_keeps_exactly_the_typed_columns_after_typing() -> None:
+    """Anything SharePoint adds unasked rides through every later step, so the
+    declared set is selected right after it is typed, and the next step builds
+    on that selection rather than on the typing step it bypasses."""
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+
+    select = _SELECT_STEP.search(task)
+    assert select is not None, "no Table.SelectColumns step"
+    typing = _TYPING_STEP.search(task)
+    assert typing is not None
+    assert select["prev"] == typing["step"]
+    assert re.findall(r'"([^"]+)"', select["body"]) == _typed_columns(task)
+    assert re.search(
+        rf'Table\.AddColumn\(\s*{select["step"]}, "ItemURL"', task,
+    ), "ItemURL is not built on the selected columns"
+
+
+def test_powerquery_keeps_a_multi_value_column_through_the_selection() -> None:
+    """The joined multi-value column is the one output that is NOT in the
+    typing step (the join ascribes its type), so a selection built from the
+    typed names alone would drop it silently: a column missing from an export
+    with no error anywhere, this project's failure class."""
+    schema, bundle = _multi_value()
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    select = _SELECT_STEP.search(q)
+    assert select is not None, "no Table.SelectColumns step"
+    kept = re.findall(r'"([^"]+)"', select["body"])
+    assert "AuditEvents" in kept
+    assert set(kept) == set(_typed_columns(q)) | {"AuditEvents"}
+
+
+def test_the_uppercase_id_run_is_recorded_where_the_selection_lives() -> None:
+    """A bare `Table.SelectColumns` over the columns the query itself asked
+    for reads as a no-op to the next person, who deletes it and puts "ID 2"
+    back into every model."""
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "2026-09-02" in task
+    assert '"ID 2"' in task
