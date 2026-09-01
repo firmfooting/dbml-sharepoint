@@ -47,6 +47,7 @@ from dbml_sharepoint.model.mapping_types import (
     Principal,
     PrincipalKind,
     ReconcileMode,
+    ReportingOptions,
     RetentionPolicy,
     RoleAssignment,
     SiteGroup,
@@ -74,6 +75,7 @@ KNOWN_SECTIONS = frozenset({
     "enum_sources", "watched_lists", "polymorphic_patterns",
     "retention_policies_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
+    "reporting",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
     "retired_columns", "field_sets",
     "lookup_projections",
@@ -355,6 +357,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ).items()
         },
         display_name_mode=_parse_display_name_mode(raw),
+        reporting=_parse_reporting(raw.get("reporting")),
         display_name_overrides={
             entity: {
                 col: str(name)
@@ -555,6 +558,19 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
         )
     return "auto"
 
+
+
+def _parse_reporting(block: Any) -> ReportingOptions:
+    section = _require_mapping(block, "reporting")
+    _reject_unknown_keys(section, {"system_columns"}, "reporting")
+    value = section.get("system_columns", False)
+    # YAML reads "yes" and 1 as truthy, so anything but a real boolean would
+    # switch the feature on by accident and never say so.
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"reporting.system_columns: expected true or false, got {value!r}",
+        )
+    return ReportingOptions(system_columns=value)
 
 
 def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:

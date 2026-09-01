@@ -26,7 +26,42 @@ REPORT_FIXED_COLUMNS: tuple[str, ...] = ("Site Url", "Site Name", "List Title")
 #: a key that carries both. Named per entity, so it cannot be a constant.
 REPORT_KEY_SUFFIX = " Key"
 
+#: The system columns `reporting.system_columns` adds to every list, in
+#: reporting order: Created By, Created, Modified By, Modified. Which columns
+#: exist and what kind each is comes from `column_projection.SYSTEM_COLUMN_TYPES`,
+#: the deploy side's list; only the order is decided here. ID is not among
+#: them because every query already carries the row id as `Id`.
+REPORT_SYSTEM_COLUMNS: tuple[str, ...] = ("Author", "Created", "Editor", "Modified")
 
-def report_columns_for(entity: str) -> tuple[str, ...]:
-    """Every reporting column present when `entity`'s rename runs."""
-    return (*REPORT_FIXED_COLUMNS, f"{entity}{REPORT_KEY_SUFFIX}")
+#: SharePoint's own display titles for the two person columns. Created and
+#: Modified are already theirs.
+SYSTEM_DISPLAY_TITLES: dict[str, str] = {"Author": "Created By", "Editor": "Modified By"}
+
+
+def system_report_columns() -> tuple[str, ...]:
+    """The model-facing names the system columns take under display-name
+    mode: `Created By Id`, `Created By Title`, `Created`, and the Modified
+    three. The person pair follows the `<Display> Id` / `<Display> Title`
+    shape a declared person column gets, so it sits consistently beside
+    one."""
+    names: list[str] = []
+    for name in REPORT_SYSTEM_COLUMNS:
+        title = SYSTEM_DISPLAY_TITLES.get(name)
+        if title is None:
+            names.append(name)
+        else:
+            names += [f"{title} Id", f"{title} Title"]
+    return tuple(names)
+
+
+def report_columns_for(entity: str, *, system_columns: bool = False) -> tuple[str, ...]:
+    """Every reporting column present when `entity`'s rename runs.
+
+    With `reporting.system_columns` on, the six system column names are in
+    the table too, renamed in the same step as the schema columns, so a
+    schema column landing on one of them fails the refresh the same way.
+    """
+    columns = (*REPORT_FIXED_COLUMNS, f"{entity}{REPORT_KEY_SUFFIX}")
+    if system_columns:
+        columns += system_report_columns()
+    return columns

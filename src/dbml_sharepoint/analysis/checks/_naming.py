@@ -94,7 +94,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             # `display_name_mode: auto` reaches this with no override at all --
             # `auto_display_name` splits `SiteUrl` to `Site Url`, `SiteName` to
             # `Site Name` and `ListTitle` to `List Title`.
-            reserved = set(report_columns_for(table.name))
+            reserved = set(report_columns_for(
+                table.name,
+                system_columns=bundle.mapping.reporting.system_columns,
+            ))
             for display_title, sources in sorted(resolved.items()):
                 if display_title in reserved:
                     findings.append(Finding(

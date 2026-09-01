@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint import __version__
+from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import (
@@ -39,8 +40,15 @@ from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
+    REPORT_SYSTEM_COLUMNS,
+    SYSTEM_DISPLAY_TITLES,
 )
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, SPField, map_column
+from dbml_sharepoint.analysis.typemap import (
+    CALCULATED_TYPES,
+    SPField,
+    is_person,
+    map_column,
+)
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_DIR,
@@ -211,13 +219,7 @@ def _build_plans(
                     plan.m_types.append((sp.name, "type number"))
                     plan.sql_columns.append((sp.name, "DECIMAL(18,4)"))
                 case "DateTime":
-                    plan.selects.append(sp.name)
-                    if sp.date_only:
-                        plan.m_types.append((sp.name, "type date"))
-                        plan.sql_columns.append((sp.name, "DATE"))
-                    else:
-                        plan.m_types.append((sp.name, "type datetimezone"))
-                        plan.sql_columns.append((sp.name, "DATETIMEOFFSET"))
+                    _plan_datetime(plan, sp.name, date_only=sp.date_only)
                 case "Boolean":
                     plan.selects.append(sp.name)
                     plan.m_types.append((sp.name, "type logical"))
@@ -231,15 +233,7 @@ def _build_plans(
                     plan.m_types.append((f"{sp.name}Url", "type text"))
                     plan.sql_columns.append((sp.name, "NVARCHAR(2000)"))
                 case "User":
-                    plan.selects.append(f"{sp.name}Id")
-                    plan.selects.append(f"{sp.name}/Title")
-                    plan.expands.append(sp.name)
-                    plan.record_expands.append(
-                        (sp.name, "Title", f"{sp.name}Title", "type text"),
-                    )
-                    plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
-                    plan.m_types.append((f"{sp.name}Title", "type text"))
-                    plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
+                    _plan_person(plan, sp.name)
                 case "Lookup":
                     target = sp.target_list or ""
                     display = _display_column(bundle, target)
@@ -329,6 +323,26 @@ def _build_plans(
                         f"arm in _sp_type_cell -- rather than letting it fall "
                         f"out of every generated query.",
                     )
+        # After the schema's own columns, so they sit at the end of every
+        # query and view. MEASURED 2026-09-02 on a live tenant: /items answers
+        # $select=Created,Modified,AuthorId,Author/Title,EditorId,Editor/Title
+        # with $expand=Author,Editor in the same shape as a declared person
+        # or date-time column, which is why they ride the same two helpers.
+        system_outputs: set[str] = set()
+        if bundle.mapping.reporting.system_columns:
+            for name in REPORT_SYSTEM_COLUMNS:
+                kind = SYSTEM_COLUMN_TYPES[name]
+                if is_person(kind):
+                    _plan_person(plan, name)
+                    system_outputs.update((f"{name}Id", f"{name}Title"))
+                elif kind == "datetime":
+                    _plan_datetime(plan, name, date_only=False)
+                    system_outputs.add(name)
+                else:
+                    raise ValueError(
+                        f"reporting has no plan for system column {name!r} "
+                        f"of kind {kind!r}",
+                    )
         if bundle.mapping.display_name_mode is not None:
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
@@ -343,11 +357,43 @@ def _build_plans(
                 + plan.multi_value_joins
                 + ["ItemURL"]
             ):
+                if out_name in system_outputs:
+                    continue
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
+            # System columns are not the mapping's to rename: they take
+            # SharePoint's own display titles, through the same
+            # "<Display> Id" / "<Display> Title" shape as a declared person
+            # column, so they sit consistently beside one.
+            for name, title in SYSTEM_DISPLAY_TITLES.items():
+                if f"{name}Id" in system_outputs:
+                    plan.renames.append((f"{name}Id", f"{title} Id"))
+                    plan.renames.append((f"{name}Title", f"{title} Title"))
         plans.append(plan)
     return plans
+
+
+def _plan_person(plan: _ListPlan, name: str) -> None:
+    """A person column: the site-user id as the join key, the display name
+    through a guarded expand, and display text on the SQL side."""
+    plan.selects.append(f"{name}Id")
+    plan.selects.append(f"{name}/Title")
+    plan.expands.append(name)
+    plan.record_expands.append((name, "Title", f"{name}Title", "type text"))
+    plan.m_types.append((f"{name}Id", "Int64.Type"))
+    plan.m_types.append((f"{name}Title", "type text"))
+    plan.sql_columns.append((name, "NVARCHAR(255)"))
+
+
+def _plan_datetime(plan: _ListPlan, name: str, *, date_only: bool) -> None:
+    plan.selects.append(name)
+    if date_only:
+        plan.m_types.append((name, "type date"))
+        plan.sql_columns.append((name, "DATE"))
+    else:
+        plan.m_types.append((name, "type datetimezone"))
+        plan.sql_columns.append((name, "DATETIMEOFFSET"))
 
 
 # ---------------------------------------------------------------- Power Query
@@ -838,6 +884,7 @@ def generate_reporting_md(
     is wrong about that costs the operator the whole first hour.
     """
     plans = _build_plans(schema, bundle, site_role)
+    system_columns = bundle.mapping.reporting.system_columns
     setup_step = (
         ("1. **Manage Parameters -> New parameter**: a *Text* parameter named "
          "`SiteUrl` holding the **site** URL, e.g. "
@@ -949,6 +996,15 @@ def generate_reporting_md(
         ("Person columns carry the site-user id (`...Id`) and display name "
          "(`...Title`) but no relationship target. The site user list is not "
          "part of this schema."),
+        *(
+            ["",
+             ("Every list also carries SharePoint's **Created By**, "
+              "**Created**, **Modified By** and **Modified** "
+              "(`reporting.system_columns` in the mapping), after its own "
+              "columns and in the same shape as a declared person or "
+              "date-time column.")]
+            if system_columns else []
+        ),
         "",
         "## SQL views: warehouse landing zone",
         "",
@@ -957,7 +1013,11 @@ def generate_reporting_md(
          "table named after the list, columns named after the SharePoint "
          "internal names, in the `$(LandingSchema)` schema. Lookup columns "
          "land as `...Id` integers; person columns land as display-name text. "
-         "Run the script in SQLCMD mode after adjusting `:setvar "
+         + ("With `reporting.system_columns` on, each landed table must also "
+            "carry `Author`, `Editor`, `Created` and `Modified`; a missing "
+            "one fails the view by name rather than silently. "
+            if system_columns else "")
+         + "Run the script in SQLCMD mode after adjusting `:setvar "
          "LandingSchema` / `:setvar ReportSchema`."),
         "",
         ("**Multi-value choice columns are a landing contract, not a "
@@ -1230,7 +1290,25 @@ def _column_rows_for_table(
                 "-", "-", "-", "-", "-", "Always", "-",
                 f"Read-only dependent of {column}, showing the target's {target}.",
             ))
+    if bundle.mapping.reporting.system_columns:
+        rows += _system_column_rows()
     return rows
+
+
+def _system_column_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
+    """Dictionary rows for the system columns, in the query's order. They
+    exist on every list, so they belong beside the list's own columns rather
+    than in the query-layer helper table."""
+    described = {
+        "Author": ("Person (system: Created By)", "Who created the item."),
+        "Created": ("Date and time (system)", "When the item was created."),
+        "Editor": ("Person (system: Modified By)", "Who last modified the item."),
+        "Modified": ("Date and time (system)", "When the item was last modified."),
+    }
+    return [
+        (name, described[name][0], "-", "-", "-", "-", "-", "Always", "-", described[name][1])
+        for name in REPORT_SYSTEM_COLUMNS
+    ]
 
 
 def _metadata_rows(
