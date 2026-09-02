@@ -307,7 +307,10 @@
   record('formula.validation.list-modified-rule-accepted', 'the list validation formula against [Modified] and [Created] is accepted', set.ok ? 'ACCEPTED' : 'REFUSED', set.ok ? `HTTP ${set.status}` : `HTTP ${set.status} ${reason(set)}`);
   if (!set.ok) return report();
   const back = await spGet(`${listPath}?$select=ValidationFormula`);
-  record('formula.validation.list-modified-rule-readback', 'the stored formula reads back as written', back.body && back.body.ValidationFormula === rule ? 'PASS' : 'FAIL', `stored: ${back.body && back.body.ValidationFormula}`);
+  // SharePoint reads `[DM]<=[Modified]` back as `DM<=Modified` (measured
+  // 2026-09-02), so the brackets are ignored, as the deployer's readback does.
+  const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
+  record('formula.validation.list-modified-rule-readback', 'the stored formula reads back as written', back.body && canonical(back.body.ValidationFormula) === canonical(rule) ? 'PASS' : 'FAIL', `stored: ${back.body && back.body.ValidationFormula}`);
 
   const save = async (label, payload) => post(items, { __metadata: { type: itemType }, Title: label, ...payload });
   const rows = [
