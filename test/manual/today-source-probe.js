@@ -1,5 +1,5 @@
 /**
- * dbml-sharepoint PROBE (READ-ONLY unless ADD_DEFAULT_COLUMN): WHERE DOES THE
+ * dbml-sharepoint PROBE (READ-ONLY unless ALLOW_WRITES): WHERE DOES THE
  * LAGGING `today` COME FROM, AND WHICH SURFACES SHARE IT?
  *
  * QUESTION: TODAY() and NOW() in validation formulas were measured hours
@@ -9,16 +9,18 @@
  * column defaults ([today]) read the same clock?
  *
  * Runs against the scratch list `dbml-probe-today-semantics` left by the
- * today-semantics probe, which holds T (a date-only column with default
- * formula =TODAY()) and DM (a date-only column holding both yesterday's and
- * today's site-local midnight).
+ * today-semantics probe, which holds T, a date-only column with default
+ * formula =TODAY(). That probe does NOT create DM, the date-only column V2
+ * and V3 compare, so with ALLOW_WRITES this one adds DM and seeds yesterday's
+ * and today's site-local midnight into it.
  *
  * WHAT IT ASKS
  *   Z    site zone, browser offset, server clock
  *   P    the signed-in user's profile regional properties
  *   V1   CAML `T Eq <Today/>`: ALL rows means <Today/> reads the lagging
  *        clock; NONE means it reads the site's date
- *   V2   CAML `DM Eq <Today/>`: which day's rows it returns
+ *   V2   CAML `DM Eq <Today/>`: which day's rows it returns. Its evidence
+ *        also carries whether DM and its two rows had to be created
  *   V3   CAML `DM Eq <Today OffsetDays='-1'/>`: which day's rows
  *   V4   CAML `Modified Leq <Today IncludeTimeValue='TRUE'/>`: every row was
  *        modified recently, so ALL means the instant is current and NONE
@@ -29,7 +31,8 @@
  *        TD yourself: that is the FORM's [today].
  *
  * HOW TO RUN: F12 -> Console on the site, paste, Enter; set CONFIRMED = true
- * and paste again. D1 needs ADD_DEFAULT_COLUMN and ALLOW_WRITES as well.
+ * and paste again. Backfilling DM needs ALLOW_WRITES, and V2 and V3 cannot be
+ * answered without it; D1 needs ADD_DEFAULT_COLUMN on top of that.
  * Copy the RESULTS block back.
  */
 (async () => {
@@ -260,6 +263,7 @@
 
   if (!CONFIRMED) {
     log('INFO', `Would read the site zone, the profile, and query '${LIST}' on ${WEB}.`);
+    log('INFO', `With ALLOW_WRITES it would add DM and two dated rows to '${LIST}' if absent.`);
     log('INFO', `With ADD_DEFAULT_COLUMN it would also add a column and one item to '${LIST}'.`);
     log('INFO', 'Set CONFIRMED = true and paste again.');
     return;
@@ -291,6 +295,46 @@
 
   // ---- V1..V4: what <Today/> means in a CAML query ------------------------
   const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+
+  // today-semantics creates D, W and T and no DM, so on the 2026-09-02 run V2
+  // and V3 came back HTTP 500 "One or more field types are not installed
+  // properly" rather than answering. DM is backfilled here instead.
+  const nowLocal = new Date();
+  const localMidnightUtc = (days) =>
+    new Date(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate() + days, 0, 0, 0, 0).toISOString();
+  const ensureDm = async () => {
+    const titles = ((await spGet(`${listPath}/fields?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title);
+    const present = titles.includes('DM');
+    if (!present) {
+      if (!ALLOW_WRITES) return 'DM absent and ALLOW_WRITES is false, so it was not created';
+      const made = await spPost(`${listPath}/fields`, {
+        __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'DM', DisplayFormat: 0,
+      }, await getDigest(), VERBOSE);
+      if (!made.ok) return `DM create refused: HTTP ${made.status} ${made.text.slice(0, 160)}`;
+    }
+    const head = `DM ensured (${present ? 'already present' : 'created'})`;
+    const before = await spGet(`${listPath}/items?$select=Id,Title,DM&$top=500`);
+    if (readFailed(before)) return `${head}; DM values not readable: HTTP ${before.status}`;
+    const carrying = (before.body.value || []).filter((r) => r.DM);
+    if (carrying.length) {
+      return `${head}; rows seeded (${carrying.length} present): ${carrying.map((r) => `#${r.Id} ${r.Title} DM=${r.DM}`).join(', ')}`;
+    }
+    if (!ALLOW_WRITES) return `${head}; no row carries DM and ALLOW_WRITES is false, so none were seeded`;
+    const itemType = (await spGet(`${listPath}?$select=ListItemEntityTypeFullName`)).body?.ListItemEntityTypeFullName;
+    for (const [title, value] of [['dm-yesterday', localMidnightUtc(-1)], ['dm-today', localMidnightUtc(0)]]) {
+      const made = await spPost(`${listPath}/items`, {
+        __metadata: { type: itemType }, Title: title, DM: value,
+      }, await getDigest(), VERBOSE);
+      if (!made.ok) return `${head}; seeding ${title} refused: HTTP ${made.status} ${made.text.slice(0, 160)}`;
+    }
+    // Read back rather than trust the writes: the stored value is what V2 and
+    // V3 are about to compare.
+    const after = await spGet(`${listPath}/items?$select=Id,Title,DM&$top=500`);
+    if (readFailed(after)) return `${head}; rows seeded (2) but not readable back: HTTP ${after.status}`;
+    return `${head}; rows seeded (2): ${(after.body.value || []).filter((r) => r.DM).map((r) => `#${r.Id} ${r.Title} DM=${r.DM}`).join(', ')}`;
+  };
+  const dmNote = await ensureDm();
+
   const caml = async (where, fieldNames) => {
     const digest = await getDigest();
     const viewFields = [...fieldNames, 'ID'].map((f) => `<FieldRef Name='${f}'/>`).join('');
@@ -315,7 +359,9 @@
   ];
   for (const [id, question, where, fieldNames] of rows) {
     const got = await caml(where, fieldNames);
-    record(id, question, got.count === null ? 'FAIL' : 'PASS', got.detail);
+    const evidence = id === 'query.caml-adhoc.today-element-site-date'
+      ? `${dmNote}; ${got.detail}` : got.detail;
+    record(id, question, got.count === null ? 'FAIL' : 'PASS', evidence);
   }
 
   // ---- D1: the dynamic default, server side ----------------------------------
