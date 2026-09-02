@@ -1,0 +1,78 @@
+{# test/manual/templates/date-storage-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (READ-ONLY): WHAT INSTANT A DATE-ONLY COLUMN STORES
+ *
+ * QUESTION: when the modern form saves a date-only value, does SharePoint
+ * store it as midnight in the SITE's zone, or as midnight UTC (which reads
+ * as 10:00 in a UTC+10 site and so sits after a midnight TODAY())?
+ *
+ * WHY: a rule `=[D]<=TODAY()` refusing today's date past 10:00 local, on a
+ * site in UTC+10 with a correct server clock, is explained by a stored time
+ * of day and by nothing else the site settings show.
+ *
+ * WHAT IT PRINTS (dates and ids only; no titles, no names)
+ *   Z   the site's regional time zone and this browser's offset
+ *   S   the server's own clock, from a fresh response's Date header
+ *   D1  for the newest rows of the first list in READS: its date columns
+ *       as stored (UTC instants) beside Created and Modified
+ *   D2  the same for the second list, whose date column the SERVER fills
+ *       from a [today] default, so the server's own "today at midnight"
+ *       is visible here
+ *
+ * HOW TO READ IT: a value picked as the 2nd stored as ...-01T14:00:00Z is
+ * site-local midnight in UTC+10; stored as ...-02T00:00:00Z it is UTC
+ * midnight, 10:00 local. Compare a form-picked date with a server-filled one.
+ *
+ * HOW TO RUN: edit READS to name two lists on the site and the date columns
+ * to print (the defaults are the adoption program's). F12 -> Console, paste,
+ * Enter; set CONFIRMED = true and paste again. Copy the RESULTS block back.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  // Operator-set: which lists and which date columns to print.
+  const READS = [
+    { list: 'ADOPT_ProgramAction', columns: ['DueDate', 'CompletedDate'], orderBy: 'Modified' },
+    { list: 'ADOPT_ProgramIssue', columns: ['RaisedDate', 'ResolvedDate'], orderBy: 'Created' },
+  ];
+
+  expect('field.date.control-site-time-zone', 'the site zone and this browser\'s offset');
+  expect('field.date.control-server-clock', 'the server clock from a response Date header');
+  expect('field.date.stored-instant-form-picked', `stored instants of ${READS[0].columns.join(', ')} on the first list`);
+  expect('field.date.stored-instant-default-filled', `stored instants of ${READS[1].columns.join(', ')} on the second list`);
+
+  if (!CONFIRMED) {
+    log('INFO', `Would read the site zone and the newest rows of ${READS.map((r) => `'${r.list}'`).join(' and ')} on ${WEB}.`);
+    log('INFO', 'Nothing is written by this probe. Set CONFIRMED = true and paste again.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  // The harness's spGet drops response headers; the server clock needs one.
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  const info = tz && tz.Information;
+  record('field.date.control-site-time-zone', 'the site zone and this browser\'s offset', dated.ok ? 'PASS' : 'FAIL',
+    dated.ok
+      ? `site zone "${tz.Description}" bias=${info && info.Bias} standard=${info && info.StandardBias} daylight=${info && info.DaylightBias}; browser offset ${-new Date().getTimezoneOffset()} min; browser now ${new Date().toISOString()}`
+      : `could not read the site zone: HTTP ${dated.status}`);
+  record('field.date.control-server-clock', 'the server clock from a response Date header', 'PASS', `server Date header: ${dated.headers.get('date')}`);
+
+  for (const [index, read] of READS.entries()) {
+    const id = `D${index + 1}`;
+    const question = `stored instants of ${read.columns.join(', ')} on the ${index ? 'second' : 'first'} list`;
+    const select = ['Id', ...read.columns, 'Created', 'Modified'].join(',');
+    const rows = await spGet(
+      `web/lists/getbytitle('${enc(read.list)}')/items?$select=${select}&$orderby=${read.orderBy} desc&$top=5`);
+    if (readFailed(rows)) {
+      record(id, question, 'FAIL', `could not read '${read.list}': HTTP ${rows.status}`);
+      continue;
+    }
+    const lines = (rows.body.value || []).map((r) =>
+      `id=${r.Id} ${read.columns.map((c) => `${c}=${r[c]}`).join(' ')} Created=${r.Created} Modified=${r.Modified}`);
+    record(id, question, lines.length ? 'PASS' : 'NOT ESTABLISHED',
+      lines.length ? `'${read.list}': ${lines.join(' | ')}` : `'${read.list}' has no rows`);
+  }
+  return report();
+})();

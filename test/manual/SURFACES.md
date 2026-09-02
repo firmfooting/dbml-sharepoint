@@ -117,7 +117,10 @@ question is which operands the server accepts, and what it does when it refuses.
 Scopes: `calc`, `validation`, `datetime`, `choice`
 
 Probes: `calculated-operand-probe.js`, `calculated-choice-operand.js`,
-`hyperlink-validation-operand-probe.js`, `datetime-sentinel-probe.js`
+`hyperlink-validation-operand-probe.js`, `datetime-sentinel-probe.js`,
+`today-semantics-probe.js`, `modified-clock-probe.js`,
+`list-modified-clock-probe.js`, `form-validation-probe.js`,
+`save-instant-paths-probe.js`, `today-source-probe.js`
 
 ### 2. `expression`: client-evaluated expressions
 
@@ -187,9 +190,11 @@ Probes: `form-visibility-probe.js`, `form-visibility-storage-probe.js`,
 Creating a column of a given type and getting a value into and out of an item
 intact. Multi-value columns, lookups and their projected columns.
 
-Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`
+Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
+`list` (the list object the columns belong to)
 
-Probes: `multi-value-probe.js`, `projected-lookup-probe.js`
+Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
+`date-storage-probe.js`
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -214,7 +219,7 @@ Scopes: `role-def`, `role-binding`, `group`, `principal`, `item-acl`,
 `list-acl`, `lookup-acl`, `effective-perms`
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
-`lookup-acl-probe.js`
+`lookup-acl-probe.js`, `siteuserinfolist-probe.js`
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 
@@ -269,6 +274,11 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `search-discovery-probe.js` | `search` | `continuation-link-emitted`, `continuation-link-followed` (was `S11`, `S12`) | `query.odata.*` |
 | `view-edit-page-probe.js` | `view` | `guarded-single-clause-inert`, `tautology-alone-partitions` (was `S1`, `S2`) | `query.caml.*` |
 | `view-edit-page-probe.js` | `view` | `guarded-single-clause-stored` (was `Q1`) | `query.view-query.*` |
+| `siteuserinfolist-probe.js` | `access` | `system-columns-item-shape` | `field.person.*` |
+| `today-source-probe.js` | `formula` | `profile-regional-settings` | `access.principal.*` |
+| `today-source-probe.js` | `formula` | `today-element-*`, `today-offset-element-*`, `today-include-time-*` | `query.caml-adhoc.*` |
+| `today-source-probe.js` | `formula` | `dynamic-default-rest-fill` | `field.date.*` |
+| `save-instant-paths-probe.js` | `formula` | `hidden-list-readback` | `field.list.*` |
 
 Two probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:

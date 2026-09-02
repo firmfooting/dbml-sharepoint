@@ -1,0 +1,166 @@
+{# test/manual/templates/today-semantics-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (WRITES TO ITS OWN SCRATCH LIST): WHAT TODAY() AND
+ * NOW() EVALUATE TO IN A VALIDATION FORMULA
+ *
+ * QUESTION: on this tenant, at this moment, what date is TODAY() and what
+ * instant is NOW() inside a validation formula, measured against values
+ * whose stored instants are known?
+ *
+ * WHY: with the site zone set, the server clock right, and date-only values
+ * stored as site-local midnight, `=[D]<=TODAY()` still refused today at
+ * mid-morning while accepting yesterday. Whether NOW() is the true instant
+ * decides how "not in the future" can be expressed for every date rule.
+ *
+ * WHAT IT DOES
+ *   1. Creates `dbml-probe-today-semantics` with three columns: D (date
+ *      only, validation `=[D]<=TODAY()`), W (date and time, validation
+ *      `=[W]<=NOW()`), T (date only, default formula `=TODAY()`).
+ *   2. Saves one item with no dates: T shows what TODAY() resolved to (D0).
+ *   3. Saves D at several site-local midnights (D1 to D5) and W at several
+ *      instants around now (N1 to N6), recording which the rule refuses.
+ *   4. Leaves the list for the follow-up probes, which reuse it; set
+ *      CLEANUP_AT_END = true on a final run to recycle it (X1).
+ *
+ * HOW TO RUN: F12 -> Console on the site, paste, Enter; it prints its plan.
+ * Set CONFIRMED and ALLOW_WRITES to true and paste again. Copy the RESULTS
+ * block back verbatim.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+  const CLEANUP_AT_END = false;
+  const LIST = 'dbml-probe-today-semantics';
+
+  expect('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock');
+  expect('formula.datetime.fixture-date-columns-created', 'the three date columns are created');
+  expect('formula.datetime.fixture-today-now-rules-stored', 'the TODAY() and NOW() validation formulas are stored');
+  expect('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default');
+  expect('formula.datetime.today-allows-two-days-ago', 'D = the day before yesterday (site-local midnight) saves');
+  expect('formula.datetime.today-allows-yesterday', 'D = yesterday (site-local midnight) saves');
+  expect('formula.datetime.today-allows-site-midnight-today', 'D = today (site-local midnight) saves');
+  expect('formula.datetime.today-allows-utc-midnight-today', 'D = today as UTC midnight saves');
+  expect('formula.datetime.today-rejects-tomorrow', 'D = tomorrow (site-local midnight) is refused');
+  expect('formula.datetime.now-function-minus-20h', 'W = now - 20 h');
+  expect('formula.datetime.now-function-minus-12h', 'W = now - 12 h');
+  expect('formula.datetime.now-function-minus-1h', 'W = now - 1 h');
+  expect('formula.datetime.now-function-plus-1h', 'W = now + 1 h');
+  expect('formula.datetime.now-function-plus-12h', 'W = now + 12 h');
+  expect('formula.datetime.now-function-plus-20h', 'W = now + 20 h');
+  expect('formula.datetime.fixture-scratch-list-recycled', 'the scratch list is recycled at the end');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create '${LIST}' on ${WEB} with three date columns and two`);
+    log('INFO', 'validation formulas, save a dozen items against them, and leave the list.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+  const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
+  const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
+  const verdict = (r) => (r.ok ? 'SAVED' : `REFUSED HTTP ${r.status} ${reason(r)}`);
+
+  // ---- Z: the frames --------------------------------------------------------
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  const info = tz && tz.Information;
+  const nowUtc = new Date();
+  record('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock', dated.ok ? 'PASS' : 'FAIL',
+    `site zone "${tz && tz.Description}" bias=${info && info.Bias} daylight=${info && info.DaylightBias}; browser offset ${-nowUtc.getTimezoneOffset()} min; browser now ${nowUtc.toISOString()}; server ${dated.headers.get('date')}`);
+
+  // Site-local midnight of the browser's local date plus `days`, as a UTC
+  // instant. Browser and site share the zone (Z says so); if they did not,
+  // this would be the browser's midnight and Z would show it.
+  const localMidnightUtc = (days) =>
+    new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate() + days, 0, 0, 0, 0).toISOString();
+
+  // ---- Create the scratch list -----------------------------------------------
+  await resetList(LIST);
+  const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+  const existing = await spGet(`${listPath}?$select=Id`);
+  if (existing.ok) {
+    record('formula.datetime.fixture-date-columns-created', 'the three date columns are created', 'ABORTED', `a list named '${LIST}' already exists; set CLEANUP = true to recycle it first`);
+    return report();
+  }
+  const created = await post('web/lists', {
+    __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: LIST,
+    Description: 'dbml-sharepoint probe of TODAY() and NOW(); safe to delete.',
+  });
+  if (!created.ok) {
+    record('formula.datetime.fixture-date-columns-created', 'the three date columns are created', 'ABORTED', `could not create the list: HTTP ${created.status} ${reason(created)}`);
+    return report();
+  }
+  const fields = `${listPath}/fields`;
+  const addField = async (title, displayFormat, extra) => post(fields, {
+    __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat, ...extra,
+  });
+  const merge = async (title, payload) => post(`${fields}/getbytitle('${enc(title)}')`, {
+    __metadata: { type: 'SP.FieldDateTime' }, ...payload,
+  }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  const fD = await addField('D', 0, {});
+  const fW = await addField('W', 1, {});
+  const fT = await addField('T', 0, { DefaultFormula: '=TODAY()' });
+  record('formula.datetime.fixture-date-columns-created', 'the three date columns are created', fD.ok && fW.ok && fT.ok ? 'PASS' : 'FAIL',
+    `D ${fD.status}, W ${fW.status}, T with DefaultFormula =TODAY() ${fT.status}${fT.ok ? '' : ` ${reason(fT)}`}`);
+  const vD = await merge('D', { ValidationFormula: '=[D]<=TODAY()', ValidationMessage: 'D is after TODAY()' });
+  const vW = await merge('W', { ValidationFormula: '=[W]<=NOW()', ValidationMessage: 'W is after NOW()' });
+  record('formula.datetime.fixture-today-now-rules-stored', 'the TODAY() and NOW() validation formulas are stored', vD.ok && vW.ok ? 'PASS' : 'FAIL',
+    `D ${vD.status}${vD.ok ? '' : ` ${reason(vD)}`}; W ${vW.status}${vW.ok ? '' : ` ${reason(vW)}`}`);
+
+  const meta = await spGet(`${listPath}?$select=ListItemEntityTypeFullName`);
+  const itemType = meta.body && meta.body.ListItemEntityTypeFullName;
+  const items = `${listPath}/items`;
+  const save = async (label, payload) => post(items, { __metadata: { type: itemType }, Title: label, ...payload });
+
+  // ---- D0: what TODAY() resolved to, via the default formula ------------------
+  const bare = await save('bare', {});
+  if (bare.ok) {
+    const back = await spGet(`${items}(${bare.body.d.Id})?$select=Id,T,Created`);
+    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default', 'PASS',
+      `T stored as ${back.body && back.body.T}; Created ${back.body && back.body.Created}; site-local midnight today would be ${localMidnightUtc(0)}`);
+  } else {
+    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default', 'FAIL', `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
+  }
+
+  // ---- D rows: date-only D against TODAY() ------------------------------------
+  const utcMidnight = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate())).toISOString();
+  const dates = [
+    ['formula.datetime.today-allows-two-days-ago', 'D = the day before yesterday (site-local midnight) saves', localMidnightUtc(-2)],
+    ['formula.datetime.today-allows-yesterday', 'D = yesterday (site-local midnight) saves', localMidnightUtc(-1)],
+    ['formula.datetime.today-allows-site-midnight-today', 'D = today (site-local midnight) saves', localMidnightUtc(0)],
+    ['formula.datetime.today-allows-utc-midnight-today', 'D = today as UTC midnight saves', utcMidnight],
+    ['formula.datetime.today-rejects-tomorrow', 'D = tomorrow (site-local midnight) is refused', localMidnightUtc(1)],
+  ];
+  for (const [id, question, value] of dates) {
+    const r = await save(id, { D: value });
+    record(id, question, r.ok ? 'SAVED' : 'REFUSED', `${value}: ${verdict(r)}`);
+  }
+
+  // ---- N rows: datetime W against NOW() ---------------------------------------
+  const hours = [['formula.datetime.now-function-minus-20h', -20], ['formula.datetime.now-function-minus-12h', -12], ['formula.datetime.now-function-minus-1h', -1], ['formula.datetime.now-function-plus-1h', 1], ['formula.datetime.now-function-plus-12h', 12], ['formula.datetime.now-function-plus-20h', 20]];
+  for (const [id, h] of hours) {
+    const value = new Date(nowUtc.getTime() + h * 3600 * 1000).toISOString();
+    const r = await save(id, { W: value });
+    record(id, `W = now ${h >= 0 ? '+' : '-'} ${Math.abs(h)} h`, r.ok ? 'SAVED' : 'REFUSED', `${value}: ${verdict(r)}`);
+  }
+
+  // ---- X1: cleanup ----------------------------------------------------------------
+  if (CLEANUP_AT_END) {
+    const gone = await post(`${listPath}/recycle`, {});
+    record('formula.datetime.fixture-scratch-list-recycled', 'the scratch list is recycled at the end', gone.ok ? 'PASS' : 'FAIL',
+      gone.ok ? `'${LIST}' recycled (restorable from the recycle bin)` : `could not recycle '${LIST}': HTTP ${gone.status} ${reason(gone)}`);
+  } else {
+    record('formula.datetime.fixture-scratch-list-recycled', 'the scratch list is recycled at the end', 'NOT APPLICABLE',
+      `'${LIST}' left in place for the follow-up probes; set CLEANUP_AT_END = true to recycle it`);
+  }
+  return report();
+})();

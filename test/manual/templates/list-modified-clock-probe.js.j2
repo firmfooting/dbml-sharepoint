@@ -1,0 +1,139 @@
+{# test/manual/templates/list-modified-clock-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (WRITES TO THE EXISTING SCRATCH LIST): IN A LIST
+ * VALIDATION FORMULA, IS [Modified] THE CURRENT SAVE INSTANT IN SITE-LOCAL
+ * TIME, AND IS [Created] SET ON A NEW ITEM?
+ *
+ * A column validation formula may reference only its own column (the
+ * modified-clock probe measures that refusal). A list validation formula
+ * may reference any column, so the rule goes on the list:
+ *
+ *   =AND(OR(ISBLANK([DM]),[DM]<=[Modified]),
+ *        OR(ISBLANK([DC]),[DC]<=[Created]),
+ *        OR(ISBLANK([WM]),[WM]<=[Modified]))
+ *
+ * WHAT IT DOES, on `dbml-probe-today-semantics` (columns from the earlier
+ * probes):
+ *   1. Sets that list validation formula (L1) and reads it back (L2).
+ *   2. CREATE: DM at yesterday, today, tomorrow and thirty days out (D1 to
+ *      D4, site-local midnights); DC at today and tomorrow (C1, C2); WM at
+ *      now - 20 h, - 1 h, + 1 h, + 20 h (W1 to W4).
+ *   3. UPDATE: creates an item with WM = now - 1 h (U1), waits ten seconds,
+ *      updates it to WM = now - 5 s (U2), then to now + 1 h as a control
+ *      (U3). U2 saved means the formula saw THIS save's instant.
+ *   4. Clears the list validation formula again (X1).
+ *
+ * HOW TO RUN: F12 -> Console on the site, paste, Enter; set CONFIRMED and
+ * ALLOW_WRITES to true and paste again. Wait through the ten-second pause.
+ * Copy the RESULTS block back.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+  const LIST = 'dbml-probe-today-semantics';
+
+  expect('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock');
+  expect('formula.validation.list-modified-rule-accepted', 'the list validation formula against [Modified] and [Created] is accepted');
+  expect('formula.validation.list-modified-rule-readback', 'the stored formula reads back as written');
+  expect('formula.validation.list-modified-allows-yesterday', 'DM = yesterday (site-local midnight) saves');
+  expect('formula.validation.list-modified-allows-today', 'DM = today (site-local midnight) saves');
+  expect('formula.validation.list-modified-rejects-tomorrow', 'DM = tomorrow (site-local midnight) is refused');
+  expect('formula.validation.control-list-modified-rejects-thirty-days', 'DM = thirty days out is refused (control)');
+  expect('formula.validation.list-created-allows-today', 'DC = today (site-local midnight) saves');
+  expect('formula.validation.list-created-rejects-tomorrow', 'DC = tomorrow (site-local midnight) is refused');
+  expect('formula.validation.list-modified-allows-20h-ago', 'WM = now - 20 h saves');
+  expect('formula.validation.list-modified-allows-hour-ago', 'WM = now - 1 h saves');
+  expect('formula.validation.list-modified-rejects-hour-ahead', 'WM = now + 1 h is refused');
+  expect('formula.validation.list-modified-rejects-20h-ahead', 'WM = now + 20 h is refused');
+  expect('formula.validation.fixture-update-seed-created', 'a seed item with WM = now - 1 h is created');
+  expect('formula.validation.list-modified-update-sees-own-save', 'an update to WM = five seconds before its own save saves');
+  expect('formula.validation.control-list-modified-update-rejects-hour-ahead', 'an update to WM = now + 1 h is refused (control)');
+  expect('formula.validation.fixture-list-rule-cleared', 'the list validation formula is cleared again');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would set and clear a list validation formula on '${LIST}' on ${WEB} and save a dozen items.`);
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+  const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
+  const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
+  const verdict = (r) => (r.ok ? 'SAVED' : `REFUSED HTTP ${r.status} ${reason(r)}`);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  const nowUtc = new Date();
+  record('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock', dated.ok ? 'PASS' : 'FAIL',
+    `site zone "${tz && tz.Description}"; browser offset ${-nowUtc.getTimezoneOffset()} min; browser now ${nowUtc.toISOString()}; server ${dated.headers.get('date')}`);
+  const localMidnightUtc = (days) =>
+    new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate() + days, 0, 0, 0, 0).toISOString();
+
+  const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+  const list = await spGet(`${listPath}?$select=Id,ListItemEntityTypeFullName`);
+  if (readFailed(list)) {
+    record('formula.validation.list-modified-rule-accepted', 'the list validation formula against [Modified] and [Created] is accepted', 'ABORTED', `list '${LIST}' not found; run the today-semantics probe first`);
+    return report();
+  }
+  const itemType = list.body.ListItemEntityTypeFullName;
+  const items = `${listPath}/items`;
+  const setRule = async (formula, message) => post(listPath, {
+    __metadata: { type: 'SP.List' }, ValidationFormula: formula, ValidationMessage: message,
+  }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+
+  const rule = '=AND(OR(ISBLANK([DM]),[DM]<=[Modified]),OR(ISBLANK([DC]),[DC]<=[Created]),OR(ISBLANK([WM]),[WM]<=[Modified]))';
+  const set = await setRule(rule, 'probe: a date is after the save instant');
+  record('formula.validation.list-modified-rule-accepted', 'the list validation formula against [Modified] and [Created] is accepted', set.ok ? 'ACCEPTED' : 'REFUSED', set.ok ? `HTTP ${set.status}` : `HTTP ${set.status} ${reason(set)}`);
+  if (!set.ok) return report();
+  const back = await spGet(`${listPath}?$select=ValidationFormula`);
+  record('formula.validation.list-modified-rule-readback', 'the stored formula reads back as written', back.body && back.body.ValidationFormula === rule ? 'PASS' : 'FAIL', `stored: ${back.body && back.body.ValidationFormula}`);
+
+  const save = async (label, payload) => post(items, { __metadata: { type: itemType }, Title: label, ...payload });
+  const rows = [
+    ['formula.validation.list-modified-allows-yesterday', 'DM = yesterday (site-local midnight) saves', { DM: localMidnightUtc(-1) }],
+    ['formula.validation.list-modified-allows-today', 'DM = today (site-local midnight) saves', { DM: localMidnightUtc(0) }],
+    ['formula.validation.list-modified-rejects-tomorrow', 'DM = tomorrow (site-local midnight) is refused', { DM: localMidnightUtc(1) }],
+    ['formula.validation.control-list-modified-rejects-thirty-days', 'DM = thirty days out is refused (control)', { DM: localMidnightUtc(30) }],
+    ['formula.validation.list-created-allows-today', 'DC = today (site-local midnight) saves', { DC: localMidnightUtc(0) }],
+    ['formula.validation.list-created-rejects-tomorrow', 'DC = tomorrow (site-local midnight) is refused', { DC: localMidnightUtc(1) }],
+    ['formula.validation.list-modified-allows-20h-ago', 'WM = now - 20 h saves', { WM: new Date(nowUtc.getTime() - 20 * 3600 * 1000).toISOString() }],
+    ['formula.validation.list-modified-allows-hour-ago', 'WM = now - 1 h saves', { WM: new Date(nowUtc.getTime() - 3600 * 1000).toISOString() }],
+    ['formula.validation.list-modified-rejects-hour-ahead', 'WM = now + 1 h is refused', { WM: new Date(nowUtc.getTime() + 3600 * 1000).toISOString() }],
+    ['formula.validation.list-modified-rejects-20h-ahead', 'WM = now + 20 h is refused', { WM: new Date(nowUtc.getTime() + 20 * 3600 * 1000).toISOString() }],
+  ];
+  for (const [id, question, payload] of rows) {
+    const r = await save(id, payload);
+    record(id, question, r.ok ? 'SAVED' : 'REFUSED', `${JSON.stringify(payload)}: ${verdict(r)}`);
+  }
+
+  const seed = await save('update-seed', { WM: new Date(nowUtc.getTime() - 3600 * 1000).toISOString() });
+  if (seed.ok) {
+    const seedId = seed.body.d.Id;
+    const before = await spGet(`${items}(${seedId})?$select=Id,Modified`);
+    record('formula.validation.fixture-update-seed-created', 'a seed item with WM = now - 1 h is created', 'PASS', `item ${seedId}; Modified ${before.body && before.body.Modified}; waiting 10 s`);
+    await sleep(10000);
+    const t1 = new Date();
+    const value = new Date(t1.getTime() - 5000).toISOString();
+    const upd = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: value }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    const after = await spGet(`${items}(${seedId})?$select=Id,Modified,WM`);
+    record('formula.validation.list-modified-update-sees-own-save', 'an update to WM = five seconds before its own save saves', upd.ok ? 'SAVED' : 'REFUSED',
+      `update at ${t1.toISOString()} to ${value}: ${verdict(upd)}; Modified now ${after.body && after.body.Modified}; WM ${after.body && after.body.WM}`);
+    const upd2 = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: new Date(Date.now() + 3600 * 1000).toISOString() }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    record('formula.validation.control-list-modified-update-rejects-hour-ahead', 'an update to WM = now + 1 h is refused (control)', upd2.ok ? 'SAVED' : 'REFUSED', verdict(upd2));
+  } else {
+    record('formula.validation.fixture-update-seed-created', 'a seed item with WM = now - 1 h is created', 'FAIL', `could not create the seed item: HTTP ${seed.status} ${reason(seed)}`);
+  }
+
+  const cleared = await setRule('', '');
+  record('formula.validation.fixture-list-rule-cleared', 'the list validation formula is cleared again', cleared.ok ? 'PASS' : 'FAIL', cleared.ok ? 'cleared' : `HTTP ${cleared.status} ${reason(cleared)}`);
+  return report();
+})();
