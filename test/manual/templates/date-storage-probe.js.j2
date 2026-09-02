@@ -23,17 +23,26 @@
  * site-local midnight in UTC+10; stored as ...-02T00:00:00Z it is UTC
  * midnight, 10:00 local. Compare a form-picked date with a server-filled one.
  *
- * HOW TO RUN: edit READS to name two lists on the site and the date columns
- * to print (the defaults are the adoption program's). F12 -> Console, paste,
- * Enter; set CONFIRMED = true and paste again. Copy the RESULTS block back.
+ * HOW TO RUN: set LIST1 and LIST2 to name two lists on the site (the defaults
+ * are the adoption program's); the date columns printed follow READS below.
+ * F12 -> Console, paste, Enter; set CONFIRMED = true and paste again. Copy the
+ * RESULTS block back.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
 
-  // Operator-set: which lists and which date columns to print.
+  const LIST1 = 'ADOPT_ProgramAction';
+  const LIST2 = 'ADOPT_ProgramIssue';
+  const COLUMNS1 = 'DueDate,CompletedDate';
+  const COLUMNS2 = 'RaisedDate,ResolvedDate';
+
+  // Operator-set: which lists and which date columns to print. LIST1/LIST2
+  // and COLUMNS1/COLUMNS2 are simple consts so the agent runner can arm them
+  // in memory with --set LIST1='<name>' --set COLUMNS1='A,B'; the split into
+  // READS happens here so the arming grammar stays bool/number/string.
   const READS = [
-    { list: 'ADOPT_ProgramAction', columns: ['DueDate', 'CompletedDate'], orderBy: 'Modified' },
-    { list: 'ADOPT_ProgramIssue', columns: ['RaisedDate', 'ResolvedDate'], orderBy: 'Created' },
+    { list: LIST1, columns: COLUMNS1.split(','), orderBy: 'Modified' },
+    { list: LIST2, columns: COLUMNS2.split(','), orderBy: 'Created' },
   ];
 
   expect('field.date.control-site-time-zone', 'the site zone and this browser\'s offset');
