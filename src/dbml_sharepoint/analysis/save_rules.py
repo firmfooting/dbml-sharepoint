@@ -22,6 +22,12 @@ Sydney", at 10:57 local, with the server clock correct:
   today, so the lag is not a setting propagating; under the list rule
   `=OR(ISBLANK([DM]),[DM]<=[Modified])` the form saved today and refused
   tomorrow with the rule's own message. The form path behaves as REST did.
+- The lag is the formula engine's alone. At 12:40 local a CAML `<Today/>`
+  matched the 2 September rows and not the 1 September ones, `<Today/>`
+  with IncludeTimeValue was the current instant, and a `[today]` column
+  default filled the current instant, while a `=TODAY()` default formula
+  on the same item filled 1 September. Views and dynamic defaults need no
+  change; the signed-in user's profile regional settings were empty.
 
 So a column rule that compares a date with `today` or `now` cannot be
 exact where it was declared, and is hoisted onto the list rule here. The

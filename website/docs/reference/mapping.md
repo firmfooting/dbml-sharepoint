@@ -488,20 +488,22 @@ Most view filters still want `today`. A rolling window ("the last 30 days",
 "signed in today") means a **date**, and `today` is the right sentinel for
 it; reach for `now` only when a filter genuinely turns on the time of day.
 
-**Which clock `today` reads.** In a view filter, `<Today/>` is rendered
-by the server, and a `[today]` default is filled by it; Microsoft says
-only that both follow "the server's local time zone". In a validation
-formula the clock is measured: on 2026-09-02, on a site in AUS Eastern
-with the server's own clock correct, `TODAY()` filled 1 September while
-the site's date was the 2nd, and `NOW()` accepted an instant 20 hours
-before now and refused one 12 hours before. That clock sits 16 to 20
-hours behind the site and no site setting moves it, so a save rule
-built on it refused today's date for most of the working day. Save rules
-therefore do not use it: see the `today` and `now` rules under
+**Which clock `today` reads.** Measured 2026-09-02 on a site in AUS
+Eastern with the server's own clock correct and the user following the
+web's regional settings: a view filter's `<Today/>`, with or without
+`IncludeTimeValue`, follows the site's regional zone, and a `[today]`
+column default fills the current instant, so both are right at any hour.
+Only the formula engine lags: `TODAY()` in a validation formula or a
+`=TODAY()` default formula filled 1 September while the site's date was
+the 2nd, and `NOW()` accepted an instant 20 hours before now and refused
+one 12 hours before, still an hour after the site's zone was set. A save
+rule built on that clock refused today's date for most of the working
+day, so save rules do not use it: see the `today` and `now` rules under
 [`column_validation`](#column_validation). Set **Site settings >
-Regional settings > Time zone** to the users' zone anyway, because that
-is the zone every date and time is stored and shown in; `assess.js.txt`
-reads it and warns when it differs from the browser's.
+Regional settings > Time zone** to the users' zone, because that is the
+zone every date and time is stored and shown in and the day a view
+window is read against; `assess.js.txt` reads it and warns when it
+differs from the browser's.
 
 `now` takes **no offset form**. `today±N` has a verified rendering;
 `now±N` does not, and unverified is treated as unknown.
