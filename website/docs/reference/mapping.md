@@ -438,11 +438,13 @@ column_validation:
         message: "A sign-in cannot be in the future."
 ```
 
-`TODAY()` in a validation formula is **midnight**, so `leq today` on a
-datetime column rejects everything stamped after 00:00, which is every row
-anybody ever types on a sign-in log. The whole-day alternative,
-`today+1`, permits up to twenty-four hours of future-dating depending on
-the time of day. `now` is exact.
+A bare `today` compared on a datetime column in a validation rule is
+refused (`condition_today_on_a_datetime_column`): it would render
+`TODAY()`, midnight on a clock measured 16 to 20 hours behind the site, so
+"not after today" refuses most of the last two days. The offset form
+`today+1` still renders `TODAY()+1`, and the validator warns that it reads
+that clock (`condition_reads_the_formula_clock`), so the window lands hours
+from where it reads. `now` is exact.
 
 **Where it works, and where it does not:**
 
@@ -1146,13 +1148,16 @@ onto the list's, the declared list message first. The manifest names
 every hoisted rule in both sections. A date-only column is compared by
 whole days with the offset on the column (`leq today+30` renders
 `[D]-30<=[Modified]`); a datetime compared with `now` is compared
-directly. `today` on a **datetime** column keeps `TODAY()` and its lag;
-say `now` for a datetime.
+directly. A bare `today` on a **datetime** column is refused, and
+`today±N` there keeps `TODAY()±N` with a warning; say `now` for a
+datetime.
 
 The price is one message per list: a list with a declared rule and two
 hoisted ones shows all three sentences whenever any of them fails. Keep
-each message a sentence, and the validator refuses a combined message or
-formula that would exceed SharePoint's limits.
+each message a sentence. The validator refuses a combined message or
+formula that would exceed SharePoint's limits, and the manifest's List
+validation section prints each list rule's count against those limits, so
+the headroom is visible on every build.
 
 ## `list_validation`
 

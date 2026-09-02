@@ -14,9 +14,14 @@ The parsing can be approximate because the verification is exact.
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
-from dbml_sharepoint.analysis.condition_rendering import to_expression, to_validation
+from dbml_sharepoint.analysis.condition_rendering import (
+    ConditionRefusal,
+    to_expression,
+    to_validation,
+)
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.styles import TOKENS, expand_style
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
@@ -381,9 +386,22 @@ def _validation_operand(text: str, column_type: str) -> Any:
     return None
 
 
+@dataclass(frozen=True)
+class Unrenderable:
+    """A stored rule that inverts to a declaration this build refuses.
+
+    Distinct from `None` (not a single comparison) because the report has
+    to say WHY: a list deployed before 2026-09-02 may carry `[W]<=TODAY()`
+    on a datetime column, which reads back as `leq today` and is refused
+    with a reason that names the form to write instead.
+    """
+
+    reason: str
+
+
 def invert_column_validation(
     formula: str, message: str, types: dict[str, str], context: str,
-) -> dict[str, Any] | None:
+) -> dict[str, Any] | Unrenderable | None:
     """Recover a `column_validation` declaration from a stored rule.
 
     Only a single comparison is attempted. Anything else is reported as
@@ -399,6 +417,8 @@ def invert_column_validation(
     try:
         condition = parse_condition(declared["when"], context)
         rendered = f"={to_validation(condition, types)}"
+    except ConditionRefusal as refused:
+        return Unrenderable(str(refused))
     except (ValueError, KeyError, TypeError):
         return None
     if _canonical_validation(rendered) != _canonical_validation(formula):

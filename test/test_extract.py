@@ -1672,3 +1672,17 @@ def test_extract_refuses_out_with_no_download(
     # message, not the decoration.
     plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert "--out has no download" in plain
+
+
+def test_a_stored_rule_the_build_now_refuses_reports_the_renderers_reason() -> None:
+    """A list deployed before 2026-09-02 may carry `[W]<=TODAY()` on a
+    datetime column. It inverts to `leq today`, which the build now refuses,
+    and the report has to say why rather than call a single comparison
+    "not a single comparison"."""
+    from dbml_sharepoint.extract.inverse import Unrenderable, invert_column_validation
+
+    result = invert_column_validation(
+        "=[OccurredAt]<=TODAY()", "Not in the future.", {"OccurredAt": "datetime"}, "ctx",
+    )
+    assert isinstance(result, Unrenderable)
+    assert "now" in result.reason

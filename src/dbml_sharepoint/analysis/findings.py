@@ -432,6 +432,7 @@ class FindingCode(StrEnum):
     CONDITION_PROPERTY_REQUIRED = "condition_property_required", "error"
     CONDITION_PROPERTY_UNKNOWN = "condition_property_unknown", "error"
     CONDITION_PROPERTY_UNRENDERABLE = "condition_property_unrenderable", "error"
+    CONDITION_READS_THE_FORMULA_CLOCK = "condition_reads_the_formula_clock", "warning"
     CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR = (
         "condition_sentinel_with_a_substring_operator", "error"
     )
@@ -439,6 +440,7 @@ class FindingCode(StrEnum):
     CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN = (
         "condition_substring_test_on_a_non_text_column", "error"
     )
+    CONDITION_TODAY_ON_A_DATETIME_COLUMN = "condition_today_on_a_datetime_column", "error"
     CONDITION_TODAY_UNSUPPORTED_BY_TARGET = "condition_today_unsupported_by_target", "error"
     CONDITION_TOO_DEEP = "condition_too_deep", "error"
     CONDITION_TOO_MANY_LEAVES = "condition_too_many_leaves", "error"

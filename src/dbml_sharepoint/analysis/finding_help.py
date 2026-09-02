@@ -213,6 +213,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "The `now` sentinel needs a datetime column; a date column has "
         "no time of day."
     ),
+    FindingCode.CONDITION_READS_THE_FORMULA_CLOCK: (
+        "`today+N or today-N` compared on a datetime column in a validation rule renders "
+        "TODAY()+N or TODAY()-N, and that clock was measured 16 to 20 hours behind the site "
+        "(2026-09-02), so the window lands hours away from where it reads; "
+        "`now` compares with the instant of the save exactly."
+    ),
+    FindingCode.CONDITION_TODAY_ON_A_DATETIME_COLUMN: (
+        "A bare `today` compared on a datetime column in a validation rule "
+        "would read TODAY(), a clock measured 16 to 20 hours behind the site "
+        "(2026-09-02); say `now`, which compares with the instant of the save."
+    ),
     FindingCode.CONDITION_NOW_UNSUPPORTED_BY_TARGET: (
         "The `now` sentinel has no verified client-side equivalent for "
         "show/hide."

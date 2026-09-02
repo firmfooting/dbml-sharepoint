@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.typemap import (
 )
 from dbml_sharepoint.extract.field_xml import RawField, builtin_reason, is_builtin
 from dbml_sharepoint.extract.inverse import (
+    Unrenderable,
     invert_column_formatting,
     invert_column_validation,
     invert_form_visibility,
@@ -450,7 +451,14 @@ def _recover_mapping(
             validation = invert_column_validation(
                 raw.validation_formula, raw.validation_message, types, subject,
             )
-            if validation is not None:
+            if isinstance(validation, Unrenderable):
+                unrecovered.append(Unrecovered(
+                    "column-validation", subject,
+                    f"column validation formula {raw.validation_formula!r} reads "
+                    f"back as a rule this build refuses: {validation.reason}; "
+                    "re-declare it by hand.",
+                ))
+            elif validation is not None:
                 decoded.column_validation[raw.internal_name] = validation
             else:
                 unrecovered.append(Unrecovered(

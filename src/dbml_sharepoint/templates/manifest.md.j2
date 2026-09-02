@@ -321,6 +321,7 @@ _(none declared)_
 {% for lv in list_validation %}
 - {{ lv.list }}: {{ lv.described }}
   message: {{ lv.message }}
+  formula: {{ lv.formula_length }} of {{ lv.formula_limit }} characters, message: {{ lv.message_length }} of {{ lv.message_limit }}
 {% if lv.hoisted %}
   includes, hoisted from column validation: {{ lv.hoisted | join(', ') }}
 {% endif %}
