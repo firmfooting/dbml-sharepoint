@@ -479,3 +479,22 @@ def test_a_number_off_the_menu_re_prompts() -> None:
     assert _writes(calls) == []
     assert summary["deleted"] == []
     assert len(prompts) == 3
+
+
+def test_a_column_holding_values_prints_them_before_the_phrase() -> None:
+    """The operator re-keys those values into the replacement column after the
+    redeploy, so the script shows them rather than only saying they exist."""
+    items = [
+        {"Id": 1, "ColumnOne": ""}, {"Id": 2, "ColumnOne": "kept"}, {"Id": 3, "ColumnOne": "also"},
+    ]
+    _summary, _calls, prompts, tables = _columns(_config(items=items), ["1", ""])
+    values = next(t for t in tables if t and "item" in t[0])
+    assert values == [{"item": 2, "value": "kept"}, {"item": 3, "value": "also"}]
+    assert any("holds values in 2 item(s)" in p for p in prompts)
+
+
+def test_a_lookup_value_prints_its_id_projection() -> None:
+    items = [{"Id": 4, "RelatedId": 7}]
+    _summary, _calls, _prompts, tables = _columns(_config(items=items), ["3", ""])
+    values = next(t for t in tables if t and "item" in t[0])
+    assert values == [{"item": 4, "value": 7}]

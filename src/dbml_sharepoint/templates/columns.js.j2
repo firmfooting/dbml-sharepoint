@@ -10,8 +10,10 @@
  * Lists the custom columns as a numbered table, asks for a number, and
  * deletes that column after four guards: built-in and hidden fields never
  * appear on the menu; every item is read to see whether the column holds a
- * value; an empty column needs its internal name typed, and one that holds
- * values, or whose values could not be read, needs DELETE NON-EMPTY typed;
+ * value, and the values found are printed so they can be re-keyed into a
+ * replacement column; an empty column needs its internal name typed, and
+ * one that holds values, or whose values could not be read, needs DELETE
+ * NON-EMPTY typed;
  * a sealed column is unsealed and read back before the delete, and the
  * column is read back after it and must answer 404. A readback that
  * disagrees stops the run. The table is printed again after each delete,
@@ -83,28 +85,40 @@
 
   // Paged by Id, the documented way past the view threshold, and never
   // filtered: a $filter on an unindexed column throws past 5,000 items and a
-  // Note column refuses one outright. Past the page cap the answer is
-  // unknown, and unknown is gated exactly like a column that holds values.
+  // Note column refuses one outright. Every page is read rather than stopping
+  // at the first value, because the values are what the operator re-keys
+  // after the redeploy. Past the page cap the count is partial and the state
+  // is unknown if nothing was seen; both are gated exactly like a column
+  // that holds values.
   const VALUE_PAGES_MAX = 40;
+  const VALUE_SAMPLE_MAX = 50;
+  const shown = (v) => (v && typeof v === 'object' && Array.isArray(v.results)) ? v.results.join('; ') : v;
   async function holdsValues(f) {
     const projected = idProjected(f) ? `${f.InternalName}Id` : f.InternalName;
     let nextUrl = apiUrl(`${listPath}/items?$select=Id,${projected}&$orderby=Id&$top=5000`);
     let pages = 0;
+    let count = 0;
+    const sample = [];
+    const seen = (partial) => ({ state: 'values', count, partial, sample });
     try {
       while (nextUrl) {
-        if (++pages > VALUE_PAGES_MAX) return { state: 'unknown', why: `more than ${VALUE_PAGES_MAX} pages of items` };
+        if (++pages > VALUE_PAGES_MAX) {
+          return count ? seen(true) : { state: 'unknown', why: `more than ${VALUE_PAGES_MAX} pages of items` };
+        }
         const r = await fetchWithRetry(nextUrl, verbose());
         if (!r.ok) return { state: 'unknown', why: `HTTP ${r.status} ${spError(await r.text())}` };
         const j = await r.json();
         for (const row of ((j && j.d && j.d.results) || [])) {
-          if (hasValue(row[projected])) return { state: 'values', why: `item ${row.Id}` };
+          if (!hasValue(row[projected])) continue;
+          count += 1;
+          if (sample.length < VALUE_SAMPLE_MAX) sample.push({ item: row.Id, value: shown(row[projected]) });
         }
         nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
       }
     } catch (err) {
       return { state: 'unknown', why: err.message };
     }
-    return { state: 'empty' };
+    return count ? seen(false) : { state: 'empty' };
   }
 
   for (;;) {
@@ -127,9 +141,12 @@
       const typed = prompt(`'${field.InternalName}' holds no values in ${list.ItemCount} item(s). Type its internal name (${field.InternalName}) to ${field.Sealed === true ? 'unseal and ' : ''}delete it, or anything else to skip:`);
       confirmed = typed === field.InternalName;
     } else {
-      const reason = held.state === 'values'
-        ? `holds values (first seen on ${held.why})`
-        : `values could not be read (${held.why})`;
+      let reason = `values could not be read (${held.why})`;
+      if (held.state === 'values') {
+        console.table(held.sample);
+        const printed = held.sample.length < held.count ? `the first ${held.sample.length} are` : 'they are';
+        reason = `holds values in ${held.count}${held.partial ? ' or more' : ''} item(s); ${printed} printed above`;
+      }
       const typed = prompt(`'${field.InternalName}' ${reason}. Deleting a column removes its values from every item and nothing goes to the recycle bin. Type DELETE NON-EMPTY to delete it anyway, or anything else to skip:`);
       confirmed = typed === 'DELETE NON-EMPTY';
     }
