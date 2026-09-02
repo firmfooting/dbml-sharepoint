@@ -3,8 +3,12 @@
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import effective_column_types
-from dbml_sharepoint.analysis.column_refs import formatter_field_refs
-from dbml_sharepoint.analysis.condition_rendering import VALIDATION, to_validation
+from dbml_sharepoint.analysis.column_refs import formatter_field_refs, rewrite_formula_refs
+from dbml_sharepoint.analysis.condition_rendering import (
+    VALIDATION,
+    ConditionRefusal,
+    to_validation,
+)
 from dbml_sharepoint.analysis.conditions import condition_findings
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
@@ -19,6 +23,18 @@ from dbml_sharepoint.analysis.rendered_columns import (
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
+from dbml_sharepoint.model.mapping_types import MappingBundle
+
+
+def _as_sharepoint_receives(
+    rendered: str, bundle: MappingBundle, entity_name: str, types: dict[str, str],
+) -> str:
+    """The formula as written to the list: `=` prefixed, column references
+    by DISPLAY name. Through `rewrite_formula_refs`, which the deployer also
+    uses, so a `[Name]` inside a string literal is left alone and the length
+    measured here is the length SharePoint sees."""
+    names = {internal: bundle.mapping.display_name_for(entity_name, internal) for internal in types}
+    return rewrite_formula_refs(f"={rendered}", names)
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -418,10 +434,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         )
         findings.extend(problems)
         if not problems:
-            formula = f"={to_validation(rule.when, types)}"
-            for internal in types:
-                display = bundle.mapping.display_name_for(entity_name, internal)
-                formula = formula.replace(f"[{internal}]", f"[{display}]")
+            formula = _as_sharepoint_receives(
+                to_validation(rule.when, types), bundle, entity_name, types,
+            )
             if len(formula) > MAX_VALIDATION_FORMULA:
                 findings.append(Finding(
                     FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG,
@@ -459,10 +474,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"the limit is {MAX_VALIDATION_MESSAGE}. Shorten the messages.",
                 location=at,
             ))
-        formula = f"={to_validation(effective_rule.when, types)}"
-        for internal in types:
-            display = bundle.mapping.display_name_for(entity_name, internal)
-            formula = formula.replace(f"[{internal}]", f"[{display}]")
+        try:
+            rendered_rule = to_validation(effective_rule.when, types)
+        except ConditionRefusal:
+            # A hoisted column rule the renderer refuses (`now` on a date
+            # column, say) is already a finding from the column-validation
+            # check; measuring it here must not turn it into a traceback.
+            continue
+        formula = _as_sharepoint_receives(rendered_rule, bundle, entity_name, types)
         if len(formula) > MAX_VALIDATION_FORMULA:
             findings.append(Finding(
                 FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG,

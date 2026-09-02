@@ -1252,3 +1252,44 @@ def test_system_columns_reserve_their_model_names_only_when_switched_on() -> Non
             validate_against_mapping(schema, off),
             FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
         )
+
+
+def test_a_hoisted_rule_the_renderer_refuses_is_a_finding_not_a_traceback() -> None:
+    """`now` on a DATE column is a renderer refusal. The column rule is hoisted
+    onto the list rule before the formatting check measures the combined
+    formula, and that measurement rendered it unguarded, so the refusal
+    escaped `validate_against_mapping` as a traceback rather than the finding
+    the column-validation check classifies it into."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(
+        when=Group("all_of", (Leaf(field="DueDate", op="leq", value="now"),)),
+        message="Not after now.",
+    )
+    errors = _project_errors(
+        column_validation={"Project": EntitySection(columns={"DueDate": rule})},
+    )
+    only(errors, FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN)
+
+
+def test_the_formula_limit_is_measured_with_display_names_but_not_inside_literals() -> None:
+    """SharePoint receives the formula with DISPLAY names, so the limit is
+    measured on that spelling. A string literal is data: `"[DueDate]"` inside
+    quotes is not a reference and is not renamed, so measuring it renamed
+    (to `[Due Date]`, one character longer) refused a formula SharePoint
+    accepts at exactly the limit. The manifest measures through
+    `rewrite_formula_refs`, which skips literals, and the check must agree."""
+    types = {"Title": "nvarchar"}
+
+    def rule(needle: str) -> ListValidation:
+        return ListValidation(
+            when=Group("all_of", (Leaf(field="Title", op="neq", value=needle),)),
+            message="Too long.",
+        )
+
+    literal = "[DueDate]"
+    baseline = len("=" + to_validation(rule(literal).when, types))
+    built = rule(literal + "x" * (MAX_VALIDATION_FORMULA - baseline))
+    assert len("=" + to_validation(built.when, types)) == MAX_VALIDATION_FORMULA
+    errors = _project_errors(list_validation={"Project": built}, display_name_mode="auto")
+    none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
