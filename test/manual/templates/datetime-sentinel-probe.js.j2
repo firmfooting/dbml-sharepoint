@@ -50,9 +50,10 @@
  * with no time in them at all.
  *
  *   formula.datetime.control-site-time-zone  (TZ0)
- *        what time zone does the SITE run in, and does it match this
- *        browser? <Today/> renders in the SERVER's zone, so every same-day
- *        question below is read through this row. Not a pass/fail.
+ *        what time zone does the SITE run in, which of its two candidate
+ *        offsets is in force, and does it match this browser? <Today/>
+ *        renders in the SERVER's zone, so every same-day question below is
+ *        read through this row. Not a pass/fail.
  *
  *   -- Validation formulas ------------------------------------------------
  *   formula.datetime.control-missing-column-refused  (VN)
@@ -96,8 +97,8 @@
  *        23:00 save? This decides whether the allowance is about 24 hours
  *        or about 48, which is what the comments in five templates should
  *        say and currently do not. The stamp is built in the BROWSER's zone,
- *        so V6 reports NOT ESTABLISHED unless both candidate site offsets
- *        from TZ0 agree it lands exactly one site-local day ahead. On a
+ *        so V6 reports NOT ESTABLISHED unless the site offset TZ0
+ *        determined puts it exactly one site-local day ahead. On a
  *        different site-local day, either verdict would be about the wrong
  *        day. V6 HAS NOT BEEN RE-RUN SINCE THAT GATE WAS ADDED. Its recorded
  *        answer came from a same-zone run, which the gate now permits, so
@@ -108,8 +109,10 @@
  *   -- CAML view filters, which file under `query` -------------------------
  *   query.caml.control-bogus-element-refused  (CN)
  *        NEGATIVE CONTROL: is a CAML query containing a bogus <Nowww/>
- *        element refused? If SharePoint accepts nonsense in a ViewQuery,
- *        C1 through C5 prove nothing.
+ *        element refused? The 2026-09-02 run says no: SharePoint ACCEPTED
+ *        it and returned nothing. So the control reads the row counts
+ *        instead, and only identical counts from <Now/> and <Nowww/> mean
+ *        the element name is ignored and C1 through C5 prove nothing.
  *   query.view-query.now-element-roundtrip  (C1)
  *        does a VIEW whose ViewQuery contains <Now/> save, and read back
  *        still containing it? This is the deploy surface: deploy.js writes
@@ -265,13 +268,43 @@
   // <Today/> renders in the SERVER's local zone, not the browser's. If the
   // two differ, an item this browser calls "later today" may be tomorrow to
   // SharePoint, and the same-day rows would be answering a question nobody
-  // asked. SharePoint reports Bias and DaylightBias but does not say which
-  // is in force right now, so BOTH candidate server hours are computed and
-  // the gate demands both be safe.
+  // asked.
+  //
+  // Bias and DaylightBias give two CANDIDATE offsets and no statement of
+  // which is in force, and on the 2026-09-02 run that ambiguity alone closed
+  // the gate on nine rows. So the offset is RESOLVED rather than assumed, and
+  // only an unresolvable one falls back to demanding both candidates be safe.
   const tz = await spGet('web/RegionalSettings/TimeZone');
   const info = (tz.ok && tz.body && tz.body.Information) || null;
-  const utcHour = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
-  const browserOffsetMin = -new Date().getTimezoneOffset();
+  const nowTz = new Date();
+  const utcHour = nowTz.getUTCHours() + nowTz.getUTCMinutes() / 60;
+  const browserOffsetMin = -nowTz.getTimezoneOffset();
+
+  // Ask SharePoint to render a known UTC instant in the site's own zone. The
+  // answer has whatever DST rule the zone is under already applied, which is
+  // the thing the biases do not state.
+  const siteLocalOffsetMin = async (whenUtc) => {
+    const stamp = encodeURIComponent(whenUtc.toISOString());
+    for (const path of [
+      `web/RegionalSettings/TimeZone/utctolocaltime('${stamp}')`,
+      `web/RegionalSettings/TimeZone/utctolocaltime(@d)?@d='${stamp}'`,
+    ]) {
+      const r = await spGet(path);
+      if (readFailed(r)) continue;
+      const value = typeof r.body === 'string' ? r.body
+        : r.body.value !== undefined ? r.body.value : r.body.UTCToLocalTime;
+      const parts = typeof value === 'string'
+        && value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (!parts) continue;
+      // The reply is a WALL CLOCK carrying no zone. Reading it through
+      // Date.UTC keeps it one; parsing the string directly would apply this
+      // browser's offset and answer a different question entirely.
+      const wall = Date.UTC(+parts[1], +parts[2] - 1, +parts[3], +parts[4], +parts[5], +parts[6]);
+      return { offsetMin: Math.round((wall - whenUtc.getTime()) / 60000), path, value };
+    }
+    return null;
+  };
+
   let serverHours = [];
   let siteOffsetsMin = [];
   let tzEvidence = '';
@@ -279,15 +312,37 @@
     // Windows convention: local + Bias = UTC, so local = UTC - Bias.
     const standardMin = -(info.Bias + (info.StandardBias || 0));
     const daylightMin = -(info.Bias + (info.DaylightBias || 0));
-    siteOffsetsMin = [...new Set([standardMin, daylightMin])];
-    serverHours = [...new Set([standardMin, daylightMin])].map(
-      (m) => ((utcHour + m / 60) % 24 + 24) % 24);
+    const candidates = [...new Set([standardMin, daylightMin])];
+    let determined;
+    if (candidates.length === 1) {
+      siteOffsetsMin = candidates;
+      determined = 'the zone reports no daylight bias, so its one offset needs no resolving';
+    } else {
+      const measured = await siteLocalOffsetMin(nowTz);
+      // Accepted only when it lands on one of the zone's own two offsets. A
+      // zone is on standard or daylight time and nothing else, so any other
+      // answer means this call was misread, and a wrong hour here would
+      // silently re-date every same-day row below.
+      if (measured && candidates.includes(measured.offsetMin)) {
+        siteOffsetsMin = [measured.offsetMin];
+        determined = `${measured.path} rendered ${nowTz.toISOString()} as ${measured.value}, `
+          + `so the offset in force is ${measured.offsetMin >= 0 ? '+' : ''}${measured.offsetMin}min`;
+      } else {
+        siteOffsetsMin = candidates;
+        determined = 'UNRESOLVED, so the gate below falls back to both candidates: '
+          + (measured
+            ? `the conversion answered ${measured.value} (${measured.offsetMin}min), which is neither candidate`
+            : 'SharePoint would not convert a UTC instant to site-local time')
+          + `; Information reads ${JSON.stringify(info)}`;
+      }
+    }
+    serverHours = siteOffsetsMin.map((m) => ((utcHour + m / 60) % 24 + 24) % 24);
     const desc = (tz.body.Description || '(no description)');
     tzEvidence = `site zone "${desc}"; candidate site-local offsets `
-      + `${[...new Set([standardMin, daylightMin])].map((m) => `${m >= 0 ? '+' : ''}${m}min`).join(' / ')}; `
+      + `${candidates.map((m) => `${m >= 0 ? '+' : ''}${m}min`).join(' / ')}; ${determined}; `
       + `this browser ${browserOffsetMin >= 0 ? '+' : ''}${browserOffsetMin}min; `
       + `site-local hour now ~${serverHours.map((h) => h.toFixed(1)).join(' or ')}`;
-    const shares = [standardMin, daylightMin].includes(browserOffsetMin);
+    const shares = siteOffsetsMin.includes(browserOffsetMin);
     record('formula.datetime.control-site-time-zone', 'Site time zone, and whether this browser shares it',
            shares ? 'SAME ZONE' : 'DIFFERENT ZONE', tzEvidence);
   } else {
@@ -296,8 +351,9 @@
            + 'the same-day rows below cannot be interpreted safely');
   }
 
-  // Both candidate site-local hours must leave room for -3h and +3h to stay
-  // on the same site-local day.
+  // The determined site-local hour must leave room for -3h and +3h to stay on
+  // the same site-local day. An unresolved offset leaves both candidates here,
+  // and then both must clear it.
   const SAME_DAY_OK = serverHours.length > 0
     && serverHours.every((h) => h >= 4 && h <= 20);
   if (!SAME_DAY_OK) {
@@ -369,11 +425,11 @@
   // V6 only means something if that instant is site-local TOMORROW. TODAY()+1
   // is a date boundary, so what discriminates a 24-hour ceiling from a
   // 48-hour one is which site-local DAY the stamp falls on, and a stamp
-  // built in the browser's zone can land on a different site-local day.
-  // SharePoint reports Bias and DaylightBias without saying which is in
-  // force, so require BOTH candidates to agree the stamp is exactly one
-  // site-local day ahead. Agreement resolves the ±1h ambiguity outright: if
-  // both offsets put it on day+1, it is on day+1 whichever is live.
+  // built in the browser's zone can land on a different site-local day. TZ0
+  // leaves the offset it determined here, or both candidates where it could
+  // not determine one, and every entry must put the stamp exactly one
+  // site-local day ahead: if both offsets say day+1, it is day+1 whichever
+  // is live.
   const siteDayIndex = (ms, offsetMin) => Math.floor((ms + offsetMin * 60000) / 86400000);
   const nowMs = Date.now();
   const stampMs = tomorrowLate.getTime();
@@ -586,7 +642,7 @@
       record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
              'NOT ESTABLISHED',
              `${TOMORROW_2300} is 23:00 tomorrow in THIS browser's zone, and the `
-             + 'site offsets in TZ0 do not both put it exactly one site-local day '
+             + 'site offset TZ0 determined does not put it exactly one site-local day '
              + 'ahead. Either answer would be about a day this run cannot name, so '
              + 'neither is recorded. Re-run from a machine in the site zone.');
     } else {
@@ -594,7 +650,7 @@
       record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
              tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
              `${TOMORROW_2300} (23:00 tomorrow here, and site-local tomorrow under `
-             + 'both candidate offsets in TZ0) '
+             + 'the offset TZ0 determined) '
              + (tomorrowNight.saved
                ? 'SAVED, so TODAY()+1 permits the whole of tomorrow. The allowance is '
                  + 'about 48 hours, not 24, and the template comments should say so. '
@@ -664,18 +720,47 @@
     record('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
            'NOT ESTABLISHED', 'the fixture rows could not be created');
   } else {
+    // The control was written expecting SharePoint to REFUSE an unknown
+    // element. The 2026-09-02 run showed it does not, and that is a finding
+    // about SharePoint the evidence keeps. What still discriminates is the
+    // row count: an element being interpreted matches rows, an invented one
+    // matches none, and only IDENTICAL counts mean the name is being ignored.
     const junk = await caml(ltWhen('<Nowww/>', false), false);
-    record('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
-           junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
-           junk.ok
-             ? `a query containing <Nowww/> was ACCEPTED and returned ${junk.titles.length} `
-               + 'row(s). SharePoint is not validating this element, so C1-C5 prove '
-               + 'nothing about <Now/> being real'
-             : isRefusal(junk.status)
+    const question = 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused';
+    if (!junk.ok) {
+      record('query.caml.control-bogus-element-refused', question,
+             isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
+             isRefusal(junk.status)
                ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
                : `the request failed with HTTP ${junk.status}, which is not the server `
                  + 'rejecting the element. C1-C7 are unproven rather than answered: '
                  + junk.text.slice(0, 200));
+    } else {
+      const real = await caml(ltWhen('<Now/>', false), false);
+      const counts = `unknown element accepted (no validation); `
+        + `<Now/>=${real.ok ? real.titles.length : 'refused'} rows vs <Nowww/>=${junk.titles.length} rows`;
+      if (!real.ok) {
+        record('query.caml.control-bogus-element-refused', question, 'NOT ESTABLISHED',
+               `${counts}. The <Nowww/> query was accepted and the <Now/> query it has to `
+               + `be compared against failed with HTTP ${real.status}, so nothing was `
+               + 'compared: ' + real.text.slice(0, 200));
+      } else if (real.titles.length === junk.titles.length) {
+        record('query.caml.control-bogus-element-refused', question, 'FAIL',
+               `${counts}, the SAME count, so the element name is not being interpreted `
+               + 'and C1-C5 prove nothing about <Now/> being real');
+      } else if (real.titles.length > 0 && junk.titles.length === 0) {
+        record('query.caml.control-bogus-element-refused', question, 'PASS',
+               `${counts}, so <Now/> is interpreted. SharePoint accepted an unknown `
+               + 'element without error, which is worth recording on its own, but it '
+               + 'matched nothing while the real element matched rows, and that split '
+               + 'is what the control needs.');
+      } else {
+        record('query.caml.control-bogus-element-refused', question, 'NOT ESTABLISHED',
+               `${counts}, which is neither the same count nor the empty-against-`
+               + 'populated split this control can read. C1-C5 are unproven rather '
+               + 'than answered.');
+      }
+    }
   }
 
   // ---- now-element-roundtrip (C1): the deploy surface -----------------
