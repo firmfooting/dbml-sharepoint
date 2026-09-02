@@ -33,3 +33,41 @@ def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_ty
 
 Load the mapping YAML and the referenced configs into a single bundle.
 
+### `PREFIX_PLACEHOLDER`
+
+```python
+PREFIX_PLACEHOLDER = '{prefix}'
+```
+
+### `prefix_stem`
+
+```python
+def prefix_stem(prefix: str) -> str
+```
+
+`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem.
+
+### `expand_prefix`
+
+```python
+def expand_prefix(value: str, prefix: str, context: str) -> str
+```
+
+Replace a leading `{prefix}` with the stem; drop it and its space when empty.
+
+Refused anywhere but the start: the stem is a namespace and a namespace
+goes first, which is also what the fleet's own naming test checks.
+
+### `previous_object_names`
+
+```python
+def previous_object_names(raw_name: str, raw_previous: collections.abc.Sequence[str], prefix: str, previous_prefixes: collections.abc.Sequence[str], context: str) -> tuple[str, ...]
+```
+
+Every name a group or level may be found under on an unmigrated site.
+
+Each base name (the current one and every `renamed_from`) is expanded
+under the current stem and then under every previous stem; a literal base
+with no placeholder is taken once. The current name is never a candidate
+and nothing is listed twice.
+

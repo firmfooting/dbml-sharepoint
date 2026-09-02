@@ -13,6 +13,7 @@ the mapping's own `extension:` key).
 """
 
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -83,14 +84,14 @@ KNOWN_SECTIONS = frozenset({
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
     # `permissions:` block (see _parse_permissions).
-    "groups", "permission_levels", "list_permissions",
+    "groups", "permission_levels", "list_permissions", "previous_prefixes",
     *_REMOVED_SECTIONS,
 })
 
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
-    "accept_unindexable_display_column", "hide_from_all_items",
+    "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
 })
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -103,7 +104,7 @@ _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
     "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
     "only_allow_members_view_membership", "require_empty_at_deploy",
-    "enroll_operator_during_deploy", "enroll_enterprise_reader",
+    "enroll_operator_during_deploy", "enroll_enterprise_reader", "renamed_from",
 })
 # `site_role` scopes the DEFAULT policy (which entities it applies to) and
 # is read only there. On an override it was parsed and silently discarded,
@@ -158,6 +159,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ),
             hide_from_all_items=_optional_str_list(
                 spec, "hide_from_all_items", f"entities.{name}",
+            ),
+            renamed_from=_optional_str_list(
+                spec, "renamed_from", f"entities.{name}",
             ),
         )
 
@@ -258,7 +262,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         raw.get("extensions"), "extensions",
     )
 
-    permissions_config = _parse_permissions(raw)
+    previous_prefixes = _parse_previous_prefixes(raw.get("previous_prefixes"), raw["prefix"])
+    permissions_config = _parse_permissions(raw, raw["prefix"], previous_prefixes)
 
     # Column formatting: a dict with a 'style' key is a style spec (fleet
     # style standard, website/docs/reference/style-guide.md) expanded here
@@ -309,6 +314,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
 
     mapping = Mapping(
         prefix=raw["prefix"],
+        previous_prefixes=previous_prefixes,
         prefix_owner=raw.get("prefix_owner", ""),
         prefix_registry=raw.get("prefix_registry", ""),
         entities=entities,
@@ -882,7 +888,37 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     return cast("EntityKind", raw_kind)
 
 
-def _parse_principal(raw_principal: Any, context: str) -> Principal:
+#: The placeholder a group or permission-level name may open with. It expands
+#: to the list prefix STEM (the prefix without its trailing underscore), so
+#: one `prefix:` rewrite renames the groups and levels with the lists. The
+#: marker is computed from the expanded name; provenance never sees this.
+PREFIX_PLACEHOLDER = "{prefix}"
+
+
+def prefix_stem(prefix: str) -> str:
+    """`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem."""
+    return prefix.removesuffix("_")
+
+
+def expand_prefix(value: str, prefix: str, context: str) -> str:
+    """Replace a leading `{prefix}` with the stem; drop it and its space when empty.
+
+    Refused anywhere but the start: the stem is a namespace and a namespace
+    goes first, which is also what the fleet's own naming test checks.
+    """
+    if PREFIX_PLACEHOLDER not in value:
+        return value
+    if not value.startswith(PREFIX_PLACEHOLDER) or value.count(PREFIX_PLACEHOLDER) > 1:
+        raise ValueError(
+            f"{context}: the {PREFIX_PLACEHOLDER} placeholder may appear once, at the "
+            f"start of the name, got {value!r}",
+        )
+    rest = value[len(PREFIX_PLACEHOLDER):]
+    stem = prefix_stem(prefix)
+    return stem + rest if stem else rest.lstrip(" ")
+
+
+def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Principal:
     """Parse a principal dict into a Principal dataclass.
 
     The admission gate reads `PRINCIPAL_KINDS`, derived from the
@@ -904,6 +940,8 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
     name = raw_principal.get("name")
+    if isinstance(name, str):
+        name = expand_prefix(name, prefix, f"{context}.name")
     if kind == "group" and not name:
         raise ValueError(f"{context}: principal kind=group requires a 'name'")
     return Principal(
@@ -913,7 +951,7 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
 
 
 def _parse_policy(
-    raw_policy: Any, context: str, *, allow_site_role: bool = False,
+    raw_policy: Any, context: str, *, allow_site_role: bool = False, prefix: str = "",
 ) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
     _reject_unknown_keys(
@@ -941,9 +979,11 @@ def _parse_policy(
     for i, raw_a in enumerate(raw_policy.get("assignments", [])):
         _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
         principal = _parse_principal(
-            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal",
+            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
         )
         level = raw_a.get("level")
+        if isinstance(level, str):
+            level = expand_prefix(level, prefix, f"{context}.assignments[{i}].level")
         if not level:
             raise ValueError(f"{context}.assignments[{i}]: 'level' is required")
         assignments.append(RoleAssignment(principal=principal, level=level))
@@ -1050,7 +1090,54 @@ def _optional_str_list(raw: dict[str, Any], key: str, context: str) -> tuple[str
     return tuple(value)
 
 
-def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
+def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
+    """`previous_prefixes`, refused when it repeats or names the current prefix."""
+    if declared is None:
+        return ()
+    if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
+        raise ValueError("previous_prefixes must be a list of strings")
+    seen: set[str] = set()
+    for previous in declared:
+        if previous == current:
+            raise ValueError(
+                f"previous_prefixes names the current prefix {previous!r}; a prefix "
+                f"that is still in use is not a previous one",
+            )
+        if previous in seen:
+            raise ValueError(f"previous_prefixes names {previous!r} twice")
+        seen.add(previous)
+    return tuple(declared)
+
+
+def previous_object_names(
+    raw_name: str,
+    raw_previous: Sequence[str],
+    prefix: str,
+    previous_prefixes: Sequence[str],
+    context: str,
+) -> tuple[str, ...]:
+    """Every name a group or level may be found under on an unmigrated site.
+
+    Each base name (the current one and every `renamed_from`) is expanded
+    under the current stem and then under every previous stem; a literal base
+    with no placeholder is taken once. The current name is never a candidate
+    and nothing is listed twice.
+    """
+    current = expand_prefix(raw_name, prefix, context)
+    out: list[str] = []
+    for base in (raw_name, *raw_previous):
+        stems = [prefix, *previous_prefixes] if PREFIX_PLACEHOLDER in base else [prefix]
+        for stem_prefix in stems:
+            name = expand_prefix(base, stem_prefix, context)
+            if name == current or name in out:
+                continue
+            out.append(name)
+    return tuple(out)
+
+
+def _parse_permissions(
+    raw: dict[str, Any], prefix: str = "", previous_prefixes: Sequence[str] = (),
+) -> PermissionsConfig | None:
     """Parse permission_levels, groups, list_permissions from the raw YAML dict."""
     # All three sections are optional; default to empty / no default policy.
     raw_levels = raw.get("permission_levels", [])
@@ -1060,25 +1147,33 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
 
     for i, lvl in enumerate(raw_levels):
         _reject_unknown_keys(
-            lvl, {"name", "description", "base_permissions"}, f"permission_levels[{i}]",
+            lvl, {"name", "description", "base_permissions", "renamed_from"},
+            f"permission_levels[{i}]",
         )
     for i, grp in enumerate(raw_groups):
         _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
 
     levels = [
         CustomPermissionLevel(
-            name=lvl["name"],
+            name=expand_prefix(lvl["name"], prefix, f"permission_levels[{i}].name"),
             description=lvl.get("description", ""),
             base_permissions=list(lvl.get("base_permissions", [])),
+            renamed_from=_optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
+            previous_names=previous_object_names(
+                lvl["name"], _optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
+                prefix, previous_prefixes, f"permission_levels[{i}].renamed_from",
+            ),
         )
-        for lvl in raw_levels
+        for i, lvl in enumerate(raw_levels)
     ]
 
     groups = [
         SiteGroup(
-            name=grp["name"],
+            name=expand_prefix(grp["name"], prefix, f"groups[{i}].name"),
             description=grp.get("description", ""),
-            owner_group=grp.get("owner_group", "Site Owners"),
+            owner_group=expand_prefix(
+                grp.get("owner_group", "Site Owners"), prefix, f"groups[{i}].owner_group",
+            ),
             allow_members_edit_membership=_optional_bool(
                 grp, "allow_members_edit_membership", f"groups[{i}]",
             ),
@@ -1100,6 +1195,11 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
             enroll_enterprise_reader=_optional_bool(
                 grp, "enroll_enterprise_reader", f"groups[{i}]",
             ),
+            renamed_from=_optional_str_list(grp, "renamed_from", f"groups[{i}]"),
+            previous_names=previous_object_names(
+                grp["name"], _optional_str_list(grp, "renamed_from", f"groups[{i}]"),
+                prefix, previous_prefixes, f"groups[{i}].renamed_from",
+            ),
         )
         for i, grp in enumerate(raw_groups)
     ]
@@ -1109,7 +1209,7 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
         default_policy = _parse_policy(
-            raw_default, "list_permissions.default", allow_site_role=True,
+            raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
         )
         raw_scope = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
@@ -1119,7 +1219,7 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
         raw_list_perms.get("overrides"), "list_permissions.overrides",
     ).items():
         ctx = f"list_permissions.overrides.{entity_name}"
-        overrides[entity_name] = _parse_policy(raw_policy, ctx)
+        overrides[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
 
     return PermissionsConfig(
         levels=levels,

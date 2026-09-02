@@ -54,6 +54,17 @@ deploy.js.txt is a reconciler, not an installer:
   onto a title collision.
 - Declared mutable settings that drifted are **narrowly reconciled** and
   read back.
+- A list absent under its title but present under one of the entity's
+  `renamed_from` titles, carrying the exact marker for that previous name,
+  is **retitled in place** before anything else is written, and read back
+  by list id. A previous title without its marker, or present beside the
+  current title, blocks before writes.
+- A permission level or site group absent under its name but present
+  under one of its previous names (its `renamed_from` bases crossed with
+  every `previous_prefixes` stem), carrying the exact marker for that
+  previous name, is **renamed in place** at the start of the security
+  phase, by id, and read back; assignments and members stay. Every rename
+  is planned read-only first, and one refusal aborts before any is written.
 - Objects whose immutable shape mismatches **fail closed** with a named
   error: the script never migrates types or retargets lookups.
 - User content (undeclared views, rows, user-added columns) is never

@@ -71,7 +71,7 @@ calculated_formulas:
 # conditions being visible more widely than its investigator expects. Scope
 # SITE membership deliberately; 30-deploy/deploy.md makes it a gate.
 groups:
-  - name: "RG Research Governance"
+  - name: "{prefix} Research Governance"
     description: "Maintain the project register, record ethics decisions and site authorisations, run the expiry and reporting sweeps."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -103,7 +103,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "RG Research Governance" }
+      - principal: { kind: group, name: "{prefix} Research Governance" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

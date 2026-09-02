@@ -26,7 +26,7 @@ watched_lists: []
 # information); Full Control confined to the empty-by-default admin group.
 # Scope SITE membership deliberately: this holds staff professional data.
 groups:
-  - name: "CR Credentialing Coordinators"
+  - name: "{prefix} Credentialing Coordinators"
     description: "Maintain practitioner records and credentials per credentialing committee decisions; run the expiry and review sweeps."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -58,7 +58,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "CR Credentialing Coordinators" }
+      - principal: { kind: group, name: "{prefix} Credentialing Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

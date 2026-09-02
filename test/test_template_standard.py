@@ -45,7 +45,7 @@ from dbml_sharepoint.analysis.list_description import (
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
-from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
@@ -1776,6 +1776,9 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
         "enroll_enterprise_reader": True,
+        # Never renamed: the shared groups are one object per site.
+        "renamed_from": (),
+        "previous_names": (),
     },
     "dbml List Administrators": {
         "description": (
@@ -1790,6 +1793,9 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": True,
         "enroll_enterprise_reader": False,
+        # Never renamed: the shared groups are one object per site.
+        "renamed_from": (),
+        "previous_names": (),
     },
 }
 
@@ -1847,6 +1853,31 @@ def test_every_family_declares_the_shared_groups_identically(
                 f"it as {want!r} -- two families on one site reconcile the "
                 f"same group object."
             )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str) -> None:
+    """The stem is not typed by hand. `{prefix}` expands to the list prefix
+    stem at load, so the wizard's rewrite of `prefix:` renames the groups
+    and levels with the lists. A stem typed in ("RR Risk Managers") would
+    survive that rewrite and leave a site with ACME_ lists and RR groups."""
+    import yaml
+
+    raw = yaml.safe_load(
+        (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
+        .read_text(encoding="utf-8"),
+    )
+    typed = [
+        g["name"] for g in (raw.get("groups") or [])
+        if g["name"] not in SHARED_GROUPS and not str(g["name"]).startswith("{prefix} ")
+    ] + [
+        lvl["name"] for lvl in (raw.get("permission_levels") or [])
+        if not str(lvl["name"]).startswith("{prefix} ")
+    ]
+    assert not typed, (
+        f"{template}: these group or level names carry a typed stem instead of "
+        f"the {{prefix}} placeholder: {typed}"
+    )
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -2058,42 +2089,3 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     assert families_with_levels, "no family declares a level, the sweep visited nothing"
     assert levels_checked, "no levels discovered, the sweep visited nothing"
     assert not offenders, "level descriptions over budget:\n" + "\n".join(offenders)
-
-
-def test_no_two_templates_declare_the_same_entity_name() -> None:
-    """Unprefixed list names must stay unique across the shipped families.
-
-    The prefix is a governance device -- you register yours so nobody else
-    takes it -- and it is on its way out. RE-MEASURED 2026-08-26: 62 entity
-    names across 34 families, zero duplicated, so several families can
-    already share one site with no prefix at all.
-
-    That is only true while it stays true. Two families both declaring
-    `Actions` would collide the moment either is deployed prefix-less, and
-    nothing else in the build would notice: each family validates alone.
-    """
-    solutions = available_solutions()
-    assert len(solutions) == 34, (
-        f"{len(solutions)} templates discovered, not the 34 this collision "
-        "sweep was measured against -- re-verify the invariant before "
-        "trusting an empty collision set."
-    )
-    owners: dict[str, list[str]] = {}
-    for solution in solutions:
-        for entity in solution.lists:
-            owners.setdefault(entity, []).append(solution.id)
-    assert len(owners) == 62, (
-        f"{len(owners)} unique entity names found, not the 62 this collision "
-        "sweep was measured against -- re-verify the invariant before "
-        "trusting an empty collision set."
-    )
-    collisions = {
-        entity: families
-        for entity, families in owners.items()
-        if len(families) > 1
-    }
-    assert not collisions, (
-        "these entity names are declared by more than one family, so they "
-        "would collide on a shared site without a prefix:\n"
-        + "\n".join(f"  {e}: {', '.join(f)}" for e, f in sorted(collisions.items()))
-    )

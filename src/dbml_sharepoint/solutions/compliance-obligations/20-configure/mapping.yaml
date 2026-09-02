@@ -19,7 +19,7 @@ watched_lists: []
 # Security: coordinators maintain (status changes follow assessments);
 # everyone reads; Full Control confined to the empty-by-default admin group.
 groups:
-  - name: "CO Compliance Coordinators"
+  - name: "{prefix} Compliance Coordinators"
     description: "Maintain the obligations register: load, assess with owners, keep evidence current."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -51,7 +51,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "CO Compliance Coordinators" }
+      - principal: { kind: group, name: "{prefix} Compliance Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

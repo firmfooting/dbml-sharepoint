@@ -27,14 +27,14 @@ calculated_formulas:
 #   - CF Feedback Handlers: Contribute;
 #   - Full Control confined to the empty-by-default admin group.
 groups:
-  - name: "CF Feedback Recorders"
+  - name: "{prefix} Feedback Recorders"
     description: "Front-line staff who record feedback as it arrives. Can submit and read; cannot edit after submission."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: false
-  - name: "CF Feedback Handlers"
+  - name: "{prefix} Feedback Handlers"
     description: "Triage, investigate, respond and close feedback items."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -59,7 +59,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "CF Record Only"
+  - name: "{prefix} Record Only"
     description: "Submit new items and read; no editing or deleting, no schema rights."
     base_permissions:
       - AddListItems
@@ -77,9 +77,9 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "CF Feedback Recorders" }
-        level: "CF Record Only"
-      - principal: { kind: group, name: "CF Feedback Handlers" }
+      - principal: { kind: group, name: "{prefix} Feedback Recorders" }
+        level: "{prefix} Record Only"
+      - principal: { kind: group, name: "{prefix} Feedback Handlers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

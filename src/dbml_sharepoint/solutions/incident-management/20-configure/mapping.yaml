@@ -30,7 +30,7 @@ calculated_formulas:
 #     maintain corrective actions.
 #   - Full Control confined to the empty-by-default admin group.
 groups:
-  - name: "IN Incident Handlers"
+  - name: "{prefix} Incident Handlers"
     description: "The response team: triage, manage and resolve incidents; maintain corrective actions."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -55,7 +55,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "IN Report Only"
+  - name: "{prefix} Report Only"
     description: "Submit new items and read everything; no editing or deleting, no schema rights."
     base_permissions:
       - AddListItems
@@ -73,12 +73,12 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "IN Incident Handlers" }
+      - principal: { kind: group, name: "{prefix} Incident Handlers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "IN Report Only"
+        level: "{prefix} Report Only"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }

@@ -25,7 +25,7 @@ calculated_formulas:
 # managers triage and maintain; Full Control confined to the empty-by-
 # default admin group.
 groups:
-  - name: "CH Change Managers"
+  - name: "{prefix} Change Managers"
     description: "Triage, coordinate decisions and track implementation of change requests."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -50,7 +50,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "CH Submit Only"
+  - name: "{prefix} Submit Only"
     description: "Submit new requests and read everything; no editing or deleting, no schema rights."
     base_permissions:
       - AddListItems
@@ -68,12 +68,12 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "CH Change Managers" }
+      - principal: { kind: group, name: "{prefix} Change Managers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "CH Submit Only"
+        level: "{prefix} Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }

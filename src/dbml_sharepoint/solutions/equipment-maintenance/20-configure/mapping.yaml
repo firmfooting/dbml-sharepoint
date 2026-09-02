@@ -27,7 +27,7 @@ watched_lists: []
 # able to check an item's status); Full Control confined to the
 # empty-by-default admin group.
 groups:
-  - name: "EM Maintenance Team"
+  - name: "{prefix} Maintenance Team"
     description: "Record maintenance events and keep the schedule (NextDueDate) current."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -59,7 +59,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "EM Maintenance Team" }
+      - principal: { kind: group, name: "{prefix} Maintenance Team" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

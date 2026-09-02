@@ -24,7 +24,7 @@ calculated_formulas:
 # the contract-managers group maintains rows; Full Control lives only in the
 # empty-by-default admin group (operator self-enrolled per deploy run).
 groups:
-  - name: "CT Contract Managers"
+  - name: "{prefix} Contract Managers"
     description: "Staff who create and maintain contract records."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -56,7 +56,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "CT Contract Managers" }
+      - principal: { kind: group, name: "{prefix} Contract Managers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

@@ -64,7 +64,7 @@ calculated_formulas:
 
 # Security: risks are maintained by a managers group; everyone reads.
 groups:
-  - name: "RR Risk Managers"
+  - name: "{prefix} Risk Managers"
     description: "Staff who create, rate and maintain risk records."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -96,7 +96,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "RR Risk Managers" }
+      - principal: { kind: group, name: "{prefix} Risk Managers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

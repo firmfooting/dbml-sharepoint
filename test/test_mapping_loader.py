@@ -2502,3 +2502,184 @@ def test_reporting_users_table_must_be_a_boolean(tmp_path: Path) -> None:
     """))
     with pytest.raises(ValueError, match="users_table"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_renamed_from_defaults_empty_and_parses(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Plain: { kind: List, base_template: 100, site_role: default }
+          Risk:
+            kind: List
+            base_template: 100
+            site_role: default
+            renamed_from: [ProgramRisk, ProjectRisk]
+    """)
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert mapping.entities["Plain"].renamed_from == ()
+    assert mapping.entities["Risk"].renamed_from == ("ProgramRisk", "ProjectRisk")
+
+
+def test_renamed_from_refuses_a_bare_string(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Risk:
+            kind: List
+            base_template: 100
+            site_role: default
+            renamed_from: ProgramRisk
+    """)
+    with pytest.raises(ValueError, match="renamed_from"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_prefix_placeholder_in_group_and_level_names_expands_to_the_stem(tmp_path: Path) -> None:
+    """`{prefix}` becomes the list prefix without its trailing underscore, in
+    the declared name and in every reference to it, so the wizard's one
+    rewrite of `prefix:` renames the groups and levels with the lists."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems, ViewListItems]
+        groups:
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+            owner_group: "Site Owners"
+        list_permissions:
+          overrides:
+            Risk:
+              break_inheritance: true
+              assignments:
+                - principal: { kind: group, name: "{prefix} Request Handlers" }
+                  level: "{prefix} Submit Only"
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert [g.name for g in perms.groups] == ["GOV Request Handlers"]
+    assert [lvl.name for lvl in perms.levels] == ["GOV Submit Only"]
+    assignment = perms.overrides["Risk"].assignments[0]
+    assert assignment.principal.name == "GOV Request Handlers"
+    assert assignment.level == "GOV Submit Only"
+
+
+def test_an_empty_prefix_drops_the_placeholder_and_its_space(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: ""
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert [g.name for g in perms.groups] == ["Request Handlers"]
+    assert [lvl.name for lvl in perms.levels] == ["Submit Only"]
+
+
+def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None:
+    """The stem is a namespace, and a namespace goes first; a name that
+    buries it would defeat the fleet's own test that every family group
+    starts with one."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        groups:
+          - name: "Handlers {prefix}"
+            description: "Handlers."
+    """)
+    with pytest.raises(ValueError, match="prefix"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["", "ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+    """)
+    assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ("", "ADOPT_")
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+    """)
+    assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ()
+
+
+@pytest.mark.parametrize(
+    ("declared", "why"),
+    [
+        ('"ADOPT_"', "must be a list"),
+        ('["GOV_"]', "current prefix"),
+        ('["", ""]', "twice"),
+    ],
+    ids=["bare-string", "current-prefix", "duplicate"],
+)
+def test_previous_prefixes_refuse_a_bad_shape(tmp_path: Path, declared: str, why: str) -> None:
+    write_mapping(tmp_path, f"""
+        prefix: "GOV_"
+        previous_prefixes: {declared}
+        entities:
+          Risk: {{ kind: List, base_template: 100, site_role: default }}
+    """)
+    with pytest.raises(ValueError, match=why):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_groups_and_levels_compute_their_previous_names_over_every_stem(tmp_path: Path) -> None:
+    """A previous name is every previous stem crossed with every base name the
+    object has had, expanded like the current name and minus the current
+    name itself, so one redeploy finds the group under whichever spelling the
+    site holds."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["", "ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Programme Leads"
+            description: "Leads."
+            renamed_from: ["{prefix} Program Governance"]
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    leads, handlers = perms.groups
+    assert leads.renamed_from == ("{prefix} Program Governance",)
+    assert leads.previous_names == (
+        "Programme Leads", "ADOPT Programme Leads",
+        "GOV Program Governance", "Program Governance", "ADOPT Program Governance",
+    )
+    assert handlers.previous_names == ("Request Handlers", "ADOPT Request Handlers")
+    assert perms.levels[0].previous_names == ("Submit Only", "ADOPT Submit Only")
+
+
+def test_a_literal_previous_group_name_is_not_re_prefixed(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: [""]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        groups:
+          - name: "{prefix} Editors"
+            description: "Editors."
+            renamed_from: ["Register Editors"]
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert perms.groups[0].previous_names == ("Editors", "Register Editors")

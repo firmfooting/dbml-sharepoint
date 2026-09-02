@@ -26,7 +26,7 @@ watched_lists: []
 # the compliance function and take staff declarations via the coordinators
 # and record the decision in 50-govern.
 groups:
-  - name: "DR Compliance Coordinators"
+  - name: "{prefix} Compliance Coordinators"
     description: "Assess declarations, record management plans and decisions, run the review cadence."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -51,7 +51,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "DR Declare Only"
+  - name: "{prefix} Declare Only"
     description: "Submit declarations and read; no editing or deleting, no schema rights."
     base_permissions:
       - AddListItems
@@ -69,12 +69,12 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "DR Compliance Coordinators" }
+      - principal: { kind: group, name: "{prefix} Compliance Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "DR Declare Only"
+        level: "{prefix} Declare Only"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }

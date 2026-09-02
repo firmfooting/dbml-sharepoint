@@ -1043,6 +1043,16 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.RESERVED_COLUMN_NAME: (
         "A column uses a name SharePoint reserves."
     ),
+    FindingCode.RENAMED_FROM_CLAIMED_TWICE: (
+        "`renamed_from` resolves to one previous name on more than one "
+        "entity, group or permission level, or twice on one, so two "
+        "would race to adopt the same existing object."
+    ),
+    FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY: (
+        "`renamed_from` resolves to a previous name that is still a "
+        "declared entity, group or permission level, so a redeploy would "
+        "find both and could not tell a rename from a collision."
+    ),
     FindingCode.RETIRED_COLUMN_IN_FIELD_SET: (
         "A field set names a retired column; retirement strips it from "
         "every view that expands the set, and the build continues."

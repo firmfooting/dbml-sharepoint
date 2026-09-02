@@ -24,7 +24,7 @@ calculated_formulas:
 # asked intact); service teams work the queues; Full Control confined to
 # the empty-by-default admin group.
 groups:
-  - name: "SR Service Teams"
+  - name: "{prefix} Service Teams"
     description: "The people who work the queues: facilities, IT, admin, grounds."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -49,7 +49,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "SR Submit Only"
+  - name: "{prefix} Submit Only"
     description: "Submit new requests and read everything; no editing or deleting, no schema rights."
     base_permissions:
       - AddListItems
@@ -67,12 +67,12 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "SR Service Teams" }
+      - principal: { kind: group, name: "{prefix} Service Teams" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "SR Submit Only"
+        level: "{prefix} Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
