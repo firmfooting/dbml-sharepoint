@@ -55,6 +55,12 @@ dbml-sharepoint ROLLBACK script.
 
 DELETES every list declared by this schema at this site. Refuses EVERY list unless the user types DELETE NON-EMPTY for that list and any items present. Deletion-blocked lists (AllowDeletion = false) are unlocked per list after confirmation and re-locked if their delete fails.
 
+### `verify.js.j2`
+
+dbml-sharepoint CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
+
+Exercises every clock cell this pack uses (a `today` or `now` rule, a `today` view window, a `[today]` default) on a hidden scratch list named ``, and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it when its Description carries the tool's marker, and never touches any other list. Paste after deploy.js.txt, on the same site.
+
 ## Shared partials
 
 ### `_assess_body.js.j2`
@@ -65,33 +71,45 @@ The host names the pack data differently: assess.js.j2 passes `targets`, deploy.
 
 ### `_digest_cached.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
+### `_formula_canonical.js.j2`
+
+Included by: `deploy/_field_reconcile.js.j2`, `verify.js.j2`
+
+Shared formula canonicalisation: how a stored Formula or ValidationFormula is compared with what was written. Expects nothing; defines xmlDecode and canonicalFormula. Included by deploy/_field_reconcile.js.j2 and by the verify script, so both read a formula back the same way.
+
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them.
 
 ### `_http_write.js.j2`
 
-Included by: `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
 
 ### `_provenance.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared provenance header fields, rendered INSIDE each script's leading block comment. Expects: source_dbml, site_url, release, generated_at; optional: source_mtime, site_role. comment_safe  guards every raw interpolation against a crafted `*/`.
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`
+Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function and SITE_URL const to be defined already; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line.
+
+### `_verify_body.js.j2`
+
+Included by: `verify.js.j2`
+
+The whole verification, taking its collaborators as an argument so the standalone script and a test harness can share it. Expects `targets` (generators/verifygen.py: list_title, marker, columns, rows, checks, rule) and the transport, digest and canonicalFormula collaborators.
 
 ## deploy.js phase bodies
 

@@ -67,9 +67,15 @@ explicit migration.
    Only `[SP-DEPLOY] [ERROR]` lines and a non-empty `errors` array are
    failures. The browser may paint stray read-probe requests red; those
    are absence checks the script handles.
-8. **Verify**: run the pack's verification checklist (its deploy.md /
+8. **Verify the clock cells**, when the bundle carries `verify.js.txt`:
+   paste it into the same console, on the same site. It writes only to one
+   hidden scratch list (`_dbml-verify`) and prints a `[SP-VERIFY] [DONE]`
+   verdict; expect **VERIFIED**. A **MISMATCH** means a date rule, view
+   window or default this pack relies on does not behave on this site as
+   measured: read its FAIL lines before trusting the deployed rules.
+9. **Verify**: run the pack's verification checklist (its deploy.md /
    runbook) before handing the site over.
-9. **`rollback.js.txt` is ONLY for abandoning a failed FIRST provision on an
+10. **`rollback.js.txt` is ONLY for abandoning a failed FIRST provision on an
    empty site**, never against a site containing real records (see the
    fail-closed note above).
 

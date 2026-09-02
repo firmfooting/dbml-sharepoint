@@ -72,6 +72,7 @@ DEPLOY_SCRIPT = "deploy.js.txt"
 ROLLBACK_SCRIPT = "rollback.js.txt"
 ASSESS_SCRIPT = "assess.js.txt"
 DEMO_SCRIPT = "demo-data.js.txt"
+VERIFY_SCRIPT = "verify.js.txt"
 
 # The reporting artifacts, for the reason given directly above -- they were
 # the one set still spelled as literals at each write site, and they drifted
@@ -88,6 +89,7 @@ GENERATED_FILES: tuple[str, ...] = (
     ROLLBACK_SCRIPT,
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
+    VERIFY_SCRIPT,
     "deploy-manifest.md",
     "assess-manifest.md",
     "index.md",
@@ -140,6 +142,14 @@ _REPORTING_ROW: tuple[str, str] = (
     f"{REPORT_DIR}/",
     (f"Power Query M, SQL views, {REPORT_GUIDE} and the data dictionary for "
      "reporting onboarding."),
+)
+
+_VERIFY_ROW: tuple[str, str] = (
+    VERIFY_SCRIPT,
+    (f"Clock verification: paste AFTER {DEPLOY_SCRIPT}. Exercises every "
+     "date rule, view window and [today] default this pack relies on, on "
+     "one hidden scratch list (`_dbml-verify`), and prints VERIFIED / "
+     "MISMATCH / NOT-VERIFIED. Touches no declared list."),
 )
 
 _DEMO_ROW: tuple[str, str] = (
@@ -244,6 +254,7 @@ def write_index(
     *,
     reporting: bool = False,
     demo: bool = False,
+    verify: bool = False,
     env_provenance: EnvProvenance = NO_ENV_FILE,
 ) -> None:
     """Write ``index.md``: what is in the bundle, one row per artifact.
@@ -253,6 +264,8 @@ def write_index(
     parameter would break every one of them.
     """
     rows = list(_INDEX_ROWS)
+    if verify:
+        rows.append(_VERIFY_ROW)
     if demo:
         rows.append(_DEMO_ROW)
     if reporting:
@@ -342,6 +355,10 @@ def emit_bundle(
     from dbml_sharepoint.generators.jsgen import generate_deploy_js  # noqa: PLC0415
     from dbml_sharepoint.generators.reportgen import emit_reporting  # noqa: PLC0415
     from dbml_sharepoint.generators.rollbackgen import generate_rollback_js  # noqa: PLC0415
+    from dbml_sharepoint.generators.verifygen import (  # noqa: PLC0415
+        generate_verify_js,
+        verify_targets,
+    )
 
     if seed and not mapping_bundle.mapping.demo_items:
         raise SeedRequiresDemoItemsError(
@@ -388,6 +405,20 @@ def emit_bundle(
         "deploy-manifest.md", DEPLOY_SCRIPT, ROLLBACK_SCRIPT,
         ASSESS_SCRIPT, "assess-manifest.md",
     ]
+    # Derived, not flagged: a pack that reads a clock anywhere gets the
+    # script that exercises those cells on the site; one that does not has
+    # nothing to verify and gets no script to paste by mistake.
+    verify = bool(verify_targets(schema, mapping_bundle, site_role)["checks"])
+    if verify:
+        write_artifact(
+            out / VERIFY_SCRIPT,
+            generate_verify_js(
+                schema=schema, bundle=mapping_bundle, release=release,
+                site_url=site_url, site_role=site_role,
+                source_dbml=schema_name, generated_at=generated_at,
+            ),
+        )
+        relpaths.append(VERIFY_SCRIPT)
     if seed:
         write_artifact(
             out / DEMO_SCRIPT,
@@ -407,12 +438,13 @@ def emit_bundle(
         # the SiteUrl parameter.
         site_url=site_url,
     )
-    write_index(out, reporting=True, demo=seed, env_provenance=env_provenance)
+    write_index(out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance)
     relpaths.append("index.md")
     write_checksums(out, relpaths)
 
     return (
         f"Generated deployment bundle ({DEPLOY_SCRIPT}, {ROLLBACK_SCRIPT}, "
-        f"{ASSESS_SCRIPT}, {f'{DEMO_SCRIPT}, ' if seed else ''}manifests, "
+        f"{ASSESS_SCRIPT}, {f'{VERIFY_SCRIPT}, ' if verify else ''}"
+        f"{f'{DEMO_SCRIPT}, ' if seed else ''}manifests, "
         f"reporting, index.md, checksums.txt) in {out}."
     )

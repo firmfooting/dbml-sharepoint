@@ -1,0 +1,44 @@
+{# src/dbml_sharepoint/templates/verify.js.j2 #}
+/**
+ * dbml-sharepoint CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
+{% include "_provenance.js.j2" %}
+ *
+ * Exercises every clock cell this pack uses (a `today` or `now` rule, a
+ * `today` view window, a `[today]` default) on a hidden scratch list named
+ * `{{ targets.list_title | comment_safe }}`, and prints a VERIFIED /
+ * MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it
+ * when its Description carries the tool's marker, and never touches any
+ * other list. Paste after deploy.js.txt, on the same site.
+ */
+(async () => {
+  const SITE_URL = {{ site_url | tojson }};
+  const TARGETS = {{ targets | tojson(indent=2) }};
+
+  const log = (level, msg) => console.log(`[SP-VERIFY] [${level}] ${msg}`);
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+{% include "_http_write.js.j2" %}
+  log('INFO', `Writes only to the scratch list '${TARGETS.list_title}'. No declared list is touched.`);
+
+{% include "_digest_cached.js.j2" %}
+{% include "_formula_canonical.js.j2" %}
+
+{% include "_verify_body.js.j2" %}
+
+  let summary;
+  // A throw is a broken probe, not a verdict; NOT-VERIFIED, because a site
+  // nobody could exercise has verified nothing.
+  try {
+    summary = await verifySite({
+      targets: TARGETS, log, web: WEB, fetchWithRetry, apiUrl, odataName,
+      getDigest, spHeaders, spError, canonicalFormula, verdictLevel: 'DONE',
+    });
+  } catch (err) {
+    log('ERROR', `The verification could not run (${err.message}); nothing was verified.`);
+    summary = { findings: [], verdict: 'NOT-VERIFIED', aborted: 'verification-failed' };
+  }
+  console.log(summary);
+  return summary;
+})();

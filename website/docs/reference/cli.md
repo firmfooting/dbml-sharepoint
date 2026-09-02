@@ -12,8 +12,8 @@ dbml-sharepoint COMMAND [OPTIONS]
 ## `build`
 
 Generate the full deployment bundle (deploy.js.txt, rollback.js.txt, assess.js.txt,
-manifests, reporting, index.md, checksums.txt, plus demo-data.js.txt with
-`--seed`).
+manifests, reporting, index.md, checksums.txt, plus verify.js.txt whenever the
+pack reads a clock, and demo-data.js.txt with `--seed`).
 
 | Option | Default | Meaning |
 | --- | --- | --- |

@@ -50,6 +50,8 @@ manifest and the validator, so the three cannot disagree about which
 rules moved.
 """
 
+from collections.abc import Sequence
+
 from dbml_sharepoint.analysis.conditions import leaves
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NOW_SENTINEL, TODAY_SENTINEL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -120,6 +122,15 @@ def effective_list_validation(
     blank is not guarded twice."""
     declared = mapping.list_validation.get(entity)
     hoisted = hoisted_columns(mapping.column_validation.get(entity), column_types)
+    return joined_list_validation(declared, hoisted)
+
+
+def joined_list_validation(
+    declared: ListValidation | None,
+    hoisted: Sequence[tuple[str, ColumnValidation]],
+) -> ListValidation | None:
+    """Join hoisted column rules onto a declared list rule; the one join the
+    deployer, the manifest, the validator and the verify script all use."""
     if not hoisted:
         return declared
     parts: list[Condition] = []

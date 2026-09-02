@@ -67,6 +67,7 @@ uv run prek run --all-files markdownlint-cli2 # markdown style; see .markdownlin
   node --check build/deploy.js.txt
   node --check build/rollback.js.txt
   node --check build/assess.js.txt
+  node --check build/verify.js.txt
   node --check build/demo-data.js.txt
   ```
 
