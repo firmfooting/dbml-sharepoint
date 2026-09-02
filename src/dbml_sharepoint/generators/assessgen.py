@@ -11,12 +11,11 @@ guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 from dataclasses import dataclass
 from typing import Any
 
-from dbml_sharepoint.analysis.conditions import leaves
+from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
-from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
-from dbml_sharepoint.model.mapping_types import Mapping, MappingBundle
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -82,7 +81,7 @@ def assess_targets(
         # validation rules compare against [Modified] since 2026-09-02, and
         # TODAY() itself ran 16 to 20 hours behind the site (see `time_zone`
         # in _assess_body.js.j2).
-        "uses_today": _uses_today(schema, m, table_names),
+        "uses_today": clock_usage(schema, m, table_names).uses_today,
         "list_titles": titles,
         "list_markers": markers,
         "base_templates": sorted(templates),
@@ -97,36 +96,6 @@ def assess_targets(
         # see requires_manage_permissions's docstring and #166 item 5.
         "requires_manage_permissions": requires_manage_permissions(m, table_names),
     }
-
-
-def _uses_today(schema: Schema, m: Mapping, table_names: list[str]) -> bool:
-    """Whether anything this run ships reads `today` on the site: a view
-    filter's <Today/>, a column's [today] default, a validation rule. The
-    site's zone is the one dates are stored and shown in, and the one a view
-    window is read against; a validation rule compares with the save instant,
-    except an offset `today` on a datetime column, which still reads the
-    formula clock (analysis/clock_cells.py). The same pack usually carries
-    all three."""
-    conditions = []
-    for name in table_names:
-        section = m.column_validation.get(name)
-        if section is not None:
-            conditions += [rule.when for rule in section.columns.values()]
-        rule = m.list_validation.get(name)
-        if rule is not None:
-            conditions.append(rule.when)
-        conditions += [view.where for view in m.views.get(name, []) if view.where is not None]
-    for condition in conditions:
-        for leaf in leaves(condition):
-            if isinstance(leaf.value, str) and TODAY_SENTINEL.match(leaf.value):
-                return True
-    for table in schema.tables:
-        if table.name not in table_names:
-            continue
-        for col in table.columns:
-            if isinstance(col.default, str) and col.default.strip().lower() == "[today]":
-                return True
-    return False
 
 
 def derive_requirements(
