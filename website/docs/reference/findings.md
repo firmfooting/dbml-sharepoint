@@ -222,8 +222,8 @@ dbml-sharepoint explain unknown_column_type
 | `projection_unknown_column` | error | A `lookup_projections:` entry names a column the entity's table does not declare. |
 | `projection_unknown_target_column` | error | A `lookup_projections:` entry projects a column the lookup target does not declare. |
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
-| `renamed_from_claimed_twice` | error | `renamed_from` names one previous list name on more than one entity, or twice on one, so two lists would race to adopt the same existing list. |
-| `renamed_from_is_a_declared_entity` | error | `renamed_from` names a previous list name that is still a declared entity, so a redeploy would find both lists and could not tell a rename from a collision. |
+| `renamed_from_claimed_twice` | error | `renamed_from` resolves to one previous name on more than one entity, group or permission level, or twice on one, so two would race to adopt the same existing object. |
+| `renamed_from_is_a_declared_entity` | error | `renamed_from` resolves to a previous name that is still a declared entity, group or permission level, so a redeploy would find both and could not tell a rename from a collision. |
 | `required_column_hidden_from_the_new_form` | error | A required column with no default is hidden from the New form, so every save would fail. Statically provable, hence an error. |
 | `required_column_may_be_hidden_at_creation` | warning | A required column with no default has a `when` that MAY hide it at creation. Whether it does depends on what the person types, so the build cannot decide it -- a warning by design, per the form_visibility spec. |
 | `reserved_column_name` | error | A column uses a name SharePoint reserves. |

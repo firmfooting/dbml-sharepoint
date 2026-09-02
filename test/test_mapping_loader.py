@@ -2598,3 +2598,88 @@ def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None
     """)
     with pytest.raises(ValueError, match="prefix"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["", "ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+    """)
+    assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ("", "ADOPT_")
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+    """)
+    assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ()
+
+
+@pytest.mark.parametrize(
+    ("declared", "why"),
+    [
+        ('"ADOPT_"', "must be a list"),
+        ('["GOV_"]', "current prefix"),
+        ('["", ""]', "twice"),
+    ],
+    ids=["bare-string", "current-prefix", "duplicate"],
+)
+def test_previous_prefixes_refuse_a_bad_shape(tmp_path: Path, declared: str, why: str) -> None:
+    write_mapping(tmp_path, f"""
+        prefix: "GOV_"
+        previous_prefixes: {declared}
+        entities:
+          Risk: {{ kind: List, base_template: 100, site_role: default }}
+    """)
+    with pytest.raises(ValueError, match=why):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_groups_and_levels_compute_their_previous_names_over_every_stem(tmp_path: Path) -> None:
+    """A previous name is every previous stem crossed with every base name the
+    object has had, expanded like the current name and minus the current
+    name itself, so one redeploy finds the group under whichever spelling the
+    site holds."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["", "ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Programme Leads"
+            description: "Leads."
+            renamed_from: ["{prefix} Program Governance"]
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    leads, handlers = perms.groups
+    assert leads.renamed_from == ("{prefix} Program Governance",)
+    assert leads.previous_names == (
+        "Programme Leads", "ADOPT Programme Leads",
+        "GOV Program Governance", "Program Governance", "ADOPT Program Governance",
+    )
+    assert handlers.previous_names == ("Request Handlers", "ADOPT Request Handlers")
+    assert perms.levels[0].previous_names == ("Submit Only", "ADOPT Submit Only")
+
+
+def test_a_literal_previous_group_name_is_not_re_prefixed(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: [""]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        groups:
+          - name: "{prefix} Editors"
+            description: "Editors."
+            renamed_from: ["Register Editors"]
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert perms.groups[0].previous_names == ("Editors", "Register Editors")

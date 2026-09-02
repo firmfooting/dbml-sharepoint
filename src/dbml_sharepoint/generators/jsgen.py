@@ -590,8 +590,8 @@ def build_schema_json(
             # The previous TITLES (prefix applied) and the marker each must
             # carry, from the same helper as the current marker.
             "renamed_from": [
-                {"title": bundle.mapping.prefix + old, "expected_marker": marker_for(family, old)}
-                for old in entity.renamed_from
+                {"title": title, "expected_marker": marker_for(family, name)}
+                for title, name in bundle.mapping.previous_titles(table_name)
             ],
             "content_types_enabled": False,
             "enable_versioning": versioning.enable_versioning,

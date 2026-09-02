@@ -13,6 +13,7 @@ the mapping's own `extension:` key).
 """
 
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -83,7 +84,7 @@ KNOWN_SECTIONS = frozenset({
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
     # `permissions:` block (see _parse_permissions).
-    "groups", "permission_levels", "list_permissions",
+    "groups", "permission_levels", "list_permissions", "previous_prefixes",
     *_REMOVED_SECTIONS,
 })
 
@@ -103,7 +104,7 @@ _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
     "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
     "only_allow_members_view_membership", "require_empty_at_deploy",
-    "enroll_operator_during_deploy", "enroll_enterprise_reader",
+    "enroll_operator_during_deploy", "enroll_enterprise_reader", "renamed_from",
 })
 # `site_role` scopes the DEFAULT policy (which entities it applies to) and
 # is read only there. On an override it was parsed and silently discarded,
@@ -261,7 +262,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         raw.get("extensions"), "extensions",
     )
 
-    permissions_config = _parse_permissions(raw, raw["prefix"])
+    previous_prefixes = _parse_previous_prefixes(raw.get("previous_prefixes"), raw["prefix"])
+    permissions_config = _parse_permissions(raw, raw["prefix"], previous_prefixes)
 
     # Column formatting: a dict with a 'style' key is a style spec (fleet
     # style standard, website/docs/reference/style-guide.md) expanded here
@@ -312,6 +314,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
 
     mapping = Mapping(
         prefix=raw["prefix"],
+        previous_prefixes=previous_prefixes,
         prefix_owner=raw.get("prefix_owner", ""),
         prefix_registry=raw.get("prefix_registry", ""),
         entities=entities,
@@ -1087,7 +1090,54 @@ def _optional_str_list(raw: dict[str, Any], key: str, context: str) -> tuple[str
     return tuple(value)
 
 
-def _parse_permissions(raw: dict[str, Any], prefix: str = "") -> PermissionsConfig | None:
+def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
+    """`previous_prefixes`, refused when it repeats or names the current prefix."""
+    if declared is None:
+        return ()
+    if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
+        raise ValueError("previous_prefixes must be a list of strings")
+    seen: set[str] = set()
+    for previous in declared:
+        if previous == current:
+            raise ValueError(
+                f"previous_prefixes names the current prefix {previous!r}; a prefix "
+                f"that is still in use is not a previous one",
+            )
+        if previous in seen:
+            raise ValueError(f"previous_prefixes names {previous!r} twice")
+        seen.add(previous)
+    return tuple(declared)
+
+
+def previous_object_names(
+    raw_name: str,
+    raw_previous: Sequence[str],
+    prefix: str,
+    previous_prefixes: Sequence[str],
+    context: str,
+) -> tuple[str, ...]:
+    """Every name a group or level may be found under on an unmigrated site.
+
+    Each base name (the current one and every `renamed_from`) is expanded
+    under the current stem and then under every previous stem; a literal base
+    with no placeholder is taken once. The current name is never a candidate
+    and nothing is listed twice.
+    """
+    current = expand_prefix(raw_name, prefix, context)
+    out: list[str] = []
+    for base in (raw_name, *raw_previous):
+        stems = [prefix, *previous_prefixes] if PREFIX_PLACEHOLDER in base else [prefix]
+        for stem_prefix in stems:
+            name = expand_prefix(base, stem_prefix, context)
+            if name == current or name in out:
+                continue
+            out.append(name)
+    return tuple(out)
+
+
+def _parse_permissions(
+    raw: dict[str, Any], prefix: str = "", previous_prefixes: Sequence[str] = (),
+) -> PermissionsConfig | None:
     """Parse permission_levels, groups, list_permissions from the raw YAML dict."""
     # All three sections are optional; default to empty / no default policy.
     raw_levels = raw.get("permission_levels", [])
@@ -1097,7 +1147,8 @@ def _parse_permissions(raw: dict[str, Any], prefix: str = "") -> PermissionsConf
 
     for i, lvl in enumerate(raw_levels):
         _reject_unknown_keys(
-            lvl, {"name", "description", "base_permissions"}, f"permission_levels[{i}]",
+            lvl, {"name", "description", "base_permissions", "renamed_from"},
+            f"permission_levels[{i}]",
         )
     for i, grp in enumerate(raw_groups):
         _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
@@ -1107,6 +1158,11 @@ def _parse_permissions(raw: dict[str, Any], prefix: str = "") -> PermissionsConf
             name=expand_prefix(lvl["name"], prefix, f"permission_levels[{i}].name"),
             description=lvl.get("description", ""),
             base_permissions=list(lvl.get("base_permissions", [])),
+            renamed_from=_optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
+            previous_names=previous_object_names(
+                lvl["name"], _optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
+                prefix, previous_prefixes, f"permission_levels[{i}].renamed_from",
+            ),
         )
         for i, lvl in enumerate(raw_levels)
     ]
@@ -1138,6 +1194,11 @@ def _parse_permissions(raw: dict[str, Any], prefix: str = "") -> PermissionsConf
             ),
             enroll_enterprise_reader=_optional_bool(
                 grp, "enroll_enterprise_reader", f"groups[{i}]",
+            ),
+            renamed_from=_optional_str_list(grp, "renamed_from", f"groups[{i}]"),
+            previous_names=previous_object_names(
+                grp["name"], _optional_str_list(grp, "renamed_from", f"groups[{i}]"),
+                prefix, previous_prefixes, f"groups[{i}].renamed_from",
             ),
         )
         for i, grp in enumerate(raw_groups)

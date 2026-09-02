@@ -33,10 +33,10 @@ def generate_rollback_js(
         })
         # A site not yet migrated still carries the previous titles, and
         # each is gated by the marker its own name produces.
-        for old in bundle.mapping.entities[name].renamed_from:
+        for title, previous_name in bundle.mapping.previous_titles(name):
             target_lists.append({
-                "title": bundle.mapping.prefix + old,
-                "expected_marker": marker_for(family, old),
+                "title": title,
+                "expected_marker": marker_for(family, previous_name),
             })
     template = env.get_template("rollback.js.j2")
     return template.render(

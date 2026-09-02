@@ -167,8 +167,12 @@ def _interpolated_names(
         return
     for lvl in perms.levels:
         yield f"permission level {lvl.name!r}", lvl.name, _LEVELS
+        for previous in lvl.previous_names:
+            yield f"previous name {previous!r} of permission level {lvl.name!r}", previous, _LEVELS
     for grp in perms.groups:
         yield f"site group {grp.name!r}", grp.name, _GROUPS
+        for previous in grp.previous_names:
+            yield f"previous name {previous!r} of site group {grp.name!r}", previous, _GROUPS
 
 
 def _reserved_text_finding(

@@ -209,6 +209,7 @@ class MappingSections(TypedDict, total=False):
     retention_policies_source: Path | None
     extension: str | None
     permissions: PermissionsConfig | None
+    previous_prefixes: tuple[str, ...]
     calculated_formulas: dict[str, dict[str, str]]
     lookup_projections: dict[str, dict[str, list[str]]]
     form_visibility: dict[str, EntitySection[FormVisibility]]

@@ -3877,3 +3877,37 @@ def test_each_list_carries_its_previous_titles_and_their_markers() -> None:
         {"title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk")},
         {"title": "APP_ProjectRisk", "expected_marker": marker_for(family, "ProjectRisk")},
     ]
+
+
+def test_previous_prefixes_multiply_the_previous_titles_of_every_list() -> None:
+    """A prefix change is a rename: every previous prefix is tried with the
+    current name and with every previous name, each paired with the marker
+    its own entity name produces, and the current title is never a candidate."""
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.analysis.list_description import family_for
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(make_table("Risk", "Title", note="Risks."))
+    bundle = make_bundle(
+        prefix="GOV_", previous_prefixes=("", "ADOPT_"),
+        entities={
+            "Risk": EntityMapping(
+                name="Risk", kind="List", base_template=100, site_role="default",
+                renamed_from=("ProgramRisk",),
+            ),
+        },
+    )
+    built = build_schema_json(schema, bundle, "default")
+    family = family_for(schema)
+    risk, program = marker_for(family, "Risk"), marker_for(family, "ProgramRisk")
+    assert built["lists"][0]["renamed_from"] == [
+        {"title": "GOV_ProgramRisk", "expected_marker": program},
+        {"title": "Risk", "expected_marker": risk},
+        {"title": "ProgramRisk", "expected_marker": program},
+        {"title": "ADOPT_Risk", "expected_marker": risk},
+        {"title": "ADOPT_ProgramRisk", "expected_marker": program},
+    ]

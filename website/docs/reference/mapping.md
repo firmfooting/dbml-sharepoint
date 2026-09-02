@@ -38,6 +38,18 @@ marker is computed from the expanded name. A placeholder anywhere but the
 start is refused. Every shipped family declares its groups and levels this
 way, and a test holds them to it.
 
+```yaml
+previous_prefixes: ["", "ADOPT_"]
+```
+
+`previous_prefixes` lists the prefixes this family was deployed under
+before, so a prefix change is a rename rather than a recreate. Each one is
+tried with every list's current and previous names, and its stem with every
+group's and level's, when a redeploy looks for an object under a previous
+title; see `renamed_from` under [`entities`](#entities) and under
+[security](#security-permission_levels-groups-list_permissions). The current
+prefix, or a repeat, is refused.
+
 ## `entities`
 
 ```yaml
@@ -53,7 +65,7 @@ entities:
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** (a picker cannot enumerate an unindexed column past 5,000 items) so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
 | `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
-| `renamed_from` | Optional; the previous entity names this list was deployed under, oldest last. On a redeploy where nothing carries the current title, a list carrying exactly one of the previous titles **and the exact provenance marker for that previous name** is retitled in place and its marker rewritten, keeping items, views, lookups and permissions (the URL keeps its original slug). A previous title without that marker, present beside the current title, or present twice over is refused at assessment and at preflight, before any write. Keep the aliases declared so a site that skipped releases can still migrate |
+| `renamed_from` | Optional; the previous entity names this list was deployed under, oldest last. On a redeploy where nothing carries the current title, a list carrying exactly one of the previous titles **and the exact provenance marker for that previous name** is retitled in place and its marker rewritten, keeping items, views, lookups and permissions (the URL keeps its original slug). A previous title without that marker, present beside the current title, or present twice over is refused at assessment and at preflight, before any write. Keep the aliases declared so a site that skipped releases can still migrate. `previous_prefixes` multiplies the candidates: each previous prefix is tried with the current name and with every previous name |
 | `hide_from_all_items` | Optional; a list of columns the generated `All Items` view must not render. The **only** accepted reason is the list view lookup threshold (see below). Every named column must be join-bearing and rendered; naming anything else fails the build. Declared views are unaffected |
 
 :::warning A lookup into a large list breaks the FORM, not the views
@@ -1463,6 +1475,15 @@ ever stranding a lock.
 Three **top-level** sections, not one nested `permissions:` block. All
 three are optional; declare none of them and every list simply inherits the
 site's permissions.
+
+A group or level may carry `renamed_from`, a list of its previous base names
+(the `{prefix}` placeholder allowed). Every previous stem from
+`previous_prefixes` is crossed with the current and previous base names, and
+on a redeploy where nothing carries the current name, an object found under
+exactly one of those names **and carrying the exact provenance marker for that
+name** is renamed in place by id and read back, keeping its members or its
+assignments. A previous name without its marker, present beside the current
+name, or present twice over is refused at assessment and before any write.
 
 ```yaml
 permission_levels:

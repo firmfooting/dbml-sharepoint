@@ -60,10 +60,11 @@ def assess_targets(
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
-        if entity.renamed_from:
+        previous = bundle.mapping.previous_titles(table_name)
+        if previous:
             renames.append([
                 prefix + table_name,
-                [[prefix + old, marker_for(family, old)] for old in entity.renamed_from],
+                [[title, marker_for(family, name)] for title, name in previous],
             ])
         templates.add(int(entity.base_template))
         table_names.append(table_name)

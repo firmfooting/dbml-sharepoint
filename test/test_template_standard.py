@@ -1776,6 +1776,9 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
         "enroll_enterprise_reader": True,
+        # Never renamed: the shared groups are one object per site.
+        "renamed_from": (),
+        "previous_names": (),
     },
     "dbml List Administrators": {
         "description": (
@@ -1790,6 +1793,9 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": True,
         "enroll_enterprise_reader": False,
+        # Never renamed: the shared groups are one object per site.
+        "renamed_from": (),
+        "previous_names": (),
     },
 }
 
