@@ -1,0 +1,93 @@
+{# src/dbml_sharepoint/templates/protection.js.j2 #}
+/**
+ * dbml-sharepoint PROTECTION script for one list.
+ *
+ * Target site:  {{ site_url | comment_safe }}
+ * List:         {{ list_title | comment_safe }}
+ * Deployer:     v{{ deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}
+ *
+ * Reads the list's deletion lock and the Sealed flag on each custom column,
+ * prints them, then takes one word at a time until you leave the prompt
+ * blank: lock or unlock sets AllowDeletion; seal or unseal sets Sealed on
+ * every custom column not already in that state. Each write is read back,
+ * and a readback that disagrees stops the run with the list as it stands.
+ *
+ * A column the deployer provisioned is sealed on purpose: a sealed column
+ * rejects schema edits in the UI and silently discards REST writes. Unseal
+ * for the edit you are about to make, and seal again afterwards.
+ *
+ * Paste the whole file into the browser console on the site above, from a
+ * classic page such as .../_layouts/15/settings.aspx.
+ */
+(async () => {
+  const SITE_URL = {{ site_url | tojson }};
+  const LIST_TITLE = {{ list_title | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-PROTECT] [${level}] ${msg}`);
+  const summary = { list: null, actions: [], errors: [] };
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+
+{% include "_maintain_list.js.j2" %}
+
+  async function printState() {
+    const meta = await getOne(`${listPath}?$select=AllowDeletion,ItemCount`, `'${LIST_TITLE}' settings`);
+    const fields = (await readFields()).filter(isCustom);
+    const sealed = fields.filter((f) => f.Sealed === true).length;
+    log('INFO', `'${LIST_TITLE}': AllowDeletion ${meta.AllowDeletion} (${meta.AllowDeletion ? 'deletable' : 'deletion blocked'}), `
+      + `${meta.ItemCount} item(s), ${fields.length} custom column(s), ${sealed} sealed.`);
+    console.table(fields.map((f) => ({
+      internal_name: f.InternalName, title: f.Title, type: f.TypeAsString,
+      sealed: f.Sealed === true, read_only: f.ReadOnlyField === true,
+    })));
+    summary.list = {
+      title: LIST_TITLE, id: LIST_ID, allow_deletion: meta.AllowDeletion, item_count: meta.ItemCount,
+      custom_columns: fields.length, sealed_columns: sealed, provisioned_by_dbml_sharepoint: provisioned,
+    };
+    return { meta, fields };
+  }
+
+  for (;;) {
+    const state = await printState();
+    const word = String(prompt(`Type lock, unlock, seal or unseal for '${LIST_TITLE}', or leave blank to finish:`) || '')
+      .trim().toLowerCase();
+    if (!word) break;
+    try {
+      if (word === 'lock' || word === 'unlock') {
+        const want = word === 'unlock';
+        await merge(listPath, { __metadata: { type: 'SP.List' }, AllowDeletion: want }, `'${LIST_TITLE}' AllowDeletion`);
+        const back = await getOne(`${listPath}?$select=AllowDeletion`, 'AllowDeletion readback');
+        if (back.AllowDeletion !== want) {
+          throw mismatch(`AllowDeletion reads back ${back.AllowDeletion} after writing ${want}`);
+        }
+        summary.actions.push({ action: word, verified: true });
+        log('INFO', `'${LIST_TITLE}': AllowDeletion is now ${want} (read back).`);
+      } else if (word === 'seal' || word === 'unseal') {
+        const want = word === 'seal';
+        const targets = state.fields.filter((f) => (f.Sealed === true) !== want);
+        for (const field of targets) {
+          await setSealed(field, want);
+          log('INFO', `'${field.InternalName}': Sealed is now ${want} (read back).`);
+        }
+        summary.actions.push({ action: word, columns: targets.length, verified: true });
+        log('INFO', `${word}: ${targets.length} column(s) written and read back.`);
+      } else {
+        log('WARN', `'${word}' is not one of lock, unlock, seal or unseal.`);
+      }
+    } catch (err) {
+      summary.errors.push({ action: word, error: err.message });
+      log('ERROR', `${word}: ${err.message}`);
+      return { ...summary, aborted: err.readbackMismatch ? 'readback-mismatch' : 'write-failed' };
+    }
+  }
+
+  log('INFO', `DONE: ${summary.actions.length} action(s), ${summary.errors.length} error(s), ${requestCount} request(s).`);
+  return summary;
+})();

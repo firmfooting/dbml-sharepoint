@@ -1,0 +1,115 @@
+{# Shared list resolution for the two maintenance scripts (protection.js,
+   columns.js). Expects log, LIST_TITLE, summary, apiUrl, odataName,
+   fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits
+   the ManageLists preflight, the by-title list read that names what does
+   exist on a miss, the guid-addressed list and field paths, the custom
+   column filter, and the MERGE helpers every write here goes through. #}
+  const verbose = () => ({ headers: { 'Accept': 'application/json;odata=verbose' } });
+
+  // One entity read. Throws with SharePoint's own reason rather than a bare status.
+  async function getOne(suffix, what) {
+    const r = await fetchWithRetry(apiUrl(suffix), verbose());
+    if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    return (j && j.d) || {};
+  }
+
+  // A whole collection, following OData's __next, the same shape extract.js
+  // and rollback.js enumerate with.
+  async function getAll(suffix, what) {
+    const rows = [];
+    let nextUrl = apiUrl(suffix);
+    let pages = 0;
+    while (nextUrl) {
+      if (++pages > 100) throw new Error(`${what}: exceeded 100 pages; aborting`);
+      const r = await fetchWithRetry(nextUrl, verbose());
+      if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+      const j = await r.json();
+      for (const row of ((j && j.d && j.d.results) || [])) rows.push(row);
+      nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+    }
+    return rows;
+  }
+
+  // === Preflight: ManageLists (Low bit 0x800) ===
+  {
+    const permsResp = await fetchWithRetry(apiUrl('web?$select=EffectiveBasePermissions'), verbose());
+    const permsJson = await permsResp.json();
+    const haveLow = Number(permsJson?.d?.EffectiveBasePermissions?.Low || 0);
+    if ((haveLow & 0x800) !== 0x800) {
+      log('ERROR', 'Current user lacks ManageLists on this site.');
+      return { ...summary, aborted: 'insufficient-permissions' };
+    }
+  }
+
+  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const sharePointGuid = (value, label) => {
+    const held = String(value || '');
+    if (!GUID.test(held)) throw new Error(`Invalid ${label} GUID returned by SharePoint`);
+    return held;
+  };
+
+  // The list, by the title the operator pasted. A by-title GET on an absent
+  // list answers 404, which the console paints red, so the failure names
+  // the lists that do exist instead of leaving a red line to decode.
+  let list;
+  {
+    const r = await fetchWithRetry(
+      apiUrl(`web/lists/getbytitle('${odataName(LIST_TITLE)}')?$select=Id,Title,Description,AllowDeletion,ItemCount`),
+      verbose(),
+    );
+    if (r.status === 404) {
+      const titles = (await getAll('web/lists?$select=Title,Hidden&$top=5000', 'list enumeration'))
+        .filter((l) => !l.Hidden).map((l) => l.Title).sort();
+      log('ERROR', `No list titled '${LIST_TITLE}' on this web. Lists here: ${titles.join(', ') || '(none)'}.`);
+      return { ...summary, aborted: 'list-not-found' };
+    }
+    if (!r.ok) throw new Error(`list '${LIST_TITLE}': HTTP ${r.status} ${spError(await r.text())}`);
+    list = ((await r.json()) || {}).d || {};
+  }
+  const LIST_ID = sharePointGuid(list.Id, 'list');
+  const listPath = `web/lists(guid'${LIST_ID}')`;
+  const fieldPath = (fieldId) => `${listPath}/fields(guid'${sharePointGuid(fieldId, 'field')}')`;
+  // The one place a field URL is built as a literal, so the endpoint
+  // inventory in test_template_lint.py sees the family it belongs to.
+  const fieldUrl = (fieldId, query = '') => apiUrl(`web/lists(guid'${LIST_ID}')/fields(guid'${sharePointGuid(fieldId, 'field')}')${query}`);
+  // Reported, never gated on: the operator named this list by URL, and the
+  // typed confirmation is what makes each write deliberate.
+  const provisioned = String(list.Description || '').indexOf({{ marker_prefix | tojson }}) !== -1;
+  log(provisioned ? 'INFO' : 'WARN',
+    `'${LIST_TITLE}' ${provisioned ? 'carries' : 'does NOT carry'} a dbml-sharepoint provenance marker.`);
+
+  // Every property here is documented on the remote Field entity, and the
+  // deployer and the probes already read the first six live.
+  const FIELD_SELECT = 'Id,InternalName,Title,TypeAsString,Hidden,ReadOnlyField,Sealed,FromBaseType,CanBeDeleted';
+  const readFields = () => getAll(`${listPath}/fields?$select=${FIELD_SELECT}`, `fields of '${LIST_TITLE}'`);
+  // Custom means a column somebody added: not hidden, not inherited from
+  // the base type, and not one SharePoint itself refuses to delete.
+  const isCustom = (f) => !f.Hidden && !f.FromBaseType && f.CanBeDeleted !== false;
+
+  const mismatch = (message) => {
+    const err = new Error(message);
+    err.readbackMismatch = true;
+    return err;
+  };
+
+  async function merge(suffix, body, what) {
+    const digest = await getDigest();
+    const r = await fetchWithRetry(apiUrl(suffix), {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`${what}: MERGE failed, HTTP ${r.status} ${spError(await r.text())}`);
+  }
+
+  // Sealed columns accept a write, report success and discard it (probe
+  // transcript, form-visibility-evidence-probe.js), so the readback is the
+  // only thing that counts.
+  async function setSealed(field, want) {
+    await merge(fieldPath(field.Id), { __metadata: { type: 'SP.Field' }, Sealed: want }, `'${field.InternalName}'`);
+    const back = await getOne(`${fieldPath(field.Id)}?$select=Id,Sealed`, `'${field.InternalName}' readback`);
+    if (back.Sealed !== want) {
+      throw mismatch(`'${field.InternalName}' reads back Sealed=${back.Sealed} after writing ${want}; the write was discarded`);
+    }
+  }

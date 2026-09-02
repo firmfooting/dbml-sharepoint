@@ -1,6 +1,7 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -41,6 +42,7 @@ from dbml_sharepoint.extension import (
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
     README_FILENAME,
+    folder_for,
     folder_for_download,
     seed,
 )
@@ -56,6 +58,12 @@ from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.extract.wizard import run_extract_wizard
 from dbml_sharepoint.generators.extractgen import EXTRACT_SCRIPT, download_name
 from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.generators.maintaingen import (
+    COLUMNS_SCRIPT,
+    PROTECTION_SCRIPT,
+    generate_columns_js,
+    generate_protection_js,
+)
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
@@ -1226,6 +1234,93 @@ def extract_script(
     typer.echo(
         f"The script downloads {download}. Save it into {seeded.folder}, then "
         f"run: dbml-sharepoint extract {seeded.folder / download}",
+    )
+
+
+
+_LIST_URL_HELP = (
+    "The list's URL, copied from the browser address bar with the list open, "
+    "e.g. https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx"
+)
+
+
+def _maintenance_script(
+    url: str,
+    out: Path | None,
+    *,
+    script_name: str,
+    render: Callable[..., str],
+    does: str,
+) -> None:
+    """Write one list-maintenance script from a pasted list URL.
+
+    The site and the list title are split out of the one string the address
+    bar holds, then the site half meets the same rule an operator-typed
+    `--site-url` does. Default location: a folder named after the list, the
+    same place `extract-script` writes to, so the scripts for one list stay
+    together.
+    """
+    try:
+        target = parse_list_url(url)
+    except ListUrlError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    used = validate_site_url(target.site_url)
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    path = out if out is not None else folder_for(target.list_title) / script_name
+    write_artifact(path, render(
+        site_url=used, list_title=target.list_title, generated_at=generated_at,
+    ))
+    typer.echo(f"Wrote {path} for the list {target.list_title!r} on {used}.")
+    typer.echo(
+        "Open it, copy all of it, and paste it into the browser console on "
+        f"{used} from a classic page such as _layouts/15/settings.aspx. It {does}",
+    )
+
+
+@app.command("protection-script")
+def protection_script(
+    url: str = typer.Argument(..., help=_LIST_URL_HELP),
+    out: Path | None = typer.Option(
+        None, help=f"Where to write the script. Default: <list name>/{PROTECTION_SCRIPT}",
+    ),
+) -> None:
+    """Generate the browser-paste script that locks, unlocks, seals or unseals one list.
+
+    The script prints the list's deletion lock and the Sealed flag on each
+    custom column, then takes one word at a time: lock or unlock sets
+    AllowDeletion, seal or unseal sets Sealed on every custom column not
+    already in that state. Every write is read back, and a readback that
+    disagrees stops the run. It deletes nothing.
+    """
+    _maintenance_script(
+        url, out, script_name=PROTECTION_SCRIPT, render=generate_protection_js,
+        does="prompts for each action and reads every write back.",
+    )
+
+
+@app.command("columns-script")
+def columns_script(
+    url: str = typer.Argument(..., help=_LIST_URL_HELP),
+    out: Path | None = typer.Option(
+        None, help=f"Where to write the script. Default: <list name>/{COLUMNS_SCRIPT}",
+    ),
+) -> None:
+    """Generate the browser-paste script that enumerates and deletes one list's custom columns.
+
+    The script prints the custom columns as a numbered table and asks for a
+    number. Built-in and hidden fields never appear. Every item is read to
+    see whether the column holds a value: an empty column needs its internal
+    name typed, and one with values, or whose values cannot be read, needs
+    DELETE NON-EMPTY typed. A sealed column is unsealed and read back before
+    the delete, and the column is read back after it and must be gone. The
+    table is printed again after each delete; a blank answer finishes.
+
+    Deleting a column removes its values from every item, and nothing goes
+    to the recycle bin.
+    """
+    _maintenance_script(
+        url, out, script_name=COLUMNS_SCRIPT, render=generate_columns_js,
+        does="asks for a typed confirmation before every delete.",
     )
 
 

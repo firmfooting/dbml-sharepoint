@@ -257,6 +257,39 @@ downloads the list's field definitions as JSON; feed that JSON to
 
 Every request the script makes is a GET. It carries no write helpers.
 
+### `protection_script`
+
+```python
+def protection_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+```
+
+Generate the browser-paste script that locks, unlocks, seals or unseals one list.
+
+The script prints the list's deletion lock and the Sealed flag on each
+custom column, then takes one word at a time: lock or unlock sets
+AllowDeletion, seal or unseal sets Sealed on every custom column not
+already in that state. Every write is read back, and a readback that
+disagrees stops the run. It deletes nothing.
+
+### `columns_script`
+
+```python
+def columns_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+```
+
+Generate the browser-paste script that enumerates and deletes one list's custom columns.
+
+The script prints the custom columns as a numbered table and asks for a
+number. Built-in and hidden fields never appear. Every item is read to
+see whether the column holds a value: an empty column needs its internal
+name typed, and one with values, or whose values cannot be read, needs
+DELETE NON-EMPTY typed. A sealed column is unsealed and read back before
+the delete, and the column is read back after it and must be gone. The
+table is printed again after each delete; a blank answer finishes.
+
+Deleting a column removes its values from every item, and nothing goes
+to the recycle bin.
+
 ### `extract`
 
 ```python
