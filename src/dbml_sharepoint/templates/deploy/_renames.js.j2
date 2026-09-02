@@ -1,0 +1,52 @@
+{# Phase body: retitle every list the preflight found under a previous
+   title carrying that title's own marker. Each rename is re-checked at
+   write time, written by list id, and read back; a readback that disagrees
+   aborts. Nothing is created here. #}
+  // === Phase {{ phase.number }}: list renames ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  {
+    const planned = Object.entries(renamePlan);
+    if (planned.length === 0) {
+      log('INFO', 'No list is under a previous title; nothing to rename.');
+    }
+    for (const [newTitle, plan] of planned) {
+      const list = SCHEMA.lists.find((candidate) => candidate.title === newTitle);
+      try {
+        // Re-read at write time: the preflight's answer is not authority over
+        // a list something else may have touched since.
+        const fresh = await readListShape(plan.from, true);
+        const held = fresh && typeof fresh.Description === 'string' ? fresh.Description : '';
+        if (!fresh || fresh.Id !== plan.id || !held.includes(plan.marker)) {
+          throw new Error(`'${plan.from}' no longer carries the marker for its previous name, or is no longer the list the preflight read; nothing was renamed.`);
+        }
+        if (await readListShape(newTitle, true)) {
+          throw new Error(`'${newTitle}' appeared since the preflight; deploy cannot tell a rename from a collision.`);
+        }
+        // SP.List Title and Description are plain read-write properties written
+        // by the same MERGE as any other list setting; the readback by id is
+        // the control.
+        const digest = await getDigest();
+        await patchListById(fresh.Id, {
+          __metadata: { type: 'SP.List' }, Title: newTitle, Description: list.description || '',
+        }, digest);
+        const r = await fetchWithRetry(apiUrl(`web/lists(guid'${fresh.Id}')?$select=Id,Title,Description`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`readback after the retitle failed: HTTP ${r.status} ${spError(await r.text())}`);
+        const back = ((await r.json()) || {}).d || {};
+        if (back.Title !== newTitle || back.Description !== (list.description || '')) {
+          throw new Error(`'${plan.from}' read back as '${back.Title}' with Description ${JSON.stringify(back.Description)} after writing '${newTitle}'; the retitle did not take.`);
+        }
+        invalidateListShapes();
+        summary.listsRenamed.push({ from: plan.from, to: newTitle });
+        log('INFO', `Renamed '${plan.from}' to '${newTitle}' in place (read back by list id).`);
+      } catch (err) {
+        summary.errors.push({ phase: '{{ phase.number }}', list: newTitle, error: err.message });
+        log('ERROR', `Rename '${plan.from}' -> '${newTitle}': ${err.message}`);
+        return { ...summary, aborted: 'rename-errors' };
+      }
+    }
+  }

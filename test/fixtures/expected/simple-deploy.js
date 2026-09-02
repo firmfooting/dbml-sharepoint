@@ -120,6 +120,7 @@
       "Provisioned by dbml-sharepoint from simple-test for list AppSettings."
     ]
   ],
+  "list_renames": [],
   "list_titles": [
     "APP_Project",
     "APP_Task",
@@ -160,6 +161,7 @@
   };
   const summary = {
     listsCreated: [],
+    listsRenamed: [],
     listsSkipped: [],
     columnsCreated: 0,
     columnsSkipped: 0,
@@ -617,6 +619,41 @@
         );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+      }
+    }
+
+    // The rename decision, predicted. Exactly one previous title carrying
+    // its own marker while the current title is absent is the only shape
+    // deploy renames; everything else blocks, because a guess here is a
+    // list adopted or created over somebody else's.
+    for (const [title, previousTitles] of (TARGETS.list_renames || [])) {
+      const key = `rename:${title}`;
+      const present = [];
+      let unprobed = null;
+      for (const [oldTitle, oldMarker] of previousTitles) {
+        if (knownTitles && !knownTitles.has(String(oldTitle).toLowerCase())) continue;
+        const old = await probeGet(`web/lists/getbytitle('${odataName(oldTitle)}')?$select=Title,Description`);
+        if (!old.ok && old.status === 404) continue;
+        if (!old.ok) { unprobed = `HTTP ${old.status || old.error} on '${oldTitle}'`; continue; }
+        const held = typeof old.d.Description === 'string' ? old.d.Description : '';
+        present.push({ title: oldTitle, marker: oldMarker, carries: held.includes(oldMarker) });
+      }
+      const currentExists = knownTitles
+        ? knownTitles.has(String(title).toLowerCase())
+        : (await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title`)).ok;
+      const named = present.map((p) => `'${p.title}'`).join(', ');
+      if (unprobed) {
+        finding(2, key, 'NOT-ASSESSABLE', `A previous title of '${title}' could not be probed (${unprobed}); deploy will make a fresh preflight read.`);
+      } else if (present.length === 0) {
+        finding(2, key, 'PASS', `No previous title of '${title}' exists; nothing to rename.`);
+      } else if (currentExists) {
+        finding(2, key, 'BLOCKED', `'${title}' exists and so does its previous title ${named}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`);
+      } else if (present.length > 1) {
+        finding(2, key, 'BLOCKED', `More than one previous title of '${title}' exists (${named}); deploy cannot choose which to rename.`);
+      } else if (!present[0].carries) {
+        finding(2, key, 'BLOCKED', `'${present[0].title}' exists but does not carry the exact provenance marker for its previous name "${present[0].marker}". Deploy will not adopt or rename it; restore that marker only if this tool created the list.`);
+      } else {
+        finding(2, key, 'INFO', `'${present[0].title}' carries the marker for its previous name and will be renamed '${title}' in place, keeping its items, views, lookups and permissions.`);
       }
     }
 
@@ -1325,6 +1362,7 @@
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
+      "renamed_from": [],
       "title": "APP_Project",
       "title_patch": {
         "Description": "Project name.",
@@ -1396,6 +1434,7 @@
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
+      "renamed_from": [],
       "title": "APP_Task",
       "title_patch": {
         "Description": "",
@@ -1420,6 +1459,7 @@
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
+      "renamed_from": [],
       "title": "APP_AppSettings",
       "title_patch": {
         "Description": "App Settings singleton.",
@@ -2597,10 +2637,52 @@
   // Null-prototype, so a list titled 'constructor' or 'toString' cannot read
   // truthy from Object.prototype without ever being assigned.
   const listOutcomes = Object.create(null);
+  // Lists found under a previous title carrying that title's own marker,
+  // keyed by the current title. The renames phase acts on it; nothing here
+  // writes. A previous title without its marker, present beside the current
+  // title, or present twice over is an error, never a guess.
+  const renamePlan = Object.create(null);
+  const probeTitleFor = (list) => (renamePlan[list.title] ? renamePlan[list.title].from : list.title);
+  async function previousTitleShapes(list) {
+    const found = [];
+    for (const previous of (list.renamed_from || [])) {
+      const shape = await readListShape(previous.title);
+      if (!shape) continue;
+      const held = typeof shape.Description === 'string' ? shape.Description : '';
+      found.push({
+        title: previous.title, marker: previous.expected_marker, shape,
+        carries: previous.expected_marker.length > 0 && held.includes(previous.expected_marker),
+      });
+    }
+    return found;
+  }
   await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
     try {
-      const actual = await readListShape(list.title);
-      if (!actual) { listOutcomes[list.title] = 'absent'; return; }
+      let actual = await readListShape(list.title);
+      const previous = await previousTitleShapes(list);
+      if (!actual && previous.length === 0) { listOutcomes[list.title] = 'absent'; return; }
+      let renamedFrom = null;
+      if (previous.length > 0) {
+        const titles = previous.map((p) => `'${p.title}'`).join(', ');
+        let refusal = null;
+        if (actual) {
+          refusal = `'${list.title}' exists and so does its previous title ${titles}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`;
+        } else if (previous.length > 1) {
+          refusal = `more than one previous title of '${list.title}' exists (${titles}); deploy cannot choose which to rename. Remove or retitle all but one by hand.`;
+        } else if (!previous[0].carries) {
+          refusal = `'${previous[0].title}' exists but does not carry the exact provenance marker for its previous name ("${previous[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created the list.`;
+        }
+        if (refusal) {
+          listOutcomes[list.title] = 'ok';
+          log('ERROR', `Existing-schema list '${list.title}': ${refusal}`);
+          summary.errors.push({ phase: 'preflight', list: list.title, error: refusal, mismatches: [] });
+          return;
+        }
+        renamedFrom = previous[0];
+        actual = renamedFrom.shape;
+        renamePlan[list.title] = { from: renamedFrom.title, marker: renamedFrom.marker, id: actual.Id };
+        log('INFO', `'${renamedFrom.title}' carries the marker for its previous name; the renames phase will retitle it '${list.title}'.`);
+      }
       // Stored BEFORE the shape is judged: a list with a wrong BaseTemplate
       // still resolves lookup GUIDs and its columns are still worth reporting.
       preflightListShapes[list.title] = actual;
@@ -2610,7 +2692,11 @@
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
-      const mismatches = listAdoptionMismatches(list, actual);
+      // Ownership of a planned rename was proved by the PREVIOUS marker
+      // above; the current marker is written by the renames phase.
+      const mismatches = renamedFrom
+        ? immutableListMismatches(list, actual)
+        : listAdoptionMismatches(list, actual);
       if (mismatches.length === 0) return;
       const message = [...new Set(mismatches.map(m => m.message))].join(' ');
       log('ERROR', `Existing-schema list '${list.title}': ${message}`);
@@ -2633,7 +2719,7 @@
     async (list) => {
     for (const field of declaredFieldsForList(list)) {
       try {
-        const actual = await readFieldShape(list.title, field.title, field);
+        const actual = await readFieldShape(probeTitleFor(list), field.title, field);
         if (!actual) continue;
         const targetGuid = field.target_list
           ? preflightListShapes[field.target_list]?.Id
@@ -2689,17 +2775,63 @@
     return { ...summary, aborted: 'existing-schema-shape-errors' };
   }
 
-  markPhase('Phase 1.3: permission levels and site groups');
-  // === Phase 1.3: custom permission levels + site groups ===
-  log('INFO', 'Starting Phase 1.3: permission levels and site groups.');
+  markPhase('Phase 1.3: list renames');
+  // === Phase 1.3: list renames ===
+  log('INFO', 'Starting Phase 1.3: list renames.');
+  {
+    const planned = Object.entries(renamePlan);
+    if (planned.length === 0) {
+      log('INFO', 'No list is under a previous title; nothing to rename.');
+    }
+    for (const [newTitle, plan] of planned) {
+      const list = SCHEMA.lists.find((candidate) => candidate.title === newTitle);
+      try {
+        // Re-read at write time: the preflight's answer is not authority over
+        // a list something else may have touched since.
+        const fresh = await readListShape(plan.from, true);
+        const held = fresh && typeof fresh.Description === 'string' ? fresh.Description : '';
+        if (!fresh || fresh.Id !== plan.id || !held.includes(plan.marker)) {
+          throw new Error(`'${plan.from}' no longer carries the marker for its previous name, or is no longer the list the preflight read; nothing was renamed.`);
+        }
+        if (await readListShape(newTitle, true)) {
+          throw new Error(`'${newTitle}' appeared since the preflight; deploy cannot tell a rename from a collision.`);
+        }
+        // SP.List Title and Description are plain read-write properties written
+        // by the same MERGE as any other list setting; the readback by id is
+        // the control.
+        const digest = await getDigest();
+        await patchListById(fresh.Id, {
+          __metadata: { type: 'SP.List' }, Title: newTitle, Description: list.description || '',
+        }, digest);
+        const r = await fetchWithRetry(apiUrl(`web/lists(guid'${fresh.Id}')?$select=Id,Title,Description`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`readback after the retitle failed: HTTP ${r.status} ${spError(await r.text())}`);
+        const back = ((await r.json()) || {}).d || {};
+        if (back.Title !== newTitle || back.Description !== (list.description || '')) {
+          throw new Error(`'${plan.from}' read back as '${back.Title}' with Description ${JSON.stringify(back.Description)} after writing '${newTitle}'; the retitle did not take.`);
+        }
+        invalidateListShapes();
+        summary.listsRenamed.push({ from: plan.from, to: newTitle });
+        log('INFO', `Renamed '${plan.from}' to '${newTitle}' in place (read back by list id).`);
+      } catch (err) {
+        summary.errors.push({ phase: '1.3', list: newTitle, error: err.message });
+        log('ERROR', `Rename '${plan.from}' -> '${newTitle}': ${err.message}`);
+        return { ...summary, aborted: 'rename-errors' };
+      }
+    }
+  }
+  markPhase('Phase 1.4: permission levels and site groups');
+  // === Phase 1.4: custom permission levels + site groups ===
+  log('INFO', 'Starting Phase 1.4: permission levels and site groups.');
   {
     // A digest the phase takes for itself is outside every per-object catch, so a refusal rejected the deploy (#282).
     async function phaseDigest() {
       try {
         return await getDigest();
       } catch (err) {
-        log('ERROR', `Phase 1.3: ${err.message}`);
-        summary.errors.push({ phase: '1.3', error: err.message });
+        log('ERROR', `Phase 1.4: ${err.message}`);
+        summary.errors.push({ phase: '1.4', error: err.message });
         return null;
       }
     }
@@ -2954,8 +3086,8 @@
         if (decision.kind === 'refuse') throw new Error(decision.reason);
         decisions.push(decision);
       } catch (err) {
-        log('ERROR', `Phase 1.3 permission level '${lvl.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.3', permissionLevel: lvl.name, error: err.message });
+        log('ERROR', `Phase 1.4 permission level '${lvl.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.4', permissionLevel: lvl.name, error: err.message });
       }
     }
 
@@ -3403,8 +3535,8 @@
         if (decision.kind === 'refuse') throw new Error(decision.reason);
         decisions.push(decision);
       } catch (err) {
-        log('ERROR', `Phase 1.3 site group '${grp.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.3', group: grp.name, error: err.message });
+        log('ERROR', `Phase 1.4 site group '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.4', group: grp.name, error: err.message });
       }
     }
 
@@ -3417,7 +3549,7 @@
     // successfully, interleaved with the refusals that already printed.
     // This phase decides no list and no ACL, so neither appears here.
     if (decisions.length > 0) {
-      log('INFO', `Phase 1.3 decisions (nothing applied yet):`);
+      log('INFO', `Phase 1.4 decisions (nothing applied yet):`);
       for (const decision of decisions) {
         const label = decision.object === 'level' ? 'permission level' : 'site group';
         const verb = decision.kind === 'create' ? 'create' : 'adopt';
@@ -3460,11 +3592,11 @@
         } catch (err) {
           // Continue after object errors, but a digest failure makes every later write unsafe.
           const label = decision.object === 'level' ? 'permission level' : 'site group';
-          log('ERROR', `Phase 1.3 ${label} '${decision.name}': ${err.message}`);
+          log('ERROR', `Phase 1.4 ${label} '${decision.name}': ${err.message}`);
           if (decision.object === 'level') {
-            summary.errors.push({ phase: '1.3', permissionLevel: decision.name, error: err.message });
+            summary.errors.push({ phase: '1.4', permissionLevel: decision.name, error: err.message });
           } else {
-            summary.errors.push({ phase: '1.3', group: decision.name, error: err.message });
+            summary.errors.push({ phase: '1.4', group: decision.name, error: err.message });
           }
           if (err && err.digestFailure) break;
         }
@@ -3475,11 +3607,11 @@
   // Permission-level or group failures make every later ACL assertion
   // untrustworthy. Stop before creating content-bearing lists or seed rows.
   if (summary.errors.length > 0) {
-    log('ERROR', 'Phase 1.3 security reconciliation failed; aborting before list creation.');
+    log('ERROR', 'Phase 1.4 security reconciliation failed; aborting before list creation.');
     return { ...summary, aborted: 'phase-0-security-errors' };
   }
 
-  markPhase('Phase 1.4: operator self-enrolment');
+  markPhase('Phase 1.5: operator self-enrolment');
   // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
   // Some mappings route all list administration through an empty-by-default
   // admin group (Owners hold only Contribute on the lists). Later phases
@@ -3488,7 +3620,7 @@
   // of the run and removes them at the end. An operator who was ALREADY a
   // member is left untouched. Only principals who can already manage the
   // group (its Site-Owners owner) can benefit; this adds no new authority.
-  log('INFO', 'Starting Phase 1.4: operator self-enrolment.');
+  log('INFO', 'Starting Phase 1.5: operator self-enrolment.');
   {
     const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
     for (const grp of enrollGroups) {
@@ -3526,7 +3658,7 @@
         log('INFO', `Enrolled operator '${me.Title}' into '${grp.name}' for this run; removed automatically at the end.`);
       } catch (err) {
         log('ERROR', `Operator self-enrolment for '${grp.name}': ${err.message}`);
-        summary.errors.push({ phase: '1.4', group: grp.name, error: err.message });
+        summary.errors.push({ phase: '1.5', group: grp.name, error: err.message });
       }
     }
   }
@@ -3534,14 +3666,14 @@
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-  markPhase('Phase 1.5: enterprise reader enrolment');
-  markPhase('Phase 1.6: maintenance unseal');
+  markPhase('Phase 1.6: enterprise reader enrolment');
+  markPhase('Phase 1.7: maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
   // legitimate maintenance path is this script. Unseal declared fields so
   // the run's write phases work unchanged; Phase 4.1 re-seals and
   // verifies after every field write is done.
-  log('INFO', 'Starting Phase 1.6: maintenance unseal.');
+  log('INFO', 'Starting Phase 1.7: maintenance unseal.');
   invalidateFieldShapes();  // probes reflect phase-start state
   {
     const sealDeclared = [];
@@ -3572,7 +3704,7 @@
       // become a different object since.
       const unsealOwned = await surveyOwnedListsForWrites(
         sealDeclared.map(([listTitle]) => listTitle),
-        '1.6', 'Maintenance ownership recheck', true,
+        '1.7', 'Maintenance ownership recheck', true,
       );
       if (!unsealOwned) {
         log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
@@ -3630,7 +3762,7 @@
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
-          summary.errors.push({ phase: '1.6', list: listTitle, column: field.title, error: err.message });
+          summary.errors.push({ phase: '1.7', list: listTitle, column: field.title, error: err.message });
         }
       }, 4);
       if (summary.errors.length > errorsBeforeUnseal) {

@@ -3850,3 +3850,30 @@ def test_a_view_with_no_filter_gains_no_where_clause() -> None:
     # selected on the absence of a <Where>, and the guard is only ever emitted
     # inside one, so a per-view assertion below could not fail.
     assert unfiltered
+
+
+def test_each_list_carries_its_previous_titles_and_their_markers() -> None:
+    """`renamed_from` reaches the deploy as the previous TITLE (prefix
+    applied) paired with the marker that title must carry, computed by the
+    same helper the current marker is, so the two cannot disagree."""
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.analysis.list_description import family_for
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(make_table("Risk", "Title", note="Risks."))
+    bundle = make_bundle(entities={
+        "Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+            renamed_from=("ProgramRisk", "ProjectRisk"),
+        ),
+    })
+    built = build_schema_json(schema, bundle, "default")
+    family = family_for(schema)
+    assert built["lists"][0]["renamed_from"] == [
+        {"title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk")},
+        {"title": "APP_ProjectRisk", "expected_marker": marker_for(family, "ProjectRisk")},
+    ]

@@ -1509,3 +1509,33 @@ def test_a_pack_without_today_only_reports_the_site_time_zone() -> None:
     )
     assert finding["level"] == "INFO"
     assert "Canberra" in finding["detail"]
+
+
+def test_a_renamed_entity_is_a_blocking_requirement_with_its_previous_titles() -> None:
+    """The assessment predicts the rename decision the deploy will make: it
+    needs the previous titles and their markers, and a wrong answer must
+    block the verdict rather than warn."""
+    from dbml_sharepoint.analysis.list_description import family_for
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(
+        make_table("Risk", "Title", note="Risks."),
+        make_table("Action", "Title", note="Actions."),
+    )
+    bundle = make_bundle(entities={
+        "Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+            renamed_from=("ProgramRisk",),
+        ),
+        "Action": EntityMapping(
+            name="Action", kind="List", base_template=100, site_role="default",
+        ),
+    })
+    family = family_for(schema)
+    targets = assess_targets(schema, bundle, "default")
+    assert targets["list_renames"] == [
+        ["APP_Risk", [["APP_ProgramRisk", marker_for(family, "ProgramRisk")]]],
+    ]
+    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert reqs["rename:APP_Risk"].level_on_fail == "BLOCKED"
+    assert "rename:APP_Action" not in reqs

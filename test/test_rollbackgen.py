@@ -1,4 +1,5 @@
 # test/test_rollbackgen.py
+import json
 import re
 from typing import Any
 
@@ -393,3 +394,35 @@ def test_rollback_skips_a_list_that_is_not_ours() -> None:
     not_ours = js.index("'not-ours'")
     delete = js.index("'X-HTTP-Method': 'DELETE'")
     assert unreadable < delete and not_ours < delete
+
+
+def test_rollback_targets_previous_titles_with_their_own_markers() -> None:
+    """A site that has not been migrated still carries the old titles, so
+    rollback must be able to find and gate them exactly as it does the new
+    ones; each previous title pairs with the marker its own name produces."""
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(make_table("Risk", "Title", note="Risks."))
+    bundle = make_bundle(entities={
+        "Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+            renamed_from=("ProgramRisk",),
+        ),
+    })
+    js = generate_rollback_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="x.dbml", generated_at="2026-09-03T00:00:00Z",
+    )
+    m = re.search(r"TARGET_LISTS\s*=\s*(\[.*?\]);", js, re.DOTALL)
+    assert m
+    targets = json.loads(m.group(1))
+    family = family_for(schema)
+    assert targets == [
+        {"title": "APP_Risk", "expected_marker": marker_for(family, "Risk")},
+        {"title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk")},
+    ]

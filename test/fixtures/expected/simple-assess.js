@@ -116,6 +116,7 @@
       "Provisioned by dbml-sharepoint from simple-test for list AppSettings."
     ]
   ],
+  "list_renames": [],
   "list_titles": [
     "APP_Project",
     "APP_Task",
@@ -579,6 +580,41 @@
         );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+      }
+    }
+
+    // The rename decision, predicted. Exactly one previous title carrying
+    // its own marker while the current title is absent is the only shape
+    // deploy renames; everything else blocks, because a guess here is a
+    // list adopted or created over somebody else's.
+    for (const [title, previousTitles] of (TARGETS.list_renames || [])) {
+      const key = `rename:${title}`;
+      const present = [];
+      let unprobed = null;
+      for (const [oldTitle, oldMarker] of previousTitles) {
+        if (knownTitles && !knownTitles.has(String(oldTitle).toLowerCase())) continue;
+        const old = await probeGet(`web/lists/getbytitle('${odataName(oldTitle)}')?$select=Title,Description`);
+        if (!old.ok && old.status === 404) continue;
+        if (!old.ok) { unprobed = `HTTP ${old.status || old.error} on '${oldTitle}'`; continue; }
+        const held = typeof old.d.Description === 'string' ? old.d.Description : '';
+        present.push({ title: oldTitle, marker: oldMarker, carries: held.includes(oldMarker) });
+      }
+      const currentExists = knownTitles
+        ? knownTitles.has(String(title).toLowerCase())
+        : (await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title`)).ok;
+      const named = present.map((p) => `'${p.title}'`).join(', ');
+      if (unprobed) {
+        finding(2, key, 'NOT-ASSESSABLE', `A previous title of '${title}' could not be probed (${unprobed}); deploy will make a fresh preflight read.`);
+      } else if (present.length === 0) {
+        finding(2, key, 'PASS', `No previous title of '${title}' exists; nothing to rename.`);
+      } else if (currentExists) {
+        finding(2, key, 'BLOCKED', `'${title}' exists and so does its previous title ${named}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`);
+      } else if (present.length > 1) {
+        finding(2, key, 'BLOCKED', `More than one previous title of '${title}' exists (${named}); deploy cannot choose which to rename.`);
+      } else if (!present[0].carries) {
+        finding(2, key, 'BLOCKED', `'${present[0].title}' exists but does not carry the exact provenance marker for its previous name "${present[0].marker}". Deploy will not adopt or rename it; restore that marker only if this tool created the list.`);
+      } else {
+        finding(2, key, 'INFO', `'${present[0].title}' carries the marker for its previous name and will be renamed '${title}' in place, keeping its items, views, lookups and permissions.`);
       }
     }
 

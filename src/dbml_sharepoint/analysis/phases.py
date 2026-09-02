@@ -26,6 +26,9 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
         # before anything reads its schema.
         PhaseStep("assess", "site assessment", "deploy/_assess_gate.js.j2"),
         PhaseStep("preflight", "read-only preflight", "deploy/_preflight.js.j2"),
+        # The first write. Before the security phase, so a renamed list is
+        # under its current title by the time anything addresses it.
+        PhaseStep("renames", "list renames", "deploy/_renames.js.j2"),
         PhaseStep("security", "permission levels and site groups",
                   "deploy/_security_principals.js.j2"),
         PhaseStep("enrolment", "operator self-enrolment",

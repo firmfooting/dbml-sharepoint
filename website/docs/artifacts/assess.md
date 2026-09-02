@@ -65,7 +65,11 @@ Findings roll up per requirement key to a single line:
   assessment cannot honestly decide whether the marker is present; deploy's
   fresh preflight read makes that decision.
 - `BLOCKED`: a named requirement fails (for example, missing permission
-  bits or a locked site); resolve before deploying.
+  bits or a locked site); resolve before deploying. A `rename:<title>`
+  requirement blocks when a list under one of the entity's `renamed_from`
+  titles does not carry the exact marker for that previous name, when it
+  exists beside the current title, or when two previous titles exist; it
+  reports `INFO` naming the list deploy will retitle in place.
 
 `assess-manifest.md` documents what will be probed and how to read the
 result, so the verdict can be shared with a site owner who never sees

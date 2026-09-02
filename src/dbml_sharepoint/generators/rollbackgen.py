@@ -25,15 +25,19 @@ def generate_rollback_js(
     # two cannot disagree about what this family's marker says.
     family = family_for(schema)
     # Children before parents: reverse of the deploy creation order.
-    target_lists = [
-        {
+    target_lists = []
+    for name in reversed(site_tables_in_order(schema, bundle.mapping.entities, site_role)):
+        target_lists.append({
             "title": bundle.mapping.prefix + name,
             "expected_marker": marker_for(family, name),
-        }
-        for name in reversed(
-            site_tables_in_order(schema, bundle.mapping.entities, site_role),
-        )
-    ]
+        })
+        # A site not yet migrated still carries the previous titles, and
+        # each is gated by the marker its own name produces.
+        for old in bundle.mapping.entities[name].renamed_from:
+            target_lists.append({
+                "title": bundle.mapping.prefix + old,
+                "expected_marker": marker_for(family, old),
+            })
     template = env.get_template("rollback.js.j2")
     return template.render(
         site_url=site_url,

@@ -54,9 +54,17 @@ def assess_targets(
     # `__proto__` sets the prototype instead of creating an own property,
     # and the marker check then finds nothing and stays silent.
     markers: list[tuple[str, str]] = []
+    # [[new title, [[previous title, previous marker], ...]], ...], lists
+    # rather than tuples so the Python side compares equal to the JSON.
+    renames: list[list[Any]] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
+        if entity.renamed_from:
+            renames.append([
+                prefix + table_name,
+                [[prefix + old, marker_for(family, old)] for old in entity.renamed_from],
+            ])
         templates.add(int(entity.base_template))
         table_names.append(table_name)
         markers.append((prefix + table_name, marker_for(family, table_name)))
@@ -84,6 +92,7 @@ def assess_targets(
         "uses_today": clock_usage(schema, m, table_names).uses_today,
         "list_titles": titles,
         "list_markers": markers,
+        "list_renames": renames,
         "base_templates": sorted(templates),
         "declares_groups": bool(perms and perms.groups),
         "declares_seal": bool(m.seal_columns),
@@ -127,6 +136,16 @@ def derive_requirements(
         reqs.append(Requirement(
             f"provenance_marker:{title}",
             f"Existing list '{title}' carries this declaration's exact provenance marker",
+            "BLOCKED",
+        ))
+    for title, _previous in t["list_renames"]:
+        # The rename decision, predicted before any write: exactly one
+        # previous title carrying its own marker, and the current title
+        # absent, is the only shape the deploy will rename.
+        reqs.append(Requirement(
+            f"rename:{title}",
+            f"Previous titles of '{title}' are absent, or exactly one carries its "
+            f"exact previous marker while '{title}' is absent",
             "BLOCKED",
         ))
     if t["uses_today"]:

@@ -54,6 +54,11 @@ deploy.js.txt is a reconciler, not an installer:
   onto a title collision.
 - Declared mutable settings that drifted are **narrowly reconciled** and
   read back.
+- A list absent under its title but present under one of the entity's
+  `renamed_from` titles, carrying the exact marker for that previous name,
+  is **retitled in place** before anything else is written, and read back
+  by list id. A previous title without its marker, or present beside the
+  current title, blocks before writes.
 - Objects whose immutable shape mismatches **fail closed** with a named
   error: the script never migrates types or retargets lookups.
 - User content (undeclared views, rows, user-added columns) is never

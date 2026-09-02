@@ -14,8 +14,9 @@ def test_todays_numbering_is_pinned() -> None:
     """THE canary: structure changes surface here first, loudly. Numbers
     derive from position; this pins today's derivation exactly."""
     assert phase_numbers() == {
-        "assess": "1.1", "preflight": "1.2", "security": "1.3",
-        "enrolment": "1.4", "reader_enrolment": "1.5", "unseal": "1.6",
+        "assess": "1.1", "preflight": "1.2", "renames": "1.3",
+        "security": "1.4", "enrolment": "1.5", "reader_enrolment": "1.6",
+        "unseal": "1.7",
         "lists": "2.1", "lookups": "2.2", "indexes": "2.3",
         "defaults": "2.4", "views": "3.1", "forms": "3.2", "seal": "4.1",
         "acls": "4.2", "seeds": "5.1",
@@ -26,15 +27,18 @@ def test_todays_numbering_is_pinned() -> None:
 def test_reader_enrolment_follows_operator_enrolment() -> None:
     """Order matters and is not cosmetic.
 
-    `require_empty_at_deploy` is proved in `security` (1.3). The reader must
+    `require_empty_at_deploy` is proved in `security` (1.4). The reader must
     be added AFTER that gate has run in this same deploy, never before, or
     the run would trip its own gate. It must also precede every write phase,
     since the enrolment is part of PREPARE's security setup.
     """
     numbers = phase_numbers()
-    assert numbers["reader_enrolment"] == "1.5"
-    assert numbers["unseal"] == "1.6"
+    assert numbers["reader_enrolment"] == "1.6"
+    assert numbers["unseal"] == "1.7"
     keys = [step.key for _, steps in DEPLOY_GROUPS for step in steps]
+    # A renamed list must be under its current title before the security
+    # phase, the first to address lists by title after the preflight.
+    assert keys.index("preflight") < keys.index("renames") < keys.index("security")
     assert keys.index("security") < keys.index("reader_enrolment")
     assert keys.index("reader_enrolment") < keys.index("lists")
 
