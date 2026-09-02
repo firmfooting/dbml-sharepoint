@@ -62,7 +62,8 @@ does not exist in SharePoint Online; there is no "default 8 raised by a
 cumulative update" here, that is the on-premises upgrade story. The strongest
 first-party SPO statement of 12 is in the Power Query connector documentation.
 The citation being that thin is why the ceiling was measured, and why the
-uncertainty is carried by a warning band rather than hidden.
+uncertainty is carried by a warning band rather than hidden. The band covers
+the two counts before the ceiling, 11 and 12.
 """
 
 # Two lines, not `from collections.abc import Iterable, Set as AbstractSet`:
@@ -80,9 +81,13 @@ from dbml_sharepoint.model.parser import Table
 # Measured: 12 rendered, 13 refused. Above this a view is blank at any list size.
 JOIN_LIMIT = 12
 
-# 8 was a real ceiling on some farms and this project cannot prove it never
-# reaches SharePoint Online. Between the two figures the finding is a warning.
-JOIN_WARN_AT = 9
+# The last two counts before the measured ceiling warn. 12 held on the tenant
+# measured and the SharePoint Online citation is thin, so a view at 11 or 12
+# may not travel. The band used to start at 9, because 8 was a real ceiling
+# on some on-premises farms; it was narrowed on 2026-09-02 when a shipped
+# entity needed nine, since that farm property does not exist in SharePoint
+# Online and no measurement here has ever shown fewer than 12.
+JOIN_WARN_AT = 11
 
 # Appended to every generated `All Items` view without being asked for, and the
 # two nobody counts. DERIVED, not written out: `column_projection` already
@@ -90,8 +95,8 @@ JOIN_WARN_AT = 9
 # are `datetime`, and a second hand-written copy of that fact is exactly what
 # goes stale. `Created` and `Modified` fall out of this expression on their own,
 # which is the INFERRED half of the rule, never measured; see the module
-# docstring. `test/test_joins.py::test_the_bands_are_nine_and_twelve` pins what
-# this must evaluate to.
+# docstring. `test/test_joins.py::test_the_bands_are_eleven_and_twelve` pins
+# what this must evaluate to.
 SYSTEM_JOIN_COLUMNS = frozenset(
     name for name, col_type in SYSTEM_COLUMN_TYPES.items()
     if col_type in JOIN_BEARING_TYPES

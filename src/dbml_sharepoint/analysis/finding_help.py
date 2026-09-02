@@ -783,8 +783,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
 
     FindingCode.JOIN_THRESHOLD_APPROACHED: (
-        "A view renders join-bearing columns at that ceiling, which "
-        "held on the tenant measured but may not travel."
+        "A view renders 11 or 12 join-bearing columns, the two counts "
+        "before the measured ceiling of 12 join operations. 12 held on "
+        "the tenant measured, but the SharePoint Online citation is "
+        "thin, so a view this wide may not travel to every tenant."
     ),
     FindingCode.JOIN_THRESHOLD_EXCEEDED: (
         "A view renders more join-bearing columns than the measured "

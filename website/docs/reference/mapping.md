@@ -96,12 +96,14 @@ render, 13 is refused** with `SPQueryThrottledException` code `-2147024749`, a
 different code from the item-count threshold's `-2147024860`, so the two are
 distinguishable in a transcript.
 
-The build is silent at 8 or fewer, **warns** from 9 to 12, and **fails** at 13.
-The warning band is deliberate: 12 held on the tenant measured, but 8 was a real
-limit on some SharePoint farms and the SharePoint Online citation is thin. The
-strongest first-party statement is in the Power Query connector documentation.
-(8 itself comes from `MaxQueryLookupFields`, a farm property that does not exist
-in SharePoint Online at all.)
+The build is silent at 10 or fewer, **warns** at 11 and 12, and **fails** at 13.
+The warning band is deliberate: 12 held on the tenant measured, but the
+SharePoint Online citation is thin, so the last two counts before the ceiling
+warn. The strongest first-party statement is in the Power Query connector
+documentation. The band used to start at 9 because 8 was a real limit on some
+on-premises farms; that figure comes from `MaxQueryLookupFields`, a farm
+property that does not exist in SharePoint Online at all, and no measurement
+here has shown fewer than 12, so the band was narrowed in September 2026.
 
 **`All Items` is the surface that bites.** It is generated with every rendered
 column and it appends `Author` and `Editor` without being asked, so **every

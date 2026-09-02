@@ -49,7 +49,7 @@ def _task() -> tuple[Table, MappingBundle]:
     return task, bundle
 
 
-def test_the_bands_are_nine_and_twelve() -> None:
+def test_the_bands_are_eleven_and_twelve() -> None:
     """The last two assertions are the GUARD ON THE DERIVATION, not a second
     copy of it. SYSTEM_JOIN_COLUMNS is computed from SYSTEM_COLUMN_TYPES, so
     these pin what that computation must come out as: Created and Modified are
@@ -60,7 +60,7 @@ def test_the_bands_are_nine_and_twelve() -> None:
     Written `sorted(X) == [...]` rather than `X == frozenset({...})` because
     ruff reads an uppercase name as the constant side and flags the latter
     SIM300 'Yoda condition detected'."""
-    assert JOIN_WARN_AT == 9
+    assert JOIN_WARN_AT == 11
     assert JOIN_LIMIT == 12
     assert sorted(SYSTEM_JOIN_COLUMNS) == ["Author", "Editor"]
     assert sorted(JOIN_BEARING_TYPES) == ["person"]
