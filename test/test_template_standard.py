@@ -33,6 +33,7 @@ from typing import Any
 import pytest
 from _paths import SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_rendering import _NULL_INCLUSIVE_NEGATIVES, normalise
 from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
@@ -364,6 +365,70 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The decision": "Identify",
         "Why": "Assess",
     },
+    # m365-adoption-program is the first family to merge two vocabularies, so
+    # it inherits both rather than inventing a third: its four delivery lists
+    # keep raid-log's section names exactly, and ProgramActivity,
+    # ProgramInvolvement and ProgramStakeholders keep raci-matrix's. Somebody who
+    # has used either family reads the merged one without relearning it.
+    #
+    # Only Workstream and ServiceRequest are new shapes. Workstream has no
+    # Assess beat: a stream of work is not rated, it is sequenced and dated.
+    # ServiceRequest spends three consecutive sections on Govern, which §1.2
+    # permits, because its whole tail is governance: who authorised it, who
+    # is handling it, and how far it was escalated. Splitting them gives the
+    # escalation block a heading somebody can ignore on the nine requests in
+    # ten that never escalate.
+    ("m365-adoption-program", "Workstream"): {
+        "Name the workstream": "Identify",
+        "Sequence and dates": "Act",
+        "Phase and closure": "Govern",
+    },
+    ("m365-adoption-program", "Stakeholder"): {
+        "Name the stakeholder": "Identify",
+        "How to reach them": "Act",
+        "Status and notes": "Govern",
+    },
+    ("m365-adoption-program", "Activity"): {
+        "Describe the activity": "Identify",
+        "Classify it": "Assess",
+        "Assign it": "Act",
+        "Keep it current": "Govern",
+        "System": "System",
+    },
+    ("m365-adoption-program", "Involvement"): {
+        "State the input": "Identify",
+        "How they are involved": "Act",
+    },
+    ("m365-adoption-program", "ServiceRequest"): {
+        "Describe the request": "Identify",
+        "Who needs it and when": "Act",
+        "Internal authorisation": "Govern",
+        "Handling": "Govern",
+        "Escalation": "Govern",
+    },
+    ("m365-adoption-program", "Risk"): {
+        "Describe the risk": "Identify",
+        "Assess the risk": "Assess",
+        "Response and owner": "Act",
+        "Review and closure": "Govern",
+        "System": "System",
+    },
+    ("m365-adoption-program", "Action"): {
+        "The action": "Identify",
+        "Owner and date": "Act",
+        "Progress": "Govern",
+    },
+    ("m365-adoption-program", "Issue"): {
+        "Describe the issue": "Identify",
+        "Severity and owner": "Assess",
+        "Progress": "Act",
+        "Resolution and closure": "Govern",
+    },
+    ("m365-adoption-program", "Decision"): {
+        "The decision": "Identify",
+        "Why": "Assess",
+        "Endorsement route": "Govern",
+    },
     # "What was said" is the Assess beat on a log whose whole job is
     # judgement: the summary is what a colleague picking up the thread
     # actually reads.
@@ -627,13 +692,22 @@ class Loaded:
     def column_types(self, entity: str) -> dict[str, str]:
         """{internal column name: DBML type} for the entity's table.
 
+        System columns (Author, Editor, Created, Modified) are folded in so a
+        view filter on one of them evaluates the way the generator does, where
+        a `me` sentinel on a person column (Author) is UNKNOWN rather than a
+        false negative. Declared columns win, but there is no overlap: the
+        reserved names cannot be declared.
+
         Entity names are the DBML table names; an entity with no table is a
         build error the validator already reports, so an empty dict here
         simply leaves the type-dependent checks with nothing to say.
         """
         for table in self.schema.tables:
             if table.name == entity:
-                return {column.name: column.type for column in table.columns}
+                return {
+                    **SYSTEM_COLUMN_TYPES,
+                    **{column.name: column.type for column in table.columns},
+                }
         return {}
 
     @property
@@ -1533,7 +1607,7 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     )
 
 
-def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
+def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     """The spec's survey number, pinned. It is the whole reason this check can
     ship silently, and the parametrized test above cannot hold it: that one
     only fires at 11, so a template could climb from 6 to 10 unnoticed and the
@@ -1541,7 +1615,7 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
 
     Calls `all_items_joining_fields` (the same derivation `_views.py`'s
     entity loop calls) rather than re-typing the formula here. A copy would
-    let this test and the validator drift: `assert worst == 6` could keep
+    let this test and the validator drift: `assert worst == 7` could keep
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
@@ -1587,12 +1661,56 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     raid-log lists land at 3 (ProjectRisk, ProjectDecision: one person column
     plus Author and Editor) and 4 (ProjectAction, ProjectIssue: one person
     column plus the one RelatedRisk Lookup). The worst is unchanged and is
-    still raci-matrix/Activity at 6."""
+    still raci-matrix/Activity at 6.
+
+    RE-MEASURED 2026-08-28 across 35 templates / 71 entities, when
+    m365-adoption-program joined the roster: 2 -> 8, 3 -> 32, 4 -> 25,
+    5 -> 2, 6 -> 2, 7 -> 2. The new worst is 7, shared by
+    m365-adoption-program/ProgramActivity (Responsible, Accountable,
+    ConfirmedBy, the Workstream and AccountableForum Lookups, Author and
+    Editor) and m365-adoption-program/TenantRequest (RequestedBy,
+    InternalAccountable, AuthorisedBy, EscalatedBy, the Workstream Lookup,
+    Author and Editor). Both are raci-matrix/Activity's shape with a
+    workstream added: a family that merges an accountability register with an
+    authorisation record carries person columns from both halves. Still two
+    clear of the nine-column warning band, and this is the first family to
+    reach 7, so the next one to add a person column to either entity should
+    check `hide_from_all_items` rather than the ceiling.
+
+    RE-MEASURED 2026-08-28 after m365-adoption-program added four nullable
+    reporting joins: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 4, 6 -> 1, 7 -> 2,
+    8 -> 1. TenantRequest is the new worst at 8 after adding its authorising
+    decision. ProgramAction moves from 6 to 7, while ProgramRisk and
+    ProgramDecision move from 4 to 5. Eight remains below the warning band;
+    `hide_from_all_items` is reserved for an entity that would otherwise
+    exceed the measured ceiling and would warn as unnecessary here.
+
+    RE-MEASURED 2026-08-28 after m365-adoption-program added the decision
+    route: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1, 8 -> 4. The band at 7
+    empties and four entities now sit at 8: ProgramActivity (DecisionRoute),
+    ProgramAction (AuthorisingDecision), ProgramDecision (Activity,
+    DecidedByForum, RecommendedByForum) and TenantRequest, unchanged. The
+    worst is unchanged at 8 and still one clear of the nine-column warning
+    band, but four entities now sit on that edge rather than one, so the next
+    join-bearing column added to any of them warns. Lookup PROJECTIONS are
+    what kept it there: the four decision lookups each project the target's
+    Title, and a projection is a dependent field that costs no join.
+
+    RE-MEASURED 2026-09-02 after m365-adoption-program made TenantRequest
+    the ServiceRequest surface: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1,
+    8 -> 3, 9 -> 1. ServiceRequest is the new worst at 9 (RequestedBy,
+    InternalAccountable, AuthorisedBy, EscalatedBy, AssignedTo, the
+    Workstream and AuthorisingDecision lookups, Author and Editor): a
+    request that is asked for, authorised, worked and escalated on one row
+    carries a person column for each of those acts. The warning band now
+    starts at 11, so the worst is two clear of it, and the three entities
+    at 8 (Activity, Action, Decision) are three
+    clear."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 34, (
-        f"{len(templates)} templates discovered, not the 34 this survey was "
+    assert len(templates) == 35, (
+        f"{len(templates)} templates discovered, not the 35 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1612,8 +1730,8 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
                 continue
             xcols = by_entity.get(name, set())
             worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
-    assert worst == 6, (
-        f"worst generated 'All Items' is now {worst} of 12, not the pinned 6. "
+    assert worst == 9, (
+        f"worst generated 'All Items' is now {worst} of 12, not the pinned 9. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
         f"entity. Update the number here DELIBERATELY, and check the spec's "
         f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "

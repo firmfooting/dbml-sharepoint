@@ -1,0 +1,61 @@
+release: "2.0.0"
+date: "2026-09-03"
+deployer_version: "dbml-sharepoint/0.1.0"
+schema_version: "2.0.0"
+notes: |
+  M365 adoption programme. Nine lists on one site, merging a delivery layer
+  with a standing accountability register and a service request queue for
+  tenant-level change.
+
+  2.0.0 gives every list its bare entity name under the family's new
+  prefix, GOV_: GOV_Workstream, GOV_Stakeholder, GOV_Activity,
+  GOV_Involvement, GOV_ServiceRequest, GOV_Risk, GOV_Action, GOV_Issue and
+  GOV_Decision. The three family groups and the two permission levels take
+  the same stem: GOV Programme Leads (previously ADOPT Program
+  Governance), GOV Accountability Maintainers, GOV Request Handlers, GOV
+  Submit Only and GOV Contribute No Delete. Each entity, group and level
+  carries renamed_from, and previous_prefixes lists the two stems the live
+  site holds (no list prefix, and ADOPT on the groups and levels), so the
+  redeploy renames every list, group and level in place by its previous
+  name and keeps rows, views, lookups, permissions, group membership and
+  level assignments; a list URL keeps the slug it was created with. A
+  previous name whose description does not carry this family's provenance
+  marker for that name blocks the assessment and the preflight rather than
+  being adopted.
+
+  2.0.0 also makes the request list the request surface. TenantRequest
+  becomes ServiceRequest and its row carries the whole lifecycle: Status
+  gains In progress and Waiting on requester, AssignedTo names the handler,
+  and MinutesSpent is the running total of handler effort, required at
+  Closed and totalled on the Closed view. A third family group, GOV
+  Request Handlers, holds Contribute No Delete on the list. Party becomes
+  Stakeholder throughout: PartyKind becomes StakeholderKind on Stakeholder,
+  Party becomes Stakeholder on Involvement, and every description, rule
+  message and form header is in a plainer register, with the rule for
+  choosing a person column over a stakeholder row stated on the forms.
+
+  The migration, in this order. 1) Paste assess.js.txt and read the rename
+  findings, one per list under rename:<title> and one per group and level
+  under their equivalents: every previous name adopted under its new one,
+  none blocked. 2) Paste deploy.js.txt, which renames the lists, groups
+  and levels, creates the new columns and migrates the views, then
+  verify.js.txt. 3) On each GOV_Stakeholder row copy Party Kind into
+  Stakeholder Kind, and on each GOV_Involvement row set Stakeholder from
+  the old Party value; both columns sit on the same edit form until step
+  4. Stakeholder is required, so an Involvement row cannot be saved again
+  until it is set. 4) Run columns-script on GOV_Action
+  (RelatedTenantRequest), GOV_Stakeholder (PartyKind), GOV_Involvement
+  (Party), GOV_Activity (DecisionRule) and GOV_ServiceRequest
+  (IvantiReference) to delete the superseded columns, plus anything else
+  its table shows that the schema no longer declares. 5) The three
+  post-deploy steps below. 30-deploy/deploy.md has the same sequence with
+  the detail.
+
+  Three post-deploy steps the deployer cannot do. Populate GOV Programme
+  Leads, GOV Accountability Maintainers and GOV Request Handlers, which are
+  created empty and never reconciled (a renamed group keeps the members it
+  had). Disable attachments on all
+  nine lists, which is the one privacy control a redeploy does not reassert.
+  Check the site home page and navigation against the new list titles.
+
+  Bump schema_version on any DBML or mapping change before redeploying.

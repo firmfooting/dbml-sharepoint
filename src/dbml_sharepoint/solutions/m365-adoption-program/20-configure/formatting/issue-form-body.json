@@ -1,0 +1,8 @@
+{
+  "sections": [
+    { "displayname": "Describe the issue", "fields": ["Title", "Workstream", "Detail", "RelatedRisk"] },
+    { "displayname": "Severity and owner", "fields": ["Severity", "Owner", "RaisedDate"] },
+    { "displayname": "Progress", "fields": ["Status"] },
+    { "displayname": "Resolution and closure", "fields": ["ResolvedDate", "Resolution", "NotifiedAt"] }
+  ]
+}

@@ -1,0 +1,489 @@
+// ============================================================================
+// M365 adoption programme: nine lists on one site. A workstream spine, a
+// standing accountability layer (activities, stakeholders, involvements), a moving
+// delivery layer (risks, actions, issues, decisions), and the queue of
+// service requests the shared-service provider works for the programme.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project m365_adoption_program { database_type: 'SharePoint Online Lists' }
+
+// Where the programme has got to on each stream of work. Closed is a phase and
+// not a deletion: an action filed against a closed workstream stays visible
+// through the WorkstreamPhase projection rather than being prevented.
+Enum adopt_workstream_phase {
+  "Not started"
+  "Discovery"
+  "Pilot"
+  "Rollout"
+  "Embedding"
+  "Closed"
+}
+
+// Matrix rows 1-5, and matrix columns 1-5. Both are lifted unchanged from
+// raid-log: the matrix formulas in mapping.yaml are keyed to exactly these
+// members in exactly this order.
+Enum adopt_likelihood {
+  "Rare"
+  "Unlikely"
+  "Likely"
+  "Very Likely"
+  "Almost Certain"
+}
+
+Enum adopt_consequence {
+  "Minor"
+  "Moderate"
+  "Substantial"
+  "Major"
+  "Business Critical"
+}
+
+// Open or closed, with no Provisional step, unchanged from raid-log. A
+// programme risk has a named owner from the moment it is raised, so a draft
+// state would only be a queue nobody drains.
+Enum adopt_risk_status {
+  "Open"
+  "Closed"
+}
+
+Enum adopt_risk_response {
+  "Accept"
+  "Manage"
+  "Tolerate"
+  "Transfer"
+  "Terminate"
+  "Monitor"
+}
+
+Enum adopt_action_status {
+  "Open"
+  "In progress"
+  "Done"
+  "Dropped"
+}
+
+Enum adopt_issue_severity {
+  "Minor"
+  "Moderate"
+  "Major"
+  "Critical"
+}
+
+Enum adopt_issue_status {
+  "Open"
+  "In progress"
+  "Resolved"
+  "Closed"
+}
+
+// The proposal queue and the decision log in one column. Proposed is the
+// only state that is not an outcome, which is what makes the queue
+// filterable. Ratified means decided under delegation and validated by the
+// forum afterwards; Noted means the forum noted it and no decision was
+// required.
+Enum adopt_decision_status {
+  "Proposed"
+  "Approved"
+  "Rejected"
+  "Withdrawn"
+  "Noted"
+  "Ratified"
+}
+
+Enum adopt_stakeholder_kind {
+  "Individual"
+  "Role"
+  "Forum"
+  "External"
+}
+
+Enum adopt_stakeholder_status {
+  "Active"
+  "Inactive"
+}
+
+Enum adopt_activity_kind {
+  "Task"
+  "Approval"
+  "Decision"
+}
+
+// The standing position an activity confers, kept separate from
+// adopt_activity_kind because the two describe different axes: the kind says
+// what the activity is, the role says what position it confers. Folding a
+// fourth member into the kind would also widen the escalation-route save
+// rule, which fires on Decision.
+Enum adopt_activity_role {
+  "Workstream lead"
+  "Workstream deputy"
+  "Program owner"
+}
+
+Enum adopt_criticality {
+  "Statutory"
+  "High"
+  "Routine"
+}
+
+Enum adopt_review_status {
+  "Current"
+  "Needs review"
+  "Retired"
+}
+
+// Agree is RAPID's, not RACI's: their sign-off is required before the
+// activity proceeds, which is a veto Consulted does not carry. Declared
+// strongest first so the picker reads down in order of how much a stakeholder can
+// hold the work up.
+Enum adopt_involvement_role {
+  "Agree"
+  "Consulted"
+  "Informed"
+}
+
+Enum adopt_involvement_channel {
+  "Standing agenda item"
+  "Meeting"
+  "Email"
+  "Report or dashboard"
+  "Ad hoc"
+}
+
+// The classes of tenant-level change the provider holds. Members are drawn
+// from the boundary and the named dependencies in the design; add one when a
+// real case does not fit, rather than in anticipation.
+Enum adopt_request_type {
+  "Entra group"
+  "Conditional access policy"
+  "Licensing"
+  "Power Platform environment"
+  "App registration"
+  "DLP policy"
+  "Account or identity"
+  "Reporting or telemetry access"
+  "Tenant-wide setting"
+  "Other"
+}
+
+// The whole lifecycle of a service request, on one row. Drafted and
+// Authorised are the health service's states, In progress and Waiting on
+// requester are the handler's, and Closed and Withdrawn end it. Waiting on
+// requester is the hand-back: the handler needs something from the health
+// service before the work can continue.
+Enum adopt_request_status {
+  "Drafted"
+  "Authorised"
+  "In progress"
+  "Waiting on requester"
+  "Closed"
+  "Withdrawn"
+}
+
+// The four escalation rungs. Numbered so they sort, because the count that
+// matters at the agreement review is levels 3 and 4 only: those two are
+// contractual, the first two are operational.
+Enum adopt_escalation_level {
+  "1 Program"
+  "2 Directorate"
+  "3 Contractual"
+  "4 Executive"
+}
+
+Table Workstream {
+  Id            int                    [pk, increment]
+  Title         nvarchar               [not null, note: 'The workstream as the programme refers to it: "Migration", "Teams telephony"']
+  Purpose       richtext               [note: 'What this workstream is for and, just as usefully, what it does not cover. The boundary is what stops two workstreams claiming the same work']
+  Phase         adopt_workstream_phase [not null, default: 'Not started', note: 'How far this workstream has got. The monthly steering read is these rows in Sequence order, so this column is the whole programme on one screen']
+  Sequence      int                    [not null, note: 'View ordering only. Number the workstreams in the order the programme runs them, leaving gaps so one can be inserted later']
+  StartDate     date                   [note: 'When work on this workstream started, or is planned to start']
+  TargetEndDate date                   [note: 'When this workstream is expected to reach Embedding or Closed. Move it deliberately, and record the move as a decision']
+  ClosureNote   richtext               [note: 'Why the workstream is closed: delivered, folded into another workstream, or stopped. Written once, at closure']
+
+  // NO PERSON COLUMN, deliberately. Who leads a workstream is answered by a
+  // Activity row carrying ActivityRole, which has a confirmation
+  // cadence, an escalation route and a review status. A Lead column here
+  // would have none of those and would go stale the first time a lead
+  // changed. Zero join-bearing columns, so All Items starts at 2 and stays.
+  indexes {
+    Phase
+    Sequence
+  }
+
+  Note: 'The streams of work the programme runs, in the order it runs them. No person column: who leads a workstream is a Activity row.'
+}
+
+Table Stakeholder {
+  Id                 int                [pk, increment]
+  Title              nvarchar           [not null, unique, note: 'The stakeholder as everyone refers to it: "Executive Director", "Shared service provider", "Digital Programme Board"']
+  StakeholderKind    adopt_stakeholder_kind [not null, default: 'Individual', note: 'Individual: this person, whatever position they hold. Role: the position, whoever holds it, so the row survives a change of person. Forum: a committee or meeting. External: a body outside the organisation']
+  Contact            person             [note: 'For an Individual, themselves. For a Role, whoever holds it now. For a Forum, its chair or secretariat. Leave blank on an external body and fill External Contact Details instead']
+  // Not a person column, on purpose: naming an external engineer here invites
+  // every reader to treat them as the owner of the thing, and accountability
+  // stays inside the health service. Costs no join.
+  ServiceDeskAddress nvarchar           [note: 'How an external body is reached: a portal, queue or shared mailbox. An External stakeholder names this and leaves Contact blank; every other non-Forum stakeholder names a Contact']
+  Status             adopt_stakeholder_status [not null, default: 'Active', note: 'Set Inactive when a person leaves or a forum is disbanded. Never delete a stakeholder; activities and involvements point at it and would be orphaned']
+  Notes              nvarchar           [note: 'Anything a reader needs to interpret this stakeholder correctly: its terms of reference, its meeting cadence, who it reports to']
+
+  indexes {
+    StakeholderKind
+    Status
+  }
+
+  Note: 'Everyone the programme points at by name: people, roles, forums and external bodies. A role outlives its holder. Retire by Status, never delete.'
+}
+
+Table Activity {
+  Id               int                  [pk, increment]
+  Title            nvarchar             [not null, note: 'The activity as a verb phrase: "Approve a tenant configuration change", "Chair the steering group"']
+  // Nullable, unlike the four delivery lists. Programme-wide activities exist
+  // and a false attribution is worse than a blank; the quarterly walk reads
+  // the blank ones as their own bucket.
+  Workstream       int                  [ref: > Workstream.Id, note: 'The workstream this activity belongs to. Leave blank for programme-wide work such as chairing the steering group']
+  ActivityKind     adopt_activity_kind  [not null, default: 'Task', note: 'Task: Responsible does the work, Accountable owns the outcome. Approval: Responsible prepares, Accountable signs. Decision: Responsible runs the process, Accountable makes the call']
+  ActivityRole     adopt_activity_role  [note: 'The standing position this activity confers, if it confers one. Blank is the ordinary case. Each workstream should have exactly one current lead, checked quarterly']
+  Criticality      adopt_criticality    [not null, default: 'Routine', note: 'Statutory means law, licence or funding agreement requires it. Sets how often this row must be re-confirmed: Statutory 6 months, High 12, Routine 24']
+  Detail           richtext             [note: 'What this activity covers and, just as usefully, what it does not. Write the boundary that stops somebody claiming a neighbouring activity is included']
+  Responsible      person               [not null, note: 'The one person who does the work. Name a person, not a team, so the row has someone to ask']
+  Accountable      person               [not null, note: 'The one person who owns the outcome. Exactly one. Where two people share it, name the senior one here and the other in Involvement']
+  AccountableForum int                  [ref: > Stakeholder.Id, note: 'The forum this accountability is exercised through, where there is one. The forum holds the discussion; the person above holds the accountability']
+  EscalationRoute  nvarchar             [note: 'Where this goes when Responsible and Accountable cannot agree. Required for a Decision, for anything Statutory, and for any row carrying an Activity Role']
+  // The standing route a standing activity's proposals take. Nullable because
+  // most activities are ordinary work nobody takes to a forum. Nothing at save
+  // compares this against Decision.DecidedByForum: SharePoint cannot
+  // read two lookups across two lists in one validation formula, so the
+  // drift between route and outcome is a reporting reconciliation.
+  DecisionRoute    int                  [ref: > Stakeholder.Id, note: 'The forum that decides the proposals raised under this activity. The standing route, where EscalationRoute is the exception path']
+  ReviewStatus     adopt_review_status  [not null, default: 'Current', note: 'Set Needs review the moment you know a row is wrong; that is what makes it visible. Retired keeps the history without cluttering the register']
+  LastConfirmed    date                 [note: 'The date somebody last checked that this row is still true. Blank until the first confirmation actually happens; the whole confirmation cadence counts from here']
+  ConfirmedBy      person               [note: 'Who did that check. Not the same as who last edited the row; an edit is not a confirmation']
+  // Calculated: the cadence formula lives in mapping.yaml. It carries
+  // raci-matrix issue #5 unchanged, where adding months overflows rather than
+  // clamping at month end; fixing it here would fork a defect fixed upstream.
+  ConfirmationDue  calculated_date      [note: 'When this row must be re-confirmed. Calculated from Last Confirmed and Criticality; blank on a retired row']
+
+  // Domain is dropped; Workstream replaces it as the grouping axis. The
+  // calculated confirmation date cannot be indexed by SharePoint and is
+  // rejected by the build validator.
+  indexes {
+    ReviewStatus
+    Criticality
+    Accountable
+    Workstream
+    ActivityRole
+    DecisionRoute
+  }
+
+  Note: 'One row per thing done, approved or decided, with its one Responsible and its one Accountable. Consulted stakeholders live in Involvement.'
+}
+
+Table Involvement {
+  Id          int                       [pk, increment]
+  Title       nvarchar                  [not null, note: 'State the INPUT, not the person: "Pricing tolerance and contract terms". If no input can be named, they are Informed rather than Consulted']
+  Activity    int                       [not null, ref: > Activity.Id, note: 'The activity this stakeholder is involved in']
+  Stakeholder int                       [not null, ref: > Stakeholder.Id, note: 'Who is involved, from the stakeholder list: a person, a role, a forum or an external body']
+  Involvement adopt_involvement_role    [not null, default: 'Informed', note: 'Agree means their sign-off is required before the activity proceeds. Consulted means their input is required first, but they cannot refuse. Informed means they are told, and cannot hold it up']
+  Channel     adopt_involvement_channel [not null, default: 'Email', note: 'How this happens in practice, so the involvement has a mechanism rather than an intention']
+  Notes       nvarchar                  [note: 'Anything a reader needs: timing, the standing item it sits under, what happens if they do not respond']
+
+  indexes {
+    Activity
+    Stakeholder
+    Involvement
+  }
+
+  Note: 'One row per stakeholder consulted or informed about an activity. The title states the input they give, not the person who gives it.'
+}
+
+Table ServiceRequest {
+  Id                  int                    [pk, increment]
+  Title               nvarchar               [not null, note: 'What is being asked for, stated as the change: "Create an Entra group for the Teams telephony pilot"']
+  Workstream          int                    [not null, ref: > Workstream.Id, note: 'The workstream this request unblocks. Which workstream is waiting on the provider is the most valuable single question in the programme']
+  RequestType         adopt_request_type     [not null, note: 'The class of tenant-level change. Groups the queue, and shows which kinds of change the programme depends on the provider for most']
+  Justification       richtext               [not null, note: 'Why the change is needed and what it unblocks. The only narrative column here, and the brief the handler works from. Keep patient-identifiable detail out of it']
+  RequestedBy         person                 [not null, note: 'Who needs the change. One named person inside the health service']
+  InternalAccountable person                 [not null, note: 'Who is accountable for the change inside the health service. One person, and never the provider']
+  Status              adopt_request_status   [not null, default: 'Drafted', note: 'Where the request is. Governance moves it to Authorised; the handler moves it through In progress, Waiting on requester and Closed; Withdrawn ends a request the programme no longer wants']
+  AuthorisedBy        person                 [note: 'Who authorised the request internally. Required once the status is Authorised or any later state']
+  AuthorisedDate      date                   [note: 'When that internal authorisation was given. Required from Authorised onwards, and it cannot be in the future']
+  AuthorisingDecision int                    [ref: > Decision.Id, note: 'The decision-log entry that authorised this request, when a contested or non-routine request needed one. Leave blank for routine requests authorised without a recorded decision']
+  AssignedTo          person                 [note: 'The handler working the request. Set when it is picked up, and expected on every request from In progress onwards']
+  MinutesSpent        int                    [note: 'Whole minutes the handler has spent on the request so far, kept as one running total the handler updates. Required once the request is Closed']
+  NeededBy            date                   [not null, note: 'The date the health service needs this by. A real date: the Needed soon or overdue view reads it, and it is the only ageing signal the list holds. An internal planning date only; it carries no provider commitment']
+  // The high-water mark, not a history. A request escalated at level 1 and
+  // later at level 3 keeps only level 3; the sequence is in version history.
+  EscalationLevel     adopt_escalation_level [note: 'The highest level this request has been escalated to. Levels 3 and 4 are contractual and are the two counted at the shared-service agreement review']
+  EscalatedDate       date                   [note: 'When the escalation above was made. It cannot be in the future']
+  EscalatedBy         person                 [note: 'Who initiated that escalation, inside the health service']
+  EscalatedTo         nvarchar               [note: 'The named recipient at the provider. Text and not a person column, because levels 2 to 4 name people who may hold no account in this tenant, unlike the handler in Assigned To']
+
+  indexes {
+    Status
+    Workstream
+    NeededBy
+    EscalationLevel
+    RequestedBy
+    AssignedTo
+    AuthorisingDecision
+  }
+
+  Note: 'Every change the programme needs from the provider, worked here from draft to closure, with its internal authorisation and the minutes spent on it.'
+}
+
+Table Risk {
+  Id          int               [pk, increment]
+  Title       nvarchar          [not null, note: 'The risk, stated as an uncertain event: "The provider does not create the pilot group before the pilot starts"']
+  Workstream  int               [not null, ref: > Workstream.Id, note: 'The workstream this risk sits in. It is what lets a workstream lead see their own risks rather than the whole programme log']
+  Detail      richtext          [note: 'Cause -> event -> consequence. What could trigger it, what happens to the programme if it does']
+  Likelihood  adopt_likelihood  [not null, note: 'How likely the assessed consequence is, with whatever is already in place']
+  Consequence adopt_consequence [not null, note: 'The highest reasonable consequence for the programme, with whatever is already in place']
+  // Calculated: the 5x5 matrix formula lives in mapping.yaml so the rating
+  // cannot drift from the matrix it came from. The formulas are keyed to the
+  // two enums above; read the coupling note in mapping.yaml before editing
+  // either.
+  ResidualRiskRating calculated_text   [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme']
+  RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the log by this, highest first']
+  LiveRiskTitle calculated_text [note: 'Title for open risks, blank once Closed. The RelatedRisk lookup displays this, so the picker only offers live risks']
+  RiskOwner   person            [not null, note: 'Manages the risk day to day. One named person']
+  RiskResponse adopt_risk_response [note: 'What the programme is doing about it. Tolerate is always for a set period and belongs in the decision log']
+  ToleranceDecision int          [ref: > Decision.Id, note: 'The decision-log entry accepting this risk for a set period when Risk Response is Tolerate. Leave blank for every other response']
+  Status      adopt_risk_status [not null, default: 'Open', note: 'Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
+  ReviewDate  date              [not null, note: 'When this risk is next looked at. Set by hand, and moved forward every time it is actually reviewed']
+  ClosureNote richtext          [note: 'Why the risk is being closed: it happened and became an issue, it can no longer happen, or the workstream ended']
+
+  // Filter columns for the declared views. The three calculated columns
+  // (rating, score and the live-title the RelatedRisk picker shows) cannot be
+  // indexed by SharePoint and are rejected by the build validator.
+  // LiveRiskTitle is the lookup display column and is deliberately left
+  // unindexed; mapping.yaml accepts that on the entity because a programme
+  // raising 5,000 risks has other problems.
+  indexes {
+    Status
+    Workstream
+    RiskResponse
+    ToleranceDecision
+    ReviewDate
+  }
+
+  Note: 'Uncertain events that could still stop a workstream delivering, each rated on the 5x5 matrix, owned by one person and reviewed on a date.'
+}
+
+Table Action {
+  Id            int                 [pk, increment]
+  Title         nvarchar            [not null, note: 'The action, stated as a verb: "Book the migration test window"']
+  // The Workstream lookup projects Phase as a read-only WorkstreamPhase
+  // column (declared in mapping.yaml, and a projection costs no join), so an
+  // action filed against a closed workstream is visible rather than
+  // prevented.
+  Workstream    int                 [not null, ref: > Workstream.Id, note: 'The workstream this action belongs to. Every fortnightly view groups by it, and an unattributed action is one nobody owns the queue for']
+  AssignedTo    person              [not null, note: 'One named person. A team is not an owner, and the Open by person view is read by name']
+  DueDate       date                [not null, note: 'A real date, because the Overdue view reads it. A placeholder date hides the action']
+  Status        adopt_action_status [not null, default: 'Open', note: 'Use Dropped for an action that no longer makes sense, so it is not left Open']
+  // Lookup to Risk. OPTIONAL on purpose: most actions are ordinary
+  // programme work, and demanding a risk for each one would produce invented
+  // links rather than real ones.
+  RelatedRisk   int                 [ref: > Risk.Id, note: 'The risk this action is reducing, if it is reducing one. Leave blank for ordinary programme work']
+  RelatedIssue  int                 [ref: > Issue.Id, note: 'The issue this action is resolving, if it was spawned from one. Leave blank for ordinary programme work']
+  // Lookup to ServiceRequest, optional. A workstream can have several open
+  // requests and only one of them blocks a given action, so the workstream
+  // filter answers a different question; without this the request gets
+  // described in Notes as unmanaged text.
+  RelatedServiceRequest int         [ref: > ServiceRequest.Id, note: 'The service request this action is waiting on, if it is waiting on one. Leave blank for work the programme can move on its own']
+  // Closes the recommend-decide-perform chain from the delivery end. Blank is
+  // the ordinary case: most actions implement nothing that was ever decided at
+  // a forum.
+  AuthorisingDecision int          [ref: > Decision.Id, note: 'The decision this action implements. Leave blank for ordinary programme work that followed no recorded decision']
+  CompletedDate date                [note: 'The date the work was actually finished. Required once Status is Done']
+  Notes         richtext            [note: 'Progress, blockers, and why a date moved if it moved']
+
+  indexes {
+    Status
+    Workstream
+    AssignedTo
+    DueDate
+    RelatedRisk
+    RelatedIssue
+    RelatedServiceRequest
+    AuthorisingDecision
+  }
+
+  Note: 'Work the programme has handed to somebody, each with one owner, one workstream and a real date. The open rows are what every meeting reads.'
+}
+
+Table Issue {
+  Id          int                  [pk, increment]
+  Title       nvarchar             [not null, note: 'The issue, stated as a fact: "The pilot group has not been created"']
+  Workstream  int                  [ref: > Workstream.Id, note: 'The workstream this issue sits in. Blank until a triage owner assigns one. An occasional raiser knows what broke, not which workstream owns it; the Needs triage view surfaces the blank rows']
+  Severity    adopt_issue_severity [not null, default: 'Minor', note: 'How much this is hurting the programme right now, not how much it might']
+  Status      adopt_issue_status   [not null, default: 'Open', note: 'Resolved means the issue has stopped happening. Closed means somebody has confirmed it']
+  Owner       person               [note: 'Drives this issue to a resolution. One named person. Blank until a triage owner assigns one; the Needs triage view surfaces the blank rows']
+  RaisedDate  date                 [not null, default: '[today]', note: 'When the issue was first raised. Fills with today automatically; change it if you are recording something older']
+  // Lookup to Risk. Optional, same reasoning as Action: an
+  // issue that arrived out of nowhere is the normal case, and a risk that
+  // materialised is the interesting one.
+  RelatedRisk  int                 [ref: > Risk.Id, note: 'The risk that materialised into this issue, if one did. Leave blank if the issue was never on the risk log']
+  ResolvedDate date                [note: 'The date the issue stopped happening']
+  Detail       richtext            [note: 'What is happening, since when, and what it is costing the programme']
+  Resolution   richtext            [note: 'What was done, and what would stop it recurring']
+  // Machine-owned: the phase-2 escalation flow stamps this when it notifies
+  // the owner, so a repeat notify is distinguishable from a first one. Hidden
+  // from both forms and left rendered on All Items, because watched_lists
+  // requires a watched column to be a rendered column of its entity.
+  NotifiedAt   datetime            [note: 'Machine-owned: when the escalation flow last notified the owner. Hidden from both forms; rendered because watched_lists needs a rendered column']
+
+  indexes {
+    Status
+    Workstream
+    Severity
+    Owner
+    RaisedDate
+    RelatedRisk
+  }
+
+  Note: 'Things that have already gone wrong, recorded as facts rather than as possibilities, each owned by somebody until it is resolved.'
+}
+
+Table Decision {
+  Id           int      [pk, increment]
+  Title        nvarchar [not null, note: 'The decision, stated as a decision: "We will run the telephony pilot with one directorate only"']
+  // The proposal queue and the decision log are the same list, separated by
+  // this column alone. Proposed is the only value that is not an outcome.
+  Status       adopt_decision_status [not null, default: 'Proposed', note: 'Proposed is a paper awaiting a forum. Ratified means somebody decided under delegation and the forum validated it afterwards. Noted means the forum noted it and no decision was required']
+  // Nullable, and the Ad-Hoc catch-all activity was rejected: four of the six
+  // shipped decisions have no standing activity, and a catch-all with no real
+  // Responsible is worse than a blank the Unlinked decisions report can see.
+  Activity     int      [ref: > Activity.Id, note: 'The standing activity this proposal is raised under. Blank when there is no standing activity for it']
+  // Nullable, and the split is genuinely even: a decision belongs to a
+  // workstream or it belongs to the programme, and both cases are common.
+  Workstream   int      [ref: > Workstream.Id, note: 'The workstream this decision belongs to. Leave blank for a programme-level call']
+  SupersedesDecision int [ref: > Decision.Id, note: 'The earlier decision this one replaces, if any. Point from the new decision to the old one and leave blank when this is not a supersession']
+  ResolutionSought richtext [note: 'What the paper asked the forum to decide. Blank for a decision typed up after the fact']
+  DecisionOutcome richtext [note: 'What was actually decided, kept separate so an amended decision does not overwrite what was asked']
+  RaisedDate   date     [not null, default: '[today]', note: 'When the proposal was raised. Never blank, which is what makes it the sortable axis the queue is ordered on']
+  DecisionDate date     [note: 'When the decision was made, not when it was typed in here. Blank while the proposal is still Proposed']
+  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Decided By Forum. For Ratified, name both: the person here and the ratifying forum there']
+  // Nothing at save compares this against the activity's DecisionRoute:
+  // SharePoint cannot read two lookups across two lists in one validation
+  // formula, so route-versus-outcome drift is a reporting reconciliation.
+  DecidedByForum int    [ref: > Stakeholder.Id, note: 'The forum that decided, from the stakeholder list. For Ratified, the forum that validated the delegated decision. It may differ from the DecisionRoute on the activity, and that difference is worth reporting on']
+  RecommendedByForum int [ref: > Stakeholder.Id, note: 'The committee that recommended before the deciding forum approved. Committee recommends, board decides is the statutory default shape (Health Services Act 1988 s 65S(2)(j))']
+  Detail       richtext [note: 'Context, the options considered, and who disagreed. Enough that nobody reopens it in six months']
+  EndorsementRoute longtext [note: 'Where the paper went before it was decided: which stakeholders saw it, in what role, when, and any stakeholder that declined or did not respond, with a pointer to where each endorsement is recorded. Prose reads fine; this is evidence, not data. Lives on the item form only, never in a view']
+  LiveDecisionTitle calculated_text [note: 'Title for decisions that were actually made, blank otherwise. Every picker onto this list displays it, so nobody can cite a withdrawn proposal as authority']
+
+  // Status and RaisedDate carry the three view filters. LiveDecisionTitle is
+  // the lookup display column and cannot be indexed by SharePoint; mapping.yaml
+  // accepts that on the entity.
+  indexes {
+    Status
+    RaisedDate
+    DecisionDate
+    Workstream
+    Activity
+    SupersedesDecision
+    DecidedByForum
+    RecommendedByForum
+  }
+
+  Note: 'What the programme was asked to decide and what it decided, recorded as a decision rather than a discussion, so nobody reopens the argument later.'
+}

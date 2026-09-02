@@ -1,0 +1,9 @@
+{
+  "sections": [
+    { "displayname": "Describe the request", "fields": ["Title", "Workstream", "RequestType", "Justification"] },
+    { "displayname": "Who needs it and when", "fields": ["RequestedBy", "InternalAccountable", "NeededBy"] },
+    { "displayname": "Internal authorisation", "fields": ["Status", "AuthorisedBy", "AuthorisedDate", "AuthorisingDecision"] },
+    { "displayname": "Handling", "fields": ["AssignedTo", "MinutesSpent"] },
+    { "displayname": "Escalation", "fields": ["EscalationLevel", "EscalatedDate", "EscalatedBy", "EscalatedTo"] }
+  ]
+}
