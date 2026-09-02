@@ -104,7 +104,9 @@ DEFAULT_EVIDENCE = Evidence(
     zone=_AUS,
     note=(
         "the modern form prefilled the site's date; a REST create with the "
-        "column omitted stored the current instant"
+        "column omitted stored the current instant; under a [Modified] rule "
+        "five REST creates and a form-endpoint create all saved, the default "
+        "and Modified stamped to the same second"
     ),
 )
 
