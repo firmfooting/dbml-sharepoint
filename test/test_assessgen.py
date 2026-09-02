@@ -3,6 +3,7 @@ import json
 import re
 import textwrap
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -1539,3 +1540,41 @@ def test_a_renamed_entity_is_a_blocking_requirement_with_its_previous_titles() -
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
     assert reqs["rename:APP_Risk"].level_on_fail == "BLOCKED"
     assert "rename:APP_Action" not in reqs
+
+
+def test_group_and_level_renames_are_blocking_requirements_with_their_previous_names(
+    tmp_path: Path,
+) -> None:
+    from _packs import write_mapping
+
+    from dbml_sharepoint.analysis.group_description import marker_for_group
+    from dbml_sharepoint.analysis.list_description import family_for
+    from dbml_sharepoint.analysis.role_definition_description import marker_for_level
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+    """)
+    bundle = load_mapping(tmp_path / "m.yaml")
+    schema = make_schema(make_table("Risk", "Title", note="Risks."))
+    family = family_for(schema)
+    targets = assess_targets(schema, bundle, "default")
+    level = marker_for_level(family, "ADOPT Submit Only")
+    group = marker_for_group("ADOPT Request Handlers", family)
+    assert targets["level_renames"] == [["GOV Submit Only", [["ADOPT Submit Only", level]]]]
+    assert targets["group_renames"] == [
+        ["GOV Request Handlers", [["ADOPT Request Handlers", group]]],
+    ]
+    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    assert reqs["rename_level:GOV Submit Only"].level_on_fail == "BLOCKED"
+    assert reqs["rename_group:GOV Request Handlers"].level_on_fail == "BLOCKED"

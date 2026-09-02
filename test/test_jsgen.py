@@ -3911,3 +3911,42 @@ def test_previous_prefixes_multiply_the_previous_titles_of_every_list() -> None:
         {"title": "ADOPT_Risk", "expected_marker": risk},
         {"title": "ADOPT_ProgramRisk", "expected_marker": program},
     ]
+
+
+def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path) -> None:
+    """Each previous name pairs with the marker its own name produces, so the
+    security phase adopts a previous name only when the site holds the
+    marker that name would have been stamped with."""
+    from _packs import write_mapping
+
+    from dbml_sharepoint.analysis.group_description import marker_for_group
+    from dbml_sharepoint.analysis.list_description import family_for
+    from dbml_sharepoint.analysis.role_definition_description import marker_for_level
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Programme Leads"
+            description: "Leads."
+            renamed_from: ["{prefix} Program Governance"]
+    """)
+    bundle = load_mapping(tmp_path / "m.yaml")
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    family = family_for(schema)
+    built = build_schema_json(schema, bundle, "default")
+    level = marker_for_level(family, "ADOPT Submit Only")
+    assert built["permission_levels"][0]["previous_names"] == [
+        {"name": "ADOPT Submit Only", "expected_marker": level},
+    ]
+    assert built["groups"][0]["previous_names"] == [
+        {"name": name, "expected_marker": marker_for_group(name, family)}
+        for name in ("ADOPT Programme Leads", "GOV Program Governance", "ADOPT Program Governance")
+    ]

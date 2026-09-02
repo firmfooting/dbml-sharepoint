@@ -102,6 +102,8 @@
   "declares_prevent_deletion": false,
   "declares_seal": false,
   "declares_versioning": true,
+  "group_renames": [],
+  "level_renames": [],
   "list_markers": [
     [
       "APP_Project",
@@ -617,6 +619,49 @@
         finding(2, key, 'INFO', `'${present[0].title}' carries the marker for its previous name and will be renamed '${title}' in place, keeping its items, views, lookups and permissions.`);
       }
     }
+
+    // Level and group renames, predicted from one enumeration each: the
+    // rules are the list rules, and a guess here is an object adopted or
+    // created over somebody else's.
+    const renameFinding = async (kind, prefixKey, targetsList, enumerate, nameOf) => {
+      if (!targetsList.length) return;
+      const rows = await enumerate();
+      if (rows === null) {
+        for (const [name] of targetsList) finding(2, `${prefixKey}:${name}`, 'NOT-ASSESSABLE', `${kind}s could not be enumerated; deploy will make a fresh read.`);
+        return;
+      }
+      const byName = (name) => rows.filter((row) => String(nameOf(row)).toLowerCase() === String(name).toLowerCase());
+      for (const [name, previousNames] of targetsList) {
+        const key = `${prefixKey}:${name}`;
+        const present = [];
+        for (const [oldName, oldMarker] of previousNames) {
+          for (const row of byName(oldName)) {
+            const held = typeof row.Description === 'string' ? row.Description : '';
+            present.push({ name: oldName, marker: oldMarker, carries: held.includes(oldMarker) });
+          }
+        }
+        const named = present.map((p) => `'${p.name}'`).join(', ');
+        if (present.length === 0) {
+          finding(2, key, 'PASS', `No previous name of ${kind} '${name}' exists; nothing to rename.`);
+        } else if (byName(name).length > 0) {
+          finding(2, key, 'BLOCKED', `${kind} '${name}' exists and so does its previous name ${named}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`);
+        } else if (present.length > 1) {
+          finding(2, key, 'BLOCKED', `More than one previous name of ${kind} '${name}' exists (${named}); deploy cannot choose which to rename.`);
+        } else if (!present[0].carries) {
+          finding(2, key, 'BLOCKED', `${kind} '${present[0].name}' exists but does not carry the exact provenance marker for its previous name "${present[0].marker}". Deploy will not adopt or rename it; restore that marker only if this tool created it.`);
+        } else {
+          finding(2, key, 'INFO', `${kind} '${present[0].name}' carries the marker for its previous name and will be renamed '${name}' in place, keeping its ${kind === 'site group' ? 'members' : 'assignments'}.`);
+        }
+      }
+    };
+    await renameFinding('permission level', 'rename_level', TARGETS.level_renames || [], async () => {
+      const r = await probeGet('web/roledefinitions?$select=Name,Description&$top=5000');
+      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+    }, (row) => row.Name);
+    await renameFinding('site group', 'rename_group', TARGETS.group_renames || [], async () => {
+      const r = await probeGet('web/sitegroups?$select=Title,Description&$top=5000');
+      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+    }, (row) => row.Title);
 
     // Property-surface probes against the first EXISTING declared list, else
     // the site's own lists: 200 PASS, non-200 WARN.

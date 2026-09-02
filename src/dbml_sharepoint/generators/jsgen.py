@@ -795,6 +795,12 @@ def build_schema_json(
                 # level another family stamped cannot satisfy this family's
                 # adoption test.
                 "expected_marker": marker_for_level(family, lvl.name),
+                # Each previous name pairs with the marker its own name
+                # produces; the security phase adopts one only under that.
+                "previous_names": [
+                    {"name": previous, "expected_marker": marker_for_level(family, previous)}
+                    for previous in lvl.previous_names
+                ],
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 
@@ -812,6 +818,10 @@ def build_schema_json(
                 # against the shared prefix, so a group another family
                 # stamped cannot satisfy this family's adoption test.
                 "expected_marker": marker_for_group(grp.name, family),
+                "previous_names": [
+                    {"name": previous, "expected_marker": marker_for_group(previous, family)}
+                    for previous in grp.previous_names
+                ],
                 "owner_group": grp.owner_group,
                 "allow_members_edit_membership": grp.allow_members_edit_membership,
                 "allow_request_to_join_leave": grp.allow_request_to_join_leave,

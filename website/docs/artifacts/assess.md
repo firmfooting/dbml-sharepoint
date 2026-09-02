@@ -69,7 +69,9 @@ Findings roll up per requirement key to a single line:
   requirement blocks when a list under one of the entity's `renamed_from`
   titles does not carry the exact marker for that previous name, when it
   exists beside the current title, or when two previous titles exist; it
-  reports `INFO` naming the list deploy will retitle in place.
+  reports `INFO` naming the list deploy will retitle in place. `rename_level:`
+  and `rename_group:` do the same for permission levels and site groups,
+  from one enumeration each.
 
 `assess-manifest.md` documents what will be probed and how to read the
 result, so the verdict can be shared with a site owner who never sees

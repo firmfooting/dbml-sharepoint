@@ -106,6 +106,8 @@
   "declares_prevent_deletion": false,
   "declares_seal": false,
   "declares_versioning": true,
+  "group_renames": [],
+  "level_renames": [],
   "list_markers": [
     [
       "APP_Project",
@@ -162,6 +164,8 @@
   const summary = {
     listsCreated: [],
     listsRenamed: [],
+    levelsRenamed: [],
+    groupsRenamed: [],
     listsSkipped: [],
     columnsCreated: 0,
     columnsSkipped: 0,
@@ -656,6 +660,49 @@
         finding(2, key, 'INFO', `'${present[0].title}' carries the marker for its previous name and will be renamed '${title}' in place, keeping its items, views, lookups and permissions.`);
       }
     }
+
+    // Level and group renames, predicted from one enumeration each: the
+    // rules are the list rules, and a guess here is an object adopted or
+    // created over somebody else's.
+    const renameFinding = async (kind, prefixKey, targetsList, enumerate, nameOf) => {
+      if (!targetsList.length) return;
+      const rows = await enumerate();
+      if (rows === null) {
+        for (const [name] of targetsList) finding(2, `${prefixKey}:${name}`, 'NOT-ASSESSABLE', `${kind}s could not be enumerated; deploy will make a fresh read.`);
+        return;
+      }
+      const byName = (name) => rows.filter((row) => String(nameOf(row)).toLowerCase() === String(name).toLowerCase());
+      for (const [name, previousNames] of targetsList) {
+        const key = `${prefixKey}:${name}`;
+        const present = [];
+        for (const [oldName, oldMarker] of previousNames) {
+          for (const row of byName(oldName)) {
+            const held = typeof row.Description === 'string' ? row.Description : '';
+            present.push({ name: oldName, marker: oldMarker, carries: held.includes(oldMarker) });
+          }
+        }
+        const named = present.map((p) => `'${p.name}'`).join(', ');
+        if (present.length === 0) {
+          finding(2, key, 'PASS', `No previous name of ${kind} '${name}' exists; nothing to rename.`);
+        } else if (byName(name).length > 0) {
+          finding(2, key, 'BLOCKED', `${kind} '${name}' exists and so does its previous name ${named}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`);
+        } else if (present.length > 1) {
+          finding(2, key, 'BLOCKED', `More than one previous name of ${kind} '${name}' exists (${named}); deploy cannot choose which to rename.`);
+        } else if (!present[0].carries) {
+          finding(2, key, 'BLOCKED', `${kind} '${present[0].name}' exists but does not carry the exact provenance marker for its previous name "${present[0].marker}". Deploy will not adopt or rename it; restore that marker only if this tool created it.`);
+        } else {
+          finding(2, key, 'INFO', `${kind} '${present[0].name}' carries the marker for its previous name and will be renamed '${name}' in place, keeping its ${kind === 'site group' ? 'members' : 'assignments'}.`);
+        }
+      }
+    };
+    await renameFinding('permission level', 'rename_level', TARGETS.level_renames || [], async () => {
+      const r = await probeGet('web/roledefinitions?$select=Name,Description&$top=5000');
+      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+    }, (row) => row.Name);
+    await renameFinding('site group', 'rename_group', TARGETS.group_renames || [], async () => {
+      const r = await probeGet('web/sitegroups?$select=Title,Description&$top=5000');
+      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+    }, (row) => row.Title);
 
     // Property-surface probes against the first EXISTING declared list, else
     // the site's own lists: 200 PASS, non-200 WARN.
@@ -1213,6 +1260,7 @@
       "name": "List Maintainer",
       "only_allow_members_view_membership": false,
       "owner_group": "Site Owners",
+      "previous_names": [],
       "require_empty_at_deploy": true
     }
   ],
@@ -1482,7 +1530,8 @@
       },
       "description": "Test permission level. Provisioned by dbml-sharepoint from simple-test for level Schema Manager.",
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for level Schema Manager.",
-      "name": "Schema Manager"
+      "name": "Schema Manager",
+      "previous_names": []
     }
   ],
   "phase2_lookups": [],
@@ -3078,6 +3127,128 @@
     // here, on the same per-object catch a genuine survey failure already
     // used, so both land in summary.errors identically and the gate further
     // down treats them alike.
+    // === Renames in place, before any survey ===
+    // A level or group found under a previous name carrying that name's own
+    // marker, with the current name absent, is retitled by id and read
+    // back. Every rename is planned read-only first, and one refusal
+    // anywhere aborts before any of them is written.
+    const verbose = { headers: { 'Accept': 'application/json;odata=verbose' } };
+    const principalRenames = [];
+    // Counted apart from summary.errors: a refused phase digest is already
+    // recorded above, belongs to the phase's own gate, and must not read
+    // as a rename refusal.
+    let renameFailures = 0;
+    if (summary.errors.length === 0) {
+      const refusals = [];
+      const decide = (label, current, currentExists, found) => {
+        const names = found.map((f) => `'${f.name}'`).join(', ');
+        if (found.length === 0) return null;
+        if (currentExists) {
+          return `${label} '${current}' exists and so does its previous name ${names}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`;
+        }
+        if (found.length > 1) {
+          return `more than one previous name of ${label} '${current}' exists (${names}); deploy cannot choose which to rename. Remove or retitle all but one by hand.`;
+        }
+        if (!found[0].carries) {
+          return `${label} '${found[0].name}' exists but does not carry the exact provenance marker for its previous name ("${found[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created it.`;
+        }
+        return null;
+      };
+      const carries = (description, marker) => typeof description === 'string' && marker.length > 0 && description.indexOf(marker) !== -1;
+      try {
+        for (const lvl of SCHEMA.permission_levels) {
+          if (!(lvl.previous_names || []).length) continue;
+          const found = [];
+          for (const previous of lvl.previous_names) {
+            for (const row of await probeLevelExistence(previous.name)) {
+              found.push({ name: previous.name, marker: previous.expected_marker, id: row.Id, carries: carries(row.Description, previous.expected_marker) });
+            }
+          }
+          if (found.length === 0) continue;
+          const currentExists = (await probeLevelExistence(lvl.name)).length > 0;
+          const refusal = decide('permission level', lvl.name, currentExists, found);
+          if (refusal) refusals.push(refusal);
+          else principalRenames.push({ object: 'level', from: found[0].name, to: lvl.name, id: found[0].id, marker: found[0].marker, description: lvl.description });
+        }
+        if (SCHEMA.groups.some((g) => (g.previous_names || []).length)) {
+          // One enumeration with descriptions, so the marker check costs no
+          // probe per previous name.
+          const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Id,Title,Description&$top=5000'), verbose);
+          if (!r.ok) throw new Error(`site group enumeration for renames failed: HTTP ${r.status} ${spError(await r.text())}`);
+          const rows = (((await r.json()) || {}).d || {}).results || [];
+          const byName = (name) => rows.filter((g) => nameKey(g.Title) === nameKey(name));
+          for (const grp of SCHEMA.groups) {
+            if (!(grp.previous_names || []).length) continue;
+            const found = [];
+            for (const previous of grp.previous_names) {
+              for (const row of byName(previous.name)) {
+                found.push({ name: previous.name, marker: previous.expected_marker, id: row.Id, carries: carries(row.Description, previous.expected_marker) });
+              }
+            }
+            if (found.length === 0) continue;
+            const refusal = decide('site group', grp.name, byName(grp.name).length > 0, found);
+            if (refusal) refusals.push(refusal);
+            else principalRenames.push({ object: 'group', from: found[0].name, to: grp.name, id: found[0].id, marker: found[0].marker, description: grp.description });
+          }
+        }
+      } catch (err) {
+        refusals.push(`rename planning failed: ${err.message}`);
+      }
+      for (const reason of refusals) {
+        log('ERROR', `Phase 1.4 rename: ${reason}`);
+        summary.errors.push({ phase: '1.4', error: reason });
+        renameFailures += 1;
+      }
+      if (refusals.length === 0) {
+        for (const plan of principalRenames) {
+          const label = plan.object === 'level' ? 'permission level' : 'site group';
+          const nameKeyOf = plan.object === 'level' ? 'Name' : 'Title';
+          // Two literal shapes rather than one interpolated path, so the
+          // endpoint inventory in test_template_lint.py can see both.
+          const renameUrl = (q = '') => (plan.object === 'level'
+            ? apiUrl(`web/roledefinitions(${plan.id})${q}`)
+            : apiUrl(`web/sitegroups(${plan.id})${q}`));
+          try {
+            // Re-read at write time: the plan is not authority over an object
+            // something else may have touched since.
+            const before = await fetchWithRetry(renameUrl(`?$select=Id,${nameKeyOf},Description`), verbose);
+            if (!before.ok) throw new Error(`could not re-read ${label} '${plan.from}' before the rename: HTTP ${before.status}`);
+            const held = (((await before.json()) || {}).d || {});
+            if (nameKey(held[nameKeyOf]) !== nameKey(plan.from) || !carries(held.Description, plan.marker)) {
+              throw new Error(`${label} '${plan.from}' no longer carries the marker for its previous name, or is no longer the object the plan read; nothing was renamed.`);
+            }
+            const digest = await getDigest();
+            const body = plan.object === 'level'
+              ? { __metadata: { type: 'SP.RoleDefinition' }, Name: plan.to, Description: plan.description }
+              : { __metadata: { type: 'SP.Group' }, Title: plan.to, Description: plan.description };
+            const merged = await fetchWithRetry(renameUrl(), {
+              method: 'POST',
+              headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+              body: JSON.stringify(body),
+            });
+            if (!merged.ok) throw new Error(`rename MERGE failed: HTTP ${merged.status} ${spError(await merged.text())}`);
+            const after = await fetchWithRetry(renameUrl(`?$select=Id,${nameKeyOf},Description`), verbose);
+            if (!after.ok) throw new Error(`readback after the rename failed: HTTP ${after.status}`);
+            const back = (((await after.json()) || {}).d || {});
+            if (back[nameKeyOf] !== plan.to || back.Description !== plan.description) {
+              throw new Error(`${label} '${plan.from}' read back as '${back[nameKeyOf]}' with Description ${JSON.stringify(back.Description)} after writing '${plan.to}'; the rename did not take.`);
+            }
+            (plan.object === 'level' ? summary.levelsRenamed : summary.groupsRenamed).push({ from: plan.from, to: plan.to });
+            log('INFO', `Renamed ${label} '${plan.from}' to '${plan.to}' in place (read back by id).`);
+          } catch (err) {
+            log('ERROR', `Phase 1.4 rename '${plan.from}' -> '${plan.to}': ${err.message}`);
+            summary.errors.push({ phase: '1.4', error: err.message });
+            renameFailures += 1;
+            break;
+          }
+        }
+      }
+    }
+    if (renameFailures > 0) {
+      log('ERROR', 'Phase 1.4 rename planning or rename failed; aborting before any level or group is surveyed.');
+      return { ...summary, aborted: 'phase-0-rename-errors' };
+    }
+
     const decisions = [];
 
     for (const lvl of SCHEMA.permission_levels) {
