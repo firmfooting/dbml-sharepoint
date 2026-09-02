@@ -1293,3 +1293,62 @@ def test_the_formula_limit_is_measured_with_display_names_but_not_inside_literal
     assert len("=" + to_validation(built.when, types)) == MAX_VALIDATION_FORMULA
     errors = _project_errors(list_validation={"Project": built}, display_name_mode="auto")
     none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
+
+
+def _event_findings(**sections: Any) -> list[Finding]:
+    """An entity with a datetime column, which the Project fixture lacks."""
+    schema = make_schema(
+        make_table(
+            "Event",
+            column("Title", required=True),
+            column("OccurredAt", "datetime"),
+            column("Due", "date"),
+            note="Events with a time of day.",
+        ),
+    )
+    return list(validate_against_mapping(schema, make_bundle(entities=["Event"], **sections)))
+
+
+def _clock_rule(field: str, value: str) -> Group:
+    return Group("all_of", (Leaf(field=field, op="leq", value=value),))
+
+
+def test_an_offset_today_on_a_datetime_column_warns_that_it_reads_the_formula_clock() -> None:
+    """The one emitted shape that still renders TODAY(): the window it
+    declares lands 16 to 20 hours from where it reads. A warning, not an
+    error, because the offset form is the only datetime window the grammar
+    has, and the manifest shows what was written."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(when=_clock_rule("OccurredAt", "today+1"), message="Not after tomorrow")
+    findings = _event_findings(
+        column_validation={"Event": EntitySection(columns={"OccurredAt": rule})},
+    )
+    assert by_severity(findings, "error") == []
+    warning = only(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
+    assert "OccurredAt" in warning.message
+    assert "now" in warning.message
+    assert warning.location is not None
+
+
+def test_a_declared_list_rule_with_the_same_shape_warns_too() -> None:
+    """Nothing is hoisted here, so the walk over the effective rule must not
+    skip an entity whose list rule is the declared one alone."""
+    findings = _event_findings(
+        list_validation={
+            "Event": ListValidation(when=_clock_rule("OccurredAt", "today-1"), message="m"),
+        },
+    )
+    only(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
+
+
+def test_a_date_column_against_an_offset_today_does_not_warn() -> None:
+    """A date-only column is compared with the save instant, whatever the
+    offset; only a datetime reads the clock."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(when=_clock_rule("Due", "today+30"), message="m")
+    findings = _event_findings(
+        column_validation={"Event": EntitySection(columns={"Due": rule})},
+    )
+    none_of(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)

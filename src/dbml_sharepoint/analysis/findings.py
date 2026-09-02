@@ -432,6 +432,7 @@ class FindingCode(StrEnum):
     CONDITION_PROPERTY_REQUIRED = "condition_property_required", "error"
     CONDITION_PROPERTY_UNKNOWN = "condition_property_unknown", "error"
     CONDITION_PROPERTY_UNRENDERABLE = "condition_property_unrenderable", "error"
+    CONDITION_READS_THE_FORMULA_CLOCK = "condition_reads_the_formula_clock", "warning"
     CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR = (
         "condition_sentinel_with_a_substring_operator", "error"
     )

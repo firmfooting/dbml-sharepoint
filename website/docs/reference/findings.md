@@ -78,6 +78,7 @@ dbml-sharepoint explain unknown_column_type
 | `condition_property_required` | error | A person or lookup column needs an accessor; there is no defensible default between a name, an email and an id. |
 | `condition_property_unknown` | error | The accessor is not one this column kind offers. |
 | `condition_property_unrenderable` | error | The target cannot reach person or lookup sub-properties at all. |
+| `condition_reads_the_formula_clock` | warning | `today±N` compared on a datetime column in a validation rule renders TODAY()±N, and that clock was measured 16 to 20 hours behind the site (2026-09-02), so the window lands hours away from where it reads; `now` compares with the instant of the save exactly. |
 | `condition_sentinel_with_a_substring_operator` | error | A `today`/`now` sentinel was combined with a substring test, which would search for the sentinel's own spelling. |
 | `condition_set_empty` | error | `in`/`not_in` was given an empty list, which is a constant rather than a condition. |
 | `condition_substring_test_on_a_non_text_column` | error | A substring operator was applied to a boolean, number, date or person column. |
