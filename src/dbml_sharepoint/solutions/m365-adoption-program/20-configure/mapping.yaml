@@ -1,0 +1,2258 @@
+# M365 adoption programme: physical mapping. Nine lists on one site, merging a
+# programme delivery layer (raid-log) with a standing accountability layer
+# (raci-matrix) and a service request queue for tenant-level change.
+# GOV names what the lists are, governance, which is the level the other
+# families name at (RR, RACI, RAID), rather than the programme instance.
+# Groups and levels take the stem through the {prefix} placeholder.
+prefix: "GOV_"
+# The live site was provisioned with no list prefix while its groups and
+# levels were typed under ADOPT, so both stems are previous ones: each list
+# is renamed in place from its bare title, each group and level from its
+# ADOPT name.
+previous_prefixes: ["", "ADOPT_"]
+
+entities:
+  Workstream:     { kind: List, base_template: 100, site_role: default }
+  # renamed_from reaches back to the titles on the live site, which was
+  # provisioned unprefixed from a pre-1.1.0 copy, so one redeploy renames
+  # each list in place instead of creating a second one beside it.
+  Stakeholder:    { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [ProgramStakeholders, ProgramParty] }
+  Activity:       { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [ProgramActivity] }
+  Involvement:    { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [ProgramInvolvement] }
+  ServiceRequest: { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [TenantRequest] }
+  # The RelatedRisk picker shows LiveRiskTitle, which is calculated and so
+  # cannot be indexed. raid-log's trade, taken for the same reason.
+  Risk:           { kind: List, base_template: 100, site_role: default,
+                    display_column: LiveRiskTitle,
+                    accept_unindexable_display_column: true,
+                    renamed_from: [ProgramRisk] }
+  Action:         { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [ProgramAction] }
+  Issue:          { kind: List, base_template: 100, site_role: default,
+                    renamed_from: [ProgramIssue] }
+  # Same trade again, for the same reason: every picker onto the decision log
+  # shows LiveDecisionTitle, so a proposal nobody approved cannot be cited as
+  # authority. A lookup picker cannot be filtered, and a calculated column
+  # cannot be indexed.
+  Decision:       { kind: List, base_template: 100, site_role: default,
+                    display_column: LiveDecisionTitle,
+                    accept_unindexable_display_column: true,
+                    renamed_from: [ProgramDecision] }
+
+cross_site_reference_columns: []
+
+# The reporting pack carries Created By, Created, Modified By and Modified
+# on every list, and a _Users dimension every person column joins.
+# 50-govern/reporting-joins.md reads both: "an edit is not a confirmation"
+# is LastConfirmed against Modified, and the RACI counts by person need
+# department and job title from the user list.
+reporting:
+  system_columns: true
+  users_table: true
+
+# 200 on the three accountability lists because version history is this
+# family's audit for self-service confirmation: anyone named Responsible or
+# Accountable may correct their own row, and the quarterly review reads the
+# history of every row changed since the last one. raci-matrix's number.
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides:
+    Activity:    { major_version_limit: 200 }
+    Stakeholder:       { major_version_limit: 200 }
+    Involvement: { major_version_limit: 200 }
+
+enum_sources: {}
+
+# Every (entity, column) pair the four phase-2 flows bind to, declared now,
+# while no flow exists. Power Automate binds by INTERNAL name, so a rename is
+# a new column to the deployer: the old one becomes undeclared drift, the new
+# one is empty, and the flow keeps running and reads nothing. Declared here, a
+# rename leaves an entry naming a column that no longer renders and the build
+# fails with watched_column_not_rendered.
+#
+# Display titles are changed through display_names.overrides instead, which
+# leaves the internal name alone.
+#
+# Flow A (Monday digest) reads Action and Activity; B (request
+# recorded) and C (stalled request queue) read ServiceRequest; D (severe issue)
+# reads and stamps Issue.
+watched_lists:
+  - { entity: Action, column: Title }
+  - { entity: Action, column: Workstream }
+  - { entity: Action, column: AssignedTo }
+  - { entity: Action, column: DueDate }
+  - { entity: Action, column: Status }
+  - { entity: Activity, column: Title }
+  # Not in flow A's read list, but in its payload ("title, due or confirmation
+  # date, workstream, and a link"), so the flow binds it.
+  - { entity: Activity, column: Workstream }
+  - { entity: Activity, column: Responsible }
+  - { entity: Activity, column: Accountable }
+  - { entity: Activity, column: Criticality }
+  - { entity: Activity, column: ReviewStatus }
+  - { entity: Activity, column: ConfirmationDue }
+  - { entity: ServiceRequest, column: Title }
+  - { entity: ServiceRequest, column: Workstream }
+  - { entity: ServiceRequest, column: RequestType }
+  - { entity: ServiceRequest, column: RequestedBy }
+  - { entity: ServiceRequest, column: InternalAccountable }
+  - { entity: ServiceRequest, column: Status }
+  - { entity: ServiceRequest, column: NeededBy }
+  # Flow C reads who holds a stalled request, so it binds the handler.
+  - { entity: ServiceRequest, column: AssignedTo }
+  - { entity: ServiceRequest, column: EscalationLevel }
+  - { entity: Issue, column: Title }
+  - { entity: Issue, column: Workstream }
+  - { entity: Issue, column: Owner }
+  - { entity: Issue, column: Severity }
+  # The guard on flow D's created-or-modified trigger. Machine-owned, hidden
+  # from both forms, and rendered only because a watched column must be.
+  - { entity: Issue, column: NotifiedAt }
+
+# The 5x5 matrix, carried from raid-log unchanged (rows = likelihood
+# Rare..Almost Certain; columns = consequence Minor..Business Critical):
+#
+#                 Minor   Moderate  Substantial  Major    Business Critical
+#  Rare           Low     Low       Low          Medium   Medium
+#  Unlikely       Low     Low       Medium       Medium   High
+#  Likely         Low     Medium    Medium       High     High
+#  Very Likely    Medium  Medium    High         High     Extreme
+#  Almost Certain Medium  High      High         Extreme  Extreme
+#
+# RiskScore is the matrix score 1-25, for sorting. Both formulas are keyed to
+# EXACTLY the five Likelihood and five Consequence members in the schema, in
+# that order: the nested IFs map the first four by name and treat everything
+# else as the fifth, so an added, renamed or reordered member silently rates as
+# the worst case rather than failing. The matrix is 5x5, so changing the enums
+# means rewriting the 25 cells anyway.
+#
+# ConfirmationDue carries raci-matrix's known month-end overflow (its issue
+# #5): DATE(YEAR(d), MONTH(d)+N, DAY(d)) overflows rather than clamping, so a
+# confirmation recorded on 31 August falls due on 3 March rather than 28
+# February. Not fixed here on purpose. Fixing it in one of three families that
+# share the formula forks a defect that should be fixed once, upstream.
+calculated_formulas:
+  Risk:
+    ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
+    # The RelatedRisk picker shows this column. Blank for Closed means the
+    # picker offers only live risks: below the 5,000-item threshold a blank
+    # calculated label is simply omitted from the picker.
+    LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
+  Decision:
+    # Every picker onto this list shows this column. Approved and Ratified are
+    # the two states that carry authority; a Proposed, Rejected, Withdrawn or
+    # Noted row is blank here and so is not offered.
+    LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Ratified"),[Title],"")'
+  Activity:
+    ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])))'
+
+# Projections cost no join. Each RelatedRisk lookup projects the target's real
+# Title onto the source list as a read-only dependent field
+# (RelatedRiskTitle): the picker shows LiveRiskTitle, blank once a risk is
+# Closed, while views show the projected Title, so a closed risk still reads
+# by name.
+#
+# Action.Workstream projects Phase as WorkstreamPhase. A lookup picker
+# cannot be filtered, so an action cannot be PREVENTED from being filed
+# against a closed workstream; rendering the phase beside it makes the mistake
+# visible in every action view instead. A calculated LiveWorkstreamTitle
+# blanking closed workstreams was rejected: Workstream is not null on four
+# lists, and a required field showing nothing on the Edit form of an old row
+# reads as a bug.
+#
+# The four decision lookups project Title for the same reason the risk lookups
+# do. The picker shows LiveDecisionTitle so only a decision that was actually
+# made can be selected, while the projected Title keeps the row readable if
+# that decision is later withdrawn and its live title goes blank.
+lookup_projections:
+  Action:
+    RelatedRisk: [Title]
+    Workstream: [Phase]
+    AuthorisingDecision: [Title]
+  Issue:
+    RelatedRisk: [Title]
+  ServiceRequest:
+    AuthorisingDecision: [Title]
+  Risk:
+    ToleranceDecision: [Title]
+  Decision:
+    SupersedesDecision: [Title]
+
+# Group membership is neither declared nor reconciled by the deployer, so
+# populating these is a documented post-deploy step with a release-checklist
+# line. require_empty_at_deploy is deliberately NOT set on any family
+# group: the next deployment would reject a correctly populated group.
+groups:
+  - name: "{prefix} Programme Leads"
+    # The live site holds this group under its old base name; the redeploy
+    # renames it in place and keeps its members.
+    renamed_from: ["{prefix} Program Governance"]
+    description: "The programme owner, the governance lead and executive support. Contribute on every list, and the principal that authorises a service request."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  # Deliberately wide: everyone currently named Responsible or Accountable,
+  # plus governance. SharePoint cannot express "edit only your own row"
+  # against an arbitrary person column (its item-level setting keys on Created
+  # By, and an accountability row is typically created by a maintainer, not by
+  # the person it names), so the mechanism is a wide group with no delete and
+  # no version pruning, and version history read quarterly as the audit.
+  - name: "{prefix} Accountability Maintainers"
+    description: "Everyone named Responsible or Accountable on an activity, plus governance. Confirms and corrects their own rows; cannot delete a row or prune its history."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  # The provider staff who work the requests. Contribute No Delete on
+  # ServiceRequest only: a handler edits the request they hold and nothing
+  # else on the site, and a deleted request is an authorisation record gone.
+  - name: "{prefix} Request Handlers"
+    description: "The provider staff who work service requests. Add and edit on Service Request only: assign, progress, hand back, close and record the minutes spent; no deleting."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+# Both levels are family-prefixed so the permission-level adoption gate cannot
+# collide with a level already present on the site.
+#
+# Submit Only is change-register's measured eight permissions, unchanged.
+# Contribute No Delete is that set plus EditListItems and OpenItems, and
+# is NOT itself a measured precedent: it is composed from one, and
+# 50-govern/governance.md carries the two-account probe it needs.
+# DeleteListItems is absent so the never-delete posture on stakeholders, decisions
+# and service requests has a mechanism rather than a habit; DeleteVersions is absent
+# because version history is this family's audit and an audit somebody can
+# prune is not one; ManageLists is absent because it carries structural
+# authority.
+permission_levels:
+  - name: "{prefix} Submit Only"
+    description: "Record a service request and read every list; no editing, no deleting, no schema rights. Corrections to a request go through governance."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+  - name: "{prefix} Contribute No Delete"
+    description: "Add and edit items, and read version history; no deleting an item, no pruning its history, no schema rights. The audit for self-service confirmation."
+    base_permissions:
+      - AddListItems
+      - EditListItems
+      - ViewListItems
+      - OpenItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+# Five classes. The default is class B, the delivery layer, which
+# Risk, Action and Issue use: everybody records, because
+# an issue somebody could not type is a lost issue, and delete stays available
+# because these three are the working surface.
+#
+# Every override below is a COMPLETE policy rather than an addition to the
+# default. reconcile: exact means the ACL phase removes anything not named
+# here, which is also what would silently kill a phase-2 flow granted access
+# by hand.
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "{prefix} Programme Leads" }
+        level: "Contribute"
+      - principal: { kind: associated_member_group }
+        level: "Contribute"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+  overrides:
+    # Class A, the spine. The programme's decomposition is a governance
+    # record: phase, ordering, dates and closure are not everybody's to
+    # change, and the tax is better paid at data entry than later in a
+    # disputed phase status.
+    Workstream:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "Contribute"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+    # Class D, accountability. Broad edit through the maintainer group so the
+    # people a row names can confirm and correct it; no delete and no version
+    # pruning, so the worst a disagreement produces is a row that changed,
+    # visibly, twice.
+    Activity:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "Contribute"
+        - principal: { kind: group, name: "{prefix} Accountability Maintainers" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+    Stakeholder:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "Contribute"
+        - principal: { kind: group, name: "{prefix} Accountability Maintainers" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+    Involvement:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "Contribute"
+        - principal: { kind: group, name: "{prefix} Accountability Maintainers" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+    # Class E, the request surface. Anyone on the site may record a request;
+    # only governance and the handlers may change one afterwards. If only the
+    # programme owner could raise a request, workstream leads would route
+    # around the bottleneck and the record would stop being complete. Paired
+    # with the New-form visibility rules below: neither half is the control
+    # on its own. Handlers hold Contribute No Delete because a request is an
+    # authorisation record once governance has moved it, and Withdrawn is how
+    # one ends.
+    ServiceRequest:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "Contribute"
+        - principal: { kind: group, name: "{prefix} Request Handlers" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "{prefix} Submit Only"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+    # Class C, the durable record. Broad creation is kept, because a decision
+    # nobody could type is a decision that gets relitigated; deletion is
+    # withheld from everybody short of an administrator, because the log's
+    # whole value is that it survives. Governance and the owner group hold
+    # Contribute No Delete for the same reason maintainers do on
+    # Activity: the people most likely to tidy the list are the ones
+    # whose deletions would be hardest to notice, and a Withdrawn status
+    # already covers the honest case.
+    Decision:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Programme Leads" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_owner_group }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+
+# UI hardening (tamper-resilience): site owners and administrators bypass
+# every ACL, so the realistic threat is well-meaning UI tampering. Sealed
+# columns block schema edits and column deletion through the UI even for site
+# admins; prevent_list_deletion blocks UI deletion of the list objects
+# (rollback.js clears it per list after you confirm that list's deletion).
+# Friction and tamper-evidence, not enforcement.
+#
+# Attachments are the gap these two do not close. There is no attachments key
+# in mapping.yaml and the deployer neither sets nor reconciles the setting, so
+# disabling attachments on all nine lists is a manual go-live step in
+# 30-deploy/deploy.md. It is the only privacy control a redeploy does not
+# reassert.
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+  overrides:
+    Stakeholder:
+      # UAT live-run feedback (family issue #2): the column reaches external
+      # bodies generally, not only service desks. The internal name stays
+      # ServiceDeskAddress; views, Power Query and SQL key on it.
+      ServiceDeskAddress: "External Contact Details"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), SharePoint's own severity boxes and icons, tokens resolved
+# by the style library.
+#
+# Deliberate omissions. ActivityKind and ActivityRole are axes rather than
+# states (what the activity IS, and what standing position it confers), and
+# raci-matrix leaves the first unformatted for that reason; colouring them
+# would hand the fleet's severity vocabulary a second meaning. RiskResponse is
+# a taxonomy of strategies, same reason. RaisedDate, ResolvedDate,
+# AuthorisedDate, EscalatedDate and DecisionDate record when something
+# HAPPENED and are not deadlines. Decision carries formatting on Status
+# only, and that column is a lifecycle rather than a severity: a decision is
+# not more or less severe, but a proposal nobody has answered yet reads
+# differently from one that was approved.
+column_formatting:
+  Workstream:
+    Phase: { style: pill,
+             map: { "Not started": muted, Discovery: neutral, Pilot: low,
+                    Rollout: low, Embedding: good, Closed: muted } }
+    TargetEndDate: { style: overdue-date, guard: { field: Phase, not: [Closed] } }
+  Stakeholder:
+    StakeholderKind: { style: pill,
+                 map: { Individual: neutral, Role: neutral, Forum: low, External: muted } }
+    Status: { style: severity, map: { Active: low, Inactive: muted } }
+  Activity:
+    Criticality: { style: severity, map: { Statutory: severe, High: warning, Routine: good } }
+    ReviewStatus: { style: severity,
+                    map: { Current: low, "Needs review": warning, Retired: muted } }
+    ConfirmationDue: { style: overdue-date, calculated: true,
+                       guard: { field: ReviewStatus, not: [Retired] } }
+  Involvement:
+    Involvement: { style: pill,
+                   map: { Agree: warning, Consulted: low, Informed: neutral } }
+  ServiceRequest:
+    # Warning is "with the provider" and severe is "blocked on us": a request
+    # handed back is the one the health service has to act on.
+    Status: { style: severity,
+              map: { Drafted: neutral, Authorised: low, "In progress": warning,
+                     "Waiting on requester": severe, Closed: good, Withdrawn: muted } }
+    EscalationLevel: { style: severity,
+                       map: { "1 Program": low, "2 Directorate": warning,
+                              "3 Contractual": severe, "4 Executive": blocked } }
+    NeededBy: { style: overdue-date, guard: { field: Status, not: [Closed, Withdrawn] } }
+  Risk:
+    Status: { style: severity, map: { Open: low, Closed: good } }
+    ResidualRiskRating: { style: severity, calculated: true,
+                          map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    # Data-bar with the fill translated from the rating column via the
+    # severity tokens, the same map the rating column declares, so bar and
+    # rating cell can never disagree.
+    RiskScore: { style: data-bar, max: 25, calculated: true,
+                 color_by: { field: ResidualRiskRating, calculated: true,
+                             map: { Low: good, Medium: warning, High: severe,
+                                    Extreme: blocked } } }
+    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+  Action:
+    Status: { style: severity,
+              map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
+    DueDate: { style: overdue-date, guard: { field: Status, not: [Done, Dropped] } }
+  Issue:
+    Severity: { style: severity,
+                map: { Minor: low, Moderate: warning, Major: severe, Critical: blocked } }
+    Status: { style: severity,
+              map: { Open: low, "In progress": low, Resolved: good, Closed: muted } }
+  Decision:
+    # Lifecycle, not severity. Proposed is the only value that is not an
+    # outcome, so it is the one that has to stand out in the queue.
+    Status: { style: severity,
+              map: { Proposed: warning, Approved: good, Ratified: good,
+                     Rejected: muted, Withdrawn: muted, Noted: neutral } }
+
+# Every action view and every issue view opens with the same identifying
+# columns and then its own payload, so each spine is declared once.
+# WorkstreamPhase is the projected read-only phase of the action's workstream:
+# it is in the spine because an action filed against a closed workstream is
+# the failure the projection exists to reveal.
+field_sets:
+  Action:
+    action: [Title, Workstream, WorkstreamPhase, AssignedTo, DueDate, Status]
+  Issue:
+    issue: [Title, Workstream, Severity, Status, Owner, RaisedDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared views
+# are never touched). Widths are pixel ColumnWidth per view and the keys are
+# INTERNAL names. The build rewrites them to display titles, because
+# ColumnWidth binds by display name and an internal name silently resets.
+#
+# Each list's default is the view its readers open it on: the question that
+# list answers, asked in the first person where the reader is a person.
+views:
+  Workstream:
+    # The whole programme on one screen, five to eight rows, read first at the
+    # monthly steering group.
+    - title: "The programme"
+      default: true
+      fields: [Title, Sequence, Phase, StartDate, TargetEndDate, Purpose]
+      sort:
+        - { field: Sequence, direction: asc }
+      widths:
+        Title: 300
+        Sequence: 100
+        Phase: 130
+        StartDate: 160
+        TargetEndDate: 160
+        Purpose: 280
+  Stakeholder:
+    # Carries Contact AND ServiceDeskAddress on purpose: an External stakeholder
+    # with no service desk address and a non-Forum internal stakeholder with no
+    # contact are both quarterly checks that no save rule can make, because
+    # person operands are refused in validation formulas. A blank has to be
+    # visible while somebody is reading.
+    - title: "Active stakeholders"
+      renamed_from: ["Active parties"]
+      default: true
+      fields: [Title, StakeholderKind, Contact, ServiceDeskAddress, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        StakeholderKind: 130
+        Contact: 160
+        ServiceDeskAddress: 240
+        Notes: 200
+    - title: "By kind"
+      fields: [Title, StakeholderKind, Contact, ServiceDeskAddress, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: StakeholderKind, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        StakeholderKind: 130
+        Contact: 160
+        ServiceDeskAddress: 240
+        Notes: 200
+    - title: "Retired stakeholders"
+      renamed_from: ["Retired parties"]
+      fields: [Title, StakeholderKind, Contact, Status, Notes]
+      where:
+        - { field: Status, op: eq, value: "Inactive" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        StakeholderKind: 130
+        Contact: 160
+        Status: 110
+        Notes: 200
+    # Quarterly step 9 renders Modified and Editor, most recent first, so the
+    # reviewer can read down to the last review.
+    - title: "Changed since last review"
+      fields: [Title, Modified, Editor]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        Modified: 170
+        Editor: 170
+  Activity:
+    # The weekly personal read, and the default because "what do I answer
+    # for?" is the question this list exists to answer. Both obligations are
+    # in the filter: reading only Accountable halves the readership of the
+    # layer most at risk of rotting.
+    - title: "My accountabilities"
+      default: true
+      fields: [Title, Workstream, ActivityKind, ActivityRole, Criticality,
+               Responsible, Accountable, ReviewStatus, ConfirmationDue]
+      where:
+        - any_of:
+            - { field: Responsible, op: eq, value: me }
+            - { field: Accountable, op: eq, value: me }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      # ONE row-level signal in the whole family, reserved for the state
+      # nothing else shouts about: a human has said this row is wrong, which
+      # is worse than a date having passed. The wash reads ReviewStatus, so
+      # that column must stay in this view's fields.
+      formatting: formatting/row-needs-review.json
+      widths:
+        Title: 280
+        Workstream: 180
+        ActivityKind: 120
+        ActivityRole: 170
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    # Quarterly step 1. Everything falling due within thirty days or already
+    # past. The per-row cadence is the floor, not the review schedule.
+    - title: "Confirmation due"
+      fields: [Title, Workstream, Criticality, Accountable, ConfirmedBy,
+               LastConfirmed, ConfirmationDue, ReviewStatus]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+        - { field: ConfirmationDue, op: leq, value: today+30 }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Criticality: 160
+        Accountable: 160
+        ConfirmedBy: 160
+        LastConfirmed: 170
+        ConfirmationDue: 170
+        ReviewStatus: 160
+    # The catch for a row whose confirmation has never actually happened.
+    # Confirmation due counts from LastConfirmed, so a never-confirmed row
+    # falls outside that view's thirty-day horizon; this one lists them by
+    # the blank ConfirmedBy instead.
+    - title: "Never confirmed"
+      fields: [Title, Workstream, Criticality, Responsible, Accountable,
+               ReviewStatus, LastConfirmed]
+      where:
+        - { field: ConfirmedBy, op: is_null }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        ReviewStatus: 160
+        LastConfirmed: 170
+    # Quarterly step 2. The highest-value rows in the register: somebody has
+    # said this one is wrong. They should not survive two consecutive reviews.
+    - title: "Needs review"
+      fields: [Title, Workstream, Criticality, Responsible, Accountable,
+               LastConfirmed, ConfirmedBy]
+      where:
+        - { field: ReviewStatus, op: eq, value: "Needs review" }
+      sort:
+        - { field: LastConfirmed, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        LastConfirmed: 170
+        ConfirmedBy: 160
+    # Quarterly step 3. Each workstream lead reads their own accountabilities
+    # as a block. Programme-wide rows have no workstream and group together.
+    - title: "By workstream"
+      fields: [Title, ActivityKind, ActivityRole, Criticality, Responsible,
+               Accountable, ReviewStatus, ConfirmationDue]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      group_by: { field: Workstream, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      formatting: formatting/row-needs-review.json
+      widths:
+        Title: 280
+        ActivityKind: 120
+        ActivityRole: 170
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    # Quarterly step 4. Exactly one current lead per workstream. A workstream
+    # with two shows as two rows under one heading; a workstream with NONE is
+    # invisible, because an absent group has no heading, so the check is
+    # against Workstream's own row count and not against this view
+    # alone. Nothing enforces it at save: validation reads one row.
+    - title: "Workstream leads"
+      fields: [Title, Responsible, Accountable, AccountableForum,
+               EscalationRoute, LastConfirmed, ConfirmedBy]
+      where:
+        - { field: ActivityRole, op: eq, value: "Workstream lead" }
+        - { field: ReviewStatus, op: eq, value: "Current" }
+      group_by: { field: Workstream, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Responsible: 160
+        Accountable: 160
+        AccountableForum: 180
+        EscalationRoute: 240
+        LastConfirmed: 170
+        ConfirmedBy: 160
+    # Quarterly step 5, the governance pack. Two lenses merged on purpose: a
+    # decisions list and a by-forum grouping are each half a view. Also where
+    # an External stakeholder holding an accountability becomes visible as its own
+    # group heading, since no save rule can catch it.
+    - title: "Decisions and approvals"
+      fields: [Title, ActivityKind, Criticality, Responsible, Accountable,
+               EscalationRoute, ConfirmationDue]
+      where:
+        - { field: ActivityKind, op: neq, value: "Task" }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      group_by: { field: AccountableForum, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        EscalationRoute: 240
+        ConfirmationDue: 170
+    - title: "Retired"
+      fields: [Title, Workstream, Responsible, Accountable, LastConfirmed,
+               ConfirmedBy]
+      where:
+        - { field: ReviewStatus, op: eq, value: "Retired" }
+      sort:
+        - { field: LastConfirmed, direction: desc }
+      widths:
+        Title: 300
+        Workstream: 180
+        Responsible: 160
+        Accountable: 160
+        LastConfirmed: 170
+        ConfirmedBy: 160
+    # Quarterly step 9 renders Modified and Editor, most recent first, so the
+    # reviewer can read down to the last review.
+    - title: "Changed since last review"
+      fields: [Title, Modified, Editor]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        Modified: 170
+        Editor: 170
+  Involvement:
+    # The matrix read: each group is one activity's consulted and informed
+    # list, which is the shape a RACI is normally drawn in.
+    - title: "By activity"
+      default: true
+      fields: [Title, Activity, Stakeholder, Involvement, Channel, Notes]
+      group_by: { field: Activity, collapsed: false }
+      sort:
+        - { field: Involvement, direction: asc }
+      widths:
+        Title: 280
+        Activity: 240
+        Stakeholder: 180
+        Involvement: 130
+        Channel: 180
+        Notes: 200
+    - title: "By stakeholder"
+      renamed_from: ["By party"]
+      fields: [Title, Stakeholder, Activity, Involvement, Channel]
+      group_by: { field: Stakeholder, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Stakeholder: 180
+        Activity: 240
+        Involvement: 130
+        Channel: 180
+    # Quarterly step 6, the overload detector. Grouped by stakeholder rather than by
+    # activity on purpose: the failure it exists to reveal is one stakeholder made
+    # Consulted (or, worse, Agree) on everything, and that is invisible in any
+    # activity-first view. Involvement is shown so a reader can tell the two apart.
+    - title: "Consultation load"
+      fields: [Title, Stakeholder, Involvement, Activity, Channel, Notes]
+      where:
+        - { field: Involvement, op: in, value: ["Consulted", "Agree"] }
+      group_by: { field: Stakeholder, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Stakeholder: 180
+        Involvement: 130
+        Activity: 240
+        Channel: 180
+        Notes: 200
+    # Quarterly step 9 renders Modified and Editor, most recent first, so the
+    # reviewer can read down to the last review.
+    - title: "Changed since last review"
+      fields: [Title, Modified, Editor]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        Modified: 170
+        Editor: 170
+  ServiceRequest:
+    # The default, read at the fortnightly: what the provider holds. Waiting
+    # on requester is in scope because a handed-back request is still open
+    # and is the one the health service has to move. AssignedTo shows who
+    # holds it, and a blank there on an In progress row is the fortnightly
+    # check that stands in for a save rule, since person operands are
+    # refused.
+    - title: "In progress"
+      default: true
+      renamed_from: ["Raised with the provider"]
+      fields: [Title, Workstream, RequestType, Status, AssignedTo, NeededBy,
+               InternalAccountable, MinutesSpent, EscalationLevel]
+      where:
+        - { field: Status, op: in, value: ["In progress", "Waiting on requester"] }
+      sort:
+        - { field: NeededBy, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        RequestType: 200
+        Status: 160
+        AssignedTo: 160
+        NeededBy: 160
+        InternalAccountable: 160
+        MinutesSpent: 120
+        EscalationLevel: 160
+    # The guard on the hand-off: a request authorised here that nobody has
+    # picked up is one the provider is not yet working, and nothing on their
+    # side would notice. Read at the fortnightly, and it is where a handler
+    # is named before the request moves.
+    - title: "Authorised, not yet picked up"
+      renamed_from: ["Authorised, not yet raised"]
+      fields: [Title, Workstream, RequestType, RequestedBy,
+               InternalAccountable, AuthorisedBy, AuthorisedDate, NeededBy]
+      where:
+        - { field: Status, op: eq, value: "Authorised" }
+      sort:
+        - { field: AuthorisedDate, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        RequestType: 200
+        RequestedBy: 160
+        InternalAccountable: 160
+        AuthorisedBy: 160
+        AuthorisedDate: 160
+        NeededBy: 160
+    # The handler's queue: everything they hold that is still open, soonest
+    # needed first.
+    - title: "My assigned requests"
+      fields: [Title, Workstream, RequestType, Status, NeededBy, RequestedBy,
+               MinutesSpent]
+      where:
+        - { field: AssignedTo, op: eq, value: me }
+        - { field: Status, op: not_in, value: ["Closed", "Withdrawn"] }
+      sort:
+        - { field: NeededBy, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        RequestType: 200
+        Status: 160
+        NeededBy: 160
+        RequestedBy: 160
+        MinutesSpent: 120
+    # The effort record. The Sum total under Minutes Spent is what the
+    # agreement review reads beside the escalation count.
+    - title: "Closed"
+      fields: [Title, Workstream, RequestType, AssignedTo, MinutesSpent,
+               AuthorisedDate, Modified]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+      sort:
+        - { field: Modified, direction: desc }
+      totals:
+        MinutesSpent: sum
+      widths:
+        Title: 300
+        Workstream: 180
+        RequestType: 200
+        AssignedTo: 160
+        MinutesSpent: 120
+        AuthorisedDate: 160
+        Modified: 170
+    # The annual evidence at the shared-service agreement review is a count of
+    # requests that reached levels 3 or 4. EscalationLevel is the HIGHEST
+    # level reached, not a history; the sequence is in version history.
+    - title: "Escalated"
+      fields: [Title, Workstream, Status, EscalationLevel, EscalatedDate,
+               EscalatedBy, EscalatedTo, AssignedTo]
+      where:
+        - { field: EscalationLevel, op: is_not_null }
+      sort:
+        - { field: EscalatedDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Status: 160
+        EscalationLevel: 160
+        EscalatedDate: 160
+        EscalatedBy: 160
+        EscalatedTo: 220
+        AssignedTo: 160
+    # The ageing question, answered by a horizon rather than by a calculated
+    # column: SharePoint calculated columns cannot reference [Today], so a
+    # live "days open so far" was never buildable. Drafted is deliberately in
+    # scope, because a request still being composed a fortnight before it is
+    # needed is the same failure one state earlier.
+    - title: "Needed soon or overdue"
+      fields: [Title, Workstream, Status, NeededBy, InternalAccountable,
+               AssignedTo, EscalationLevel]
+      where:
+        - { field: Status, op: not_in, value: ["Closed", "Withdrawn"] }
+        - { field: NeededBy, op: leq, value: today+14 }
+      sort:
+        - { field: NeededBy, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        Status: 160
+        NeededBy: 160
+        InternalAccountable: 160
+        AssignedTo: 160
+        EscalationLevel: 160
+    # "Did the request I raised get seen, and where is it now?" RequestedBy,
+    # not Author: a lead may compose a request on someone else's behalf.
+    - title: "My raised items"
+      fields: [Title, Workstream, Status, NeededBy, InternalAccountable,
+               AssignedTo]
+      where:
+        - { field: RequestedBy, op: eq, value: me }
+      sort:
+        - { field: NeededBy, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        Status: 160
+        NeededBy: 160
+        InternalAccountable: 160
+        AssignedTo: 160
+    # Quarterly step 9 renders Modified and Editor, most recent first, so the
+    # reviewer can read down to the last review.
+    - title: "Changed since last review"
+      fields: [Title, Modified, Editor]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        Modified: 170
+        Editor: 170
+  Risk:
+    - title: "Open"
+      default: true
+      fields: [Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
+               RiskScore, RiskOwner, RiskResponse, ReviewDate]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+      sort:
+        - { field: RiskScore, direction: desc }
+      # The second row-level signal, reserved for Extreme and carried from
+      # raid-log. The wash reads ResidualRiskRating, so it must stay in this
+      # view's fields: view formatting can only read columns the view shows.
+      formatting: formatting/row-extreme.json
+      widths:
+        Title: 280
+        Workstream: 180
+        Likelihood: 140
+        Consequence: 160
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        RiskResponse: 140
+        ReviewDate: 160
+    - title: "Review due"
+      fields: [Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
+               RiskResponse, ReviewDate]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+        - { field: ReviewDate, op: leq, value: today+14 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        RiskResponse: 140
+        ReviewDate: 160
+    # Read monthly, and the reason it is filtered on ReviewDate rather than on
+    # a closure date is that there is no closure date: closing a risk is a
+    # status change, and the last review is the closest dated event. Every row
+    # here should carry a closure note, which is a HUMAN check. ClosureNote is
+    # rich text and SharePoint validation formulas refuse multi-line operands,
+    # so no save rule can ask for it.
+    - title: "Closed this quarter"
+      fields: [Title, Workstream, ResidualRiskRating, RiskOwner, ReviewDate,
+               ClosureNote]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+        - { field: ReviewDate, op: geq, value: today-90 }
+      sort:
+        - { field: ReviewDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        ResidualRiskRating: 160
+        RiskOwner: 160
+        ReviewDate: 160
+        ClosureNote: 240
+  Action:
+    # The weekly personal read and the default: what do I owe? AssignedTo is a
+    # person column, which is what the current-user sentinel exists for.
+    - title: "My actions"
+      default: true
+      fields: ["@action", RelatedRiskTitle, Notes]
+      where:
+        - { field: AssignedTo, op: eq, value: me }
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        WorkstreamPhase: 130
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRiskTitle: 220
+        Notes: 200
+    # Read FIRST at the fortnightly, so the exception is not buried in the
+    # whole list.
+    - title: "Overdue"
+      fields: ["@action", RelatedRiskTitle]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Workstream: 180
+        WorkstreamPhase: 130
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRiskTitle: 220
+    - title: "Open by person"
+      fields: ["@action", RelatedRiskTitle, Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      group_by: { field: AssignedTo, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        WorkstreamPhase: 130
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        RelatedRiskTitle: 220
+        Notes: 200
+    - title: "Done and dropped"
+      fields: ["@action", CompletedDate, Notes]
+      where:
+        - { field: Status, op: in, value: ["Done", "Dropped"] }
+      sort:
+        - { field: CompletedDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        WorkstreamPhase: 130
+        AssignedTo: 160
+        DueDate: 160
+        Status: 120
+        CompletedDate: 160
+        Notes: 200
+  Issue:
+    # Read first at the fortnightly: facts before possibilities. Grouped by
+    # workstream so each lead's broken things arrive together.
+    - title: "Open"
+      default: true
+      fields: ["@issue", RelatedRiskTitle, Detail]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      group_by: { field: Workstream, collapsed: false }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      # The third row-level signal, reserved for Critical. Severity is in the
+      # field set, so the wash can read it.
+      formatting: formatting/row-critical.json
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        RelatedRiskTitle: 220
+        Detail: 260
+    # Phase 1's answer to a severe issue, and phase 2 flow D's fallback: both
+    # exist, and the view works with the flow off.
+    - title: "Severe and open"
+      fields: ["@issue", RelatedRiskTitle, Detail]
+      where:
+        - { field: Severity, op: in, value: ["Major", "Critical"] }
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      formatting: formatting/row-critical.json
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        RelatedRiskTitle: 220
+        Detail: 260
+    - title: "By owner"
+      fields: ["@issue", RelatedRiskTitle]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+      group_by: { field: Owner, collapsed: false }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        RelatedRiskTitle: 220
+    - title: "Resolved and closed"
+      fields: ["@issue", ResolvedDate, Resolution]
+      where:
+        - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      sort:
+        - { field: ResolvedDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        ResolvedDate: 160
+        Resolution: 260
+    # The triage owner's queue: any new issue nobody has picked up yet.
+    # Workstream and Owner are the two fields an occasional raiser cannot
+    # answer, so the view surfaces wherever either is still blank.
+    - title: "Needs triage"
+      fields: ["@issue", RelatedRiskTitle, Detail]
+      where:
+        - any_of:
+            - { field: Workstream, op: is_null }
+            - { field: Owner, op: is_null }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        RelatedRiskTitle: 220
+        Detail: 260
+    # "Did the thing I reported get seen, and where is it now?" Author is the
+    # built-in Created By column; an issue has no separate raiser column.
+    - title: "My raised items"
+      fields: ["@issue", RelatedRiskTitle, Detail]
+      where:
+        - { field: Author, op: eq, value: me }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Severity: 130
+        Status: 120
+        Owner: 160
+        RaisedDate: 160
+        RelatedRiskTitle: 220
+        Detail: 260
+  Decision:
+    # The queue comes first and the log second, because the list now holds
+    # both and only one of them is work. Status is the only thing separating
+    # them, which is why it is indexed and why it carries the one formatter on
+    # this list.
+    - title: "Awaiting decision"
+      default: true
+      fields: [Title, Status, RaisedDate, Activity, Workstream,
+               ResolutionSought, Author]
+      where:
+        - { field: Status, op: eq, value: Proposed }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 300
+        Status: 120
+        RaisedDate: 150
+        Activity: 220
+        Workstream: 180
+        ResolutionSought: 280
+        Author: 170
+    - title: "Decision log"
+      fields: [Title, Status, DecisionDate, Workstream, DecidedBy,
+               DecidedByForum, RecommendedByForum, SupersedesDecisionTitle,
+               DecisionOutcome, Detail]
+      where:
+        - { field: Status, op: neq, value: Proposed }
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 300
+        Status: 120
+        DecisionDate: 150
+        Workstream: 180
+        DecidedBy: 160
+        DecidedByForum: 180
+        RecommendedByForum: 180
+        SupersedesDecisionTitle: 220
+        DecisionOutcome: 260
+        Detail: 260
+    # Six weeks is the outer edge of two monthly meeting cycles: a proposal
+    # older than that has missed both, so it is stuck rather than pending.
+    - title: "Stalled proposals"
+      fields: [Title, Status, RaisedDate, Activity, Workstream,
+               ResolutionSought, Author]
+      where:
+        - { field: Status, op: eq, value: Proposed }
+        - { field: RaisedDate, op: lt, value: today-42 }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 300
+        Status: 120
+        RaisedDate: 150
+        Activity: 220
+        Workstream: 180
+        ResolutionSought: 280
+        Author: 170
+
+    # Quarterly step 9 renders Modified and Editor, most recent first, so the
+    # reviewer can read down to the last review.
+    - title: "Changed since last review"
+      fields: [Title, Modified, Editor]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        Modified: 170
+        Editor: 170
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles.
+#
+# The issue, risk and service-request headers carry the healthcare sentence
+# ("Nothing patient-identifiable belongs in any field on this form"). It is
+# GUIDANCE, not a control: nothing checks it, and a static header is read once
+# and then stops being read. The controls that back it are the permission
+# model, the payload restrictions on the phase-2 flows, and the quarterly
+# sampling of narrative fields.
+form_formatting:
+  Workstream:
+    header: formatting/workstream-form-header.json
+    body: formatting/workstream-form-body.json
+  Stakeholder:
+    header: formatting/stakeholder-form-header.json
+    body: formatting/stakeholder-form-body.json
+  Activity:
+    header: formatting/activity-form-header.json
+    body: formatting/activity-form-body.json
+  Involvement:
+    header: formatting/involvement-form-header.json
+    body: formatting/involvement-form-body.json
+  ServiceRequest:
+    header: formatting/servicerequest-form-header.json
+    body: formatting/servicerequest-form-body.json
+  Risk:
+    header: formatting/risk-form-header.json
+    body: formatting/risk-form-body.json
+  Action:
+    header: formatting/action-form-header.json
+    body: formatting/action-form-body.json
+  Issue:
+    header: formatting/issue-form-header.json
+    body: formatting/issue-form-body.json
+  Decision:
+    header: formatting/decision-form-header.json
+    body: formatting/decision-form-body.json
+
+# Each rule below pairs a field with the save rule under it: the field is on
+# screen exactly when it is mandatory, rather than firing a refusal about a
+# field the author cannot see. A visibility condition NARROWER than its rule
+# produces a form that will not save and will not say why, and no gate this
+# project runs catches it.
+#
+# Moving a status back does NOT clear a date already entered (SharePoint has
+# no such mechanism), so these fields hide while keeping their values.
+#
+# Deliberately NOT declared: any rule conditioned on ConfirmationDue,
+# ResidualRiskRating or RiskScore. Conditional show/hide cannot read a
+# calculated column. The formula stays syntactically valid, so it saves, the
+# readback compares equal and the phase passes, but the form never reacts.
+# The build refuses it.
+form_visibility:
+  Workstream:
+    columns:
+      ClosureNote:
+        new: false
+        when:
+          - { field: Phase, op: eq, value: "Closed" }
+  Activity:
+    columns:
+      # Defaults to today and is corrected on the Edit form when the row is
+      # actually re-confirmed. An edit is not a confirmation.
+      LastConfirmed: { new: false }
+      # Widened from raci-matrix's two conditions to three, to match the
+      # third branch of the save rule below. Edit the two together.
+      EscalationRoute:
+        when:
+          any_of:
+            - { field: ActivityKind, op: neq, value: "Task" }
+            - { field: Criticality, op: eq, value: "Statutory" }
+            - { field: ActivityRole, op: is_not_null }
+  ServiceRequest:
+    columns:
+      # The half of the internal-authorisation control that the permission
+      # level cannot do. A submitter who can pick their own status can
+      # authorise their own request; hiding Status cannot break a save,
+      # because it is not null with a default of Drafted.
+      Status: { new: false }
+      # The visible set covers EVERY state the save rule fires in, not just
+      # Authorised. Listing only the first decided state hides the field the
+      # moment the record moves downstream, and a governance user moving
+      # straight to Closed would be refused for a missing field with nothing
+      # on screen to supply it.
+      AuthorisedBy:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Authorised", "In progress", "Waiting on requester", "Closed"] }
+      AuthorisedDate:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Authorised", "In progress", "Waiting on requester", "Closed"] }
+      AuthorisingDecision:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Authorised", "In progress", "Waiting on requester", "Closed"] }
+      # Off the New form so a submitter cannot assign their own request, and
+      # on the Edit form in every state so governance can name a handler at
+      # Authorised, before anything moves.
+      AssignedTo: { new: false }
+      # Shown from the first handler state onwards, which covers Closed, the
+      # one state the save rule below fires in.
+      MinutesSpent:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["In progress", "Waiting on requester", "Closed"] }
+      # Unconditionally off the New form and unconditionally on the existing
+      # one. A rule keyed on EscalationLevel would be circular, and escalation
+      # is a governance act on a record that already exists. Hiding the block
+      # cannot break a save: branches 4 and 5 only fire once one of these is
+      # set, which cannot happen on a form that does not show them.
+      EscalationLevel: { new: false }
+      EscalatedDate: { new: false }
+      EscalatedBy: { new: false }
+      EscalatedTo: { new: false }
+  Risk:
+    columns:
+      ToleranceDecision:
+        when:
+          - { field: RiskResponse, op: eq, value: "Tolerate" }
+      ClosureNote:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+  Action:
+    columns:
+      CompletedDate:
+        when:
+          - { field: Status, op: eq, value: "Done" }
+  Issue:
+    columns:
+      # Left on the New form on purpose: an issue that was raised, fixed and
+      # is only being written up afterwards is a real case.
+      ResolvedDate:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      Resolution:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      # Machine-owned: flow D stamps it and nothing else writes it. Rendered
+      # on All Items only because watched_lists requires a watched column to
+      # be rendered.
+      NotifiedAt: { new: false, existing: false }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run, unlike list_validation, where a list has ONE
+# ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  Activity:
+    columns:
+      LastConfirmed:
+        when:
+          - { field: LastConfirmed, op: leq, value: today }
+        message: "A confirmation cannot be dated in the future. Use the date you actually re-read the row."
+  ServiceRequest:
+    columns:
+      AuthorisedDate:
+        when:
+          - { field: AuthorisedDate, op: leq, value: today }
+        message: "An authorisation cannot be dated in the future. Use the date it was actually authorised."
+      EscalatedDate:
+        when:
+          - { field: EscalatedDate, op: leq, value: today }
+        message: "An escalation cannot be dated in the future. Use the date it was actually raised."
+      # A running total only ever grows, so a negative number is a typo.
+      MinutesSpent:
+        when:
+          - { field: MinutesSpent, op: geq, value: 0 }
+        message: "Minutes spent cannot be negative. Enter the running total of whole minutes spent on the request so far."
+  Action:
+    columns:
+      # A forward-dated completion sorts to the top of "Done and dropped" and
+      # reads as the most recent thing the programme finished.
+      CompletedDate:
+        when:
+          - { field: CompletedDate, op: leq, value: today }
+        message: "An action cannot have been completed in the future. Use the date the work was actually finished."
+  Issue:
+    columns:
+      ResolvedDate:
+        when:
+          - { field: ResolvedDate, op: leq, value: today }
+        message: "An issue cannot have been resolved in the future. Use the date it actually stopped happening."
+  Decision:
+    columns:
+      DecisionDate:
+        when:
+          - { field: DecisionDate, op: leq, value: today }
+        message: "A decision cannot have been made in the future. Use the date the forum actually decided, and leave it blank while the proposal is still Proposed."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# Each rule is written as an implication: `if A then B` is `any_of[not A, B]`,
+# which is why every branch opens with the case the rule does not cover.
+#
+# A list has one ValidationFormula, so all branches on one list share one
+# message. That is why the ServiceRequest message names every obligation it
+# enforces rather than any single one.
+#
+# NOT declared, and it cannot be: "a closed risk carries a closure note".
+# ClosureNote is rich text and SharePoint validation formulas refuse
+# multi-line operands outright. It is a monthly human check instead, read on
+# the "Closed this quarter" view. The same limit rules out any rule reading
+# Purpose, Detail, Justification, Resolution or Notes, and any rule reading a
+# person or lookup column, which is why "the provider is never the
+# Accountable" and "an External stakeholder names a service desk address" are
+# quarterly checks rather than save rules.
+list_validation:
+  Activity:
+    when:
+      - any_of:
+          - { field: ActivityKind, op: neq, value: "Decision" }
+          - { field: EscalationRoute, op: is_not_null }
+      - any_of:
+          - { field: Criticality, op: neq, value: "Statutory" }
+          - { field: EscalationRoute, op: is_not_null }
+      # The third branch, new with ActivityRole. A standing position with no
+      # tie-break is the position that stalls at the worst moment. The
+      # form-visibility condition above is widened to match it.
+      - any_of:
+          - { field: ActivityRole, op: is_null }
+          - { field: EscalationRoute, op: is_not_null }
+    message: "This activity needs an Escalation Route. A Decision must say where it goes when Responsible and Accountable cannot agree, and so must anything Statutory and anything carrying an Activity Role."
+  # FOUR branches, not the six the design tabulates. "Authorised onwards
+  # requires AuthorisedBy" and "In progress onwards requires AssignedTo"
+  # cannot be built: both are person columns and SharePoint validation
+  # formulas refuse person operands, which the build rejects as
+  # condition_operand_type_unsupported (2026-08-28). AuthorisedDate is the
+  # enforceable half of the authorisation obligation and is kept, and the two
+  # fields appear together in exactly the states the rule fires in, so
+  # somebody entering the date is looking at the person field. "An
+  # authorisation names a person" and "a request being worked names its
+  # handler" are fortnightly human checks across the "Authorised, not yet
+  # picked up" and "In progress" views, alongside the closure-note check on
+  # Risk and for the same reason: the register can ask for it, the
+  # list cannot.
+  ServiceRequest:
+    when:
+      - any_of:
+          - { field: Status, op: not_in,
+              value: ["Authorised", "In progress", "Waiting on requester", "Closed"] }
+          - { field: AuthorisedDate, op: is_not_null }
+      # The effort record: a request cannot close without its minutes, and
+      # zero is an answer.
+      - any_of:
+          - { field: Status, op: neq, value: "Closed" }
+          - { field: MinutesSpent, op: is_not_null }
+      - any_of:
+          - { field: EscalationLevel, op: is_null }
+          - { field: EscalatedDate, op: is_not_null }
+      - any_of:
+          - { field: EscalatedDate, op: is_null }
+          - { field: EscalationLevel, op: is_not_null }
+    message: "An authorised request needs the date it was authorised; a closed request records the minutes spent on it; and an escalation records both a level and a date."
+  Action:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Done" }
+        - { field: CompletedDate, op: is_not_null }
+    message: "An action marked Done needs a completed date. If it is finished but you cannot say when, it is still In progress."
+  Issue:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - { field: ResolvedDate, op: is_not_null }
+    message: "An issue marked Resolved or Closed needs a resolved date. If it has stopped happening but you cannot say when, it is still In progress."
+  # One branch. "The forum that decided is the forum entitled to decide" is not
+  # here and cannot be: it compares two lookups across two lists, which
+  # SharePoint validation formulas cannot read. That reconciliation is a report.
+  Decision:
+    when:
+      any_of:
+        - { field: Status, op: in, value: ["Proposed", "Withdrawn"] }
+        - { field: DecisionDate, op: is_not_null }
+    message: "A decision that has been made needs the date it was made. If the forum has not decided yet, leave it Proposed."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
+# starts "[DEMO] " so sample data stays visible in every view and form, and
+# because every phase-2 flow carries a trigger condition excluding those
+# titles: demo-data.js writes over REST and to a flow they are ordinary
+# creates. Rollback requires per-list confirmation before every delete. Dates
+# are today+/-N so the date-derived views land correctly on whatever day the
+# demo runs, and "@me" is the pasting operator.
+#
+# Coverage: six workstreams spanning all six phases; seven stakeholders covering
+# all four kinds and both statuses; nine activities across every criticality,
+# every review status and all three activity roles, two of them carrying a
+# decision route and rule; seven involvements, three of them consulting the
+# same stakeholder so "Consultation load" has something to show and one of them the
+# single Agree; seven service requests across all six statuses with two
+# escalations, three of them assigned with minutes logged; six risks spanning all four rating bands and both statuses;
+# seven actions across every status including one overdue and still open;
+# seven issues across every severity and every status, one untriaged with no
+# owner or workstream; and seven decisions, three of them programme-wide, one
+# still Proposed and old enough to be stalled, one Ratified under delegation,
+# and one carrying the recommend-then-decide pair of forums.
+demo_items:
+  Workstream:
+    - key: ws-migration
+      values:
+        Title: "[DEMO] Move shared drives to SharePoint and OneDrive"
+        Purpose: "Demo row. Retire the two remaining file servers, moving each directorate's working files to SharePoint and personal files to OneDrive."
+        Phase: "Rollout"
+        Sequence: 1
+        StartDate: "today-200"
+        TargetEndDate: "today+60"
+    - key: ws-teams
+      values:
+        Title: "[DEMO] Move telephony and meetings to Teams"
+        Purpose: "Demo row. Replace the desk phone estate and the legacy conferencing bridge with Teams calling and Teams meetings."
+        Phase: "Pilot"
+        Sequence: 2
+        StartDate: "today-120"
+        TargetEndDate: "today+120"
+    - key: ws-security
+      values:
+        Title: "[DEMO] Baseline identity and device security"
+        Purpose: "Demo row. Bring conditional access, device compliance and privileged access to the agreed baseline before any workload carries clinical content."
+        Phase: "Discovery"
+        Sequence: 3
+        StartDate: "today-40"
+        TargetEndDate: "today+200"
+    - key: ws-power
+      values:
+        Title: "[DEMO] Retire the departmental databases onto Power Platform"
+        Purpose: "Demo row. Replace the eleven surviving desktop databases with governed Power Platform apps in a managed environment."
+        Phase: "Not started"
+        Sequence: 4
+        TargetEndDate: "today+300"
+    - key: ws-comms
+      values:
+        Title: "[DEMO] Replace the intranet with Viva Connections"
+        Purpose: "Demo row. Move the intranet to a modern communication site and give the champions network somewhere to publish."
+        Phase: "Embedding"
+        Sequence: 5
+        StartDate: "today-300"
+        TargetEndDate: "today+30"
+    - key: ws-legacy
+      values:
+        Title: "[DEMO] Decommission the fax gateway"
+        Purpose: "Demo row. Move the last referral and pathology routes off the fax gateway and switch it off."
+        Phase: "Closed"
+        Sequence: 6
+        StartDate: "today-400"
+        TargetEndDate: "today-30"
+        ClosureNote: "Demo row. All six routes moved to secure email, the gateway was switched off after two clean weeks, and the contract was not renewed."
+  Stakeholder:
+    - key: stakeholder-provider
+      values:
+        Title: "[DEMO] Shared services provider service desk"
+        StakeholderKind: "External"
+        ServiceDeskAddress: "servicedesk@provider.example"
+        Status: "Active"
+        Notes: "Demo row. Every tenant-level change reaches the provider as a service request on this site. The provider is never Accountable for a programme activity."
+    - key: stakeholder-steering
+      values:
+        Title: "[DEMO] Adoption steering group"
+        StakeholderKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Meets monthly. Owns the programme's decisions and is the escalation route for anything the workstreams cannot settle."
+    - key: stakeholder-digital-director
+      values:
+        Title: "[DEMO] Director of Digital"
+        StakeholderKind: "Role"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. Level 2 escalation for a stalled service request."
+    - key: stakeholder-privacy
+      values:
+        Title: "[DEMO] Privacy officer"
+        StakeholderKind: "Role"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. Consulted on anything that moves personal data or changes who can read it."
+    - key: stakeholder-champions
+      values:
+        Title: "[DEMO] Champions network"
+        StakeholderKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Roughly forty people across the directorates. Coverage itself is tracked elsewhere, not here."
+    - key: stakeholder-clinical-lead
+      values:
+        Title: "[DEMO] Clinical informatics lead"
+        StakeholderKind: "Individual"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. The named clinical voice on anything that touches a care setting."
+    - key: stakeholder-fax-forum
+      values:
+        Title: "[DEMO] Fax decommissioning working group"
+        StakeholderKind: "Forum"
+        Status: "Inactive"
+        Notes: "Demo row. Disbanded when the gateway was switched off. Kept so anybody looking for who used to own this can see it, and see that it stopped."
+  Activity:
+    - key: act-lead-migration
+      values:
+        Title: "[DEMO] Lead the shared drive migration workstream"
+        Workstream: { demo_ref: ws-migration }
+        ActivityKind: "Task"
+        ActivityRole: "Workstream lead"
+        Criticality: "High"
+        Detail: "Demo row. Runs the migration workstream: sequencing directorates, holding the cutover dates and reporting to the steering group."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: stakeholder-steering }
+        EscalationRoute: "The adoption steering group at its next monthly sitting; urgent cases to the Director of Digital."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-30"
+        ConfirmedBy: "@me"
+    - key: act-lead-teams
+      values:
+        Title: "[DEMO] Lead the Teams telephony workstream"
+        Workstream: { demo_ref: ws-teams }
+        ActivityKind: "Task"
+        ActivityRole: "Workstream lead"
+        Criticality: "High"
+        Detail: "Demo row. Runs the telephony workstream, including the number port and the desk phone retirement schedule."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: stakeholder-steering }
+        EscalationRoute: "The adoption steering group; anything contractual with the carrier goes to the Director of Digital."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-60"
+        ConfirmedBy: "@me"
+    - key: act-unconfirmed
+      values:
+        Title: "[DEMO] A newly listed activity nobody has confirmed yet"
+        Workstream: { demo_ref: ws-security }
+        ActivityKind: "Task"
+        ActivityRole: "Workstream deputy"
+        Criticality: "Routine"
+        Detail: "Demo row. Brand new, so the first confirmation has not happened. The blank Confirmed By is what the Never confirmed view exists to catch."
+        Responsible: "@me"
+        Accountable: "@me"
+        EscalationRoute: "The workstream lead."
+        ReviewStatus: "Current"
+    - key: act-deputy-security
+      values:
+        Title: "[DEMO] Deputise for the identity and device security workstream"
+        Workstream: { demo_ref: ws-security }
+        ActivityKind: "Task"
+        ActivityRole: "Workstream deputy"
+        Criticality: "Routine"
+        Detail: "Demo row. Covers the security workstream when its lead is unavailable, with the same standing authority for the duration."
+        Responsible: "@me"
+        Accountable: "@me"
+        EscalationRoute: "The workstream lead on return, or the Director of Digital if the decision cannot wait."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-700"
+        ConfirmedBy: "@me"
+    - key: act-chair-steering
+      values:
+        Title: "[DEMO] Chair the adoption steering group"
+        ActivityKind: "Task"
+        ActivityRole: "Program owner"
+        Criticality: "High"
+        Detail: "Demo row. Programme-wide, so it carries no workstream. Sets the agenda, holds the decision log and is accountable for the programme as a whole."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: stakeholder-steering }
+        EscalationRoute: "The programme sponsor, then the executive."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-200"
+        ConfirmedBy: "@me"
+    # Statutory, so the cadence is 6 months and today-400 is well past due.
+    # Drives the row wash, the overdue ConfirmationDue cell, the "Needs
+    # review" view and the severe Criticality token all at once.
+    - key: act-approve-tenant-change
+      values:
+        Title: "[DEMO] Approve a tenant-level configuration change"
+        Workstream: { demo_ref: ws-security }
+        ActivityKind: "Approval"
+        Criticality: "Statutory"
+        Detail: "Demo row. Internal authorisation for any change to a tenant-wide setting, before a handler at the provider picks it up. Does not cover changes inside a single site."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: stakeholder-steering }
+        EscalationRoute: "The adoption steering group; a refusal the workstream disputes goes to the Director of Digital."
+        DecisionRoute: { demo_ref: stakeholder-steering }
+        ReviewStatus: "Needs review"
+        LastConfirmed: "today-400"
+        ConfirmedBy: "@me"
+    - key: act-decide-licensing
+      values:
+        Title: "[DEMO] Decide the licensing model for frontline staff"
+        ActivityKind: "Decision"
+        Criticality: "High"
+        Detail: "Demo row. Which frontline roles are uplifted, and which stay on the base entitlement. Programme-wide, because the budget is."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: stakeholder-steering }
+        EscalationRoute: "The programme sponsor, who holds the budget line, at the next steering group."
+        DecisionRoute: { demo_ref: stakeholder-steering }
+        ReviewStatus: "Current"
+        LastConfirmed: "today-200"
+        ConfirmedBy: "@me"
+    - key: act-privacy-review
+      values:
+        Title: "[DEMO] Review adoption communications before they are published"
+        Workstream: { demo_ref: ws-comms }
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. Reads each pack for anything identifiable before it goes on the intranet. Ordinary work with no standing position, so it needs no escalation route."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Current"
+        LastConfirmed: "today-60"
+        ConfirmedBy: "@me"
+    - key: act-retired-fax
+      values:
+        Title: "[DEMO] Maintain the fax gateway routing table"
+        Workstream: { demo_ref: ws-legacy }
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. Retired when the gateway was switched off. Kept so that anybody looking for who used to do this can see it, and see that it stopped."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Retired"
+        LastConfirmed: "today-500"
+        ConfirmedBy: "@me"
+  Involvement:
+    - key: inv-privacy-tenant
+      values:
+        Title: "[DEMO] Whether the change moves personal data outside its current boundary"
+        Activity: { demo_ref: act-approve-tenant-change }
+        Stakeholder: { demo_ref: stakeholder-privacy }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Must be asked before the request is authorised, not after the provider has built it."
+    - key: inv-provider-tenant
+      values:
+        Title: "[DEMO] Whether the change can be delivered inside the requested window"
+        Activity: { demo_ref: act-approve-tenant-change }
+        Stakeholder: { demo_ref: stakeholder-provider }
+        Involvement: "Consulted"
+        Channel: "Ad hoc"
+        Notes: "Demo row. Asked on the service request itself. The provider is consulted here and is never Accountable."
+    - key: inv-steering-licensing
+      values:
+        Title: "[DEMO] Whether the licensing model fits the funded establishment"
+        Activity: { demo_ref: act-decide-licensing }
+        Stakeholder: { demo_ref: stakeholder-steering }
+        Involvement: "Consulted"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. The steering group is consulted on the model and the sponsor decides the budget."
+    - key: inv-champions-migration
+      values:
+        Title: "[DEMO] What frontline teams will need on the day their drives move"
+        Activity: { demo_ref: act-lead-migration }
+        Stakeholder: { demo_ref: stakeholder-champions }
+        Involvement: "Consulted"
+        Channel: "Meeting"
+        Notes: "Demo row. The champions are the only people who know what each team actually opens first thing in the morning."
+    - key: inv-clinical-cutover
+      values:
+        Title: "[DEMO] When the migration cutover date for each care setting is fixed"
+        Activity: { demo_ref: act-lead-migration }
+        Stakeholder: { demo_ref: stakeholder-clinical-lead }
+        Involvement: "Informed"
+        Channel: "Report or dashboard"
+        Notes: "Demo row. Told, not asked: the date is set by the workstream and the clinical lead needs to know it."
+    - key: inv-privacy-comms
+      values:
+        Title: "[DEMO] Whether a communications pack names any individual"
+        Activity: { demo_ref: act-privacy-review }
+        Stakeholder: { demo_ref: stakeholder-privacy }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Three of these six rows consult the same stakeholder, which is what the Consultation load view exists to show."
+    - key: inv-director-tenant
+      values:
+        Title: "[DEMO] Whether a tenant-wide setting may change at all this quarter"
+        Activity: { demo_ref: act-approve-tenant-change }
+        Stakeholder: { demo_ref: stakeholder-digital-director }
+        Involvement: "Agree"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. The only Agree here: the approval does not proceed without it, which is the difference from the two Consulted rows on the same activity."
+  ServiceRequest:
+    - key: tr-guest-access
+      values:
+        Title: "[DEMO] Enable guest access on the migration collaboration sites"
+        Workstream: { demo_ref: ws-migration }
+        RequestType: "Tenant-wide setting"
+        Justification: "Demo row. Two directorates share working files with an external partner. Without guest access the files are emailed instead, which is the outcome the migration exists to stop."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "In progress"
+        AuthorisedBy: "@me"
+        AuthorisedDate: "today-20"
+        AssignedTo: "@me"
+        MinutesSpent: 45
+        NeededBy: "today+7"
+    - key: tr-conditional-access
+      values:
+        Title: "[DEMO] Add the frontline device group to the conditional access policy"
+        Workstream: { demo_ref: ws-security }
+        RequestType: "Conditional access policy"
+        Justification: "Demo row. The frontline devices are outside the current policy scope, so the security baseline cannot be signed off while they are excluded."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Waiting on requester"
+        AuthorisedBy: "@me"
+        AuthorisedDate: "today-45"
+        AssignedTo: "@me"
+        MinutesSpent: 130
+        NeededBy: "today-5"
+        EscalationLevel: "3 Contractual"
+        EscalatedDate: "today-4"
+        EscalatedBy: "@me"
+        EscalatedTo: "Provider account lead"
+    - key: tr-power-environment
+      values:
+        Title: "[DEMO] Create a managed Power Platform environment for the programme"
+        Workstream: { demo_ref: ws-power }
+        RequestType: "Power Platform environment"
+        Justification: "Demo row. The departmental databases cannot be rebuilt in the default environment, which has no data loss prevention policy of its own."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Authorised"
+        AuthorisedBy: "@me"
+        AuthorisedDate: "today-3"
+        NeededBy: "today+40"
+    - key: tr-licence-uplift
+      values:
+        Title: "[DEMO] Uplift fifty frontline accounts to a licence including Teams Phone"
+        Workstream: { demo_ref: ws-teams }
+        RequestType: "Licensing"
+        Justification: "Demo row. Fifty staff answer external calls on a desk phone that is being removed. Without the uplift the telephony pilot cannot extend past the pilot group."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Authorised"
+        AuthorisedBy: "@me"
+        AuthorisedDate: "today-9"
+        AuthorisingDecision: { demo_ref: dec-licence-tier-revised }
+        NeededBy: "today+10"
+    - key: tr-entra-group
+      values:
+        Title: "[DEMO] Create an Entra group for the champions network"
+        Workstream: { demo_ref: ws-comms }
+        RequestType: "Entra group"
+        Justification: "Demo row. The champions are currently maintained as a distribution list nobody owns, so a leaver stays on it indefinitely."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Drafted"
+        NeededBy: "today+25"
+    - key: tr-dlp-exemption
+      values:
+        Title: "[DEMO] Allow the programme channel to share files with the provider"
+        Workstream: { demo_ref: ws-security }
+        RequestType: "DLP policy"
+        Justification: "Demo row. The outbound policy blocks the migration evidence pack, so the evidence is being sent to the provider one screenshot at a time."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Closed"
+        AuthorisedBy: "@me"
+        AuthorisedDate: "today-120"
+        AssignedTo: "@me"
+        MinutesSpent: 210
+        NeededBy: "today-90"
+        EscalationLevel: "1 Program"
+        EscalatedDate: "today-100"
+        EscalatedBy: "@me"
+        EscalatedTo: "Provider service desk lead"
+    - key: tr-telemetry
+      values:
+        Title: "[DEMO] Grant read access to the tenant adoption telemetry"
+        Workstream: { demo_ref: ws-comms }
+        RequestType: "Reporting or telemetry access"
+        Justification: "Demo row. Withdrawn after the provider offered the same figures through the existing Power BI report, so no new access was needed."
+        RequestedBy: "@me"
+        InternalAccountable: "@me"
+        Status: "Withdrawn"
+        NeededBy: "today-30"
+  Risk:
+    - key: risk-provider-lead-time
+      values:
+        Title: "[DEMO] Provider lead times push the security baseline past its funding deadline"
+        Workstream: { demo_ref: ws-security }
+        Detail: "Demo row. Two of the three baseline changes are tenant-level and none of them is inside the health service's control. The funding milestone is not moveable."
+        Likelihood: "Almost Certain"
+        Consequence: "Business Critical"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today+10"
+    - key: risk-adoption
+      values:
+        Title: "[DEMO] Frontline teams keep using the shared drives after cutover"
+        Workstream: { demo_ref: ws-migration }
+        Detail: "Demo row. The benefit case depends on the new location being used, not installed. Nothing about a cutover makes people change where they save."
+        Likelihood: "Very Likely"
+        Consequence: "Substantial"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today-5"
+    - key: risk-licensing
+      values:
+        Title: "[DEMO] The licensing uplift is not funded for the whole frontline"
+        Workstream: { demo_ref: ws-teams }
+        Detail: "Demo row. The pilot group is funded from the programme budget. Extending to every frontline role needs a recurrent line nobody has committed."
+        Likelihood: "Likely"
+        Consequence: "Major"
+        RiskOwner: "@me"
+        RiskResponse: "Tolerate"
+        ToleranceDecision: { demo_ref: dec-licence-tier-revised }
+        Status: "Open"
+        ReviewDate: "today+45"
+    - key: risk-champion-churn
+      values:
+        Title: "[DEMO] The champions network loses its most active members"
+        Workstream: { demo_ref: ws-comms }
+        Detail: "Demo row. Roughly a third of the network does the visible work, and none of it is in anybody's job description."
+        Likelihood: "Unlikely"
+        Consequence: "Moderate"
+        RiskOwner: "@me"
+        RiskResponse: "Accept"
+        Status: "Open"
+        ReviewDate: "today+60"
+    - key: risk-identity
+      values:
+        Title: "[DEMO] Conditional access locks staff out of unmanaged devices at go-live"
+        Workstream: { demo_ref: ws-security }
+        Detail: "Demo row. The policy is correct and the device inventory may not be. A wrong inventory reads to a member of staff as an outage."
+        Likelihood: "Likely"
+        Consequence: "Substantial"
+        RiskOwner: "@me"
+        RiskResponse: "Manage"
+        Status: "Open"
+        ReviewDate: "today+21"
+    - key: risk-fax
+      values:
+        Title: "[DEMO] The fax gateway is switched off before its replacement is proven"
+        Workstream: { demo_ref: ws-legacy }
+        Detail: "Demo row. Referral routes were the last thing on the gateway, and a lost referral is a clinical event rather than an inconvenience."
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        RiskOwner: "@me"
+        RiskResponse: "Terminate"
+        Status: "Closed"
+        ReviewDate: "today-20"
+        ClosureNote: "Demo row. Every route was moved and monitored for two clean weeks before the gateway was switched off, and the two clinics still sending were contacted individually. The risk can no longer happen."
+  Action:
+    - key: act-rehearse-migration
+      values:
+        Title: "[DEMO] Rehearse the migration on a copy of one directorate's files"
+        Workstream: { demo_ref: ws-migration }
+        AssignedTo: "@me"
+        DueDate: "today+7"
+        Status: "Open"
+        RelatedRisk: { demo_ref: risk-adoption }
+        RelatedIssue: { demo_ref: iss-mapped-drives }
+        Notes: "Demo row. The whole of the migration risk response. Until this is done the rating does not move."
+    - key: act-chase-guest-access
+      values:
+        Title: "[DEMO] Chase the guest access request with its handler"
+        Workstream: { demo_ref: ws-migration }
+        AssignedTo: "@me"
+        DueDate: "today-6"
+        Status: "Open"
+        RelatedServiceRequest: { demo_ref: tr-guest-access }
+        Notes: "Demo row. Overdue and still Open. Its date is red everywhere it appears, and it names the request that is blocking it rather than describing it in prose."
+    - key: act-licence-count
+      values:
+        Title: "[DEMO] Count the frontline accounts that need a Teams Phone licence"
+        Workstream: { demo_ref: ws-teams }
+        AssignedTo: "@me"
+        DueDate: "today+3"
+        Status: "In progress"
+        RelatedServiceRequest: { demo_ref: tr-licence-uplift }
+        AuthorisingDecision: { demo_ref: dec-licence-tier-revised }
+    - key: act-champion-recruit
+      values:
+        Title: "[DEMO] Recruit two champions in each of the four largest teams"
+        Workstream: { demo_ref: ws-comms }
+        AssignedTo: "@me"
+        DueDate: "today+21"
+        Status: "Open"
+        Notes: "Ordinary programme work with nothing behind it, which is why every lookup is blank. Most actions look like this."
+    - key: act-device-pilot
+      values:
+        Title: "[DEMO] Pilot conditional access with the informatics team"
+        Workstream: { demo_ref: ws-security }
+        AssignedTo: "@me"
+        DueDate: "today-12"
+        Status: "Done"
+        CompletedDate: "today-11"
+        RelatedRisk: { demo_ref: risk-identity }
+    - key: act-fax-audit
+      values:
+        Title: "[DEMO] Audit which services still send to the fax gateway"
+        Workstream: { demo_ref: ws-legacy }
+        AssignedTo: "@me"
+        DueDate: "today-30"
+        Status: "Dropped"
+        Notes: "Demo row. Filed against a workstream that is now Closed, which the Workstream Phase column shows in every action view. Dropped honestly beats Done falsely, and it beats an Open row nobody will ever close."
+    - key: act-privacy-brief
+      values:
+        Title: "[DEMO] Brief the privacy officer on the telemetry access request"
+        Workstream: { demo_ref: ws-comms }
+        AssignedTo: "@me"
+        DueDate: "today+14"
+        Status: "Open"
+        RelatedServiceRequest: { demo_ref: tr-telemetry }
+  Issue:
+    - key: iss-provider-paused
+      values:
+        Title: "[DEMO] The conditional access request has sat with the provider for three weeks"
+        Workstream: { demo_ref: ws-security }
+        Severity: "Critical"
+        Status: "Open"
+        Owner: "@me"
+        RaisedDate: "today-21"
+        Detail: "Demo row. Nothing in the security workstream can be signed off while the policy change is paused, and every week of it moves the funding milestone."
+    - key: iss-mapped-drives
+      values:
+        Title: "[DEMO] Mapped drive letters still point at the old file server on forty devices"
+        Workstream: { demo_ref: ws-migration }
+        Severity: "Major"
+        Status: "In progress"
+        Owner: "@me"
+        RaisedDate: "today-9"
+        RelatedRisk: { demo_ref: risk-adoption }
+        Detail: "Demo row. Staff on those devices are still saving to the old location, so the migrated copy is going stale as it is being read."
+    - key: iss-room-audio
+      values:
+        Title: "[DEMO] Two meeting rooms drop audio partway through Teams calls"
+        Workstream: { demo_ref: ws-teams }
+        Severity: "Moderate"
+        Status: "Open"
+        Owner: "@me"
+        RaisedDate: "today-4"
+        Detail: "Demo row. Reproducible in both rooms and not on any other device, so it is being treated as a room fault rather than a Teams fault."
+    - key: iss-training-slots
+      values:
+        Title: "[DEMO] Night shift has had no training slot offered"
+        Workstream: { demo_ref: ws-comms }
+        Severity: "Moderate"
+        Status: "Open"
+        Owner: "@me"
+        RaisedDate: "today-2"
+        Detail: "Demo row. The schedule was built from a daytime roster. This is the adoption risk turning into something real."
+    - key: iss-stale-links
+      values:
+        Title: "[DEMO] The intranet still links to the retired forms library"
+        Workstream: { demo_ref: ws-comms }
+        Severity: "Minor"
+        Status: "Resolved"
+        Owner: "@me"
+        RaisedDate: "today-30"
+        ResolvedDate: "today-10"
+        Detail: "Demo row. Eleven links on six pages, all pointing at a library that now returns an access denied page."
+        Resolution: "Demo row. All eleven links repointed and the old library set to read-only. The page owners now publish from a single link list, so the next move follows automatically."
+    - key: iss-fax-referrals
+      values:
+        Title: "[DEMO] Two clinics kept sending referrals to the retired fax number"
+        Workstream: { demo_ref: ws-legacy }
+        Severity: "Major"
+        Status: "Closed"
+        Owner: "@me"
+        RaisedDate: "today-60"
+        ResolvedDate: "today-40"
+        Detail: "Demo row. Found during the two-week monitoring window, before the gateway was switched off."
+        Resolution: "Demo row. Both clinics were contacted, their referral templates were corrected, and the monitoring window was extended by a week to confirm nothing else was still routing there."
+    - key: iss-triage-queue
+      values:
+        Title: "[DEMO] A clinician reported a login loop on a shared ward device"
+        Severity: "Minor"
+        Status: "Open"
+        RaisedDate: "today"
+        Detail: "Demo row. No workstream and no owner yet: this is the row the triage owner picks up, and it is what the Needs triage view is for."
+  Decision:
+    - key: dec-one-site
+      values:
+        Title: "[DEMO] We will run the whole programme from one SharePoint site"
+        Status: "Approved"
+        Activity: { demo_ref: act-chair-steering }
+        RaisedDate: "today-100"
+        DecisionDate: "today-90"
+        DecidedBy: "@me"
+        DecidedByForum: { demo_ref: stakeholder-steering }
+        ResolutionSought: "Demo row. That the steering group approve a single site for the whole programme rather than a site per workstream."
+        DecisionOutcome: "Demo row. Approved as proposed, with a review at the end of the migration workstream."
+        Detail: "Demo row. Programme-wide, so no workstream is set. The alternative was a site per workstream, which would have meant no cross-workstream view of risk, no single accountability register, and five sets of permissions to keep in step."
+    - key: dec-request-surface
+      values:
+        Title: "[DEMO] We will work provider requests on this site rather than in a separate service desk"
+        Status: "Approved"
+        RaisedDate: "today-70"
+        DecisionDate: "today-60"
+        DecidedBy: "@me"
+        Detail: "Demo row. No standing activity, and the blank is deliberate: this was settled in the programme's first fortnight, before the accountability register existed. One request lifecycle on one row, with its handler and the minutes spent on it, beats a second record kept by hand beside somebody else's queue."
+    - key: dec-self-service
+      values:
+        Title: "[DEMO] We will let the people a row names confirm and correct it"
+        Status: "Approved"
+        Activity: { demo_ref: act-chair-steering }
+        RaisedDate: "today-55"
+        DecisionDate: "today-45"
+        DecidedBy: "@me"
+        Detail: "Demo row. The cost is that anybody in the maintainer group can adjust their own row. The control is that nobody can delete a row or prune its history, and the quarterly review reads the history of everything that changed."
+    - key: dec-licence-tier
+      values:
+        Title: "[DEMO] We will uplift only staff who answer external calls"
+        Status: "Approved"
+        Activity: { demo_ref: act-decide-licensing }
+        Workstream: { demo_ref: ws-teams }
+        RaisedDate: "today-35"
+        DecisionDate: "today-20"
+        DecidedBy: "@me"
+        DecidedByForum: { demo_ref: stakeholder-steering }
+        Detail: "Demo row. Uplifting everyone was affordable in year one and not in year three. Two people argued for the wider uplift and said so, which is recorded here so nobody rediscovers the argument in November."
+    # Ratified: the sponsor decided between meetings under the delegation, and
+    # the steering group validated it at the next one. The two lookups that
+    # cite this row stay visible because Ratified is one of the two states
+    # LiveDecisionTitle renders.
+    - key: dec-licence-tier-revised
+      values:
+        Title: "[DEMO] We will licence fifty frontline accounts and tolerate the remaining gap"
+        Status: "Ratified"
+        Activity: { demo_ref: act-decide-licensing }
+        Workstream: { demo_ref: ws-teams }
+        SupersedesDecision: { demo_ref: dec-licence-tier }
+        RaisedDate: "today-20"
+        DecisionDate: "today-12"
+        DecidedBy: "@me"
+        DecidedByForum: { demo_ref: stakeholder-steering }
+        ResolutionSought: "Demo row. That the fifty-account uplift be funded from the contingency line without waiting for the next steering group."
+        DecisionOutcome: "Demo row. The sponsor agreed it under delegation on the day it was asked, and the steering group ratified it at the following meeting."
+        Detail: "Demo row. This supersedes the narrower external-calls-only decision, authorises the fifty-account request, and tolerates the remaining unfunded gap until the next budget review."
+    # The two-stage route: a working group recommends, the steering group
+    # decides. Nothing at save checks that the deciding forum was entitled to
+    # decide; the reconciliation reads these two columns against the activity.
+    - key: dec-fax-cutover
+      values:
+        Title: "[DEMO] We will switch off the fax gateway after two clean weeks"
+        Status: "Approved"
+        Workstream: { demo_ref: ws-legacy }
+        RaisedDate: "today-15"
+        DecisionDate: "today-5"
+        RecommendedByForum: { demo_ref: stakeholder-fax-forum }
+        DecidedByForum: { demo_ref: stakeholder-steering }
+        ResolutionSought: "Demo row. That the gateway be switched off once two consecutive weeks pass with no inbound fax traffic."
+        DecisionOutcome: "Demo row. Approved on the working group's recommendation, with the clinical lead to confirm the two clean weeks before the switch."
+        Detail: "Demo row. No standing activity, because the maintaining activity is retired. Decided by the steering group rather than by one person, which is why Decided By is blank and both forums are named instead."
+        EndorsementRoute: "Demo row. Endorsed by the clinical lead at the fax working group (today-20, working-group minutes) and by the chair at the steering group (today-5, steering decision register). No stakeholder declined; neither response was chased further."
+    # The one open proposal, and the reason neither "Awaiting decision" nor
+    # "Stalled proposals" opens empty. Raised long enough ago that it has
+    # missed two monthly cycles.
+    - key: dec-pilot-extension
+      values:
+        Title: "[DEMO] We will extend the telephony pilot to a second directorate"
+        Status: "Proposed"
+        Activity: { demo_ref: act-decide-licensing }
+        Workstream: { demo_ref: ws-teams }
+        RaisedDate: "today-60"
+        ResolutionSought: "Demo row. That the steering group approve a second directorate joining the telephony pilot before the rollout decision is taken."
+        Detail: "Demo row. Still Proposed, so Decision Date is blank and the save rule allows it. It has sat past two meeting cycles, which is what the Stalled proposals view is for."

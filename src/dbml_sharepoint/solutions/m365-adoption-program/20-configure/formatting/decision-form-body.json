@@ -1,0 +1,7 @@
+{
+  "sections": [
+    { "displayname": "The decision", "fields": ["Title", "Status", "Activity", "Workstream", "SupersedesDecision", "RaisedDate", "DecisionDate", "DecidedBy", "DecidedByForum", "RecommendedByForum", "LiveDecisionTitle"] },
+    { "displayname": "Why", "fields": ["ResolutionSought", "DecisionOutcome", "Detail"] },
+    { "displayname": "Endorsement route", "fields": ["EndorsementRoute"] }
+  ]
+}

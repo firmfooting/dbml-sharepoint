@@ -1,0 +1,7 @@
+{
+  "sections": [
+    { "displayname": "Name the workstream", "fields": ["Title", "Purpose"] },
+    { "displayname": "Sequence and dates", "fields": ["Sequence", "StartDate", "TargetEndDate"] },
+    { "displayname": "Phase and closure", "fields": ["Phase", "ClosureNote"] }
+  ]
+}
