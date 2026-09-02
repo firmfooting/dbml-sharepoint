@@ -37,6 +37,9 @@ MARKER_TERMINATOR: Final = "."
 LIST_KIND: Final = "list"
 GROUP_KIND: Final = "group"
 LEVEL_KIND: Final = "level"
+#: The verify script's scratch list: one per site, owned by the tool rather
+#: than by a family, so its marker carries no family.
+SCRATCH_KIND: Final = "scratch"
 
 
 def marker_for_object(*, kind: str, name: str, family: str | None) -> str:
