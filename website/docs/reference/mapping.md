@@ -1130,10 +1130,12 @@ the message.
 
 **Rules against `today` and `now` are enforced on the list.** Measured
 2026-09-02: `TODAY()` and `NOW()` inside a validation formula run 16 to 20
-hours behind an AUS Eastern site, so `=[D]<=TODAY()` refused the current
-date until late afternoon; in a *list* validation formula, `[Modified]`
-is the instant of the save being validated, site-local, on create and on
-update, and a *column* formula may reference only its own column. So a
+hours behind an AUS Eastern site, still an hour after the site's zone was
+set, so `=[D]<=TODAY()` refused the current date until late afternoon,
+through the form as well as the API; in a *list* validation formula,
+`[Modified]` is the instant of the save being validated, site-local, on
+create and on update, through the form as well, and a *column* formula
+may reference only its own column. So a
 column rule whose `when` compares a date with `today` (with or without an
 offset) or a datetime with `now` is hoisted onto the list rule at build
 time: the build clears the column's own formula, joins the rule onto the

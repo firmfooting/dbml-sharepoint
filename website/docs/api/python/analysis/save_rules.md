@@ -26,6 +26,11 @@ Sydney", at 10:57 local, with the server clock correct:
   save's own instant, in site-local time, on create and on update.
 - A COLUMN validation formula may reference only its own column:
   "The formula cannot refer to another column."
+- Through the modern form at 11:49 local, with the site zone unchanged for
+  over an hour: a date-only column under `=[DT]<=TODAY()` still refused
+  today, so the lag is not a setting propagating; under the list rule
+  `=OR(ISBLANK([DM]),[DM]<=[Modified])` the form saved today and refused
+  tomorrow with the rule's own message. The form path behaves as REST did.
 
 So a column rule that compares a date with `today` or `now` cannot be
 exact where it was declared, and is hoisted onto the list rule here. The
