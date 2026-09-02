@@ -6,6 +6,7 @@ from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.extension import ManifestExtras
@@ -171,6 +172,12 @@ def generate_manifest(
             "described": lst["validation_described"],
             "message": lst["validation_message"],
             "hoisted": lst.get("validation_hoisted", []),
+            # The count the deployer writes (display names, hoisted rules
+            # joined), against the limits a build refuses at.
+            "formula_length": len(lst["validation_formula"]),
+            "formula_limit": MAX_VALIDATION_FORMULA,
+            "message_length": len(lst["validation_message"] or ""),
+            "message_limit": MAX_VALIDATION_MESSAGE,
         }
         for lst in schema_json["lists"]
         if lst.get("validation_formula") is not None

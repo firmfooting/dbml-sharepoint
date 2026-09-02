@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import effective_column_types
-from dbml_sharepoint.analysis.column_refs import formula_column_refs
+from dbml_sharepoint.analysis.column_refs import formula_column_refs, rewrite_formula_refs
 from dbml_sharepoint.analysis.condition_rendering import VALIDATION, to_validation
 from dbml_sharepoint.analysis.conditions import condition_findings, leaves
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
@@ -341,10 +341,12 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             findings.extend(problems)
             if not problems:
-                formula = f"={to_validation(cv_rule.when, types)}"
-                for internal in types:
-                    display = bundle.mapping.display_name_for(cv_entity, internal)
-                    formula = formula.replace(f"[{internal}]", f"[{display}]")
+                # Measured as SharePoint receives it: display names, and a
+                # `[Name]` inside a string literal left alone.
+                formula = rewrite_formula_refs(
+                    f"={to_validation(cv_rule.when, types)}",
+                    {n: bundle.mapping.display_name_for(cv_entity, n) for n in types},
+                )
                 if len(formula) > MAX_VALIDATION_FORMULA:
                     findings.append(Finding(
                         FindingCode.VALIDATION_FORMULA_TOO_LONG,

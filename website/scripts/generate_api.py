@@ -67,6 +67,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.demo_marker", "the demo-row Title-prefix contract"),
     ("analysis.forms", "composing declared form visibility"),
     ("analysis.save_rules", "which date rules move from a column to the list rule"),
+    ("analysis.clock_cells", "every clock cell, with its evidence or its refusal"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),

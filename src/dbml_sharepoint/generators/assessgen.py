@@ -103,8 +103,10 @@ def _uses_today(schema: Schema, m: Mapping, table_names: list[str]) -> bool:
     """Whether anything this run ships reads `today` on the site: a view
     filter's <Today/>, a column's [today] default, a validation rule. The
     site's zone is the one dates are stored and shown in, and the one a view
-    window is read against; a validation rule no longer depends on any clock
-    (analysis/save_rules.py), but the same pack usually carries all three."""
+    window is read against; a validation rule compares with the save instant,
+    except an offset `today` on a datetime column, which still reads the
+    formula clock (analysis/clock_cells.py). The same pack usually carries
+    all three."""
     conditions = []
     for name in table_names:
         section = m.column_validation.get(name)

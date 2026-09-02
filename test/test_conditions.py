@@ -16,6 +16,8 @@ from dbml_sharepoint.analysis.condition_rendering import (
     EXPRESSION,
     NEGATION,
     VALIDATION,
+    ConditionRefusal,
+    ConditionRefusalKind,
     caml_condition_count,
     normalise,
     to_caml,
@@ -2568,14 +2570,39 @@ def test_a_date_rule_against_today_renders_against_the_save_instant() -> None:
         assert to_validation(condition, TYPES) == expected, (op, value)
 
 
-def test_a_datetime_rule_against_today_keeps_the_clock() -> None:
+def test_a_datetime_rule_against_an_offset_today_keeps_the_clock() -> None:
     """A datetime carries a time of day, so day arithmetic against the save
-    instant would compare instants, not days. Unchanged, and documented as
-    following the lagging clock; `now` is the exact form for a datetime."""
+    instant would compare instants, not days. The offset form is unchanged
+    and documented as following the lagging clock, which the validator
+    warns about; `now` is the exact form for a datetime."""
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": "today+1"}], "ctx",
     )
     assert to_validation(condition, TYPES) == "[OccurredAt]<=TODAY()+1"
+
+
+@pytest.mark.parametrize("value", ["today", "today+0", "today-0"])
+def test_a_bare_today_on_a_datetime_column_is_refused_in_validation(value: str) -> None:
+    """`[W]<=TODAY()` has no correct reading: TODAY() is midnight on a clock
+    measured 16 to 20 hours behind the site, so "not after today" refuses
+    most of the last two days and "not before today" accepts yesterday. The
+    refusal names `now`, which compares with the save instant. A zero offset
+    is the bare form spelled longer."""
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
+    )
+    with pytest.raises(ConditionRefusal) as caught:
+        to_validation(condition, TYPES)
+    assert caught.value.kind is ConditionRefusalKind.TODAY_ON_A_DATETIME_COLUMN
+    assert "now" in str(caught.value)
+
+
+@pytest.mark.parametrize("value", ["today+0", "today-0"])
+def test_a_zero_offset_today_renders_as_the_bare_form_on_every_target(value: str) -> None:
+    condition = parse_condition([{"field": "Due", "op": "leq", "value": value}], "ctx")
+    assert to_validation(condition, TYPES) == "[Due]<=[Modified]"
+    assert "<Today/>" in to_caml(condition, TYPES)
+    assert "OffsetDays" not in to_caml(condition, TYPES)
 
 
 def test_the_literal_word_today_on_a_text_column_stays_a_word() -> None:

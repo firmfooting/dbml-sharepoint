@@ -1252,3 +1252,103 @@ def test_system_columns_reserve_their_model_names_only_when_switched_on() -> Non
             validate_against_mapping(schema, off),
             FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
         )
+
+
+def test_a_hoisted_rule_the_renderer_refuses_is_a_finding_not_a_traceback() -> None:
+    """`now` on a DATE column is a renderer refusal. The column rule is hoisted
+    onto the list rule before the formatting check measures the combined
+    formula, and that measurement rendered it unguarded, so the refusal
+    escaped `validate_against_mapping` as a traceback rather than the finding
+    the column-validation check classifies it into."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(
+        when=Group("all_of", (Leaf(field="DueDate", op="leq", value="now"),)),
+        message="Not after now.",
+    )
+    errors = _project_errors(
+        column_validation={"Project": EntitySection(columns={"DueDate": rule})},
+    )
+    only(errors, FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN)
+
+
+def test_the_formula_limit_is_measured_with_display_names_but_not_inside_literals() -> None:
+    """SharePoint receives the formula with DISPLAY names, so the limit is
+    measured on that spelling. A string literal is data: `"[DueDate]"` inside
+    quotes is not a reference and is not renamed, so measuring it renamed
+    (to `[Due Date]`, one character longer) refused a formula SharePoint
+    accepts at exactly the limit. The manifest measures through
+    `rewrite_formula_refs`, which skips literals, and the check must agree."""
+    types = {"Title": "nvarchar"}
+
+    def rule(needle: str) -> ListValidation:
+        return ListValidation(
+            when=Group("all_of", (Leaf(field="Title", op="neq", value=needle),)),
+            message="Too long.",
+        )
+
+    literal = "[DueDate]"
+    baseline = len("=" + to_validation(rule(literal).when, types))
+    built = rule(literal + "x" * (MAX_VALIDATION_FORMULA - baseline))
+    assert len("=" + to_validation(built.when, types)) == MAX_VALIDATION_FORMULA
+    errors = _project_errors(list_validation={"Project": built}, display_name_mode="auto")
+    none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
+
+
+def _event_findings(**sections: Any) -> list[Finding]:
+    """An entity with a datetime column, which the Project fixture lacks."""
+    schema = make_schema(
+        make_table(
+            "Event",
+            column("Title", required=True),
+            column("OccurredAt", "datetime"),
+            column("Due", "date"),
+            note="Events with a time of day.",
+        ),
+    )
+    return list(validate_against_mapping(schema, make_bundle(entities=["Event"], **sections)))
+
+
+def _clock_rule(field: str, value: str) -> Group:
+    return Group("all_of", (Leaf(field=field, op="leq", value=value),))
+
+
+def test_an_offset_today_on_a_datetime_column_warns_that_it_reads_the_formula_clock() -> None:
+    """The one emitted shape that still renders TODAY(): the window it
+    declares lands 16 to 20 hours from where it reads. A warning, not an
+    error, because the offset form is the only datetime window the grammar
+    has, and the manifest shows what was written."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(when=_clock_rule("OccurredAt", "today+1"), message="Not after tomorrow")
+    findings = _event_findings(
+        column_validation={"Event": EntitySection(columns={"OccurredAt": rule})},
+    )
+    assert by_severity(findings, "error") == []
+    warning = only(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
+    assert "OccurredAt" in warning.message
+    assert "now" in warning.message
+    assert warning.location is not None
+
+
+def test_a_declared_list_rule_with_the_same_shape_warns_too() -> None:
+    """Nothing is hoisted here, so the walk over the effective rule must not
+    skip an entity whose list rule is the declared one alone."""
+    findings = _event_findings(
+        list_validation={
+            "Event": ListValidation(when=_clock_rule("OccurredAt", "today-1"), message="m"),
+        },
+    )
+    only(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
+
+
+def test_a_date_column_against_an_offset_today_does_not_warn() -> None:
+    """A date-only column is compared with the save instant, whatever the
+    offset; only a datetime reads the clock."""
+    from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
+
+    rule = ColumnValidation(when=_clock_rule("Due", "today+30"), message="m")
+    findings = _event_findings(
+        column_validation={"Event": EntitySection(columns={"Due": rule})},
+    )
+    none_of(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
