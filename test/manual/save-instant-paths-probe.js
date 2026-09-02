@@ -319,7 +319,11 @@
     const lv = await post(listPath, { __metadata: { type: 'SP.List' }, ValidationFormula: rule, ValidationMessage: 'probe: a date is after this save' },
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     const back = await spGet(`${listPath}?$select=ValidationFormula`);
-    record('formula.validation.fixture-three-column-modified-rule-stored', 'the list rule over DM, TR and WR against [Modified] is stored', lv.ok && back.body && back.body.ValidationFormula === rule ? 'PASS' : 'FAIL',
+    // MEASURED 2026-09-02: SharePoint stores `[DM]<=[Modified]` and reads it
+    // back as `DM<=Modified`, so the comparison ignores the brackets, as the
+    // deployer's own readback does.
+    const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
+    record('formula.validation.fixture-three-column-modified-rule-stored', 'the list rule over DM, TR and WR against [Modified] is stored', lv.ok && back.body && canonical(back.body.ValidationFormula) === canonical(rule) ? 'PASS' : 'FAIL',
       lv.ok ? `stored: ${back.body && back.body.ValidationFormula}` : `HTTP ${lv.status} ${reason(lv)}`);
 
     // ---- R1: the default race through REST, five times --------------------

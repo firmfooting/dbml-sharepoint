@@ -31,6 +31,17 @@ Sydney", at 10:57 local, with the server clock correct:
   prefilled the same `[today]` default with the site's date. Views and
   dynamic defaults need no change; the signed-in user's profile regional
   settings were empty.
+- The paths the rule had not been through (save-instant-paths probe, 19:59
+  local): under `OR(ISBLANK([TR]),[TR]<=[Modified])` with TR a date-only
+  column carrying the dynamic default `[today]`, five bare REST creates and
+  one through the form's own endpoint all saved, the default and Modified
+  stamped to the same second, so the default does not race the rule. The
+  modern form's Edit saved today and refused tomorrow with the rule's
+  message; grid view saved today on one row and on four; the New form
+  prefilled the date-only default with the site's date (stored as
+  site-local midnight) and the datetime default with the current minute,
+  and saved. Not yet observed: grid view refusing tomorrow, and the bulk
+  Edit pane. SharePoint reads `[DM]<=[Modified]` back as `DM<=Modified`.
 
 So a column rule that compares a date with `today` or `now` cannot be
 exact where it was declared, and is hoisted onto the list rule here. The
