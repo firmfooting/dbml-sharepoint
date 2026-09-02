@@ -1,0 +1,129 @@
+{# test/manual/templates/modified-clock-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (WRITES TO THE EXISTING SCRATCH LIST): CAN A COLUMN
+ * VALIDATION FORMULA COMPARE ITS COLUMN WITH [Modified] OR [Created]?
+ *
+ * QUESTION: TODAY() and NOW() were measured hours behind the site. Can a
+ * COLUMN validation formula compare against [Modified] or [Created] at all,
+ * and if it can, does it see the instant of the save being validated?
+ *
+ * Runs against `dbml-probe-today-semantics`, left by the today-semantics
+ * probe. Adds DM (date only, `=[DM]<=[Modified]`), DC (date only,
+ * `=[DC]<=[Created]`) and WM (date and time, `=[WM]<=[Modified]`), then
+ * saves items at known instants. If SharePoint refuses the formulas at C1
+ * (a column rule may reference only its own column), every row below is
+ * NOT APPLICABLE and the list-modified-clock probe is the one to run.
+ *
+ * HOW TO RUN: F12 -> Console on the site, paste, Enter; set CONFIRMED and
+ * ALLOW_WRITES to true and paste again. Wait through the ten-second pause.
+ * Copy the RESULTS block back.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+  const LIST = 'dbml-probe-today-semantics';
+
+  expect('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock');
+  expect('formula.validation.column-rule-cross-column-accepted', 'column rules against [Modified] and [Created] are accepted');
+  expect('formula.validation.column-modified-allows-yesterday', 'DM = yesterday (site-local midnight)');
+  expect('formula.validation.column-modified-allows-today', 'DM = today (site-local midnight)');
+  expect('formula.validation.column-modified-rejects-tomorrow', 'DM = tomorrow (site-local midnight)');
+  expect('formula.validation.column-created-allows-today', 'DC = today (site-local midnight)');
+  expect('formula.validation.column-created-rejects-tomorrow', 'DC = tomorrow (site-local midnight)');
+  expect('formula.validation.column-modified-allows-hour-ago', 'WM = now - 1 h');
+  expect('formula.validation.column-modified-rejects-hour-ahead', 'WM = now + 1 h');
+  expect('formula.validation.column-modified-update-sees-own-save', 'an update to WM = five seconds ago saves against this save\'s Modified');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would add three columns with validation rules to '${LIST}' on ${WEB} and save nine items.`);
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+  const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
+  const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
+  const verdict = (r) => (r.ok ? 'SAVED' : `REFUSED HTTP ${r.status} ${reason(r)}`);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  const nowUtc = new Date();
+  record('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock', dated.ok ? 'PASS' : 'FAIL',
+    `site zone "${tz && tz.Description}"; browser offset ${-nowUtc.getTimezoneOffset()} min; browser now ${nowUtc.toISOString()}; server ${dated.headers.get('date')}`);
+  const localMidnightUtc = (days) =>
+    new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate() + days, 0, 0, 0, 0).toISOString();
+
+  const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+  const list = await spGet(`${listPath}?$select=Id,ListItemEntityTypeFullName`);
+  if (readFailed(list)) {
+    record('formula.validation.column-rule-cross-column-accepted', 'column rules against [Modified] and [Created] are accepted', 'ABORTED', `list '${LIST}' not found; run the today-semantics probe first`);
+    return report();
+  }
+  const itemType = list.body.ListItemEntityTypeFullName;
+  const fields = `${listPath}/fields`;
+  const items = `${listPath}/items`;
+  const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
+  const ensure = async (title, displayFormat, formula, message) => {
+    if (!have.has(title)) {
+      const made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat });
+      if (!made.ok) return { ok: false, detail: `${title} create ${made.status} ${reason(made)}` };
+    }
+    const set = await post(`${fields}/getbytitle('${enc(title)}')`, {
+      __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: formula, ValidationMessage: message,
+    }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    return { ok: set.ok, detail: `${title} ${set.ok ? 'rule accepted' : `rule refused ${set.status} ${reason(set)}`}` };
+  };
+  const rules = [
+    await ensure('DM', 0, '=[DM]<=[Modified]', 'DM after Modified'),
+    await ensure('DC', 0, '=[DC]<=[Created]', 'DC after Created'),
+    await ensure('WM', 1, '=[WM]<=[Modified]', 'WM after Modified'),
+  ];
+  const accepted = rules.every((r) => r.ok);
+  record('formula.validation.column-rule-cross-column-accepted', 'column rules against [Modified] and [Created] are accepted', accepted ? 'ACCEPTED' : 'REFUSED', rules.map((r) => r.detail).join('; '));
+  if (!accepted) {
+    for (const id of ['formula.validation.column-modified-allows-yesterday', 'formula.validation.column-modified-allows-today', 'formula.validation.column-modified-rejects-tomorrow', 'formula.validation.column-created-allows-today', 'formula.validation.column-created-rejects-tomorrow', 'formula.validation.column-modified-allows-hour-ago', 'formula.validation.column-modified-rejects-hour-ahead', 'formula.validation.column-modified-update-sees-own-save']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE', 'the column rules were refused at C1, so there is nothing to save against');
+    }
+    return report();
+  }
+
+  const save = async (label, payload) => post(items, { __metadata: { type: itemType }, Title: label, ...payload });
+  const rows = [
+    ['formula.validation.column-modified-allows-yesterday', 'DM = yesterday (site-local midnight)', { DM: localMidnightUtc(-1) }],
+    ['formula.validation.column-modified-allows-today', 'DM = today (site-local midnight)', { DM: localMidnightUtc(0) }],
+    ['formula.validation.column-modified-rejects-tomorrow', 'DM = tomorrow (site-local midnight)', { DM: localMidnightUtc(1) }],
+    ['formula.validation.column-created-allows-today', 'DC = today (site-local midnight)', { DC: localMidnightUtc(0) }],
+    ['formula.validation.column-created-rejects-tomorrow', 'DC = tomorrow (site-local midnight)', { DC: localMidnightUtc(1) }],
+    ['formula.validation.column-modified-allows-hour-ago', 'WM = now - 1 h', { WM: new Date(nowUtc.getTime() - 3600 * 1000).toISOString() }],
+    ['formula.validation.column-modified-rejects-hour-ahead', 'WM = now + 1 h', { WM: new Date(nowUtc.getTime() + 3600 * 1000).toISOString() }],
+  ];
+  for (const [id, question, payload] of rows) {
+    const r = await save(id, payload);
+    record(id, question, r.ok ? 'SAVED' : 'REFUSED', `${JSON.stringify(payload)}: ${verdict(r)}`);
+  }
+
+  // UPDATE: does [Modified] mean THIS save, or the previous one?
+  const seed = await save('update-seed', { WM: new Date(nowUtc.getTime() - 3600 * 1000).toISOString() });
+  if (!seed.ok) {
+    record('formula.validation.column-modified-update-sees-own-save', 'an update to WM = five seconds ago saves against this save\'s Modified', 'FAIL', `could not create the seed item: HTTP ${seed.status} ${reason(seed)}`);
+    return report();
+  }
+  const seedId = seed.body.d.Id;
+  await sleep(10000);
+  const t1 = new Date();
+  const value = new Date(t1.getTime() - 5000).toISOString();
+  const upd = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: value }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  const after = await spGet(`${items}(${seedId})?$select=Id,Modified,WM`);
+  record('formula.validation.column-modified-update-sees-own-save', 'an update to WM = five seconds ago saves against this save\'s Modified', upd.ok ? 'SAVED' : 'REFUSED',
+    `update at ${t1.toISOString()} to ${value}: ${verdict(upd)}; Modified now ${after.body && after.body.Modified}; WM ${after.body && after.body.WM}`);
+  return report();
+})();
