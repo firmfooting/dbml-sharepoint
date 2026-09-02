@@ -1,0 +1,30 @@
+{# Shared formula canonicalisation: how a stored Formula or ValidationFormula
+   is compared with what was written. Expects nothing; defines xmlDecode and
+   canonicalFormula. Included by deploy/_field_reconcile.js.j2 and by the
+   verify script, so both read a formula back the same way. #}
+  // SharePoint stores a calculated field's Formula in the field schema XML
+  // and returns it with XML character entities intact (`<>` reads back as
+  // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
+  // rewrites the identical formula and the readback still "differs". Compare
+  // formulas on their XML-decoded canonical form (both sides), so encoded
+  // and decoded readbacks both match. `&amp;` decodes LAST: decoding it
+  // earlier would corrupt double-encoded text (`&amp;lt;` must yield the
+  // literal `&lt;`, not `<`).
+  const xmlDecode = (value) => String(value)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+
+  // A second storage canonicalisation (PnP provisioning documents the same
+  // trap): SharePoint strips square brackets from column references that do
+  // not need delimiting: `[Likelihood]` is stored and read back as
+  // `Likelihood`; names with spaces keep their brackets. Strip removable
+  // brackets on both sides, but only OUTSIDE string literals (split keeps
+  // `"..."` tokens, with `""` as the escaped quote, at odd indices):
+  // bracket text inside a quoted constant is data, not a reference.
+  const canonicalFormula = (value) => xmlDecode(typeof value === 'string' ? value : '')
+    .split(/("(?:""|[^"])*")/)
+    .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
+    .join('');

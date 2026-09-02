@@ -69,6 +69,12 @@ Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
+### `_formula_canonical.js.j2`
+
+Included by: `deploy/_field_reconcile.js.j2`
+
+Shared formula canonicalisation: how a stored Formula or ValidationFormula is compared with what was written. Expects nothing; defines xmlDecode and canonicalFormula. Included by deploy/_field_reconcile.js.j2 and by the verify script, so both read a formula back the same way.
+
 ### `_http.js.j2`
 
 Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`
