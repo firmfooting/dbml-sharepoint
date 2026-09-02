@@ -616,6 +616,53 @@ def test_manifest_has_a_list_validation_section() -> None:
     assert "Status is_not_null" in md
 
 
+def test_manifest_announces_a_column_rule_hoisted_to_the_list() -> None:
+    """The operator reads the manifest to know what will be written. A rule
+    that moved from a column to the list, with its message joined onto the
+    list's, has to be visible in both sections or the clear on the column
+    reads as a rule lost."""
+    md = _manifest_for(
+        column_validation={
+            "Escalation": EntitySection(columns={
+                "Note": ColumnValidation(
+                    when=Leaf(field="Note", op="neq", value="x"), message="Not x.",
+                ),
+            }),
+        },
+    )
+    assert "hoisted" not in md
+    schema = make_schema(make_table(
+        "Escalation",
+        column("Title", required=True),
+        column("Raised", "date"),
+    ))
+    bundle = make_bundle(
+        entities=["Escalation"],
+        column_validation={
+            "Escalation": EntitySection(columns={
+                "Raised": ColumnValidation(
+                    when=Leaf(field="Raised", op="leq", value="today"),
+                    message="Not in the future.",
+                ),
+            }),
+        },
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/t",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "Raised" in md.split("## List validation")[1].split("## Form formatting")[0]
+    assert "hoisted from column validation" in md
+    assert "Not in the future." in md
+
+
 def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> None:
     """The manifest is what an operator reads to decide whether to paste the
     script, so it must describe THIS build and no other.

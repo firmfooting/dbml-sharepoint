@@ -560,7 +560,9 @@ TODAY_SENTINEL = re.compile(r"^today(?:([+-])(\d+))?$")
 # validation formula and <Today OffsetDays> combined with IncludeTimeValue
 # are each plausible and each unobserved, and this project's rule is that
 # unverified is treated as unknown. Bare `now` is what the probe on
-# 2026-07-29 actually established, so bare `now` is what exists.
+# 2026-07-29 actually established, so bare `now` is what exists. Since
+# 2026-09-02 a validation comparison against `now` renders [Modified] rather
+# than NOW() (analysis/save_rules.py), so the CAML half is the unobserved one.
 NOW_SENTINEL = re.compile(r"^now$")
 
 # Declared view aggregations: the authored name, and SharePoint's own token

@@ -24,6 +24,20 @@ write machinery is auditable from the script text itself.
    ManagePermissions, NoScript), creatable list templates, regional and
    language settings, group connection, storage, hub status, retention
    labels, app catalog and SPFx footprint, search.
+
+   The regional read includes the site's **time zone**, compared with the
+   browser the script is pasted into. Every date and time on a site is
+   stored and shown in the site's zone (a date-only value is site-local
+   midnight), and a `today` view window is read against the site's day,
+   so a site left in a zone other than its users' shifts every time they
+   see. When the pack uses `today` and the two zones differ, `time_zone`
+   is a WARN that degrades the verdict until the site's zone is set to
+   the users' or the finding is acknowledged; when they agree, or the pack
+   has no `today`, it is INFO. Save rules are a separate matter: measured
+   2026-09-02, `TODAY()` and `NOW()` in a validation formula ran 16 to 20
+   hours behind an AUS Eastern site whatever the zone said, so the build
+   compares date rules with the save instant instead; see the mapping
+   reference under `column_validation`.
 2. **Pack-driven attempt-probes**: per-declared-list collision probes;
    property-surface probes (sealing, `AllowDeletion`, column and form
    formatter surfaces) against an existing declared list where one

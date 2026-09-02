@@ -90,8 +90,8 @@ Rules 1 and 3 cannot be enforced at save either.
 | Rule | List | Where it lives |
 | --- | --- | --- |
 | Rule 2: a *Closed* **or *Risk accepted*** recommendation needs a `ClosedDate` | Recommendation | list validation |
-| `ClosedDate` cannot be in the future | Recommendation | column validation |
-| `ReportDate` cannot be in the future | Audit | column validation |
+| `ClosedDate` cannot be in the future | Recommendation | list validation, hoisted from the column rule |
+| `ReportDate` cannot be in the future | Audit | list validation, hoisted from the column rule |
 
 The two closure rules share one message, because a SharePoint list has
 exactly one `ValidationFormula` and cannot say which branch failed. The

@@ -84,8 +84,8 @@ becomes structure.
 | --- | --- | --- |
 | Rule 2, the date half: *Assessed - managed* needs a `ReviewDate` | Interest | list validation |
 | Rule 1, the date half: *Ceased* needs a `CeasedDate` | Interest | list validation |
-| `DeclaredDate` and `CeasedDate` cannot be in the future | Interest | column validation |
-| `OfferedDate` cannot be in the future | GiftBenefit | column validation |
+| `DeclaredDate` and `CeasedDate` cannot be in the future | Interest | list validation, hoisted from the column rule |
+| `OfferedDate` cannot be in the future | GiftBenefit | list validation, hoisted from the column rule |
 | `EstimatedValue` cannot be negative | GiftBenefit | column validation |
 
 The two Interest rules share one message, because a SharePoint list has

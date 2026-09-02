@@ -19,7 +19,7 @@ from typing import Any
 from dbml_sharepoint.analysis.condition_rendering import to_expression, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.styles import TOKENS, expand_style
-from dbml_sharepoint.analysis.typemap import NUMBER_TYPES
+from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 
 #: The suffix `_severity` appends to its class expression.
@@ -298,6 +298,47 @@ def _verified_visibility(
     return declared if rendered == observed.strip() else None
 
 
+_SAVE_INSTANT = re.compile(r"^\[?Modified\]?$", re.IGNORECASE)
+# The columns that carry a time of day; one home in condition_rendering too.
+_DATETIME_TYPES = frozenset({"datetime"})
+_SHIFTED_REF = re.compile(r"^(?P<ref>.+?)(?P<shift>[+-]\d+)?$")
+
+
+def _save_instant_leaf(
+    head: str, op: str, tail: str, types: dict[str, str],
+) -> dict[str, Any] | None:
+    """A comparison against `[Modified]`, the save instant, back to the
+    `today`/`now` sentinel the build rendered it from (see
+    `analysis/condition_rendering._save_instant_leaf`).
+
+    A datetime compares directly, so the sentinel is `now`. A date-only
+    column is shifted by whole days on the column side, so `D-N<=Modified`
+    is `leq today+N` and `D+1<=Modified` is `lt today`, which comes back in
+    its equivalent canonical spelling `leq today-1`: the two render to the
+    same formula, and the canonical one is what a re-read compares equal to.
+    """
+    if not _SAVE_INSTANT.match(tail.strip()):
+        return None
+    shifted = _SHIFTED_REF.fullmatch(head.strip())
+    if shifted is None:
+        return None
+    ref = re.fullmatch(_VALIDATION_REF, shifted.group("ref").strip())
+    if ref is None:
+        return None
+    name = ref.group("braced") or ref.group("bare")
+    column_type = types.get(name)
+    if column_type is None or column_type not in DATE_TYPES:
+        return None
+    shift = int(shifted.group("shift") or 0)
+    if column_type in _DATETIME_TYPES:
+        return None if shift else {"field": name, "op": op, "value": "now"}
+    if op not in ("leq", "gt"):
+        return None
+    offset = -shift
+    value = "today" if offset == 0 else f"today{offset:+d}"
+    return {"field": name, "op": op, "value": value}
+
+
 def _validation_leaf(text: str, types: dict[str, str]) -> dict[str, Any] | None:
     """One comparison from a validation formula, as an authored leaf.
 
@@ -310,6 +351,9 @@ def _validation_leaf(text: str, types: dict[str, str]) -> dict[str, Any] | None:
         head, sep, tail = text.partition(spelling)
         if not sep:
             continue
+        against_save = _save_instant_leaf(head, op, tail, types)
+        if against_save is not None:
+            return against_save
         ref = re.fullmatch(_VALIDATION_REF, head.strip())
         if ref is None:
             continue

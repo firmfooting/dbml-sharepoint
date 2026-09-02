@@ -2556,8 +2556,70 @@ def test_required_date_default_and_validation_reach_the_field(tmp_path: Path) ->
     )
     assert field["body"]["Required"] is True
     assert field["body"]["DefaultValue"] == "[today]"
-    assert field["validation_formula"] == "=[LastReviewedDate]<=TODAY()"
-    assert field["validation_message"] == "Review date cannot be in the future."
+    # MEASURED 2026-09-02: a column rule against the clock cannot be exact
+    # on its column (TODAY() lags the site, and a column formula may not
+    # reference [Modified]), so it moves to the list rule, guarded for a
+    # blank, and the column's own rule is CLEARED so the lagging one
+    # cannot survive a redeploy beside it. See analysis/save_rules.py.
+    assert field["validation_formula"] == ""
+    assert field["validation_message"] == ""
+    assert out["lists"][0]["validation_formula"] == (
+        "=OR(ISBLANK([LastReviewedDate]),[LastReviewedDate]<=[Modified])"
+    )
+    assert out["lists"][0]["validation_message"] == "Review date cannot be in the future."
+    assert out["lists"][0]["validation_hoisted"] == ["LastReviewedDate"]
+
+
+def test_a_hoisted_date_rule_joins_the_declared_list_rule(tmp_path: Path) -> None:
+    """One list, one formula, one message: the declared list rule comes
+    first, each hoisted rule follows under its blank guard, and the messages
+    are joined in the same order."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Action", ID_PK, TITLE,
+            "Status nvarchar",
+            "CompletedDate date",
+            "OccurredAt datetime",
+        ),
+        mapping=blocks(entities("Action"), """
+            list_validation:
+              Action:
+                when:
+                  - any_of:
+                      - { field: Status, op: neq, value: Done }
+                      - { field: CompletedDate, op: is_not_null }
+                message: An action marked Done needs a completed date.
+            column_validation:
+              Action:
+                columns:
+                  CompletedDate:
+                    when:
+                      - { field: CompletedDate, op: leq, value: today }
+                    message: An action cannot have been completed in the future.
+                  OccurredAt:
+                    when:
+                      - { field: OccurredAt, op: leq, value: now }
+                    message: Not after now.
+        """),
+    )
+    out = build_schema_json(schema, bundle, "default")
+    lst = out["lists"][0]
+    assert lst["validation_formula"] == (
+        '=AND(OR([Status]<>"Done",NOT(ISBLANK([CompletedDate]))),'
+        "OR(ISBLANK([CompletedDate]),[CompletedDate]<=[Modified]),"
+        "OR(ISBLANK([OccurredAt]),[OccurredAt]<=[Modified]))"
+    )
+    assert lst["validation_message"] == (
+        "An action marked Done needs a completed date. "
+        "An action cannot have been completed in the future. Not after now."
+    )
+    assert lst["validation_hoisted"] == ["CompletedDate", "OccurredAt"]
+    fields = {f["title"]: f for f in lst["fields_phase1"]}
+    assert fields["CompletedDate"]["validation_formula"] == ""
+    assert fields["OccurredAt"]["validation_formula"] == ""
 
 
 def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -> None:

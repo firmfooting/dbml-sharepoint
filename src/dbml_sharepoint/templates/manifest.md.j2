@@ -298,7 +298,7 @@ _(none declared)_
 
 {% if column_validation %}
 {% for cv in column_validation %}
-- {{ cv.list }}.{{ cv.column }}{% if cv.cleared %}: cleared{% else %}
+- {{ cv.list }}.{{ cv.column }}{% if cv.hoisted %}: cleared here; its rule is hoisted to the list rule below{% elif cv.cleared %}: cleared{% else %}
   `{{ cv.formula }}`
   message: {{ cv.message }}{% endif %}
 
@@ -321,6 +321,9 @@ _(none declared)_
 {% for lv in list_validation %}
 - {{ lv.list }}: {{ lv.described }}
   message: {{ lv.message }}
+{% if lv.hoisted %}
+  includes, hoisted from column validation: {{ lv.hoisted | join(', ') }}
+{% endif %}
 
 {% endfor %}
 The cross-column sibling of the per-column rules above, stored on the
@@ -328,6 +331,13 @@ LIST (ValidationFormula/ValidationMessage) rather than on a field, so it
 may reference any column. Shown as the declared condition rather than the
 rendered formula: the condition is what was authored, and the SharePoint
 syntax carrying it is a renderer detail.
+
+A column rule that compares a date with `today` or `now` is enforced here
+rather than on its column, guarded so a blank never fails it, and its
+message is joined onto the list's. Measured 2026-09-02: the formula clock
+behind TODAY() and NOW() ran 16 to 20 hours behind an AUS Eastern site,
+while [Modified] in a list formula is the instant of the save being
+validated; a column formula may not reference it.
 {% else %}
 _(none declared)_
 {% endif %}

@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.column_refs import (
     formula_column_refs,
     rewrite_formula_refs,
 )
+from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
@@ -32,6 +33,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
     level_description,
     marker_for_level,
 )
+from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     TOTAL_FUNCTIONS,
@@ -232,9 +234,15 @@ def _column_validation(
     *,
     field_type_kind: int,
     is_calculated: bool = False,
+    hoisted: frozenset[str] = frozenset(),
 ) -> tuple[str, str]:
     if field_type_kind in _COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS:
         return (UNMANAGED, UNMANAGED)
+    # A rule that moved to the list (analysis/save_rules.py) is CLEARED on
+    # its column, whatever the reconcile mode: left in place, the lagging
+    # column formula would keep refusing today beside the exact list rule.
+    if column in hoisted:
+        return ("", "")
     declared, clear = _section_target(section, column, is_calculated=is_calculated)
     if declared is None:
         return ("", "") if clear else (UNMANAGED, UNMANAGED)
@@ -500,6 +508,17 @@ def build_schema_json(
             {c.name: c.type for c in table.columns},
             {name for entity_name, name in cross_site_keys if entity_name == table_name},
         )
+        # Column rules that compare a date with the clock move onto the list
+        # rule, where [Modified] is the save's own instant; see
+        # analysis/save_rules.py for the measurement behind this.
+        hoisted_names = frozenset(
+            name for name, _ in hoisted_columns(
+                bundle.mapping.column_validation.get(table_name), col_types,
+            )
+        )
+        effective_validation = effective_list_validation(
+            bundle.mapping, table_name, col_types,
+        )
         calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
             f["display_title"] = display_map[f["title"]]
@@ -511,6 +530,7 @@ def build_schema_json(
                 validation, f["title"], col_types, display_map,
                 field_type_kind=f["body"]["FieldTypeKind"],
                 is_calculated=is_calculated,
+                hoisted=hoisted_names,
             )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
@@ -544,6 +564,7 @@ def build_schema_json(
                     validation, deferred["field"]["title"], col_types, display_map,
                     field_type_kind=deferred["field"]["body"]["FieldTypeKind"],
                     is_calculated=deferred_calculated,
+                    hoisted=hoisted_names,
                 )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 
@@ -557,7 +578,7 @@ def build_schema_json(
                 "Required": False,
             }
 
-        declared_validation = bundle.mapping.list_validation.get(table_name)
+        declared_validation = effective_validation
         lists.append({
             "title": list_title,
             "kind": entity.kind,
@@ -584,6 +605,15 @@ def build_schema_json(
             ),
             "validation_message": (
                 declared_validation.message if declared_validation is not None else None
+            ),
+            # The manifest shows the authored condition rather than the
+            # rendered formula, and names the column rules that moved here.
+            "validation_described": (
+                describe(declared_validation.when) if declared_validation is not None else None
+            ),
+            "validation_hoisted": sorted(
+                hoisted_names, key=lambda name: [c.name for c in table.columns].index(name)
+                if name in [c.name for c in table.columns] else len(table.columns),
             ),
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })

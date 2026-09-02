@@ -61,7 +61,7 @@ DELETES every list declared by this schema at this site. Refuses EVERY list unle
 
 Included by: `assess.js.j2`, `deploy.js.j2`
 
-The whole assessment, taking its collaborators as an argument so the standalone script and the deploy can share it without a second copy.
+The host names the pack data differently: assess.js.j2 passes `targets`, deploy.js.j2 `assess_targets_data`. One name here, so a probe that branches on the pack cannot render in one host and fail in the other.
 
 ### `_digest_cached.js.j2`
 

@@ -56,7 +56,7 @@ neither of which a SharePoint validation formula can reach.
 | Rule 3: a *Successful* bid needs `AmountAwarded` | Submission | list validation |
 | Rule 2, the date half: a filed obligation needs its `SubmittedDate` | Acquittal | list validation |
 | `AmountSought` and `AmountAwarded` cannot be negative | Submission | column validation |
-| A `SubmittedDate` cannot be in the future | both | column validation |
+| A `SubmittedDate` cannot be in the future | both | list validation, hoisted from the column rule |
 
 Each list has one `ValidationFormula`, so the two Submission rules share
 one message naming both checks. SharePoint cannot say which branch failed.
