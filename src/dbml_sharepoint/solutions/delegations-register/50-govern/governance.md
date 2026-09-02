@@ -69,7 +69,7 @@ three data-quality rules above are not, and cannot be.
 | Rule | Where it lives | Message shown |
 | --- | --- | --- |
 | A **Superseded** row must record its supersession in `Notes` | list validation | Names what the note has to say: which instrument version replaced it, and where the authority went |
-| `ApprovedDate` cannot be in the future | column validation | Its own message, on the column |
+| `ApprovedDate` cannot be in the future | list validation, hoisted from the column rule | Its sentence joins the list message |
 
 The supersession rule is a cross-column rule, so it takes the list's single
 `ValidationFormula`. The future-date rule reads only its own column, so it

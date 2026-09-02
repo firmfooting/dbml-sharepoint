@@ -66,6 +66,11 @@
     "level_on_fail": "BLOCKED"
   },
   {
+    "description": "Site regional time zone is the users\u0027 zone (dates are stored and shown in it, and the pack\u0027s `today` windows are read against its day)",
+    "key": "time_zone",
+    "level_on_fail": "WARN"
+  },
+  {
     "description": "Operator holds ManagePermissions",
     "key": "manage_permissions_bit",
     "level_on_fail": "BLOCKED"
@@ -120,7 +125,8 @@
     "APP_Task",
     "APP_AppSettings"
   ],
-  "requires_manage_permissions": true
+  "requires_manage_permissions": true,
+  "uses_today": true
 };
   const ASSESS_NOT_ASSESSABLE = [
   "Power Automate / Power Apps inventory (lives in Power Platform APIs, no SharePoint REST surface from site context)",
@@ -432,10 +438,42 @@
       }
     }
 
-    // Regional settings & languages: locale drives date rendering.
+    // Regional settings & languages: locale drives date rendering, and the
+    // time zone is the one every date and time is stored and shown in: a
+    // date-only value is site-local midnight, and a view window on `today`
+    // is read against the site's day. A site left in a zone other than its
+    // users' shifts every time they see. This reads the zone and compares it
+    // with the browser this is pasted into. The validation clock is a
+    // separate matter: MEASURED 2026-09-02, TODAY() and NOW() in a
+    // validation formula ran 16 to 20 hours behind an AUS Eastern site
+    // whatever this setting said, which is why the build compares date rules
+    // with the save instant instead (analysis/save_rules.py).
     {
       const rs = await probeGet('web/regionalsettings?$select=LocaleId');
       if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${reported(rs.d.LocaleId)}.`);
+      const tz = await probeGet('web/regionalsettings/timezone');
+      const info = (tz.ok && tz.d && tz.d.Information) || null;
+      if (!info) {
+        finding(1, 'time_zone', 'NOT-ASSESSABLE',
+          "web/regionalsettings/timezone did not report a zone, so which zone this site stores and shows dates in, and reads its 'today' view windows against, is unknown.");
+      } else {
+        // Windows convention: local + Bias = UTC, so local = UTC - Bias.
+        // SharePoint reports both biases without saying which is in force,
+        // so both site-local offsets are candidates and either may match.
+        const offsets = [...new Set([
+          -(info.Bias + (info.StandardBias || 0)),
+          -(info.Bias + (info.DaylightBias || 0)),
+        ])];
+        const browser = -new Date().getTimezoneOffset();
+        const spell = (m) => `${m >= 0 ? '+' : ''}${m} min`;
+        const zone = `Site time zone "${tz.d.Description || '(no description)'}" (UTC ${offsets.map(spell).join(' / ')}); this browser is UTC ${spell(browser)}.`;
+        if (offsets.includes(browser)) {
+          finding(1, 'time_zone', 'INFO', `${zone} They agree, so dates and times on this site read the same day this browser does.`);
+        } else {
+          finding(1, 'time_zone', 'WARN',
+            `${zone} They differ: every date and time on this site is stored and shown in the site's zone, and this pack's 'today' view windows are read against the site's day, so a user in this browser's zone sees every time shifted by the difference. Set Site settings > Regional settings > Time zone to the users' zone before deploying, or acknowledge this.`);
+        }
+      }
       const ml = await probeGet('web?$select=IsMultilingual,SupportedUILanguageIds');
       if (ml.ok) {
         // `${[]}` stringifies to nothing, so an unreported list read as a blank.
@@ -1295,7 +1333,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": "(NOT(Status eq \u0027Closed\u0027) OR SortOrder geq 0)",
       "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort Order]\u003e=0)",
+      "validation_hoisted": [],
       "validation_message": "A closed project needs a non-negative sort order."
     },
     {
@@ -1364,7 +1404,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": null,
       "validation_formula": null,
+      "validation_hoisted": [],
       "validation_message": null
     },
     {
@@ -1386,7 +1428,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": null,
       "validation_formula": null,
+      "validation_hoisted": [],
       "validation_message": null
     }
   ],

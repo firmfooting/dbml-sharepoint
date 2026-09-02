@@ -70,7 +70,7 @@ worth knowing rather than discovering.
 | --- | --- | --- |
 | A status other than *Not assessed* needs a `LastAssessedDate` | list validation | Shared, names both list rules |
 | *Compliant* / *Partially compliant* / *Non-compliant* needs `EvidenceNotes` | list validation | Shared, names both list rules |
-| `LastAssessedDate` cannot be in the future | column validation | Its own message, on the column |
+| `LastAssessedDate` cannot be in the future | list validation, hoisted from the column rule | Its sentence joins the list message |
 
 The two list rules share one message because a SharePoint list has exactly
 one `ValidationFormula`. It cannot say which branch failed, so the message

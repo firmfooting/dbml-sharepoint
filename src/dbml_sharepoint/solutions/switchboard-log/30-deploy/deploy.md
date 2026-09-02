@@ -115,9 +115,10 @@ site that already holds real switchboard records.
       the Edit form only once Status is **Relayed**. On a **new key
       movement**, *Returned At* is absent and appears once Status is
       **Returned**.
-- [ ] Save rules. Every datetime column refuses a future value with its
-      own message, and note the shape: each compares against `NOW()`, so
-      the refusal bites within the hour. A whole-day bound would have let a
+- [ ] Save rules. Every datetime column refuses a future value, the save
+      message carries a sentence for each, and note the shape: each
+      compares against the instant of the save, so the refusal bites
+      within the hour. A whole-day bound would have let a
       call be logged most of a day early, which at a switchboard is the one
       thing the timestamp is for. The message list refuses
       **Relayed** with no *Relayed To* or no *Relayed At*; the key
