@@ -48,6 +48,7 @@ class ConditionRefusalKind(Enum):
     SENTINEL_WITH_A_SUBSTRING_OPERATOR = auto()
     SET_EMPTY = auto()
     SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN = auto()
+    TODAY_ON_A_DATETIME_COLUMN = auto()
     TODAY_UNSUPPORTED_BY_TARGET = auto()
     VALUE_HAS_A_CONTROL_CHARACTER = auto()
     VALUE_MISSING = auto()
@@ -550,17 +551,13 @@ _ISO_DATE_LITERAL = re.compile(
 #
 # MEASURED 2026-09-02 (analysis/save_rules.py has the run): TODAY() and
 # NOW() in a validation formula run 16 to 20 hours behind the site, so a
-# comparison against `today` or `now` no longer renders either function.
-# `_save_instant_leaf` compares the column with [Modified] instead. The
-# VALIDATION row below records the 2026-07-29 rendering; it is reached only
-# by the shapes that helper does not take.
-#
-#   VALIDATION -> NOW()
-#       Microsoft's "Introduction to SharePoint formulas and functions"
-#       states "Lists and libraries do not support the RAND and NOW
-#       functions". That is TRUE of calculated columns and FALSE here: the
-#       probe set `=[ProbeWhen]<=NOW()`, SharePoint returned 204, read it
-#       back, and REFUSED an item stamped three hours in the future.
+# validation comparison against `today` or `now` renders against [Modified]
+# (`_save_instant_leaf`), bare `today` on a datetime column is refused, and
+# only the offset form `TODAY()+N` on a datetime still reaches
+# `_validation_literal`. For the record: the 2026-07-29 probe set
+# `=[ProbeWhen]<=NOW()`, SharePoint returned 204 and enforced it, which
+# contradicts the formula reference's "Lists and libraries do not support
+# the RAND and NOW functions". That sentence holds for calculated columns.
 #
 #   CAML -> <Today/> with IncludeTimeValue="TRUE", NOT <Now/>
 #       Learn documents <Now/> as a child of <Value> beside <Today/>. It
@@ -1443,6 +1440,15 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
     return _validation_leaf(leaf, column_type, where)
 
 
+def _today_offset(value: object) -> int:
+    """The signed day offset of a `today` sentinel; bare `today` is 0."""
+    match = _TODAY.match(str(value))
+    if match is None or match.group(2) is None:
+        return 0
+    days = int(match.group(2))
+    return -days if match.group(1) == "-" else days
+
+
 def _shift(ref: str, days: int) -> str:
     """`ref` moved by whole days; a date is a serial number in a formula."""
     if days == 0:
@@ -1476,10 +1482,7 @@ def _save_instant_leaf(leaf: Leaf, column_type: str) -> str | None:
         return f"{ref}{_VALIDATION_OPS[op]}[Modified]"
     if column_type in _DATETIME_TYPES or not _is_today(leaf.value, column_type):
         return None
-    match = _TODAY.match(str(leaf.value))
-    offset = int(match.group(2)) if match and match.group(2) else 0
-    if match and match.group(1) == "-":
-        offset = -offset
+    offset = _today_offset(leaf.value)
     day = _shift(ref, -offset)
     next_day = _shift(ref, -offset + 1)
     match op:
@@ -1506,6 +1509,26 @@ def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
     against_save = _save_instant_leaf(leaf, column_type)
     if against_save is not None:
         return against_save
+    if (
+        _is_today(leaf.value, column_type)
+        and column_type in _DATETIME_TYPES
+        and leaf.op in _VALIDATION_OPS
+        and not leaf.measure
+        and _today_offset(leaf.value) == 0
+    ):
+        # `[W]<=TODAY()` has no correct reading: TODAY() is midnight on a
+        # clock measured 16 to 20 hours behind the site (2026-09-02), so
+        # "not after today" refuses most of the last two days and "not
+        # before today" accepts yesterday. `now` compares with the save
+        # instant and is exact.
+        raise _reject(
+            ConditionRefusalKind.TODAY_ON_A_DATETIME_COLUMN,
+            VALIDATION,
+            f"'today' compared on the datetime column {leaf.field!r} would read "
+            f"TODAY(), a clock measured hours behind the site; say 'now', which "
+            f"compares with the instant of the save",
+            where,
+        )
     literal = _validation_literal(column_type, leaf.value, where)
     if leaf.op in ("contains", "not_contains"):
         rendered = f"ISNUMBER(FIND({literal},{ref}))"
@@ -1536,7 +1559,7 @@ def _caml_value(column_type: str, value: object, where: str) -> str:
         match = _TODAY.match(value) if isinstance(value, str) else None
         if match:
             sign, days = match.group(1), match.group(2)
-            if days is None:
+            if not days or int(days) == 0:
                 return '<Value Type="DateTime"><Today/></Value>'
             offset = days if sign == "+" else f"-{days}"
             return f'<Value Type="DateTime"><Today OffsetDays="{offset}"/></Value>'
@@ -1554,15 +1577,13 @@ def _expr_literal(column_type: str, value: object, where: str) -> str:
 
 
 def _validation_literal(column_type: str, value: object, where: str) -> str:
-    if _is_now(value, column_type):
-        # A `now` comparison renders [Modified] since 2026-09-02 (see
-        # _save_instant_leaf). This is the 2026-07-29 rendering, accepted
-        # with HTTP 204 then, kept for the shapes that helper does not take.
-        return "NOW()"
     if _is_today(value, column_type):
-        match = _TODAY.match(str(value))
-        sign, days = (match.group(1), match.group(2)) if match else (None, None)
-        return "TODAY()" if days is None else f"TODAY(){sign}{days}"
+        # Only the offset form on a datetime column reaches here: a date
+        # column renders against the save instant, and bare `today` on a
+        # datetime is refused (`_validation_leaf`). It reads the lagging
+        # clock, which the validator warns about.
+        offset = _today_offset(value)
+        return f"TODAY(){'+' if offset >= 0 else '-'}{abs(offset)}"
     if is_boolean(column_type):
         return "TRUE" if _boolean(value, where, VALIDATION) else "FALSE"
     if column_type in _NUMBER_TYPES:

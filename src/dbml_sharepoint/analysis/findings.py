@@ -439,6 +439,7 @@ class FindingCode(StrEnum):
     CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN = (
         "condition_substring_test_on_a_non_text_column", "error"
     )
+    CONDITION_TODAY_ON_A_DATETIME_COLUMN = "condition_today_on_a_datetime_column", "error"
     CONDITION_TODAY_UNSUPPORTED_BY_TARGET = "condition_today_unsupported_by_target", "error"
     CONDITION_TOO_DEEP = "condition_too_deep", "error"
     CONDITION_TOO_MANY_LEAVES = "condition_too_many_leaves", "error"

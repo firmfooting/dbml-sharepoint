@@ -125,6 +125,7 @@ def test_refusal_kind_mapping_is_exact_and_exhaustive() -> None:
             FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN
         ),
         "TODAY_UNSUPPORTED_BY_TARGET": FindingCode.CONDITION_TODAY_UNSUPPORTED_BY_TARGET,
+        "TODAY_ON_A_DATETIME_COLUMN": FindingCode.CONDITION_TODAY_ON_A_DATETIME_COLUMN,
         "VALUE_HAS_A_CONTROL_CHARACTER": FindingCode.CONDITION_VALUE_HAS_A_CONTROL_CHARACTER,
         "VALUE_MISSING": FindingCode.CONDITION_VALUE_MISSING,
         "VALUE_NOT_ALLOWED": FindingCode.CONDITION_VALUE_NOT_ALLOWED,
@@ -180,6 +181,13 @@ def test_refusal_kind_mapping_is_exact_and_exhaustive() -> None:
             FindingCode.CONDITION_NOW_UNSUPPORTED_BY_TARGET,
             Leaf("Occurred", "leq", "now"),
             rendering.EXPRESSION,
+            {"Occurred": "datetime"},
+            {"Occurred"},
+        ),
+        (
+            FindingCode.CONDITION_TODAY_ON_A_DATETIME_COLUMN,
+            Leaf("Occurred", "leq", "today"),
+            rendering.VALIDATION,
             {"Occurred": "datetime"},
             {"Occurred"},
         ),
