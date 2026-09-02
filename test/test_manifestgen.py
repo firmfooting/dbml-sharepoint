@@ -1003,3 +1003,44 @@ def test_the_versioning_and_field_count_bullets_stay_on_separate_lines() -> None
     assert any(
         f"- Phase {pn('lists')} fields:" in line for line in md.splitlines()
     ), "the field-count bullet must still render on its own line"
+
+
+def test_manifest_prints_the_list_rule_budget_against_sharepoint_limits() -> None:
+    """SharePoint refuses a list formula over 1023 characters and a message
+    over 1024, and the joined rule reaches those limits quietly as display
+    names lengthen and rules are hoisted. The manifest prints the count the
+    deployer will write, so the headroom is visible before a build refuses."""
+    schema = make_schema(make_table(
+        "Escalation",
+        column("Title", required=True),
+        column("Raised", "date"),
+    ))
+    bundle = make_bundle(
+        entities=["Escalation"],
+        column_validation={
+            "Escalation": EntitySection(columns={
+                "Raised": ColumnValidation(
+                    when=Leaf(field="Raised", op="leq", value="today"),
+                    message="Not in the future.",
+                ),
+            }),
+        },
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+    written = next(lst for lst in schema_json["lists"] if lst["validation_formula"] is not None)
+    md = generate_manifest(
+        schema_json=schema_json,
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/t",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    section = md.split("## List validation")[1].split("## Form formatting")[0]
+    assert (
+        f"formula: {len(written['validation_formula'])} of 1023 characters, "
+        f"message: {len(written['validation_message'])} of 1024"
+    ) in section
