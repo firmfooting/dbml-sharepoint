@@ -20,10 +20,52 @@
   // Null-prototype, so a list titled 'constructor' or 'toString' cannot read
   // truthy from Object.prototype without ever being assigned.
   const listOutcomes = Object.create(null);
+  // Lists found under a previous title carrying that title's own marker,
+  // keyed by the current title. The renames phase acts on it; nothing here
+  // writes. A previous title without its marker, present beside the current
+  // title, or present twice over is an error, never a guess.
+  const renamePlan = Object.create(null);
+  const probeTitleFor = (list) => (renamePlan[list.title] ? renamePlan[list.title].from : list.title);
+  async function previousTitleShapes(list) {
+    const found = [];
+    for (const previous of (list.renamed_from || [])) {
+      const shape = await readListShape(previous.title);
+      if (!shape) continue;
+      const held = typeof shape.Description === 'string' ? shape.Description : '';
+      found.push({
+        title: previous.title, marker: previous.expected_marker, shape,
+        carries: previous.expected_marker.length > 0 && held.includes(previous.expected_marker),
+      });
+    }
+    return found;
+  }
   await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
     try {
-      const actual = await readListShape(list.title);
-      if (!actual) { listOutcomes[list.title] = 'absent'; return; }
+      let actual = await readListShape(list.title);
+      const previous = await previousTitleShapes(list);
+      if (!actual && previous.length === 0) { listOutcomes[list.title] = 'absent'; return; }
+      let renamedFrom = null;
+      if (previous.length > 0) {
+        const titles = previous.map((p) => `'${p.title}'`).join(', ');
+        let refusal = null;
+        if (actual) {
+          refusal = `'${list.title}' exists and so does its previous title ${titles}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`;
+        } else if (previous.length > 1) {
+          refusal = `more than one previous title of '${list.title}' exists (${titles}); deploy cannot choose which to rename. Remove or retitle all but one by hand.`;
+        } else if (!previous[0].carries) {
+          refusal = `'${previous[0].title}' exists but does not carry the exact provenance marker for its previous name ("${previous[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created the list.`;
+        }
+        if (refusal) {
+          listOutcomes[list.title] = 'ok';
+          log('ERROR', `Existing-schema list '${list.title}': ${refusal}`);
+          summary.errors.push({ phase: 'preflight', list: list.title, error: refusal, mismatches: [] });
+          return;
+        }
+        renamedFrom = previous[0];
+        actual = renamedFrom.shape;
+        renamePlan[list.title] = { from: renamedFrom.title, marker: renamedFrom.marker, id: actual.Id };
+        log('INFO', `'${renamedFrom.title}' carries the marker for its previous name; the renames phase will retitle it '${list.title}'.`);
+      }
       // Stored BEFORE the shape is judged: a list with a wrong BaseTemplate
       // still resolves lookup GUIDs and its columns are still worth reporting.
       preflightListShapes[list.title] = actual;
@@ -33,7 +75,11 @@
       if (listSettingsMismatch(actual, desiredListSettings(list))) {
         log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
       }
-      const mismatches = listAdoptionMismatches(list, actual);
+      // Ownership of a planned rename was proved by the PREVIOUS marker
+      // above; the current marker is written by the renames phase.
+      const mismatches = renamedFrom
+        ? immutableListMismatches(list, actual)
+        : listAdoptionMismatches(list, actual);
       if (mismatches.length === 0) return;
       const message = [...new Set(mismatches.map(m => m.message))].join(' ');
       log('ERROR', `Existing-schema list '${list.title}': ${message}`);
@@ -56,7 +102,7 @@
     async (list) => {
     for (const field of declaredFieldsForList(list)) {
       try {
-        const actual = await readFieldShape(list.title, field.title, field);
+        const actual = await readFieldShape(probeTitleFor(list), field.title, field);
         if (!actual) continue;
         const targetGuid = field.target_list
           ? preflightListShapes[field.target_list]?.Id

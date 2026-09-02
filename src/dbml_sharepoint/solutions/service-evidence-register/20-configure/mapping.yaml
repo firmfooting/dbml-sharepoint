@@ -44,14 +44,14 @@ calculated_formulas:
     DaysToResponse: '=IF(OR(ISBLANK([RaisedDate]),ISBLANK([ResponseDate])),"",INT([ResponseDate])-INT([RaisedDate]))'
 
 groups:
-  - name: "SE Evidence Contributors"
+  - name: "{prefix} Evidence Contributors"
     description: "Staff who log service events and their follow-ups. Can add and read; cannot edit after saving, because SE Log Only withholds Edit rather than because of any item-level setting."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
-  - name: "SE Evidence Curators"
+  - name: "{prefix} Evidence Curators"
     description: "The small group that reviews events, assembles themes and decides what is raised with the provider."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -76,7 +76,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "SE Log Only"
+  - name: "{prefix} Log Only"
     description: "Add and read every item; no edit, delete or schema rights. Withholding Edit here is what makes a saved record unalterable, so no item-level setting is required."
     base_permissions:
       - AddListItems
@@ -97,9 +97,9 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "SE Evidence Contributors" }
-        level: "SE Log Only"
-      - principal: { kind: group, name: "SE Evidence Curators" }
+      - principal: { kind: group, name: "{prefix} Evidence Contributors" }
+        level: "{prefix} Log Only"
+      - principal: { kind: group, name: "{prefix} Evidence Curators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
@@ -110,7 +110,7 @@ list_permissions:
       break_inheritance: true
       reconcile: exact
       assignments:
-        - principal: { kind: group, name: "SE Evidence Curators" }
+        - principal: { kind: group, name: "{prefix} Evidence Curators" }
           level: "Contribute"
         - principal: { kind: group, name: "dbml List Administrators" }
           level: "Full Control"

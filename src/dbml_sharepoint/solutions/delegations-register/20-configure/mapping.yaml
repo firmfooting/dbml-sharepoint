@@ -20,7 +20,7 @@ watched_lists: []
 # governance coordinators maintain; everyone reads (that is the point);
 # Full Control confined to the empty-by-default admin group.
 groups:
-  - name: "DG Governance Coordinators"
+  - name: "{prefix} Governance Coordinators"
     description: "Maintain the register in lockstep with the approved instrument of delegation."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -52,7 +52,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "DG Governance Coordinators" }
+      - principal: { kind: group, name: "{prefix} Governance Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

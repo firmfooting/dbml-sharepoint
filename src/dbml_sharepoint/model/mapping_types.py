@@ -102,6 +102,12 @@ class EntityMapping:
     # reason and this is not a general hide-this feature. Declared views are
     # unaffected; they keep every field they declare.
     hide_from_all_items: tuple[str, ...] = ()
+    # Previous entity names this list was deployed under. When no list carries
+    # the current title, the deploy adopts one carrying a previous title and
+    # the exact provenance marker for that previous name, then retitles it.
+    # A previous title without that marker, or present beside the current
+    # one, is refused at assessment and at preflight.
+    renamed_from: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -358,6 +364,13 @@ class CustomPermissionLevel:
     name: str
     description: str
     base_permissions: list[str]
+    # Previous base names, as declared (a `{prefix}` placeholder allowed).
+    renamed_from: tuple[str, ...] = ()
+    # Every name this level may be found under on a site that has not
+    # migrated: each previous stem crossed with each base name, expanded,
+    # minus the current name. Computed by the loader; the deploy adopts one
+    # of these only when it carries the marker its own name produces.
+    previous_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -387,6 +400,11 @@ class SiteGroup:
     # is undone at the end of the run. Membership is otherwise operator-owned:
     # the deploy adds, verifies, and never removes anyone.
     enroll_enterprise_reader: bool = False
+    # Previous base names, as declared (a `{prefix}` placeholder allowed).
+    renamed_from: tuple[str, ...] = ()
+    # Every name this group may be found under on a site that has not
+    # migrated; see CustomPermissionLevel.previous_names.
+    previous_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -468,6 +486,11 @@ class Mapping:
     retention_policies_source: Path | None = None
     extension: str | None = None
     permissions: "PermissionsConfig | None" = None
+    # List prefixes this family was deployed under before. A prefix change is
+    # then a rename: every previous prefix multiplies the previous titles of
+    # each list (see `previous_titles`) and its stem the previous names of
+    # each group and level. Never the current prefix, never repeated.
+    previous_prefixes: tuple[str, ...] = ()
     # {entity: {column: formula}} for calculated_text/calculated_number
     # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
     # attribute to carry them); the validator enforces the pairing.
@@ -632,6 +655,28 @@ class Mapping:
                 return None
         return self.permissions.default_policy
 
+    def previous_titles(self, entity_name: str) -> list[tuple[str, str]]:
+        """Every title this list may be found under on a site that has not
+        migrated, each paired with the entity name whose marker it must carry.
+
+        Order: the current prefix with each previous name, then each previous
+        prefix with the current name and each previous name. The current
+        title is never a candidate, and nothing is listed twice.
+        """
+        entity = self.entities[entity_name]
+        current = self.prefix + entity_name
+        seen: set[str] = set()
+        out: list[tuple[str, str]] = []
+        prefixes = [self.prefix, *self.previous_prefixes]
+        for i, prefix in enumerate(prefixes):
+            names = list(entity.renamed_from) if i == 0 else [entity_name, *entity.renamed_from]
+            for name in names:
+                title = prefix + name
+                if title == current or title in seen:
+                    continue
+                seen.add(title)
+                out.append((title, name))
+        return out
 
 @dataclass(frozen=True)
 class RetentionPolicy:

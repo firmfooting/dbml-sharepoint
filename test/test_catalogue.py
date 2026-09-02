@@ -8,6 +8,7 @@ malformed template cannot take the picker down with it.
 from pathlib import Path
 
 import pytest
+import yaml
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
@@ -46,11 +47,18 @@ def test_the_catalogue_ships_inside_the_package() -> None:
 
 @pytest.mark.parametrize("solution", available_solutions(), ids=lambda s: s.id)
 def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
-    """A blank cell in the picker is indistinguishable from a broken one."""
+    """A blank cell in the picker is indistinguishable from a broken one.
+
+    The prefix may legitimately be empty (m365-adoption-program declares
+    `prefix: ""` and the picker shows "(none)"), so what is pinned is that
+    the mapping DECLARES the key: an empty cell is a decision, never an
+    omission the catalogue papered over."""
     assert solution.title
     assert solution.summary
     assert solution.lists
-    assert solution.prefix
+    assert isinstance(solution.prefix, str)
+    raw = yaml.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
+    assert "prefix" in raw, f"{solution.id}: mapping.yaml declares no prefix key"
 
 
 @pytest.mark.parametrize("solution", available_solutions(), ids=lambda s: s.id)

@@ -240,6 +240,10 @@ class FindingCode(StrEnum):
     PREVIOUS_TITLE_IS_OWN_TITLE = "previous_title_is_own_title", "error"
     PREVIOUS_TITLE_IS_RESERVED = "previous_title_is_reserved", "error"
     REDUNDANT_DISPLAY_COLUMN_ACCEPTANCE = "redundant_display_column_acceptance", "warning"
+    RENAMED_FROM_CLAIMED_TWICE = "renamed_from_claimed_twice", "error"
+    RENAMED_FROM_IS_A_DECLARED_ENTITY = (
+        "renamed_from_is_a_declared_entity", "error"
+    )
     RETIRED_COLUMN_IN_FIELD_SET = "retired_column_in_field_set", "warning"
     ROW_LIMIT_OUT_OF_RANGE = "row_limit_out_of_range", "error"
     TOTAL_COLUMN_NOT_DISPLAYED = "total_column_not_displayed", "error"

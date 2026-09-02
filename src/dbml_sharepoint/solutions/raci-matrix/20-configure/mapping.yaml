@@ -51,7 +51,7 @@ calculated_formulas:
 # edits their own row: a register whose subjects can rewrite their own
 # accountability is not a register.
 groups:
-  - name: "RACI Matrix Maintainers"
+  - name: "{prefix} Matrix Maintainers"
     description: "Staff who maintain the activity register, its involvements and the party vocabulary."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -83,7 +83,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "RACI Matrix Maintainers" }
+      - principal: { kind: group, name: "{prefix} Matrix Maintainers" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

@@ -23,7 +23,7 @@ watched_lists: []
 # changes every chart downstream); everyone reads; Full Control confined to
 # the empty-by-default admin group.
 groups:
-  - name: "MR Measure Custodians"
+  - name: "{prefix} Measure Custodians"
     description: "Maintain measure definitions, run the review cadence, guard definition change control."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -55,7 +55,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "MR Measure Custodians" }
+      - principal: { kind: group, name: "{prefix} Measure Custodians" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

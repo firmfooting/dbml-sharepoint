@@ -4787,7 +4787,9 @@ def test_a_contextinfo_body_that_cannot_be_read_still_names_the_operation() -> N
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_uncaught_phase_failure_returns_an_aborted_summary() -> None:
-    needle = "  log('INFO', 'Starting Phase 1.3: permission levels and site groups.');"
+    needle = (
+        f"  log('INFO', 'Starting Phase {pn('security')}: permission levels and site groups.');"
+    )
     js = _deploy_js().replace(
         needle,
         needle + "\n  throw new Error('contextinfo (request digest) failed: no response');",
@@ -4815,7 +4817,7 @@ def test_a_security_digest_failure_stops_the_decision_loop() -> None:
     assert "failure.digestFailure = true;" in js
     assert "let digestFailure" not in js
     assert "if (err && err.digestFailure) break;" in js
-    assert js.index("summary.errors.push({ phase: '1.3'") < js.index(
+    assert js.index(f"summary.errors.push({{ phase: '{pn('security')}'") < js.index(
         "if (err && err.digestFailure) break;",
     )
 

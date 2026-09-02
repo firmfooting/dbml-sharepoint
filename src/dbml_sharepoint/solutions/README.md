@@ -402,6 +402,11 @@ formatting classes.
 
 - **Prefix** (`mapping.yaml`): pick something short and unique per site:
   two lists with the same internal name cannot coexist.
+  Entity names are unique within a family, not across the library: two
+  families may both declare `Risk`. On a shared site the prefix is what
+  keeps their titles apart, and a title that already exists with another
+  family's provenance marker is refused at assessment and at deploy.
+
 - **Columns**: delete what you won't use *before* first deploy. Afterwards,
   deleting the declaration strands a live column the schema no longer knows
   about. Retire it instead, with

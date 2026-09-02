@@ -12,9 +12,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from dbml_sharepoint.analysis.clock_usage import clock_usage
+from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
@@ -54,14 +56,36 @@ def assess_targets(
     # `__proto__` sets the prototype instead of creating an own property,
     # and the marker check then finds nothing and stays silent.
     markers: list[tuple[str, str]] = []
+    # [[new title, [[previous title, previous marker], ...]], ...], lists
+    # rather than tuples so the Python side compares equal to the JSON.
+    renames: list[list[Any]] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
+        previous = bundle.mapping.previous_titles(table_name)
+        if previous:
+            renames.append([
+                prefix + table_name,
+                [[title, marker_for(family, name)] for title, name in previous],
+            ])
         templates.add(int(entity.base_template))
         table_names.append(table_name)
         markers.append((prefix + table_name, marker_for(family, table_name)))
     m = bundle.mapping
     perms = m.permissions
+    # [[current name, [[previous name, previous marker], ...]], ...] for
+    # every level and group that has previous names, the same shape as
+    # `renames` above so one assessment loop serves all three.
+    level_renames: list[list[Any]] = [
+        [lvl.name, [[p, marker_for_level(family, p)] for p in lvl.previous_names]]
+        for lvl in (perms.levels if perms else [])
+        if lvl.previous_names
+    ]
+    group_renames: list[list[Any]] = [
+        [grp.name, [[p, marker_for_group(p, family)] for p in grp.previous_names]]
+        for grp in (perms.groups if perms else [])
+        if grp.previous_names
+    ]
     # Does any list THIS RUN provisions end up with versioning on? Asked
     # through `versioning_for`, the same merge jsgen deploys from.
     #
@@ -84,6 +108,9 @@ def assess_targets(
         "uses_today": clock_usage(schema, m, table_names).uses_today,
         "list_titles": titles,
         "list_markers": markers,
+        "list_renames": renames,
+        "level_renames": level_renames,
+        "group_renames": group_renames,
         "base_templates": sorted(templates),
         "declares_groups": bool(perms and perms.groups),
         "declares_seal": bool(m.seal_columns),
@@ -127,6 +154,30 @@ def derive_requirements(
         reqs.append(Requirement(
             f"provenance_marker:{title}",
             f"Existing list '{title}' carries this declaration's exact provenance marker",
+            "BLOCKED",
+        ))
+    for name, _previous in t["level_renames"]:
+        reqs.append(Requirement(
+            f"rename_level:{name}",
+            f"Previous names of permission level '{name}' are absent, or exactly one "
+            f"carries its exact previous marker while '{name}' is absent",
+            "BLOCKED",
+        ))
+    for name, _previous in t["group_renames"]:
+        reqs.append(Requirement(
+            f"rename_group:{name}",
+            f"Previous names of site group '{name}' are absent, or exactly one "
+            f"carries its exact previous marker while '{name}' is absent",
+            "BLOCKED",
+        ))
+    for title, _previous in t["list_renames"]:
+        # The rename decision, predicted before any write: exactly one
+        # previous title carrying its own marker, and the current title
+        # absent, is the only shape the deploy will rename.
+        reqs.append(Requirement(
+            f"rename:{title}",
+            f"Previous titles of '{title}' are absent, or exactly one carries its "
+            f"exact previous marker while '{title}' is absent",
             "BLOCKED",
         ))
     if t["uses_today"]:

@@ -26,7 +26,7 @@ watched_lists: []
 # coordinators maintain records, Full Control confined to the empty-by-
 # default admin group.
 groups:
-  - name: "TR Training Coordinators"
+  - name: "{prefix} Training Coordinators"
     description: "Staff who record completions, maintain the catalogue and run the expiry sweep."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -58,7 +58,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "TR Training Coordinators" }
+      - principal: { kind: group, name: "{prefix} Training Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

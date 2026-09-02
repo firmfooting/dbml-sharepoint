@@ -152,16 +152,27 @@ def _interpolated_names(
     declared = vc.schema.project_name
     yield f"the DBML `Project` name {declared!r}", declared, _SCHEMA
 
-    for entity_name in vc.bundle.mapping.entities:
+    for entity_name, entity in vc.bundle.mapping.entities.items():
         yield f"entity {entity_name!r}", entity_name, _ENTITIES
+        # The old marker is computed from the previous name exactly as the
+        # current one is from the entity name, so the same grammar applies.
+        for previous in entity.renamed_from:
+            yield (
+                f"previous name {previous!r} of entity {entity_name!r}",
+                previous, _ENTITIES,
+            )
 
     perms = vc.bundle.mapping.permissions
     if perms is None:
         return
     for lvl in perms.levels:
         yield f"permission level {lvl.name!r}", lvl.name, _LEVELS
+        for previous in lvl.previous_names:
+            yield f"previous name {previous!r} of permission level {lvl.name!r}", previous, _LEVELS
     for grp in perms.groups:
         yield f"site group {grp.name!r}", grp.name, _GROUPS
+        for previous in grp.previous_names:
+            yield f"previous name {previous!r} of site group {grp.name!r}", previous, _GROUPS
 
 
 def _reserved_text_finding(

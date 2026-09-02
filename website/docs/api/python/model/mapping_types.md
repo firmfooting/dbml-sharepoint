@@ -73,6 +73,7 @@ class EntityMapping:
     display_column: str | None = None
     accept_unindexable_display_column: bool = False
     hide_from_all_items: tuple[str, ...] = ()
+    renamed_from: tuple[str, ...] = ()
 ```
 
 SP physical mapping for one entity (kind, base template, site role).
@@ -342,6 +343,8 @@ class CustomPermissionLevel:
     name: str
     description: str
     base_permissions: list[str]
+    renamed_from: tuple[str, ...] = ()
+    previous_names: tuple[str, ...] = ()
 ```
 
 A custom permission level to create at the site.
@@ -361,6 +364,8 @@ class SiteGroup:
     require_empty_at_deploy: bool = False
     enroll_operator_during_deploy: bool = False
     enroll_enterprise_reader: bool = False
+    renamed_from: tuple[str, ...] = ()
+    previous_names: tuple[str, ...] = ()
 ```
 
 A SharePoint site group to create at the site.
@@ -453,6 +458,7 @@ class Mapping:
     retention_policies_source: pathlib.Path | None = None
     extension: str | None = None
     permissions: PermissionsConfig | None = None
+    previous_prefixes: tuple[str, ...] = ()
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     form_visibility: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.FormVisibility]] = field(default_factory=dict)
@@ -527,6 +533,19 @@ Returns override if present, else the default policy, but the default
 only applies when its site-role scope (if any) matches the entity's
 site_role. A default scoped to one role must not re-ACL lists
 belonging to another role.
+
+#### `Mapping.previous_titles`
+
+```python
+def previous_titles(self, entity_name: str) -> list[tuple[str, str]]
+```
+
+Every title this list may be found under on a site that has not
+migrated, each paired with the entity name whose marker it must carry.
+
+Order: the current prefix with each previous name, then each previous
+prefix with the current name and each previous name. The current
+title is never a candidate, and nothing is listed twice.
 
 #### `Mapping.projections_for`
 
