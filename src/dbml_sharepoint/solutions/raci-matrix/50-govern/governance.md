@@ -217,7 +217,7 @@ that they are the same work. Two habits reduce it:
 | An involvement names an activity, a party and the input it gives | Required columns |
 | A Decision has an Escalation Route | list validation (shared message) |
 | Anything Statutory has an Escalation Route | list validation (shared message) |
-| `LastConfirmed` is required and never in the future | required field + column validation (own message) |
+| `LastConfirmed` is required and never in the future | required field + list validation, hoisted from the column rule |
 
 The two escalation rules share one message because SharePoint gives a
 list a single `ValidationFormula`. The `LastConfirmed` rule reads only its

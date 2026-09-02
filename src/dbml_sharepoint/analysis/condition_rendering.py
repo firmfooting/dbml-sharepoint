@@ -546,7 +546,14 @@ _ISO_DATE_LITERAL = re.compile(
 
 # The current-instant sentinel. Every rendering below was established by
 # test/manual/datetime-sentinel-probe.js on 2026-07-29, against a live
-# tenant, and two of the three answers contradict a Microsoft document:
+# tenant, and two of the three answers contradict a Microsoft document.
+#
+# MEASURED 2026-09-02 (analysis/save_rules.py has the run): TODAY() and
+# NOW() in a validation formula run 16 to 20 hours behind the site, so a
+# comparison against `today` or `now` no longer renders either function.
+# `_save_instant_leaf` compares the column with [Modified] instead. The
+# VALIDATION row below records the 2026-07-29 rendering; it is reached only
+# by the shapes that helper does not take.
 #
 #   VALIDATION -> NOW()
 #       Microsoft's "Introduction to SharePoint formulas and functions"
@@ -1548,10 +1555,9 @@ def _expr_literal(column_type: str, value: object, where: str) -> str:
 
 def _validation_literal(column_type: str, value: object, where: str) -> str:
     if _is_now(value, column_type):
-        # Microsoft's formula reference says Lists do not support NOW().
-        # That holds for calculated columns and not for validation: probed
-        # 2026-07-29, accepted with HTTP 204 and enforced against a
-        # timestamp three hours in the future.
+        # A `now` comparison renders [Modified] since 2026-09-02 (see
+        # _save_instant_leaf). This is the 2026-07-29 rendering, accepted
+        # with HTTP 204 then, kept for the shapes that helper does not take.
         return "NOW()"
     if _is_today(value, column_type):
         match = _TODAY.match(str(value))

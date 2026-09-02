@@ -76,10 +76,12 @@ def assess_targets(
     # it, which is how a warning stops meaning anything.
     versioning_on = any(m.versioning_for(name).enable_versioning for name in table_names)
     return {
-        # Whether anything this run ships evaluates `today` on the site: a
-        # validation formula's TODAY(), a view filter's <Today/>, a column's
-        # [today] default. All three take the SITE's regional time zone, so
-        # assess reads it (see `time_zone` in _assess_body.js.j2).
+        # Whether anything this run ships reads `today` on the site: a view
+        # filter's <Today/>, a column's [today] default, a validation rule.
+        # The site's zone governs storage, display and the view windows;
+        # validation rules compare against [Modified] since 2026-09-02, and
+        # TODAY() itself ran 16 to 20 hours behind the site (see `time_zone`
+        # in _assess_body.js.j2).
         "uses_today": _uses_today(schema, m, table_names),
         "list_titles": titles,
         "list_markers": markers,

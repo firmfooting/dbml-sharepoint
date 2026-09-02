@@ -1,6 +1,13 @@
 /**
  * dbml-sharepoint PROBE (TIME OF DAY): NOW(), <Now/>, AND IncludeTimeValue
  *
+ * STATUS 2026-09-02: SUPERSEDED for validation. A later run, recorded in
+ * analysis/save_rules.py, measured TODAY() and NOW() in a validation
+ * formula 16 to 20 hours behind the site, so V1 to V6 below describe a
+ * clock the shipped renderer no longer reads: a `today` or `now` comparison
+ * compares the column with [Modified], the instant of the save, and the
+ * `today+1` allowance is gone. The CAML rows (C1 to C7) stand.
+ *
  * QUESTION: can this tool express "not in the future" on a DATETIME column
  * exactly, rather than to the nearest day, and is there a `now` sentinel
  * worth adding beside `today`?
