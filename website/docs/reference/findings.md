@@ -179,7 +179,7 @@ dbml-sharepoint explain unknown_column_type
 | `index_limit_exceeded` | error | A list's effective indexes exceed SharePoint's limit of 20. The message names the implicit contributors, which are the ones an author cannot count. |
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |
-| `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
+| `join_threshold_approached` | warning | A view renders 11 or 12 join-bearing columns, the two counts before the measured ceiling of 12 join operations. 12 held on the tenant measured, but the SharePoint Online citation is thin, so a view this wide may not travel to every tenant. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
 | `legacy_choice_type` | error | A column uses the legacy `choice` type instead of a named DBML enum. |
 | `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1023 characters once display names are substituted. |

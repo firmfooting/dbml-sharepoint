@@ -1507,7 +1507,7 @@ def _join_findings_for(template: str) -> list[str]:
     """Every join-threshold finding one template produces, at ANY severity.
 
     Deliberately unfiltered by severity: a WARNING on a shipped template is a
-    failure here too. Nothing shipped is meant to reach 9."""
+    failure here too. Nothing shipped is meant to reach 11."""
     from dbml_sharepoint.analysis.validator import validate_against_mapping
 
     root = SOLUTION_TEMPLATES / template
@@ -1527,7 +1527,7 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     found = _join_findings_for(template)
     assert not found, (
         f"{template}: {found}. This check exists to catch a template that grows "
-        f"a sixth join column, not to fail one that ships. If this fires on a "
+        f"into the warning band, not to fail one that ships. If this fires on a "
         f"shipped template the COUNT is wrong (most likely Created/Modified or "
         f"a cross-site ref being counted), not the template."
     )
@@ -1536,7 +1536,7 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
 def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     """The spec's survey number, pinned. It is the whole reason this check can
     ship silently, and the parametrized test above cannot hold it: that one
-    only fires at 9, so a template could climb from 6 to 8 unnoticed and the
+    only fires at 11, so a template could climb from 6 to 10 unnoticed and the
     warning band would be one column away with nothing having said so.
 
     Calls `all_items_joining_fields` (the same derivation `_views.py`'s
