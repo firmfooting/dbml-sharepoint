@@ -1,0 +1,136 @@
+{# test/manual/templates/today-source-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (READ-ONLY unless ADD_DEFAULT_COLUMN): WHERE DOES THE
+ * LAGGING `today` COME FROM, AND WHICH SURFACES SHARE IT?
+ *
+ * QUESTION: TODAY() and NOW() in validation formulas were measured hours
+ * behind the site. Is the source the signed-in user's own regional settings
+ * (profile properties SPS-RegionalSettings-FollowWeb and SPS-TimeZone), or a
+ * clock nobody on the site can change? And do view filters (<Today/>) and
+ * column defaults ([today]) read the same clock?
+ *
+ * Runs against the scratch list `dbml-probe-today-semantics` left by the
+ * today-semantics probe, which holds T (a date-only column with default
+ * formula =TODAY()) and DM (a date-only column holding both yesterday's and
+ * today's site-local midnight).
+ *
+ * WHAT IT ASKS
+ *   Z    site zone, browser offset, server clock
+ *   P    the signed-in user's profile regional properties
+ *   V1   CAML `T Eq <Today/>`: ALL rows means <Today/> reads the lagging
+ *        clock; NONE means it reads the site's date
+ *   V2   CAML `DM Eq <Today/>`: which day's rows it returns
+ *   V3   CAML `DM Eq <Today OffsetDays='-1'/>`: which day's rows
+ *   V4   CAML `Modified Leq <Today IncludeTimeValue='TRUE'/>`: every row was
+ *        modified recently, so ALL means the instant is current and NONE
+ *        means it is hours behind
+ *   D1   (only with ADD_DEFAULT_COLUMN) adds TD, date only, dynamic default
+ *        [today], creates a bare item through REST, and prints what the
+ *        server filled. Then open the list's New form and read the prefilled
+ *        TD yourself: that is the FORM's [today].
+ *
+ * HOW TO RUN: F12 -> Console on the site, paste, Enter; set CONFIRMED = true
+ * and paste again. D1 needs ADD_DEFAULT_COLUMN and ALLOW_WRITES as well.
+ * Copy the RESULTS block back.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+  const ADD_DEFAULT_COLUMN = false;
+  const LIST = 'dbml-probe-today-semantics';
+
+  expect('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock');
+  expect('access.principal.profile-regional-settings', 'the signed-in user\'s profile regional properties');
+  expect('query.caml-adhoc.today-element-vs-today-function', 'CAML T Eq <Today/> matches the =TODAY()-filled rows');
+  expect('query.caml-adhoc.today-element-site-date', 'CAML DM Eq <Today/> returns which day');
+  expect('query.caml-adhoc.today-offset-element-previous-day', 'CAML DM Eq <Today OffsetDays=-1/> returns which day');
+  expect('query.caml-adhoc.today-include-time-current-instant', 'CAML Modified Leq <Today IncludeTimeValue/> sees recent rows');
+  expect('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would read the site zone, the profile, and query '${LIST}' on ${WEB}.`);
+    log('INFO', `With ADD_DEFAULT_COLUMN it would also add a column and one item to '${LIST}'.`);
+    log('INFO', 'Set CONFIRMED = true and paste again.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  record('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock', dated.ok ? 'PASS' : 'FAIL',
+    `site zone "${tz && tz.Description}"; browser offset ${-new Date().getTimezoneOffset()} min; browser now ${new Date().toISOString()}; server ${dated.headers.get('date')}`);
+
+  // ---- P: the user's own regional settings, from the profile ----------------
+  const me = await spGet('SP.UserProfiles.PeopleManager/GetMyProperties?$select=UserProfileProperties');
+  const wanted = ['SPS-RegionalSettings-FollowWeb', 'SPS-RegionalSettings-Initialized', 'SPS-TimeZone', 'SPS-Locale', 'SPS-CalendarType', 'SPS-TimeFormat', 'SPS-Time24'];
+  const props = {};
+  for (const kv of (me.body && me.body.UserProfileProperties) || []) {
+    if (wanted.includes(kv.Key)) props[kv.Key] = kv.Value;
+  }
+  record('access.principal.profile-regional-settings', 'the signed-in user\'s profile regional properties', readFailed(me) ? 'FAIL' : 'PASS',
+    readFailed(me)
+      ? `profile not readable: HTTP ${me.status}`
+      : wanted.map((k) => `${k}=${props[k] === undefined ? '(absent)' : props[k] === '' ? '(empty)' : props[k]}`).join('; '));
+
+  // ---- V1..V4: what <Today/> means in a CAML query ------------------------
+  const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+  const caml = async (where, fieldNames) => {
+    const digest = await getDigest();
+    const viewFields = [...fieldNames, 'ID'].map((f) => `<FieldRef Name='${f}'/>`).join('');
+    const r = await spPost(`${listPath}/getitems`, {
+      query: {
+        __metadata: { type: 'SP.CamlQuery' },
+        ViewXml: `<View><ViewFields>${viewFields}</ViewFields><Query><Where>${where}</Where></Query><RowLimit>200</RowLimit></View>`,
+      },
+    }, digest, VERBOSE);
+    if (!r.ok) return { count: null, detail: `query refused: HTTP ${r.status} ${r.text.slice(0, 160)}` };
+    const rows = (r.body && r.body.d && r.body.d.results) || [];
+    return {
+      count: rows.length,
+      detail: `${rows.length} row(s): ${rows.map((x) => `#${x.ID}${fieldNames.map((f) => ` ${f}=${x[f]}`).join('')}`).join(', ') || '(none)'}`,
+    };
+  };
+  const rows = [
+    ['query.caml-adhoc.today-element-vs-today-function', 'CAML T Eq <Today/> matches the =TODAY()-filled rows', "<Eq><FieldRef Name='T'/><Value Type='DateTime'><Today/></Value></Eq>", ['T']],
+    ['query.caml-adhoc.today-element-site-date', 'CAML DM Eq <Today/> returns which day', "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today/></Value></Eq>", ['DM']],
+    ['query.caml-adhoc.today-offset-element-previous-day', 'CAML DM Eq <Today OffsetDays=-1/> returns which day', "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today OffsetDays='-1'/></Value></Eq>", ['DM']],
+    ['query.caml-adhoc.today-include-time-current-instant', 'CAML Modified Leq <Today IncludeTimeValue/> sees recent rows', "<Leq><FieldRef Name='Modified'/><Value Type='DateTime' IncludeTimeValue='TRUE'><Today/></Value></Leq>", ['Modified']],
+  ];
+  for (const [id, question, where, fieldNames] of rows) {
+    const got = await caml(where, fieldNames);
+    record(id, question, got.count === null ? 'FAIL' : 'PASS', got.detail);
+  }
+
+  // ---- D1: the dynamic default, server side ----------------------------------
+  if (!ADD_DEFAULT_COLUMN) {
+    record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT APPLICABLE', 'ADD_DEFAULT_COLUMN is off');
+  } else if (!ALLOW_WRITES) {
+    record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT ESTABLISHED', 'ADD_DEFAULT_COLUMN needs ALLOW_WRITES');
+  } else {
+    const have = new Set(((await spGet(`${listPath}/fields?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
+    let created = 'TD already present';
+    if (!have.has('TD')) {
+      const r = await spPost(`${listPath}/fields`, {
+        __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'TD', DisplayFormat: 0, DefaultValue: '[today]',
+      }, await getDigest(), VERBOSE);
+      created = r.ok ? 'TD created with default [today]' : `TD create refused: HTTP ${r.status} ${r.text.slice(0, 160)}`;
+    }
+    const meta = await spGet(`${listPath}?$select=ListItemEntityTypeFullName`);
+    const made = await spPost(`${listPath}/items`, {
+      __metadata: { type: meta.body && meta.body.ListItemEntityTypeFullName }, Title: 'default-today',
+    }, await getDigest(), VERBOSE);
+    if (made.ok) {
+      const back = await spGet(`${listPath}/items(${made.body.d.Id})?$select=Id,TD,T,Created`);
+      record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'PASS',
+        `${created}; REST item with no dates: TD ([today]) = ${back.body && back.body.TD}; T (=TODAY() default) = ${back.body && back.body.T}; Created ${back.body && back.body.Created}. Now open New on the list and note the prefilled TD.`);
+    } else {
+      record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'FAIL', `${created}; could not create the item: HTTP ${made.status} ${made.text.slice(0, 160)}`);
+    }
+  }
+  return report();
+})();

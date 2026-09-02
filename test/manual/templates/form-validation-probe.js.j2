@@ -1,0 +1,145 @@
+{# test/manual/templates/form-validation-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (WRITES TO THE EXISTING SCRATCH LIST, THEN A PERSON
+ * USES THE FORM): COLUMN AND LIST VALIDATION THROUGH THE MODERN FORM
+ *
+ * QUESTION: does the modern form evaluate a column rule against TODAY() and
+ * a list rule against [Modified] the same way REST does? A form validates
+ * before it saves, so whether [Modified] already holds the save's instant
+ * at that point is exactly what this asks.
+ *
+ * Two runs on `dbml-probe-today-semantics`. MODE = 'setup' puts the rules in
+ * place and reads what TODAY() resolves to right now; you then use the
+ * list's own form. MODE = 'report' prints what the form saved so the
+ * RESULTS block can be sent back with your notes.
+ *
+ * Rules it sets:
+ *   DT  date only, COLUMN validation `=[DT]<=TODAY()`
+ *   DM  date only (already there), LIST validation
+ *       `=OR(ISBLANK([DM]),[DM]<=[Modified])`
+ *   T   date only (already there), default formula `=TODAY()`: a bare item
+ *       shows what TODAY() resolves to right now (D0).
+ *
+ * THE FORM STEPS, after MODE = 'setup' (each is a MANUAL question until you
+ * write down what happened):
+ *   F1  New. Title "form-1", DT = today, DM blank. Save.
+ *   F2  New. Title "form-2", DT = tomorrow. Expect the DT message.
+ *   F3  New. Title "form-3", DM = today. Save.
+ *   F4  New. Title "form-4", DM = tomorrow. Expect the DM message.
+ *   F5  Edit "form-1": set DM = today. Save. (an UPDATE against [Modified])
+ *   F6  Edit "form-1": set DM = tomorrow. Expect the DM message.
+ *
+ * HOW TO RUN: F12 -> Console on the site. Set CONFIRMED, ALLOW_WRITES to
+ * true and MODE as above; paste; Enter.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+  const MODE = 'setup'; // 'setup' first, then 'report'
+  const LIST = 'dbml-probe-today-semantics';
+
+  expect('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock');
+  expect('formula.validation.fixture-dt-column', 'the DT column exists');
+  expect('formula.validation.fixture-today-column-rule-stored', 'the column rule =[DT]<=TODAY() is stored');
+  expect('formula.validation.fixture-modified-list-rule-stored', 'the list rule =OR(ISBLANK([DM]),[DM]<=[Modified]) is stored');
+  expect('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default');
+  expect('formula.validation.form-new-today-under-today-rule', 'form: New with DT = today saves');
+  expect('formula.validation.form-new-tomorrow-under-today-rule', 'form: New with DT = tomorrow shows the DT message');
+  expect('formula.validation.form-new-today-under-modified-rule', 'form: New with DM = today saves');
+  expect('formula.validation.form-new-tomorrow-under-modified-rule', 'form: New with DM = tomorrow shows the DM message');
+  expect('formula.validation.form-edit-today-under-modified-rule', 'form: Edit form-1 to DM = today saves');
+  expect('formula.validation.form-edit-tomorrow-under-modified-rule', 'form: Edit form-1 to DM = tomorrow shows the DM message');
+  expect('formula.validation.fixture-form-rows-readback', 'report: the rows the form saved');
+  expect('formula.validation.fixture-rules-readback', 'report: the rules as stored now');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would set a column rule and a list rule on '${LIST}' on ${WEB} (MODE setup), or read its rows (MODE report).`);
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+  const enc = (t) => encodeURIComponent(t.replace(/'/g, "''"));
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+  const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
+  const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
+
+  const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
+    headers: { Accept: 'application/json;odata=nometadata' },
+  });
+  const tz = await dated.json().catch(() => null);
+  const nowUtc = new Date();
+  record('formula.datetime.control-site-time-zone', 'site zone, browser offset and server clock', dated.ok ? 'PASS' : 'FAIL',
+    `site zone "${tz && tz.Description}"; browser offset ${-nowUtc.getTimezoneOffset()} min; browser now ${nowUtc.toISOString()}; server ${dated.headers.get('date')}`);
+  const listPath = `web/lists/getbytitle('${enc(LIST)}')`;
+  const list = await spGet(`${listPath}?$select=Id,ListItemEntityTypeFullName`);
+  if (readFailed(list)) {
+    record('formula.validation.fixture-dt-column', 'the DT column exists', 'ABORTED', `list '${LIST}' not found; run the today-semantics probe first`);
+    return report();
+  }
+  const itemType = list.body.ListItemEntityTypeFullName;
+  const items = `${listPath}/items`;
+  const fields = `${listPath}/fields`;
+  const formSteps = [
+    ['formula.validation.form-new-today-under-today-rule', 'form: New with DT = today saves', 'New, Title "form-1", DT = today, DM blank, Save'],
+    ['formula.validation.form-new-tomorrow-under-today-rule', 'form: New with DT = tomorrow shows the DT message', 'New, Title "form-2", DT = tomorrow, Save'],
+    ['formula.validation.form-new-today-under-modified-rule', 'form: New with DM = today saves', 'New, Title "form-3", DM = today, Save'],
+    ['formula.validation.form-new-tomorrow-under-modified-rule', 'form: New with DM = tomorrow shows the DM message', 'New, Title "form-4", DM = tomorrow, Save'],
+    ['formula.validation.form-edit-today-under-modified-rule', 'form: Edit form-1 to DM = today saves', 'Edit "form-1", DM = today, Save'],
+    ['formula.validation.form-edit-tomorrow-under-modified-rule', 'form: Edit form-1 to DM = tomorrow shows the DM message', 'Edit "form-1", DM = tomorrow, Save'],
+  ];
+
+  if (MODE === 'setup') {
+    const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
+    let made = { ok: true, status: 'present' };
+    if (!have.has('DT')) {
+      made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'DT', DisplayFormat: 0 });
+    }
+    record('formula.validation.fixture-dt-column', 'the DT column exists', made.ok ? 'PASS' : 'FAIL', made.ok ? `DT ${made.status}` : `DT create refused: HTTP ${made.status} ${reason(made)}`);
+    const cv = await post(`${fields}/getbytitle('DT')`, {
+      __metadata: { type: 'SP.FieldDateTime' },
+      ValidationFormula: '=[DT]<=TODAY()', ValidationMessage: 'DT: TODAY() says this is in the future',
+    }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    record('formula.validation.fixture-today-column-rule-stored', 'the column rule =[DT]<=TODAY() is stored', cv.ok ? 'PASS' : 'FAIL', cv.ok ? `HTTP ${cv.status}` : `HTTP ${cv.status} ${reason(cv)}`);
+    const lv = await post(listPath, {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: '=OR(ISBLANK([DM]),[DM]<=[Modified])', ValidationMessage: 'DM: later than this save',
+    }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    record('formula.validation.fixture-modified-list-rule-stored', 'the list rule =OR(ISBLANK([DM]),[DM]<=[Modified]) is stored', lv.ok ? 'PASS' : 'FAIL', lv.ok ? `HTTP ${lv.status}` : `HTTP ${lv.status} ${reason(lv)}`);
+    const bare = await post(items, { __metadata: { type: itemType }, Title: 'today-now' });
+    if (bare.ok) {
+      const back = await spGet(`${items}(${bare.body.d.Id})?$select=Id,T,Created`);
+      const siteMidnight = new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate()).toISOString();
+      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default', 'PASS',
+        `T = ${back.body && back.body.T} (site-local midnight today would be ${siteMidnight}); Created ${back.body && back.body.Created}`);
+    } else {
+      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default', 'FAIL', `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
+    }
+    for (const [id, question, step] of formSteps) {
+      record(id, question, 'MANUAL', `${step}; note what happened, then run again with MODE = 'report'`);
+    }
+    record('formula.validation.fixture-form-rows-readback', 'report: the rows the form saved', 'NOT REACHED', 'run again with MODE = report after the form steps');
+    record('formula.validation.fixture-rules-readback', 'report: the rules as stored now', 'NOT REACHED', 'run again with MODE = report after the form steps');
+    log('INFO', `The list's form is at ${WEB}/Lists/${encodeURIComponent(LIST)}`);
+  } else {
+    for (const [id, question] of formSteps) {
+      record(id, question, 'MANUAL', 'fill in from your notes of the form step');
+    }
+    const rows = await spGet(`${items}?$select=Id,Title,DT,DM,T,Created,Modified&$orderby=Id desc&$top=12`);
+    const lines = ((rows.body && rows.body.value) || []).map((r) =>
+      `id=${r.Id} title=${r.Title} DT=${r.DT} DM=${r.DM} T=${r.T} Created=${r.Created} Modified=${r.Modified}`);
+    record('formula.validation.fixture-form-rows-readback', 'report: the rows the form saved', readFailed(rows) ? 'FAIL' : 'PASS', lines.join(' | ') || 'no rows');
+    const ruleNow = await spGet(`${listPath}?$select=ValidationFormula,ValidationMessage`);
+    const dt = await spGet(`${fields}/getbytitle('DT')?$select=ValidationFormula`);
+    record('formula.validation.fixture-rules-readback', 'report: the rules as stored now', 'PASS',
+      `list: ${ruleNow.body && ruleNow.body.ValidationFormula}; DT: ${dt.body && dt.body.ValidationFormula}`);
+    for (const id of ['formula.validation.fixture-dt-column', 'formula.validation.fixture-today-column-rule-stored', 'formula.validation.fixture-modified-list-rule-stored', 'formula.datetime.today-function-default-value']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE', 'a setup-mode question');
+    }
+  }
+  return report();
+})();

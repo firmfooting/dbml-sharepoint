@@ -576,7 +576,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -3330,6 +3330,761 @@
           "depends_on": [
             "machine-findings"
           ]
+        }
+      ]
+    },
+    {
+      "file": "siteuserinfolist-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "a visible list with rows and a person column"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.principal.userinfolist-readable",
+              "depends_on": []
+            },
+            {
+              "id": "access.principal.userinfolist-fields-present",
+              "depends_on": [
+                "access.principal.userinfolist-readable"
+              ]
+            },
+            {
+              "id": "access.principal.userinfolist-principal-mix",
+              "depends_on": [
+                "access.principal.userinfolist-fields-present"
+              ]
+            },
+            {
+              "id": "access.principal.person-column-ids-resolve",
+              "depends_on": [
+                "access.principal.userinfolist-readable"
+              ]
+            },
+            {
+              "id": "field.person.system-columns-item-shape",
+              "depends_on": []
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "access"
+        }
+      ]
+    },
+    {
+      "file": "date-storage-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "READS names two lists on the site and their date columns"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.control-server-clock",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.stored-instant-form-picked",
+              "depends_on": [
+                "field.date.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "field.date.stored-instant-default-filled",
+              "depends_on": [
+                "field.date.control-site-time-zone"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "field"
+        }
+      ]
+    },
+    {
+      "file": "today-source-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "optional TD column and one item on the scratch list"
+      ],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "scratch list dbml-probe-today-semantics from the today-semantics probe"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "access.principal.profile-regional-settings",
+              "depends_on": []
+            },
+            {
+              "id": "query.caml-adhoc.today-element-vs-today-function",
+              "depends_on": [
+                "formula.datetime.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.today-element-site-date",
+              "depends_on": [
+                "formula.datetime.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.today-offset-element-previous-day",
+              "depends_on": [
+                "formula.datetime.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.today-include-time-current-instant",
+              "depends_on": [
+                "formula.datetime.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "field.date.dynamic-default-rest-fill",
+              "depends_on": [
+                "formula.datetime.control-site-time-zone"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "today-semantics-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "scratch list dbml-probe-today-semantics, its columns, rules and items"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "formula.datetime.fixture-date-columns-created",
+              "depends_on": []
+            },
+            {
+              "id": "formula.datetime.fixture-today-now-rules-stored",
+              "depends_on": [
+                "formula.datetime.fixture-date-columns-created"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-function-default-value",
+              "depends_on": [
+                "formula.datetime.fixture-date-columns-created"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-allows-two-days-ago",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-allows-yesterday",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-allows-site-midnight-today",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-allows-utc-midnight-today",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.today-rejects-tomorrow",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-minus-20h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-minus-12h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-minus-1h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-plus-1h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-plus-12h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.now-function-plus-20h",
+              "depends_on": [
+                "formula.datetime.fixture-today-now-rules-stored"
+              ]
+            },
+            {
+              "id": "formula.datetime.fixture-scratch-list-recycled",
+              "depends_on": []
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "modified-clock-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "columns, column rules and items on the scratch list"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "scratch list dbml-probe-today-semantics from the today-semantics probe"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.column-rule-cross-column-accepted",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.column-modified-allows-yesterday",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-modified-allows-today",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-modified-rejects-tomorrow",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-created-allows-today",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-created-rejects-tomorrow",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-modified-allows-hour-ago",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-modified-rejects-hour-ahead",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.column-modified-update-sees-own-save",
+              "depends_on": [
+                "formula.validation.column-rule-cross-column-accepted"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "list-modified-clock-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "a list rule, cleared at the end, and items on the scratch list"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "scratch list dbml-probe-today-semantics from the today-semantics probe"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.list-modified-rule-accepted",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.list-modified-rule-readback",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-allows-yesterday",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-allows-today",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-rejects-tomorrow",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.control-list-modified-rejects-thirty-days",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-created-allows-today",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-created-rejects-tomorrow",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-allows-20h-ago",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-allows-hour-ago",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-rejects-hour-ahead",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-rejects-20h-ahead",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-update-seed-created",
+              "depends_on": [
+                "formula.validation.list-modified-rule-accepted"
+              ]
+            },
+            {
+              "id": "formula.validation.list-modified-update-sees-own-save",
+              "depends_on": [
+                "formula.validation.fixture-update-seed-created"
+              ]
+            },
+            {
+              "id": "formula.validation.control-list-modified-update-rejects-hour-ahead",
+              "depends_on": [
+                "formula.validation.fixture-update-seed-created"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-list-rule-cleared",
+              "depends_on": []
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "form-validation-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "interactive",
+      "writes": [
+        "DT column, a column rule and a list rule on the scratch list"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "scratch list dbml-probe-today-semantics from the today-semantics probe",
+        "a person to use the list's form"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-dt-column",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-today-column-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-dt-column"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-modified-list-rule-stored",
+              "depends_on": []
+            },
+            {
+              "id": "formula.datetime.today-function-default-value",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-form-rows-readback",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-rules-readback",
+              "depends_on": []
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            {
+              "id": "formula.validation.form-new-today-under-today-rule",
+              "depends_on": [
+                "formula.validation.fixture-today-column-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-new-tomorrow-under-today-rule",
+              "depends_on": [
+                "formula.validation.fixture-today-column-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-new-today-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-modified-list-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-new-tomorrow-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-modified-list-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-edit-today-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-modified-list-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-edit-tomorrow-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-modified-list-rule-stored"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "new-form",
+              "page": "the list's New form",
+              "assertions": [
+                "DT today saves",
+                "DT tomorrow refused with the DT message",
+                "DM today saves",
+                "DM tomorrow refused with the DM message"
+              ]
+            },
+            {
+              "role": "edit-form",
+              "page": "the Edit form of form-1",
+              "assertions": [
+                "DM today saves",
+                "DM tomorrow refused with the DM message"
+              ]
+            }
+          ],
+          "controls": [
+            "formula.validation.fixture-today-column-rule-stored",
+            "formula.validation.fixture-modified-list-rule-stored"
+          ],
+          "depends_on": [],
+          "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "save-instant-paths-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "interactive",
+      "writes": [
+        "TR and WR columns, a list rule and six items on the scratch list; optionally a hidden list"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "scratch list dbml-probe-today-semantics from the today-semantics probe",
+        "a person to use the form, grid view and bulk edit"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.datetime.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-default-columns",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-three-column-modified-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-default-columns"
+              ]
+            },
+            {
+              "id": "formula.validation.today-default-races-modified-rule-rest",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.today-default-races-modified-rule-form-endpoint",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "field.list.hidden-list-readback",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-path-rows-readback",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-three-column-rule-readback",
+              "depends_on": []
+            }
+          ],
+          "states": [],
+          "controls": [],
+          "depends_on": [],
+          "surface": "formula"
+        },
+        {
+          "id": "visible-findings",
+          "pattern": "before-action-after",
+          "findings": [
+            {
+              "id": "formula.validation.form-edit-today-under-three-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-edit-tomorrow-under-three-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.grid-edit-today-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.grid-edit-tomorrow-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.bulk-edit-today-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.form-new-prefilled-default-under-modified-rule",
+              "depends_on": [
+                "formula.validation.fixture-three-column-modified-rule-stored"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "edit-form",
+              "page": "the Edit form of R1-1",
+              "assertions": [
+                "DM today saves",
+                "DM tomorrow refused"
+              ]
+            },
+            {
+              "role": "grid-view",
+              "page": "Edit in grid view",
+              "assertions": [
+                "DM today sticks",
+                "DM tomorrow refused"
+              ]
+            },
+            {
+              "role": "bulk-edit",
+              "page": "the bulk Edit pane for R1-3 and R1-4",
+              "assertions": [
+                "both save with DM today"
+              ]
+            },
+            {
+              "role": "new-form",
+              "page": "the list's New form",
+              "assertions": [
+                "TR prefilled with the site's date",
+                "saves"
+              ]
+            }
+          ],
+          "controls": [
+            "formula.validation.fixture-three-column-modified-rule-stored",
+            "formula.validation.today-default-races-modified-rule-rest"
+          ],
+          "depends_on": [],
+          "surface": "formula"
         }
       ]
     }
