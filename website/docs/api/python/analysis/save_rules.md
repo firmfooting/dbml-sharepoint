@@ -35,8 +35,10 @@ Sydney", at 10:57 local, with the server clock correct:
   matched the 2 September rows and not the 1 September ones, `<Today/>`
   with IncludeTimeValue was the current instant, and a `[today]` column
   default filled the current instant, while a `=TODAY()` default formula
-  on the same item filled 1 September. Views and dynamic defaults need no
-  change; the signed-in user's profile regional settings were empty.
+  on the same item filled 1 September, and the modern form's New form
+  prefilled the same `[today]` default with the site's date. Views and
+  dynamic defaults need no change; the signed-in user's profile regional
+  settings were empty.
 
 So a column rule that compares a date with `today` or `now` cannot be
 exact where it was declared, and is hoisted onto the list rule here. The
