@@ -49,11 +49,13 @@ SCANNED = ("*.py", "*.md", "*.yaml", "*.yml", "*.dbml", "*.j2", "*.txt", "*.json
 #: - website/docs/reference/findings/ holds the live-findings evidence pages,
 #:   rendered by the findings agent from evidence packages outside this
 #:   repository. A violation there can only be fixed in that renderer, the
-#:   same reason markdownlint excludes the generated catalogue page.
+#:   same reason markdownlint excludes the generated catalogue page. Its
+#:   index, live-findings.md, is rendered by the same agent.
 EXCLUDED = (
     "CHANGELOG.md",
     "docs/superpowers/",
     "website/docs/reference/findings/",
+    "website/docs/reference/live-findings.md",
 )
 
 #: Where hatchling records what reaches the wheel. Named once so a failure can
