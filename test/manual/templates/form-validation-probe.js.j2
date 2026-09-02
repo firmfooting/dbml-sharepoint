@@ -110,7 +110,13 @@
       ValidationFormula: '=OR(ISBLANK([DM]),[DM]<=[Modified])', ValidationMessage: 'DM: later than this save',
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     record('formula.validation.fixture-modified-list-rule-stored', 'the list rule =OR(ISBLANK([DM]),[DM]<=[Modified]) is stored', lv.ok ? 'PASS' : 'FAIL', lv.ok ? `HTTP ${lv.status}` : `HTTP ${lv.status} ${reason(lv)}`);
-    const bare = await post(items, { __metadata: { type: itemType }, Title: 'today-now' });
+    // One bare item per list, not one per setup run: reuse an existing
+    // 'today-now' row when a previous setup left one, so repeated setup runs
+    // do not accumulate rows the form steps then have to look past.
+    const existing = await spGet(`${items}?$select=Id,Title&$filter=${encodeURIComponent("Title eq 'today-now'")}&$top=1`);
+    const bare = (existing.body && existing.body.value && existing.body.value.length)
+      ? { ok: true, body: { d: { Id: existing.body.value[0].Id } }, reused: true }
+      : await post(items, { __metadata: { type: itemType }, Title: 'today-now' });
     if (bare.ok) {
       const back = await spGet(`${items}(${bare.body.d.Id})?$select=Id,T,Created`);
       const siteMidnight = new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate()).toISOString();
