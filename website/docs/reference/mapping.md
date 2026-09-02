@@ -448,7 +448,7 @@ the time of day. `now` is exact.
 
 | Target | `now` |
 | --- | --- |
-| `column_validation` / `list_validation` | ✅ renders `NOW()` |
+| `column_validation` / `list_validation` | ✅ renders against `[Modified]`, the save instant (see `column_validation`) |
 | `views[].where` | ✅ renders `<Today/>` with `IncludeTimeValue="TRUE"` |
 | `form_visibility.when` | ❌ refused, as `today` is |
 
@@ -457,7 +457,11 @@ so both are recorded here explicitly.
 
 Microsoft's formula reference says Lists and libraries do not support
 `NOW()`. True of **calculated** columns, where the value would go stale
-between saves; false in a validation formula.
+between saves; false in a validation formula, where it is accepted and
+enforced. It is not used there anyway, because the clock behind it was
+measured 16 to 20 hours behind the site (see the note on which clock
+`today` reads, above); a validation rule compares with `[Modified]`, the
+instant of the save being validated.
 `test/manual/datetime-sentinel-probe.js` set one on a live tenant, watched
 SharePoint accept and store it, then watched it refuse a timestamp three
 hours in the future.
@@ -484,15 +488,20 @@ Most view filters still want `today`. A rolling window ("the last 30 days",
 "signed in today") means a **date**, and `today` is the right sentinel for
 it; reach for `now` only when a filter genuinely turns on the time of day.
 
-**`today` is the site's today.** `TODAY()` in a validation formula,
-`<Today/>` in a view filter and `[today]` as a column default all evaluate
-in the site's regional time zone, not the user's. Measured 2026-09-02: a
-date-only rule `=[Completed Date]<=TODAY()` rejected the current date as
-"in the future" for a user in AUS Eastern on a site whose regional
-settings had not been set for that zone, because the site's clock had not
-reached that date. Set **Site settings > Regional settings > Time zone**
-to the users' zone before deploying; `assess.js.txt` reads the zone and
-warns when it differs from the browser's and the pack uses `today`.
+**Which clock `today` reads.** In a view filter, `<Today/>` is rendered
+by the server, and a `[today]` default is filled by it; Microsoft says
+only that both follow "the server's local time zone". In a validation
+formula the clock is measured: on 2026-09-02, on a site in AUS Eastern
+with the server's own clock correct, `TODAY()` filled 1 September while
+the site's date was the 2nd, and `NOW()` accepted an instant 20 hours
+before now and refused one 12 hours before. That clock sits 16 to 20
+hours behind the site and no site setting moves it, so a save rule
+built on it refused today's date for most of the working day. Save rules
+therefore do not use it: see the `today` and `now` rules under
+[`column_validation`](#column_validation). Set **Site settings >
+Regional settings > Time zone** to the users' zone anyway, because that
+is the zone every date and time is stored and shown in; `assess.js.txt`
+reads it and warns when it differs from the browser's.
 
 `now` takes **no offset form**. `today±N` has a verified rendering;
 `now±N` does not, and unverified is treated as unknown.
@@ -1118,6 +1127,28 @@ the message.
 
 `Title` and the system columns are rejected here too (see
 [Columns you cannot declare on](#columns-you-cannot-declare-on)).
+
+**Rules against `today` and `now` are enforced on the list.** Measured
+2026-09-02: `TODAY()` and `NOW()` inside a validation formula run 16 to 20
+hours behind an AUS Eastern site, so `=[D]<=TODAY()` refused the current
+date until late afternoon; in a *list* validation formula, `[Modified]`
+is the instant of the save being validated, site-local, on create and on
+update, and a *column* formula may reference only its own column. So a
+column rule whose `when` compares a date with `today` (with or without an
+offset) or a datetime with `now` is hoisted onto the list rule at build
+time: the build clears the column's own formula, joins the rule onto the
+list's under a guard so a blank never fails it, and joins its message
+onto the list's, the declared list message first. The manifest names
+every hoisted rule in both sections. A date-only column is compared by
+whole days with the offset on the column (`leq today+30` renders
+`[D]-30<=[Modified]`); a datetime compared with `now` is compared
+directly. `today` on a **datetime** column keeps `TODAY()` and its lag;
+say `now` for a datetime.
+
+The price is one message per list: a list with a declared rule and two
+hoisted ones shows all three sentences whenever any of them fails. Keep
+each message a sentence, and the validator refuses a combined message or
+formula that would exceed SharePoint's limits.
 
 ## `list_validation`
 

@@ -784,7 +784,7 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "(creation may still work).\n"
         "1\tregional_settings\tINFO\tSite LocaleId (not reported).\n"
         "1\ttime_zone\tINFO\tSite time zone \"(UTC) Coordinated Universal Time\" (UTC +0 "
-        "min); this browser is UTC +0 min. They agree, so this pack's date rules ('today') "
+        "min); this browser is UTC +0 min. They agree, so dates and times on this site "
         "read the same day this browser does.\n"
         "1\tlanguages\tINFO\tMultilingual (not reported); UI languages (none reported).\n"
         "1\tstorage\tINFO\tsite/usage did not report storage figures.\n"
@@ -1398,13 +1398,13 @@ if __name__ == "__main__":  # pragma: no cover
 
 # --- The site's time zone is what every `today` evaluates in ----------------
 #
-# MEASURED 2026-09-02: a date-only rule `=[Completed Date]<=TODAY()` rejected
-# the current date as "in the future" for a user in AUS Eastern (UTC+10) on a
-# site whose regional settings had not been set for that zone. TODAY() in a
-# validation formula, <Today/> in a view filter and [today] as a default all
-# evaluate in the SITE's regional time zone, not the user's, so a user whose
-# clock is ahead of the site's cannot save today's date until the site's
-# clock reaches it. Nothing read that zone before this.
+# The site's regional time zone is the one every date and time is stored
+# and shown in, and the one a `today` view window is read against. A site
+# left in a zone other than its users' shifts every time they see. Nothing
+# read that zone before this. (The validation clock is separate: measured
+# 2026-09-02, TODAY() and NOW() ran 16 to 20 hours behind an AUS Eastern
+# site whatever the setting, so date rules compare with the save instant;
+# see analysis/save_rules.py.)
 
 
 def _today_pack() -> tuple[Schema, MappingBundle]:
@@ -1487,7 +1487,7 @@ def test_the_time_zone_finding_warns_when_the_browser_is_ahead_of_the_site() -> 
     assert zone_finding(660)["level"] == "INFO"
     apart = zone_finding(0)
     assert apart["level"] == "WARN", apart
-    assert "in the future" in apart["detail"]
+    assert "site's zone" in apart["detail"]
     assert "Regional settings" in apart["detail"]
 
 

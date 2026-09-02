@@ -98,11 +98,11 @@ def assess_targets(
 
 
 def _uses_today(schema: Schema, m: Mapping, table_names: list[str]) -> bool:
-    """MEASURED 2026-09-02: `=[Completed Date]<=TODAY()` on a date-only
-    column rejected the current date as "in the future" for a user in AUS
-    Eastern on a site whose regional settings had not been set for that
-    zone. Every `today` this tool emits evaluates in the site's zone, not
-    the user's, and nothing read that zone before."""
+    """Whether anything this run ships reads `today` on the site: a view
+    filter's <Today/>, a column's [today] default, a validation rule. The
+    site's zone is the one dates are stored and shown in, and the one a view
+    window is read against; a validation rule no longer depends on any clock
+    (analysis/save_rules.py), but the same pack usually carries all three."""
     conditions = []
     for name in table_names:
         section = m.column_validation.get(name)
@@ -159,8 +159,8 @@ def derive_requirements(
     if t["uses_today"]:
         reqs.append(Requirement(
             "time_zone",
-            "Site regional time zone is the users' zone (the pack's date rules "
-            "evaluate `today` in it)",
+            "Site regional time zone is the users' zone (dates are stored and "
+            "shown in it, and the pack's `today` windows are read against its day)",
             "WARN",
         ))
     if t["requires_manage_permissions"]:
