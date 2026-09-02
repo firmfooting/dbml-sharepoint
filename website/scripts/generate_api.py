@@ -72,6 +72,7 @@ MODULES: list[tuple[str, str]] = [
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),
+    ("generators.verifygen", "verify.js: each clock cell a pack uses, on a scratch list"),
     ("generators.demogen", "demo-data.js"),
     ("generators.manifestgen", "deploy-manifest.md"),
     ("generators.reportgen", "Power Query / SQL reporting pack"),
