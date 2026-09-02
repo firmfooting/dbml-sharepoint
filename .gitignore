@@ -72,3 +72,6 @@ docs/superpowers/
 
 # Hypothesis example database (machine-local; not shared).
 .hypothesis/
+
+# Pickles are never source. A stray empty sites.pkl was once committed by accident.
+*.pkl
