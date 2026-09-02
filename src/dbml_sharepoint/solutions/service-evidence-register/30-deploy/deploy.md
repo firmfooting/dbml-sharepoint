@@ -150,7 +150,8 @@ Delete the rows before go-live.
 - [ ] **An event that happened earlier today saves, and one stamped an hour
       from now is refused.** `Occurred At` is a datetime and its rule compares
       against the instant of the save, not a whole-day bound, so the
-      refusal should bite within the hour rather than at midnight. A date next month is refused too.
+      refusal should bite within the hour rather than at midnight. A date
+      next month is refused too.
 - [ ] `Logged Date` defaults to today without user entry.
 
 ### The calculated columns, and the one that is blank on purpose

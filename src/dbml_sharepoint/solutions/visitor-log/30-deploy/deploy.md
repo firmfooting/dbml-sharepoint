@@ -89,8 +89,9 @@ site that already holds real visits.
       is a future **Signed Out At**; the save message carries a sentence
       for each. Both allow any time up to the moment you save. Each rule
       compares against the instant of the save, so the refusal bites
-      within the hour rather than at midnight. If it refuses a sign-in stamped a few minutes ago, the rule
-      has been edited back to a whole-day bound.
+      within the hour rather than at midnight. If it refuses a sign-in
+      stamped a few minutes ago, the rule has been edited back to a
+      whole-day bound.
 - [ ] Two rules this register wants are **not** enforced at save, by
       construction rather than by omission; `50-govern/governance.md` says
       what carries them instead:
