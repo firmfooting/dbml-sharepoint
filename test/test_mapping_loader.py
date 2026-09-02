@@ -2502,3 +2502,31 @@ def test_reporting_users_table_must_be_a_boolean(tmp_path: Path) -> None:
     """))
     with pytest.raises(ValueError, match="users_table"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_renamed_from_defaults_empty_and_parses(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Plain: { kind: List, base_template: 100, site_role: default }
+          Risk:
+            kind: List
+            base_template: 100
+            site_role: default
+            renamed_from: [ProgramRisk, ProjectRisk]
+    """)
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert mapping.entities["Plain"].renamed_from == ()
+    assert mapping.entities["Risk"].renamed_from == ("ProgramRisk", "ProjectRisk")
+
+
+def test_renamed_from_refuses_a_bare_string(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Risk:
+            kind: List
+            base_template: 100
+            site_role: default
+            renamed_from: ProgramRisk
+    """)
+    with pytest.raises(ValueError, match="renamed_from"):
+        load_mapping(tmp_path / "m.yaml")

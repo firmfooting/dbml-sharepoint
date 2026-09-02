@@ -152,8 +152,15 @@ def _interpolated_names(
     declared = vc.schema.project_name
     yield f"the DBML `Project` name {declared!r}", declared, _SCHEMA
 
-    for entity_name in vc.bundle.mapping.entities:
+    for entity_name, entity in vc.bundle.mapping.entities.items():
         yield f"entity {entity_name!r}", entity_name, _ENTITIES
+        # The old marker is computed from the previous name exactly as the
+        # current one is from the entity name, so the same grammar applies.
+        for previous in entity.renamed_from:
+            yield (
+                f"previous name {previous!r} of entity {entity_name!r}",
+                previous, _ENTITIES,
+            )
 
     perms = vc.bundle.mapping.permissions
     if perms is None:

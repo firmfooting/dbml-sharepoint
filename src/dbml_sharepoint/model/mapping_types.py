@@ -102,6 +102,12 @@ class EntityMapping:
     # reason and this is not a general hide-this feature. Declared views are
     # unaffected; they keep every field they declare.
     hide_from_all_items: tuple[str, ...] = ()
+    # Previous entity names this list was deployed under. When no list carries
+    # the current title, the deploy adopts one carrying a previous title and
+    # the exact provenance marker for that previous name, then retitles it.
+    # A previous title without that marker, or present beside the current
+    # one, is refused at assessment and at preflight.
+    renamed_from: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

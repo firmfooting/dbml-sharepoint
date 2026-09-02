@@ -90,7 +90,7 @@ KNOWN_SECTIONS = frozenset({
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
-    "accept_unindexable_display_column", "hide_from_all_items",
+    "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
 })
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -158,6 +158,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ),
             hide_from_all_items=_optional_str_list(
                 spec, "hide_from_all_items", f"entities.{name}",
+            ),
+            renamed_from=_optional_str_list(
+                spec, "renamed_from", f"entities.{name}",
             ),
         )
 
