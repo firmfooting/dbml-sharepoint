@@ -484,6 +484,16 @@ Most view filters still want `today`. A rolling window ("the last 30 days",
 "signed in today") means a **date**, and `today` is the right sentinel for
 it; reach for `now` only when a filter genuinely turns on the time of day.
 
+**`today` is the site's today.** `TODAY()` in a validation formula,
+`<Today/>` in a view filter and `[today]` as a column default all evaluate
+in the site's regional time zone, not the user's. Measured 2026-09-02: a
+date-only rule `=[Completed Date]<=TODAY()` rejected the current date as
+"in the future" for a user in AUS Eastern on a site whose regional
+settings had not been set for that zone, because the site's clock had not
+reached that date. Set **Site settings > Regional settings > Time zone**
+to the users' zone before deploying; `assess.js.txt` reads the zone and
+warns when it differs from the browser's and the pack uses `today`.
+
 `now` takes **no offset form**. `today±N` has a verified rendering;
 `now±N` does not, and unverified is treated as unknown.
 

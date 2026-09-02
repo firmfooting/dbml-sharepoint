@@ -17,10 +17,14 @@ from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
+    generate_assess_js,
 )
 from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
+    ColumnValidation,
+    EntitySection,
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
@@ -30,6 +34,7 @@ from dbml_sharepoint.model.mapping_types import (
     Versioning,
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
@@ -362,6 +367,10 @@ _MARKER_KEY = "provenance_marker:"
 # that follow from it are not what these tests measure.
 _ASSESS_HARNESS = textwrap.dedent(r"""
     globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
+    // A healthy site reports its time zone, and this "browser" sits in it:
+    // UTC on both sides, so the time_zone finding cannot depend on the
+    // machine running the tests.
+    Date.prototype.getTimezoneOffset = () => 0;
     globalThis._spPageContextInfo = {
       webServerRelativeUrl: '/sites/test',
       userLoginName: 'probe@example.com',
@@ -430,6 +439,14 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
         return respond(200, {
           d: { results: [...LIST_DESCRIPTIONS.keys()].map((t) => ({ Title: t })) },
         });
+      }
+      if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {
+        // Spelled with a bracket key: `_description_absent_harness` strips
+        // every description key to model a list whose description is not
+        // reported, and the zone's own description must survive that.
+        const zone = { Id: 93, Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } };
+        zone['Description'] = '(UTC) Coordinated Universal Time';
+        return respond(200, { d: zone });
       }
       return respond(200, body(u));
     };
@@ -766,6 +783,9 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "2\tlist_template_100\tWARN\tBase template 100 not listed by web/listtemplates "
         "(creation may still work).\n"
         "1\tregional_settings\tINFO\tSite LocaleId (not reported).\n"
+        "1\ttime_zone\tINFO\tSite time zone \"(UTC) Coordinated Universal Time\" (UTC +0 "
+        "min); this browser is UTC +0 min. They agree, so this pack's date rules ('today') "
+        "read the same day this browser does.\n"
         "1\tlanguages\tINFO\tMultilingual (not reported); UI languages (none reported).\n"
         "1\tstorage\tINFO\tsite/usage did not report storage figures.\n"
         "1\thub\tINFO\tHub site (not reported); hub id (not reported).\n"
@@ -1374,3 +1394,118 @@ if __name__ == "__main__":  # pragma: no cover
     _target = EXPECTED / "simple-assess.js"
     write_golden(_target, _assess_js())
     print(f"wrote {_target}")  # noqa: T201
+
+
+# --- The site's time zone is what every `today` evaluates in ----------------
+#
+# MEASURED 2026-09-02: a date-only rule `=[Completed Date]<=TODAY()` rejected
+# the current date as "in the future" for a user in AUS Eastern (UTC+10) on a
+# site whose regional settings had not been set for that zone. TODAY() in a
+# validation formula, <Today/> in a view filter and [today] as a default all
+# evaluate in the SITE's regional time zone, not the user's, so a user whose
+# clock is ahead of the site's cannot save today's date until the site's
+# clock reaches it. Nothing read that zone before this.
+
+
+def _today_pack() -> tuple[Schema, MappingBundle]:
+    schema = make_schema(
+        make_table("Project", column("Title", required=True), column("DueDate", "date")),
+    )
+    bundle = make_bundle(
+        entities=["Project"],
+        column_validation={
+            "Project": EntitySection(columns={
+                "DueDate": ColumnValidation(
+                    when=Leaf(field="DueDate", op="leq", value="today"),
+                    message="Not in the future.",
+                ),
+            }),
+        },
+    )
+    return schema, bundle
+
+
+def test_assess_targets_report_whether_the_pack_uses_today() -> None:
+    schema, bundle = _today_pack()
+    assert assess_targets(schema, bundle, "default")["uses_today"] is True
+    plain = make_bundle(entities=["Project"])
+    assert assess_targets(schema, plain, "default")["uses_today"] is False
+    # A `[today]` default is a use as well: it is filled in the site's zone.
+    dated = make_schema(
+        make_table(
+            "Project", column("Title", required=True),
+            column("Raised", "date", default="[today]"),
+        ),
+    )
+    assert assess_targets(dated, plain, "default")["uses_today"] is True
+
+
+def test_a_pack_that_uses_today_requires_the_site_time_zone() -> None:
+    schema, bundle = _today_pack()
+    levels = {r.key: r.level_on_fail for r in derive_requirements(schema, bundle, "default")}
+    assert levels["time_zone"] == "WARN"
+    plain = make_bundle(entities=["Project"])
+    assert "time_zone" not in {r.key for r in derive_requirements(schema, plain, "default")}
+
+
+# The site runs in AUS Eastern (Bias -600, daylight bias -60) and the
+# "browser" sits wherever the test says.
+_ZONE_HARNESS = _ASSESS_HARNESS + textwrap.dedent(r"""
+    Date.prototype.getTimezoneOffset = () => -(BROWSER_OFFSET_MIN);
+    const _siteFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (String(url).toLowerCase().includes('regionalsettings/timezone')) {
+        const zone = { Id: 76, Information: { Bias: -600, StandardBias: 0, DaylightBias: -60 } };
+        zone['Description'] = '(UTC+10:00) Canberra, Melbourne, Sydney';
+        return respond(200, { d: zone });
+      }
+      return _siteFetch(url);
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_time_zone_finding_warns_when_the_browser_is_ahead_of_the_site() -> None:
+    schema, bundle = _today_pack()
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    def zone_finding(browser_offset_min: int) -> dict[str, Any]:
+        harness = _ZONE_HARNESS.replace("BROWSER_OFFSET_MIN", str(browser_offset_min))
+        summary = _run_assess("", harness=harness, js=js)
+        return next(f for f in summary["findings"] if f["key"] == "time_zone")
+
+    same = zone_finding(600)
+    assert same["level"] == "INFO", same
+    assert "Canberra" in same["detail"]
+    # Daylight time is the same site, so it is not a mismatch.
+    assert zone_finding(660)["level"] == "INFO"
+    apart = zone_finding(0)
+    assert apart["level"] == "WARN", apart
+    assert "in the future" in apart["detail"]
+    assert "Regional settings" in apart["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_pack_without_today_only_reports_the_site_time_zone() -> None:
+    schema = make_schema(make_table("Project", column("Title", required=True)))
+    bundle = make_bundle(entities=["Project"])
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    harness = _ZONE_HARNESS.replace("BROWSER_OFFSET_MIN", "0")
+    finding = next(
+        f for f in _run_assess("", harness=harness, js=js)["findings"]
+        if f["key"] == "time_zone"
+    )
+    assert finding["level"] == "INFO"
+    assert "Canberra" in finding["detail"]
