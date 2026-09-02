@@ -46,7 +46,7 @@ def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
-    reader: str | None = "", confirm: str = "y", prefix: str = "RR_",
+    reader: str | None = "", confirm: str = "y", prefix: str | None = "RR_",
     template: str = "risk-register",
     site_url: str = "https://contoso.sharepoint.com/sites/x",
 ) -> list[str]:
@@ -68,7 +68,9 @@ def _answers(
     is not a new convention -- `solution.prefix` and `TemplateChoice.prefix`
     already use `""` to mean "no prefix" everywhere else in this module; the
     parameter just moves that meaning one layer up, to the SCRIPT rather
-    than the result.
+    than the result. `None` scripts NO prefix answer at all: a template
+    that declares `prefix: ""` is never asked the gate, so a script that
+    carried one would feed it to the directory prompt.
 
     **A spare answer is no longer invisible, and that is why `seed` and
     `reader` both take `None`, and why `prefix` changes the ANSWER COUNT
@@ -98,7 +100,10 @@ def _answers(
     the script one answer short of what the caller thought they asked for.
     Plain parameters make the same typo a `TypeError` at the call site.
     """
-    prefix_answers = ["n"] if not prefix else ["y", prefix]
+    if prefix is None:
+        prefix_answers: list[str] = []
+    else:
+        prefix_answers = ["n"] if not prefix else ["y", prefix]
     tail = [build]
     if build == "y":
         if reader is not None:
@@ -2447,9 +2452,11 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     )
     for solution in solutions:
         destination = tmp_path / solution.id
-        console = ScriptedConsole(
-            _answers(destination, template=solution.id, build="n"),
-        )
+        # A family declaring no prefix is asked neither prefix question.
+        console = ScriptedConsole(_answers(
+            destination, template=solution.id, build="n",
+            prefix="RR_" if solution.prefix else None,
+        ))
         assert wizard.run_wizard(console) == 0, solution.id
 
         copied = wizard._read_facts(
