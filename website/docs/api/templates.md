@@ -19,6 +19,18 @@ dbml-sharepoint SITE ASSESSMENT script (READ-ONLY).
 
 Probes the site's capabilities against this pack's requirements and prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes: every call is a GET except the contextinfo digest fetch and one read-only CSOM ProcessQuery.
 
+### `columns.js.j2`
+
+dbml-sharepoint COLUMNS script for one list.
+
+Target site: List: Deployer:     v Generated at:
+
+Lists the custom columns as a numbered table, asks for a number, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
+
+Deleting a column removes its values from every item, and neither the column nor the values go to the recycle bin (Microsoft Learn, SharePoint data deletion). The item scan is what keeps that from being a surprise.
+
+Paste the whole file into the browser console on the site above, from a classic page such as .../_layouts/15/settings.aspx.
+
 ### `demo.js.j2`
 
 dbml-sharepoint DEMO DATA script (built with --seed).
@@ -49,6 +61,18 @@ That creates a folder named after the download and writes a DRAFT schema.dbml, m
 
 The operator-facing deploy manifest: supported mode, step-by-step run instructions, validation findings (must be zero errors), and the full deployment inventory - list creation order, deferred lookups, indexes, views, formatting, permissions - with phase numbers taken from the phases manifest.
 
+### `protection.js.j2`
+
+dbml-sharepoint PROTECTION script for one list.
+
+Target site: List: Deployer:     v Generated at:
+
+Reads the list's deletion lock and the Sealed flag on each custom column, prints them, then takes one word at a time until you leave the prompt blank: lock or unlock sets AllowDeletion; seal or unseal sets Sealed on every custom column not already in that state. Each write is read back, and a readback that disagrees stops the run with the list as it stands.
+
+A column the deployer provisioned is sealed on purpose: a sealed column rejects schema edits in the UI and silently discards REST writes. Unseal for the edit you are about to make, and seal again afterwards.
+
+Paste the whole file into the browser console on the site above, from a classic page such as .../_layouts/15/settings.aspx.
+
 ### `rollback.js.j2`
 
 dbml-sharepoint ROLLBACK script.
@@ -71,7 +95,7 @@ The host names the pack data differently: assess.js.j2 passes `targets`, deploy.
 
 ### `_digest_cached.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
@@ -83,15 +107,21 @@ Shared formula canonicalisation: how a stored Formula or ValidationFormula is co
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them.
 
 ### `_http_write.js.j2`
 
-Included by: `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
+
+### `_maintain_list.js.j2`
+
+Included by: `columns.js.j2`, `protection.js.j2`
+
+Shared list resolution for the two maintenance scripts (protection.js, columns.js). Expects log, LIST_TITLE, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-title list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, and the MERGE helpers every write here goes through.
 
 ### `_provenance.js.j2`
 
@@ -101,7 +131,7 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function and SITE_URL const to be defined already; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line.
 
