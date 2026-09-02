@@ -1,0 +1,167 @@
+{# src/dbml_sharepoint/templates/columns.js.j2 #}
+/**
+ * dbml-sharepoint COLUMNS script for one list.
+ *
+ * Target site:  {{ site_url | comment_safe }}
+ * List:         {{ list_title | comment_safe }}
+ * Deployer:     v{{ deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}
+ *
+ * Lists the custom columns as a numbered table, asks for a number, and
+ * deletes that column after four guards: built-in and hidden fields never
+ * appear on the menu; every item is read to see whether the column holds a
+ * value; an empty column needs its internal name typed, and one that holds
+ * values, or whose values could not be read, needs DELETE NON-EMPTY typed;
+ * a sealed column is unsealed and read back before the delete, and the
+ * column is read back after it and must answer 404. A readback that
+ * disagrees stops the run. The table is printed again after each delete,
+ * and a blank answer finishes.
+ *
+ * Deleting a column removes its values from every item, and neither the
+ * column nor the values go to the recycle bin (Microsoft Learn, SharePoint
+ * data deletion). The item scan is what keeps that from being a surprise.
+ *
+ * Paste the whole file into the browser console on the site above, from a
+ * classic page such as .../_layouts/15/settings.aspx.
+ */
+(async () => {
+  const SITE_URL = {{ site_url | tojson }};
+  const LIST_TITLE = {{ list_title | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-COLUMNS] [${level}] ${msg}`);
+  const summary = { list: null, deleted: [], skipped: [], errors: [] };
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+
+{% include "_maintain_list.js.j2" %}
+
+  summary.list = { title: LIST_TITLE, id: LIST_ID, item_count: list.ItemCount, provisioned_by_dbml_sharepoint: provisioned };
+
+  // Lookup and person columns project their value as <name>Id; every other
+  // type answers under its own internal name.
+  const idProjected = (f) => /^(Lookup|LookupMulti|User|UserMulti)$/.test(String(f.TypeAsString));
+
+  // The same read the deployer's shape probe makes on a lookup, then one
+  // GET on the target: a lookup whose list was deleted is the column this
+  // script exists to remove, so the table says so.
+  async function lookupTarget(f) {
+    if (!/^Lookup(Multi)?$/.test(String(f.TypeAsString))) return '';
+    const shape = await getOne(`${fieldPath(f.Id)}?$select=LookupList,LookupField`, `'${f.InternalName}' lookup shape`);
+    const target = String(shape.LookupList || '').replace(/[{}]/g, '');
+    if (!GUID.test(target)) return 'UNREADABLE';
+    const r = await fetchWithRetry(apiUrl(`web/lists(guid'${target}')?$select=Title`), verbose());
+    if (r.status === 404) return 'MISSING';
+    if (!r.ok) return 'UNREADABLE';
+    const d = ((await r.json()) || {}).d || {};
+    return d.Title || target;
+  }
+
+  async function enumerate() {
+    const fields = (await readFields()).filter(isCustom);
+    const rows = [];
+    for (const [i, f] of fields.entries()) {
+      rows.push({
+        number: i + 1, internal_name: f.InternalName, title: f.Title, type: f.TypeAsString,
+        sealed: f.Sealed === true, read_only: f.ReadOnlyField === true, lookup_target: await lookupTarget(f),
+      });
+    }
+    console.table(rows);
+    return fields;
+  }
+
+  const hasValue = (v) => {
+    if (v === null || v === undefined || v === '') return false;
+    if (typeof v === 'object' && Array.isArray(v.results)) return v.results.length > 0;
+    return true;
+  };
+
+  // Paged by Id, the documented way past the view threshold, and never
+  // filtered: a $filter on an unindexed column throws past 5,000 items and a
+  // Note column refuses one outright. Past the page cap the answer is
+  // unknown, and unknown is gated exactly like a column that holds values.
+  const VALUE_PAGES_MAX = 40;
+  async function holdsValues(f) {
+    const projected = idProjected(f) ? `${f.InternalName}Id` : f.InternalName;
+    let nextUrl = apiUrl(`${listPath}/items?$select=Id,${projected}&$orderby=Id&$top=5000`);
+    let pages = 0;
+    try {
+      while (nextUrl) {
+        if (++pages > VALUE_PAGES_MAX) return { state: 'unknown', why: `more than ${VALUE_PAGES_MAX} pages of items` };
+        const r = await fetchWithRetry(nextUrl, verbose());
+        if (!r.ok) return { state: 'unknown', why: `HTTP ${r.status} ${spError(await r.text())}` };
+        const j = await r.json();
+        for (const row of ((j && j.d && j.d.results) || [])) {
+          if (hasValue(row[projected])) return { state: 'values', why: `item ${row.Id}` };
+        }
+        nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+      }
+    } catch (err) {
+      return { state: 'unknown', why: err.message };
+    }
+    return { state: 'empty' };
+  }
+
+  for (;;) {
+    const fields = await enumerate();
+    if (!fields.length) {
+      log('INFO', `'${LIST_TITLE}' has no custom columns left.`);
+      break;
+    }
+    const answer = String(prompt(`Enter the number of the column to delete from '${LIST_TITLE}' (1-${fields.length}), or leave blank to finish:`) || '').trim();
+    if (!answer) break;
+    const n = Number(answer);
+    if (!Number.isInteger(n) || n < 1 || n > fields.length) {
+      log('WARN', `'${answer}' is not a number on the menu.`);
+      continue;
+    }
+    const field = fields[n - 1];
+    const held = await holdsValues(field);
+    let confirmed;
+    if (held.state === 'empty') {
+      const typed = prompt(`'${field.InternalName}' holds no values in ${list.ItemCount} item(s). Type its internal name (${field.InternalName}) to ${field.Sealed === true ? 'unseal and ' : ''}delete it, or anything else to skip:`);
+      confirmed = typed === field.InternalName;
+    } else {
+      const reason = held.state === 'values'
+        ? `holds values (first seen on ${held.why})`
+        : `values could not be read (${held.why})`;
+      const typed = prompt(`'${field.InternalName}' ${reason}. Deleting a column removes its values from every item and nothing goes to the recycle bin. Type DELETE NON-EMPTY to delete it anyway, or anything else to skip:`);
+      confirmed = typed === 'DELETE NON-EMPTY';
+    }
+    if (!confirmed) {
+      summary.skipped.push({ column: field.InternalName, reason: 'not-confirmed' });
+      log('INFO', `Skipped '${field.InternalName}'; nothing was written.`);
+      continue;
+    }
+    try {
+      if (field.Sealed === true) {
+        await setSealed(field, false);
+        log('INFO', `Unsealed '${field.InternalName}' (read back).`);
+      }
+      const digest = await getDigest();
+      const r = await fetchWithRetry(fieldUrl(field.Id), {
+        method: 'POST',
+        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+      });
+      if (!r.ok) throw new Error(`DELETE refused: HTTP ${r.status} ${spError(await r.text())}`);
+      const gone = await fetchWithRetry(fieldUrl(field.Id, '?$select=Id'), verbose());
+      if (gone.status !== 404) {
+        throw mismatch(`'${field.InternalName}' still reads back after the delete (HTTP ${gone.status})`);
+      }
+      summary.deleted.push(field.InternalName);
+      log('INFO', `Deleted '${field.InternalName}' and confirmed it is gone (HTTP 404 on readback).`);
+    } catch (err) {
+      summary.errors.push({ column: field.InternalName, error: err.message });
+      log('ERROR', `'${field.InternalName}': ${err.message}`);
+      return { ...summary, aborted: err.readbackMismatch ? 'readback-mismatch' : 'write-failed' };
+    }
+  }
+
+  log('INFO', `DONE: ${summary.deleted.length} deleted, ${summary.skipped.length} skipped, ${summary.errors.length} error(s), ${requestCount} request(s).`);
+  return summary;
+})();

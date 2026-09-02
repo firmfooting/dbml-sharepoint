@@ -120,7 +120,10 @@ def test_every_documented_command_survived_the_wizard_default() -> None:
     change that can turn a subcommand into a no-op: the callback runs for
     every invocation, and an early `raise typer.Exit` in it would swallow
     them all while `--help` kept listing them."""
-    for command in ("build", "validate", "report", "extract", "extract-script", "version"):
+    for command in (
+        "build", "validate", "report", "extract", "extract-script",
+        "protection-script", "columns-script", "version",
+    ):
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, f"{command} --help failed"
         assert command in result.stdout
@@ -170,7 +173,10 @@ def test_help_still_renders_as_rich_panels() -> None:
 
     # Every registered command is listed. A command silently dropped from the
     # help screen is invisible to anyone who has not read the source.
-    for command in ("build", "validate", "report", "extract", "extract-script", "version"):
+    for command in (
+        "build", "validate", "report", "extract", "extract-script",
+        "protection-script", "columns-script", "version",
+    ):
         assert command in out, f"{command!r} is missing from the help screen"
 
 

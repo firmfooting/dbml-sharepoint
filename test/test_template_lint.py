@@ -79,6 +79,10 @@ KNOWN_CONTEXT = {
     # `release.deployer_version`: extract.js runs before a release.yaml
     # exists, so there is no release object to hang it off.
     "list_titles", "live_format", "download_name", "deployer_version",
+    # maintaingen (protection.js, columns.js): one list, named by the
+    # operator from the address bar, and no release object for the same
+    # reason extract.js has none.
+    "list_title", "marker_prefix",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }
