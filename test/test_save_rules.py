@@ -96,3 +96,49 @@ def test_hoisted_rules_join_the_declared_list_rule_and_its_message_first() -> No
         Group("any_of", (Leaf(field="OccurredAt", op="is_null"), occurred.when)),
     ))
     assert effective.message == "Done needs a date. Not in the future. Not after now."
+
+
+def test_a_rule_that_already_accepts_a_blank_is_not_guarded_twice() -> None:
+    """Many rules are authored `is_null OR <clock comparison>`. Wrapping that
+    in a second blank guard is exact and wastes characters against
+    SharePoint's 1023-character formula limit, which one shipped solution
+    then exceeded."""
+    rule = ColumnValidation(
+        when=Group("any_of", (
+            Leaf(field="Due", op="is_null"), Leaf(field="Due", op="leq", value="today"),
+        )),
+        message="Not in the future.",
+    )
+    mapping = make_mapping(
+        entities=["Risk"],
+        column_validation={"Risk": EntitySection(columns={"Due": rule})},
+    )
+    effective = effective_list_validation(mapping, "Risk", TYPES)
+    assert effective is not None
+    assert effective.when == Group("all_of", (rule.when,))
+
+
+def test_a_declared_all_of_rule_is_flattened_into_the_joined_rule() -> None:
+    """AND is associative, so the declared rule's own conjuncts join the
+    hoisted rules at one level rather than nesting an AND inside the AND."""
+    declared = ListValidation(
+        when=Group("all_of", (
+            Leaf(field="Status", op="neq", value="Done"),
+            Leaf(field="Note", op="is_not_null"),
+        )),
+        message="Done needs a note.",
+    )
+    due = _rule("Due", "leq", "today", "Not in the future.")
+    mapping = make_mapping(
+        entities=["Risk"],
+        list_validation={"Risk": declared},
+        column_validation={"Risk": EntitySection(columns={"Due": due})},
+    )
+    effective = effective_list_validation(mapping, "Risk", TYPES)
+    assert effective is not None
+    assert effective.when == Group("all_of", (
+        Leaf(field="Status", op="neq", value="Done"),
+        Leaf(field="Note", op="is_not_null"),
+        Group("any_of", (Leaf(field="Due", op="is_null"), due.when)),
+    ))
+    assert effective.message == "Done needs a note. Not in the future."

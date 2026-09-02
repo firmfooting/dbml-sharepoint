@@ -74,3 +74,8 @@ hoisted column rule joined by AND and each hoisted rule guarded so a
 blank never fails it, as a column rule never fires on a blank. Messages
 are joined in the same order, the declared list rule's first.
 
+The join spends no characters it does not need, because the result is
+measured against SharePoint's formula limit: a declared AND contributes
+its conjuncts rather than nesting, and a rule that already accepts a
+blank is not guarded twice.
+

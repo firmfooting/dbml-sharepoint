@@ -74,22 +74,50 @@ def hoisted_columns(
     ]
 
 
+def _conjuncts(condition: Condition) -> list[Condition]:
+    """A top-level AND's children, or the condition itself; AND is associative."""
+    if isinstance(condition, Group) and condition.kind == "all_of":
+        return list(condition.children)
+    return [condition]
+
+
+def _accepts_a_blank(column: str, condition: Condition) -> bool:
+    """Whether a rule already passes a blank: a top-level OR with an
+    `is_null` test on its own column."""
+    return (
+        isinstance(condition, Group)
+        and condition.kind == "any_of"
+        and any(
+            isinstance(child, Leaf) and child.field == column and child.op == "is_null"
+            for child in condition.children
+        )
+    )
+
+
 def effective_list_validation(
     mapping: Mapping, entity: str, column_types: dict[str, str],
 ) -> ListValidation | None:
     """The list rule the deployer writes: the declared one, with every
     hoisted column rule joined by AND and each hoisted rule guarded so a
     blank never fails it, as a column rule never fires on a blank. Messages
-    are joined in the same order, the declared list rule's first."""
+    are joined in the same order, the declared list rule's first.
+
+    The join spends no characters it does not need, because the result is
+    measured against SharePoint's formula limit: a declared AND contributes
+    its conjuncts rather than nesting, and a rule that already accepts a
+    blank is not guarded twice."""
     declared = mapping.list_validation.get(entity)
     hoisted = hoisted_columns(mapping.column_validation.get(entity), column_types)
     if not hoisted:
         return declared
-    parts: list[Condition] = [declared.when] if declared is not None else []
-    parts += [
-        Group("any_of", (Leaf(field=column, op="is_null"), rule.when))
-        for column, rule in hoisted
-    ]
+    parts: list[Condition] = []
+    if declared is not None:
+        parts += _conjuncts(declared.when)
+    for column, rule in hoisted:
+        if _accepts_a_blank(column, rule.when):
+            parts.append(rule.when)
+        else:
+            parts.append(Group("any_of", (Leaf(field=column, op="is_null"), rule.when)))
     messages = ([declared.message] if declared is not None else []) + [
         rule.message for _, rule in hoisted
     ]
