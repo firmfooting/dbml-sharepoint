@@ -139,6 +139,7 @@ def generate_manifest(
             "formula": f["validation_formula"],
             "message": f["validation_message"],
             "cleared": f["validation_formula"] == "",
+            "hoisted": f["title"] in lst.get("validation_hoisted", []),
         }
         for lst in schema_json["lists"]
         for f in _written_fields(lst)
@@ -162,14 +163,17 @@ def generate_manifest(
     }
     # The cross-column sibling had no section at all, so a save rule
     # governing the whole list deployed unannounced.
+    # From the schema JSON rather than the mapping: the deployer writes the
+    # EFFECTIVE rule, which carries any column rule hoisted onto the list.
     list_validation = [
         {
-            "list": f"{bundle.mapping.prefix}{entity}",
-            "described": describe(rule.when),
-            "message": rule.message,
+            "list": lst["title"],
+            "described": lst["validation_described"],
+            "message": lst["validation_message"],
+            "hoisted": lst.get("validation_hoisted", []),
         }
-        for entity, rule in bundle.mapping.list_validation.items()
-        if _deployed(entity)
+        for lst in schema_json["lists"]
+        if lst.get("validation_formula") is not None
     ]
 
     def _form_parts(client_formatter: str) -> str:

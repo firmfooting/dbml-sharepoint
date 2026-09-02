@@ -620,6 +620,30 @@ def test_a_validation_declaration_survives_the_round_trip(
     }
 
 
+@pytest.mark.parametrize(("when", "recovered"), [
+    ([{"field": "ReviewedOn", "op": "lt", "value": "today"}],
+     [{"field": "ReviewedOn", "op": "leq", "value": "today-1"}]),
+    ([{"field": "ReviewedOn", "op": "leq", "value": "today+365"}],
+     [{"field": "ReviewedOn", "op": "leq", "value": "today+365"}]),
+    ([{"field": "ReviewedOn", "op": "geq", "value": "today"}],
+     [{"field": "ReviewedOn", "op": "gt", "value": "today-1"}]),
+])
+def test_a_rule_against_the_save_instant_comes_back_in_its_canonical_spelling(
+    when: list[dict[str, Any]], recovered: list[dict[str, Any]],
+) -> None:
+    """MEASURED 2026-09-02: date rules render against [Modified], the save
+    instant, with the offset on the column. Two spellings can render to one
+    formula ("before today" is "on or before yesterday"), so the inverter
+    returns the canonical one, which re-renders to the same formula."""
+    from dbml_sharepoint.extract.inverse import invert_column_validation
+    context = "T.A"
+    rendered = f"={to_validation(parse_condition(when, context), _TYPES)}"
+    stored = re.sub(r"\s+", "", re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", rendered))
+    assert invert_column_validation(stored, "m", _TYPES, context) == {
+        "when": recovered, "message": "m",
+    }
+
+
 def test_the_calculated_formula_comes_back_from_the_read() -> None:
     """The formula is the part somebody modifying the list most needs, and
     it is in the field XML of a live read."""

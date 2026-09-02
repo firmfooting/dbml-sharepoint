@@ -382,7 +382,9 @@ def test_today_sentinel_is_rejected_by_the_expression_target() -> None:
     @now with datetime rather than date semantics and was never verified."""
     condition = parse_condition([{"field": "Due", "op": "lt", "value": "today"}], "ctx")
     assert "<Today/>" in to_caml(condition, TYPES)
-    assert to_validation(condition, TYPES) == "[Due]<TODAY()"
+    # Validation compares against the save instant, never the lagging clock;
+    # see test_a_date_rule_against_today_renders_against_the_save_instant.
+    assert to_validation(condition, TYPES) == "[Due]+1<=[Modified]"
     with pytest.raises(ValueError, match="expression"):
         to_expression(condition, TYPES)
 
@@ -403,7 +405,11 @@ def test_now_renders_now_in_a_validation_formula() -> None:
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
     )
-    assert to_validation(condition, TYPES) == "[OccurredAt]<=NOW()"
+    # MEASURED 2026-09-02: NOW() itself ran 16 to 20 hours behind an AUS
+    # Eastern site, while [Modified] in a list validation formula was the
+    # instant of the save being validated. `now` therefore renders against
+    # the save instant; see the test below.
+    assert to_validation(condition, TYPES) == "[OccurredAt]<=[Modified]"
 
 
 def test_now_renders_the_instant_in_caml_without_using_now() -> None:
@@ -617,16 +623,22 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
 
 def test_a_date_sentinel_still_works_with_every_comparison() -> None:
     """The mirror. Refusing the substring operators must not touch the
-    operators the sentinel exists for."""
+    operators the sentinel exists for, which render against the save
+    instant (see test_a_date_rule_against_today_renders_against_the_save_instant)."""
     for op in ("eq", "neq", "lt", "leq", "gt", "geq"):
         condition = parse_condition(
             [{"field": "OccurredAt", "op": op, "value": "now"}], "ctx",
         )
-        assert "NOW()" in to_validation(condition, TYPES)
+        assert "[Modified]" in to_validation(condition, TYPES)
+    # A membership test expands to per-member equality, and each member is
+    # a day range against the save instant.
     members = parse_condition(
         [{"field": "Due", "op": "in", "value": ["today", "today+1"]}], "ctx",
     )
-    assert "TODAY()" in to_validation(members, TYPES)
+    assert to_validation(members, TYPES) == (
+        "OR(AND([Due]<=[Modified],[Due]+1>[Modified]),"
+        "AND([Due]-1<=[Modified],[Due]>[Modified]))"
+    )
 
 
 def test_a_date_operand_that_is_not_a_string_is_refused() -> None:
@@ -2518,3 +2530,54 @@ def test_the_guard_is_the_construct_that_was_measured() -> None:
         '<IsNull><FieldRef Name="ID"/></IsNull>'
         "</Or>"
     )
+
+
+# --- Date rules compare against the save instant, not the clock ---------------
+#
+# MEASURED 2026-09-02 on a live tenant in "(UTC+10:00) Canberra, Melbourne,
+# Sydney" at 10:57 local: a date-only column with default `=TODAY()` filled
+# 1 September while the site's date was the 2nd; `=[D]<=TODAY()` refused the
+# 2nd as "in the future"; `=[W]<=NOW()` accepted an instant 20 hours before
+# now and refused one 12 hours before. The formula clock sits 16 to 20 hours
+# behind the site. In a LIST validation formula, `[D]<=[Modified]` accepted
+# today's midnight and refused tomorrow's (and a 30-day control), and an
+# update to five seconds before the save was accepted while an hour after
+# was refused: [Modified] is the save's own instant, site-local, on create
+# and on update. Date-only values are stored as site-local midnight.
+
+
+def test_a_date_rule_against_today_renders_against_the_save_instant() -> None:
+    """Day arithmetic on the column, compared with [Modified]: a date-only
+    value is midnight, so "on or before today" is "midnight not after the
+    save instant", "before today" is "the next midnight not after it", and
+    an offset shifts the column rather than the clock."""
+    cases = {
+        ("leq", "today"): "[Due]<=[Modified]",
+        ("lt", "today"): "[Due]+1<=[Modified]",
+        ("gt", "today"): "[Due]>[Modified]",
+        ("geq", "today"): "[Due]+1>[Modified]",
+        ("eq", "today"): "AND([Due]<=[Modified],[Due]+1>[Modified])",
+        ("neq", "today"): "OR([Due]>[Modified],[Due]+1<=[Modified])",
+        ("leq", "today+365"): "[Due]-365<=[Modified]",
+        ("lt", "today-42"): "[Due]+43<=[Modified]",
+        ("geq", "today-90"): "[Due]+91>[Modified]",
+        ("gt", "today+1"): "[Due]-1>[Modified]",
+    }
+    for (op, value), expected in cases.items():
+        condition = parse_condition([{"field": "Due", "op": op, "value": value}], "ctx")
+        assert to_validation(condition, TYPES) == expected, (op, value)
+
+
+def test_a_datetime_rule_against_today_keeps_the_clock() -> None:
+    """A datetime carries a time of day, so day arithmetic against the save
+    instant would compare instants, not days. Unchanged, and documented as
+    following the lagging clock; `now` is the exact form for a datetime."""
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "today+1"}], "ctx",
+    )
+    assert to_validation(condition, TYPES) == "[OccurredAt]<=TODAY()+1"
+
+
+def test_the_literal_word_today_on_a_text_column_stays_a_word() -> None:
+    condition = parse_condition([{"field": "Note", "op": "eq", "value": "today"}], "ctx")
+    assert to_validation(condition, TYPES) == '[Note]="today"'

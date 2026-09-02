@@ -17,6 +17,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
     rendered_columns,
     undeployable,
 )
+from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 
 
@@ -429,5 +430,45 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at,
                 ))
 
+    # The list rule SharePoint receives also carries every column rule that
+    # compares a date with the clock (analysis/save_rules.py), so the limits
+    # apply to that combined rule, not only to the one declared here.
+    for entity_name, table in tables_by_name.items():
+        if entity_name not in bundle.mapping.entities:
+            continue
+        xcols = cross_site_by_entity.get(entity_name, set())
+        types = effective_column_types({c.name: c.type for c in table.columns}, xcols)
+        effective_rule = effective_list_validation(bundle.mapping, entity_name, types)
+        declared_rule = bundle.mapping.list_validation.get(entity_name)
+        if effective_rule is None or effective_rule is declared_rule:
+            continue
+        hoisted_names = [
+            name for name, _ in hoisted_columns(
+                bundle.mapping.column_validation.get(entity_name), types,
+            )
+        ]
+        ctx = (
+            f"list_validation[{entity_name}] with {len(hoisted_names)} column rule(s) "
+            f"hoisted onto it ({', '.join(hoisted_names)})"
+        )
+        at = Location(Section.LIST_VALIDATION, entity=entity_name)
+        if len(effective_rule.message) > MAX_VALIDATION_MESSAGE:
+            findings.append(Finding(
+                FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG,
+                f"{ctx}: the combined message is {len(effective_rule.message)} characters; "
+                f"the limit is {MAX_VALIDATION_MESSAGE}. Shorten the messages.",
+                location=at,
+            ))
+        formula = f"={to_validation(effective_rule.when, types)}"
+        for internal in types:
+            display = bundle.mapping.display_name_for(entity_name, internal)
+            formula = formula.replace(f"[{internal}]", f"[{display}]")
+        if len(formula) > MAX_VALIDATION_FORMULA:
+            findings.append(Finding(
+                FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG,
+                f"{ctx}: the combined formula is {len(formula)} characters; "
+                f"SharePoint's limit is {MAX_VALIDATION_FORMULA}.",
+                location=at,
+            ))
 
     return findings

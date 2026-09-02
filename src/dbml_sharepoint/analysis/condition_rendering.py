@@ -1436,12 +1436,69 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
     return _validation_leaf(leaf, column_type, where)
 
 
+def _shift(ref: str, days: int) -> str:
+    """`ref` moved by whole days; a date is a serial number in a formula."""
+    if days == 0:
+        return ref
+    return f"{ref}+{days}" if days > 0 else f"{ref}-{-days}"
+
+
+def _save_instant_leaf(leaf: Leaf, column_type: str) -> str | None:
+    """A comparison with `today` or `now`, rendered against the SAVE INSTANT.
+
+    MEASURED 2026-09-02 (analysis/save_rules.py has the run): TODAY() and
+    NOW() in a validation formula ran 16 to 20 hours behind an AUS Eastern
+    site, so `=[D]<=TODAY()` refused the current date until late afternoon,
+    while `[Modified]` in a list validation formula was the instant of the
+    save being validated, site-local, on create and on update.
+
+    A date-only value is stored as site-local midnight, so its date is
+    "today+N" exactly when its midnight, shifted back by N days, is not
+    after the save instant and its next midnight is. The offset shifts the
+    column rather than the clock. A datetime carries a time of day, so the
+    same arithmetic would compare instants rather than days; `today` on a
+    datetime keeps the clock, and `now` is its exact form. Only the six
+    comparison operators have a day-range reading; anything else keeps
+    the clock too.
+    """
+    op = leaf.op
+    if op not in _VALIDATION_OPS or leaf.measure:
+        return None
+    ref = f"[{leaf.field}]"
+    if _is_now(leaf.value, column_type):
+        return f"{ref}{_VALIDATION_OPS[op]}[Modified]"
+    if column_type in _DATETIME_TYPES or not _is_today(leaf.value, column_type):
+        return None
+    match = _TODAY.match(str(leaf.value))
+    offset = int(match.group(2)) if match and match.group(2) else 0
+    if match and match.group(1) == "-":
+        offset = -offset
+    day = _shift(ref, -offset)
+    next_day = _shift(ref, -offset + 1)
+    match op:
+        case "leq":
+            return f"{day}<=[Modified]"
+        case "lt":
+            return f"{next_day}<=[Modified]"
+        case "gt":
+            return f"{day}>[Modified]"
+        case "geq":
+            return f"{next_day}>[Modified]"
+        case "eq":
+            return f"AND({day}<=[Modified],{next_day}>[Modified])"
+        case _:
+            return f"OR({day}>[Modified],{next_day}<=[Modified])"
+
+
 def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
     ref = f"LEN([{leaf.field}])" if leaf.measure == "length" else f"[{leaf.field}]"
     if leaf.op == "is_null":
         return f"ISBLANK({ref})"
     if leaf.op == "is_not_null":
         return f"NOT(ISBLANK({ref}))"
+    against_save = _save_instant_leaf(leaf, column_type)
+    if against_save is not None:
+        return against_save
     literal = _validation_literal(column_type, leaf.value, where)
     if leaf.op in ("contains", "not_contains"):
         rendered = f"ISNUMBER(FIND({literal},{ref}))"

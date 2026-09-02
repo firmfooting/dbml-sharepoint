@@ -1295,7 +1295,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": "(NOT(Status eq \u0027Closed\u0027) OR SortOrder geq 0)",
       "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort Order]\u003e=0)",
+      "validation_hoisted": [],
       "validation_message": "A closed project needs a non-negative sort order."
     },
     {
@@ -1364,7 +1366,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": null,
       "validation_formula": null,
+      "validation_hoisted": [],
       "validation_message": null
     },
     {
@@ -1386,7 +1390,9 @@
           "type": "SP.FieldText"
         }
       },
+      "validation_described": null,
       "validation_formula": null,
+      "validation_hoisted": [],
       "validation_message": null
     }
   ],
