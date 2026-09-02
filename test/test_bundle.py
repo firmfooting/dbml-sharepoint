@@ -4,7 +4,7 @@
 import hashlib
 from pathlib import Path
 
-from _paths import PACKAGE
+from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
@@ -13,6 +13,7 @@ from dbml_sharepoint.bundle import (
     GENERATED_FILES,
     ROLLBACK_SCRIPT,
     clear_generated,
+    emit_bundle,
     sha256_lf,
     write_artifact,
     write_checksums,
@@ -29,7 +30,7 @@ def test_generated_files_is_the_full_bundle() -> None:
     # GENERATED_FILES` would pass no matter what either one said.
     assert set(GENERATED_FILES) == {
         "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
-        "demo-data.js.txt",
+        "demo-data.js.txt", "verify.js.txt",
         "deploy-manifest.md", "assess-manifest.md",
         "index.md", "checksums.txt",
     }
@@ -322,3 +323,63 @@ def test_the_package_has_exactly_one_writer() -> None:
     assert "'newline'" in writers[0], (
         f"the one writer must pass newline: {writers[0]}"
     )
+
+
+def test_write_index_verify_row_only_when_asked(tmp_path: Path) -> None:
+    out = tmp_path / "build"
+    out.mkdir()
+    write_index(out)
+    assert "`verify.js.txt`" not in (out / "index.md").read_text(encoding="utf-8")
+    write_index(out, verify=True)
+    md = (out / "index.md").read_text(encoding="utf-8")
+    assert "`verify.js.txt`" in md
+    assert "_dbml-verify" in md
+
+
+def _emit(tmp_path: Path, schema: object, bundle: object) -> Path:
+    from dbml_sharepoint.model.release import load_release
+
+    out = tmp_path / "build"
+    # The CLI writes the manifest before emitting; the checksums cover it.
+    out.mkdir(exist_ok=True)
+    (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")
+    emit_bundle(
+        out, schema=schema, mapping_bundle=bundle,  # type: ignore[arg-type]
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        schema_name="s.dbml", mapping_name="m.yaml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", seed=False,
+    )
+    return out
+
+
+def test_verify_is_emitted_only_for_a_pack_that_uses_a_clock_cell(tmp_path: Path) -> None:
+    """The simple fixture's view window is a clock cell, so every ordinary
+    build carries verify.js.txt; a pack with no clock use must not, and a
+    stale one from an earlier build of it must go."""
+    from _model import bundle as make_bundle
+    from _model import column
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.conditions import Group, Leaf
+    from dbml_sharepoint.model.mapping_types import ViewDef
+
+    plain_schema = make_schema(make_table(
+        "Task", column("Title", required=True), column("Due", "date"), note="Tasks.",
+    ))
+    clock = make_bundle(entities=["Task"], views={"Task": [ViewDef(
+        title="Soon", fields=["Title"],
+        where=Group("all_of", (Leaf(field="Due", op="leq", value="today+7"),)),
+    )]})
+    out = _emit(tmp_path, plain_schema, clock)
+    assert (out / "verify.js.txt").is_file()
+    assert "verify.js.txt" in (out / "checksums.txt").read_text(encoding="utf-8")
+    assert "`verify.js.txt`" in (out / "index.md").read_text(encoding="utf-8")
+
+    clear_generated(out, reporting=True)
+    assert not (out / "verify.js.txt").exists()
+    out = _emit(tmp_path, plain_schema, make_bundle(entities=["Task"]))
+    assert not (out / "verify.js.txt").exists()
+    assert "verify.js.txt" not in (out / "checksums.txt").read_text(encoding="utf-8")
+    assert "`verify.js.txt`" not in (out / "index.md").read_text(encoding="utf-8")

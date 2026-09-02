@@ -354,8 +354,8 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "deploy-manifest.md",
-                 "assess-manifest.md", "index.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt",
+                 "deploy-manifest.md", "assess-manifest.md", "index.md", "checksums.txt"):
         assert (out / name).exists(), name
     # assess.js.txt stays read-only (no write verbs).
     assert "X-HTTP-Method" not in (out / "assess.js.txt").read_text(encoding="utf-8")
@@ -425,7 +425,7 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
         digest, _, relpath = line.partition("  ")
         listed[relpath] = digest
     base = {
-        "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
+        "deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt",
         "deploy-manifest.md", "assess-manifest.md", "index.md",
     }
     assert base <= set(listed)
@@ -1140,8 +1140,8 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     wrong release."""
     out = tmp_path / "build"
     out.mkdir()
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
-                 "index.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt",
+                 "assess-manifest.md", "index.md", "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
     (out / "reporting" / "stale.pq").write_text("stale", encoding="utf-8")
@@ -1165,8 +1165,8 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code == 1
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
-                 "index.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt",
+                 "assess-manifest.md", "index.md", "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()
@@ -1437,7 +1437,8 @@ def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> Non
 def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "index.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt", "index.md",
+                 "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
     (out / "reporting" / "stale.pq").write_text("stale", encoding="utf-8")
@@ -1452,7 +1453,8 @@ def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
         "--dry-run",
     ])
     assert result.exit_code == 0, result.output
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "index.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "verify.js.txt", "index.md",
+                 "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()
