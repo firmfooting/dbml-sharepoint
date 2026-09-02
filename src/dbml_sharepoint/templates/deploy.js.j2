@@ -61,6 +61,10 @@
 
 {% include "deploy/_shape_probes.js.j2" %}
 {% include "deploy/_helpers.js.j2" %}
+
+  // === Schema definition (rendered from DBML + mapping) ===
+  const SCHEMA = {{ schema_json | tojson(indent=2) }};
+
 {% include "deploy/_field_reconcile.js.j2" %}
   // Run-scoped privilege is exit-scoped too. Keep the state and cleanup
   // outside the phase try so an unexpected throw can still remove every

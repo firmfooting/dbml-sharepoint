@@ -1,6 +1,6 @@
 ---
 title: catalogue
-sidebar_position: 36
+sidebar_position: 38
 ---
 
 # `dbml_sharepoint.catalogue`

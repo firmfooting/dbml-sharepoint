@@ -1,6 +1,6 @@
 ---
 title: bundle
-sidebar_position: 32
+sidebar_position: 34
 ---
 
 # `dbml_sharepoint.bundle`
@@ -72,6 +72,12 @@ ASSESS_SCRIPT = 'assess.js.txt'
 DEMO_SCRIPT = 'demo-data.js.txt'
 ```
 
+### `VERIFY_SCRIPT`
+
+```python
+VERIFY_SCRIPT = 'verify.js.txt'
+```
+
 ### `REPORT_DIR`
 
 ```python
@@ -99,7 +105,7 @@ REPORT_VIEWS_SQL = 'views.sql'
 ### `GENERATED_FILES`
 
 ```python
-GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-data.js.txt', 'deploy-manifest.md', 'assess-manifest.md', 'index.md', 'checksums.txt')
+GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-data.js.txt', 'verify.js.txt', 'deploy-manifest.md', 'assess-manifest.md', 'index.md', 'checksums.txt')
 ```
 
 ### `clear_generated`
@@ -189,7 +195,7 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> None
+def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.

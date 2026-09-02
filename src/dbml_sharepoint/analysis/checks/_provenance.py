@@ -37,6 +37,7 @@ _FAMILY_BOUNDARY = re.compile(
         provenance.LIST_KIND,
         provenance.GROUP_KIND,
         provenance.LEVEL_KIND,
+        provenance.SCRATCH_KIND,
     )))
     + r")(?: |$)"
 )

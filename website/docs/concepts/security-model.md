@@ -83,7 +83,9 @@ dynamic script imports, `eval`, remote modules or code downloads. This
 inventory was derived from `src/dbml_sharepoint/templates/` on 2026-07-30
 and re-derived, independently, on 2026-08-11 (same seven families, no
 drift); `test/test_template_lint.py`'s endpoint-inventory tests pin this
-going forward. The source of truth remains the generated script being
+going forward. `verify.js.txt`, added 2026-09-02, reaches only the
+`web` family: it creates and writes to one hidden scratch list and
+queries it. The source of truth remains the generated script being
 reviewed for a particular release.
 
 ## Why this is different from an unsolicited console paste
@@ -98,6 +100,9 @@ guidance warns about; provenance and review are what change the risk:
 - `deploy-manifest.md` lists the intended objects and writes before execution.
 - `assess.js.txt` runs first. Its business probes are read-only; its only POSTs
   obtain a digest or execute a read-only CSOM query.
+- `verify.js.txt` runs after the paste. It creates one hidden scratch list,
+  `_dbml-verify`, and writes only to it; a list of that title it does not
+  own by its exact marker stops the run.
 - `deploy.js.txt` is deterministic output, with no runtime code download or
   telemetry path that can substitute different logic after review.
 

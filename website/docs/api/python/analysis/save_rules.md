@@ -91,3 +91,12 @@ measured against SharePoint's formula limit: a declared AND contributes
 its conjuncts rather than nesting, and a rule that already accepts a
 blank is not guarded twice.
 
+### `joined_list_validation`
+
+```python
+def joined_list_validation(declared: dbml_sharepoint.model.mapping_types.ListValidation | None, hoisted: collections.abc.Sequence[tuple[str, dbml_sharepoint.model.mapping_types.ColumnValidation]]) -> dbml_sharepoint.model.mapping_types.ListValidation | None
+```
+
+Join hoisted column rules onto a declared list rule; the one join the
+deployer, the manifest, the validator and the verify script all use.
+

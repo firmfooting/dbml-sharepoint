@@ -32,6 +32,11 @@ it again. `assess.js.txt` still ships unchanged alongside `deploy.js.txt`,
 so it can still be handed to somebody whose tenant you do not own, to
 check compatibility without provisioning anything.
 
+After the paste, `verify.js.txt` exercises every clock cell the pack
+relies on (date rules, view windows, `[today]` defaults) on one hidden
+scratch list and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict; see
+[verify.md](verify.md).
+
 Each phase is fail-closed on its own: an error is tagged with its phase,
 recorded in the summary, and never silently swallowed. Later phases
 still run where they are independent, so one broken column does not hide

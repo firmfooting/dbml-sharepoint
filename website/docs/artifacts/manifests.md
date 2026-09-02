@@ -1,6 +1,6 @@
 ---
 title: Manifests & provenance
-sidebar_position: 6
+sidebar_position: 7
 ---
 
 # Manifests and provenance
@@ -31,8 +31,9 @@ verification.
 
 ## Provenance headers
 
-Every generated **script** (deploy.js.txt, rollback.js.txt, assess.js.txt,
-demo-data.js.txt) opens with the same provenance block: source schema (and
+Every generated **script** (deploy.js.txt, rollback.js.txt,
+assess.js.txt, verify.js.txt, demo-data.js.txt) opens with the same
+provenance block: source schema (and
 its modification time), target site, site role, release tag, schema
 version and generation timestamp. A pasted console transcript therefore
 records exactly which release produced it. Interpolated values are

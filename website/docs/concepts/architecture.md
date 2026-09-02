@@ -55,10 +55,11 @@ HTTP transport, write headers, cached digest); `templates/deploy/_*.js.j2`
 are deploy.js.txt's phase bodies.
 
 **"Shared" means available to every script, not present in every script.**
-`deploy.js.txt`, `rollback.js.txt` and `demo-data.js.txt` include all five top-level
-partials. `assess.js.txt` includes four: it omits `_http_write.js.j2`, so the
-write-header helper (`spHeaders`) and every mutation path it feeds are
-simply absent from the emitted file. That omission is what makes the
+`deploy.js.txt`, `rollback.js.txt`, `verify.js.txt` and `demo-data.js.txt`
+include all five top-level partials. `assess.js.txt` includes four: it
+omits `_http_write.js.j2`, so the write-header helper (`spHeaders`) and
+every mutation path it feeds are simply absent from the emitted file. That
+omission is what makes the
 read-only guarantee structural. You can check it by grepping the artifact
 rather than by trusting the phase logic. (`assess.js.txt` still issues two
 POSTs: the `contextinfo` digest fetch, and a CSOM `ProcessQuery`

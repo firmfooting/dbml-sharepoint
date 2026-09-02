@@ -165,6 +165,23 @@ def marker_for(family: str, entity: str) -> str:
     )
 
 
+#: The verify script's scratch list. One per site, shared by every family
+#: deployed there, hidden, and never deleted by this tool.
+VERIFY_LIST_TITLE = "_dbml-verify"
+
+
+def verify_marker() -> str:
+    """The exact Description the verify script owns its scratch list by.
+
+    Tool-owned (no family) and a kind of its own, so no family's list marker
+    can be mistaken for it, and the guard that reuses the list compares the
+    whole Description for equality rather than looking for a substring.
+    """
+    return provenance.marker_for_object(
+        kind=provenance.SCRATCH_KIND, name=VERIFY_LIST_TITLE, family=None,
+    )
+
+
 def note_budget(family: str, entity: str) -> int:
     """How many characters a human note may use before the marker will not fit.
 

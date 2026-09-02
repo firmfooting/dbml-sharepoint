@@ -535,6 +535,8 @@ def test_manifest_run_order_puts_assessment_first() -> None:
     assert "assess-manifest.md" in run
     # Verification and the rollback scope limit close the sequence.
     assert "verification checklist" in run
+    # The clock verification follows the paste and precedes the rollback caveat.
+    assert run.index("deploy.js.txt") < run.index("verify.js.txt") < run.index("rollback.js.txt")
     assert run.index("[SP-DEPLOY]") < run.index("rollback.js.txt")
     assert "failed FIRST provision" in run
 

@@ -31,7 +31,9 @@ from dbml_sharepoint.model.parser import parse_dbml
 # or by the characters the old fold collapsed.
 FAMILIES = ["risk", "risk2", "risk-v2", "risk_v2", "a", "ab", "routine_checks"]
 NAMES = ["Owners", "Owners2", "Owners Extra", "O", "Risk", "Risk Owners"]
-KINDS = [provenance.LIST_KIND, provenance.GROUP_KIND, provenance.LEVEL_KIND]
+KINDS = [
+    provenance.LIST_KIND, provenance.GROUP_KIND, provenance.LEVEL_KIND, provenance.SCRATCH_KIND,
+]
 
 
 def _every_marker() -> list[str]:
@@ -41,8 +43,8 @@ def _every_marker() -> list[str]:
     ]
     # The tool-owned form carries no family and must stay distinguishable.
     markers += [
-        provenance.marker_for_object(kind=provenance.GROUP_KIND, name=n, family=None)
-        for n in NAMES
+        provenance.marker_for_object(kind=k, name=n, family=None)
+        for k in (provenance.GROUP_KIND, provenance.SCRATCH_KIND) for n in NAMES
     ]
     return markers
 
@@ -283,3 +285,22 @@ def test_a_list_marker_longer_than_its_field_is_refused() -> None:
     rather than by being told: note_budget clamps too."""
     marker_codes = _marker_codes(_marker_findings("f" * 230))
     assert marker_codes == {FindingCode.MARKER_LONGER_THAN_THE_FIELD}
+
+
+def test_the_verify_scratch_list_marker_is_tool_owned_and_never_a_list_marker() -> None:
+    """One scratch list per site, shared by every family, so its marker
+    carries no family; and a different kind word, so no family's list marker
+    can sit inside it or it inside one."""
+    from dbml_sharepoint.analysis.list_description import (
+        VERIFY_LIST_TITLE,
+        marker_for,
+        verify_marker,
+    )
+
+    marker = verify_marker()
+    assert VERIFY_LIST_TITLE == "_dbml-verify"
+    assert marker == "Provisioned by dbml-sharepoint for scratch _dbml-verify."
+    for family in ("risk", "m365-adoption-program"):
+        listed = marker_for(family, VERIFY_LIST_TITLE)
+        assert marker not in listed
+        assert listed not in marker
