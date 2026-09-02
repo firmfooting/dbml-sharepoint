@@ -31,7 +31,7 @@ calculated_formulas:
 # operators record and maintain; Full Control confined to the empty-by-
 # default admin group. Scope SITE membership to switchboard + supervisors.
 groups:
-  - name: "SB Switchboard Operators"
+  - name: "{prefix} Switchboard Operators"
     description: "Switchboard/after-hours operators: log codes, take and relay messages, issue and receive keys."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -63,7 +63,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "SB Switchboard Operators" }
+      - principal: { kind: group, name: "{prefix} Switchboard Operators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

@@ -21,7 +21,7 @@ watched_lists: []
 # visible prevents duplicate approaches to the same funder); Full Control
 # confined to the empty-by-default admin group.
 groups:
-  - name: "GR Grants Coordinators"
+  - name: "{prefix} Grants Coordinators"
     description: "Maintain submissions and post-award obligations; run the acquittal sweep."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -53,7 +53,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "GR Grants Coordinators" }
+      - principal: { kind: group, name: "{prefix} Grants Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

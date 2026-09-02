@@ -33,3 +33,28 @@ def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_ty
 
 Load the mapping YAML and the referenced configs into a single bundle.
 
+### `PREFIX_PLACEHOLDER`
+
+```python
+PREFIX_PLACEHOLDER = '{prefix}'
+```
+
+### `prefix_stem`
+
+```python
+def prefix_stem(prefix: str) -> str
+```
+
+`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem.
+
+### `expand_prefix`
+
+```python
+def expand_prefix(value: str, prefix: str, context: str) -> str
+```
+
+Replace a leading `{prefix}` with the stem; drop it and its space when empty.
+
+Refused anywhere but the start: the stem is a namespace and a namespace
+goes first, which is also what the fleet's own naming test checks.
+

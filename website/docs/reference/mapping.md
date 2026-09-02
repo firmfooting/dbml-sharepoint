@@ -26,6 +26,18 @@ Every deployed list is named `<prefix><EntityName>`. The owner and
 registry fields document who claims the prefix. They are provenance,
 stamped into the manifest.
 
+Group and permission-level names take the same prefix through a
+placeholder: `{prefix}` at the start of a name expands to the prefix
+**stem**, the prefix without its trailing underscore, so `RR_` names lists
+`RR_Risk` and a group `{prefix} Risk Managers` becomes `RR Risk Managers`.
+With an empty prefix the placeholder and the space after it vanish. The
+expansion happens at load, in the declared name and in every reference to
+it (`owner_group`, assignment principals and levels), so one rewrite of
+`prefix:` renames the groups and levels with the lists. The provenance
+marker is computed from the expanded name. A placeholder anywhere but the
+start is refused. Every shipped family declares its groups and levels this
+way, and a test holds them to it.
+
 ## `entities`
 
 ```yaml
@@ -1454,12 +1466,12 @@ site's permissions.
 
 ```yaml
 permission_levels:
-  - name: "Contribute No Delete"
+  - name: "{prefix} Contribute No Delete"
     description: "Add and edit without delete"
     base_permissions: [ViewListItems, AddListItems, EditListItems]
 
 groups:
-  - name: "Register Editors"
+  - name: "{prefix} Register Editors"
     description: "People who maintain the register."
     owner_group: "Site Owners"
     allow_members_edit_membership: false

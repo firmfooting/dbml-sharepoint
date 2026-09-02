@@ -1850,6 +1850,31 @@ def test_every_family_declares_the_shared_groups_identically(
 
 
 @pytest.mark.parametrize("template", _all_templates())
+def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str) -> None:
+    """The stem is not typed by hand. `{prefix}` expands to the list prefix
+    stem at load, so the wizard's rewrite of `prefix:` renames the groups
+    and levels with the lists. A stem typed in ("RR Risk Managers") would
+    survive that rewrite and leave a site with ACME_ lists and RR groups."""
+    import yaml
+
+    raw = yaml.safe_load(
+        (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
+        .read_text(encoding="utf-8"),
+    )
+    typed = [
+        g["name"] for g in (raw.get("groups") or [])
+        if g["name"] not in SHARED_GROUPS and not str(g["name"]).startswith("{prefix} ")
+    ] + [
+        lvl["name"] for lvl in (raw.get("permission_levels") or [])
+        if not str(lvl["name"]).startswith("{prefix} ")
+    ]
+    assert not typed, (
+        f"{template}: these group or level names carry a typed stem instead of "
+        f"the {{prefix}} placeholder: {typed}"
+    )
+
+
+@pytest.mark.parametrize("template", _all_templates())
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
     """The complement, so the rule above cannot pass while the old names survive.
 

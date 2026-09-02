@@ -36,14 +36,14 @@ calculated_formulas:
 #     and retain column sealing plus list-deletion protection;
 #   - Full Control stays in the administrator group.
 groups:
-  - name: "OR Opportunity Submitters"
+  - name: "{prefix} Opportunity Submitters"
     description: "Named project staff allowed to submit opportunities. Keep this group small; configure read-own item-level access before adding members."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
-  - name: "OR Opportunity Stewards"
+  - name: "{prefix} Opportunity Stewards"
     description: "Small routing team that triages, coordinates decisions and verifies hand-offs through existing governance."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -68,7 +68,7 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
-  - name: "OR Submit Only"
+  - name: "{prefix} Submit Only"
     description: "Submit and read according to list item-level settings; no edit, delete or schema rights."
     base_permissions:
       - AddListItems
@@ -79,7 +79,7 @@ permission_levels:
       - ViewPages
       - BrowseUserInfo
       - UseRemoteAPIs
-  - name: "OR Steward No Delete"
+  - name: "{prefix} Steward No Delete"
     description: "Work all opportunities under read-own item settings. Includes ManageLists to bypass item filtering, but no item-delete permission; keep membership tightly controlled."
     base_permissions:
       - ManageLists
@@ -99,10 +99,10 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "OR Opportunity Submitters" }
-        level: "OR Submit Only"
-      - principal: { kind: group, name: "OR Opportunity Stewards" }
-        level: "OR Steward No Delete"
+      - principal: { kind: group, name: "{prefix} Opportunity Submitters" }
+        level: "{prefix} Submit Only"
+      - principal: { kind: group, name: "{prefix} Opportunity Stewards" }
+        level: "{prefix} Steward No Delete"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: group, name: "dbml Enterprise Readers" }

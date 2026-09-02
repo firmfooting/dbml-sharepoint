@@ -261,7 +261,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         raw.get("extensions"), "extensions",
     )
 
-    permissions_config = _parse_permissions(raw)
+    permissions_config = _parse_permissions(raw, raw["prefix"])
 
     # Column formatting: a dict with a 'style' key is a style spec (fleet
     # style standard, website/docs/reference/style-guide.md) expanded here
@@ -885,7 +885,37 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     return cast("EntityKind", raw_kind)
 
 
-def _parse_principal(raw_principal: Any, context: str) -> Principal:
+#: The placeholder a group or permission-level name may open with. It expands
+#: to the list prefix STEM (the prefix without its trailing underscore), so
+#: one `prefix:` rewrite renames the groups and levels with the lists. The
+#: marker is computed from the expanded name; provenance never sees this.
+PREFIX_PLACEHOLDER = "{prefix}"
+
+
+def prefix_stem(prefix: str) -> str:
+    """`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem."""
+    return prefix.removesuffix("_")
+
+
+def expand_prefix(value: str, prefix: str, context: str) -> str:
+    """Replace a leading `{prefix}` with the stem; drop it and its space when empty.
+
+    Refused anywhere but the start: the stem is a namespace and a namespace
+    goes first, which is also what the fleet's own naming test checks.
+    """
+    if PREFIX_PLACEHOLDER not in value:
+        return value
+    if not value.startswith(PREFIX_PLACEHOLDER) or value.count(PREFIX_PLACEHOLDER) > 1:
+        raise ValueError(
+            f"{context}: the {PREFIX_PLACEHOLDER} placeholder may appear once, at the "
+            f"start of the name, got {value!r}",
+        )
+    rest = value[len(PREFIX_PLACEHOLDER):]
+    stem = prefix_stem(prefix)
+    return stem + rest if stem else rest.lstrip(" ")
+
+
+def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Principal:
     """Parse a principal dict into a Principal dataclass.
 
     The admission gate reads `PRINCIPAL_KINDS`, derived from the
@@ -907,6 +937,8 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
     name = raw_principal.get("name")
+    if isinstance(name, str):
+        name = expand_prefix(name, prefix, f"{context}.name")
     if kind == "group" and not name:
         raise ValueError(f"{context}: principal kind=group requires a 'name'")
     return Principal(
@@ -916,7 +948,7 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
 
 
 def _parse_policy(
-    raw_policy: Any, context: str, *, allow_site_role: bool = False,
+    raw_policy: Any, context: str, *, allow_site_role: bool = False, prefix: str = "",
 ) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
     _reject_unknown_keys(
@@ -944,9 +976,11 @@ def _parse_policy(
     for i, raw_a in enumerate(raw_policy.get("assignments", [])):
         _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
         principal = _parse_principal(
-            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal",
+            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
         )
         level = raw_a.get("level")
+        if isinstance(level, str):
+            level = expand_prefix(level, prefix, f"{context}.assignments[{i}].level")
         if not level:
             raise ValueError(f"{context}.assignments[{i}]: 'level' is required")
         assignments.append(RoleAssignment(principal=principal, level=level))
@@ -1053,7 +1087,7 @@ def _optional_str_list(raw: dict[str, Any], key: str, context: str) -> tuple[str
     return tuple(value)
 
 
-def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
+def _parse_permissions(raw: dict[str, Any], prefix: str = "") -> PermissionsConfig | None:
     """Parse permission_levels, groups, list_permissions from the raw YAML dict."""
     # All three sections are optional; default to empty / no default policy.
     raw_levels = raw.get("permission_levels", [])
@@ -1070,18 +1104,20 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
 
     levels = [
         CustomPermissionLevel(
-            name=lvl["name"],
+            name=expand_prefix(lvl["name"], prefix, f"permission_levels[{i}].name"),
             description=lvl.get("description", ""),
             base_permissions=list(lvl.get("base_permissions", [])),
         )
-        for lvl in raw_levels
+        for i, lvl in enumerate(raw_levels)
     ]
 
     groups = [
         SiteGroup(
-            name=grp["name"],
+            name=expand_prefix(grp["name"], prefix, f"groups[{i}].name"),
             description=grp.get("description", ""),
-            owner_group=grp.get("owner_group", "Site Owners"),
+            owner_group=expand_prefix(
+                grp.get("owner_group", "Site Owners"), prefix, f"groups[{i}].owner_group",
+            ),
             allow_members_edit_membership=_optional_bool(
                 grp, "allow_members_edit_membership", f"groups[{i}]",
             ),
@@ -1112,7 +1148,7 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
         default_policy = _parse_policy(
-            raw_default, "list_permissions.default", allow_site_role=True,
+            raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
         )
         raw_scope = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
@@ -1122,7 +1158,7 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
         raw_list_perms.get("overrides"), "list_permissions.overrides",
     ).items():
         ctx = f"list_permissions.overrides.{entity_name}"
-        overrides[entity_name] = _parse_policy(raw_policy, ctx)
+        overrides[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
 
     return PermissionsConfig(
         levels=levels,

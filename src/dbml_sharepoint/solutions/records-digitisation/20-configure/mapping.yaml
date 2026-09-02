@@ -49,7 +49,7 @@ calculated_formulas: {}
 # https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels#overview-and-permissions-inheritance
 # Anybody with Contribute can switch to All Items and type in any column.
 groups:
-  - name: "RD Records Digitisation Program"
+  - name: "{prefix} Records Digitisation Program"
     description: "Assess platforms against the records requirements, record custodian answers and reach the destination verdict."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -81,7 +81,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "RD Records Digitisation Program" }
+      - principal: { kind: group, name: "{prefix} Records Digitisation Program" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

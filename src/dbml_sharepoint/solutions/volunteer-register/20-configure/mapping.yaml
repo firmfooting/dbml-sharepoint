@@ -21,7 +21,7 @@ watched_lists: []
 # empty-by-default admin group. Scope SITE membership to the volunteer
 # programme.
 groups:
-  - name: "VL Volunteer Coordinators"
+  - name: "{prefix} Volunteer Coordinators"
     description: "Maintain volunteer records, run the check-expiry sweeps, manage onboarding and exits."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -53,7 +53,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "VL Volunteer Coordinators" }
+      - principal: { kind: group, name: "{prefix} Volunteer Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

@@ -29,7 +29,7 @@ calculated_formulas:
 # default admin group. Action owners send updates/evidence to the
 # coordinators, keeping the register's audit trail single-handed.
 groups:
-  - name: "AU Audit Coordinators"
+  - name: "{prefix} Audit Coordinators"
     description: "Maintain audits and recommendations, chase owners, verify closure evidence."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -61,7 +61,7 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: { kind: group, name: "AU Audit Coordinators" }
+      - principal: { kind: group, name: "{prefix} Audit Coordinators" }
         level: "Contribute"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"

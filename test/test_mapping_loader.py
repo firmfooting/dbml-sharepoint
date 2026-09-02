@@ -2530,3 +2530,71 @@ def test_renamed_from_refuses_a_bare_string(tmp_path: Path) -> None:
     """)
     with pytest.raises(ValueError, match="renamed_from"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_prefix_placeholder_in_group_and_level_names_expands_to_the_stem(tmp_path: Path) -> None:
+    """`{prefix}` becomes the list prefix without its trailing underscore, in
+    the declared name and in every reference to it, so the wizard's one
+    rewrite of `prefix:` renames the groups and levels with the lists."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems, ViewListItems]
+        groups:
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+            owner_group: "Site Owners"
+        list_permissions:
+          overrides:
+            Risk:
+              break_inheritance: true
+              assignments:
+                - principal: { kind: group, name: "{prefix} Request Handlers" }
+                  level: "{prefix} Submit Only"
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert [g.name for g in perms.groups] == ["GOV Request Handlers"]
+    assert [lvl.name for lvl in perms.levels] == ["GOV Submit Only"]
+    assignment = perms.overrides["Risk"].assignments[0]
+    assert assignment.principal.name == "GOV Request Handlers"
+    assert assignment.level == "GOV Submit Only"
+
+
+def test_an_empty_prefix_drops_the_placeholder_and_its_space(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        prefix: ""
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Request Handlers"
+            description: "Handlers."
+    """)
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert [g.name for g in perms.groups] == ["Request Handlers"]
+    assert [lvl.name for lvl in perms.levels] == ["Submit Only"]
+
+
+def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None:
+    """The stem is a namespace, and a namespace goes first; a name that
+    buries it would defeat the fleet's own test that every family group
+    starts with one."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        groups:
+          - name: "Handlers {prefix}"
+            description: "Handlers."
+    """)
+    with pytest.raises(ValueError, match="prefix"):
+        load_mapping(tmp_path / "m.yaml")
