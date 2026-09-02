@@ -83,13 +83,14 @@ appends both unconditionally, so **every `All Items` starts at 2**: an
 entity's real budget for its own lookup and person columns is **10**, not
 12.
 
-**What the build does.** **Silent at 8 or fewer, warns from 9–12
+**What the build does.** **Silent at 10 or fewer, warns at 11 and 12
 (`join_threshold_approached`), errors at 13+
 (`join_threshold_exceeded`).** The warning band exists because 12 held on the
-tenant this repository measured, but 8 was a real limit on some SharePoint
-farms and the SharePoint Online citation, while explicit, is not exhaustive
-platform documentation. A view in the 9–12 band may not travel to every
-tenant.
+tenant this repository measured, but the SharePoint Online citation, while
+explicit, is not exhaustive platform documentation. A view in the 11 to 12
+band may not travel to every tenant. The band once started at 9, because 8
+was a real limit on some on-premises farms; that property does not exist in
+SharePoint Online, so the band was narrowed in September 2026.
 
 **Mitigation.** Fewer rendered lookup/person columns per view; on the
 generated `All Items` view specifically, `hide_from_all_items` can drop

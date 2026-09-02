@@ -123,24 +123,24 @@ def _view(title: str, fields: list[str]) -> ViewDef:
     """One declared view on Project."""
     return ViewDef(title=title, fields=fields)
 
-def test_a_view_with_eight_join_columns_is_silent() -> None:
-    """Under every figure ever documented, anywhere. The subject filter matters:
-    this entity's generated All Items carries 10 and is warned about separately."""
+def test_a_view_with_ten_join_columns_is_silent() -> None:
+    """The last count under the band. The subject filter matters: this
+    entity's generated All Items carries 12 and is warned about separately."""
     schema, bundle = _join_inputs(
-        _persons(8),
-        views=[_view("Wide", ["Title", *(f"P{n}" for n in range(1, 9))])],
+        _persons(10),
+        views=[_view("Wide", ["Title", *(f"P{n}" for n in range(1, 11))])],
     )
     assert _join_findings(schema, bundle, _declared_view("Wide")) == []
 
-def test_a_view_with_nine_join_columns_warns() -> None:
+def test_a_view_with_eleven_join_columns_warns() -> None:
     schema, bundle = _join_inputs(
-        _persons(9),
-        views=[_view("Wide", ["Title", *(f"P{n}" for n in range(1, 10))])],
+        _persons(11),
+        views=[_view("Wide", ["Title", *(f"P{n}" for n in range(1, 12))])],
     )
     found = _join_findings(schema, bundle, _declared_view("Wide"))
     f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
-    assert "9 join-bearing columns" in f.message
-    assert "P9" in _named(f.message)
+    assert "11 join-bearing columns" in f.message
+    assert "P11" in _named(f.message)
     # A declared view CAN be edited, so this is the remedy it must be offered.
     assert "Remove fields from this view." in f.message
 
@@ -321,17 +321,19 @@ def test_the_generated_all_items_counts_author_and_editor_as_joins() -> None:
     assert "Remove fields from this view." not in f.message
 
 def test_the_generated_all_items_join_count_is_silent_under_the_band() -> None:
-    """The negative case: 6 declared + Author + Editor = 8, under the band."""
-    schema, bundle = _join_inputs(_persons(6))
+    """The negative case: 8 declared + Author + Editor = 10, the last count
+    under the band."""
+    schema, bundle = _join_inputs(_persons(8))
     assert _join_findings(schema, bundle, _all_items()) == []
 
 def test_the_generated_all_items_starts_at_two_joins() -> None:
     """Author and Editor are 2 of the 12 before a single business column, so an
-    entity's real budget for its own columns is 10. 7 declared columns is 9."""
-    schema, bundle = _join_inputs(_persons(7))
+    entity's real budget for its own columns is 10. 9 declared columns is 11,
+    the first count that warns."""
+    schema, bundle = _join_inputs(_persons(9))
     found = _join_findings(schema, bundle, _all_items())
     f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
-    assert "9 join-bearing columns" in f.message
+    assert "11 join-bearing columns" in f.message
 
 def test_hide_from_all_items_clears_the_all_items_join_error() -> None:
     schema, bundle = _join_inputs(
