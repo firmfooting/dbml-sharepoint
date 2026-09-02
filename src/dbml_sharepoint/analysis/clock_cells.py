@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/clock_cells.py
 """Every clock cell the renderer can meet, with its evidence or its refusal.
 
-A clock cell is one sentinel (`today`, `today±N`, `now`) on one kind of date
+A clock cell is one sentinel (`today`, `today+N or today-N`, `now`) on one kind of date
 column (`date`, `datetime`, `calculated_date`) for one condition target (a
 validation formula, a CAML view filter, a client-side expression). Each cell
 is declared here as one of:

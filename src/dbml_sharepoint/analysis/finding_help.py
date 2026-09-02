@@ -214,8 +214,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "no time of day."
     ),
     FindingCode.CONDITION_READS_THE_FORMULA_CLOCK: (
-        "`today±N` compared on a datetime column in a validation rule renders "
-        "TODAY()±N, and that clock was measured 16 to 20 hours behind the site "
+        "`today+N or today-N` compared on a datetime column in a validation rule renders "
+        "TODAY()+N or TODAY()-N, and that clock was measured 16 to 20 hours behind the site "
         "(2026-09-02), so the window lands hours away from where it reads; "
         "`now` compares with the instant of the save exactly."
     ),
