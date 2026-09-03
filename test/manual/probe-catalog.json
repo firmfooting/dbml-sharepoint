@@ -1022,6 +1022,10 @@
               "depends_on": [
                 "expression.client-validation.control-unknown-function-refused"
               ]
+            },
+            {
+              "id": "expression.client-validation.candidates-discriminate-on-form",
+              "depends_on": []
             }
           ],
           "states": [
