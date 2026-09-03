@@ -229,7 +229,13 @@ def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
     assert set(next(
         scenario["controls"] for scenario in descriptor["scenarios"]
     )) == {control, comparison}
-    assert source.count("'void'") == 2
+    # The states this probe PASSES, not every mention of the word: report()'s
+    # tally reads `r.state === 'void'` in every probe the harness renders.
+    voided = [
+        line for line in source.splitlines()
+        if "'void'" in line and "r.state" not in line
+    ]
+    assert len(voided) == 2, voided
 
 
 def test_every_registry_emits_a_state_from_the_shared_vocabulary() -> None:
