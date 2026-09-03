@@ -1153,6 +1153,77 @@
       ]
     },
     {
+      "file": "folder-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, folder, child file, folder metadata, rename, and recycle"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.folder.creation-path",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.folder.control-missing-column-refused",
+              "depends_on": [
+                "library.folder.creation-path"
+              ]
+            },
+            {
+              "id": "library.folder.filesystem-object-type",
+              "depends_on": [
+                "library.folder.creation-path"
+              ]
+            },
+            {
+              "id": "library.folder.carries-metadata",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.folder.name-field",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.folder.delete-recycles",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.folder.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-columns-probe.js",
       "surface": "library",
       "harness": "shared-v1",
