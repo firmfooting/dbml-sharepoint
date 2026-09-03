@@ -1,7 +1,7 @@
-# Deploying the M365 adoption programme (administrator)
+# Deploying programme governance (administrator)
 
 Shared procedure: [`templates/README.md`](../../README.md) with
-`<name> = m365-adoption-program`. Run order: **assess** the target site
+`<name> = programme-governance`. Run order: **assess** the target site
 (paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or
 an accepted DEGRADED) -> **review** `build/deploy-manifest.md` (must show 0
 validation errors) -> **paste** `build/deploy.js.txt` from a Site Owner's
