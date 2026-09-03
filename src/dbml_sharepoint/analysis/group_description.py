@@ -47,13 +47,25 @@ def shared_marker_for(group_name: str) -> str:
 #: The marker for a group the deploying organisation owns.
 FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {name}."
 
+#: The tool-owned group for the identity an automation connects as, such as a
+#: Power Automate flow. Named here as a constant because a rule keys off the
+#: NAME: unlike the reader tier there is no enrolment flag to select it, since
+#: nothing about this group happens at build time (#331).
+AUTOMATION_GROUP_NAME = "dbml Enterprise Automation"
+
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.
 #:
-#: These two are declared identically by every shipped family and reconcile
-#: one group object per site, so a marker naming one family would be false on
-#: a site running five. Every other group is named by the organisation
-#: (`RR Risk Managers`), belongs to exactly one family, and says so.
+#: Each reconciles one group object per site, so a marker naming one family
+#: would be false on a site running five. Every other group is named by the
+#: organisation (`RR Risk Managers`), belongs to exactly one family, and says
+#: so.
+#:
+#: The first two are declared identically by every shipped family.
+#: `AUTOMATION_GROUP_NAME` is reserved rather than shipped: it carries no
+#: site-wide grant, so a family declaring it without granting it anything
+#: would create a group with no access on every site it reaches.
+#: `test_group_description.py` holds that as a ratchet.
 #:
 #: NOT DERIVED FROM THE `dbml ` PREFIX, deliberately. The prefix exists to
 #: make a collision with a hand-made group unlikely, which is a different job
@@ -66,6 +78,7 @@ FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {n
 TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
     "dbml Enterprise Readers",
     "dbml List Administrators",
+    AUTOMATION_GROUP_NAME,
 })
 
 #: Characters held back from every description's budget, on top of the marker.

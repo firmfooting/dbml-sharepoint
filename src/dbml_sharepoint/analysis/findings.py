@@ -348,6 +348,8 @@ class FindingCode(StrEnum):
     VIEW_EMPTIED_BY_RETIREMENT = "view_emptied_by_retirement", "warning"
 
     # --- permission levels, groups and policies (checks/_permissions.py) ----
+    AUTOMATION_GROUP_GRANTED_FULL_CONTROL = (
+        "automation_group_granted_full_control", "error")
     DUPLICATE_GROUP_NAME = "duplicate_group_name", "error"
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
     ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (

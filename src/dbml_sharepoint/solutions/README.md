@@ -323,7 +323,7 @@ Description, and a same-named group without that marker is refused unless it
 holds no members. That guards a hand-made group the tool never touched; it
 does not enforce emptiness on the groups it does adopt. Once stamped, `dbml
 List Administrators` is adopted and granted Full Control with any membership
-at all. See [the group-adoption gate](../website/docs/reference/mapping.md#the-two-site-wide-groups)
+at all. See [the group-adoption gate](../website/docs/reference/mapping.md#the-site-wide-groups)
 for what that means when redeploying to a site provisioned before this was
 added.
 
