@@ -1470,6 +1470,35 @@
             "library.form.control-missing-column-refused"
           ],
           "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "state-matrix",
+          "findings": [
+            {
+              "id": "library.form.rendered-edit-form",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "edit-form",
+              "page": "uploaded file edit form",
+              "assertions": [
+                "rendered edit form leads with the file name",
+                "metadata columns present"
+              ]
+            }
+          ],
+          "controls": [
+            "library.doc-lib.fixture-library-created"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
         }
       ]
     },
