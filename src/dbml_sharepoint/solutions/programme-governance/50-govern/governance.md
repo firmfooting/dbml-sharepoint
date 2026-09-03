@@ -1,6 +1,6 @@
 # Programme governance: how the family is governed
 
-Nine lists enforce what SharePoint can enforce, and `20-configure/mapping.yaml`
+Ten lists enforce what SharePoint can enforce, and `20-configure/mapping.yaml`
 holds every one of those rules. This document holds the rest: the obligations
 the platform cannot express, who performs them and when, and what is safe to
 change once the programme is running.
@@ -434,7 +434,7 @@ afterwards can authorise it a moment later.
 | Consultation is not concentrated on one stakeholder | Quarterly | A judgement about a distribution, which no formula reads |
 | Narrative fields are sampled for identifiable content | Quarterly, programme owner | Multi-line columns cannot be validation operands, and a length measure is refused in conditions |
 | Escalation levels 3 and 4 are counted, and the minutes spent on closed requests are totalled | Annually | The programme's evidence at the agreement review; *Closed* carries the total |
-| Attachments are disabled on all nine lists | At deploy, and after any list-settings change | There is no `attachments` key in `mapping.yaml`, and the deployer neither sets nor reconciles the setting |
+| Attachments are disabled on all ten lists | At deploy, and after any list-settings change | There is no `attachments` key in `mapping.yaml`, and the deployer neither sets nor reconciles the setting |
 | The site home page and navigation are built and verified | At deploy | The bundle provisions lists, views, forms and permissions, and has no site-home or navigation declaration |
 
 ### Guidance only
@@ -654,7 +654,7 @@ This family uses the fleet-standard hardening declared in `mapping.yaml`.
 `seal_columns: true` blocks UI schema edits and column deletion on every
 deployed column, even for site admins, and a display-name rename still gets
 through as drift that the next re-paste reverts and reports.
-`prevent_list_deletion: true` removes "Delete this list" from all nine
+`prevent_list_deletion: true` removes "Delete this list" from all ten
 lists for everyone. Both are friction and tamper-evidence rather than
 enforcement against a determined site collection administrator working
 through the API. See "Hardening and drift detection" in
@@ -664,7 +664,7 @@ protection per list after you confirm that list.
 
 **Attachments are the gap those two do not close.** There is no
 `attachments` key in `mapping.yaml`, the deployer neither sets nor
-reconciles the setting, and disabling attachments on all nine lists is a
+reconciles the setting, and disabling attachments on all ten lists is a
 manual step in `30-deploy/deploy.md` with a line in the verification
 checklist. For a family carrying a healthcare boundary that is the
 uncomfortable one, because it is the **only** privacy control a redeploy
@@ -720,7 +720,7 @@ manager said so, in writing, with a date. Record that here when it happens.
 Run in this order, and record the whole sequence as one
 `GOV_Decision` row before any of it is executed.
 
-1. **Export all nine lists**, before anything is decommissioned. Where
+1. **Export all ten lists**, before anything is decommissioned. Where
    version history is the audit (the three accountability lists and
    `GOV_ServiceRequest`), export the history too. An Excel export of
    current rows is not the audit. Export `GOV_Involvement` with

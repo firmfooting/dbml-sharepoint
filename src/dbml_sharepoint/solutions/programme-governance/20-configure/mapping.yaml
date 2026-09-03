@@ -1,4 +1,4 @@
-# Programme governance: physical mapping. Nine lists on one site, merging a
+# Programme governance: physical mapping. Ten lists on one site, merging a
 # programme delivery layer (raid-log) with a standing accountability layer
 # (raci-matrix) and a service request queue for tenant-level change.
 # GOV names what the lists are, governance, which is the level the other
@@ -42,6 +42,8 @@ entities:
                     display_column: LiveDecisionTitle,
                     accept_unindexable_display_column: true,
                     renamed_from: [ProgramDecision] }
+  # New in 2.1.0, so no renamed_from: no site was ever provisioned with it.
+  BusinessProcess: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
 
@@ -139,6 +141,11 @@ watched_lists:
 # February. Not fixed here on purpose. Fixing it in one of three families that
 # share the formula forks a defect that should be fixed once, upstream.
 calculated_formulas:
+  # Byte-identical to process-register's. The two registers must rank the same
+  # way, or a process assessed in one and mapped from the other changes score
+  # by moving.
+  BusinessProcess:
+    DigitisationPriority: '=IF(OR(ISBLANK([Criticality]),ISBLANK([PainLevel])),"",IF([Criticality]="Low",1,IF([Criticality]="Medium",2,3))*IF([PainLevel]="Minor",1,IF([PainLevel]="Moderate",2,3)))'
   Risk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
     RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
@@ -431,7 +438,7 @@ list_permissions:
 #
 # Attachments are the gap these two do not close. There is no attachments key
 # in mapping.yaml and the deployer neither sets nor reconciles the setting, so
-# disabling attachments on all nine lists is a manual go-live step in
+# disabling attachments on all ten lists is a manual go-live step in
 # 30-deploy/deploy.md. It is the only privacy control a redeploy does not
 # reassert.
 seal_columns: true
@@ -461,6 +468,45 @@ display_names:
 # not more or less severe, but a proposal nobody has answered yet reads
 # differently from one that was approved.
 column_formatting:
+  # Lifted from process-register, which formats the same columns on the same
+  # scale. The two registers must read alike, or a process assessed in one
+  # and mapped from the other changes colour by moving.
+  BusinessProcess:
+    Criticality: { style: severity, map: { Low: good, Medium: warning, High: severe } }
+    CurrentState:
+      style: severity
+      map:
+        "Paper / manual": severe
+        "Email / ad hoc": warning
+        "Spreadsheet": warning
+        "Shared list / basic digital": low
+        "System of record": good
+    PainLevel: { style: severity, map: { Minor: good, Moderate: warning, Severe: severe } }
+    DigitisationStatus:
+      style: severity
+      map:
+        "Not assessed": neutral
+        "Assessed": neutral
+        "Planned": low
+        "In progress": low
+        "Digitised": good
+        "Not worth digitising": muted
+    DigitisationPriority:
+      style: data-bar
+      max: 9
+      calculated: true
+      # Coloured from pain rather than the score, so a severely painful
+      # process still reads red when a low criticality drags the number down.
+      color_by:
+        field: PainLevel
+        map: { Minor: good, Moderate: warning, Severe: severe }
+    # Guarded on the two states where a refresh no longer means anything: a
+    # date that keeps shouting after the decision trains people to ignore it.
+    ReviewDate:
+      style: overdue-date
+      guard:
+        field: DigitisationStatus
+        not: ["Digitised", "Not worth digitising"]
   Workstream:
     Phase: { style: pill,
              map: { "Not started": muted, Discovery: neutral, Pilot: low,
@@ -536,6 +582,57 @@ field_sets:
 # Each list's default is the view its readers open it on: the question that
 # list answers, asked in the first person where the reader is a person.
 views:
+  BusinessProcess:
+    # Ranked, because the ranking is the point. Everything else is a filter
+    # over the same order.
+    - title: "The worklist"
+      default: true
+      fields: [Title, Function, Criticality, PainLevel, DigitisationPriority,
+               DigitisationStatus, Owner, Workstream]
+      where:
+        - { field: DigitisationStatus, op: not_in,
+            value: ["Digitised", "Not worth digitising"] }
+      sort:
+        - { field: DigitisationPriority, direction: desc }
+      widths:
+        Title: 300
+        Function: 150
+        Criticality: 110
+        PainLevel: 110
+        DigitisationPriority: 110
+        DigitisationStatus: 140
+        Owner: 160
+        Workstream: 160
+    # Which workstream has picked a process up, and which have not been
+    # claimed. A blank group is the finding.
+    - title: "By workstream"
+      fields: [Title, Function, DigitisationPriority, DigitisationStatus, Owner]
+      sort:
+        - { field: DigitisationPriority, direction: desc }
+      group_by: { field: Workstream, collapsed: false }
+      widths:
+        Title: 320
+        Function: 150
+        DigitisationPriority: 110
+        DigitisationStatus: 140
+        Owner: 160
+    # The slide leadership remembers: critical work still living on paper or
+    # in one person's spreadsheet.
+    - title: "Key-person risk"
+      fields: [Title, Function, Owner, CurrentState, PainNotes, DigitisationPriority]
+      where:
+        - { field: CurrentState, op: in, value: ["Paper / manual", "Spreadsheet"] }
+        - { field: Criticality, op: eq, value: "High" }
+      sort:
+        - { field: DigitisationPriority, direction: desc }
+      widths:
+        Title: 300
+        Function: 150
+        Owner: 160
+        CurrentState: 170
+        PainNotes: 280
+        DigitisationPriority: 110
+
   Workstream:
     # The whole programme on one screen, five to eight rows, read first at the
     # monthly steering group.
@@ -1305,6 +1402,9 @@ views:
 # model, the payload restrictions on the phase-2 flows, and the quarterly
 # sampling of narrative fields.
 form_formatting:
+  BusinessProcess:
+    header: formatting/businessprocess-form-header.json
+    body: formatting/businessprocess-form-body.json
   Workstream:
     header: formatting/workstream-form-header.json
     body: formatting/workstream-form-body.json
@@ -1348,6 +1448,14 @@ form_formatting:
 # readback compares equal and the phase passes, but the form never reacts.
 # The build refuses it.
 form_visibility:
+  BusinessProcess:
+    columns:
+      TargetState:
+        when:
+          - { field: DigitisationStatus, op: neq, value: "Not assessed" }
+      SystemUrl:
+        when:
+          - { field: DigitisationStatus, op: in, value: ["In progress", "Digitised"] }
   Workstream:
     columns:
       ClosureNote:
@@ -1447,6 +1555,14 @@ form_visibility:
 # message, and they all run, unlike list_validation, where a list has ONE
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
+  BusinessProcess:
+    columns:
+      ReviewDate:
+        when:
+          any_of:
+            - { field: ReviewDate, op: is_null }
+            - { field: ReviewDate, op: leq, value: today+365 }
+        message: "The inventory refresh is annual. Pick a review date within the next twelve months, or leave it blank until the row has been through a workshop."
   Activity:
     columns:
       LastConfirmed:
@@ -1506,6 +1622,13 @@ column_validation:
 # Accountable" and "an External stakeholder names a service desk address" are
 # quarterly checks rather than save rules.
 list_validation:
+  BusinessProcess:
+    when:
+      any_of:
+        - { field: DigitisationStatus, op: in,
+            value: ["Not assessed", "Assessed", "Not worth digitising"] }
+        - { field: TargetState, op: is_not_null }
+    message: "A process that is Planned, In progress or Digitised needs a Target State: which system, which template, which form. Say where it is going before you say it is on its way."
   Activity:
     when:
       - any_of:
@@ -1595,6 +1718,92 @@ list_validation:
 # still Proposed and old enough to be stalled, one Ratified under delegation,
 # and one carrying the recommend-then-decide pair of forums.
 demo_items:
+  # Six processes covering every member of all four scored enums, so each
+  # formatted column is exercised and each declared view has rows. Adapted
+  # from process-register's, which cover the same ground: the two registers
+  # should read the same to somebody who has seen both.
+  BusinessProcess:
+    - key: process-roster
+      values:
+        Title: "[DEMO] Build the fortnightly roster"
+        Function: "Operations"
+        Owner: "@me"
+        Workstream: "ws-legacy"
+        Purpose: "Demo row. Turns the fortnight's demand and leave into a published roster the whole service works to."
+        Criticality: "High"
+        CurrentState: "Spreadsheet"
+        PainLevel: "Severe"
+        PainNotes: "Demo row. One workbook, one person who understands the award formulas in it, and no version anyone else can safely open."
+        DigitisationStatus: "Planned"
+        TargetState: "Rostering module in the workforce system"
+        ReviewDate: "today-15"
+    - key: process-visitors
+      values:
+        Title: "[DEMO] Register visitors at reception"
+        Function: "Front of house"
+        Owner: "@me"
+        Workstream: "ws-legacy"
+        Purpose: "Demo row. Signs visitors in and out, and produces the muster list an evacuation reads."
+        Criticality: "High"
+        CurrentState: "Paper / manual"
+        PainLevel: "Moderate"
+        PainNotes: "Demo row. A paper book at the desk. Nobody can answer who is on site without walking to it."
+        DigitisationStatus: "In progress"
+        TargetState: "visitor-log template"
+        ReviewDate: "today+40"
+    - key: process-travel
+      values:
+        Title: "[DEMO] Approve staff travel"
+        Function: "Corporate services"
+        Owner: "@me"
+        Workstream: "ws-power"
+        Purpose: "Demo row. Requests, approves and acquits work travel against the delegation."
+        Criticality: "Medium"
+        CurrentState: "Email / ad hoc"
+        PainLevel: "Moderate"
+        PainNotes: "Demo row. Approvals live in individual mailboxes, so the delegation cannot be evidenced without asking."
+        DigitisationStatus: "Assessed"
+        TargetState: "Power Platform form and approval flow"
+        ReviewDate: "today+120"
+    - key: process-onboard
+      values:
+        Title: "[DEMO] Onboard a new starter"
+        Function: "People and culture"
+        Purpose: "Demo row. Coordinates the HR, IT, facilities and finance tasks a new starter needs before day one."
+        Criticality: "Medium"
+        CurrentState: "Shared list / basic digital"
+        PainLevel: "Moderate"
+        PainNotes: "Demo row. A list per team, none of which knows what the others have done. Owner deliberately blank: nobody has claimed it, which is the finding."
+        DigitisationStatus: "Not assessed"
+        TargetState: "onboarding-tracker template"
+        ReviewDate: "today+90"
+    - key: process-incidents
+      values:
+        Title: "[DEMO] Record and investigate incidents"
+        Function: "Quality and safety"
+        Owner: "@me"
+        Purpose: "Demo row. Captures an incident, assigns the investigation and tracks the corrective action to closure."
+        Criticality: "High"
+        CurrentState: "System of record"
+        PainLevel: "Minor"
+        PainNotes: "Demo row. Already in the statutory system. Listed so the inventory is complete, not because it needs work."
+        DigitisationStatus: "Digitised"
+        TargetState: "Statutory incident system, unchanged"
+        ReviewDate: "today-200"
+    - key: process-stationery
+      values:
+        Title: "[DEMO] Order stationery"
+        Function: "Corporate services"
+        Owner: "@me"
+        Purpose: "Demo row. Orders consumables against the office budget."
+        Criticality: "Low"
+        CurrentState: "Email / ad hoc"
+        PainLevel: "Minor"
+        PainNotes: "Demo row. An email to the office manager. It works, and digitising it would cost more than it saves."
+        DigitisationStatus: "Not worth digitising"
+        TargetState: "None. Ruled out deliberately."
+        ReviewDate: "today+300"
+
   Workstream:
     - key: ws-migration
       values:

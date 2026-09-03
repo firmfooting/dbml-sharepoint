@@ -1,0 +1,43 @@
+{
+  "sections": [
+    {
+      "displayname": "Name the process",
+      "fields": [
+        "Title",
+        "Function",
+        "Owner",
+        "Workstream",
+        "Purpose"
+      ]
+    },
+    {
+      "displayname": "Score it",
+      "fields": [
+        "Criticality",
+        "CurrentState",
+        "PainLevel",
+        "PainNotes"
+      ]
+    },
+    {
+      "displayname": "Digitise it",
+      "fields": [
+        "DigitisationStatus",
+        "TargetState",
+        "SystemUrl"
+      ]
+    },
+    {
+      "displayname": "Review",
+      "fields": [
+        "ReviewDate"
+      ]
+    },
+    {
+      "displayname": "System",
+      "fields": [
+        "DigitisationPriority"
+      ]
+    }
+  ]
+}

@@ -1,9 +1,17 @@
-release: "2.0.0"
+release: "2.1.0"
 date: "2026-09-03"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.0.0"
+schema_version: "2.1.0"
 notes: |
-  Programme governance. Nine lists on one site, merging a delivery layer
+  2.1.0 adds GOV_BusinessProcess, the inventory of processes this programme has
+  to map or change, ranked by criticality multiplied by pain on the same 1-to-9
+  scale process-register uses. Activity gains a nullable Process lookup, so who
+  maps a process is an ordinary activity with one Responsible, one Accountable
+  and an Involvement row per stakeholder consulted. Nothing else changes: the
+  list is new, so a 2.0.0 site adopts its nine existing lists untouched and
+  gains a tenth.
+
+  Programme governance. Ten lists on one site, merging a delivery layer
   with a standing accountability register and a service request queue for
   tenant-level change.
 
@@ -55,7 +63,7 @@ notes: |
   Leads, GOV Accountability Maintainers and GOV Request Handlers, which are
   created empty and never reconciled (a renamed group keeps the members it
   had). Disable attachments on all
-  nine lists, which is the one privacy control a redeploy does not reassert.
+  ten lists, which is the one privacy control a redeploy does not reassert.
   Check the site home page and navigation against the new list titles.
 
   Bump schema_version on any DBML or mapping change before redeploying.

@@ -2488,8 +2488,8 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     solutions = available_solutions()
     # A guard, not a formality: the loop below would pass just as happily
     # over an empty roster, proving nothing while looking like it walked
-    # every family. `test_no_two_templates_declare_the_same_entity_name`
-    # in test_template_standard.py uses the same shape for the same reason.
+    # every family. `test_every_family_appears_in_at_least_one_journey`
+    # in test_journeys.py uses the same shape for the same reason.
     assert len(solutions) == 35, (
         f"{len(solutions)} templates discovered, not the 35 this walk was "
         "measured against -- re-verify the invariant before trusting an "

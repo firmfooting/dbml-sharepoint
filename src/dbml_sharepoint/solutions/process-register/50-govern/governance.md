@@ -101,6 +101,24 @@ quietly going stale.
   the score would save cleanly, read back equal, pass the deploy phase and
   never fire.
 
+## Hand-off to programme-governance
+
+This register is the inventory on its own: one list, everyone contributes,
+no programme required. `programme-governance` carries the same inventory as
+`GOV_BusinessProcess`, on the same criticality-multiplied-by-pain scale and
+with the same formula, alongside the workstreams, accountabilities and RAID
+lists a programme needs.
+
+Take this one to build the map. Move to that one when the mapping work itself
+needs owners: there, an activity carries one Responsible and one Accountable
+for mapping a process, and every stakeholder consulted is an involvement row
+with the input they give. There is no lookup between the two, in either
+direction, and there will not be. Templates in this library hand off by
+process, never by list reference, so either deploys and stands alone.
+
+A row moves by export and re-import; the score does not change, because the
+formula is the same.
+
 ## Lifecycle
 
 The register is the programme's memory. Keep it. Export before

@@ -381,6 +381,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # is handling it, and how far it was escalated. Splitting them gives the
     # escalation block a heading somebody can ignore on the nine requests in
     # ten that never escalate.
+    # The same five beats process-register declares for the same table. The
+    # arc is a property of the shape, so two families carrying it should not
+    # tell the reader two different stories about it.
+    ("programme-governance", "BusinessProcess"): {
+        "Name the process": "Identify",
+        "Score it": "Assess",
+        "Digitise it": "Act",
+        "Review": "Govern",
+        "System": "System",
+    },
     ("programme-governance", "Workstream"): {
         "Name the workstream": "Identify",
         "Sequence and dates": "Act",
