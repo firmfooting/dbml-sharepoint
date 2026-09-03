@@ -1947,8 +1947,9 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": False,
-    },
+        "enroll_enterprise_reader": False,    "renamed_from": [],
+    "previous_names": [],
+},
 }
 
 #: Every group this tool names for itself, shipped by all families or not.
@@ -2052,6 +2053,7 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
 
 
 
+@pytest.mark.parametrize("template", _all_templates())
 def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
     template: str,
 ) -> None:
