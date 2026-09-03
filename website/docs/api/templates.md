@@ -25,7 +25,7 @@ dbml-sharepoint COLUMNS script for one list.
 
 Target site: List: Deployer:     v Generated at:
 
-Lists the custom columns as a numbered table, asks for a number, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
+Lists the custom columns, asks for one by internal name, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed again after that scan, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
 
 Deleting a column removes its values from every item, and neither the column nor the values go to the recycle bin (Microsoft Learn, SharePoint data deletion). The item scan is what keeps that from being a surprise.
 

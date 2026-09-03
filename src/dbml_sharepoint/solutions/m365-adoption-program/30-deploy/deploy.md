@@ -607,8 +607,9 @@ steps, in this order:
    `RelatedTenantRequest` on `GOV_Action`, `PartyKind` on `GOV_Stakeholder`,
    `Party` on `GOV_Involvement`, `DecisionRule` on `GOV_Activity` and
    `IvantiReference` on `GOV_ServiceRequest`, plus anything else the
-   script's table shows that the schema no longer declares. Pick each by
-   number and let the script unseal it, delete it and read the field back.
+   script's table shows that the schema no longer declares. Type each
+   internal name and let the script unseal it, delete it and read the field
+   back.
 5. **The three go-live steps** above: attachments off on all nine lists,
    the three family groups populated (`GOV Programme Leads` and
    `GOV Accountability Maintainers` keep the members they had under their
