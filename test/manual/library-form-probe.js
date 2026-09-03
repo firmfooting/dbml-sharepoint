@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMS AND FIELD ORDER
  *
- * REVISION: 549c3dd1
+ * REVISION: 575c348e
  *
  * ONE QUESTION:
  *   How do document library forms behave over REST, and can their field order be customised?
@@ -25,6 +25,11 @@
  *     Can the field order be changed over REST and does the new order read back?
  *     Tests whether a library form can be customised over REST the way a list form
  *     can, or whether the field order is fixed.
+ *   library.form.rendered-edit-form
+ *     Does the rendered edit form lead with the file name and show the metadata
+ *     columns? The machine lane records the field-link order as a proxy; the
+ *     rendered form itself is adjudicated by a visible capture (capture-visible
+ *     + record-review), the same pattern the list forms use.
  *
  * RETIRED QUESTION:
  *   library.form.new-form-field-order
@@ -280,7 +285,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 549c3dd1. Quote this when reporting results.');
+  log('INFO', 'probe revision 575c348e. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibForm';
   const FILE = 'dbmlsp-form-doc.txt';
@@ -339,6 +344,7 @@
   expect('library.form.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused');
   expect('library.form.edit-form-field-order', 'What fields does the Document content type edit form carry and in what order');
   expect('library.form.form-field-reorder', 'Can the field order be changed over REST and does the new order read back');
+  expect('library.form.rendered-edit-form', 'Does the rendered edit form lead with the file name and show the metadata columns');
 
   await resetList(LIB);
   let digest = await getDigest();
@@ -457,6 +463,24 @@
            outcome,
            evidence);
   }
+
+  // ---- rendered-edit-form: machine-visible field order ----------------
+  // The field-link order is the machine-visible proxy for what the rendered
+  // form draws. The actual rendered form is adjudicated by a visible capture
+  // (capture-visible + record-review); this record keeps the id in the static
+  // set and carries the field-order half of the answer.
+  const renderedLeadsFile = firstVisible === 'FileLeafRef' || firstField === 'FileLeafRef';
+  const renderedLeadsTitle = firstVisible === 'Title' || firstField === 'Title';
+  const renderedOutcome = renderedLeadsFile
+    ? 'LEADS WITH FILE'
+    : renderedLeadsTitle
+      ? 'LEADS WITH TITLE'
+      : `LEADS WITH ${firstVisible || firstField || 'UNKNOWN'}`;
+  record('library.form.rendered-edit-form',
+         'Does the rendered edit form lead with the file name and show the metadata columns',
+         renderedOutcome,
+         `field-link order (visible fields): ${JSON.stringify(visibleNames)}. ` +
+         'The rendered form is adjudicated by the visible capture.');
 
   // ---- Create two test columns on library for reordering --------------
   const makeCol = async (name) => {
