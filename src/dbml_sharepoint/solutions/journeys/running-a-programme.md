@@ -2,7 +2,7 @@
 title: Running a programme
 summary: One site holding delivery, accountability, and the changes another team has to make for you.
 solutions:
-  - m365-adoption-program
+  - programme-governance
 ---
 
 # Running a programme

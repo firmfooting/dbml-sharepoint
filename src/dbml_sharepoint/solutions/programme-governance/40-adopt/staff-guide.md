@@ -1,4 +1,4 @@
-# M365 adoption programme: programme team guide
+# Programme governance: programme team guide
 
 Nine lists on one site, holding two layers of one programme. The standing
 layer records who owes what permanently: `GOV_Activity`, the
@@ -21,9 +21,10 @@ For step-by-step instructions - raising an issue, completing an action,
 recording a decision, confirming an accountability, and the rest - see
 `workflows/`, one short guide per task.
 
-Seven of the nine lists carry a `Program` stem because the plain names
-belong to other templates in this library. On screen they read *Program
-Risk*, *Action*, *Activity* and so on.
+All nine lists carry the `GOV_` prefix, so on screen they read *GOV_Risk*,
+*GOV_Action*, *GOV_Activity* and so on. The prefix is what keeps this family
+apart from the other registers on a shared site; the name after it is the
+plain one.
 
 ## Which list does this go on?
 

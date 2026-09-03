@@ -5,9 +5,13 @@ Each template is a complete, working input set for `dbml-sharepoint build`
 **plus** the organisational material a real rollout needs: an administrator
 deployment guide, staff education, and governance resources.
 
-The library is organised into four themes, plus sector guides (currently:
-[regional healthcare](sectors/healthcare.md): NSQHS mapping, statutory-system
-boundaries, and a first-90-days sequence). Templates interconnect across
+The library is organised into four themes below, plus sector guides
+(currently: [regional healthcare](sectors/healthcare.md): NSQHS mapping,
+statutory-system boundaries, and a first-90-days sequence). For a reading
+ORDER rather than a subject index, see [journeys](journeys/): one file per
+route through the library, and what the wizard offers first. Every template
+appears in at least one, which a test enforces; these four theme tables are
+prose and do not. Templates interconnect across
 themes by *process hand-off* (documented in their governance files), never
 by list lookups. Every template deploys and stands alone.
 
@@ -51,6 +55,7 @@ hand-off into that same improvement/investment chain.
 | [raci-matrix](raci-matrix/) | Who does what, and who answers for it | One Accountable per row, structurally; consulted parties must state their input; criticality-driven re-confirmation |
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
 | [records-digitisation](records-digitisation/) | Can a digitised record be kept in this platform? | Platform-by-platform capability assessment: six answers that can each say *Unknown*, three multi-value evidence lists, and a verdict a person types |
+| [programme-governance](programme-governance/) | Programme delivery, accountability and provider requests | Nine lists on one site: RAID and RACI merged, plus the service requests only the provider can action |
 
 *Theme: Operations & service.*
 

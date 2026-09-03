@@ -1,21 +1,23 @@
-# M365 adoption programme
+# Programme governance
 
-An M365 adoption programme on nine lists, from workstreams and
+Programme governance on nine lists, from workstreams and standing
 accountabilities to service requests, risks, actions, issues and decisions.
 Nine lists: `GOV_Workstream`, `GOV_Stakeholder`,
 `GOV_Activity`, `GOV_Involvement`, `GOV_ServiceRequest`,
 `GOV_Risk`, `GOV_Action`, `GOV_Issue`,
 `GOV_Decision`.
 
-**The value case.** An adoption programme in a health service that does not
-run its own tenant fails in three places at once, and no single template in
-this library covers all three. Delivery drifts, which a RAID log catches.
-Accountabilities rot, which a RACI matrix catches. And the changes that
-actually unblock the work are made by somebody else's tenant team, which
-neither catches. This family is one site holding all three, because they are
-read together: an issue is usually a service request that has sat with the
-provider for three weeks, and the person who can escalate it is whoever the
-accountability register says it is.
+**The value case.** A programme run by an organisation that does not
+administer its own platform fails in three places at once, and no single
+template in this library covers all three. The worked example throughout is an
+M365 adoption programme in a health service whose tenant a shared-service
+provider holds, which is where the family was built. Delivery drifts, which a
+RAID log catches. Accountabilities rot, which a RACI matrix catches. And the
+changes that actually unblock the work are made by somebody else's tenant
+team, which neither catches. This family is one site holding all three,
+because they are read together: an issue is usually a service request that has
+sat with the provider for three weeks, and the person who can escalate it is
+whoever the accountability register says it is.
 
 **Nine lists, and what each one is for:**
 
@@ -36,8 +38,10 @@ The family's prefix is `GOV_`, so the list titles are `GOV_Workstream`,
 two permission levels carry the same stem: `GOV Programme Leads`,
 `GOV Submit Only`. GOV names what the lists are, which is the level the other
 families name at (`RR_`, `RACI_`, `RAID_`), rather than the programme they
-happen to serve. Entity names are unique within the family, and the prefix
-is what keeps families apart on a shared site.
+happen to serve. The family's own name now says the same: it was
+`m365-adoption-program`, which named one programme rather than the register
+every programme needs. Entity names are unique within the family, and the
+prefix is what keeps families apart on a shared site.
 
 **The provider boundary is the design decision that matters.** The health
 service does not hold tenant administration; a shared services provider does,

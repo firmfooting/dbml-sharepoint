@@ -1,4 +1,4 @@
-# M365 adoption programme: governance
+# Programme governance: how the family is governed
 
 Nine lists enforce what SharePoint can enforce, and `20-configure/mapping.yaml`
 holds every one of those rules. This document holds the rest: the obligations

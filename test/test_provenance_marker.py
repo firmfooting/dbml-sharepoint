@@ -300,7 +300,7 @@ def test_the_verify_scratch_list_marker_is_tool_owned_and_never_a_list_marker() 
     marker = verify_marker()
     assert VERIFY_LIST_TITLE == "_dbml-verify"
     assert marker == "Provisioned by dbml-sharepoint for scratch _dbml-verify."
-    for family in ("risk", "m365-adoption-program"):
+    for family in ("risk", "programme-governance"):
         listed = marker_for(family, VERIFY_LIST_TITLE)
         assert marker not in listed
         assert listed not in marker
