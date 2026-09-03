@@ -109,7 +109,7 @@ Shared formula canonicalisation: how a stored Formula or ValidationFormula is co
 
 Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
-Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them.
+Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
 ### `_http_write.js.j2`
 

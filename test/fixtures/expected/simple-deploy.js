@@ -220,18 +220,58 @@
     return String(message).slice(0, 300);
   };
 
+  // The page a throttled BROWSER is redirected to. Matched on the final URL
+  // rather than on the status, because the status is a property of OUR
+  // request: the page is HTML and every call here asks for JSON, so it
+  // arrives as 406 Not Acceptable. A caller that asked for something else
+  // would see a different status and the same throttle. Keying on 406 would
+  // also have retried every genuine content-negotiation refusal five times.
+  const THROTTLE_PAGE = /\/_layouts\/15\/throttle\.htm(\?|$)/i;
+  const isThrottled = (r) => r.status === 429 || r.status === 503
+    || THROTTLE_PAGE.test(r.url || '');
+
+  // ONE PAUSE FOR THE WHOLE RUN, not one per lane. `mapLanes` puts four
+  // workers through this helper at once, and Learn is explicit that
+  // "throttled requests count towards usage limits, so failure to honor
+  // Retry-After may result in more throttling" and that an application
+  // should "reduce concurrency after throttling". Four independent backoffs
+  // keep spending quota against a tenant that is already refusing, and then
+  // resume together. The first request to be refused opens this gate; every
+  // request waits on it before going out.
+  let throttleGate = null;
+  async function passThrottleGate() {
+    while (throttleGate) await throttleGate;
+  }
+  function holdEveryLane(seconds) {
+    if (!throttleGate) {
+      throttleGate = sleep(seconds * 1000).then(() => { throttleGate = null; });
+    }
+    return throttleGate;
+  }
+
   // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
   // else back off exponentially (capped), up to `attempts` before
   // returning the final response to the caller's own error handling.
-  async function fetchWithRetry(url, opts, attempts = 5) {
+  //
+  // The defaults are a JUDGEMENT, not a measurement: eight attempts capped at
+  // 60s is about four minutes of patience. The browser redirect carries no
+  // Retry-After -- it is an HTML page -- so on the path that prompted this
+  // there is nothing to honour and the backoff is all there is. Waiting four
+  // minutes on a paste is cheap; a deploy abandoned mid-Phase-4 leaves
+  // columns unsealed and needs the whole run again.
+  async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
     for (let i = 0; ; i++) {
+      await passThrottleGate();
       const r = await fetch(url, opts);
       requestCount += 1;
-      if ((r.status === 429 || r.status === 503) && i < attempts) {
-        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 30);
-        log('INFO', `Throttled (HTTP ${r.status}); retry ${i + 1}/${attempts} in ${ra}s.`);
-        await sleep(ra * 1000);
+      if (isThrottled(r) && i < attempts) {
+        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);
+        const how = THROTTLE_PAGE.test(r.url || '')
+          ? `redirected to the throttling page (HTTP ${r.status})`
+          : `HTTP ${r.status}`;
+        log('INFO', `Throttled, ${how}; every lane waits ${ra}s, retry ${i + 1}/${attempts}.`);
+        await holdEveryLane(ra);
         continue;
       }
       dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}...` : url} -> ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
