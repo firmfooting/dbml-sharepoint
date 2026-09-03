@@ -2361,8 +2361,13 @@
             {
               "id": "access.role-binding.web-scope-by-group",
               "depends_on": [
-                "access.role-def.control-roledefinitions-readable"
+                "access.role-def.control-roledefinitions-readable",
+                "access.role-binding.control-web-roleassignments-readable"
               ]
+            },
+            {
+              "id": "access.role-binding.control-web-roleassignments-readable",
+              "depends_on": []
             },
             {
               "id": "access.role-binding.list-scope-by-group",
@@ -2379,7 +2384,8 @@
           ],
           "states": [],
           "controls": [
-            "access.role-def.control-roledefinitions-readable"
+            "access.role-def.control-roledefinitions-readable",
+            "access.role-binding.control-web-roleassignments-readable"
           ],
           "depends_on": []
         }
