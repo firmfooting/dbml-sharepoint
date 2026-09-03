@@ -189,7 +189,9 @@
  *
  * WHAT IS STILL OPEN: whether any of it RENDERS. Every row above says
  * only that SharePoint kept the text. The A/B/C_COMBINED writes exist so
- * one look answers it; the checklist this prints is unanswered so far.
+ * one look answers it, and the three '.markers-render-on-page' rows put
+ * that question in the summary, where it counts as awaiting capture until
+ * an operator works the checklist and reports what they saw.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -418,7 +420,7 @@
   // Printed FIRST, before any gate: see threshold-index-probe.js.j2 for why
   // (a stale clipboard and a fix that did not work produce identical
   // transcripts otherwise).
-  log('INFO', 'probe revision 9b9697f8. Quote this when reporting results.');
+  log('INFO', 'probe revision adf174a4. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe FormatterXML';
   const FIELD_FMT = 'ProbeFmtField';
@@ -479,6 +481,14 @@
     APOS: 'apos',
   };
   const checkId = (prefix, id) => `${SCOPE_FOR[prefix]}.${QUESTION_FOR[id]}`;
+
+  // One table so the question registered up front and the question recorded
+  // at the end are the same sentence, and so it names where to look.
+  const RENDER_QUESTION = {
+    A: 'Do the accepted View CustomFormatter markers actually paint on the seeded rows (checklist item 1)?',
+    B: 'Do the accepted Column CustomFormatter markers actually paint in the column cells (checklist item 2)?',
+    C: 'Do the accepted Form ClientFormCustomFormatter markers actually paint on the New form (checklist item 3)?',
+  };
 
   // A view/column formatter payload carrying the token as literal text
   // inside a formatter JSON's txtContent, the same shape a real formatter
@@ -649,6 +659,14 @@
   expect('text.view-title.metachar', 'A view Title containing a bare ampersand');
   expect('text.valmsg.metachar', 'A field ValidationMessage containing a bare ampersand');
   expect('text.col-desc.metachar', 'A column Description containing a bare ampersand');
+  // The eyes-on half. Every row above says only that SharePoint KEPT the text;
+  // whether any of it RENDERS is the half that decides whether the build-time
+  // refusal can be deleted, and it had no row at all. The checklist printed
+  // after report() is prose the tally cannot see, so a run with the whole
+  // rendering question outstanding summarised as fully answered.
+  expect('text.view-fmt.markers-render-on-page', RENDER_QUESTION.A);
+  expect('text.col-fmt.markers-render-on-page', RENDER_QUESTION.B);
+  expect('text.form-fmt.markers-render-on-page', RENDER_QUESTION.C);
 
   if (!CONFIRMED) {
     log('INFO', `Would create list '${LIST}' with a text field and a view, seed`);
@@ -847,8 +865,15 @@
       }
       const readback = read.body[propertyName];
       const drift = canonicalFn(readback) !== canonicalFn(payload);
+      // DRIFT is a REWRITE: SharePoint stored something other than what was
+      // sent. The outcome head carried that and the evidence did not, so a
+      // reader skimming the evidence saw a clean write with an encoding note
+      // beside it. The rewrite is named first now, before the two payloads.
       record(rowId, question, `ACCEPTED: ${drift ? 'DRIFT' : 'UNCHANGED'}`,
-             `wrote ${JSON.stringify(payload)}; read back ${JSON.stringify(readback)}. `
+             (drift
+               ? 'SharePoint REWROTE the body: what is stored is not what was sent. '
+               : 'stored byte-identical to what was sent. ')
+             + `wrote ${JSON.stringify(payload)}; read back ${JSON.stringify(readback)}. `
              + describeEncoding(token, String(readback)));
       acceptedTokens.push(token);
     }
@@ -1109,6 +1134,24 @@
         }
       }
     }
+  }
+
+  // ---- The eyes-on half, as rows the summary counts --------------------
+  // MANUAL, so report() files them under awaiting-capture and prints how many
+  // are waiting on somebody to look. A surface whose combined write never
+  // landed has nothing on the page to look AT, so that row is open instead:
+  // recording it MANUAL would send an operator to an empty view.
+  for (const [prefix, item] of [['A', 1], ['B', 2], ['C', 3]]) {
+    const combined = RESULTS.find((r) => r.id === `${SCOPE_FOR[prefix]}.combined-markers`);
+    const ready = combined !== undefined && String(combined.outcome).startsWith('ACCEPTED');
+    record(
+      `${SCOPE_FOR[prefix]}.markers-render-on-page`,
+      RENDER_QUESTION[prefix],
+      ready ? 'MANUAL' : 'NOT ESTABLISHED',
+      ready
+        ? `nothing here is measured by the API rows: work through EYES-ON CHECKLIST item ${item} below and report what you saw. ${SURFACE_LABEL[prefix]} combined write: ${combined.outcome}`
+        : `the ${SURFACE_LABEL[prefix]} combined write left nothing standing to look at (${combined === undefined ? 'the row was never reached' : combined.outcome}), so checklist item ${item} cannot be answered from this run`,
+    );
   }
 
   // ---- Report ---------------------------------------------------------

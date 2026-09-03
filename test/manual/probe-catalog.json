@@ -1543,6 +1543,24 @@
             {
               "id": "text.col-fmt.width-attribute",
               "depends_on": []
+            },
+            {
+              "id": "text.view-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.view-fmt.combined-markers"
+              ]
+            },
+            {
+              "id": "text.col-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.col-fmt.combined-markers"
+              ]
+            },
+            {
+              "id": "text.form-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.form-fmt.combined-markers"
+              ]
             }
           ],
           "states": [
