@@ -247,12 +247,13 @@ what a file is made of over REST, and how metadata columns and list validation
 behave on libraries.
 
 Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`,
-`folder`, `content-type`, `form`, `view`, `formula`, `access`
+`folder`, `content-type`, `form`, `view`, `formula`, `access`, `query`
 
 Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`,
 `library-column-interactions-probe.js`, `library-form-probe.js`,
-`library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`
+`library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`,
+`library-query-probe.js`
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement

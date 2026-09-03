@@ -4698,6 +4698,65 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-query-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, three metadata columns, and twelve test files with distinct metadata values"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.query.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.query.caml-chain-depth",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.query.guarded-single-clause",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.query.order-by-multi-field",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.query.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
