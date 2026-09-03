@@ -1503,6 +1503,58 @@
       ]
     },
     {
+      "file": "library-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, test files, and a grouped view"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.group-by-metadata-column",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.group-by-folder",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "form-visibility-evidence-probe.js",
       "surface": "expression",
       "harness": "helper",
