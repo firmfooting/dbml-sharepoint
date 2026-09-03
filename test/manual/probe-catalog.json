@@ -1555,6 +1555,65 @@
       ]
     },
     {
+      "file": "library-formula-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a small lookup target list, two test files, calculated and validation columns, and a library ValidationFormula"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.formula.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.formula.calc-datetime-sentinel",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.formula.calc-choice-lookup-operand",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.formula.validation-url-operand",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.formula.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "form-visibility-evidence-probe.js",
       "surface": "expression",
       "harness": "helper",
