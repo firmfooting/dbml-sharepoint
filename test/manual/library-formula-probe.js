@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMULA SURFACE
  *
- * REVISION: 22313b8d
+ * REVISION: 3ccc59fc
  *
  * ONE QUESTION:
  *   Does the formula surface of a document library diverge from a generic list?
@@ -291,7 +291,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 22313b8d. Quote this when reporting results.');
+  log('INFO', 'probe revision 3ccc59fc. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibFormula';
   const TARGET = 'dbmlsp Probe LibFormula Target';
@@ -520,11 +520,14 @@
   // supported in the default value setting of a column." A calculated column
   // that resolves =NOW() or =TODAY() to a datetime would contradict that.
   // FieldRefs is empty: the formulas reference no other column.
+  const xmlEscape = (s) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
   const calcXml = (name, formula, refs, resultType) =>
-    `<Field Type="Calculated" DisplayName="${name}" Name="${name}" ` +
+    `<Field Type="Calculated" DisplayName="${xmlEscape(name)}" Name="${xmlEscape(name)}" ` +
     `ResultType="${resultType}">` +
-    `<Formula>${formula}</Formula>` +
-    `<FieldRefs>${refs.map((r) => `<FieldRef Name="${r}"/>`).join('')}</FieldRefs>` +
+    `<Formula>${xmlEscape(formula)}</Formula>` +
+    `<FieldRefs>${refs.map((r) => `<FieldRef Name="${xmlEscape(r)}"/>`).join('')}</FieldRefs>` +
     `</Field>`;
 
   const createSentinelCalc = async (name, formula) => {
