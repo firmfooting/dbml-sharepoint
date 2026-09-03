@@ -359,22 +359,119 @@
       detail: `${rows.length} row(s): ${rows.map((x) => `#${x.ID}${fieldNames.map((f) => ` ${f}=${x[f]}`).join('')}`).join(', ') || '(none)'}`,
     };
   };
+
+  // The census these four rows are read AGAINST. A query that merely ran
+  // answers none of them: each is an ALL-versus-NONE discrimination, or a
+  // which-seeded-day one, against the fixture. Recording PASS on `count !==
+  // null` reported four answers from a run that had only established the
+  // getitems endpoint was reachable, which is what the control row is for.
+  const localDay = (value) => {
+    const parsed = value ? new Date(value) : null;
+    if (parsed === null || Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 10);
+  };
+  const todayLocal = localDay(new Date().toISOString());
+  const census = await spGet(`${listPath}/items?$select=Id,Title,T,DM,Modified&$top=500`);
+  const fixture = (!readFailed(census) && census.body.value) || [];
+  const withT = fixture.filter((r) => r.T);
+  const tDays = new Set(withT.map((r) => localDay(r.T)));
+  const withDm = fixture.filter((r) => r.DM).length;
+  const modifiedToday = fixture.filter((r) => localDay(r.Modified) === todayLocal).length;
+  const censusNote = readFailed(census)
+    ? `the fixture census failed: HTTP ${census.status}`
+    : `fixture: ${fixture.length} row(s), ${withT.length} carrying T on ${tDays.size} distinct day(s), ${withDm} carrying DM, ${modifiedToday} modified today (${todayLocal} local)`;
+
+  // Each row names the counts that would DISCRIMINATE, and what each one would
+  // mean. `blocked` is the fixture state under which neither count separates
+  // the hypotheses, in which case the row is open rather than answered.
   const rows = [
-    ['query.caml-adhoc.today-element-vs-today-function', 'CAML T Eq <Today/> matches the =TODAY()-filled rows', "<Eq><FieldRef Name='T'/><Value Type='DateTime'><Today/></Value></Eq>", ['T']],
-    ['query.caml-adhoc.today-element-site-date', 'CAML DM Eq <Today/> returns which day', "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today/></Value></Eq>", ['DM']],
-    ['query.caml-adhoc.today-offset-element-previous-day', 'CAML DM Eq <Today OffsetDays=-1/> returns which day', "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today OffsetDays='-1'/></Value></Eq>", ['DM']],
-    ['query.caml-adhoc.today-include-time-current-instant', 'CAML Modified Leq <Today IncludeTimeValue/> sees recent rows', "<Leq><FieldRef Name='Modified'/><Value Type='DateTime' IncludeTimeValue='TRUE'><Today/></Value></Leq>", ['Modified']],
+    {
+      id: 'query.caml-adhoc.today-element-vs-today-function',
+      question: 'CAML T Eq <Today/> matches the =TODAY()-filled rows',
+      where: "<Eq><FieldRef Name='T'/><Value Type='DateTime'><Today/></Value></Eq>",
+      fields: ['T'],
+      blocked: withT.length === 0
+        ? 'no row carries T, so there is nothing for <Today/> to match or miss'
+        : tDays.size !== 1
+          ? `the ${withT.length} rows carrying T hold ${tDays.size} different days (${[...tDays].join(', ')}), so ALL-versus-NONE does not separate the clocks`
+          : null,
+      expectations: [
+        { count: withT.length, meaning: 'ALL: <Today/> matches every =TODAY()-filled row, so the CAML element and the formula read the same clock' },
+        { count: 0, meaning: 'NONE: <Today/> matches no =TODAY()-filled row, so the CAML element and the formula read different clocks' },
+      ],
+    },
+    {
+      id: 'query.caml-adhoc.today-element-site-date',
+      question: 'CAML DM Eq <Today/> returns which day',
+      where: "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today/></Value></Eq>",
+      fields: ['DM'],
+      blocked: withDm < 2
+        ? `only ${withDm} row(s) carry DM, so the two seeded days are not both present to choose between`
+        : null,
+      expectations: [
+        { count: 1, meaning: 'exactly one of the two seeded days came back; which one is the answer, and it is named in the rows below' },
+      ],
+    },
+    {
+      id: 'query.caml-adhoc.today-offset-element-previous-day',
+      question: 'CAML DM Eq <Today OffsetDays=-1/> returns which day',
+      where: "<Eq><FieldRef Name='DM'/><Value Type='DateTime'><Today OffsetDays='-1'/></Value></Eq>",
+      fields: ['DM'],
+      blocked: withDm < 2
+        ? `only ${withDm} row(s) carry DM, so the two seeded days are not both present to choose between`
+        : null,
+      expectations: [
+        { count: 1, meaning: 'exactly one of the two seeded days came back; which one is the answer, and it is named in the rows below' },
+      ],
+    },
+    {
+      id: 'query.caml-adhoc.today-include-time-current-instant',
+      question: 'CAML Modified Leq <Today IncludeTimeValue/> sees recent rows',
+      where: "<Leq><FieldRef Name='Modified'/><Value Type='DateTime' IncludeTimeValue='TRUE'><Today/></Value></Leq>",
+      fields: ['Modified'],
+      // A row modified before today matches under either hypothesis, so the
+      // discrimination is carried entirely by the rows modified TODAY.
+      blocked: modifiedToday === 0
+        ? 'no row was modified today, so every row matches whether the instant is current or hours behind'
+        : null,
+      expectations: [
+        { count: fixture.length, meaning: `ALL ${fixture.length} rows matched, so the <Today IncludeTimeValue/> instant is at or after the newest Modified: it is current` },
+        { count: fixture.length - modifiedToday, meaning: `only the ${fixture.length - modifiedToday} rows NOT modified today matched, so the instant precedes today's writes: it is behind` },
+      ],
+    },
   ];
-  for (const [id, question, where, fieldNames] of rows) {
-    const got = await caml(where, fieldNames);
-    const evidence = id === 'query.caml-adhoc.today-element-site-date'
+  for (const row of rows) {
+    const got = await caml(row.where, row.fields);
+    const detail = row.id === 'query.caml-adhoc.today-element-site-date'
       ? `${dmNote}; ${got.detail}` : got.detail;
-    record(id, question, got.count === null ? 'FAIL' : 'PASS', evidence);
+    if (got.count === null) {
+      record(row.id, row.question, 'FAIL', `${censusNote}; ${detail}`);
+      continue;
+    }
+    if (readFailed(census) || row.blocked) {
+      record(row.id, row.question, 'NOT ESTABLISHED',
+        `${row.blocked || 'the fixture could not be read, so there is nothing to compare against'}. Observed ${detail}. ${censusNote}`);
+      continue;
+    }
+    // Two expectations that collapse to the same count discriminate nothing,
+    // so a match on one of them is not evidence for either.
+    const counts = new Set(row.expectations.map((e) => e.count));
+    const matched = counts.size === row.expectations.length
+      ? row.expectations.find((e) => e.count === got.count) : undefined;
+    record(row.id, row.question, matched ? 'PASS' : 'NOT ESTABLISHED',
+      matched
+        ? `${matched.meaning}. ${detail}. ${censusNote}`
+        : `${got.count} row(s) matches none of the discriminating counts (${row.expectations.map((e) => `${e.count} = ${e.meaning}`).join('; ')}). Observed ${detail}. ${censusNote}`);
   }
 
   // ---- D1: the dynamic default, server side ----------------------------------
   if (!ADD_DEFAULT_COLUMN) {
-    record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT APPLICABLE', 'ADD_DEFAULT_COLUMN is off');
+    // A skipped row, not an inapplicable one. NOT APPLICABLE settled it, so a
+    // run with the flag off reported this question answered while the column
+    // it asks about was never created.
+    record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT REACHED',
+      'ADD_DEFAULT_COLUMN is off, so TD was never created and the question was not asked. Set ADD_DEFAULT_COLUMN and ALLOW_WRITES and run again.');
   } else if (!ALLOW_WRITES) {
     record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT ESTABLISHED', 'ADD_DEFAULT_COLUMN needs ALLOW_WRITES');
   } else {
