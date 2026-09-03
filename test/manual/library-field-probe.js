@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: FIELD DIVERGENCE ON A DOCUMENT LIBRARY
  *
- * REVISION: 2c4be77e
+ * REVISION: f78ed486
  *
  * ONE QUESTION:
  *   Does the field surface of a document library diverge from a generic list?
@@ -286,7 +286,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 2c4be77e. Quote this when reporting results.');
+  log('INFO', 'probe revision f78ed486. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibField';
   const TARGET = 'dbmlsp Probe LibField Target';
@@ -548,11 +548,11 @@
   record('library.field.control-missing-column-refused', Q_CONTROL,
          controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
          controlHeld
-           ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+           ? `refused with HTTP ${junk.status}`
            : (junk.ok
              ? 'the field read naming a missing column was ACCEPTED. This probe cannot '
                + 'detect a refusal, so the two rows below are unproven'
-             : `the field read failed with non-refusal HTTP ${junk.status}: ${junk.text.slice(0, 200)}`));
+             : `the field read failed with non-refusal HTTP ${junk.status}`));
 
   const voidBoth = async (reason) => {
     for (const id of ['library.field.dependent-lookup-on-library',

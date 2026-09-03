@@ -332,11 +332,11 @@
   record('library.field.control-missing-column-refused', Q_CONTROL,
          controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
          controlHeld
-           ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+           ? `refused with HTTP ${junk.status}`
            : (junk.ok
              ? 'the field read naming a missing column was ACCEPTED. This probe cannot '
                + 'detect a refusal, so the two rows below are unproven'
-             : `the field read failed with non-refusal HTTP ${junk.status}: ${junk.text.slice(0, 200)}`));
+             : `the field read failed with non-refusal HTTP ${junk.status}`));
 
   const voidBoth = async (reason) => {
     for (const id of ['library.field.dependent-lookup-on-library',
