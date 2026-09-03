@@ -242,15 +242,18 @@ Probes: `search-discovery-probe.js`
 
 ### 11. `library`: document libraries
 
-Where a library's behaviour diverges from a generic list: files versus items.
+Where a library's behaviour diverges from a generic list: files versus items,
+and what a file is made of over REST.
 
-Scopes: `doc-lib`, `file-vs-item`
+Scopes: `doc-lib`, `file-vs-item`, `file`
 
-Probes: `document-library-probe.js`
+Probes: `document-library-probe.js`, `file-operations-probe.js`
 
-`search` and `library` hold one probe each. That is the map doing its job, not a
-flaw to tidy away by merging them into something larger: `library` holding one
-probe is the statement that document libraries are almost entirely unprobed.
+`search` holds one probe. That is the map doing its job, not a flaw to tidy away
+by merging it into something larger: a surface holding one probe is the statement
+that the surface is almost entirely unprobed. `library` was in that position
+until `file-operations-probe.js`, which is the first of four probes taking it
+out, and which holds the `file` scope on its own.
 
 ## Checks that file under a different surface than their probe
 
@@ -280,7 +283,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `today-source-probe.js` | `formula` | `dynamic-default-rest-fill` | `field.date.*` |
 | `save-instant-paths-probe.js` | `formula` | `hidden-list-readback` | `field.list.*` |
 
-Two probes cross a *scope* boundary within their own surface rather than a
+Some probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
 
 | Probe | Checks | File under |
@@ -291,6 +294,7 @@ surface boundary, and are listed for the same reason:
 | `calculated-choice-operand.js` | `person-operand`, `lookup-operand` (was `P1`, `L2`) | `formula.validation.*` |
 | `datetime-sentinel-probe.js` | the four `*-quote-literal` questions (was `Q1`–`Q4`) | `formula.validation.*` |
 | `native-index-probe.js` | `odata-comparison-found-list`, `odata-null-found-list` (was `CMPIDX`, `NULIDX`) | `scale.index.*` |
+| `file-operations-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
