@@ -128,7 +128,9 @@
   // STATE is the five-value vocabulary in test/manual/SURFACES.md, carried
   // beside the prose. An explicit state passed to record() wins over the
   // classifier, which is the default for rows nobody has ruled on yet.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  // ABORTED is open: it means the fixture never built, so the question was
+  // never asked and the run has nothing to settle it with.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';

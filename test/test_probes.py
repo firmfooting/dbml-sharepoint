@@ -584,6 +584,27 @@ def test_a_run_whose_only_unsettled_row_is_void_has_nothing_outstanding() -> Non
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_aborted_fixture_leaves_its_questions_open() -> None:
+    """ABORTED means the fixture never built, so nothing was measured.
+
+    Classified as settled it printed "3 answered, 0 open" for a run whose list
+    was never created, which is the summary reading exactly backwards: an
+    abort is the case the up-front registration exists to report honestly.
+    A void row still voids, and a real measurement still settles.
+    """
+    lines = _summary([
+        ("A", "ABORTED", None),
+        ("B", "ABORTED: list 'dbmlsp Probe Dates' not found", None),
+        ("C", "PASS", None),
+        ("D", "STORED 2026-09-03T00:00:00Z", None),
+        ("E", "NOT ESTABLISHED (HTTP 403)", "void"),
+    ])
+
+    assert _tally(lines) == "5 question(s); 2 answered, 2 open, 1 voided."
+    assert any("NOT a pass" in ln for ln in lines)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize(
     "outcome",
     ["NOT ESTABLISHED", "SHORT: 3 of 12 disjuncts", "MANUAL (unobserved)", "NOT REACHED"],
