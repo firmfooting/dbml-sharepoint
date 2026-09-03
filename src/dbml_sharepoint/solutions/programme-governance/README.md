@@ -32,7 +32,7 @@ whoever the accountability register says it is.
 | `GOV_Action` | Work handed to a named person with a date | Who is doing what, and by when |
 | `GOV_Issue` | Things that have already gone wrong | What is hurting the programme right now |
 | `GOV_Decision` | Decisions and why they were made | Why we did it that way |
-| `GOV_BusinessProcess` | The processes to map or change, ranked by criticality x pain | Which process to take next, and who owns it today |
+| `GOV_BusinessProcess` | Project-adjacent processes worth mapping, and where each map lives | Which process to map next, and who owns it today |
 
 The family's prefix is `GOV_`, so the list titles are `GOV_Workstream`,
 `GOV_Stakeholder`, `GOV_Activity` and so on, and the three family groups and

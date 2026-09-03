@@ -103,21 +103,27 @@ quietly going stale.
 
 ## Hand-off to programme-governance
 
-This register is the inventory on its own: one list, everyone contributes,
-no programme required. `programme-governance` carries the same inventory as
-`GOV_BusinessProcess`, on the same criticality-multiplied-by-pain scale and
-with the same formula, alongside the workstreams, accountabilities and RAID
-lists a programme needs.
+This register asks **how work is done today**, and scores what to digitise on
+criticality multiplied by pain. It is the inventory on its own: one list,
+everyone contributes, no programme required.
 
-Take this one to build the map. Move to that one when the mapping work itself
-needs owners: there, an activity carries one Responsible and one Accountable
-for mapping a process, and every stakeholder consulted is an involvement row
-with the input they give. There is no lookup between the two, in either
-direction, and there will not be. Templates in this library hand off by
+`programme-governance` carries `GOV_BusinessProcess`, which is a different
+question. That one asks **which processes are worth mapping**, scores on
+criticality multiplied by frequency, and records where the resulting map
+lives. It says nothing about how a process is done today, because that is what
+the map is for.
+
+Take this register when the question is what to digitise and in what order.
+Take that one when the processes are already digital, the work is
+understanding them, and the mapping itself needs owners: there, an activity
+carries one Responsible and one Accountable for mapping a process, and every
+stakeholder consulted is an involvement row with the input they give.
+
+The two share a shape and a 1-to-9 scale, and nothing else. Their columns do
+not line up and their scores mean different things, so a row does not move
+between them unchanged. There is no lookup between them either, in either
+direction, and there will not be: templates in this library hand off by
 process, never by list reference, so either deploys and stands alone.
-
-A row moves by export and re-import; the score does not change, because the
-formula is the same.
 
 ## Lifecycle
 

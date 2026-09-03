@@ -384,10 +384,14 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # The same five beats process-register declares for the same table. The
     # arc is a property of the shape, so two families carrying it should not
     # tell the reader two different stories about it.
+    # A mapping backlog, not process-register's digitisation inventory, so the
+    # Act beat is split: deciding the order is one act, doing the mapping is
+    # another, and the register records both.
     ("programme-governance", "BusinessProcess"): {
         "Name the process": "Identify",
         "Score it": "Assess",
-        "Digitise it": "Act",
+        "Decide the order": "Act",
+        "Map it": "Act",
         "Review": "Govern",
         "System": "System",
     },
