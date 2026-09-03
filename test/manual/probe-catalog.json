@@ -611,7 +611,15 @@
               ]
             },
             {
-              "id": "query.caml.control-bogus-element-refused",
+              "id": "query.caml.control-real-element-selects",
+              "depends_on": []
+            },
+            {
+              "id": "query.caml.bogus-element-accepted",
+              "depends_on": []
+            },
+            {
+              "id": "query.caml-adhoc.now-element-inert",
               "depends_on": []
             },
             {
@@ -679,7 +687,7 @@
           "controls": [
             "formula.datetime.control-site-time-zone",
             "formula.datetime.control-missing-column-refused",
-            "query.caml.control-bogus-element-refused",
+            "query.caml.control-real-element-selects",
             "formula.datetime.control-now-function-allows-past",
             "formula.datetime.control-today-allows-yesterday"
           ],
