@@ -1297,6 +1297,72 @@
       ]
     },
     {
+      "file": "library-content-type-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, site and list content types, test files, column, and field link bindings"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.content-type.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.content-type.default-content-types",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.content-type.custom-content-type-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.content-type.content-type-at-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.custom-content-type-on-library",
+                "library.content-type.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.content-type.column-bound-to-one-content-type",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.content-type.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "form-visibility-evidence-probe.js",
       "surface": "expression",
       "harness": "helper",

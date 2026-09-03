@@ -246,15 +246,15 @@ Where a library's behaviour diverges from a generic list: files versus items,
 what a file is made of over REST, and how metadata columns and list validation
 behave on libraries.
 
-Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`, `folder`
+Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`, `folder`, `content-type`
 
-Probes: `document-library-probe.js`, `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`
+Probes: `document-library-probe.js`, `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
 that the surface is almost entirely unprobed. `library` was in that position
-until `file-operations-probe.js`, `library-columns-probe.js`, and `folder-probe.js`,
-the first three of four probes taking it out.
+until `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`,
+and `library-content-type-probe.js`, the four probes taking it out.
 
 ## Checks that file under a different surface than their probe
 
@@ -298,6 +298,7 @@ surface boundary, and are listed for the same reason:
 | `file-operations-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-columns-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `folder-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-content-type-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
