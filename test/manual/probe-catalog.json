@@ -1224,6 +1224,65 @@
       ]
     },
     {
+      "file": "library-column-interactions-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, lookup target list, multi-value and formatted columns, test files, and column formatting JSON"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.column.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.column.multi-choice-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.multi-lookup-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.custom-column-formatting",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.column.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-columns-probe.js",
       "surface": "library",
       "harness": "shared-v1",
