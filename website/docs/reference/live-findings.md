@@ -9,13 +9,13 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 31. Findings: 112. Captures superseded: 1.
+Runs: 36. Findings: 117. Captures superseded: 1.
 
-Probes: 33. Probed: 24. Not yet probed: 9.
+Probes: 33. Probed: 25. Not yet probed: 8.
 
-Checks with a probe result, not settled: 110 of 493. Checks with a reviewed capture, not settled: 3 of 31.
+Checks with a probe result, not settled: 115 of 542. Checks with a reviewed capture, not settled: 4 of 33.
 
-## formula — 9 of 10 probes with evidence, 52 findings
+## formula — 9 of 10 probes with evidence, 54 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -31,6 +31,8 @@ Checks with a probe result, not settled: 110 of 493. Checks with a reviewed capt
 | [query.view-query.today-include-time-roundtrip](findings/datetime-sentinel-20260824-sandbox-1-query-view-query-today-include-time-roundtrip) | machine | open | datetime-sentinel/20260824-sandbox-1 | — |
 | [query.view-query.today-include-time-selects](findings/datetime-sentinel-20260824-sandbox-1-query-view-query-today-include-time-selects) | machine | open | datetime-sentinel/20260824-sandbox-1 | — |
 | [query.caml.control-bogus-element-refused](findings/datetime-sentinel-20260902-post-fix-query-caml-control-bogus-element-refused) | machine | failed | datetime-sentinel/20260902-post-fix | — |
+| [formula.datetime.today-plus-one-ceiling-tomorrow-night](findings/datetime-sentinel-20260902-rerun-eod-formula-datetime-today-plus-one-ceiling-tomorrow-night) | machine | open | datetime-sentinel/20260902-rerun-eod | — |
+| [query.caml.control-bogus-element-refused](findings/datetime-sentinel-20260902-rerun-eod-query-caml-control-bogus-element-refused) | machine | failed | datetime-sentinel/20260902-rerun-eod | — |
 | [formula.datetime.control-today-allows-yesterday](findings/datetime-sentinel-20260902-tz-gate-closed-formula-datetime-control-today-allows-yesterday) | machine | open | datetime-sentinel/20260902-tz-gate-closed | — |
 | [formula.datetime.today-plus-one-allows-later-today](findings/datetime-sentinel-20260902-tz-gate-closed-formula-datetime-today-plus-one-allows-later-today) | machine | open | datetime-sentinel/20260902-tz-gate-closed | — |
 | [formula.datetime.today-rejects-earlier-today](findings/datetime-sentinel-20260902-tz-gate-closed-formula-datetime-today-rejects-earlier-today) | machine | open | datetime-sentinel/20260902-tz-gate-closed | — |
@@ -72,7 +74,7 @@ Checks with a probe result, not settled: 110 of 493. Checks with a reviewed capt
 | [query.caml-adhoc.today-element-site-date](findings/today-source-20260902-first-contact-query-caml-adhoc-today-element-site-date) | machine | failed | today-source/20260902-first-contact | — |
 | [query.caml-adhoc.today-offset-element-previous-day](findings/today-source-20260902-first-contact-query-caml-adhoc-today-offset-element-previous-day) | machine | failed | today-source/20260902-first-contact | — |
 
-177 further checks in this surface are settled.
+205 further checks in this surface are settled.
 
 Not yet probed: `hyperlink-validation-operand-probe.js`.
 
@@ -147,7 +149,7 @@ Not yet probed: `projected-lookup-probe.js`.
 
 Not yet probed: `role-definition-probe.js`.
 
-## access — 3 of 4 probes with evidence, 12 findings
+## access — 4 of 4 probes with evidence, 15 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -162,11 +164,12 @@ Not yet probed: `role-definition-probe.js`.
 | [access.lookup-acl.display-value-to-denied-reader](findings/lookup-acl-20260828-initial-access-lookup-acl-display-value-to-denied-reader) | machine | open | lookup-acl/20260828-initial | — |
 | [access.lookup-acl.expand-reaches-other-columns](findings/lookup-acl-20260828-initial-access-lookup-acl-expand-reaches-other-columns) | machine | open | lookup-acl/20260828-initial | — |
 | [field.lookup.picker-omits-empty-label](findings/lookup-acl-20260828-initial-field-lookup-picker-omits-empty-label) | machine | open | lookup-acl/20260828-initial | — |
+| [access.role-binding.web-scope-by-group](findings/reader-bindings-20260902-reader-run-access-role-binding-web-scope-by-group) | machine | open | reader-bindings/20260902-reader-run | — |
+| [access.role-binding.control-web-roleassignments-readable](findings/reader-bindings-20260903-void-differential-access-role-binding-control-web-roleassignments-readable) | machine | failed | reader-bindings/20260903-void-differential | — |
+| [access.role-binding.web-scope-by-group](findings/reader-bindings-20260903-void-differential-access-role-binding-web-scope-by-group) | machine, visible | void | reader-bindings/20260903-void-differential | reader |
 | [access.principal.person-column-ids-resolve](findings/siteuserinfolist-20260902-initial-access-principal-person-column-ids-resolve) | machine | open | siteuserinfolist/20260902-initial | — |
 
-12 further checks in this surface are settled.
-
-Not yet probed: `reader-bindings-probe.js`.
+29 further checks in this surface are settled.
 
 ## scale — 2 of 2 probes with evidence, 17 findings
 
