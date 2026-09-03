@@ -6,7 +6,7 @@ Each template is a complete, working input set for `dbml-sharepoint build`
 deployment guide, staff education, and governance resources.
 
 The library is organised into four themes, plus sector guides (currently:
-[regional healthcare](healthcare.md): NSQHS mapping, statutory-system
+[regional healthcare](sectors/healthcare.md): NSQHS mapping, statutory-system
 boundaries, and a first-90-days sequence). Templates interconnect across
 themes by *process hand-off* (documented in their governance files), never
 by list lookups. Every template deploys and stands alone.

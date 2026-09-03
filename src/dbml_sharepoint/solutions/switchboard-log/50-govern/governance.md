@@ -15,7 +15,7 @@ Code events reference clinical situations without containing them: "Code
 Blue - Ward 2 North, MET team paged" is a switchboard record; the
 patient's deterioration and treatment live in clinical systems. Operators
 log what switchboard *did*, never what clinicians found. See
-[templates/healthcare.md](../../healthcare.md).
+[sectors/healthcare.md](../../sectors/healthcare.md).
 
 The seeded demo data holds nothing clinical, for the same reason.
 
