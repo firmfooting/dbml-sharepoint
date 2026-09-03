@@ -3,7 +3,11 @@
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.group_description import description_budget, marker_for_group
+from dbml_sharepoint.analysis.group_description import (
+    AUTOMATION_GROUP_NAME,
+    description_budget,
+    marker_for_group,
+)
 from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
     MAX_ROLE_DEFINITION_DESCRIPTION,
@@ -435,6 +439,45 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"allowed.",
                     location=origin,
                 ))
+
+        # === Automation tier ===
+        # Keyed off the NAME, not a flag. The reader tier has a flag because
+        # `build --enterprise-reader` must know which group to enrol an
+        # account into; nothing about this group happens at build time, so a
+        # flag would select nothing.
+        #
+        # A DENYLIST of one level rather than the reader tier's allowlist:
+        # what an automation legitimately needs is the family's call
+        # (Contribute, Edit, a custom level), and only Full Control is knowably
+        # wrong here. It is what `dbml List Administrators` already holds, so
+        # granting it reproduces the breadth this group exists to avoid.
+        #
+        # Same locale blind spot as `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED`:
+        # the built-in names are English, so on a non-English tenant the
+        # equivalent level is spelled otherwise and is not matched here.
+        full_control_grants = sorted(
+            {
+                origin
+                for level, origin in _levels_granted_to_group(
+                    perms, AUTOMATION_GROUP_NAME,
+                )
+                if level == "Full Control"
+            },
+            key=lambda origin: origin.path,
+        )
+        for origin in full_control_grants:
+            findings.append(Finding(
+                FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+                f"list_permissions: {AUTOMATION_GROUP_NAME!r} is granted "
+                f"'Full Control'. The group exists so an automation identity "
+                f"can hold a narrow declared write on the lists it stamps, and "
+                f"Full Control is what 'dbml List Administrators' already "
+                f"carries on every list, so this grant leaves the automation "
+                f"the breadth the group was declared to avoid. Grant the "
+                f"narrowest level that lets the flow write, or name a group of "
+                f"your own.",
+                location=origin,
+            ))
 
         # list_permissions.overrides keys must be unprefixed DBML table names.
         for entity_name, override_policy in perms.overrides.items():

@@ -20,7 +20,10 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.group_description import description_budget
+from dbml_sharepoint.analysis.group_description import (
+    AUTOMATION_GROUP_NAME,
+    description_budget,
+)
 from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
     MAX_INTERNAL_NAME,
@@ -1872,6 +1875,99 @@ def test_a_correctly_declared_reader_group_is_clean() -> None:
     none_of(
         findings,
         FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
+    )
+
+
+def _automation_findings(
+    *, level: str = "Contribute", override_level: str | None = None,
+) -> list[Finding]:
+    """A mapping declaring the automation group and granting it `level`.
+
+    `override_level`, when set, adds a `list_permissions.overrides["Risk"]`
+    block granting the same group that level. An override carries its OWN
+    complete assignment list rather than adding to the default, so it is the
+    only way to reach the override path.
+    """
+    group = SiteGroup(
+        name=AUTOMATION_GROUP_NAME, description="", owner_group="Site Owners",
+        allow_members_edit_membership=False,
+        allow_request_to_join_leave=False,
+        auto_accept_request_to_join_leave=False,
+        only_allow_members_view_membership=True,
+    )
+    overrides = {} if override_level is None else {
+        "Risk": ListPermissionPolicy(
+            break_inheritance=True, reconcile_mode="exact",
+            assignments=[RoleAssignment(
+                principal=Principal(kind="group", name=group.name),
+                level=override_level,
+            )],
+        ),
+    }
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[], groups=[group],
+                default_policy=ListPermissionPolicy(
+                    break_inheritance=True, reconcile_mode="exact",
+                    assignments=[RoleAssignment(
+                        principal=Principal(kind="group", name=group.name),
+                        level=level,
+                    )],
+                ),
+                overrides=overrides,
+            ),
+        ),
+    )
+
+
+def test_the_automation_group_granted_full_control_is_refused() -> None:
+    """The group exists to be narrower than `dbml List Administrators`.
+
+    Granting it Full Control hands the identity a flow connects as the schema
+    and the ACL of the list it was declared to stamp one column on, which is
+    the breadth this group was added to avoid. Nothing downstream can see
+    that: the deploy assigns whatever the mapping declares and reports
+    success.
+    """
+    finding = only(
+        _automation_findings(level="Full Control"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert finding.severity == "error"
+    assert AUTOMATION_GROUP_NAME in finding.message
+
+
+def test_the_automation_group_over_privileged_by_an_override_is_refused() -> None:
+    """The override path, not just the default.
+
+    An override carries its own complete assignment list, so a mapping clean
+    on `list_permissions.default` can still hand Full Control to the group on
+    one list. The finding must point at the block that granted it.
+    """
+    finding = only(
+        _automation_findings(override_level="Full Control"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+
+def test_the_automation_group_granted_a_narrower_level_is_clean() -> None:
+    """Only Full Control is refused.
+
+    Which narrower level an automation needs is the mapping's call: a flow
+    stamping one column may hold `Contribute`, `Edit` or a custom level, and a
+    rule picking between those would be stronger than anything measured.
+    """
+    none_of(
+        _automation_findings(level="Contribute"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    none_of(
+        _automation_findings(level="Edit", override_level="Contribute"),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
     )
 
 

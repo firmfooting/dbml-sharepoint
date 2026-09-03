@@ -23,12 +23,15 @@ def test_a_tool_owned_group_gets_a_family_less_marker_naming_itself() -> None:
     """
     reader = marker_for_group("dbml Enterprise Readers", "risk-register")
     admin = marker_for_group("dbml List Administrators", "incident-management")
+    automation = marker_for_group("dbml Enterprise Automation", "risk-register")
 
     assert reader == shared_marker_for("dbml Enterprise Readers")
     assert admin == shared_marker_for("dbml List Administrators")
+    assert automation == shared_marker_for("dbml Enterprise Automation")
     assert "risk-register" not in reader
     assert "incident-management" not in admin
-    assert reader != admin
+    assert "risk-register" not in automation
+    assert len({reader, admin, automation}) == 3
 
 
 def test_a_family_group_gets_the_family_marker() -> None:
@@ -125,10 +128,40 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
     assert composed == marker_for_group("RR Risk Managers", "f" * MAX_GROUP_DESCRIPTION)
 
 
+#: Tool-owned names no shipped family declares yet, and why.
+#:
+#: A ratchet of the same shape as `_reachability.NOT_YET_REACHED`: an entry
+#: comes out when a family declares the name, and one goes in with a reason.
+#:
+#: `dbml Enterprise Automation` carries no site-wide grant, so a family
+#: declaring it and granting it nothing would create a group with no access on
+#: every site that family reaches. It is reserved so the first family that
+#: does need it gets the family-less marker rather than a name of its own.
+_NOT_YET_SHIPPED: frozenset[str] = frozenset({"dbml Enterprise Automation"})
+
+
+def test_the_not_yet_shipped_ratchet_names_only_tool_owned_groups() -> None:
+    """An entry naming nothing exempts nothing, and reads as if it did."""
+    assert _NOT_YET_SHIPPED <= TOOL_OWNED_GROUP_NAMES
+
+
 @pytest.mark.parametrize("name", sorted(TOOL_OWNED_GROUP_NAMES))
 def test_every_tool_owned_name_is_actually_shipped(name: str) -> None:
-    """A typo here silently downgrades a shared group to the family marker."""
+    """A typo here silently downgrades a shared group to the family marker.
+
+    A reserved name is exempt in the one direction only. It must still be
+    absent from every shipped mapping, so the day a family declares it the
+    ratchet fails and the entry is deleted rather than left standing as an
+    exemption nobody re-reads.
+    """
     from dbml_sharepoint.catalogue import SOLUTIONS_DIR
 
     mappings = (SOLUTIONS_DIR).rglob("20-configure/mapping.yaml")
-    assert any(name in m.read_text(encoding="utf-8") for m in mappings)
+    shipped = any(name in m.read_text(encoding="utf-8") for m in mappings)
+    if name in _NOT_YET_SHIPPED:
+        assert not shipped, (
+            f"{name!r} is now declared by a shipped family; delete it from "
+            f"_NOT_YET_SHIPPED so the ratchet holds."
+        )
+    else:
+        assert shipped

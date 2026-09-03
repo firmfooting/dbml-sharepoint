@@ -1782,15 +1782,17 @@ refusal is not proof that no encoding exists. See the dated comment in
 
 :::
 
-### The two site-wide groups
+### The site-wide groups
 
-`dbml Enterprise Readers` and `dbml List Administrators` are
+`dbml Enterprise Readers`, `dbml List Administrators` and
+`dbml Enterprise Automation` are
 **one group per site**, not one per family. Every shipped family
-declares them identically, and a fleet
+declares the first two identically, and a fleet
 test enforces that, because two families deployed to the same site reconcile
 the same group object. The security phase writes the description, owner and
 every behaviour flag on every run, so a family that disagreed would silently
-change the other's settings.
+change the other's settings. The third is a reserved name rather than a
+shipped declaration, described below.
 
 Two consequences worth knowing before you deploy a second family to a site:
 
@@ -1820,7 +1822,36 @@ near-simultaneous MERGE calls to the same group description even serialise on a
 live tenant. Until that is measured, no guard is built on it: avoid pasting the
 same mapping's deploy script into two tabs at once.
 
-**Why the `dbml` prefix.** These two are the only groups the tool names for
+**`dbml Enterprise Automation` is reserved, not shipped.** It is the name for
+the identity an automation connects as, such as a Power Automate flow. No
+shipped family declares it, because it carries no site-wide grant, and a
+family declaring it while granting it nothing would create a group with no
+access on every site that family reaches. Declare it in your own `groups:` when
+a flow needs to write, and grant it in `list_permissions` on the lists it
+writes to. Reserving the name is what makes two families that both need it
+reconcile one group object per site rather than one each.
+
+Why a declared group at all: under `reconcile: exact` a redeploy removes
+undeclared direct grants, so access handed to a flow by hand does not survive
+one. The identity has to sit in a group the mapping declares, holding a level
+the mapping declares.
+
+Two parts of it are yours rather than the tool's. **Membership is manual.**
+There is no `--enterprise-automation` option matching `--enterprise-reader`,
+because resolving a flow's connection identity to a site principal has not been
+measured against a live tenant. Add the identity to the group by hand once: no
+phase adds or removes members of it, so the membership survives redeploys.
+Leave `require_empty_at_deploy` off on it, or the next deploy aborts on
+finding the identity you just added. **The level is yours to choose**, with
+one refusal: the
+validator rejects `Full Control` on this group
+(`automation_group_granted_full_control`). That is what `dbml List
+Administrators` already carries on every list, so granting it here hands the
+automation the breadth this group exists to avoid. Which narrower level a flow
+needs, `Contribute`, `Edit` or a level of your own, depends on what it writes,
+and nothing here decides that for you.
+
+**Why the `dbml` prefix.** These are the only groups the tool names for
 itself rather than for your organisation, so they carry the tool's name. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
 administrator may already have used. The prefix makes that collision
@@ -1838,7 +1869,7 @@ Delete them by hand once you have re-enrolled the reader account into
 `dbml Enterprise Readers`.
 
 **The group-adoption gate.** Every group this tool writes now carries
-`Provisioned by dbml-sharepoint` in its description: the two site-wide groups
+`Provisioned by dbml-sharepoint` in its description: the site-wide groups
 carry a marker naming no family, and every other group carries one naming
 its own, such as `Provisioned by dbml-sharepoint from risk-register.` The
 marker is how a later run recognises a group this tool created.

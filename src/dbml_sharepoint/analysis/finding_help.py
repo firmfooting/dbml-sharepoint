@@ -81,6 +81,24 @@ FINDING_HELP: dict[FindingCode, str] = {
         "with every rendered column and no filter, and cannot be "
         "overridden."
     ),
+    FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
+        "`list_permissions` grants `dbml Enterprise Automation` the built-in "
+        "`Full Control`, on the default policy or on an override. That group "
+        "exists so the identity a flow connects as can hold a narrow declared "
+        "write on the lists it stamps: under `reconcile: exact` a redeploy "
+        "removes undeclared direct grants, so access handed to a flow by hand "
+        "does not survive one and the identity has to sit in a group the "
+        "mapping declares, holding a level it declares. Full Control is "
+        "what `dbml List Administrators` already carries on every list, so "
+        "granting it here gives the automation the breadth the group was "
+        "declared to avoid, and the name goes on saying otherwise. Grant the "
+        "narrowest level that lets the flow write, or name a group of your "
+        "own. Only `Full Control` is refused; which narrower level an "
+        "automation needs is the mapping's call. The built-in names are "
+        "English, so on a non-English tenant the equivalent level is spelled "
+        "otherwise and is not matched, the same blind spot "
+        "`enterprise_reader_group_over_privileged` carries."
+    ),
     FindingCode.AUTO_INCREMENT_PK_MUST_BE_ID: (
         "An auto-increment primary key is named something other than "
         "`Id`."
