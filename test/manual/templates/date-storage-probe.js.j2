@@ -40,9 +40,20 @@
   // and COLUMNS1/COLUMNS2 are simple consts so the agent runner can arm them
   // in memory with --set LIST1='<name>' --set COLUMNS1='A,B'; the split into
   // READS happens here so the arming grammar stays bool/number/string.
+  //
+  // Each read carries the check id it answers, spelled exactly as its expect()
+  // below. The loop used to record a computed `D${n}`, so the two registered
+  // questions stayed NOT ESTABLISHED on every run while two ids that are not
+  // on the SURFACES.md grammar appeared in the transcript instead.
   const READS = [
-    { list: LIST1, columns: COLUMNS1.split(','), orderBy: 'Modified' },
-    { list: LIST2, columns: COLUMNS2.split(','), orderBy: 'Created' },
+    {
+      id: 'field.date.stored-instant-form-picked',
+      list: LIST1, columns: COLUMNS1.split(','), orderBy: 'Modified', position: 'first',
+    },
+    {
+      id: 'field.date.stored-instant-default-filled',
+      list: LIST2, columns: COLUMNS2.split(','), orderBy: 'Created', position: 'second',
+    },
   ];
 
   expect('field.date.control-site-time-zone', 'the site zone and this browser\'s offset');
@@ -66,21 +77,32 @@
     dated.ok
       ? `site zone "${tz.Description}" bias=${info && info.Bias} standard=${info && info.StandardBias} daylight=${info && info.DaylightBias}; browser offset ${-new Date().getTimezoneOffset()} min; browser now ${new Date().toISOString()}`
       : `could not read the site zone: HTTP ${dated.status}`);
-  record('field.date.control-server-clock', 'the server clock from a response Date header', 'PASS', `server Date header: ${dated.headers.get('date')}`);
+  // A control has to observe something. This one recorded PASS whatever came
+  // back, so a failed request with no Date header at all certified the server
+  // clock on the strength of having been reached. The header must be present
+  // and parse to a real instant, and the skew against this browser is printed
+  // because that difference is what the two D rows are read against.
+  const serverDate = dated.headers.get('date');
+  const serverInstant = serverDate === null ? null : new Date(serverDate);
+  const clockRead = serverInstant !== null && !Number.isNaN(serverInstant.getTime());
+  record('field.date.control-server-clock', 'the server clock from a response Date header',
+    clockRead ? 'PASS' : 'NOT ESTABLISHED',
+    clockRead
+      ? `server Date header: ${serverDate}; parsed ${serverInstant.toISOString()}; roughly ${Math.round((serverInstant.getTime() - Date.now()) / 60000)} min ahead of this browser (negative: behind)`
+      : `HTTP ${dated.status} carried no usable Date header (${serverDate === null ? 'header absent' : `unparseable: ${serverDate}`}), so the server clock was not read`);
 
-  for (const [index, read] of READS.entries()) {
-    const id = `D${index + 1}`;
-    const question = `stored instants of ${read.columns.join(', ')} on the ${index ? 'second' : 'first'} list`;
+  for (const read of READS) {
+    const question = `stored instants of ${read.columns.join(', ')} on the ${read.position} list`;
     const select = ['Id', ...read.columns, 'Created', 'Modified'].join(',');
     const rows = await spGet(
       `web/lists/getbytitle('${enc(read.list)}')/items?$select=${select}&$orderby=${read.orderBy} desc&$top=5`);
     if (readFailed(rows)) {
-      record(id, question, 'FAIL', `could not read '${read.list}': HTTP ${rows.status}`);
+      record(read.id, question, 'FAIL', `could not read '${read.list}': HTTP ${rows.status}`);
       continue;
     }
     const lines = (rows.body.value || []).map((r) =>
       `id=${r.Id} ${read.columns.map((c) => `${c}=${r[c]}`).join(' ')} Created=${r.Created} Modified=${r.Modified}`);
-    record(id, question, lines.length ? 'PASS' : 'NOT ESTABLISHED',
+    record(read.id, question, lines.length ? 'PASS' : 'NOT ESTABLISHED',
       lines.length ? `'${read.list}': ${lines.join(' | ')}` : `'${read.list}' has no rows`);
   }
   return report();

@@ -80,6 +80,10 @@ _MIN_TEMPLATES = 12
 # Its own floor: only the probes that send `__metadata` reach that assertion,
 # and they are a minority of the scripts.
 _MIN_METADATA_PROBES = 8
+# Counted in record()/expect() CALLS rather than files: the run-time-id sweep
+# reaches its assertion once per call, and a floor on files would stay green if
+# the calls themselves stopped matching.
+_MIN_QUESTION_CALLS = 400
 
 
 def test_rendered_probes_match_their_templates() -> None:
@@ -281,6 +285,129 @@ def test_every_recorded_question_is_registered_up_front() -> None:
     assert reporting >= _MIN_SCRIPTS, (
         f"only {reporting} probes using record() checked, so this pins nothing"
     )
+
+
+# === An id may not be invented at run time =================================
+#
+# The gate above matches literals, so an id the run ASSEMBLES is invisible to
+# it. date-storage recorded `D${index + 1}` while the two ids it registered
+# stayed NOT ESTABLISHED on every run, and neither the summary, the catalogue
+# nor the registration gate could see either half of that.
+#
+# WHAT THIS SEES. A first argument that is a plain identifier is usually
+# destructured from a table of literal ids, which probe-catalog.json already
+# reads, so those are resolved one level and otherwise left alone. What is
+# checked is every id expression that BUILDS a string: a template literal or a
+# `+` concatenation, at the call site or in the const the call site names. Its
+# literal skeleton, the text outside the `${}` holes, must be on the
+# SURFACES.md grammar: at least one dot, and nothing but id characters. An id
+# assembled from declared scope and question tables keeps its dots in the
+# source and passes; a counter cannot produce one.
+CALL_HEAD = re.compile(r"^[ \t]*(?:record|expect)\(", re.MULTILINE)
+ASSIGNMENT = "(?:const|let|var)"
+INTERPOLATION = re.compile(r"\$\{[^}]*\}")
+ID_SKELETON = re.compile(r"^[a-z0-9.-]*$")
+QUOTED_PIECE = re.compile(r"'([^']*)'|\"([^\"]*)\"")
+
+
+def _first_argument(text: str, after_paren: int) -> str:
+    """The first argument of a call, scanned to its top-level comma.
+
+    Read character by character rather than by regex: a call spanning lines
+    with a template literal holding a comma is both normal here and the exact
+    shape a line-oriented pattern truncates into something that parses clean.
+    """
+    depth = 0
+    quote: str | None = None
+    for position in range(after_paren, len(text)):
+        char = text[position]
+        if quote is not None:
+            if char == "\\":
+                continue
+            if char == quote:
+                quote = None
+            continue
+        if char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                return text[after_paren:position]
+            depth -= 1
+        elif char == "," and depth == 0:
+            return text[after_paren:position]
+    return text[after_paren:]
+
+
+def _assembled_skeleton(expression: str) -> str | None:
+    """The literal text of an id-building expression, or None if it builds none."""
+    expression = expression.strip()
+    if "`" in expression:
+        pieces = re.findall(r"`([^`]*)`", expression)
+        return "".join(INTERPOLATION.sub("", piece) for piece in pieces)
+    if "+" in expression:
+        return "".join(
+            single or double for single, double in QUOTED_PIECE.findall(expression)
+        )
+    return None
+
+
+def _resolve_once(expression: str, source: str) -> list[str]:
+    """One level of indirection: the right-hand sides an identifier can name."""
+    name = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|$)", expression.strip())
+    if name is None:
+        return []
+    pattern = rf"^\s*{ASSIGNMENT}\s+{name.group(1)}\s*=\s*(?:\([^)]*\)\s*=>\s*)?(.+)$"
+    return re.findall(pattern, source, re.MULTILINE)
+
+
+def test_no_probe_invents_a_check_id_at_run_time() -> None:
+    offenders = []
+    scanned = 0
+    for path in _probe_scripts():
+        text = path.read_text(encoding="utf-8")
+        for call in CALL_HEAD.finditer(text):
+            scanned += 1
+            argument = _first_argument(text, call.end())
+            if argument.lstrip()[:1] in {"'", '"'}:
+                continue  # a literal, already covered by the registration gate
+            candidates = [argument, *_resolve_once(argument, text)]
+            for candidate in candidates:
+                skeleton = _assembled_skeleton(candidate)
+                if skeleton is None:
+                    continue
+                if "." in skeleton and ID_SKELETON.match(skeleton):
+                    continue
+                offenders.append(
+                    f"{path.name}: {candidate.strip()!r} builds the id "
+                    f"{skeleton!r}, which is not on the check-id grammar"
+                )
+    assert scanned >= _MIN_QUESTION_CALLS, (
+        f"only {scanned} record()/expect() calls scanned, so this pins nothing"
+    )
+    assert not offenders, (
+        f"Check id(s) assembled at run time: {offenders}. An id built from "
+        f"anything but declared id text cannot be registered up front, cannot "
+        f"be declared in probe-catalog.json, and does not have to be on the "
+        f"grammar in test/manual/SURFACES.md."
+    )
+
+
+def test_the_run_time_id_detector_reads_the_shapes_it_claims_to() -> None:
+    """The detector's own cases, because a scanner that matches nothing passes."""
+    source = (
+        "  const counted = `D${index + 1}`;\n"
+        "  const tabled = `${SCOPE_FOR[prefix]}.${QUESTION_FOR[id]}`;\n"
+        "  const glued = 'text.view-fmt' + '.' + suffix;\n"
+    )
+    assert _assembled_skeleton("`D${index + 1}`") == "D"
+    assert _assembled_skeleton("`${SCOPE_FOR[p]}.${QUESTION_FOR[i]}`") == "."
+    assert _assembled_skeleton("'text.view-fmt' + '.' + suffix") == "text.view-fmt."
+    assert _assembled_skeleton("read.id") is None
+    assert _resolve_once("counted", source) == ["`D${index + 1}`;"]
+    assert _first_argument("record(`a,b`, 'q');", len("record(")) == "`a,b`"
+    assert _first_argument("record(\n  'x',\n  'q');", len("record(")) == "\n  'x'"
 
 
 def test_question_call_detector_ignores_comments_and_strings() -> None:
