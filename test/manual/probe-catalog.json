@@ -2381,6 +2381,12 @@
               ]
             },
             {
+              "id": "access.role-def.read-level-edited-from-stock",
+              "depends_on": [
+                "access.role-def.control-roledefinitions-readable"
+              ]
+            },
+            {
               "id": "access.role-binding.web-scope-by-group",
               "depends_on": [
                 "access.role-def.control-roledefinitions-readable",
