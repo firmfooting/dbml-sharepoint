@@ -14,17 +14,22 @@
       "displayname": "Score it",
       "fields": [
         "Criticality",
-        "CurrentState",
-        "PainLevel",
-        "PainNotes"
+        "Frequency"
       ]
     },
     {
-      "displayname": "Digitise it",
+      "displayname": "Decide the order",
       "fields": [
-        "DigitisationStatus",
-        "TargetState",
-        "SystemUrl"
+        "MappingPriority",
+        "PriorityNote"
+      ]
+    },
+    {
+      "displayname": "Map it",
+      "fields": [
+        "MappingStatus",
+        "MapUrl",
+        "Notes"
       ]
     },
     {
@@ -36,7 +41,7 @@
     {
       "displayname": "System",
       "fields": [
-        "DigitisationPriority"
+        "PriorityScore"
       ]
     }
   ]

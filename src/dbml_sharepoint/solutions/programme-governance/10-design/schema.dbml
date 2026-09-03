@@ -196,27 +196,33 @@ Enum gov_process_criticality {
   "High"
 }
 
-Enum gov_process_state {
-  "Paper / manual"
-  "Email / ad hoc"
-  "Spreadsheet"
-  "Shared list / basic digital"
-  "System of record"
+// How often the process runs. The second scoring factor, and a factual one:
+// a map pays back every time the process runs, so a weekly process earns its
+// map faster than an annual one. Chosen over reach after reach was measured
+// against the real population and did not vary: every project-adjacent
+// process here (onboarding, offboarding, Teams management, guest access)
+// reaches the whole organisation, so reach scored every row the same.
+Enum gov_process_frequency {
+  "A few times a year"
+  "Monthly"
+  "Daily or weekly"
 }
 
-Enum gov_pain_level {
-  "Minor"
-  "Moderate"
-  "Severe"
+// The captain's call. The score ranks; a person decides. Separate from the
+// score so the judgement is visible AS a judgement, rather than laundered
+// into the inputs until the arithmetic agrees with it.
+Enum gov_mapping_priority {
+  "Now"
+  "Next"
+  "Later"
 }
 
-Enum gov_digitisation_status {
-  "Not assessed"
-  "Assessed"
-  "Planned"
-  "In progress"
-  "Digitised"
-  "Not worth digitising"
+Enum gov_mapping_status {
+  "Identified"
+  "Ready to map"
+  "Mapping"
+  "Mapped"
+  "Out of scope"
 }
 
 Table Workstream {
@@ -523,34 +529,36 @@ Table Decision {
 }
 
 Table BusinessProcess {
-  Id                   int                     [pk, increment]
-  Title                nvarchar                [not null, note: 'The process, verb first: "Approve staff travel", "Register a new starter"']
-  Function             nvarchar                [not null, note: 'Which team or function runs it']
-  // Nullable, unlike the delivery lists. A process nobody will own yet is
-  // exactly the finding the inventory exists to surface, and a forced owner
+  Id              int                     [pk, increment]
+  Title           nvarchar                [not null, note: 'The process, verb first: "Offboard a leaver", "Create a Team", "Grant a guest access"']
+  Function        nvarchar                [not null, note: 'Which team or function runs it. Where several do, name the one that starts it']
+  // Nullable, unlike the delivery lists. A project-adjacent process nobody
+  // owns is the finding this register exists to surface, and a forced owner
   // would be a false one.
-  Owner                person                  [note: 'The person accountable for how this process works. Blank is a finding, not a gap to fill with a guess']
-  Workstream           int                     [ref: > Workstream.Id, note: 'The workstream that will map or change this process. Leave blank until one picks it up']
-  Purpose              richtext                [note: 'What the process achieves and for whom, in two sentences']
-  Criticality          gov_process_criticality [not null, default: 'Medium', note: 'Scored against the definitions in governance.md, not by feel']
-  CurrentState         gov_process_state       [not null, note: 'How it is actually done today. Be honest; the spreadsheet counts as a spreadsheet']
-  PainLevel            gov_pain_level          [not null, default: 'Moderate', note: 'How much the current state hurts: rework, delays, errors, key-person risk']
-  PainNotes            richtext                [note: 'The specific pain: where it breaks, who it burns, what it costs']
-  // Calculated: formula in mapping.yaml, lifted unchanged from
-  // process-register so the two registers rank the same way and a row can
-  // move between them without being re-scored.
-  DigitisationPriority calculated_number       [note: 'Criticality multiplied by pain level, 1 to 9. Higher means map it sooner. Calculates itself once both are set']
-  DigitisationStatus   gov_digitisation_status [not null, default: 'Not assessed']
-  TargetState          nvarchar                [note: 'Where it should end up: which system, which template, which form']
-  SystemUrl            hyperlink               [note: 'Link to the mapped or digitised process once it exists']
-  ReviewDate           date                    [note: 'Next inventory review of this row']
+  Owner           person                  [note: 'The person accountable for how this process works. Blank is a finding, not a gap to fill with a guess']
+  Workstream      int                     [ref: > Workstream.Id, note: 'The workstream this process sits next to. Leave blank until one claims it']
+  Purpose         richtext                [note: 'What the process achieves and for whom, in two sentences. Enough to tell it apart from a neighbouring one, not a description of how it works']
+  Criticality     gov_process_criticality [not null, default: 'Medium', note: 'How much it matters that this process works. Scored against the definitions in governance.md, not by feel']
+  Frequency       gov_process_frequency   [not null, default: 'Monthly', note: 'How often it runs. A map pays back every time, so a weekly process earns mapping sooner than an annual one']
+  // Calculated: formula in mapping.yaml. ADVICE, not the queue. The queue is
+  // MappingPriority, which a person sets.
+  PriorityScore   calculated_number       [note: 'Criticality multiplied by frequency, 1 to 9. A starting order for mapping, not a decision. Calculates itself once both are set']
+  MappingPriority gov_mapping_priority    [not null, default: 'Later', note: 'What you actually intend to map next, which is a decision rather than an arithmetic result. Read the score first, then overrule it if it is wrong']
+  PriorityNote    nvarchar                [note: 'Why this call differs from the score. Only worth writing when they disagree; a matching pair needs no defence']
+  MappingStatus   gov_mapping_status      [not null, default: 'Identified', note: 'Where this process is in the mapping work. Identified means somebody named it; Out of scope means it was considered and ruled out, which is a decision worth keeping']
+  MapUrl          hyperlink               [note: 'The process map itself, wherever it is drawn. The map holds who does what, on which systems, in what order; this row holds only that it exists']
+  Notes           richtext                [note: 'Why this needs mapping: where it breaks, who it burns, what nobody can currently explain about it']
+  ReviewDate      date                    [note: 'Next sweep of this row. The register is only useful while it is current']
 
   indexes {
     Function
-    DigitisationStatus
-    CurrentState
+    MappingStatus
+    MappingPriority
     Workstream
+    // The Unowned view filters on this. An unindexed filter past the 5,000
+    // item threshold returns the wrong rows with HTTP 200 rather than failing.
+    Owner
   }
 
-  Note: 'The processes this programme must map or change, how each is done today, and a score ranking which to take first. Who maps one is an Activity.'
+  Note: 'Project-adjacent processes worth mapping, and the order to take them in. The maps are drawn elsewhere; this records which ones we know about.'
 }

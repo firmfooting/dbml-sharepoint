@@ -120,7 +120,7 @@ extension with `ERR_UNKNOWN_FILE_EXTENSION` before it parses anything.
 Feeding the file on stdin and naming the dialect is the form CI uses.
 
 Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 101
-non-lookup columns, 6 phase-2 lookup columns, 57 indexed columns, 56 views,
+non-lookup columns, 6 phase-2 lookup columns, 58 indexed columns, 57 views,
 26 formatted columns, and **0 validation errors and 0 validation
 warnings**. A number that differs from these means the schema or the
 mapping has been edited, which is legitimate; an error count above zero
@@ -212,7 +212,7 @@ visible.
       `GOV_Action` and on `GOV_Issue`, each pointing at
       `GOV_Risk`. Create a test risk and confirm both pickers
       offer it by title.
-- [ ] All forty-six declared views appear:
+- [ ] All forty-seven declared views appear:
       - **Workstream**: *The programme* (the default).
       - **Stakeholder**: *Active stakeholders* (the default), *By kind*,
         *Retired stakeholders*, *Changed since last review*.
@@ -234,7 +234,7 @@ visible.
         owner*, *Needs triage*, *My raised items*, *Resolved and closed*.
       - **Decision**: *Awaiting decision* (the default),
         *Decision log*, *Stalled proposals*, *Changed since last review*.
-      The manifest counts 56, which is these forty-six plus the ten generated
+      The manifest counts 57, which is these forty-seven plus the ten generated
       **All Items** recovery views, hidden from the modern view bar because
       every list has an authored default.
 - [ ] **My actions** and **My accountabilities** show *your* rows and

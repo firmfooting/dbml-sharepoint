@@ -106,11 +106,12 @@ for up to two years in its Routine half.
 9. **Read version history and reconcile group membership.** See
    "Self-service confirmation" below.
 
-## Two checks no save rule can make
+## Three checks no save rule can make
 
-Both are human work, both are stated here rather than implied, and neither
-is a gap somebody forgot to close. SharePoint validation formulas refuse
-multi-line and person operands outright, which is where each of these dies.
+All three are human work, all three are stated here rather than implied, and
+none is a gap somebody forgot to close. SharePoint validation formulas refuse
+multi-line, person and hyperlink operands outright, which is where each of
+these dies.
 
 **1. Every closed risk carries a closure note.**
 
@@ -144,10 +145,51 @@ internal-authorisation control cannot survive, because the assertion at an
 audit is a named person on a dated record, and a request In progress with
 no handler is one nobody is working.
 
+**3. Every process marked Mapped carries a link to its map.**
+
+`MapUrl` is a hyperlink column, which SharePoint refuses inside a validation
+formula. The build says so by name (`condition_operand_type_unsupported`)
+rather than emitting a rule that would save, read back byte-identical, pass
+every deploy phase and never fire.
+
+The control is the *Mapped* view, which renders `MapUrl` beside every row
+that claims to be finished. A blank cell in a column of links is the whole
+check, and it is read at the annual sweep. A process marked Mapped with no
+map has not been mapped; it has been remembered, and the register's one
+durable promise is that the map can be found.
+
 Two more checks of the same shape live in "The provider boundary" below: an
 External stakeholder names a `ServiceDeskAddress` while every other non-Forum
 stakeholder names a `Contact`, and the provider is never the Accountable. Both
 are refused for the same reason and both have a view behind them.
+
+## Scoring a process, and overruling the score
+
+`PriorityScore` is **criticality multiplied by frequency**, one to nine. It is
+advice. `MappingPriority` is the decision, and it is what the mapping queue
+runs on.
+
+**Criticality** is how much it matters that the process works at all. High
+means a failure is felt outside the team that runs it: a leaver keeping
+access, a starter who cannot work on day one. Medium means the work is
+delayed or redone. Low means it is an irritation.
+
+**Frequency** is how often it runs, which is how often a map pays back. Daily
+or weekly, monthly, or a few times a year. It is a count, not a judgement, and
+somebody filling the form in cannot really get it wrong.
+
+**Reach was considered and rejected**, in favour of frequency. Measured
+against the real population, every project-adjacent process here reaches the
+whole organisation, so scoring on reach gave every row the same second factor
+and the score collapsed to criticality alone. A scale that does not vary
+across the things being scored is worse than no scale, because it reads as
+information.
+
+**The call may disagree with the score, and `PriorityNote` is where that is
+defended.** A six called Now because a workstream is blocked behind it is a
+good decision; a six called Now for no stated reason is the register drifting
+back into whoever asked last. Write the note only when the two disagree, since
+a matching pair needs no defence.
 
 ## The departed-person workflow
 
