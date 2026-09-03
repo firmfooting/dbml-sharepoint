@@ -1448,6 +1448,14 @@ form_formatting:
 # readback compares equal and the phase passes, but the form never reacts.
 # The build refuses it.
 form_visibility:
+  BusinessProcess:
+    columns:
+      TargetState:
+        when:
+          - { field: DigitisationStatus, op: neq, value: "Not assessed" }
+      SystemUrl:
+        when:
+          - { field: DigitisationStatus, op: in, value: ["In progress", "Digitised"] }
   Workstream:
     columns:
       ClosureNote:
@@ -1547,6 +1555,14 @@ form_visibility:
 # message, and they all run, unlike list_validation, where a list has ONE
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
+  BusinessProcess:
+    columns:
+      ReviewDate:
+        when:
+          any_of:
+            - { field: ReviewDate, op: is_null }
+            - { field: ReviewDate, op: leq, value: today+365 }
+        message: "The inventory refresh is annual. Pick a review date within the next twelve months, or leave it blank until the row has been through a workshop."
   Activity:
     columns:
       LastConfirmed:
@@ -1606,6 +1622,13 @@ column_validation:
 # Accountable" and "an External stakeholder names a service desk address" are
 # quarterly checks rather than save rules.
 list_validation:
+  BusinessProcess:
+    when:
+      any_of:
+        - { field: DigitisationStatus, op: in,
+            value: ["Not assessed", "Assessed", "Not worth digitising"] }
+        - { field: TargetState, op: is_not_null }
+    message: "A process that is Planned, In progress or Digitised needs a Target State: which system, which template, which form. Say where it is going before you say it is on its way."
   Activity:
     when:
       - any_of:
