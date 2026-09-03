@@ -546,7 +546,7 @@ Table BusinessProcess {
   MappingPriority gov_mapping_priority    [not null, default: 'Later', note: 'What you actually intend to map next, which is a decision rather than an arithmetic result. Read the score first, then overrule it if it is wrong']
   PriorityNote    nvarchar                [note: 'Why this call differs from the score. Only worth writing when they disagree; a matching pair needs no defence']
   MappingStatus   gov_mapping_status      [not null, default: 'Identified', note: 'Where this process is in the mapping work. Identified means somebody named it; Out of scope means it was considered and ruled out, which is a decision worth keeping']
-  MapUrl          hyperlink               [note: 'The process map itself, in Lucid. The map holds who does what, on which systems, in what order; this row holds only that it exists']
+  MapUrl          hyperlink               [note: 'The process map itself, wherever it is drawn. The map holds who does what, on which systems, in what order; this row holds only that it exists']
   Notes           richtext                [note: 'Why this needs mapping: where it breaks, who it burns, what nobody can currently explain about it']
   ReviewDate      date                    [note: 'Next sweep of this row. The register is only useful while it is current']
 
@@ -560,5 +560,5 @@ Table BusinessProcess {
     Owner
   }
 
-  Note: 'Project-adjacent processes worth mapping, and the order to take them in. The maps live in Lucid; this is the record of which ones we know about.'
+  Note: 'Project-adjacent processes worth mapping, and the order to take them in. The maps are drawn elsewhere; this records which ones we know about.'
 }

@@ -1807,7 +1807,7 @@ demo_items:
         Frequency: "Monthly"
         MappingPriority: "Later"
         MappingStatus: "Mapped"
-        MapUrl: "https://lucid.app/lucidchart/demo-shared-mailbox/view"
+        MapUrl: "https://example.com/process-maps/demo-shared-mailbox"
         Notes: "Demo row. Mapped in March. The review date is long past and reads plain rather than red, because a mapped process is settled."
         ReviewDate: "today-200"
     - key: process-mobile
