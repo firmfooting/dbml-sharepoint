@@ -399,7 +399,10 @@ def test_built_ins_and_hidden_fields_never_reach_the_menu() -> None:
     assert [row["internal_name"] for row in tables[0]] == [
         "ColumnOne", "ColumnTwo", "Related", "Orphan",
     ]
-    assert [row["number"] for row in tables[0]] == [1, 2, 3, 4]
+    assert all("number" not in row for row in tables[0]), (
+        "a position column beside console.table's own 0-based index is two "
+        "differently-based ways to name a row on a destructive menu"
+    )
 
 
 def test_a_sealed_column_reaches_the_menu_even_though_it_cannot_be_deleted_yet() -> None:
@@ -440,7 +443,7 @@ def test_a_lookup_whose_target_list_is_gone_is_flagged() -> None:
 
 def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() -> None:
     config = _config(items=[{"Id": 1, "ColumnOne": None}])
-    summary, calls, _prompts, _tables = _columns(config, ["1", "ColumnOne", ""])
+    summary, calls, _prompts, _tables = _columns(config, ["ColumnOne", "ColumnOne", ""])
     unseal = _merges_of(calls, "Sealed")
     assert len(unseal) == 1 and unseal[0]["body"]["Sealed"] is False
     deletes = _deletes(calls)
@@ -460,13 +463,13 @@ def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() ->
 
 
 def test_an_unsealed_column_is_not_merged_before_the_delete() -> None:
-    _summary, calls, _prompts, _tables = _columns(_config(), ["2", "ColumnTwo", ""])
+    _summary, calls, _prompts, _tables = _columns(_config(), ["ColumnTwo", "ColumnTwo", ""])
     assert _merges_of(calls, "Sealed") == []
     assert len(_deletes(calls)) == 1 and F_TWO in _deletes(calls)[0]
 
 
 def test_typing_the_wrong_name_skips_the_column() -> None:
-    summary, calls, _prompts, _tables = _columns(_config(), ["1", "ColumnTwo", ""])
+    summary, calls, _prompts, _tables = _columns(_config(), ["ColumnOne", "ColumnTwo", ""])
     assert _writes(calls) == []
     assert summary["deleted"] == []
     assert summary["skipped"] == [{"column": "ColumnOne", "reason": "not-confirmed"}]
@@ -475,7 +478,8 @@ def test_typing_the_wrong_name_skips_the_column() -> None:
 def test_a_column_holding_values_needs_the_phrase() -> None:
     items = [{"Id": 1, "ColumnOne": ""}, {"Id": 2, "ColumnOne": "kept"}]
     summary, calls, prompts, _tables = _columns(
-        _config(items=items), ["1", "ColumnOne", "1", "DELETE NON-EMPTY", ""],
+        _config(items=items),
+        ["ColumnOne", "ColumnOne", "ColumnOne", "DELETE NON-EMPTY", ""],
     )
     asked = [p for p in prompts if "DELETE NON-EMPTY" in p]
     assert len(asked) == 2 and "holds values" in asked[0]
@@ -486,7 +490,7 @@ def test_a_column_holding_values_needs_the_phrase() -> None:
 
 def test_a_column_whose_values_cannot_be_read_needs_the_phrase() -> None:
     summary, calls, prompts, _tables = _columns(
-        _config(), ["2", "ColumnTwo", ""], {"itemsStatus": 400},
+        _config(), ["ColumnTwo", "ColumnTwo", ""], {"itemsStatus": 400},
     )
     assert any("could not be read" in p and "DELETE NON-EMPTY" in p for p in prompts)
     assert _deletes(calls) == []
@@ -495,14 +499,14 @@ def test_a_column_whose_values_cannot_be_read_needs_the_phrase() -> None:
 
 def test_a_lookup_value_is_read_through_its_id_projection() -> None:
     items = [{"Id": 1, "RelatedId": 7}]
-    _summary, calls, prompts, _tables = _columns(_config(items=items), ["3", ""])
+    _summary, calls, prompts, _tables = _columns(_config(items=items), ["Related", ""])
     assert any("$select=Id,RelatedId" in c["url"] for c in calls)
     assert any("holds values" in p for p in prompts)
 
 
 def test_a_delete_that_still_reads_back_stops_the_run() -> None:
     summary, calls, prompts, _tables = _columns(
-        _config(), ["2", "ColumnTwo", "1", "ColumnOne"], {"discardDelete": True},
+        _config(), ["ColumnTwo", "ColumnTwo", "ColumnOne", "ColumnOne"], {"discardDelete": True},
     )
     assert summary["aborted"] == "readback-mismatch"
     assert len(_deletes(calls)) == 1
@@ -511,15 +515,42 @@ def test_a_delete_that_still_reads_back_stops_the_run() -> None:
 
 def test_the_menu_is_re_enumerated_after_a_delete() -> None:
     summary, _calls, _prompts, tables = _columns(
-        _config(), ["1", "ColumnOne", "1", "ColumnTwo", ""],
+        _config(), ["ColumnOne", "ColumnOne", "ColumnTwo", "ColumnTwo", ""],
     )
     assert summary["deleted"] == ["ColumnOne", "ColumnTwo"]
     assert [row["internal_name"] for row in tables[1]] == ["ColumnTwo", "Related", "Orphan"]
     assert [row["internal_name"] for row in tables[2]] == ["Related", "Orphan"]
 
 
-def test_a_number_off_the_menu_re_prompts() -> None:
-    summary, calls, prompts, _tables = _columns(_config(), ["9", "x", ""])
+def test_a_menu_position_no_longer_selects_a_column() -> None:
+    """The regression this selection change exists to prevent.
+
+    console.table prints its own 0-based (index), so a 1-based menu number sat
+    one column away from a number naming a different row. Typing a position now
+    selects nothing rather than the neighbour of what was meant.
+    """
+    # Before this change "1" selected ColumnOne and the name that follows
+    # confirmed it, so this exact sequence deleted a column.
+    summary, calls, _prompts, _tables = _columns(_config(), ["1", "ColumnOne", ""])
+    assert _deletes(calls) == [], "a menu position selected a column on a delete menu"
+    assert summary["deleted"] == []
+
+
+def test_a_name_differing_only_by_case_is_refused_and_the_exact_one_named() -> None:
+    """SharePoint resolves a field case-insensitively; this menu must not.
+
+    Two columns can differ by case alone, so accepting a near miss would let
+    one name delete the other.
+    """
+    summary, calls, prompts, _tables = _columns(_config(), ["columnone", ""])
+    assert _deletes(calls) == []
+    assert summary["deleted"] == []
+    # Re-prompted rather than resolved: two answers consumed, not one.
+    assert len(prompts) == 2
+
+
+def test_a_name_off_the_menu_re_prompts() -> None:
+    summary, calls, prompts, _tables = _columns(_config(), ["NoSuchColumn", "x", ""])
     assert _writes(calls) == []
     assert summary["deleted"] == []
     assert len(prompts) == 3
@@ -531,7 +562,7 @@ def test_a_column_holding_values_prints_them_before_the_phrase() -> None:
     items = [
         {"Id": 1, "ColumnOne": ""}, {"Id": 2, "ColumnOne": "kept"}, {"Id": 3, "ColumnOne": "also"},
     ]
-    _summary, _calls, prompts, tables = _columns(_config(items=items), ["1", ""])
+    _summary, _calls, prompts, tables = _columns(_config(items=items), ["ColumnOne", ""])
     values = next(t for t in tables if t and "item" in t[0])
     assert values == [{"item": 2, "value": "kept"}, {"item": 3, "value": "also"}]
     assert any("holds values in 2 item(s)" in p for p in prompts)
@@ -539,6 +570,6 @@ def test_a_column_holding_values_prints_them_before_the_phrase() -> None:
 
 def test_a_lookup_value_prints_its_id_projection() -> None:
     items = [{"Id": 4, "RelatedId": 7}]
-    _summary, _calls, _prompts, tables = _columns(_config(items=items), ["3", ""])
+    _summary, _calls, _prompts, tables = _columns(_config(items=items), ["Related", ""])
     values = next(t for t in tables if t and "item" in t[0])
     assert values == [{"item": 4, "value": 7}]

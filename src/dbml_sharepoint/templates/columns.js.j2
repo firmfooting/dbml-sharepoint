@@ -7,13 +7,13 @@
  * Deployer:     v{{ deployer_version | comment_safe }}
  * Generated at: {{ generated_at | comment_safe }}
  *
- * Lists the custom columns as a numbered table, asks for a number, and
- * deletes that column after four guards: built-in and hidden fields never
+ * Lists the custom columns, asks for one by internal name, and deletes that
+ * column after four guards: built-in and hidden fields never
  * appear on the menu; every item is read to see whether the column holds a
  * value, and the values found are printed so they can be re-keyed into a
- * replacement column; an empty column needs its internal name typed, and
- * one that holds values, or whose values could not be read, needs DELETE
- * NON-EMPTY typed;
+ * replacement column; an empty column needs its internal name typed again
+ * after that scan, and one that holds values, or whose values could not be
+ * read, needs DELETE NON-EMPTY typed;
  * a sealed column is unsealed and read back before the delete, and the
  * column is read back after it and must answer 404. A readback that
  * disagrees stops the run. The table is printed again after each delete,
@@ -66,10 +66,13 @@
 
   async function enumerate() {
     const fields = (await readFields()).filter(isCustom);
+    // No position column. Selection is by internal name, and a number here
+    // would sit beside console.table's own 0-based (index) as a second,
+    // differently-based way to name a row on a destructive menu.
     const rows = [];
-    for (const [i, f] of fields.entries()) {
+    for (const f of fields) {
       rows.push({
-        number: i + 1, internal_name: f.InternalName, title: f.Title, type: f.TypeAsString,
+        internal_name: f.InternalName, title: f.Title, type: f.TypeAsString,
         sealed: f.Sealed === true, read_only: f.ReadOnlyField === true, lookup_target: await lookupTarget(f),
       });
     }
@@ -127,14 +130,24 @@
       log('INFO', `'${LIST_TITLE}' has no custom columns left.`);
       break;
     }
-    const answer = String(prompt(`Enter the number of the column to delete from '${LIST_TITLE}' (1-${fields.length}), or leave blank to finish:`) || '').trim();
+    // BY NAME, NOT BY POSITION. console.table prints its own 0-based (index)
+    // column immediately left of the row's own fields, so a menu number sat
+    // beside a number one lower naming a different column. Off by one, on a
+    // delete that takes the values with it and puts neither in the recycle
+    // bin. An internal name cannot be off by one.
+    const answer = String(prompt(`Type the internal name of the column to delete from '${LIST_TITLE}', or leave blank to finish:`) || '').trim();
     if (!answer) break;
-    const n = Number(answer);
-    if (!Number.isInteger(n) || n < 1 || n > fields.length) {
-      log('WARN', `'${answer}' is not a number on the menu.`);
+    const field = fields.find((f) => f.InternalName === answer);
+    if (!field) {
+      // Case-insensitively close is still not it: SharePoint resolves a field
+      // case-insensitively, so accepting that here would let one name select
+      // the other of a pair differing only by case. Name the one to copy.
+      const near = fields.find((f) => f.InternalName.toLowerCase() === answer.toLowerCase());
+      log('WARN', near
+        ? `'${answer}' is not on the menu; did you mean '${near.InternalName}'? Type it exactly.`
+        : `'${answer}' is not an internal name on the menu.`);
       continue;
     }
-    const field = fields[n - 1];
     const held = await holdsValues(field);
     let confirmed;
     if (held.state === 'empty') {
