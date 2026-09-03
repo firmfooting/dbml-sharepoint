@@ -153,9 +153,24 @@ def _field(
     sealed: bool = False,
     hidden: bool = False,
     from_base: bool = False,
-    can_delete: bool = True,
+    can_delete: bool | None = None,
     lookup_list: str | None = None,
 ) -> dict[str, Any]:
+    """One field's shape, with `CanBeDeleted` derived rather than assumed.
+
+    MEASURED 2026-09-03 against a live list: every one of its 11 sealed
+    columns reported `CanBeDeleted: false`, and all 3 unsealed custom columns
+    reported true. Sealing a column is what makes SharePoint refuse to delete
+    it, so a fixture pairing `Sealed: true` with `CanBeDeleted: true` describes
+    a list no tenant can produce -- and that pairing is what let the sidecars
+    ship unable to see a sealed column at all.
+
+    `can_delete` still takes an explicit value, for the case this default
+    cannot express: a column SharePoint refuses to delete for its own reasons
+    while unsealed.
+    """
+    if can_delete is None:
+        can_delete = not sealed
     return {
         "Id": field_id,
         "InternalName": internal,
@@ -177,6 +192,7 @@ F_ONE = "aaaaaaaa-0000-0000-0000-000000000011"
 F_TWO = "aaaaaaaa-0000-0000-0000-000000000012"
 F_LOOKUP = "aaaaaaaa-0000-0000-0000-000000000013"
 F_ORPHAN = "aaaaaaaa-0000-0000-0000-000000000014"
+F_UNDELETABLE = "aaaaaaaa-0000-0000-0000-000000000015"
 
 
 def _fields() -> list[dict[str, Any]]:
@@ -384,6 +400,34 @@ def test_built_ins_and_hidden_fields_never_reach_the_menu() -> None:
         "ColumnOne", "ColumnTwo", "Related", "Orphan",
     ]
     assert [row["number"] for row in tables[0]] == [1, 2, 3, 4]
+
+
+def test_a_sealed_column_reaches_the_menu_even_though_it_cannot_be_deleted_yet() -> None:
+    """The regression this file could not see while its fixture was impossible.
+
+    Sealing is what sets `CanBeDeleted: false`, so a filter reading that
+    property alone removed every column this script exists to delete. The
+    column is offered; the delete path unseals it first.
+    """
+    rows = _columns(_config(), [""])[3][0]
+    sealed = {row["internal_name"] for row in rows if row["sealed"]}
+    assert sealed == {"ColumnOne", "Related", "Orphan"}, (
+        "a sealed column was filtered off the menu, so it can never be deleted"
+    )
+
+
+def test_a_column_sharepoint_refuses_to_delete_while_unsealed_stays_off_the_menu() -> None:
+    """The other half: only a SEAL earns the exemption.
+
+    An unsealed column reporting `CanBeDeleted: false` is refusing for
+    SharePoint's own reasons, and unsealing it would not help.
+    """
+    fields = [
+        *_fields(),
+        _field("Undeletable", field_id=F_UNDELETABLE, sealed=False, can_delete=False),
+    ]
+    rows = _columns(_config(fields=fields), [""])[3][0]
+    assert "Undeletable" not in {row["internal_name"] for row in rows}
 
 
 def test_a_lookup_whose_target_list_is_gone_is_flagged() -> None:
