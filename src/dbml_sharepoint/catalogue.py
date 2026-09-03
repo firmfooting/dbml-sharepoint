@@ -47,7 +47,22 @@ PLACEHOLDER_SITE_URL = "https://yourtenant.sharepoint.com/sites/your-site"
 
 #: Files at the top of `solutions/` that document the collection rather than
 #: being one of its members.
-_NOT_A_SOLUTION = {"README.md", "healthcare.md"}
+_NOT_A_SOLUTION = {"README.md"}
+
+#: Curated reading orders over the families, one file each. A journey is
+#: EDITORIAL and may name a family more than one journey names: routine-checks
+#: is a digitisation win and a daily-rhythm list at once, and forcing a family
+#: into exactly one group is what made the README's four themes rot.
+JOURNEYS_DIRNAME = "journeys"
+
+#: Sector overlays: guidance for reading the whole collection from inside one
+#: industry, rather than a family anybody deploys.
+SECTORS_DIRNAME = "sectors"
+
+#: Directories under `solutions/` that hold documentation rather than families.
+#: The discovery glob already excludes them by requiring a `schema.dbml`; this
+#: names them so a reader does not have to derive that.
+_NOT_A_SOLUTION_DIR = {JOURNEYS_DIRNAME, SECTORS_DIRNAME}
 
 _SUMMARY_MAX = 140
 
@@ -103,6 +118,25 @@ class Solution:
     @property
     def release_path(self) -> Path:
         return self.root / RELEASE_RELPATH
+
+
+@dataclass(frozen=True)
+class Journey:
+    """One curated reading order over the families.
+
+    The wizard's first step. Grouping is DECLARED here rather than derived
+    from a family's own prose: `catalogue._lead_sentence` explains why the
+    READMEs' `*Theme:*` line was never consistent enough to key off, and a
+    grouping nothing verifies is a grouping that goes stale, which is how one
+    shipped family came to sit in no theme at all.
+    """
+
+    id: str
+    title: str
+    summary: str
+    #: Declared order, which is the order to deploy in. Not sorted.
+    solution_ids: tuple[str, ...]
+    path: Path
 
 
 #: Typographic characters a README may use, and their terminal spellings.
@@ -304,6 +338,69 @@ def available_solutions() -> list[Solution]:
         if path.parent.parent.name not in _NOT_A_SOLUTION
     ]
     return [_build(root) for root in found]
+
+
+#: Opens and closes a journey file's YAML front matter.
+_FRONT_MATTER_FENCE = "---"
+
+
+def _front_matter(text: str, path: Path) -> dict[str, Any]:
+    """The YAML block a journey file opens with.
+
+    Declared rather than parsed out of prose. The whole reason this file
+    refuses to key grouping off a README's `*Theme:*` line is that prose is
+    not consistent enough to trust; a journey states its members in YAML so
+    the guard in `test_journeys.py` can check them.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != _FRONT_MATTER_FENCE:
+        raise ValueError(f"{path}: no YAML front matter; the file must open with '---'")
+    try:
+        end = lines.index(_FRONT_MATTER_FENCE, 1)
+    except ValueError:
+        raise ValueError(f"{path}: front matter is never closed with '---'") from None
+    loaded = yaml.safe_load("\n".join(lines[1:end])) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path}: front matter must be a mapping")
+    return loaded
+
+
+def _build_journey(path: Path) -> Journey:
+    raw = _front_matter(path.read_text(encoding="utf-8"), path)
+    unknown = set(raw) - {"title", "summary", "solutions"}
+    if unknown:
+        raise ValueError(f"{path}: unknown front-matter key(s) {sorted(unknown)}")
+    solutions = raw.get("solutions")
+    if not isinstance(solutions, list) or not solutions:
+        raise ValueError(f"{path}: 'solutions' must be a non-empty list")
+    if not all(isinstance(s, str) for s in solutions):
+        raise ValueError(f"{path}: 'solutions' must be a list of family ids")
+    if len(set(solutions)) != len(solutions):
+        raise ValueError(f"{path}: 'solutions' names the same family twice")
+    for key in ("title", "summary"):
+        if not isinstance(raw.get(key), str) or not raw[key].strip():
+            raise ValueError(f"{path}: '{key}' must be a non-empty string")
+    return Journey(
+        id=path.stem,
+        title=_clean(str(raw["title"])),
+        summary=_clean(str(raw["summary"])),
+        solution_ids=tuple(solutions),
+        path=path,
+    )
+
+
+def available_journeys() -> list[Journey]:
+    """Every curated reading order, ordered by id.
+
+    Unlike `available_solutions`, a malformed file RAISES rather than being
+    skipped. A family that will not load is one template out of the picker;
+    a journey that will not load is a grouping silently missing its members,
+    and the guard that would have caught it is the one being bypassed.
+    """
+    directory = SOLUTIONS_DIR / JOURNEYS_DIRNAME
+    if not directory.is_dir():
+        return []
+    return [_build_journey(path) for path in sorted(directory.glob("*.md"))]
 
 
 def load_solution(name: str) -> Solution:
