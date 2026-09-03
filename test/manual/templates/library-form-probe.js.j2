@@ -1,0 +1,356 @@
+{# test/manual/templates/library-form-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMS AND FIELD ORDER
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   How do document library forms behave over REST, and can their field order be customised?
+ *
+ * Round 1 settled what a file, folder, column, and content type are on a library.
+ * Round 2 settles how a library interacts with list features. This probe covers the
+ * form half (probe 6 of the document-library programme): edit form field order and
+ * whether content type field links can be reordered over REST.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101).
+ *   library.form.control-missing-column-refused
+ *     NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused.
+ *   library.form.edit-form-field-order
+ *     What fields does the Document content type edit form carry and in what order?
+ *     Reads the content type field links collection. The library-specific question
+ *     is whether the form leads with the file (Name or FileLeafRef) where a generic
+ *     list form would lead with Title.
+ *   library.form.form-field-reorder
+ *     Can the field order be changed over REST and does the new order read back?
+ *     Tests whether a library form can be customised over REST the way a list form
+ *     can, or whether the field order is fixed.
+ *
+ * RETIRED QUESTION:
+ *   library.form.new-form-field-order
+ *   Why retired: In SharePoint REST and content type schema, FieldLinks define
+ *   field ordering on content types across forms. There is no separate REST
+ *   endpoint or schema for a distinct New form field order on document
+ *   libraries. Furthermore, document libraries do not support file creation via
+ *   a fileless New form (fileless POST to /items is refused per
+ *   document-library-probe.js), and rendered form appearance in modern UI is a
+ *   visible browser concern that cannot be asserted over REST.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   Document library creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   File upload via `RootFolder/Files/add(url=,overwrite=)`:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   List content types via `web/lists/getbytitle(...)/contenttypes`:
+ *     "SP.List.contentTypes property (sp.js)", dn531432(v=office.15)
+ *   Content type FieldLinks collection via `contenttypes(...)/fieldlinks`:
+ *     "SP.ContentType.fieldLinks property (sp.js)", jj246293(v=office.15)
+ *   FieldLinks reorder method via `contenttypes(...)/fieldlinks/reorder(internalNames)`:
+ *     "SP.FieldLinkCollection.reorder Method (sp.js)", jj838539(v=office.15)
+ *   Field creation via POST to `fields/createfieldasxml`:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   Item metadata updates via MERGE to `items(...)`:
+ *     "Working with lists and list items with REST"
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the library it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe LibForm';
+  const FILE = 'dbmlsp-form-doc.txt';
+  const COL_A = 'dbmlspFormColA';
+  const COL_B = 'dbmlspFormColB';
+  const listPath = `web/lists/getbytitle('${LIB}')`;
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB}.`);
+    log('INFO', 'Would upload a test file, send a negative control write,');
+    log('INFO', 'read Document content type field links to establish edit form field order,');
+    log('INFO', 'and attempt to reorder content type field links over REST and read them back.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const rawPost = async (path, body, digest, extraHeaders = {}) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+          ...extraHeaders,
+        },
+        body,
+      });
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* plain text response */ }
+      return { ok: res.ok, status: res.status, body: parsed, text };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: String(err) };
+    }
+  };
+
+  const ctIdOf = (ct) => String(
+    (ct && ct.Id && ct.Id.StringValue)
+    || (ct && ct.StringId)
+    || (ct && ct.Id)
+    || ''
+  );
+
+  expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.form.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused');
+  expect('library.form.edit-form-field-order', 'What fields does the Document content type edit form carry and in what order');
+  expect('library.form.form-field-reorder', 'Can the field order be changed over REST and does the new order read back');
+
+  await resetList(LIB);
+  let digest = await getDigest();
+
+  // ---- fixture-library-created: the library ---------------------------
+  const existing = await spGet(listPath);
+  if (existing.ok) {
+    record('library.doc-lib.fixture-library-created',
+           'A document library is created (BaseTemplate 101)',
+           'ALREADY PRESENT',
+           'reusing an existing library. Set CLEANUP = true for a clean answer');
+  } else {
+    digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint library-form probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created',
+           'A document library is created (BaseTemplate 101)',
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    if (!made.ok) return report();
+  }
+
+  // ---- Upload initial file for negative control -----------------------
+  digest = await getDigest();
+  const initialUpload = await rawPost(
+    `${listPath}/RootFolder/Files/add(url='${FILE}',overwrite=true)`,
+    'dbml-sharepoint library-form probe initial file',
+    digest
+  );
+  if (!initialUpload.ok) {
+    log('FAIL', `Initial upload of '${FILE}' failed: HTTP ${initialUpload.status}`);
+  }
+
+  const items = await spGet(
+    `${listPath}/items?$select=Id,Title,FileLeafRef,ContentTypeId&$filter=FileLeafRef eq '${FILE}'`
+  );
+  const rows = (items.ok && items.body && Array.isArray(items.body.value)) ? items.body.value : [];
+  const initialItem = rows.length ? rows[0] : null;
+  const initialItemId = initialItem ? initialItem.Id : null;
+
+  // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
+  let controlHeld = false;
+  if (initialItemId === null) {
+    record('library.form.control-missing-column-refused',
+           'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused',
+           'NOT ESTABLISHED',
+           `no list item was found for '${FILE}' (HTTP ${items.status}), so there was `
+           + 'nothing to send a test write to. Every refusal below this line is '
+           + 'unproven rather than answered.',
+           'void');
+  } else {
+    digest = await getDigest();
+    const junk = await spPost(`${listPath}/items(${initialItemId})`,
+                              { NoSuchColumnAtAll: 'x' }, digest,
+                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    controlHeld = !junk.ok && isRefusal(junk.status);
+    record('library.form.control-missing-column-refused',
+           'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused',
+           junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
+           junk.ok
+             ? 'a MERGE naming a column that does not exist was ACCEPTED on a file '
+               + 'item. This probe cannot tell a refused metadata write from a '
+               + 'successful one, so subsequent refusal answers are void.'
+             : isRefusal(junk.status)
+               ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+               : `the request failed with HTTP ${junk.status}, which is not the server `
+                 + 'rejecting the payload. Refusal answers below this line are void.');
+  }
+
+  // ---- Locate Document content type -----------------------------------
+  const ctsResp = await spGet(`${listPath}/contenttypes?$select=Id,StringId,Name`);
+  const cts = (ctsResp.ok && ctsResp.body && Array.isArray(ctsResp.body.value))
+    ? ctsResp.body.value
+    : [];
+  const docCt = cts.find((c) => c.Name === 'Document' || (ctIdOf(c).startsWith('0x0101') && !ctIdOf(c).startsWith('0x010100')));
+  const docCtId = docCt ? ctIdOf(docCt) : null;
+
+  // ---- edit-form-field-order: Document content type field links -------
+  const initialLinksResp = docCtId
+    ? await spGet(`${listPath}/contenttypes('${docCtId}')/fieldlinks?$select=Name,Id,Hidden,Required`)
+    : null;
+  const initialLinks = (initialLinksResp && initialLinksResp.ok && initialLinksResp.body && Array.isArray(initialLinksResp.body.value))
+    ? initialLinksResp.body.value
+    : [];
+
+  const initialNames = initialLinks.map((f) => f.Name);
+  const visibleLinks = initialLinks.filter((f) => !f.Hidden);
+  const visibleNames = visibleLinks.map((f) => f.Name);
+  const firstField = initialNames.length > 0 ? initialNames[0] : null;
+  const firstVisible = visibleNames.length > 0 ? visibleNames[0] : null;
+
+  if (!docCtId || !initialLinksResp || !initialLinksResp.ok) {
+    record('library.form.edit-form-field-order',
+           'What fields does the Document content type edit form carry and in what order',
+           controlHeld ? 'NOT ESTABLISHED' : 'NOT ESTABLISHED',
+           `could not read Document content type fieldlinks (docCtId: ${docCtId}, HTTP ${initialLinksResp ? initialLinksResp.status : 'n/a'})`,
+           controlHeld ? 'open' : 'void');
+  } else {
+    const leadsWithFile = firstVisible === 'FileLeafRef' || firstField === 'FileLeafRef';
+    const leadsWithTitle = firstVisible === 'Title' || firstField === 'Title';
+    const outcome = leadsWithFile
+      ? 'LEADS WITH FILE'
+      : leadsWithTitle
+        ? 'LEADS WITH TITLE'
+        : `LEADS WITH ${firstVisible || firstField || 'UNKNOWN'}`;
+    const evidence = `found ${initialLinks.length} field link(s) on Document (${docCtId}). `
+      + `All names in order: ${JSON.stringify(initialNames)}. `
+      + `Visible names in order: ${JSON.stringify(visibleNames)}. `
+      + `First visible field: ${firstVisible || '(none)'}. `
+      + `First field overall: ${firstField || '(none)'}.`;
+    record('library.form.edit-form-field-order',
+           'What fields does the Document content type edit form carry and in what order',
+           outcome,
+           evidence);
+  }
+
+  // ---- Create two test columns on library for reordering --------------
+  const makeCol = async (name) => {
+    const xml = `<Field Type="Text" Name="${name}" DisplayName="${name}" />`;
+    digest = await getDigest();
+    return spPost(`${listPath}/fields/createfieldasxml`, {
+      parameters: { SchemaXml: xml, Options: 8 },
+    }, digest);
+  };
+  await makeCol(COL_A);
+  await makeCol(COL_B);
+
+  // Read field links after adding columns
+  const updatedLinksResp = docCtId
+    ? await spGet(`${listPath}/contenttypes('${docCtId}')/fieldlinks?$select=Name`)
+    : null;
+  let currentNames = (updatedLinksResp && updatedLinksResp.ok && updatedLinksResp.body && Array.isArray(updatedLinksResp.body.value))
+    ? updatedLinksResp.body.value.map((f) => f.Name)
+    : initialNames;
+
+  // If COL_A or COL_B are not linked to Document, explicitly link them
+  for (const col of [COL_A, COL_B]) {
+    if (!currentNames.includes(col) && docCtId) {
+      digest = await getDigest();
+      await spPost(`${listPath}/contenttypes('${docCtId}')/fieldlinks`, {
+        FieldInternalName: col,
+      }, digest);
+    }
+  }
+
+  const finalPreReorderResp = docCtId
+    ? await spGet(`${listPath}/contenttypes('${docCtId}')/fieldlinks?$select=Name`)
+    : null;
+  if (finalPreReorderResp && finalPreReorderResp.ok && finalPreReorderResp.body && Array.isArray(finalPreReorderResp.body.value)) {
+    currentNames = finalPreReorderResp.body.value.map((f) => f.Name);
+  }
+
+  // ---- form-field-reorder: test reordering over REST ------------------
+  if (!docCtId || currentNames.length < 2) {
+    record('library.form.form-field-reorder',
+           'Can the field order be changed over REST and does the new order read back',
+           'NOT ESTABLISHED',
+           `cannot test reorder: docCtId=${docCtId}, available fieldlinks count=${currentNames.length}`,
+           controlHeld ? 'open' : 'void');
+  } else {
+    // Reverse field order to ensure every position changes
+    const targetOrder = [...currentNames].reverse();
+
+    digest = await getDigest();
+    let reorderRes = await spPost(
+      `${listPath}/contenttypes('${docCtId}')/fieldlinks/reorder`,
+      { internalNames: targetOrder },
+      digest
+    );
+
+    if (!reorderRes.ok && reorderRes.status === 404) {
+      // Try the parenthesized signature from Learn jj838539
+      digest = await getDigest();
+      reorderRes = await spPost(
+        `${listPath}/contenttypes('${docCtId}')/fieldlinks/reorder(internalNames)`,
+        { internalNames: targetOrder },
+        digest
+      );
+    }
+
+    if (!reorderRes.ok && (reorderRes.status === 400 || reorderRes.status === 500)) {
+      // Try wrapped results format if needed by OData v3 parser
+      digest = await getDigest();
+      const altRes = await spPost(
+        `${listPath}/contenttypes('${docCtId}')/fieldlinks/reorder`,
+        { internalNames: { results: targetOrder } },
+        digest
+      );
+      if (altRes.ok) reorderRes = altRes;
+    }
+
+    const afterLinksResp = await spGet(`${listPath}/contenttypes('${docCtId}')/fieldlinks?$select=Name`);
+    const afterNames = (afterLinksResp && afterLinksResp.ok && afterLinksResp.body && Array.isArray(afterLinksResp.body.value))
+      ? afterLinksResp.body.value.map((f) => f.Name)
+      : [];
+
+    const matchesTarget = JSON.stringify(afterNames) === JSON.stringify(targetOrder);
+    const unchanged = JSON.stringify(afterNames) === JSON.stringify(currentNames);
+
+    let outcome;
+    let evidence;
+
+    if (matchesTarget) {
+      outcome = 'PASS';
+      evidence = `reorder call succeeded (HTTP ${reorderRes.status}) and read back in requested order: ${JSON.stringify(afterNames)}`;
+    } else if (reorderRes.ok && unchanged) {
+      outcome = 'SILENT NO-OP';
+      evidence = `reorder call returned HTTP ${reorderRes.status} but field order read back unchanged from baseline: ${JSON.stringify(currentNames)}`;
+    } else if (!reorderRes.ok && isRefusal(reorderRes.status)) {
+      outcome = 'REFUSED';
+      evidence = `reorder call refused with HTTP ${reorderRes.status}: ${reorderRes.text.slice(0, 260)}`;
+    } else if (!reorderRes.ok) {
+      outcome = 'NOT ESTABLISHED';
+      evidence = `reorder call failed with HTTP ${reorderRes.status}: ${reorderRes.text.slice(0, 260)}`;
+    } else {
+      outcome = 'PARTIAL REORDER';
+      evidence = `reorder call returned HTTP ${reorderRes.status}, but read back order (${JSON.stringify(afterNames)}) matched neither target (${JSON.stringify(targetOrder)}) nor baseline (${JSON.stringify(currentNames)})`;
+    }
+
+    record('library.form.form-field-reorder',
+           'Can the field order be changed over REST and does the new order read back',
+           outcome,
+           evidence,
+           controlHeld ? stateFor(outcome) : 'void');
+  }
+
+  report();
+})();

@@ -246,9 +246,9 @@ Where a library's behaviour diverges from a generic list: files versus items,
 what a file is made of over REST, and how metadata columns and list validation
 behave on libraries.
 
-Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`, `folder`, `content-type`
+Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`, `folder`, `content-type`, `form`
 
-Probes: `document-library-probe.js`, `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`, `library-column-interactions-probe.js`
+Probes: `document-library-probe.js`, `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`, `library-column-interactions-probe.js`, `library-form-probe.js`
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -300,6 +300,7 @@ surface boundary, and are listed for the same reason:
 | `folder-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-content-type-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-column-interactions-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-form-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
