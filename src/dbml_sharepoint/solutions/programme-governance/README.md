@@ -1,11 +1,11 @@
 # Programme governance
 
-Programme governance on nine lists, from workstreams and standing
+Programme governance on ten lists, from workstreams and standing
 accountabilities to service requests, risks, actions, issues and decisions.
-Nine lists: `GOV_Workstream`, `GOV_Stakeholder`,
+Ten lists: `GOV_Workstream`, `GOV_Stakeholder`,
 `GOV_Activity`, `GOV_Involvement`, `GOV_ServiceRequest`,
 `GOV_Risk`, `GOV_Action`, `GOV_Issue`,
-`GOV_Decision`.
+`GOV_Decision`, `GOV_BusinessProcess`.
 
 **The value case.** A programme run by an organisation that does not
 administer its own platform fails in three places at once, and no single
@@ -19,7 +19,7 @@ because they are read together: an issue is usually a service request that has
 sat with the provider for three weeks, and the person who can escalate it is
 whoever the accountability register says it is.
 
-**Nine lists, and what each one is for:**
+**Ten lists, and what each one is for:**
 
 | List | Holds | The question it answers |
 | --- | --- | --- |
@@ -32,6 +32,7 @@ whoever the accountability register says it is.
 | `GOV_Action` | Work handed to a named person with a date | Who is doing what, and by when |
 | `GOV_Issue` | Things that have already gone wrong | What is hurting the programme right now |
 | `GOV_Decision` | Decisions and why they were made | Why we did it that way |
+| `GOV_BusinessProcess` | The processes to map or change, ranked by criticality x pain | Which process to take next, and who owns it today |
 
 The family's prefix is `GOV_`, so the list titles are `GOV_Workstream`,
 `GOV_Stakeholder`, `GOV_Activity` and so on, and the three family groups and

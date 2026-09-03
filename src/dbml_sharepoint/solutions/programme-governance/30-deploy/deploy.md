@@ -9,11 +9,11 @@ console -> **verify** against the checklist below. Template-specific notes
 follow.
 
 This family carries more that the deployer cannot do than any other in the
-library: attachments on nine lists, three group memberships, the site home
+library: attachments on ten lists, three group memberships, the site home
 page, and the identity phase 2 will run its flows as. Read **Mandatory
 manual go-live steps** before you schedule the paste rather than after it.
 
-## The nine lists
+## The ten lists
 
 | List | Holds | Who writes to it |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ record; the table above is its summary.
 
 ## Before you build
 
-- [ ] Each of the nine list titles is either absent on the target site or
+- [ ] Each of the ten list titles is either absent on the target site or
       carries this family's provenance marker under its current or a
       previous name; `assess.js.txt` reports every one under
       `rename:<title>`. The same holds for the three family groups
@@ -78,7 +78,7 @@ record; the table above is its summary.
       from `10-design/schema.dbml` plus a provenance marker naming the
       family and entity. That write replaces whatever the list holds now,
       including prose an owner typed by hand, and SharePoint preserves no
-      copy. The nine exact strings are in `build/deploy-manifest.md` under
+      copy. The ten exact strings are in `build/deploy-manifest.md` under
       the list-creation phase; read them there rather than after the fact.
       This matters on a redeploy over existing lists, not on a fresh site.
 - [ ] Each form header shows the row's title on a saved row and a `New ...`
@@ -119,9 +119,9 @@ and a mail gateway treat them as text, and node refuses an unknown
 extension with `ERR_UNKNOWN_FILE_EXTENSION` before it parses anything.
 Feeding the file on stdin and naming the dialect is the form CI uses.
 
-Then read `build/deploy-manifest.md`. As shipped it reports 9 lists, 87
-non-lookup columns, 6 phase-2 lookup columns, 52 indexed columns, 52 views,
-20 formatted columns, and **0 validation errors and 0 validation
+Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 101
+non-lookup columns, 6 phase-2 lookup columns, 57 indexed columns, 56 views,
+26 formatted columns, and **0 validation errors and 0 validation
 warnings**. A number that differs from these means the schema or the
 mapping has been edited, which is legitimate; an error count above zero
 means do not paste.
@@ -202,7 +202,7 @@ visible.
       measured: stop and read its FAIL lines before the trial goes further.
       A **NOT-VERIFIED** with date cases skipped means the browser's zone
       differs from the site's; paste from a browser set to the site's zone.
-- [ ] All nine lists exist, created in this order: `GOV_Workstream`,
+- [ ] All ten lists exist, created in this order: `GOV_Workstream`,
       `GOV_Stakeholder`, `GOV_Activity`,
       `GOV_Involvement`, `GOV_ServiceRequest`,
       `GOV_Risk`, `GOV_Action`, `GOV_Issue`,
@@ -212,7 +212,7 @@ visible.
       `GOV_Action` and on `GOV_Issue`, each pointing at
       `GOV_Risk`. Create a test risk and confirm both pickers
       offer it by title.
-- [ ] All forty-three declared views appear:
+- [ ] All forty-six declared views appear:
       - **Workstream**: *The programme* (the default).
       - **Stakeholder**: *Active stakeholders* (the default), *By kind*,
         *Retired stakeholders*, *Changed since last review*.
@@ -234,7 +234,7 @@ visible.
         owner*, *Needs triage*, *My raised items*, *Resolved and closed*.
       - **Decision**: *Awaiting decision* (the default),
         *Decision log*, *Stalled proposals*, *Changed since last review*.
-      The manifest counts 52, which is these forty-three plus the nine generated
+      The manifest counts 56, which is these forty-six plus the ten generated
       **All Items** recovery views, hidden from the modern view bar because
       every list has an authored default.
 - [ ] **My actions** and **My accountabilities** show *your* rows and
@@ -431,20 +431,20 @@ so they need nothing.
 - [ ] The pack was built after the save-instant change, and an action
       dated today saves at 10:00 in the morning.
 
-### 1. Disable attachments on all nine lists
+### 1. Disable attachments on all ten lists
 
 There is no `attachments` key in `mapping.yaml`. The deployer neither sets
 nor reconciles the setting, so this is a manual gate, and it is the **only
 privacy control a redeploy does not reassert**. If somebody re-enables
 attachments later, nothing detects it and nothing repairs it.
 
-On each of the nine lists:
+On each of the ten lists:
 
 1. Open **List settings -> Advanced settings**.
 2. Set **Attachments to list items** to **Disabled**.
 
 - [ ] Attachments are disabled and absent from the New and Display
-      experiences on all nine lists.
+      experiences on all ten lists.
 
 For a family carrying a healthcare boundary this is the gap that matters:
 an attachment is the one place identifiable content can arrive that no
@@ -510,7 +510,7 @@ phase enumerates every role assignment, skips only `Limited Access`, and
 removes anything not in the declared set. So:
 
 - [ ] No automation identity, service account or connection owner has been
-      granted access to any of the nine lists by hand. Such a grant is
+      granted access to any of the ten lists by hand. Such a grant is
       deleted by the next redeploy, and the flow then fails with a 403 on a
       site nobody touched.
 - [ ] No individual list **item** has been shared with anyone. An item
@@ -537,7 +537,7 @@ that it did so.
 Four things a redeploy will not do for you:
 
 - **It will not restore the attachment setting.** See gate 1 above. Check
-  all nine lists after every redeploy.
+  all ten lists after every redeploy.
 - **It will not populate a group.** An emptied
   `GOV Accountability Maintainers` stays empty and the accountability
   layer silently becomes read-only to everybody, and an emptied
@@ -589,7 +589,7 @@ steps, in this order:
    beside its new name; restore a marker only if this tool created the
    object, and never stamp a foreign one.
 2. **Paste `deploy.js.txt`, then `verify.js.txt`.** The deploy renames the
-   nine lists, the two groups and the two levels in place, creates
+   ten lists, the two groups and the two levels in place, creates
    `GOV Request Handlers`, creates the new columns (`StakeholderKind`,
    `Stakeholder`, `AssignedTo`, `MinutesSpent`, `RelatedServiceRequest` and
    the rest), migrates the views by their previous titles, and reconciles
@@ -609,7 +609,7 @@ steps, in this order:
    `IvantiReference` on `GOV_ServiceRequest`, plus anything else the
    script's table shows that the schema no longer declares. Pick each by
    number and let the script unseal it, delete it and read the field back.
-5. **The three go-live steps** above: attachments off on all nine lists,
+5. **The three go-live steps** above: attachments off on all ten lists,
    the three family groups populated (`GOV Programme Leads` and
    `GOV Accountability Maintainers` keep the members they had under their
    ADOPT names), and the home page checked.
@@ -647,7 +647,7 @@ person doing the paste will see it.
       object reports `errors: []`.
 - [ ] Verification checklist above worked through.
 - [ ] Both custom permission levels re-verified with a second account.
-- [ ] Attachments disabled on all nine lists, re-checked after the paste
+- [ ] Attachments disabled on all ten lists, re-checked after the paste
       rather than assumed from last time.
 - [ ] All three family groups populated, and
       `GOV Accountability Maintainers` still matches the current
@@ -691,7 +691,7 @@ reference's Security section.
 
 The mapping turns on `reporting.users_table`, so the pack's `_Users.pq`
 reads the site's user information list (`/_api/web/siteuserinfolist`) as
-well as the nine lists. That list was measured readable by a site admin on
+well as the ten lists. That list was measured readable by a site admin on
 2026-09-02. Whether the enrolled reader account can read it is not yet
 measured: a 403 on refreshing `_Users` while the list queries refresh is
 that gap. Record what fixes it here, dated.

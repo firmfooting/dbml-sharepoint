@@ -1,5 +1,5 @@
 // ============================================================================
-// Programme governance: nine lists on one site. A workstream spine, a
+// Programme governance: ten lists on one site. A workstream spine, a
 // standing accountability layer (activities, stakeholders, involvements), a moving
 // delivery layer (risks, actions, issues, decisions), and the queue of
 // service requests the shared-service provider works for the programme.
@@ -190,6 +190,35 @@ Enum gov_escalation_level {
   "4 Executive"
 }
 
+Enum gov_process_criticality {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Enum gov_process_state {
+  "Paper / manual"
+  "Email / ad hoc"
+  "Spreadsheet"
+  "Shared list / basic digital"
+  "System of record"
+}
+
+Enum gov_pain_level {
+  "Minor"
+  "Moderate"
+  "Severe"
+}
+
+Enum gov_digitisation_status {
+  "Not assessed"
+  "Assessed"
+  "Planned"
+  "In progress"
+  "Digitised"
+  "Not worth digitising"
+}
+
 Table Workstream {
   Id            int                    [pk, increment]
   Title         nvarchar               [not null, note: 'The workstream as the programme refers to it: "Migration", "Teams telephony"']
@@ -240,6 +269,11 @@ Table Activity {
   // and a false attribution is worse than a blank; the quarterly walk reads
   // the blank ones as their own bucket.
   Workstream       int                  [ref: > Workstream.Id, note: 'The workstream this activity belongs to. Leave blank for programme-wide work such as chairing the steering group']
+  // The point of the process inventory: WHO maps a process is an activity
+  // like any other, so it carries one Responsible and one Accountable, and
+  // everyone else consulted is an Involvement row. Nullable because most
+  // activities are not about a process at all.
+  Process          int                  [ref: > BusinessProcess.Id, note: 'The process this activity maps, documents or changes. Blank for activities that are not about one']
   ActivityKind     gov_activity_kind  [not null, default: 'Task', note: 'Task: Responsible does the work, Accountable owns the outcome. Approval: Responsible prepares, Accountable signs. Decision: Responsible runs the process, Accountable makes the call']
   ActivityRole     gov_activity_role  [note: 'The standing position this activity confers, if it confers one. Blank is the ordinary case. Each workstream should have exactly one current lead, checked quarterly']
   Criticality      gov_criticality    [not null, default: 'Routine', note: 'Statutory means law, licence or funding agreement requires it. Sets how often this row must be re-confirmed: Statutory 6 months, High 12, Routine 24']
@@ -486,4 +520,37 @@ Table Decision {
   }
 
   Note: 'What the programme was asked to decide and what it decided, recorded as a decision rather than a discussion, so nobody reopens the argument later.'
+}
+
+Table BusinessProcess {
+  Id                   int                     [pk, increment]
+  Title                nvarchar                [not null, note: 'The process, verb first: "Approve staff travel", "Register a new starter"']
+  Function             nvarchar                [not null, note: 'Which team or function runs it']
+  // Nullable, unlike the delivery lists. A process nobody will own yet is
+  // exactly the finding the inventory exists to surface, and a forced owner
+  // would be a false one.
+  Owner                person                  [note: 'The person accountable for how this process works. Blank is a finding, not a gap to fill with a guess']
+  Workstream           int                     [ref: > Workstream.Id, note: 'The workstream that will map or change this process. Leave blank until one picks it up']
+  Purpose              richtext                [note: 'What the process achieves and for whom, in two sentences']
+  Criticality          gov_process_criticality [not null, default: 'Medium', note: 'Scored against the definitions in governance.md, not by feel']
+  CurrentState         gov_process_state       [not null, note: 'How it is actually done today. Be honest; the spreadsheet counts as a spreadsheet']
+  PainLevel            gov_pain_level          [not null, default: 'Moderate', note: 'How much the current state hurts: rework, delays, errors, key-person risk']
+  PainNotes            richtext                [note: 'The specific pain: where it breaks, who it burns, what it costs']
+  // Calculated: formula in mapping.yaml, lifted unchanged from
+  // process-register so the two registers rank the same way and a row can
+  // move between them without being re-scored.
+  DigitisationPriority calculated_number       [note: 'Criticality multiplied by pain level, 1 to 9. Higher means map it sooner. Calculates itself once both are set']
+  DigitisationStatus   gov_digitisation_status [not null, default: 'Not assessed']
+  TargetState          nvarchar                [note: 'Where it should end up: which system, which template, which form']
+  SystemUrl            hyperlink               [note: 'Link to the mapped or digitised process once it exists']
+  ReviewDate           date                    [note: 'Next inventory review of this row']
+
+  indexes {
+    Function
+    DigitisationStatus
+    CurrentState
+    Workstream
+  }
+
+  Note: 'The processes this programme must map or change, how each is done today, and a score ranking which to take first. Who maps one is an Activity.'
 }
