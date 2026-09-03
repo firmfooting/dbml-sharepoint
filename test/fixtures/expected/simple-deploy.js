@@ -2137,15 +2137,21 @@
     return actual;
   }
 
-  async function expectedLookupFieldInternalName(listName, field) {
+  // `resolveTitle` maps a DECLARED list title to the one the site holds it
+  // under right now. Preflight runs BEFORE the renames phase, so on an
+  // unmigrated site the target is still under a previous title, and reading it
+  // by the declared title reported the FIELD missing when the LIST was.
+  // Null means identity, which is every caller after the renames have run.
+  async function expectedLookupFieldInternalName(listName, field, resolveTitle = null) {
+    const targetTitle = resolveTitle ? resolveTitle(field.target_list) : field.target_list;
     const targetDisplay = await readFieldShape(
-      field.target_list,
+      targetTitle,
       field.body.LookupField,
       null,
     );
     if (!targetDisplay) {
       throw new Error(
-        `Lookup '${listName}.${field.title}' target display field '${field.target_list}.${field.body.LookupField}' does not exist`,
+        `Lookup '${listName}.${field.title}' target display field '${targetTitle}.${field.body.LookupField}' does not exist`,
       );
     }
     if (targetDisplay.InternalName !== field.body.LookupField) {
@@ -2156,7 +2162,9 @@
     return targetDisplay.InternalName;
   }
 
-  async function immutableFieldMismatches(listName, field, actual, targetGuid, targetState = null) {
+  async function immutableFieldMismatches(
+    listName, field, actual, targetGuid, targetState = null, resolveTitle = null,
+  ) {
     const desired = declaredFieldState(listName, field);
     const mismatches = [];
     // checked:true means compared and differed; checked:false means it could not
@@ -2210,7 +2218,7 @@
     const listDiffers = normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid);
     let expectedLookupField;
     try {
-      expectedLookupField = await expectedLookupFieldInternalName(listName, field);
+      expectedLookupField = await expectedLookupFieldInternalName(listName, field, resolveTitle);
     } catch (err) {
       // Recorded, not propagated: a throw would discard this column's other mismatches.
       if (listDiffers) {
@@ -2691,7 +2699,10 @@
   // writes. A previous title without its marker, present beside the current
   // title, or present twice over is an error, never a guess.
   const renamePlan = Object.create(null);
-  const probeTitleFor = (list) => (renamePlan[list.title] ? renamePlan[list.title].from : list.title);
+  // By declared TITLE, so a lookup can resolve its target the same way the
+  // owning list resolves itself. Renames have not run yet at preflight.
+  const probeTitle = (title) => (renamePlan[title] ? renamePlan[title].from : title);
+  const probeTitleFor = (list) => probeTitle(list.title);
   async function previousTitleShapes(list) {
     const found = [];
     for (const previous of (list.renamed_from || [])) {
@@ -2776,6 +2787,7 @@
         const mismatches = await immutableFieldMismatches(
           list.title, field, actual, targetGuid,
           field.target_list ? listOutcomes[field.target_list] : null,
+          probeTitle,
         );
         if (mismatches.length === 0) continue;
         const message = [...new Set(mismatches.map(m => m.message))].join(' ');

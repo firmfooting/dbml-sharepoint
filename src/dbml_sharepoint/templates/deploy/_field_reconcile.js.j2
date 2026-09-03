@@ -485,15 +485,21 @@
     return actual;
   }
 
-  async function expectedLookupFieldInternalName(listName, field) {
+  // `resolveTitle` maps a DECLARED list title to the one the site holds it
+  // under right now. Preflight runs BEFORE the renames phase, so on an
+  // unmigrated site the target is still under a previous title, and reading it
+  // by the declared title reported the FIELD missing when the LIST was.
+  // Null means identity, which is every caller after the renames have run.
+  async function expectedLookupFieldInternalName(listName, field, resolveTitle = null) {
+    const targetTitle = resolveTitle ? resolveTitle(field.target_list) : field.target_list;
     const targetDisplay = await readFieldShape(
-      field.target_list,
+      targetTitle,
       field.body.LookupField,
       null,
     );
     if (!targetDisplay) {
       throw new Error(
-        `Lookup '${listName}.${field.title}' target display field '${field.target_list}.${field.body.LookupField}' does not exist`,
+        `Lookup '${listName}.${field.title}' target display field '${targetTitle}.${field.body.LookupField}' does not exist`,
       );
     }
     if (targetDisplay.InternalName !== field.body.LookupField) {
@@ -504,7 +510,9 @@
     return targetDisplay.InternalName;
   }
 
-  async function immutableFieldMismatches(listName, field, actual, targetGuid, targetState = null) {
+  async function immutableFieldMismatches(
+    listName, field, actual, targetGuid, targetState = null, resolveTitle = null,
+  ) {
     const desired = declaredFieldState(listName, field);
     const mismatches = [];
     // checked:true means compared and differed; checked:false means it could not
@@ -558,7 +566,7 @@
     const listDiffers = normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid);
     let expectedLookupField;
     try {
-      expectedLookupField = await expectedLookupFieldInternalName(listName, field);
+      expectedLookupField = await expectedLookupFieldInternalName(listName, field, resolveTitle);
     } catch (err) {
       // Recorded, not propagated: a throw would discard this column's other mismatches.
       if (listDiffers) {

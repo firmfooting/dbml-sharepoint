@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 from _model import bundle as make_bundle
+from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE
@@ -27,7 +28,8 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
-from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
+from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import load_release
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -242,3 +244,262 @@ def test_the_assessment_reports_the_rename_it_will_make() -> None:
     planned = [f for f in summary["assessment"]["findings"] if f["key"] == "rename:APP_Risk"]
     assert len(planned) == 1 and planned[0]["level"] == "INFO"
     assert "APP_ProgramRisk" in planned[0]["detail"] and "renamed" in planned[0]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# A renamed list that is also a lookup TARGET.
+#
+# The preflight reads the list being probed under its PREVIOUS title, but
+# resolved a lookup's target list by its DECLARED one, so every cross-list
+# lookup on an unmigrated site failed with "target display field does not
+# exist" -- naming the field when the missing thing was the list. Nothing here
+# is lookup-specific to one family: it is every schema with a ref.
+# ---------------------------------------------------------------------------
+
+WS_ID = "aaaaaaaa-2222-2222-2222-222222222222"
+
+_LOOKUP_HARNESS = textwrap.dedent(r"""
+    const LISTS = {};
+    const FIELDS = {};
+    const calls = [];
+    globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
+    globalThis._spPageContextInfo = {
+      webServerRelativeUrl: '/sites/test',
+      userLoginName: 'probe@example.com',
+      userId: 1,
+    };
+    const state = { lists: { ...LISTS }, fields: { ...FIELDS }, nextId: 1 };
+    const byGuid = (guid) => Object.values(state.lists)
+      .find((l) => String(l.Id).toLowerCase() === String(guid).toLowerCase());
+    const shapeOf = (l) => ({
+      Id: l.Id, Title: l.Title, BaseTemplate: 100, ContentTypesEnabled: false,
+      Description: l.Description, EnableVersioning: false, EnableMinorVersions: false,
+      MajorVersionLimit: 0, ValidationFormula: null, ValidationMessage: null,
+    });
+    const fieldShape = (f) => ({
+      Id: f.Id, InternalName: f.InternalName, Title: f.Title,
+      TypeAsString: f.TypeAsString, Description: f.Description ?? null,
+      Required: !!f.Required, EnforceUniqueValues: !!f.EnforceUniqueValues,
+      Indexed: !!f.Indexed, ReadOnlyField: !!f.ReadOnlyField, Sealed: !!f.Sealed,
+      DefaultValue: f.DefaultValue ?? null, CustomFormatter: f.CustomFormatter ?? null,
+    });
+    const reply = (status, payload) => ({
+      ok: status < 400, status, headers: { get: () => null },
+      json: async () => payload, text: async () => JSON.stringify(payload),
+    });
+    const notFound = () => reply(404, { error: { message: { value: 'not found' } } });
+    const applyMerge = (l, body) => {
+      if (typeof body.Title === 'string' && body.Title !== l.Title) {
+        const held = state.fields[l.Title];
+        delete state.lists[l.Title];
+        delete state.fields[l.Title];
+        l.Title = body.Title;
+        state.lists[l.Title] = l;
+        if (held) state.fields[l.Title] = held;
+      }
+      if (typeof body.Description === 'string') l.Description = body.Description;
+    };
+    const findField = (title, name) => (state.fields[title] || [])
+      .find((f) => String(f.InternalName).toLowerCase() === String(name).toLowerCase()
+                || String(f.Title).toLowerCase() === String(name).toLowerCase());
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = decodeURIComponent(String(url));
+      const method = opts.method || 'GET';
+      const headers = opts.headers || {};
+      const body = opts.body ? JSON.parse(opts.body) : null;
+      calls.push({ url: u, method, headers, body });
+      const verb = headers['X-HTTP-Method'] || method;
+      if (u.includes('contextinfo')) {
+        return reply(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
+      }
+      if (u.toLowerCase().includes('effectivebasepermissions')) {
+        const all = { High: 4294967295, Low: 4294967295 };
+        return reply(200, { d: { EffectiveBasePermissions: all } });
+      }
+      if (/web\/lists\?\$select=Title/.test(u)) {
+        const rows = Object.values(state.lists)
+          .map((l) => ({ Title: l.Title, ItemCount: 0, Hidden: false }));
+        return reply(200, { d: { results: rows } });
+      }
+      const byTitle = /web\/lists\/getbytitle\('([^']+)'\)(.*)$/.exec(u);
+      const byId = /web\/lists\(guid'([^']+)'\)(.*)$/.exec(u);
+      let list = null;
+      let rest = '';
+      if (byTitle) { list = state.lists[byTitle[1]] || null; rest = byTitle[2]; }
+      else if (byId) { list = byGuid(byId[1]) || null; rest = byId[2]; }
+      if (byTitle || byId) {
+        if (!list) return notFound();
+        const one = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)/.exec(rest);
+        if (one) {
+          const f = findField(list.Title, one[1]);
+          if (!f) return notFound();
+          if (verb === 'MERGE') return reply(204, {});
+          // Every $select on one field answers from the seeded row: the shape
+          // probe, the LookupList/LookupField pair and the per-type derived
+          // properties (MaxLength and the rest) all read the same object.
+          return reply(200, { d: { ...fieldShape(f), ...f } });
+        }
+        if (/^\/fields(\?|$)/.test(rest)) {
+          return reply(200, {
+            d: { results: (state.fields[list.Title] || []).map(fieldShape) } });
+        }
+        if (rest.startsWith('/')) return reply(200, { d: { results: [] } });
+        if (verb === 'MERGE') { applyMerge(list, body || {}); return reply(204, {}); }
+        return reply(200, { d: shapeOf(list) });
+      }
+      if (method === 'POST' && /\/_api\/web\/lists$/.test(u) && body && body.Title) {
+        const suffix = String(state.nextId++).padStart(12, '0');
+        const created = { Id: `bbbbbbbb-0000-0000-0000-${suffix}`,
+          Title: body.Title, Description: body.Description || '' };
+        state.lists[created.Title] = created;
+        return reply(201, { d: shapeOf(created) });
+      }
+      return reply(200, { d: { results: [] } });
+    };
+""")
+
+
+def _lookup_schema(*, display_column: bool = False) -> Schema:
+    """Risk.Workstream is a lookup at Workstream, which is itself renamed."""
+    workstream_columns: list[Any] = ["Title"]
+    if display_column:
+        workstream_columns.append(column("Reference"))
+    return make_schema(
+        make_table("Workstream", *workstream_columns, note="Streams of work."),
+        make_table(
+            "Risk", "Title", column("Workstream", "int", ref="Workstream.Id"),
+            note="Risks.",
+        ),
+    )
+
+
+def _lookup_bundle(*, display_column: bool = False) -> MappingBundle:
+    # Any display column other than Title defers the lookup to Phase 2.2
+    # (`analysis/ordering.py`), which is the second path the resolver has to
+    # reach. A text column keeps the fixture off the calculated-column probes,
+    # which are not what these runs are about.
+    workstream = EntityMapping(
+        name="Workstream", kind="List", base_template=100, site_role="default",
+        renamed_from=("ProgramWorkstream",),
+        display_column="Reference" if display_column else None,
+    )
+    return make_bundle(entities={
+        "Workstream": workstream,
+        "Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+            renamed_from=("ProgramRisk",),
+        ),
+    })
+
+
+def _run_lookup_deploy(
+    lists: dict[str, dict[str, Any]],
+    fields: dict[str, list[dict[str, Any]]],
+    *,
+    display_column: bool = False,
+) -> dict[str, Any]:
+    js = generate_deploy_js(
+        schema=_lookup_schema(display_column=display_column),
+        bundle=_lookup_bundle(display_column=display_column),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="x.dbml", source_mtime="2026-09-03T00:00:00Z",
+        generated_at="2026-09-03T00:00:00Z",
+    )
+    body = js.replace(
+        "    assessment = await assessSite({",
+        "    assessment = { findings: [], verdict: 'COMPATIBLE' };\n"
+        "    if (false) await assessSite({",
+        1,
+    ).rstrip()
+    assert body.endswith("})();")
+    harness = (
+        _LOOKUP_HARNESS
+        .replace("const LISTS = {};", f"const LISTS = {json.dumps(lists)};", 1)
+        .replace("const FIELDS = {};", f"const FIELDS = {json.dumps(fields)};", 1)
+    )
+    script = (
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "});\n"
+    )
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None)
+    assert line is not None, f"deploy.js never returned a summary:\n{output[-4000:]}"
+    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
+    return summary
+
+
+def _text_field(name: str, ident: str) -> dict[str, Any]:
+    return {
+        "Id": ident, "InternalName": name, "Title": name, "TypeAsString": "Text",
+        "Description": "", "Required": False, "EnforceUniqueValues": False,
+        "Indexed": False, "ReadOnlyField": False, "Sealed": False,
+        "DefaultValue": None, "CustomFormatter": None, "MaxLength": 255,
+    }
+
+
+def _lookup_field(name: str, ident: str, target: str, show: str) -> dict[str, Any]:
+    return {
+        **_text_field(name, ident), "TypeAsString": "Lookup",
+        "LookupList": target, "LookupField": show,
+    }
+
+
+def _unmigrated_site(*, display_column: bool = False) -> tuple[
+    dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]],
+]:
+    """Both lists still under their previous titles, each carrying its marker."""
+    family = family_for(_lookup_schema(display_column=display_column))
+    lists = {
+        "APP_ProgramWorkstream": {
+            "Id": WS_ID, "Title": "APP_ProgramWorkstream",
+            "Description": f"Streams. {marker_for(family, 'ProgramWorkstream')}",
+        },
+        "APP_ProgramRisk": {
+            "Id": OLD_ID, "Title": "APP_ProgramRisk",
+            "Description": f"Risks. {marker_for(family, 'ProgramRisk')}",
+        },
+    }
+    show = "Reference" if display_column else "Title"
+    workstream_fields = [_text_field("Title", "f-ws-title")]
+    if display_column:
+        workstream_fields.append(_text_field("Reference", "f-ws-ref"))
+    fields = {
+        "APP_ProgramWorkstream": workstream_fields,
+        "APP_ProgramRisk": [
+            _text_field("Title", "f-risk-title"),
+            _lookup_field("Workstream", "f-risk-ws", WS_ID, show),
+        ],
+    }
+    return lists, fields
+
+
+def _display_field_errors(summary: dict[str, Any]) -> list[str]:
+    return [
+        e["error"] for e in summary.get("errors", [])
+        if e.get("phase") == "preflight" and "target display field" in str(e.get("error", ""))
+    ]
+
+
+def test_a_lookup_at_a_renamed_target_list_is_resolved_by_its_previous_title() -> None:
+    """The bug: the target was looked up under the title it does not carry yet."""
+    lists, fields = _unmigrated_site()
+    summary = _run_lookup_deploy(lists, fields)
+    assert _display_field_errors(summary) == [], (
+        "preflight refused a lookup whose target list is still under its previous "
+        "title; the target must be resolved through the rename plan"
+    )
+    assert summary.get("aborted") != "existing-schema-shape-errors"
+
+
+def test_a_deferred_lookup_at_a_renamed_target_resolves_its_display_column() -> None:
+    """Same path for a lookup whose display column is not the built-in Title."""
+    lists, fields = _unmigrated_site(display_column=True)
+    summary = _run_lookup_deploy(lists, fields, display_column=True)
+    assert _display_field_errors(summary) == [], (
+        "preflight refused a deferred lookup because it read the declared target "
+        "title rather than the previous one"
+    )
+    assert summary.get("aborted") != "existing-schema-shape-errors"
