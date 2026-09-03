@@ -64,13 +64,18 @@
  *   access.role-binding.web-scope-by-group            (R4) which groups hold a
  *                                                          WEB-scope role
  *                                                          assignment, and what?
+ *   access.role-binding.control-web-roleassignments-readable
+ *                                                    (R4c) CONTROL: can this
+ *                                                          caller enumerate
+ *                                                          web/roleassignments
+ *                                                          at all?
  *   access.role-binding.list-scope-by-group           (R5) which groups hold a
  *                                                          LIST-scope one, and
  *                                                          on what?
  *   access.group.site-group-census                    (R6) what groups does
  *                                                          this site have?
  *
- * All six are `access` questions, which is the surface this probe files
+ * All seven are `access` questions, which is the surface this probe files
  * under, but they sit in three different scopes because they are about three
  * different things: what a level CAN do, what a principal HOLDS, and which
  * principals exist. R1 to R3 share the `role-def` scope with
@@ -131,6 +136,11 @@
  *     groups, exactly the fragmentation the shared-group change removes.
  *
  * #199 part 2 is ANSWERED FOR THIS SITE, and #198 with it.
+ *
+ * RUN 3, 2026-09-02, the reader lane through the agent harness: R4 is VOID
+ * rather than open, because a Visitor cannot enumerate web/roleassignments
+ * (HTTP 403), and R5 found 0 of 14 visible lists carrying unique permissions
+ * at that visibility.
  *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER. Reading role assignments needs
@@ -341,11 +351,15 @@
     console.log('=================================================');
     // Counted off state rather than off the outcome head, so the summary and
     // the per-row state can never disagree. awaiting-capture stays open until
-    // a person records the observation; so does void, which is open for a
-    // reason the control row names.
-    const open = RESULTS.filter((r) => r.state !== 'settled').length;
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
     const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
-    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
     if (waiting) {
       console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
     }
@@ -357,7 +371,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 1ad24692. Quote this when reporting results.');
+  log('INFO', 'probe revision a6588084. Quote this when reporting results.');
 
 
   // Learn's stock `Read`, for R3 to compare against. From "Permission levels
@@ -376,6 +390,7 @@
   expect('access.role-def.read-level-basepermissions', 'What BasePermissions does THIS site\'s built-in Read carry?');
   expect('access.role-def.read-level-customised', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?');
   expect('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?');
+  expect('access.role-binding.control-web-roleassignments-readable', 'CONTROL: can this caller enumerate web/roleassignments at all?');
   expect('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?');
   expect('access.group.site-group-census', 'What groups does this site have, and what does each already hold?');
 
@@ -457,13 +472,28 @@
     'PASS',
     `${byId.size} site group(s): ${[...byId.values()].join(', ')}`);
 
+  // ---- control-web-roleassignments-readable (R4c): R4's own control --------
+  // R1 establishes that role DEFINITIONS are readable, which is a different
+  // endpoint from the one R4 reads. A Visitor can read the first and is
+  // refused the second: measured 2026-09-02, HTTP 403 on the reader lane.
+  // Without this control R4's refusal recorded as an ordinary open question,
+  // so "this identity can never see it" and "not yet asked" were the same row,
+  // and the owner/reader differential the second lane exists to produce was
+  // buried in an open tally.
+  const webAsg = await spGet('web/roleassignments?$expand=RoleDefinitionBindings&$top=200');
+  const webAsgReadable = !readFailed(webAsg) && Array.isArray(webAsg.body && webAsg.body.value);
+  record('access.role-binding.control-web-roleassignments-readable', 'CONTROL: can this caller enumerate web/roleassignments at all?',
+    webAsgReadable ? 'PASS' : `CONTROL FAILED, METHOD VOID (HTTP ${webAsg.status})`,
+    webAsgReadable
+      ? `${webAsg.body.value.length} assignment(s) readable, so an empty result below means empty`
+      : 'this caller cannot enumerate web role assignments, so the census below cannot be taken by it');
+
   // ---- web-scope-by-group (R4): web-scope bindings, for every group ---------
   // The binding the ACL phase never looks at and never removes: it reconciles
   // web/lists/.../roleassignments only.
-  const webAsg = await spGet('web/roleassignments?$expand=RoleDefinitionBindings&$top=200');
-  if (readFailed(webAsg) || !Array.isArray(webAsg.body && webAsg.body.value)) {
+  if (!webAsgReadable) {
     record('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?',
-      `NOT ESTABLISHED (HTTP ${webAsg.status})`, 'could not enumerate web role assignments');
+      `NOT ESTABLISHED (HTTP ${webAsg.status})`, 'could not enumerate web role assignments', 'void');
   } else {
     const held = webAsg.body.value
       .filter((a) => byId.has(a.PrincipalId))
@@ -491,10 +521,15 @@
     const unique = visible.filter((l) => l.HasUniqueRoleAssignments);
     const held = [];
     let unreadable = 0;
+    const refusals = new Set();
     for (const l of unique) {
       const asg = await spGet(
         `web/lists(guid'${l.Id}')/roleassignments?$expand=RoleDefinitionBindings&$top=200`);
-      if (readFailed(asg) || !Array.isArray(asg.body && asg.body.value)) { unreadable += 1; continue; }
+      if (readFailed(asg) || !Array.isArray(asg.body && asg.body.value)) {
+        unreadable += 1;
+        refusals.add(asg.status);
+        continue;
+      }
       for (const a of asg.body.value) {
         if (!byId.has(a.PrincipalId)) continue;
         const names = (a.RoleDefinitionBindings || []).map((b) => b.Name).join('+');
@@ -504,14 +539,29 @@
     // The unreadable count is REPORTED, not swallowed. A list this caller
     // cannot read the ACL of is a list this probe cannot clear, and a
     // summary that omitted it would overstate what was checked.
-    record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
-      'PASS',
-      `${unique.length} of ${visible.length} visible list(s) have UNIQUE permissions and were inspected; `
-      + `the other ${visible.length - unique.length} inherit from the web, so their bindings are R4's, not their own`
-      + `${unreadable ? `, and ${unreadable} unique list(s) had an ACL this caller could not read` : ''}. `
-      + (held.length
-        ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
-        : 'no site group holds an explicit binding on any list with unique permissions.'));
+    //
+    // All of them unreadable is not a partial answer, it is no answer: the
+    // held list is empty because nothing was inspected, and a PASS there would
+    // say "no group holds an explicit binding" on the strength of zero reads.
+    // That is the same false reassurance R1 exists to prevent, one endpoint
+    // down. The row is voided against its own refusals instead.
+    if (unique.length > 0 && unreadable === unique.length) {
+      record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
+        'NOT ESTABLISHED (HTTP 403)',
+        `every one of the ${unique.length} unique list(s) had bindings this caller could not read `
+        + `(HTTP ${[...refusals].join(', ')}), so nothing was inspected and an empty census here `
+        + `would be indistinguishable from no group holding anything.`,
+        'void');
+    } else {
+      record('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?',
+        'PASS',
+        `${unique.length} of ${visible.length} visible list(s) have UNIQUE permissions and were inspected; `
+        + `the other ${visible.length - unique.length} inherit from the web, so their bindings are R4's, not their own`
+        + `${unreadable ? `, and ${unreadable} unique list(s) had an ACL this caller could not read` : ''}. `
+        + (held.length
+          ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
+          : 'no site group holds an explicit binding on any list with unique permissions.'));
+    }
   }
 
   report();

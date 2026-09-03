@@ -15,8 +15,10 @@ import sys
 import tempfile
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
+from _node import NODE, run_node
 from _paths import MANUAL, REPO_ROOT
 
 TEMPLATES = MANUAL / "templates"
@@ -489,3 +491,107 @@ def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
     assert checked >= _MIN_METADATA_PROBES, (
         f"only {checked} probes sending __metadata checked, so this pins nothing"
     )
+
+
+# === The summary tally =====================================================
+
+HARNESS = TEMPLATES / "_probe_harness.js.j2"
+
+
+def _report_block() -> str:
+    """The shared result table and report(), as standalone JavaScript.
+
+    The harness is a fragment of an async IIFE, and Jinja besides, so the
+    block is sliced out rather than the file being run whole. `log` is stubbed
+    because record()'s per-row logging is not what these tests read.
+    """
+    source = HARNESS.read_text(encoding="utf-8")
+    block = source[source.index("const OPEN_HEADS"):]
+    assert "const report = " in block, "report() is no longer the tail of the harness"
+    return f"const log = () => {{}};\n{block}"
+
+
+def _summary(rows: list[tuple[str, str, str | None]]) -> list[str]:
+    """Run report() over `rows` and return the lines it printed.
+
+    A row is (id, outcome, state). A state of None passes none, which is how
+    a probe that has not ruled on the row leaves the classifier to derive one.
+    """
+    driver = (
+        f"{_report_block()}\n"
+        f"const ROWS = {json.dumps(rows)};\n"
+        "for (const [id, outcome, state] of ROWS) "
+        "record(id, 'a question', outcome, '', state);\n"
+        "const printed = [];\n"
+        "const real = console.log;\n"
+        "console.log = (...parts) => { printed.push(parts.map(String).join(' ')); };\n"
+        "report();\n"
+        "console.log = real;\n"
+        "console.log('__SUMMARY__' + JSON.stringify(printed));\n"
+    )
+    output = run_node(driver)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__SUMMARY__")), None,
+    )
+    assert line is not None, f"report() printed nothing readable:\n{output[-2000:]}"
+    return cast(list[str], json.loads(line.removeprefix("__SUMMARY__")))
+
+
+def _tally(lines: list[str]) -> str:
+    """The one line carrying the counts."""
+    return next(ln for ln in lines if "question(s);" in ln)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_tally_counts_a_void_row_apart_from_open_and_answered() -> None:
+    """A void row is neither answered nor outstanding, so it needs its own count.
+
+    Folded into open it reads as work left to do, and folded into answered it
+    reads as a measurement the identity never made. Both are wrong about the
+    same row.
+    """
+    lines = _summary([
+        ("A", "PASS", None),
+        ("B", "NOT ESTABLISHED (HTTP 403)", "void"),
+        ("C", "NOT ESTABLISHED", None),
+        ("D", "MANUAL (unobserved)", None),
+        ("E", "NOT REACHED", None),
+    ])
+
+    assert _tally(lines) == "5 question(s); 1 answered, 3 open, 1 voided."
+    assert any("waiting on an observation" in ln for ln in lines)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_run_whose_only_unsettled_row_is_void_has_nothing_outstanding() -> None:
+    """The reader lane of reader-bindings, which is what this split is for.
+
+    R4c settles and R4 voids against it, so nothing is outstanding. The old
+    tally said "5 answered, 2 open" forever, and the reader lane could never
+    report a clean run however many times it was re-run.
+    """
+    lines = _summary([
+        ("R1", "PASS", None),
+        ("R2", "PASS", None),
+        ("R3", "PASS", None),
+        ("R4c", "CONTROL FAILED, METHOD VOID (HTTP 403)", None),
+        ("R5", "PASS", None),
+        ("R4", "NOT ESTABLISHED (HTTP 403)", "void"),
+    ])
+
+    assert _tally(lines) == "6 question(s); 5 answered, 0 open, 1 voided."
+    assert not [ln for ln in lines if "NOT a pass" in ln]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "outcome",
+    ["NOT ESTABLISHED", "SHORT: 3 of 12 disjuncts", "MANUAL (unobserved)", "NOT REACHED"],
+)
+def test_a_row_nobody_has_ruled_on_is_still_open(outcome: str) -> None:
+    """Only an explicit `void` leaves the open count. Every other unsettled
+    state stays in it, and the void count is printed either way so the three
+    numbers always add up on the page."""
+    lines = _summary([("A", "PASS", None), ("B", outcome, None)])
+
+    assert _tally(lines) == "2 question(s); 1 answered, 1 open, 0 voided."

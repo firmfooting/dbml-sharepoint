@@ -227,11 +227,15 @@
     console.log('=================================================');
     // Counted off state rather than off the outcome head, so the summary and
     // the per-row state can never disagree. awaiting-capture stays open until
-    // a person records the observation; so does void, which is open for a
-    // reason the control row names.
-    const open = RESULTS.filter((r) => r.state !== 'settled').length;
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
     const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
-    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} open.`);
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
     if (waiting) {
       console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
     }
