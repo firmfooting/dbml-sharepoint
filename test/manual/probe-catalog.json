@@ -1068,6 +1068,91 @@
       ]
     },
     {
+      "file": "file-operations-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, file, file content, versions and a rename"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.file.name-field-is-leafref",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.file.upload-path-files-add",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.file.control-missing-column-refused",
+              "depends_on": [
+                "library.file.upload-path-files-add"
+              ]
+            },
+            {
+              "id": "library.file.file-system-object-type",
+              "depends_on": [
+                "library.file.upload-path-files-add"
+              ]
+            },
+            {
+              "id": "library.file.versioning-read-back",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.check-out-check-in",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.file-rename",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.name-field-is-leafref",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.file-delete",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.file.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "form-visibility-evidence-probe.js",
       "surface": "expression",
       "harness": "helper",
