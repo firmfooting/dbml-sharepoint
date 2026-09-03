@@ -243,17 +243,18 @@ Probes: `search-discovery-probe.js`
 ### 11. `library`: document libraries
 
 Where a library's behaviour diverges from a generic list: files versus items,
-and what a file is made of over REST.
+what a file is made of over REST, and how metadata columns and list validation
+behave on libraries.
 
-Scopes: `doc-lib`, `file-vs-item`, `file`
+Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`
 
-Probes: `document-library-probe.js`, `file-operations-probe.js`
+Probes: `document-library-probe.js`, `file-operations-probe.js`, `library-columns-probe.js`
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
 that the surface is almost entirely unprobed. `library` was in that position
-until `file-operations-probe.js`, which is the first of four probes taking it
-out, and which holds the `file` scope on its own.
+until `file-operations-probe.js` and `library-columns-probe.js`, the first two
+of four probes taking it out.
 
 ## Checks that file under a different surface than their probe
 
@@ -295,6 +296,7 @@ surface boundary, and are listed for the same reason:
 | `datetime-sentinel-probe.js` | the four `*-quote-literal` questions (was `Q1`–`Q4`) | `formula.validation.*` |
 | `native-index-probe.js` | `odata-comparison-found-list`, `odata-null-found-list` (was `CMPIDX`, `NULIDX`) | `scale.index.*` |
 | `file-operations-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-columns-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description

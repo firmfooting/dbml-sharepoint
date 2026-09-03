@@ -1,0 +1,471 @@
+/**
+ * dbml-sharepoint PROBE: METADATA COLUMNS AND VALIDATION ON A DOCUMENT LIBRARY
+ *
+ * QUESTION: A document library stores files alongside metadata columns. Do
+ * Choice, Lookup, and Calculated columns behave the same on a library as on a
+ * generic list, does a required column enforce during file upload, and does a
+ * list ValidationFormula enforce against file metadata?
+ *
+ * WHY: `document-library-probe.js` established that a fileless POST to /items is
+ * refused, and `file-operations-probe.js` settled what a file is over REST.
+ * This probe takes the next step into the `library` surface by examining
+ * metadata columns and validation rules. It establishes whether the column types
+ * dbml-sharepoint emits for generic lists behave identically on document
+ * libraries, how required columns interact with file uploads, and whether
+ * list-level ValidationFormula rules enforce when metadata is updated.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`.
+ *
+ *   library.doc-lib.fixture-library-created
+ *        Does a document library create at all (BaseTemplate 101)? The same
+ *        question `document-library-probe.js` and `file-operations-probe.js` ask,
+ *        by the same method, keeping the same id per SURFACES.md.
+ *   library.column.control-missing-column-refused
+ *        NEGATIVE CONTROL: Is a MERGE naming a column that does not exist,
+ *        sent to a library file's list item, REFUSED? Establishes that this
+ *        probe can detect a failed metadata write on a file item. Without it,
+ *        every refusal observed below is unproven.
+ *   library.column.choice-column-on-library
+ *        Does a choice column behave the same on a library (create the field,
+ *        write a value via item MERGE, and read it back)?
+ *   library.column.lookup-column-on-library
+ *        Does a lookup column behave the same on a library (create the field
+ *        pointing to a target list, write a lookup ID, and read it back)?
+ *   library.column.calculated-column-on-library
+ *        Does a calculated column behave the same on a library (create the
+ *        field referencing another column, and read back the calculated value)?
+ *   library.column.required-column-enforced-on-upload
+ *        Is a required column enforced when a file is uploaded without it?
+ *        Observes whether Files/add is refused, or accepted with checkout,
+ *        or accepted without checkout.
+ *   library.validation.validation-formula-on-library
+ *        Does a list ValidationFormula enforce against a library's items
+ *        (the file's metadata row), or is it inert on a document library?
+ *
+ * READ THE CONTROL FIRST. It runs after the fixture library is created and an
+ * initial file is uploaded, because a metadata write needs an existing item to
+ * address. If a MERGE naming a nonexistent column is ACCEPTED, this probe
+ * cannot distinguish a refused write from a successful one, and write-refusal
+ * answers are void.
+ *
+ * RETIRED QUESTION:
+ *   library.column.column-default-on-folder
+ *   Why retired: Location-based column defaults (defaults per folder) are not
+ *   exposed as a writable REST endpoint on SP.Folder or SP.List in the
+ *   SharePoint REST API (/_api/). In SharePoint, folder metadata defaults are
+ *   managed through the server-side Microsoft.Office.DocumentManagement.MetadataDefaults
+ *   API and stored in an internal XML configuration file
+ *   (/Forms/client_side_location_based_defaults.html) processed by synchronous
+ *   event receivers. Standard SharePoint REST provides no endpoint to set or
+ *   cascade folder column defaults. Asking this over REST is unaskable without
+ *   reverse-engineering internal XML file placement.
+ *
+ * WHERE THE ENDPOINTS COME FROM. Every URL below is the one Microsoft Learn
+ * documents, not one assembled from memory, because a wrong spelling returns
+ * 404, `isRefusal` counts 404 as a refusal, and the probe would then print a
+ * claim about SharePoint that was really a typo:
+ *
+ *   List creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   Field creation via POST to `fields/createfieldasxml`:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   File upload via `RootFolder/Files/add(url=,overwrite=)`:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   Item metadata updates via MERGE to `items(...)`:
+ *     "Working with lists and list items with REST"
+ *   List ValidationFormula via MERGE to `web/lists/getbytitle(...)`:
+ *     "SP.List.validationFormula property (sp.js)", dn531432(v=office.15)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the libraries it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe LibCols';
+  const TARGET_LIB = 'dbmlsp Probe LibCols Target';
+  const FILE = 'dbmlsp-columns-probe.txt';
+  const REQUIRED_FILE = 'dbmlsp-required-probe.txt';
+  const listPath = `web/lists/getbytitle('${LIB}')`;
+  const targetPath = `web/lists/getbytitle('${TARGET_LIB}')`;
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' and TARGET LIST '${TARGET_LIB}' on ${WEB}.`);
+    log('INFO', `Would create choice, lookup, and calculated columns on '${LIB}'.`);
+    log('INFO', `Would upload test file '${FILE}', send a negative control write, write choice`);
+    log('INFO', 'and lookup values, read back calculated values, test required column upload');
+    log('INFO', 'enforcement, and test list ValidationFormula enforcement on file metadata.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${TARGET_LIB}' and '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: existing lists would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const rawPost = async (path, body, digest, extraHeaders = {}) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+          ...extraHeaders,
+        },
+        body,
+      });
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* plain text response */ }
+      return { ok: res.ok, status: res.status, body: parsed, text };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: String(err) };
+    }
+  };
+
+  expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.column.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a file item is refused');
+  expect('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library');
+  expect('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library');
+  expect('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library');
+  expect('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it');
+  expect('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata');
+
+  await resetList(TARGET_LIB);
+  await resetList(LIB);
+
+  let digest = await getDigest();
+
+  // ---- Bootstrap target list for lookup column ------------------------
+  const existingTarget = await spGet(targetPath);
+  let targetListId = null;
+  if (existingTarget.ok && existingTarget.body) {
+    targetListId = existingTarget.body.Id;
+  } else {
+    digest = await getDigest();
+    const madeTarget = await spPost('web/lists', {
+      Title: TARGET_LIB,
+      BaseTemplate: 100,
+      Description: 'dbml-sharepoint target list for library lookup column probe. Safe to delete.',
+    }, digest);
+    if (madeTarget.ok && madeTarget.body) {
+      targetListId = madeTarget.body.Id;
+    } else {
+      log('WARN', `Could not create target list '${TARGET_LIB}': HTTP ${madeTarget.status}`);
+    }
+  }
+
+  let targetRowId = null;
+  if (targetListId) {
+    const targetRows = await spGet(`${targetPath}/items?$select=Id,Title&$top=1`);
+    if (targetRows.ok && targetRows.body && Array.isArray(targetRows.body.value) && targetRows.body.value.length > 0) {
+      targetRowId = targetRows.body.value[0].Id;
+    } else {
+      digest = await getDigest();
+      const madeRow = await spPost(`${targetPath}/items`, { Title: 'Target Row 1' }, digest);
+      if (madeRow.ok && madeRow.body) {
+        targetRowId = madeRow.body.Id;
+      }
+    }
+  }
+
+  // ---- fixture-library-created: the library ---------------------------
+  const existing = await spGet(listPath);
+  if (existing.ok) {
+    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
+           'reusing an existing library. Set CLEANUP = true for a clean answer');
+  } else {
+    digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint library-columns probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    if (!made.ok) return report();
+  }
+
+  const addField = async (schemaXml) => {
+    digest = await getDigest();
+    return spPost(`${listPath}/fields/createfieldasxml`, {
+      parameters: { SchemaXml: schemaXml, Options: 8 },
+    }, digest);
+  };
+
+  const fieldExists = async (name) =>
+    (await spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')`)).ok;
+
+  // ---- Choice column setup --------------------------------------------
+  let choiceCreated = false;
+  if (!(await fieldExists('ColChoice'))) {
+    const resChoice = await addField(
+      '<Field Type="Choice" DisplayName="ColChoice" Name="ColChoice" Format="Dropdown">'
+      + '<CHOICES><CHOICE>Alpha</CHOICE><CHOICE>Beta</CHOICE><CHOICE>Gamma</CHOICE></CHOICES>'
+      + '<Default>Alpha</Default></Field>'
+    );
+    choiceCreated = resChoice.ok;
+  } else {
+    choiceCreated = true;
+  }
+
+  // ---- Lookup column setup --------------------------------------------
+  let lookupCreated = false;
+  if (targetListId && !(await fieldExists('ColLookup'))) {
+    const resLookup = await addField(
+      `<Field Type="Lookup" DisplayName="ColLookup" Name="ColLookup"`
+      + ` List="{${targetListId}}" ShowField="Title"/>`
+    );
+    lookupCreated = resLookup.ok;
+  } else if (targetListId) {
+    lookupCreated = true;
+  }
+
+  // ---- Calculated column setup ----------------------------------------
+  let calcCreated = false;
+  if (!(await fieldExists('ColCalc'))) {
+    const resCalc = await addField(
+      '<Field Type="Calculated" DisplayName="ColCalc" Name="ColCalc" ResultType="Text">'
+      + '<Formula>=[ColChoice]&amp;" - calc"</Formula>'
+      + '<FieldRefs><FieldRef Name="ColChoice"/></FieldRefs></Field>'
+    );
+    calcCreated = resCalc.ok;
+  } else {
+    calcCreated = true;
+  }
+
+  // ---- Upload initial file for metadata tests -------------------------
+  digest = await getDigest();
+  const uploadRes = await rawPost(
+    `${listPath}/RootFolder/Files/add(url='${FILE}',overwrite=true)`,
+    'dbml-sharepoint library columns probe payload',
+    digest
+  );
+  if (!uploadRes.ok) {
+    log('FAIL', `Upload of '${FILE}' failed: HTTP ${uploadRes.status}`);
+  }
+
+  const items = await spGet(
+    `${listPath}/items?$select=Id,Title,FileLeafRef,ColChoice,ColCalc,ColLookupId`
+    + `&$filter=FileLeafRef eq '${FILE}'`
+  );
+  const rows = (items.ok && items.body && Array.isArray(items.body.value)) ? items.body.value : [];
+  const row = rows.length ? rows[0] : null;
+  const itemId = row ? row.Id : null;
+
+  // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
+  let controlHeld = false;
+  if (itemId === null) {
+    record('library.column.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a file item is refused', 'NOT ESTABLISHED',
+           `no list item was found for '${FILE}' (HTTP ${items.status}), so there was `
+           + 'nothing to send a test write to. Every refusal below this line is '
+           + 'unproven rather than answered.');
+  } else {
+    digest = await getDigest();
+    const junk = await spPost(`${listPath}/items(${itemId})`,
+                              { NoSuchColumnAtAll: 'x' }, digest,
+                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    controlHeld = !junk.ok && isRefusal(junk.status);
+    record('library.column.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a file item is refused',
+           junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
+           junk.ok
+             ? 'a MERGE naming a column that does not exist was ACCEPTED on a library item. '
+               + 'This probe cannot tell a refused metadata write from a successful one, '
+               + 'so later refusal answers are void.'
+             : isRefusal(junk.status)
+               ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+               : `the request failed with HTTP ${junk.status}, which is not the server `
+                 + 'refusing the write. The rows depending on this control are '
+                 + `unproven rather than answered: ${junk.text.slice(0, 200)}`);
+  }
+
+  // ---- choice-column-on-library ---------------------------------------
+  if (!choiceCreated || itemId === null) {
+    record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
+           'VOID', 'ColChoice could not be created or file item was not found');
+  } else {
+    digest = await getDigest();
+    const writeChoice = await spPost(
+      `${listPath}/items(${itemId})`,
+      { ColChoice: 'Beta' },
+      digest,
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
+    );
+    if (!writeChoice.ok) {
+      record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
+             'FAIL', `MERGE with ColChoice="Beta" failed: HTTP ${writeChoice.status} ${writeChoice.text.slice(0, 200)}`);
+    } else {
+      const readChoice = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice`);
+      const val = (readChoice.ok && readChoice.body) ? readChoice.body.ColChoice : null;
+      record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
+             val === 'Beta' ? 'PASS' : 'FAIL',
+             val === 'Beta'
+               ? 'choice column created, value written via item MERGE, and read back as written'
+               : `read back unexpected value: ${JSON.stringify(val)} (HTTP ${readChoice.status})`);
+    }
+  }
+
+  // ---- lookup-column-on-library ---------------------------------------
+  if (!lookupCreated || itemId === null || targetRowId === null) {
+    record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
+           'VOID', `lookup column setup incomplete (lookupCreated=${lookupCreated}, itemId=${itemId}, targetRowId=${targetRowId})`);
+  } else {
+    digest = await getDigest();
+    const writeLookup = await spPost(
+      `${listPath}/items(${itemId})`,
+      { ColLookupId: targetRowId },
+      digest,
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
+    );
+    if (!writeLookup.ok) {
+      record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
+             'FAIL', `MERGE with ColLookupId=${targetRowId} failed: HTTP ${writeLookup.status} ${writeLookup.text.slice(0, 200)}`);
+    } else {
+      const readLookup = await spGet(
+        `${listPath}/items(${itemId})?$select=Id,ColLookupId`
+      );
+      const readId = (readLookup.ok && readLookup.body) ? readLookup.body.ColLookupId : null;
+      record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
+             readId === targetRowId ? 'PASS' : 'FAIL',
+             readId === targetRowId
+               ? `lookup column created, set to target ID ${targetRowId} via item MERGE, and read back as written`
+               : `read back unexpected ColLookupId: ${JSON.stringify(readId)} (HTTP ${readLookup.status})`);
+    }
+  }
+
+  // ---- calculated-column-on-library -----------------------------------
+  if (!calcCreated || itemId === null) {
+    record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
+           'VOID', 'ColCalc could not be created or file item was not found');
+  } else {
+    const readCalc = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice,ColCalc`);
+    const calcVal = (readCalc.ok && readCalc.body) ? readCalc.body.ColCalc : null;
+    const expectedVal = 'Beta - calc';
+    record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
+           calcVal === expectedVal ? 'PASS' : 'FAIL',
+           calcVal === expectedVal
+             ? `calculated column evaluated operand [ColChoice] and read back as "${calcVal}"`
+             : `calculated column read back "${calcVal}", expected "${expectedVal}" (HTTP ${readCalc.status})`);
+  }
+
+  // ---- required-column-enforced-on-upload -----------------------------
+  let reqCreated = false;
+  if (!(await fieldExists('ColRequired'))) {
+    const resReq = await addField(
+      '<Field Type="Text" DisplayName="ColRequired" Name="ColRequired" Required="TRUE"/>'
+    );
+    reqCreated = resReq.ok;
+  } else {
+    reqCreated = true;
+  }
+
+  if (!reqCreated) {
+    record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
+           'VOID', 'ColRequired could not be created on the library');
+  } else {
+    digest = await getDigest();
+    const reqUpload = await rawPost(
+      `${listPath}/RootFolder/Files/add(url='${REQUIRED_FILE}',overwrite=true)`,
+      'dbml-sharepoint required column upload test',
+      digest
+    );
+    if (!reqUpload.ok) {
+      record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
+             'UPLOAD REFUSED',
+             `Files/add was refused with HTTP ${reqUpload.status}: ${reqUpload.text.slice(0, 260)}`);
+    } else {
+      const reqItems = await spGet(
+        `${listPath}/items?$select=Id,FileLeafRef,ColRequired&$filter=FileLeafRef eq '${REQUIRED_FILE}'`
+      );
+      const reqRows = (reqItems.ok && reqItems.body && Array.isArray(reqItems.body.value)) ? reqItems.body.value : [];
+      const reqRow = reqRows.length ? reqRows[0] : null;
+      const fileProps = await spGet(
+        `${listPath}/RootFolder/Files('${REQUIRED_FILE}')?$select=CheckOutType,MajorVersion`
+      );
+      const checkOutType = (fileProps.ok && fileProps.body) ? fileProps.body.CheckOutType : null;
+      const colVal = reqRow ? reqRow.ColRequired : null;
+
+      const checkedOut = checkOutType === 0;
+      record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
+             checkedOut ? 'UPLOAD ACCEPTED WITH CHECKOUT' : 'UPLOAD ACCEPTED WITHOUT CHECKOUT',
+             `Files/add succeeded (HTTP ${reqUpload.status}). CheckOutType=${checkOutType}`
+             + ` (${checkedOut ? 'checked out to author' : 'not checked out'}),`
+             + ` ColRequired value is ${JSON.stringify(colVal)}`);
+    }
+  }
+
+  // ---- validation-formula-on-library ----------------------------------
+  digest = await getDigest();
+  const setRule = await spPost(
+    listPath,
+    {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: '=[ColChoice]<>"InvalidValue"',
+      ValidationMessage: 'ColChoice cannot be InvalidValue',
+    },
+    digest,
+    {
+      'Content-Type': 'application/json;odata=verbose',
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': '*',
+    }
+  );
+
+  if (!setRule.ok) {
+    record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
+           'NOT ESTABLISHED',
+           `setting ValidationFormula on the library returned HTTP ${setRule.status}: ${setRule.text.slice(0, 260)}`);
+  } else if (itemId === null) {
+    record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
+           'VOID', 'ValidationFormula was set, but no test file item exists to test enforcement against');
+  } else {
+    digest = await getDigest();
+    const badWrite = await spPost(
+      `${listPath}/items(${itemId})`,
+      { ColChoice: 'InvalidValue' },
+      digest,
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
+    );
+    const refused = !badWrite.ok && isRefusal(badWrite.status);
+
+    if (refused) {
+      digest = await getDigest();
+      const goodWrite = await spPost(
+        `${listPath}/items(${itemId})`,
+        { ColChoice: 'Alpha' },
+        digest,
+        { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
+      );
+      record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
+             'ENFORCED',
+             `violating write refused with HTTP ${badWrite.status} (${badWrite.text.slice(0, 160)});`
+             + ` valid write returned HTTP ${goodWrite.status}`);
+    } else if (badWrite.ok) {
+      record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
+             'INERT',
+             'the violating write was ACCEPTED; list ValidationFormula does not enforce against library item updates');
+    } else {
+      record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
+             'NOT ESTABLISHED',
+             `violating write failed with non-refusal HTTP ${badWrite.status}: ${badWrite.text.slice(0, 200)}`);
+    }
+  }
+
+  report();
+})();
