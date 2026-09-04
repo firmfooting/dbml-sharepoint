@@ -107,9 +107,11 @@ def test_a_multi_value_lookup_costs_one_join_at_the_ceiling() -> None:
     tables differs in nothing but that column's arity, so a change that started
     charging two for the multi-value one fails here and nowhere else.
 
-    The answer is INFERRED, not measured. `analysis/joins.py`'s docstring says
-    so and names the probe that would settle it. This test exists so the
-    inference cannot be revised by accident.
+    MEASURED 2026-09-04 by `multilookup-probe.js`
+    (`scale.join.multi-value-lookup-costs-a-join`): eleven single-value lookups
+    plus the multi-value one rendered at 12, twelve plus the multi-value one
+    blanked at 13. This test exists so the measurement cannot be revised by
+    accident.
     """
     def _at_the_ceiling(twelfth: str) -> list[str]:
         table = make_table(

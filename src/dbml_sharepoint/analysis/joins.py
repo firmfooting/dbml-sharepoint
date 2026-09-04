@@ -15,6 +15,11 @@ about, and the two are distinguishable in a transcript: this one refuses with
 `SPQueryThrottledException` code `-2147024749`, the item-count one with
 `-2147024860`.
 
+The shape-not-size half was itself an inference until 2026-09-04, when
+`scale.join.control-ceiling-small-list` measured it on a FOUR-ITEM list: 12
+lookups rendered and 13 refused with `SPQueryThrottledException`, at a size
+nowhere near any item threshold. The same ceiling, on 6,000 items and on four.
+
 MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2, at 6,000
 items with the filter held constant at the same 60-row indexed query so the join
 count was the only variable. The ids are under `scale.join`, and the mnemonic
@@ -57,29 +62,24 @@ field as ``<column><target>`` (e.g.
 `test/test_joins.py::test_a_lookup_projection_costs_no_join` is the test this
 paragraph was waiting for.
 
-A MULTI-VALUE LOOKUP COSTS ONE, the same as a single-value one. It is one
-column, one `LookupList` binding and one relationship, and the count here is a
-count of join-bearing COLUMNS, so `join_bearing_columns` already returns it once
-on the strength of `col.ref is not None` with no arity test anywhere. This row
-is INFERRED, not measured, like the `Created`/`Modified` row above: the
-2026-09-02 multi-lookup probe answered creation, indexing, mutability and write
-shape, and left join cost open (#409 Q3). It is recorded as one rather than more
-because a rule must never be stronger than what has been shown: counting two
-would refuse views that may well render, and nothing has been observed that
-says they do not. `test/test_joins.py::
-test_a_multi_value_lookup_costs_one_join_at_the_ceiling` pins the answer, so
-changing it is a deliberate act with a failing test attached.
+A MULTI-VALUE LOOKUP COSTS ONE, the same as a single-value one, and this row is
+MEASURED rather than inferred. On 2026-09-04 `multilookup-probe.js` walked
+single-value lookups to the ceiling and walked again with the multi-value column
+appended, reporting the difference as
+`scale.join.multi-value-lookup-costs-a-join`: eleven single-value lookups plus
+the multi-value one RENDERED (12 join-bearing columns) and twelve plus the
+multi-value one came back BLANK (13). One more column, one more join, whatever
+its arity. The probe reported a NUMBER rather than a confirmation and subtracted
+rather than sitting at a fixed width, so nothing in it assumed the ceiling was
+12; it measured 12 on that run's own fixture (#409 Q3).
 
-The instrument that closes it now exists and has not been run.
-`multilookup-probe.js` walks single-value lookups to the ceiling, walks again
-with the multi-value column appended, and reports the difference as
-`scale.join.multi-value-lookup-costs-a-join`. It reports a NUMBER rather than a
-confirmation, and it subtracts rather than sitting at a fixed width, so it does
-not assume the ceiling is 12. Its fixture holds four items rather than 6,000,
-which is why `scale.join.control-ceiling-small-list` runs first: if no ceiling
-appears at that size the cost row is void, and settling this needs
-`threshold-index-probe.js`'s fixture instead. That control also measures the
-SHAPE-not-size claim in the second paragraph above, which is itself unmeasured.
+That is what `join_bearing_columns` already computed, on the strength of
+`col.ref is not None` with no arity test anywhere, because the count here is a
+count of join-bearing COLUMNS and a LookupMulti is one column, one `LookupList`
+binding and one relationship. The answer did not change when it was measured;
+its footing did. `test/test_joins.py::
+test_a_multi_value_lookup_costs_one_join_at_the_ceiling` pins it, so changing it
+is a deliberate act with a failing test attached.
 
 8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
 does not exist in SharePoint Online; there is no "default 8 raised by a
@@ -136,8 +136,8 @@ def join_bearing_columns(table: Table, cross_site_cols: AbstractSet[str]) -> set
 
     Arity is not tested, which is the decision and not an omission: a
     multi-value ref (`int[] [ref: > X.Id]`, a LookupMulti) is one column and
-    costs one join. See the module docstring for why that is recorded as one
-    and what would settle it.
+    costs one join, measured on 2026-09-04 against the ceiling. See the module
+    docstring for the run.
 
     The two system columns are always included. A declared view may name them,
     and the generated `All Items` always does.
