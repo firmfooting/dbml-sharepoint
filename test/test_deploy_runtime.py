@@ -2759,6 +2759,64 @@ def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> Non
         )
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
+    """Indexed:true travels as ChangeSet parts, one $batch per list.
+
+    Two indexed columns on one list, so a batch that coalesces them is
+    distinguishable from one request per column: the declared index on Note
+    plus the lookup display column the picker indexes.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    indexing = [
+        b for b in batches
+        if any('"Indexed":true' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert indexing, f"no index write travelled as a ChangeSet part: {batches}"
+    assert len(indexing) == 1, (
+        f"the list's index writes went out as {len(indexing)} $batch requests"
+    )
+    assert len(indexing[0]["ops"]) == 2, (
+        f"expected both indexed columns as parts, got {indexing[0]['ops']}"
+    )
+    for op in indexing[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "an index part would POST rather than MERGE the field"
+        )
+        assert "/fields(guid'" in op["url"], (
+            "an index part addresses the field by name, which a rebind can "
+            "redirect; the write it replaces went by Id"
+        )
+        assert '"Indexed":true' in (op["body"] or ""), (
+            f"an unrelated write shares the index ChangeSet: {op['body']}"
+        )
+    list_ids = {
+        match.group(1) for match in (
+            re.search(r"lists\(guid'([^']+)'\)", op["url"])
+            for op in indexing[0]["ops"]
+        ) if match
+    }
+    assert len(list_ids) == 1, (
+        f"one ChangeSet spans {len(list_ids)} lists; the list is the boundary "
+        "the seal phase draws and this phase makes no wider claim"
+    )
+
+
 def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 
@@ -2781,6 +2839,7 @@ def _declared_pack(
     *, table_name: str = "Escalation",
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
+    extra_lines: tuple[str, ...] = (),
 ) -> tuple[Any, Any]:
     """The (schema, bundle) behind `_declared_deploy_js`.
 
@@ -2798,6 +2857,11 @@ def _declared_pack(
     what puts a column in `phase2_lookups`: a lookup whose target does not
     exist yet when the field wave runs is deferred, and without one the
     deferred-lookup phase has nothing to do and cannot be reached from here.
+
+    `extra_lines` are further lines inside every table block, one per entry.
+    Columns are what `table()` normally takes, but a DBML `indexes { ... }`
+    block is also just lines, and declaring one is the only way to reach the
+    index phase with more than the lookup display column.
     """
     names = table_names or (table_name,)
     return pack(
@@ -2806,6 +2870,7 @@ def _declared_pack(
             table(
                 name, ID_PK, "Title nvarchar", "Note nvarchar",
                 *((f"Parent int [ref: > {name}.Id]",) if self_reference else ()),
+                *extra_lines,
             )
             for name in names
         ),
@@ -2819,6 +2884,7 @@ def _declared_deploy_js(
     *, table_name: str = "Escalation",
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
+    extra_lines: tuple[str, ...] = (),
 ) -> str:
     """deploy.js for an all-text schema that actually declares a formula.
 
@@ -2839,7 +2905,7 @@ def _declared_deploy_js(
     schema, bundle = _declared_pack(
         tmp_path, section, prefix,
         table_name=table_name, table_names=table_names,
-        self_reference=self_reference,
+        self_reference=self_reference, extra_lines=extra_lines,
     )
     return _without_assessment(generate_deploy_js(
         schema=schema,

@@ -6,7 +6,6 @@
   log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
-  digest = await getDigest();
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -21,14 +20,58 @@
       log('ERROR', 'Index ownership survey failed; aborting before any index write.');
       return { ...summary, aborted: 'index-ownership-errors' };
     }
+    // Every target is resolved before the first write. Approving a field is a
+    // read, and once approved these MERGEs depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const indexTargets = [];
     for (const idx of SCHEMA.indexed_columns) {
       try {
-        digest = await getDigest();  // refresh per item (digest lifetime)
-        const target = await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list));
-        await patchFieldById(
-          target.listId, target.field.Id,
-          { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
-        );
+        indexTargets.push({
+          idx,
+          target: await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list)),
+        });
+      } catch (err) {
+        log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+        summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+      }
+    }
+    // One $batch per list, the same boundary the seal phase draws. Lists are
+    // independent; same-list field writes are the ones that race into save
+    // conflicts, so the list stays the unit a ChangeSet is drawn around and
+    // this phase makes no claim the seal phase has not already made.
+    const indexByList = new Map();
+    for (const entry of indexTargets) {
+      if (!indexByList.has(entry.idx.list)) indexByList.set(entry.idx.list, []);
+      indexByList.get(entry.idx.list).push(entry);
+    }
+    for (const [listTitle, entries] of indexByList) {
+      const indexBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          await indexBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            { __metadata: { type: 'SP.Field' }, Indexed: true },
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await indexBatch.done();
+      } catch (err) {
+        // Named at list level with the columns it covered, not attributed to
+        // one of them: SharePoint does not roll a ChangeSet back, and the
+        // refusal reports part statuses in queue order rather than saying
+        // which column each belongs to.
+        log('ERROR', `Index ${listTitle}: ${err.message}`);
+        summary.errors.push({
+          list: listTitle, columns: entries.map(entry => entry.idx.field),
+          error: err.message,
+        });
+      }
+    }
+    for (const { idx, target } of indexTargets) {
+      try {
         // Identity read-back, not a value read-back. What SharePoint reports
         // for Indexed immediately after the MERGE has not been measured here
         // (it builds the index behind the flag asynchronously), so asserting
