@@ -169,10 +169,15 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 # same sentence (see test/manual/multi-value-probe.js).
 #
 # This set is a hand-kept list of platform facts, so treat it as incomplete
-# by default. Boolean (8) is the one this tool emits whose behaviour is not
-# established either way. The deploy does NOT rely on it being complete: a
-# clear that SharePoint refuses for this reason is treated there as the
-# no-op it is, because a formula the field cannot hold is already absent.
+# by default. Boolean (8) is deliberately NOT a member. A SET of a composed
+# ClientValidationFormula on one was refused live on 2026-09-04, which
+# `form_visibility_condition_on_a_boolean_column` now refuses at build time;
+# nothing has established what a ValidationFormula on kind 8 does, and adding
+# it here would UNMANAGE that property on every boolean column on the
+# strength of a measurement of the other one. The deploy does NOT rely on
+# this set being complete: a clear that SharePoint refuses for this reason is
+# treated there as the no-op it is, because a formula the field cannot hold
+# is already absent.
 # This set only avoids making the pointless request.
 _COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 11, 15, 17, 20})
 

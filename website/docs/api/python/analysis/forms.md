@@ -43,7 +43,7 @@ def validate_form_visibility(*, column: str, new: bool, existing: bool, when: Co
 
 Semantic problems with one column's declaration, as Findings.
 
-Five distinct rules live here, and each has its own code. The severity
+Six distinct rules live here, and each has its own code. The severity
 is carried structurally rather than described in the prose: every
 message used to be returned as a bare string and wrapped by the caller
 as an error, including the one case the spec makes a WARNING, a
@@ -53,9 +53,9 @@ genuinely conditional declaration the feature exists to express could
 not be deployed at all.
 
 Returning Findings rather than (severity, message) pairs is what keeps
-those five apart. The caller cannot supply the code, because it does
+those six apart. The caller cannot supply the code, because it does
 not know which rule fired. One code at the call site would collapse
-all five into one.
+all six into one.
 
 `at` locates the DECLARATION, which is `retired_columns[E]` when the
 retirement fold synthesised it and `form_visibility[E]` otherwise. The

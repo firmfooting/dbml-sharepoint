@@ -157,6 +157,7 @@ dbml-sharepoint explain unknown_column_type
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
 | `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |
 | `form_section_field_not_rendered` | error | A form body section names a field the entity does not render. |
+| `form_visibility_condition_on_a_boolean_column` | error | A Yes/No column declares a `when`. SharePoint refuses validation formulas on that field type, so the conditional visibility cannot be deployed and the deploy aborts at the field it names. Declare the visibility without `when`, or move the column off boolean. |
 | `form_visibility_condition_unreachable` | error | A column is hidden on every form yet carries a `when`, which can never be reached. |
 | `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility. Calculated columns never appear on an entry form. |
 | `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |

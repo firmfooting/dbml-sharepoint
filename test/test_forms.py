@@ -24,7 +24,10 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.parser import Schema
 
-TYPES = {"Status": "nvarchar", "Count": "number", "Note": "nvarchar"}
+#: `Sighted` is the Yes/No column: SharePoint refuses a validation formula on
+#: that field type, so it is the one whose declaration can be conditional in
+#: the mapping and not on the list.
+TYPES = {"Status": "nvarchar", "Count": "number", "Note": "nvarchar", "Sighted": "boolean"}
 WHEN = parse_condition([{"field": "Status", "op": "eq", "value": "Resolved"}], "w")
 
 
@@ -146,6 +149,33 @@ def test_calculated_columns_cannot_declare_visibility() -> None:
     assert "calculated" in found.message
 
 
+def test_a_condition_on_a_yes_no_column_is_refused() -> None:
+    """Measured live on 2026-09-04, and the shape is the one the shipped
+    `visitor-log` family carried: a boolean column with a `when`.
+
+    The deploy aborted in phase 2.1 on `VI_Visit.InductionSighted` with
+    HTTP 500 "This field type does not support validation formulas", so
+    the composed formula never reached the field and the paste stopped
+    part-way through a fresh provision. Refusing it at build time is the
+    difference between an unbuildable mapping and a half-deployed site.
+    """
+    found = only(
+        _findings(column="Sighted", when=WHEN),
+        FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
+    )
+
+    assert "Yes/No" in found.message
+    assert found.severity == "error"
+
+
+def test_a_yes_no_column_may_still_be_gated_per_form() -> None:
+    """Only the composed formula is measured. A gate is carried by the same
+    property, so this is not obviously safe, but nothing has established
+    that it fails, and a guard wider than the measurement refuses a
+    declaration the platform may well accept."""
+    assert _findings(column="Sighted", new=False) == []
+
+
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
     """The spec makes this a warning precisely because it cannot be decided
     statically. Every message came back as an "error", with the word
@@ -170,13 +200,14 @@ def test_statically_provable_cases_stay_errors() -> None:
 
 def test_each_rule_here_has_its_own_code() -> None:
     """The reason this function returns Findings rather than
-    (severity, message) pairs. The caller cannot know which of the five
+    (severity, message) pairs. The caller cannot know which of the six
     rules fired, so one code assigned there would collapse all of them,
     and a rule with no code of its own can never be asserted on, or
     suppressed, or looked up in the catalogue.
     """
     codes = [
         _findings(is_calculated=True)[0].code,
+        _findings(column="Sighted", when=WHEN)[0].code,
         _findings(new=False, existing=False, when=WHEN)[0].code,
         _findings(new=False, required=True)[0].code,
         _findings(when=WHEN, required=True)[0].code,

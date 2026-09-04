@@ -261,10 +261,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 continue
             col = by_name.get(column)
-            # Five distinct rules with a per-rule severity, so
+            # Six distinct rules with a per-rule severity, so
             # validate_form_visibility names its own codes and hands back
             # Findings. Wrapping (severity, message) pairs here would have
-            # given all five one code.
+            # given all six one code.
             findings.extend(validate_form_visibility(
                 column=column,
                 new=fv_declared.new,
