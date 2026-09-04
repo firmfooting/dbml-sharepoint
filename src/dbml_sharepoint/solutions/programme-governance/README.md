@@ -38,8 +38,8 @@ The family's prefix is `GOV_`, so the list titles are `GOV_Workstream`,
 `GOV_Stakeholder`, `GOV_Activity` and so on, and the three family groups and
 two permission levels carry the same stem: `GOV Programme Leads`,
 `GOV Submit Only`. GOV names what the lists are, which is the level the other
-families name at (`RR_`, `RACI_`, `RAID_`), rather than the programme they
-happen to serve. The family's own name now says the same: it was
+families name at (`RR_` on the risk register, for one), rather than the
+programme they happen to serve. The family's own name now says the same: it was
 `m365-adoption-program`, which named one programme rather than the register
 every programme needs. Entity names are unique within the family, and the
 prefix is what keeps families apart on a shared site.

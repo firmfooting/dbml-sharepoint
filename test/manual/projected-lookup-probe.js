@@ -6,7 +6,7 @@
  *   Can a lookup's "additional field" projection be created BY SCRIPT, and
  *   does it auto-populate with the target's real Title?
  *
- * The raid-log family wants a RelatedRisk lookup whose PICKER shows only live
+ * A programme RAID log wants a RelatedRisk lookup whose PICKER shows only live
  * risks (via a calculated display column `LiveRiskTitle` that blanks once
  * Status=Closed), while VIEWS show the real Title. That needs two columns on
  * the source list: the primary lookup (ShowField=LiveRiskTitle) plus a

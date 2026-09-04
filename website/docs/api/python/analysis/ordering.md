@@ -20,7 +20,7 @@ The display-field deferral exists because the field wave runs one lane per list
 in PARALLEL: a lookup whose `LookupField` is a calculated or custom column is
 reading a field the target list's lane may not have created yet. The lookup must
 wait for Phase 2.2, where every lane has finished. Measured 2026-08-27: the
-raid-log `RelatedRisk` displays the calculated `LiveRiskTitle` and failed with
+a `RelatedRisk` lookup displaying the calculated `LiveRiskTitle` failed with
 "target display field 'ProjectRisk.LiveRiskTitle' does not exist".
 
 ### `DeployPlan`

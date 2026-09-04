@@ -346,33 +346,12 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # ProjectIssue is the only new shape: Progress is its own Act section
     # holding just Status, because on an issue the progress IS the status,
     # and the resolution fields below it are conditional on that value.
-    ("raid-log", "ProjectRisk"): {
-        "Describe the risk": "Identify",
-        "Assess the risk": "Assess",
-        "Response and owner": "Act",
-        "Review and closure": "Govern",
-        "System": "System",
-    },
-    ("raid-log", "ProjectAction"): {
-        "The action": "Identify",
-        "Owner and date": "Act",
-        "Progress": "Govern",
-    },
-    ("raid-log", "ProjectIssue"): {
-        "Describe the issue": "Identify",
-        "Severity and owner": "Assess",
-        "Progress": "Act",
-        "Resolution and closure": "Govern",
-    },
-    ("raid-log", "ProjectDecision"): {
-        "The decision": "Identify",
-        "Why": "Assess",
-    },
-    # programme-governance is the first family to merge two vocabularies, so
-    # it inherits both rather than inventing a third: its four delivery lists
-    # keep raid-log's section names exactly, and ProgramActivity,
-    # ProgramInvolvement and ProgramStakeholders keep raci-matrix's. Somebody who
-    # has used either family reads the merged one without relearning it.
+    # programme-governance merged two vocabularies rather than inventing a
+    # third. Its four delivery lists carry the section names the project RAID
+    # log used, and Activity, Involvement and Stakeholder carry the ones the
+    # standing accountability register used. Both families were retired into
+    # this one on 2026-09-04; the names stayed so that anyone who had used
+    # either read the merged family without relearning it.
     #
     # Only Workstream and ServiceRequest are new shapes. Workstream has no
     # Assess beat: a stream of work is not rated, it is sequenced and dated.
@@ -600,29 +579,14 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # A vocabulary list, not a process one: it collapses to Identify ->
     # Govern. There is no Assess beat because nothing about a party is
     # rated, and no System beat because nothing is auto-stamped.
-    ("raci-matrix", "Party"): {
-        "Name the party": "Identify",
-        "Status and notes": "Govern",
-    },
     # The full five-beat arc. "Classify it" is the Assess beat: ActivityKind
     # and Criticality are the two judgements made about an activity, and
     # Criticality drives the confirmation cadence.
-    ("raci-matrix", "Activity"): {
-        "Describe the activity": "Identify",
-        "Classify it": "Assess",
-        "Assign it": "Act",
-        "Keep it current": "Govern",
-        "System": "System",
-    },
     # Collapses to Identify -> Act. There is no Assess beat because an
     # involvement is not rated, and no System beat because nothing is
     # auto-stamped. "State the input" is Identify and is named as an
     # instruction on purpose: the mandatory Title is the whole
     # counter-measure against a consulted list of everyone who asked.
-    ("raci-matrix", "Involvement"): {
-        "State the input": "Identify",
-        "How they are involved": "Act",
-    },
     # Consecutive Assess sections are permitted by §1.2.
     # "Can it keep a record" holds capability questions; "Evidence and method" qualifies them.
     # System holds the assessment provenance typed after the verdict.
@@ -1721,13 +1685,29 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     request that is asked for, authorised, worked and escalated on one row
     carries a person column for each of those acts. The warning band now
     starts at 11, so the worst is two clear of it, and the three entities
-    at 8 (Activity, Action, Decision) are three
-    clear."""
+    at 8 (Activity, Action, Decision) are three clear.
+
+    RE-MEASURED 2026-09-04 across 33 templates / 65 entities, when raid-log
+    and raci-matrix were retired into programme-governance: 2 -> 8, 3 -> 29,
+    4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. Seven lists left the roster, three from
+    band 3 (raid-log ProjectRisk and ProjectDecision, raci-matrix Party),
+    three from band 4 (raid-log ProjectAction and ProjectIssue, raci-matrix
+    Involvement) and one from band 6 (raci-matrix Activity), which empties
+    band 6 entirely.
+
+    Two corrections fall out of the same pass, because the entry above was
+    already stale. BusinessProcess had joined at 4 and was never counted, and
+    programme-governance/Activity moved from 8 to 9 when its Process lookup
+    was added, so the worst is now SHARED by Activity (Accountable,
+    AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
+    Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
+    alone. Still two clear of the eleven-column warning band, with Action and
+    Decision behind them at 8."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 35, (
-        f"{len(templates)} templates discovered, not the 35 this survey was "
+    assert len(templates) == 33, (
+        f"{len(templates)} templates discovered, not the 33 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."

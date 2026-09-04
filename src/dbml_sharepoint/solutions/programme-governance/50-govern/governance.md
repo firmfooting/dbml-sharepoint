@@ -52,7 +52,7 @@ work.
 
 **Plus one trigger that is not a cadence: any material organisational
 change runs the affected part of the quarterly review immediately.** That
-half is inherited from `raci-matrix` and it is the half that gets skipped.
+half is the one that gets skipped.
 Material change means at least a restructure, a senior appointment or
 departure, a forum created or disbanded, a service moved between teams, a
 new statutory or funding obligation, a change of provider personnel on the
@@ -126,7 +126,7 @@ steering group. It filters on `LastReviewedDate` within the last ninety days,
 because closing a risk is a status change and there is no closure date to
 filter on, and the review at which a risk was closed is the closest dated
 event to it. It renders `ClosureNote` as a column so a blank is visible while
-reading. This is `raid-log` governance rule 2, unchanged.
+reading.
 
 Nothing needs to check that the next review follows the last one, because on
 this list nobody sets it. `NextReviewDue` is calculated from
@@ -236,9 +236,8 @@ changes the person who holds the account. Work it in this order.
    left three months ago is a row that reads as owned and is not.
 4. **Work the involvements.** *By stakeholder* is grouped for exactly this.
    Repoint each involvement at the successor or retire it.
-5. **Work the delivery layer, which `raci-matrix` does not have.** A
-   departure leaves rows in four more lists, and none of them appears in
-   any accountability view:
+5. **Work the delivery layer.** A departure leaves rows in four more
+   lists, and none of them appears in any accountability view:
 
    | Column | List | What to do |
    | --- | --- | --- |
@@ -270,8 +269,9 @@ the register can tell you about it. Ask them.
 ## Self-service confirmation, and what it costs
 
 The people named Responsible and Accountable can confirm and correct their
-own rows. That is a deliberate reversal of `raci-matrix`'s posture, and it
-is bought with an audit rather than with a gate.
+own rows. Self-service correction is bought with an audit rather than with a
+gate: version history at 200 on the three accountability lists is what makes
+it safe, and the quarterly review reads it.
 
 **SharePoint cannot express "edit only your own row" against an arbitrary
 person column.** The platform's item-level setting is "Create items and
@@ -468,7 +468,7 @@ afterwards can authorise it a moment later.
 | --- | --- | --- |
 | Every closed risk carries a closure note | Monthly | `ClosureNote` is rich text and validation formulas refuse multi-line operands |
 | A risk is genuinely reviewed rather than date-bumped | Monthly | SharePoint can require a date; it cannot require a thought |
-| A risk that has outgrown the programme graduates | Monthly | `raid-log`'s four criteria, and it is a copy rather than a move |
+| A risk that has outgrown the programme graduates | Monthly | Four criteria, listed under closure below, and it is a copy rather than a move |
 | No action is filed against a closed workstream | Fortnightly | A lookup picker cannot be filtered, so the `WorkstreamPhase` projection makes the mistake visible instead of preventing it |
 | Every decision is typed in before the meeting ends | Fortnightly | The discipline most likely to lapse, and the one with the highest cost when it does |
 | No proposal sits past two meeting cycles | Fortnightly | *Stalled proposals* shows them at 42 days. Whether a stall is neglect or a deliberate hold is a judgement no filter makes |
@@ -536,16 +536,15 @@ Adding months with `DATE(YEAR(d), MONTH(d)+N, DAY(d))` overflows rather
 than clamping, so a confirmation recorded on 31 August falls due on 3 March
 rather than 28 February. It is one to three days on a cadence of six months
 or more, against a column whose own guidance is to re-confirm sooner on any
-material change. The same formula is in `raci-matrix` and `risk-register`,
-and it is tracked as `raci-matrix` issue #5. Fixing it in one of the three
-families forks a defect that should be fixed once, upstream, and the
+material change. The same formula is in `risk-register`, and the two copies
+should be fixed together rather than one at a time, and the
 arithmetic that clamps correctly is substantially longer and recalculates
 every row to install. Read that issue before touching it here.
 
 ### The risk matrix
 
-The 5x5 matrix is carried from `raid-log` unchanged, and the argument for
-keeping it that way is worth stating before somebody improves one cell. The
+The argument for leaving the 5x5 matrix alone is worth stating before
+somebody improves one cell. The
 same matrix is used by `risk-register`, so a programme risk and an
 organisational risk mean the same thing by "High", and a risk graduating
 from this family to the organisational register does not need re-rating on
@@ -555,8 +554,8 @@ the log.
 **Editing a cell recalculates every existing row**, for the same reason the
 cadence does, and this family carries no `MatrixVersion` guard. A row rated
 under the old matrix is silently re-rated by the new one with no record
-that it was ever rated differently. `raid-log` accepts that trade because a
-project log is archived with the project; a programme running for two years
+that it was ever rated differently. A project log can accept that trade,
+because it is archived with the project; a programme running for two years
 or more is more likely to outlive a revision of the matrix, so the
 discipline here is stricter rather than looser:
 
@@ -782,14 +781,22 @@ Run in this order, and record the whole sequence as one
    its lookups resolved, because an involvement exported without its
    activity and stakeholder is a sentence about an input with nothing attached.
 2. **Graduate the unresolved risks.** Anything still open that outlives the
-   programme goes to the organisational `risk-register` as a copy, on
-   `raid-log`'s four criteria and its copy-not-move rule. Close the
-   programme row with a closure note naming where it went.
-3. **Graduate the standing accountabilities.** An `GOV_Activity`
-   row describing work that continues after the programme is a
-   `raci-matrix` row, and `raci-matrix` stays deployed and supported. Copy
-   it, set its `Domain`, and confirm it there. The programme's copy stays
-   as history.
+   programme goes to the organisational `risk-register` as a **copy, not a
+   move**, when any of four things is true: its consequence lands outside the
+   programme, on patient safety, statutory compliance, finances or
+   reputation; it will still exist after the programme closes; its owner is
+   not on the programme; or a board is being asked to accept or tolerate it.
+   Close the programme row with a closure note naming where it went, so the
+   programme keeps its evidence that it spotted the risk and the two
+   registers do not hold two half-maintained copies of one rating.
+3. **Graduate the standing accountabilities.** A `GOV_Activity` row
+   describing work that continues after the programme has nowhere else on
+   this shelf to go, because the standing accountability register is part of
+   this family rather than a separate one. Either the site outlives the
+   programme as the accountability record, or each row is copied into
+   whatever the organisation uses and the programme's copy stays as history.
+   Decide which before closure, not after: an accountability with no home is
+   how a programme's obligations quietly stop being anybody's.
 4. **Close or hand over the service requests.** Anything still open moves
    to business as usual with a named owner, and its handler is told. The
    escalation counts and the minutes spent go to the contract manager as
