@@ -22,6 +22,7 @@ from dbml_sharepoint.model.parser import Column
 type FieldKind = Literal[
     "Skip", "Text", "Note", "DateTime", "Choice", "Lookup",
     "Boolean", "Number", "URL", "User", "Calculated", "MultiChoice",
+    "LookupMulti",
 ]
 
 #: THE pairing of this codebase's field-kind token to SharePoint's numeric
@@ -46,6 +47,7 @@ FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
     "DateTime": 4,
     "Choice": 6,
     "Lookup": 7,
+    "LookupMulti": 7,
     "Boolean": 8,
     "Number": 9,
     "URL": 11,
@@ -54,14 +56,38 @@ FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
     "User": 20,
 }
 
+#: Kinds that share a `FieldTypeKind` with a single-value sibling, keyed by the
+#: single-value kind.
+#:
+#: MEASURED, not assumed. A multi-value lookup reads back FieldTypeKind=7, the
+#: same number a single-value Lookup reads back, entity type SP.FieldLookup,
+#: and is told apart only by TypeAsString="LookupMulti" and
+#: AllowMultipleValues=true (test/manual/multilookup-probe.js,
+#: `field.multilookup.create-readback-type`, 2026-09-02). So the kind number
+#: does NOT determine the kind token, and every derivation below that inverts
+#: the map has to say which arity it means.
+MULTI_ARITY_KIND: dict[FieldKind, FieldKind] = {"Lookup": "LookupMulti"}
+
+#: The inverse of the above: the single-value spelling of a multi-value kind.
+SINGLE_ARITY_KIND: dict[FieldKind, FieldKind] = {
+    multi: single for single, multi in MULTI_ARITY_KIND.items()
+}
+
 #: The inverse. What SharePoint reports as `TypeAsString` on read-back is this
 #: codebase's kind token for every kind it emits, verified on a live tenant
 #: rather than transcribed from a page, which is what makes the deployer's
 #: immutable-shape assertion trustworthy (a wrong string there fails a field
 #: that is in fact correct). 15/MultiChoice was measured on 2026-08-10
 #: alongside FieldTypeKind=15 and Choices as Collection(Edm.String).
+#:
+#: SINGLE-VALUE KINDS ONLY. A number that two kinds share cannot invert, and
+#: the arity that resolves it is not a property of the number: the deployer
+#: asks the DECLARATION (`AllowMultipleValues`) and picks from this map or
+#: `MULTI_TYPE_AS_STRING_PAIRS` below.
 FIELD_KIND_BY_TYPE_KIND: dict[int, FieldKind] = {
-    kind_number: kind for kind, kind_number in FIELD_TYPE_KIND_BY_KIND.items()
+    kind_number: kind
+    for kind, kind_number in FIELD_TYPE_KIND_BY_KIND.items()
+    if kind not in SINGLE_ARITY_KIND
 }
 
 #: The same pairing shaped for a JavaScript `new Map([...])` constructor.
@@ -73,6 +99,59 @@ FIELD_KIND_BY_TYPE_KIND: dict[int, FieldKind] = {
 #: verifying is then reported as shape-mismatched. Pairs keep the key an
 #: integer on both sides.
 TYPE_AS_STRING_PAIRS: list[tuple[int, str]] = sorted(FIELD_KIND_BY_TYPE_KIND.items())
+
+#: The multi-arity half of the same question, keyed by the same numbers. The
+#: deployer consults this one when a declared field says AllowMultipleValues,
+#: and throws a named error when a kind number has no multi spelling.
+MULTI_TYPE_AS_STRING_PAIRS: list[tuple[int, str]] = sorted(
+    (FIELD_TYPE_KIND_BY_KIND[multi], multi) for multi in SINGLE_ARITY_KIND
+)
+
+#: Every multi-arity spelling collapsed onto its single-value one, for the
+#: deployer's immutable-shape assertion.
+#:
+#: TypeAsString is immutable in the sense that a Lookup can never become a
+#: Text. It is NOT immutable across arity: `AllowMultipleValues` flips both
+#: ways on an existing lookup, HTTP 204 in each direction, measured 2026-09-02
+#: (`field.multilookup.allow-multiple-values-mutability`). Comparing the raw
+#: string would abort a field the tenant is perfectly willing to change, so
+#: the assertion compares base types and arity reconciles as an ordinary
+#: property.
+BASE_TYPE_AS_STRING_PAIRS: list[tuple[str, str]] = sorted(SINGLE_ARITY_KIND.items())
+
+#: The SP.Field properties a declaration owns that are not on every subtype.
+#: The deployer reads them back with `$select`, compares them and MERGEs the
+#: drifted ones; a property missing from this list is written on create and
+#: then never verified again.
+#:
+#: RENDERED, not typed out, for the reason `TYPE_AS_STRING_PAIRS` is. The same
+#: ten names were spelled twice in two Jinja templates, once to select them
+#: (`deploy/_shape_probes.js.j2`) and once to compare them
+#: (`deploy/_field_reconcile.js.j2`), so a property added to the comparison and
+#: not the probe compares a declared value against `undefined` and reports
+#: permanent drift on a field that is correct.
+#:
+#: `AllowMultipleValues` is here rather than in the immutable set on purpose:
+#: it flips both ways on an existing lookup, HTTP 204 in each direction,
+#: measured 2026-09-02 (`field.multilookup.allow-multiple-values-mutability`).
+#: It is an ordinary reconciled property.
+DERIVED_FIELD_PROPERTIES: list[str] = [
+    "MaxLength", "RichText", "NumberOfLines", "AppendOnly", "Choices",
+    "FillInChoice", "DisplayFormat", "SelectionMode",
+    "Formula", "OutputType", "AllowMultipleValues",
+]
+
+#: How the deployer validates each derived property's read-back value. The
+#: default is "an integer", which is what the four format and length
+#: properties are; everything else says so here.
+DERIVED_FIELD_PROPERTY_KINDS: dict[str, str] = {
+    "Choices": "strings",
+    "RichText": "boolean",
+    "AppendOnly": "boolean",
+    "FillInChoice": "boolean",
+    "AllowMultipleValues": "boolean",
+    "Formula": "string",
+}
 
 # DBML type -> SP.FieldCalculated OutputType. OutputType is an SP.FieldType
 # value, the same enumeration FieldTypeKind draws on, so it is spelled through
@@ -166,6 +245,20 @@ MULTI_VALUE_SUFFIX = "[]"
 # reader of a multi-value payload quote the same measured string.
 MULTI_VALUE_METADATA_TYPE = "Collection(Edm.String)"
 
+# THE ITEM WRITE SHAPE FOR A MULTI-VALUE LOOKUP, measured as
+# `field.multilookup.item-write-shape` by `test/manual/multilookup-probe.js` on
+# 2026-09-02: `{"<Name>Id": {"results": [id1, id2]}}` returned HTTP 201, and a
+# bare array under the same key was refused HTTP 400. The `__metadata` wrapper
+# is what the value READS BACK as under `$select=<Name>Id` in verbose
+# (`field.multilookup.item-read-shape`), so it is quoted here for readers and
+# emitted on the write for symmetry with the multi-choice shape above.
+#
+# NOTE THE KEY. A multi-value lookup is addressed as `<Name>Id`, not `<Name>`:
+# the same `Id` suffix a single-value lookup takes. The probe's
+# `name-not-id-alias` candidate is UNMEASURED (the run broke on the first
+# success), so nothing here claims the bare name is refused.
+MULTI_VALUE_LOOKUP_METADATA_TYPE = "Collection(Edm.Int32)"
+
 
 def is_multi_value(col_type: str) -> bool:
     """Whether a declared DBML type holds many values rather than one.
@@ -180,8 +273,10 @@ def is_multi_value(col_type: str) -> bool:
 
     Callers ask this instead of adding a string entry. The suffix test is
     deliberately arity-only and says nothing about which SharePoint field the
-    type becomes; `map_column` decides that, and refuses everything except an
-    enum, so `person[]` and `int[]` are still unknown types today.
+    type becomes; `map_column` decides that. Two multi-value kinds resolve
+    today, an enum (MultiChoice) and a `ref` (LookupMulti), so a caller that
+    needs to know WHICH must ask `is_multi_value_lookup` as well. `person[]`
+    is still an unknown type.
     """
     return col_type.endswith(MULTI_VALUE_SUFFIX)
 
@@ -213,6 +308,33 @@ def choice_enum_for(col_type: str, enum_names: Collection[str]) -> str | None:
     """
     bare = element_type(col_type)
     return bare if bare in enum_names else None
+
+
+def is_multi_value_lookup(col: Column, enum_names: Collection[str]) -> bool:
+    """Whether this column is a lookup that holds many target items.
+
+    THE TWO MULTI-VALUE KINDS DIVERGE and a caller has to know which it has.
+    They share arity mechanics (no default, no unique, no index, a collection
+    write shape) and differ where the tenant differs: a MultiChoice is written
+    under its own name and holds strings, a LookupMulti is written under
+    `<Name>Id` and holds item ids, and only the lookup carries a join.
+
+    ASKED IN `_resolve_column`'s OWN ORDER, which is why the enum question is
+    here at all. The resolver decides Choice before it looks at `ref`, so
+    `audit_event[] [ref: > X.Id]` is a MultiChoice and its `ref` is ignored; a
+    predicate that only tested `col.ref is not None` would call the same column
+    a lookup and send every downstream rule down the wrong arm.
+
+    Nothing here tests the element type against `KNOWN_SCALARS`. The resolver
+    does not either: `blob [ref: > X.Id]` maps to a Lookup and the validator is
+    what reports the unknown type, so `blob[] [ref: > X.Id]` behaves the same
+    way rather than acquiring a second, arity-only opinion.
+    """
+    return (
+        is_multi_value(col.type)
+        and col.ref is not None
+        and choice_enum_for(col.type, enum_names) is None
+    )
 
 # THE type-identity questions, asked as questions rather than spelled out.
 #
@@ -463,9 +585,21 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
         )
 
     if col.ref is not None:
+        # ARITY CHANGES THE KIND TOKEN BUT NOT THE NUMBER. A multi-value lookup
+        # reads back FieldTypeKind=7, the same number as a single-value one,
+        # with TypeAsString="LookupMulti" and AllowMultipleValues=true
+        # (measured 2026-09-02, test/manual/multilookup-probe.js). Taking the
+        # number from `FIELD_TYPE_KIND_BY_KIND[kind]` is therefore correct for
+        # both arms and stays correct if the map is ever re-ordered.
+        #
+        # The CREATE ROUTE is what actually differs, and jsgen owns it:
+        # AddField refuses `AllowMultipleValues` outright (HTTP 400, the
+        # property does not exist on SP.FieldCreationInformation), so the
+        # multi-value arm goes through createfieldasxml.
+        kind: FieldKind = "LookupMulti" if is_multi_value(col.type) else "Lookup"
         return SPField(
-            name=col.name, kind="Lookup",
-            field_type_kind=FIELD_TYPE_KIND_BY_KIND["Lookup"],
+            name=col.name, kind=kind,
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND[kind],
             required=col.required, unique=col.unique, default=None,
             description=description, target_list=col.ref.target_table,
         )
@@ -652,15 +786,38 @@ UNSUPPORTED_INDEX_TYPES = {
 # names the enum, and invites deleting the brackets, which changes what the
 # column means rather than dropping the setting that is refused.
 #
-# One name, not one per arity: the only multi-value type `map_column` will
-# resolve is an enum, which becomes a Choice. `person[]` and a multi-value
-# lookup are refused as unknown types, so this string cannot be wrong today,
-# and the day one of them is added it has to be revisited HERE rather than at
-# every call site.
-MULTI_VALUE_SP_TYPE_NAME = "Choice (multi-valued)"
+# ONE NAME PER MULTI-VALUE KIND, which is what the previous single constant
+# said would have to happen the day a second multi-value type resolved: "the
+# day one of them is added it has to be revisited HERE rather than at every
+# call site". It has been.
+#
+# "Lookup (multi-valued)" is Microsoft's own spelling on both pages, alongside
+# "Choice (multi-valued)", and the refusal was measured the same way: on
+# 2026-09-02 a POST setting Indexed=true on a LookupMulti field was refused
+# HTTP 500, "This column type is not supported for indexing", and read back
+# Indexed=false, while the SAME RUN's control -- a single-value Lookup in the
+# same list, targeting the same list -- took the index and kept it. So the
+# refusal belongs to the multiplicity and not to lookups
+# (test/manual/multilookup-probe.js, `field.multilookup.indexed-property` and
+# `.control-single-value-indexed`).
+MULTI_VALUE_SP_TYPE_NAMES: dict[FieldKind, str] = {
+    "MultiChoice": "Choice (multi-valued)",
+    "LookupMulti": "Lookup (multi-valued)",
+}
 
 
-def unsupported_index_reason(col_type: str) -> str | None:
+def multi_value_sp_type_name(*, lookup: bool = False) -> str:
+    """SharePoint's own name for the multi-value column type `lookup` selects.
+
+    A FLAG RATHER THAN A `Column`, because the two callers that render this
+    into a message hold different things: one has the parsed column, the other
+    only a declared type string out of a `types_by_col` map. Both can answer
+    "is this a lookup", and neither should be typing the string.
+    """
+    return MULTI_VALUE_SP_TYPE_NAMES["LookupMulti" if lookup else "MultiChoice"]
+
+
+def unsupported_index_reason(col_type: str, *, lookup: bool = False) -> str | None:
     """The SharePoint type name that explains why `col_type` cannot be
     indexed, or None if it can.
 
@@ -672,13 +829,17 @@ def unsupported_index_reason(col_type: str) -> str | None:
     which on a multi-value column would prescribe a remedy the deploy cannot
     carry out.
 
+    `lookup` only picks which name comes back, never whether one does: both
+    multi-value kinds are refused an index, so a caller that cannot tell a
+    lookup from an enum still gets the right verdict and a slightly wrong noun.
+
     Calculated columns are deliberately still not covered here: they are
     identified by CALCULATED_TYPES rather than by one type name, and a caller
     excluding unindexable columns has to consult both. That is a second
     predicate, not a second string.
     """
     if is_multi_value(col_type):
-        return MULTI_VALUE_SP_TYPE_NAME
+        return multi_value_sp_type_name(lookup=lookup)
     return UNSUPPORTED_INDEX_TYPES.get(col_type)
 
 # One join operation per RENDERED column of these types, against the list view

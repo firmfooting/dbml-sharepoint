@@ -214,30 +214,23 @@
           )) {
             summary.columnsSkipped += 1;
           } else {
-            let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
-            let createBody = col.body;
-            if (col.target_list) {
-              // SharePoint rejects POSTing an SP.FieldLookup directly to
-              // /fields ("Please use addfield to add a lookup field"). Use the
-              // supported FieldCollection.AddField REST method and keep its
-              // SP.FieldCreationInformation object nested under `parameters`.
-              // Properties that type does not carry are MERGEd and read back by
-              // reconcileDeclaredField immediately below.
-              const parameters = {
-                ...col.lookup_creation_parameters,
-                LookupListId: targetGuid,
-              };
-              createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
-              createBody = { parameters };
-            }
             await assertLaneOwnership();
             targetGuid = await resolveTargetGuid();
-            if (col.target_list) createBody.parameters.LookupListId = targetGuid;
-            await postJson(
-              createUrl,
-              createBody,
-              laneDigest,
-            );
+            if (col.target_list) {
+              // SharePoint rejects POSTing an SP.FieldLookup directly to
+              // /fields ("Please use addfield to add a lookup field"), and
+              // refuses AddField outright for a multi-value one. Both routes
+              // live in createDeclaredLookupField; properties neither can
+              // carry are MERGEd and read back by reconcileDeclaredField
+              // immediately below.
+              await createDeclaredLookupField(list.title, col, targetGuid, laneDigest);
+            } else {
+              await postJson(
+                apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`),
+                col.body,
+                laneDigest,
+              );
+            }
             invalidateFieldShapes();  // new field: next probe re-enumerates
             await assertLaneOwnership();
             targetGuid = await resolveTargetGuid();

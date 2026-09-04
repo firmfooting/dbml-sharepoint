@@ -31,9 +31,10 @@ from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
     CALCULATED_TYPES,
-    MULTI_VALUE_SP_TYPE_NAME,
+    MULTI_VALUE_SUFFIX,
     element_type,
     is_multi_value,
+    is_multi_value_lookup,
     unsupported_index_reason,
 )
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityMapping
@@ -482,7 +483,10 @@ def _display_column_index(
     display_column = declared_names.get(display)
     unindexable = (
         None if display_column is None
-        else unsupported_index_reason(display_column.type)
+        else unsupported_index_reason(
+            display_column.type,
+            lookup=is_multi_value_lookup(display_column, vc.enum_by_name),
+        )
     )
     if unindexable is not None:
         findings.append(Finding(
@@ -877,8 +881,10 @@ def _indexable_columns(
             ))
             continue
         column = columns_by_name.get(col_name)
+        is_lookup = column is not None and is_multi_value_lookup(column, vc.enum_by_name)
         unindexable = (
-            None if column is None else unsupported_index_reason(column.type)
+            None if column is None
+            else unsupported_index_reason(column.type, lookup=is_lookup)
         )
         if column is not None and is_multi_value(column.type):
             # Ahead of the generic rule rather than beside it -- both
@@ -886,7 +892,7 @@ def _indexable_columns(
             # arity-aware. The specific one exists for its second remedy:
             # the generic message can only say "SharePoint cannot index
             # this type", and the fix it implies is a different column,
-            # while here the SAME enum without the brackets is indexable.
+            # while here the SAME type without the brackets is indexable.
             # That is usually what the author wants to hear.
             #
             # Measured 2026-08-10 and read WITH ITS CONTROL: setting
@@ -895,14 +901,30 @@ def _indexable_columns(
             # while the same run set Indexed=true on a single-value Choice
             # in the same list and it stuck. So the refusal belongs to the
             # field type and not to the probe.
+            #
+            # A multi-value LOOKUP was measured the same way on 2026-09-02
+            # and refused identically, HTTP 500 with the same message and
+            # Indexed=false on readback, against a single-value lookup
+            # control in the same list that took the index and kept it.
+            # Both arms therefore say the same thing; only the type name
+            # and the shape of the single-value remedy differ, because
+            # dropping the brackets off a lookup leaves a lookup and off an
+            # enum leaves a Choice.
+            remedy = (
+                f"declare it as a single-value "
+                f"{element_type(column.type)!r} lookup by dropping the "
+                f"{MULTI_VALUE_SUFFIX!r}, which can carry an index"
+                if is_lookup else
+                f"declare it as a single-value "
+                f"{element_type(column.type)!r} column, which can carry "
+                f"an index"
+            )
             findings.append(Finding(
                 FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED,
                 f"{entity_name}.indexes: {col_name!r} is a multi-value "
                 f"column, which SharePoint refuses to index -- it is a "
-                f"{MULTI_VALUE_SP_TYPE_NAME} column. Remove it from "
-                f"indexes {{ }}, or declare it as a single-value "
-                f"{element_type(column.type)!r} column, which can carry "
-                f"an index.",
+                f"{unindexable} column. Remove it from "
+                f"indexes {{ }}, or {remedy}.",
                 location=Location(
                     Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
                 ),

@@ -15,6 +15,10 @@ from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.typemap import (
     FIELD_KIND_BY_TYPE_KIND,
     FIELD_TYPE_KIND_BY_KIND,
+    MULTI_ARITY_KIND,
+    MULTI_TYPE_AS_STRING_PAIRS,
+    SINGLE_ARITY_KIND,
+    TYPE_AS_STRING_PAIRS,
     FieldKind,
     choice_enum_for,
     describe_unknown_type,
@@ -22,6 +26,7 @@ from dbml_sharepoint.analysis.typemap import (
     is_boolean,
     is_hyperlink,
     is_legacy_choice,
+    is_multi_value_lookup,
     is_person,
     map_column,
     supports_unique,
@@ -55,6 +60,42 @@ def test_int_with_ref_is_lookup() -> None:
     assert field.kind == "Lookup"
     assert field.target_list == "Project"
     assert field.unique is True
+
+
+def test_int_array_with_ref_is_a_multi_value_lookup() -> None:
+    """`int[] [ref: > Party.Id]` resolves rather than failing as unknown.
+
+    The number is 7 in BOTH arities, which is the measurement that makes this
+    worth pinning: a reader who expects a new FieldTypeKind for LookupMulti
+    would add one, and every field then fails its immutable-shape check
+    against a tenant that reports 7.
+    """
+    col = Column(
+        name="Parties",
+        type="int[]",
+        ref=Reference("Party", "Id"),
+        required=True,
+    )
+    field = map_column(col, ENUM_NAMES)
+    assert field.kind == "LookupMulti"
+    assert field.field_type_kind == FIELD_TYPE_KIND_BY_KIND["Lookup"] == 7
+    assert field.target_list == "Party"
+    assert field.required is True
+
+
+def test_an_enum_array_carrying_a_ref_is_still_a_multi_choice() -> None:
+    """The resolver decides Choice before it looks at `ref`, and so must the
+    predicate that names the kind for everything downstream."""
+    col = Column(name="Events", type="status[]", ref=Reference("Party", "Id"))
+    assert map_column(col, ENUM_NAMES).kind == "MultiChoice"
+    assert is_multi_value_lookup(col, ENUM_NAMES) is False
+
+
+def test_only_a_multi_value_ref_column_is_a_multi_value_lookup() -> None:
+    ref = Reference("Party", "Id")
+    assert is_multi_value_lookup(Column(name="P", type="int[]", ref=ref), ENUM_NAMES)
+    assert not is_multi_value_lookup(Column(name="P", type="int", ref=ref), ENUM_NAMES)
+    assert not is_multi_value_lookup(Column(name="P", type="int[]"), ENUM_NAMES)
 
 
 def test_int_plain_is_number() -> None:
@@ -443,18 +484,52 @@ def test_every_field_kind_has_a_sharepoint_type_kind() -> None:
     assert set(FIELD_TYPE_KIND_BY_KIND) == _DEPLOYED_FIELD_KINDS
 
 
-def test_the_type_kind_numbers_are_distinct() -> None:
-    """Two kinds sharing a number would make FIELD_KIND_BY_TYPE_KIND lossy.
+def test_the_type_kind_numbers_are_distinct_among_single_value_kinds() -> None:
+    """Two SINGLE-VALUE kinds sharing a number would make the inverse lossy.
 
     The inverse map is built by comprehension, so a duplicated integer does
     not raise -- the later entry simply wins and one kind disappears from the
     deploy script's Map without anything saying so.
+
+    The multi-arity kinds are excluded here rather than pinned as distinct,
+    because sharing is the measured fact about them: LookupMulti reads back
+    FieldTypeKind=7, the same number as Lookup. They are inverted separately.
     """
-    assert len(set(FIELD_TYPE_KIND_BY_KIND.values())) == len(FIELD_TYPE_KIND_BY_KIND)
-    assert set(FIELD_KIND_BY_TYPE_KIND.values()) == _DEPLOYED_FIELD_KINDS
+    singles = {
+        kind: number for kind, number in FIELD_TYPE_KIND_BY_KIND.items()
+        if kind not in SINGLE_ARITY_KIND
+    }
+    assert len(set(singles.values())) == len(singles)
+    assert set(FIELD_KIND_BY_TYPE_KIND.values()) == set(singles)
+    assert set(singles) == _DEPLOYED_FIELD_KINDS - set(SINGLE_ARITY_KIND)
 
 
-def _rendered_type_as_string_map(js: str) -> dict[int, str]:
+def test_a_multi_arity_kind_shares_its_single_value_kind_number() -> None:
+    """The pairing is what makes one FieldTypeKind resolvable to two tokens.
+
+    Measured 2026-09-02: a createfieldasxml LookupMulti field reads back
+    FieldTypeKind=7, TypeAsString="LookupMulti", AllowMultipleValues=true,
+    entity type SP.FieldLookup. If the two ever carried different numbers the
+    deployer could pick the token from the number alone and every arity map
+    below would be scaffolding, so pin the reason they exist.
+    """
+    assert MULTI_ARITY_KIND == {"Lookup": "LookupMulti"}
+    for single, multi in MULTI_ARITY_KIND.items():
+        assert FIELD_TYPE_KIND_BY_KIND[multi] == FIELD_TYPE_KIND_BY_KIND[single]
+
+
+def test_every_field_kind_has_exactly_one_type_as_string_spelling() -> None:
+    """Across both arity maps, each kind is named once and only once.
+
+    The deployer reads one map or the other, never both, so a kind appearing
+    in neither throws mid-deploy and a kind appearing in both would mean the
+    arity question had two answers.
+    """
+    spelled = [name for _, name in [*TYPE_AS_STRING_PAIRS, *MULTI_TYPE_AS_STRING_PAIRS]]
+    assert sorted(spelled) == sorted(_DEPLOYED_FIELD_KINDS)
+
+
+def _rendered_type_as_string_map(js: str, name: str = "TYPE_AS_STRING_BY_KIND") -> dict[int, str]:
     """The `TYPE_AS_STRING_BY_KIND` pairs as they reach the operator's browser.
 
     Read out of the RENDERED script rather than off the Python constant. The
@@ -463,10 +538,10 @@ def _rendered_type_as_string_map(js: str) -> dict[int, str]:
     whatever the template does with it.
     """
     match = re.search(
-        r"const TYPE_AS_STRING_BY_KIND = new Map\((\[.*?\])\);", js, re.DOTALL,
+        rf"const {name} = new Map\((\[.*?\])\);", js, re.DOTALL,
     )
     assert match is not None, (
-        "deploy.js.txt no longer declares TYPE_AS_STRING_BY_KIND as "
+        f"deploy.js.txt no longer declares {name} as "
         "`new Map([...])` -- this test can no longer see what the deployer "
         "will compare TypeAsString against, so it has stopped checking."
     )
@@ -479,7 +554,7 @@ def _rendered_type_as_string_map(js: str) -> dict[int, str]:
         # strings are not JSON. That is the regression this file exists to
         # catch, so say so rather than reporting a parser error.
         msg = (
-            "TYPE_AS_STRING_BY_KIND is not the JSON `| tojson` renders. It "
+            f"{name} is not the JSON `| tojson` renders. It "
             "has most likely been hand-written back into the template, which "
             "is the duplication this test exists to prevent. Render it from "
             "typemap.TYPE_AS_STRING_PAIRS instead.\n"
@@ -511,6 +586,11 @@ def test_the_deploy_script_map_covers_every_field_kind() -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
     rendered = _rendered_type_as_string_map(js)
+    rendered_multi = _rendered_type_as_string_map(js, "MULTI_TYPE_AS_STRING_BY_KIND")
 
-    assert set(rendered.values()) == _DEPLOYED_FIELD_KINDS
+    # Both halves together are the whole vocabulary. Asserting the single-value
+    # map alone covered every kind is what this used to say, and it would now
+    # be satisfied by a script that never learnt the multi-value spelling.
+    assert set(rendered.values()) | set(rendered_multi.values()) == _DEPLOYED_FIELD_KINDS
     assert rendered == FIELD_KIND_BY_TYPE_KIND
+    assert rendered_multi == dict(MULTI_TYPE_AS_STRING_PAIRS)

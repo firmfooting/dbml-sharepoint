@@ -17,7 +17,19 @@ nothing could check and that had already lost Calculated and MultiChoice.
 ### `FIELD_TYPE_KIND_BY_KIND`
 
 ```python
-FIELD_TYPE_KIND_BY_KIND = {'Text': 2, 'Note': 3, 'DateTime': 4, 'Choice': 6, 'Lookup': 7, 'Boolean': 8, 'Number': 9, 'URL': 11, 'MultiChoice': 15, 'Calculated': 17, 'User': 20}
+FIELD_TYPE_KIND_BY_KIND = {'Text': 2, 'Note': 3, 'DateTime': 4, 'Choice': 6, 'Lookup': 7, 'LookupMulti': 7, 'Boolean': 8, 'Number': 9, 'URL': 11, 'MultiChoice': 15, 'Calculated': 17, 'User': 20}
+```
+
+### `MULTI_ARITY_KIND`
+
+```python
+MULTI_ARITY_KIND = {'Lookup': 'LookupMulti'}
+```
+
+### `SINGLE_ARITY_KIND`
+
+```python
+SINGLE_ARITY_KIND = {'LookupMulti': 'Lookup'}
 ```
 
 ### `FIELD_KIND_BY_TYPE_KIND`
@@ -30,6 +42,30 @@ FIELD_KIND_BY_TYPE_KIND = {2: 'Text', 3: 'Note', 4: 'DateTime', 6: 'Choice', 7: 
 
 ```python
 TYPE_AS_STRING_PAIRS = [(2, 'Text'), (3, 'Note'), (4, 'DateTime'), (6, 'Choice'), (7, 'Lookup'), (8, 'Boolean'), (9, 'Number'), (11, 'URL'), (15, 'MultiChoice'), (17, 'Calculated'), (20, 'User')]
+```
+
+### `MULTI_TYPE_AS_STRING_PAIRS`
+
+```python
+MULTI_TYPE_AS_STRING_PAIRS = [(7, 'LookupMulti')]
+```
+
+### `BASE_TYPE_AS_STRING_PAIRS`
+
+```python
+BASE_TYPE_AS_STRING_PAIRS = [('LookupMulti', 'Lookup')]
+```
+
+### `DERIVED_FIELD_PROPERTIES`
+
+```python
+DERIVED_FIELD_PROPERTIES = ['MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices', 'FillInChoice', 'DisplayFormat', 'SelectionMode', 'Formula', 'OutputType', 'AllowMultipleValues']
+```
+
+### `DERIVED_FIELD_PROPERTY_KINDS`
+
+```python
+DERIVED_FIELD_PROPERTY_KINDS = {'Choices': 'strings', 'RichText': 'boolean', 'AppendOnly': 'boolean', 'FillInChoice': 'boolean', 'AllowMultipleValues': 'boolean', 'Formula': 'string'}
 ```
 
 ### `CALCULATED_OUTPUT_TYPES`
@@ -80,6 +116,12 @@ MULTI_VALUE_SUFFIX = '[]'
 MULTI_VALUE_METADATA_TYPE = 'Collection(Edm.String)'
 ```
 
+### `MULTI_VALUE_LOOKUP_METADATA_TYPE`
+
+```python
+MULTI_VALUE_LOOKUP_METADATA_TYPE = 'Collection(Edm.Int32)'
+```
+
 ### `is_multi_value`
 
 ```python
@@ -98,8 +140,10 @@ shape of failure this project exists to close.
 
 Callers ask this instead of adding a string entry. The suffix test is
 deliberately arity-only and says nothing about which SharePoint field the
-type becomes; `map_column` decides that, and refuses everything except an
-enum, so `person[]` and `int[]` are still unknown types today.
+type becomes; `map_column` decides that. Two multi-value kinds resolve
+today, an enum (MultiChoice) and a `ref` (LookupMulti), so a caller that
+needs to know WHICH must ask `is_multi_value_lookup` as well. `person[]`
+is still an unknown type.
 
 ### `element_type`
 
@@ -132,6 +176,31 @@ docstring says a branch is where the two arms come to disagree.
 This is not for the arity-sensitive guards. `supports_unique` and the multi-value
 default refusal answer differently for the two arities by design, and are
 deliberately not routed here.
+
+### `is_multi_value_lookup`
+
+```python
+def is_multi_value_lookup(col: dbml_sharepoint.model.parser.Column, enum_names: collections.abc.Collection[str]) -> bool
+```
+
+Whether this column is a lookup that holds many target items.
+
+THE TWO MULTI-VALUE KINDS DIVERGE and a caller has to know which it has.
+They share arity mechanics (no default, no unique, no index, a collection
+write shape) and differ where the tenant differs: a MultiChoice is written
+under its own name and holds strings, a LookupMulti is written under
+`<Name>Id` and holds item ids, and only the lookup carries a join.
+
+ASKED IN `_resolve_column`'s OWN ORDER, which is why the enum question is
+here at all. The resolver decides Choice before it looks at `ref`, so
+`audit_event[] [ref: > X.Id]` is a MultiChoice and its `ref` is ignored; a
+predicate that only tested `col.ref is not None` would call the same column
+a lookup and send every downstream rule down the wrong arm.
+
+Nothing here tests the element type against `KNOWN_SCALARS`. The resolver
+does not either: `blob [ref: > X.Id]` maps to a Lookup and the validator is
+what reports the unknown type, so `blob[] [ref: > X.Id]` behaves the same
+way rather than acquiring a second, arity-only opinion.
 
 ### `is_boolean`
 
@@ -306,16 +375,29 @@ def format_description(note: str) -> str
 UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtext': 'Multiple lines of text (Note)', 'hyperlink': 'Hyperlink'}
 ```
 
-### `MULTI_VALUE_SP_TYPE_NAME`
+### `MULTI_VALUE_SP_TYPE_NAMES`
 
 ```python
-MULTI_VALUE_SP_TYPE_NAME = 'Choice (multi-valued)'
+MULTI_VALUE_SP_TYPE_NAMES = {'MultiChoice': 'Choice (multi-valued)', 'LookupMulti': 'Lookup (multi-valued)'}
 ```
+
+### `multi_value_sp_type_name`
+
+```python
+def multi_value_sp_type_name(*, lookup: bool = False) -> str
+```
+
+SharePoint's own name for the multi-value column type `lookup` selects.
+
+A FLAG RATHER THAN A `Column`, because the two callers that render this
+into a message hold different things: one has the parsed column, the other
+only a declared type string out of a `types_by_col` map. Both can answer
+"is this a lookup", and neither should be typing the string.
 
 ### `unsupported_index_reason`
 
 ```python
-def unsupported_index_reason(col_type: str) -> str | None
+def unsupported_index_reason(col_type: str, *, lookup: bool = False) -> str | None
 ```
 
 The SharePoint type name that explains why `col_type` cannot be
@@ -328,6 +410,10 @@ while the rule reads as though it covers the column. Two of the three
 produce a build error and the third decides whether to RECOMMEND an index,
 which on a multi-value column would prescribe a remedy the deploy cannot
 carry out.
+
+`lookup` only picks which name comes back, never whether one does: both
+multi-value kinds are refused an index, so a caller that cannot tell a
+lookup from an enum still gets the right verdict and a slightly wrong noun.
 
 Calculated columns are deliberately still not covered here: they are
 identified by CALCULATED_TYPES rather than by one type name, and a caller

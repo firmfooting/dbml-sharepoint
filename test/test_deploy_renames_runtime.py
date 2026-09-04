@@ -445,6 +445,9 @@ def _lookup_field(name: str, ident: str, target: str, show: str) -> dict[str, An
     return {
         **_text_field(name, ident), "TypeAsString": "Lookup",
         "LookupList": target, "LookupField": show,
+        # Declared on every lookup, so the shape probe selects it and the
+        # reconcile compares it. A single-value lookup reads back false.
+        "AllowMultipleValues": False,
     }
 
 
