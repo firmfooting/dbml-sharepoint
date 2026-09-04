@@ -75,6 +75,13 @@ KNOWN_CONTEXT = {
     # that nothing was), same wording in the manifest, index.md and the
     # deploy transcript's log() line.
     "env_file_line",
+    # The sidecar lists the logging phase ensures on every deploy (both
+    # None under --no-sidecars, which emits no logging phase at all), the
+    # change-log column bodies shared by the ensure and the SCD-2 writer,
+    # and the external deployment log probed but never created.
+    "sidecar_run_log_title", "sidecar_run_log_marker",
+    "sidecar_change_log_title", "sidecar_change_log_marker",
+    "sidecar_change_fields", "deployment_log_list",
     # extractgen (extract.js). `deployer_version` is bare here rather than
     # `release.deployer_version`: extract.js runs before a release.yaml
     # exists, so there is no release object to hang it off.

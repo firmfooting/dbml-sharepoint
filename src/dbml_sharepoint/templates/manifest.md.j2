@@ -142,6 +142,39 @@ than refused{% else %}every list this bundle provisions{% endif %}.
 Check **Site permissions -> Groups** if you need to know.
 {% endif %}
 
+{% if sidecar_run_log_title %}
+## Run and change logs
+
+Phase {{ phase_num['logging'] }} keeps two hidden, tool-owned lists on the site
+before any register is written:
+
+- **{{ sidecar_run_log_title }}** records this run: a start stamp, provenance
+  naming the release and schema version the bundle was built from (and what the
+  env file supplied, if one was read), and a stop stamp written on every way out
+  -- success, abort, or error -- with the outcome and elapsed time. Nothing is
+  granted on it beyond what the running operator already holds.
+- **{{ sidecar_change_log_title }}** records CHANGES as type-2 rows: list
+  creates, renames (old value and new value side by side), and enterprise-reader
+  enrolments, each with an effective-from time and the previous row closed out
+  with an effective-to time. Rows are insert-only from the deploy's side; the
+  enterprise-reader group is granted Read on this list so an external reader can
+  collect them without touching the registers.
+
+Both are owned the same way every list here is: by the tool's provenance marker
+in the Description, compared whole. A list of the same title that is NOT this
+tool's stops the run rather than being written into. Neither list is created
+when the bundle was built with `--no-sidecars`, and neither is deleted by
+`rollback.js.txt`.
+{% if deployment_log_list %}
+
+This bundle also stamps a site-run **deployment log** named
+`{{ deployment_log_list }}`: the same start, provenance and stop rows, appended
+to a list that exists independently of this tool. It is probed, never created --
+if it is absent the run notes that and carries on -- and only the item Title is
+written, so any generic list works as the log.
+{% endif %}
+{% endif %}
+
 ## Summary
 
 - Lists to provision: {{ counts.lists }}

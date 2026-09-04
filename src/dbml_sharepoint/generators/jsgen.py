@@ -2,6 +2,7 @@
 """Render deploy.js from the schema, mapping bundle, and release."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,12 @@ def generate_deploy_js(
     site_context: SiteContext | None = None,
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
+    deployment_log_list: str = "",
+    sidecar_run_log_title: str | None = None,
+    sidecar_run_log_marker: str | None = None,
+    sidecar_change_log_title: str | None = None,
+    sidecar_change_log_marker: str | None = None,
+    sidecar_change_fields: Sequence[dict[str, Any]] | None = None,
 ) -> str:
     env = script_env()
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
@@ -138,6 +145,19 @@ def generate_deploy_js(
         # that matters is the transcript the operator pastes back, not the
         # file. It reads nothing from the tenant and must not imply it did.
         env_file_line=describe_env_provenance(env_provenance),
+        # The sidecar lists the logging phase ensures on every deploy, and
+        # the external deployment log it probes but never creates. The
+        # markers come from the same grammar as the verify scratch list;
+        # the change columns are emitted here so the runtime side cannot
+        # drift from the declared schema of its own log. All None when the
+        # operator passed --no-sidecars: the logging phase then emits
+        # nothing at all.
+        sidecar_run_log_title=sidecar_run_log_title,
+        sidecar_run_log_marker=sidecar_run_log_marker,
+        sidecar_change_log_title=sidecar_change_log_title,
+        sidecar_change_log_marker=sidecar_change_log_marker,
+        sidecar_change_fields=sidecar_change_fields or [],
+        deployment_log_list=deployment_log_list,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

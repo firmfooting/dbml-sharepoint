@@ -39,6 +39,13 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
         # the enrolment is part of PREPARE's security setup.
         PhaseStep("reader_enrolment", "enterprise reader enrolment",
                   "deploy/_reader_enrolment.js.j2"),
+        # After `reader_enrolment` so the run log's start stamp records a run
+        # whose security setup (groups, enrolments) already exists, and so the
+        # change log's reader grant can reuse the group the enrolment targets.
+        # Before every write phase: a sidecar created by a run that later
+        # aborts is tool-owned documentation, not half a register.
+        PhaseStep("logging", "deployment run and change logs",
+                  "deploy/_logging.js.j2"),
         PhaseStep("unseal", "maintenance unseal",
                   "deploy/_maintenance_unseal.js.j2"),
     )),

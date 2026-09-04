@@ -1130,12 +1130,23 @@ def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
     test indifferent to the width rich chose. Pinning the width to avoid the
     wrap would have worked too, but it couples a content assertion to a
     presentation decision that has nothing to do with what is being tested.
+
+    A KEY, though, is one unbroken token, and rich breaks long tokens
+    mid-word: a key too long for the options-table name column arrives
+    ELLIPSISED (`DBMLSP_DEPLOY_LOG_L…`), which no normalisation can
+    recover. The registry key therefore has to FIT the panel, which is the
+    constraint this test enforces: today's longest key fits at the same
+    width `DBMLSP_ENTERPRISE_READER` always has. Assertions go through
+    `_rendered_without_whitespace` so a wrap between words cannot split a
+    token; the help PROSE stays on `_normalise_rendered_output`, since
+    every break rich can make in prose falls between words.
     """
     result = runner.invoke(app, ["build", "--help"])
     assert result.exit_code == 0
     collapsed = _normalise_rendered_output(result.stdout)
+    tokens = _rendered_without_whitespace(result.stdout)
     for setting in ENV_SETTINGS:
-        assert setting.key in collapsed, f"{setting.key} missing from build --help"
+        assert setting.key in tokens, f"{setting.key} missing from build --help"
         help_collapsed = " ".join(setting.help.split())
         assert help_collapsed in collapsed, f"help for {setting.key} missing from build --help"
 
@@ -2090,6 +2101,140 @@ def test_build_defaults_its_inputs_to_the_project_layout(
 
     assert result.exit_code == 0, result.output
     assert (Path("build") / "deploy.js.txt").is_file()
+
+
+def test_sidecar_lists_are_ensured_by_default_and_the_external_log_is_probed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain build keeps a run log and a change log, and names the
+    external deployment log to probe.
+
+    The run log is the whole point of the stamps: without a list the
+    transcript is the only record, and a console that closes takes it with
+    it. The external log is the opposite bargain -- probed, never created,
+    because its absence means the site does not run one. The build bakes
+    the NAME in either way, so the operator can see what will be looked
+    for before pasting.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert '"dbml Local Log"' in js
+    assert '"dbml_Logs"' in js
+    assert '"dbml-deployment-log"' in js
+    assert "finishRunLog" in js
+
+
+def test_no_sidecars_emits_no_logging_phase_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--no-sidecars` is a full opt-out, not a quiet mode.
+
+    No sidecar constants may reach the script, because a constant that is
+    declared but never ensured is exactly how a script comes to stamp into
+    a list it never created. The logging phase renders empty; the buffered
+    change events from renames are dropped on the floor, which is what the
+    operator asked for.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--no-sidecars",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert "dbml Local Log" not in js
+    assert "dbml_Logs" not in js
+    assert "dbml-deployment-log" not in js
+
+    # The manifest is the pre-paste contract: it must not advertise lists
+    # the bundle will not create.
+    manifest = (Path("build") / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert "Run and change logs" not in manifest
+    assert "dbml Local Log" not in manifest
+
+
+def test_an_empty_deployment_log_list_disables_the_external_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--deployment-log-list ''` turns the external stamps off while
+    keeping the built-in sidecars.
+
+    The empty string must survive as a MEANING, not die in validation:
+    it is how an operator says "this site does not run a shared deployment
+    log" without losing the run log's start and stop stamps. A padded
+    variant is not the disable and is refused, so nothing invisible can
+    turn the feature off.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-list", "",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert 'EXTERNAL_LOG_TITLE = ""' in js
+    assert '"dbml Local Log"' in js  # the built-in sidecars stay
+
+    padded = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-list", " ",
+    ])
+    assert padded.exit_code == 2
+    # Normalise, then assert: rich wraps the refusal inside the panel and
+    # the break lands between words, which is exactly what the collapsing
+    # helper exists to remove.
+    assert "padded, or whitespace" in _normalise_rendered_output(padded.output)
+
+
+def test_an_env_file_can_supply_both_log_lists_and_a_flag_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two list names resolve under the same precedence as the reader.
+
+    File supplies, flag overrides, and the build transcript says which won
+    -- the same provenance line the reader key has always had, because a
+    setting whose source cannot be told from a setting whose source is
+    guessed is a setting nobody can audit.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+    (Path("dbml-sharepoint.env").write_text(
+        "DBMLSP_DEPLOY_LOG_LIST=Programme Board Log\n"
+        "DBMLSP_CHANGE_LOG_LIST=Programme_Changes\n",
+        encoding="utf-8", newline="\n",
+    ))
+
+    from_file = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+    assert from_file.exit_code == 0, from_file.output
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert '"Programme Board Log"' in js
+    assert '"Programme_Changes"' in js
+    assert "DBMLSP_DEPLOY_LOG_LIST = Programme Board Log (from the file)" in from_file.output
+    assert "DBMLSP_CHANGE_LOG_LIST = Programme_Changes (from the file)" in from_file.output
+
+    by_flag = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-list", "dbml-deployment-log",
+    ])
+    assert by_flag.exit_code == 0, by_flag.output
+    assert (
+        "DBMLSP_DEPLOY_LOG_LIST = Programme Board Log"
+        " (from the file; overridden, using dbml-deployment-log)"
+        in by_flag.output
+    )
+    js2 = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert '"dbml-deployment-log"' in js2  # the flag's value is what ships
 
 
 def test_an_explicit_path_beats_the_project_default(

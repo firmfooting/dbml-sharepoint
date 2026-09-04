@@ -16,7 +16,7 @@ def test_todays_numbering_is_pinned() -> None:
     assert phase_numbers() == {
         "assess": "1.1", "preflight": "1.2", "renames": "1.3",
         "security": "1.4", "enrolment": "1.5", "reader_enrolment": "1.6",
-        "unseal": "1.7",
+        "logging": "1.7", "unseal": "1.8",
         "lists": "2.1", "lookups": "2.2", "indexes": "2.3",
         "defaults": "2.4", "views": "3.1", "forms": "3.2", "seal": "4.1",
         "acls": "4.2", "seeds": "5.1",
@@ -30,17 +30,22 @@ def test_reader_enrolment_follows_operator_enrolment() -> None:
     `require_empty_at_deploy` is proved in `security` (1.4). The reader must
     be added AFTER that gate has run in this same deploy, never before, or
     the run would trip its own gate. It must also precede every write phase,
-    since the enrolment is part of PREPARE's security setup.
+    since the enrolment is part of PREPARE's security setup. The logging
+    phase follows the reader (its start stamp records the security setup)
+    and still precedes every write phase: a sidecar created by a run that
+    later aborts is tool-owned documentation, not half a register.
     """
     numbers = phase_numbers()
     assert numbers["reader_enrolment"] == "1.6"
-    assert numbers["unseal"] == "1.7"
+    assert numbers["logging"] == "1.7"
+    assert numbers["unseal"] == "1.8"
     keys = [step.key for _, steps in DEPLOY_GROUPS for step in steps]
     # A renamed list must be under its current title before the security
     # phase, the first to address lists by title after the preflight.
     assert keys.index("preflight") < keys.index("renames") < keys.index("security")
     assert keys.index("security") < keys.index("reader_enrolment")
-    assert keys.index("reader_enrolment") < keys.index("lists")
+    assert keys.index("reader_enrolment") < keys.index("logging")
+    assert keys.index("logging") < keys.index("lists")
 
 
 def test_keys_unique_and_templates_exist() -> None:

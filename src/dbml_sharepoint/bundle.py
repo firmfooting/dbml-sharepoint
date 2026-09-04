@@ -325,6 +325,9 @@ def emit_bundle(
     site_context: "SiteContext | None" = None,
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
+    deployment_log_list: str | None = None,
+    change_log_list: str | None = None,
+    no_sidecars: bool = False,
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
@@ -347,6 +350,7 @@ def emit_bundle(
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
     # packaging helpers without pulling the whole generation stack.
+    from dbml_sharepoint.analysis import sidecars as sidecars_mod  # noqa: PLC0415
     from dbml_sharepoint.generators.assessgen import (  # noqa: PLC0415
         generate_assess_js,
         generate_assess_manifest,
@@ -375,6 +379,18 @@ def emit_bundle(
             extension=extension, site_context=site_context,
             enterprise_reader=enterprise_reader,
             env_provenance=env_provenance,
+            sidecar_run_log_title=None if no_sidecars else sidecars_mod.run_log_title(),
+            sidecar_run_log_marker=None if no_sidecars else sidecars_mod.run_log_marker(),
+            sidecar_change_log_title=(
+                None if no_sidecars or change_log_list is None
+                else change_log_list
+            ),
+            sidecar_change_log_marker=(
+                None if no_sidecars or change_log_list is None
+                else sidecars_mod.scratch_marker_for(change_log_list)
+            ),
+            sidecar_change_fields=[] if no_sidecars else sidecars_mod.CHANGE_FIELDS,
+            deployment_log_list=deployment_log_list or "",
         ),
     )
     write_artifact(

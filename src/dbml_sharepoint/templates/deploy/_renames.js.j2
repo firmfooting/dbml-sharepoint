@@ -43,6 +43,8 @@
         invalidateListShapes();
         summary.listsRenamed.push({ from: plan.from, to: newTitle });
         log('INFO', `Renamed '${plan.from}' to '${newTitle}' in place (read back by list id).`);
+        logChange({ key: `list: ${plan.from}`, kind: 'rename', target: plan.from,
+          oldValue: plan.from, newValue: newTitle });
       } catch (err) {
         summary.errors.push({ phase: '{{ phase.number }}', list: newTitle, error: err.message });
         log('ERROR', `Rename '${plan.from}' -> '${newTitle}': ${err.message}`);

@@ -1,0 +1,436 @@
+{# src/dbml_sharepoint/templates/deploy/_logging.js.j2
+   Phase body: ensure the tool's sidecar lists, stamp the run log, probe the
+   external deployment log, and declare the change-log writer every later
+   phase calls.
+
+   THREE lists, three different contracts:
+
+   - `dbml Local Log` is created on EVERY deploy, hidden, and left with no
+     role assignments, so an ordinary member sees nothing and a paste
+     returns to a site that shows no trace of it. It records this run:
+     start stamp, stop stamp, and what the run did.
+   - The change log (default `dbml_Logs`) is created on every deploy,
+     hidden, and holds one Read assignment for the site group flagged
+     `enroll_enterprise_reader`, so a Power Automate reader can list and
+     read rows without seeing the registers themselves. It receives
+     type-2 rows: every change carries EffectiveFrom/EffectiveTo and
+     IsCurrent, and a change CLOSES the previous current row for its key
+     in the same logical step, so a reader always sees exactly one
+     current row per key.
+   - The EXTERNAL deployment log (probe `dbml-deployment-log`) is NEVER
+     created. An operator with a site-wide deployment log names it (flag
+     or DBMLSP_DEPLOYMENT_LOG_LIST) and this phase writes deployment
+     start, deployment stop and provenance rows into it. The rows set
+     Title ONLY: the list is the operator's, its schema is unknown, and
+     every generic list has a Title. Absent, this phase says so once and
+     moves on.
+
+   The two created lists carry the tool's provenance marker in their
+   Description. A list of the same title whose Description is not EXACTLY
+   the marker is somebody else's and this phase ABORTS the run, the same
+   fail-closed contract as verify.js's scratch list. Creation is
+   idempotent; a rollback never deletes these lists because rollback only
+   deletes declared TARGET_LISTS.
+
+   Change events raised BEFORE this phase (renames, phase 1.3) were
+   buffered by deploy.js.j2's shim. If the run aborts before reaching
+   this phase they are lost, and so is everything else about that run:
+   with no sidecar lists there is no record at all, which is the state
+   every deploy before this phase existed in. From this phase onward the
+   writer is live and events are written as they happen.
+#}
+{% if sidecar_run_log_title %}
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+
+  {
+    // ---- Constants, rendered from the single authority -----------------
+    const RUN_LOG_TITLE = {{ sidecar_run_log_title | tojson }};
+    const RUN_LOG_MARKER = {{ sidecar_run_log_marker | tojson }};
+    const CHANGE_LOG_TITLE = {{ sidecar_change_log_title | tojson }};
+    const CHANGE_LOG_MARKER = {{ sidecar_change_log_marker | tojson }};
+    // Empty string: no external log was named, so no probing either.
+    const EXTERNAL_LOG_TITLE = {{ deployment_log_list | tojson }};
+    const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
+
+    // ---- Failure recording ---------------------------------------------
+    // The registers this deploy maintains must never depend on the logs
+    // that document them, so every logging failure is RECORDED on
+    // summary.errors and the run carries on. The two exceptions are the
+    // sidecar ownership guards above: writing into a foreign list is a
+    // halt, not a note.
+    const recordFailure = (where, err) => {
+      summary.errors.push({
+        phase: '{{ phase.number }}', where,
+        error: err && err.message ? err.message : String(err),
+      });
+    };
+
+    // ---- Sidecar creation, marker-guarded ------------------------------
+    // Same contract as verify.js's scratch list: exact-Description
+    // ownership or abort. Returns the list Id.
+    const ensureSidecar = async (title, marker) => {
+      let shape = null;
+      try {
+        shape = await readListShape(title);
+      } catch (err) {
+        throw new Error(`sidecar '${title}' probe failed: ${err.message}`);
+      }
+      if (shape) {
+        if (shape.Description !== marker) {
+          throw new Error(
+            `A list titled '${title}' exists and its Description is not this `
+            + `tool's marker. It is not touched; rename or remove it and paste again.`,
+          );
+        }
+        log('INFO', `Sidecar '${title}' exists (marker matched); reusing it.`);
+        return shape.Id;
+      }
+      const digestS = await getDigest();
+      const created = await postJson(apiUrl('web/lists'), {
+        __metadata: { type: 'SP.List' },
+        Title: title,
+        BaseTemplate: 100,
+        Description: marker,
+        Hidden: true,
+        ContentTypesEnabled: false,
+        EnableVersioning: false,
+      }, digestS);
+      if (!created.d || typeof created.d.Id !== 'string') {
+        throw new Error(`Sidecar '${title}' create returned an invalid response`);
+      }
+      invalidateListShapes();
+      log('INFO', `Created hidden sidecar list '${title}'.`);
+      return created.d.Id;
+    };
+
+    let runLogId = null;
+    try {
+      runLogId = await ensureSidecar(RUN_LOG_TITLE, RUN_LOG_MARKER);
+    } catch (err) {
+      throw err;  // foreign run log: fatal, nothing about this run gets recorded
+    }
+    let changeLogId = null;
+    let changeLogFatal = null;
+    try {
+      changeLogId = await ensureSidecar(CHANGE_LOG_TITLE, CHANGE_LOG_MARKER);
+    } catch (err) {
+      // A foreign CHANGE log is recorded and non-fatal: the registers
+      // deploy fine without a change feed, and the operator must see the
+      // reason. Unlike the run log, nothing else fails without it.
+      recordFailure(`ensuring '${CHANGE_LOG_TITLE}'`, err);
+      changeLogFatal = err;
+    }
+
+    // ---- Change log columns --------------------------------------------
+    // Added only when the list is; a reused list is trusted to carry them
+    // already. Every column write is read back before the first event.
+    let changeLogReady = false;
+    let entityTypeFullName = null;
+    if (changeLogId) {
+      try {
+        const readPresent = async () => {
+          const resp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
+            + `?$select=InternalName&$filter=Hidden eq false and ReadOnlyField eq false`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status} ${await resp.text()}`);
+          }
+          return new Set((((await resp.json()).d || {}).results || [])
+            .map((f) => f.InternalName));
+        };
+        const present = await readPresent();
+        for (const fieldBody of CHANGE_FIELDS) {
+          if (present.has(fieldBody.Title)) continue;
+          const digestF = await getDigest();
+          const addResp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
+          ), {
+            method: 'POST', headers: spHeaders(digestF),
+            body: JSON.stringify(fieldBody),
+          });
+          if (!addResp.ok) {
+            throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
+          }
+        }
+        const back = await readPresent();
+        for (const fieldBody of CHANGE_FIELDS) {
+          if (!back.has(fieldBody.Title)) {
+            throw new Error(`field '${fieldBody.Title}' was accepted but is absent on read-back`);
+          }
+        }
+        const typeResp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
+          + `?$select=ListItemEntityTypeFullName`
+        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!typeResp.ok) {
+          throw new Error(`HTTP ${typeResp.status} ${await typeResp.text()}`);
+        }
+        entityTypeFullName = ((await typeResp.json()).d || {}).ListItemEntityTypeFullName;
+        if (typeof entityTypeFullName !== 'string' || !entityTypeFullName) {
+          throw new Error('ListItemEntityTypeFullName probe returned no value');
+        }
+        changeLogReady = true;
+      } catch (err) {
+        recordFailure(`columns on '${CHANGE_LOG_TITLE}'`, err);
+      }
+    }
+
+    // ---- The type-2 change writer --------------------------------------
+    // One insert per event; a key that already has a current row gets that
+    // row MERGEd closed (EffectiveTo, IsCurrent) in the same logical step.
+    // The current-row decision is read from the server per event: at
+    // deploy volumes one read is affordable and a run-local cache would
+    // lie about rows an earlier run left behind.
+    const writeChange = async (digest, change) => {
+      if (!changeLogReady) return;
+      const effectiveFrom = change.at || new Date().toISOString();
+      const currentResp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items`
+        + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}' and IsCurrent eq true`
+      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+      const currentRows = currentResp.ok
+        ? (((await currentResp.json()).d || {}).results || [])
+        : [];
+      if (!currentResp.ok) {
+        recordFailure(`current-row read for '${change.key}'`,
+          new Error(`HTTP ${currentResp.status} ${await currentResp.text()}`));
+        return;
+      }
+      if (currentRows.length > 1) {
+        recordFailure(`change key '${change.key}'`,
+          new Error(`${currentRows.length} rows are marked current; a previous run died mid-close. Close all but one by hand before the next deploy with changes to this key.`));
+        return;
+      }
+      if (currentRows.length === 1) {
+        const closeResp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items(${currentRows[0].Id})`
+        ), {
+          method: 'POST',
+          headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
+            __metadata: { type: entityTypeFullName },
+            EffectiveTo: effectiveFrom,
+            IsCurrent: false,
+          }),
+        });
+        if (!closeResp.ok) {
+          recordFailure(`closing row ${currentRows[0].Id} for '${change.key}'`,
+            new Error(`HTTP ${closeResp.status} ${await closeResp.text()}`));
+          return;
+        }
+      }
+      const insertResp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items`
+      ), {
+        method: 'POST',
+        headers: spHeaders(digest),
+        body: JSON.stringify({
+          __metadata: { type: entityTypeFullName },
+          Title: change.key,
+          ChangeKind: change.kind,
+          TargetName: change.target || '',
+          OldValue: change.oldValue || '',
+          NewValue: change.newValue || '',
+          EffectiveFrom: effectiveFrom,
+          EffectiveTo: null,
+          IsCurrent: true,
+          ReleaseTag: RELEASE_TAG,
+        }),
+      });
+      if (!insertResp.ok) {
+        recordFailure(`inserting '${change.key}'`,
+          new Error(`HTTP ${insertResp.status} ${await insertResp.text()}`));
+      }
+    };
+
+    // ---- The reader's Read grant on the change log ---------------------
+    // The SAME level the reader group holds on the declared lists,
+    // resolved by role definition Id read back from the site, never by
+    // trusting the name at runtime. No reader configured: the change log
+    // sits at zero assignments, like the run log.
+{% if enterprise_reader %}
+    {
+      const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
+      const readerGrant = readerGroup && SCHEMA.list_assignments
+        .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
+                && a.principal.name === readerGroup.name))
+        .find((a) => a);
+      const levelName = readerGrant ? readerGrant.level : null;
+      if (!readerGroup || !levelName) {
+        log('INFO', 'Change log: no reader group grant found to mirror; leaving it with no role assignments.');
+      } else {
+        try {
+          const breakResp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
+            + `/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`
+          ), { method: 'POST', headers: spHeaders(await getDigest()) });
+          if (!breakResp.ok) {
+            throw new Error(`breakroleinheritance: HTTP ${breakResp.status} ${await breakResp.text()}`);
+          }
+          const roleResp = await fetchWithRetry(apiUrl(
+            `web/roledefinitions/getbyname('${odataName(levelName)}')?$select=Id`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          if (!roleResp.ok) {
+            throw new Error(`role definition '${levelName}': HTTP ${roleResp.status} ${await roleResp.text()}`);
+          }
+          const roleId = sharePointGuid(((await roleResp.json()).d || {}).Id, `role definition '${levelName}'`);
+          const grpResp = await fetchWithRetry(apiUrl(
+            `web/sitegroups/getbyname('${odataName(readerGroup.name)}')?$select=Id`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          if (!grpResp.ok) {
+            throw new Error(`group '${readerGroup.name}': HTTP ${grpResp.status} ${await grpResp.text()}`);
+          }
+          const groupId = sharePointGuid(((await grpResp.json()).d || {}).Id, `group '${readerGroup.name}'`);
+          const grantResp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
+            + `/roleassignments/addroleassignment(principalid=${groupId},roleDefId=${roleId})`
+          ), { method: 'POST', headers: spHeaders(await getDigest()) });
+          if (!grantResp.ok) {
+            throw new Error(`addroleassignment: HTTP ${grantResp.status} ${await grantResp.text()}`);
+          }
+          log('INFO', `Change log '${CHANGE_LOG_TITLE}': granted '${readerGroup.name}' the '${levelName}' level for the enterprise reader.`);
+          await writeChange(await getDigest(), {
+            key: 'enterprise reader grant',
+            kind: 'permission',
+            target: CHANGE_LOG_TITLE,
+            oldValue: '(no access)',
+            newValue: `${levelName} for group '${readerGroup.name}'`,
+          });
+        } catch (err) {
+          recordFailure(`reader grant on '${CHANGE_LOG_TITLE}'`, err);
+        }
+      }
+    }
+{% else %}
+    log('INFO', `Change log '${CHANGE_LOG_TITLE}' holds no role assignments: no enterprise reader was configured.`);
+{% endif %}
+
+    // ---- The external deployment log -----------------------------------
+    // Probed, never created, written by Title only. Absent: one INFO line
+    // and the run carries on, because an operator who named a list that
+    // is not there yet must still be able to deploy.
+    const stampExternal = async (digest, kind, text) => {
+      try {
+        const resp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
+        ), {
+          method: 'POST', headers: spHeaders(digest),
+          body: JSON.stringify({ Title: `dbml-sharepoint ${kind}: ${text}`.slice(0, 255) }),
+        });
+        if (!resp.ok) {
+          recordFailure(`external log '${EXTERNAL_LOG_TITLE}' ${kind}`,
+            new Error(`HTTP ${resp.status} ${await resp.text()}`));
+        }
+      } catch (err) {
+        recordFailure(`external log '${EXTERNAL_LOG_TITLE}' ${kind}`, err);
+      }
+    };
+    if (EXTERNAL_LOG_TITLE) {
+      let externalShape = null;
+      try {
+        externalShape = await readListShape(EXTERNAL_LOG_TITLE);
+      } catch (err) {
+        log('INFO', `External deployment log '${EXTERNAL_LOG_TITLE}' probe failed (${err.message}); stamps skipped.`);
+      }
+      if (externalShape) {
+        log('INFO', `External deployment log '${EXTERNAL_LOG_TITLE}' found; stamping deployment start and provenance.`);
+        await stampExternal(await getDigest(), 'deployment start',
+          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
+          + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')}`);
+        await stampExternal(await getDigest(), 'provenance',
+          `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
+          + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`
+          + `; change log '${CHANGE_LOG_TITLE}'; run log '${RUN_LOG_TITLE}'`.slice(0, 255));
+      } else if (externalShape === null) {
+        log('INFO', `No list '${EXTERNAL_LOG_TITLE}' on this site; no external stamps. `
+          + `The run log '${RUN_LOG_TITLE}' holds this run's record.`);
+      }
+    }
+
+    // ---- Drain what the shim buffered ----------------------------------
+    for (const change of DEPLOY_CHANGES.splice(0, DEPLOY_CHANGES.length)) {
+      try {
+        await writeChange(await getDigest(), change);
+      } catch (err) {
+        recordFailure(`buffered change '${change.key}'`, err);
+      }
+    }
+
+    // ---- Publish the writers to the rest of the run --------------------
+    // From here every phase logs changes directly; the finally in
+    // deploy.js.j2 calls these two on every exit path.
+    logChange = writeChange;
+    finishRunLog = async () => {
+      const kind = summary.errors.length > 0 ? 'abort' : 'deployment stop';
+      const note = `errors ${summary.errors.length}; lists +${summary.listsCreated.length}, `
+        + `renamed ${summary.listsRenamed.length}, columns +${summary.columnsCreated}, `
+        + `skipped ${summary.columnsSkipped}; ${Math.round((Date.now() - RUN_STARTED_AT) / 1000)}s`;
+      try {
+        const digest = await getDigest();
+        const resp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
+        ), {
+          method: 'POST', headers: spHeaders(digest),
+          body: JSON.stringify({
+            Title: `dbml-sharepoint ${kind}: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
+              + `at ${new Date().toISOString()}`.slice(0, 255),
+            StampKind: kind,
+            StampUtc: new Date().toISOString(),
+            ReleaseTag: RELEASE_TAG,
+            SchemaVersion: SCHEMA_VERSION,
+            Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
+            Details: note.slice(0, 255),
+          }),
+        });
+        if (!resp.ok) {
+          recordFailure(`run log ${kind}`, new Error(`HTTP ${resp.status} ${await resp.text()}`));
+        }
+      } catch (err) {
+        recordFailure(`run log ${kind}`, err);
+      }
+      if (EXTERNAL_LOG_TITLE) {
+        await stampExternal(await getDigest(), kind,
+          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`.slice(0, 255));
+      }
+    };
+
+    // ---- The start stamp, last -----------------------------------------
+    // Written once the phase's own setup has fully succeeded, so a start
+    // stamp exists only for a run that got past creating its log lists.
+    try {
+      const digest = await getDigest();
+      const resp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
+      ), {
+        method: 'POST', headers: spHeaders(digest),
+        body: JSON.stringify({
+          Title: `dbml-sharepoint deployment start: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
+            + `at ${new Date().toISOString()}`.slice(0, 255),
+          StampKind: 'deployment start',
+          StampUtc: new Date().toISOString(),
+          ReleaseTag: RELEASE_TAG,
+          SchemaVersion: SCHEMA_VERSION,
+          Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
+          Details: `site {{ site_url }}; role {{ site_role }}`.slice(0, 255),
+        }),
+      });
+      if (!resp.ok) {
+        recordFailure('run log start', new Error(`HTTP ${resp.status} ${await resp.text()}`));
+      }
+    } catch (err) {
+      recordFailure('run log start', err);
+    }
+    log('INFO', `Run log '${RUN_LOG_TITLE}' stamped; `
+      + (changeLogReady
+        ? `change log '${CHANGE_LOG_TITLE}' ready.`
+        : `change log '${CHANGE_LOG_TITLE}' NOT ready${changeLogFatal ? ' (foreign list refused)' : ' (setup failed)'}; changes will not be recorded this run.`));
+  }
+{% else %}
+  // --no-sidecars: no run log, no change log, no external stamps. The
+  // shim logChange still buffers whatever renames raise, and nothing
+  // drains it: a build that declines its own logging records nothing.
+{% endif %}

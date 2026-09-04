@@ -53,10 +53,34 @@ ENTERPRISE_READER_KEY = 'DBMLSP_ENTERPRISE_READER'
 ENTERPRISE_READER_PARAMETER = 'enterprise_reader'
 ```
 
+### `DEPLOYMENT_LOG_LIST_KEY`
+
+```python
+DEPLOYMENT_LOG_LIST_KEY = 'DBMLSP_DEPLOY_LOG_LIST'
+```
+
+### `DEPLOYMENT_LOG_LIST_PARAMETER`
+
+```python
+DEPLOYMENT_LOG_LIST_PARAMETER = 'deployment_log_list'
+```
+
+### `CHANGE_LOG_LIST_KEY`
+
+```python
+CHANGE_LOG_LIST_KEY = 'DBMLSP_CHANGE_LOG_LIST'
+```
+
+### `CHANGE_LOG_LIST_PARAMETER`
+
+```python
+CHANGE_LOG_LIST_PARAMETER = 'change_log_list'
+```
+
 ### `ENV_SETTINGS`
 
 ```python
-ENV_SETTINGS = (EnvSetting(key='DBMLSP_ENTERPRISE_READER', parameter='enterprise_reader', help='UPN of the enterprise-reader service account to enrol.'),)
+ENV_SETTINGS = (EnvSetting(key='DBMLSP_ENTERPRISE_READER', parameter='enterprise_reader', help='UPN of the enterprise-reader service account to enrol.'), EnvSetting(key='DBMLSP_DEPLOY_LOG_LIST', parameter='deploymen…
 ```
 
 ### `EnvValue`

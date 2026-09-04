@@ -209,6 +209,12 @@ Phase body: assert Indexed=true on every declared indexed column, verified by re
 
 Phase body: create or reconcile owned lists in dependency order with their non-lookup columns and every same-site lookup whose target already exists. Wave 1 runs sequentially to capture lookup-target GUIDs; wave 2 runs in per-list lanes. Existing lists are reconciled only when exact provenance and immutable shape both match (fail closed).
 
+### `deploy/_logging.js.j2`
+
+*Phase 1.7 (PREPARE): deployment run and change logs*
+
+Phase body: ensure the tool's sidecar lists, stamp the run log, probe the external deployment log, and declare the change-log writer every later phase calls. THREE lists, three different contracts: - `dbml Local Log` is created on EVERY deploy, hidden, and left with no role assignments, so an ordinary member sees nothing and a paste returns to a site that shows no trace of it. It records this run: start stamp, stop stamp, and what the run did. - The change log (default `dbml_Logs`) is created on every deploy, hidden, and holds one Read assignment for the site group flagged `enroll_enterprise_reader`, so a Power Automate reader can list and read rows without seeing the registers themselves. It receives type-2 rows: every change carries EffectiveFrom/EffectiveTo and IsCurrent, and a change CLOSES the previous current row for its key in the same logical step, so a reader always sees exactly one current row per key. - The EXTERNAL deployment log (probe `dbml-deployment-log`) is NEVER created. An operator with a site-wide deployment log names it (flag or DBMLSP_DEPLOYMENT_LOG_LIST) and this phase writes deployment start, deployment stop and provenance rows into it. The rows set Title ONLY: the list is the operator's, its schema is unknown, and every generic list has a Title. Absent, this phase says so once and moves on. The two created lists carry the tool's provenance marker in their Description. A list of the same title whose Description is not EXACTLY the marker is somebody else's and this phase ABORTS the run, the same fail-closed contract as verify.js's scratch list. Creation is idempotent; a rollback never deletes these lists because rollback only deletes declared TARGET_LISTS. Change events raised BEFORE this phase (renames, phase 1.3) were buffered by deploy.js.j2's shim. If the run aborts before reaching this phase they are lost, and so is everything else about that run: with no sidecar lists there is no record at all, which is the state every deploy before this phase existed in. From this phase onward the writer is live and events are written as they happen.
+
 ### `deploy/_lookups.js.j2`
 
 *Phase 2.2 (STRUCTURE): deferred lookups*
@@ -217,7 +223,7 @@ Phase body: add the deferred lookup columns (self-references and members of refe
 
 ### `deploy/_maintenance_unseal.js.j2`
 
-*Phase 1.7 (PREPARE): maintenance unseal*
+*Phase 1.8 (PREPARE): maintenance unseal*
 
 Sealed columns reject UI schema edits even for site admins; the ONLY legitimate maintenance path is this script. Unseal declared fields so the run's write phases work unchanged; Phase 4.1 re-seals and verifies after every field write is done.
 

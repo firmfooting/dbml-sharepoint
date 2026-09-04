@@ -367,6 +367,8 @@
               throw new Error(`${label} '${plan.from}' read back as '${back[nameKeyOf]}' with Description ${JSON.stringify(back.Description)} after writing '${plan.to}'; the rename did not take.`);
             }
             (plan.object === 'level' ? summary.levelsRenamed : summary.groupsRenamed).push({ from: plan.from, to: plan.to });
+            logChange({ key: `${plan.object}: ${plan.from}`, kind: 'rename',
+              target: plan.from, oldValue: plan.from, newValue: plan.to });
             log('INFO', `Renamed ${label} '${plan.from}' to '${plan.to}' in place (read back by id).`);
           } catch (err) {
             log('ERROR', `Phase {{ phase.number }} rename '${plan.from}' -> '${plan.to}': ${err.message}`);
