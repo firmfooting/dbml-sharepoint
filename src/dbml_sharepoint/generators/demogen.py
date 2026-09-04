@@ -4,7 +4,8 @@
 The plan is generation-time typed: each field carries a `kind` so the
 script knows whether to write a literal, resolve the deploying operator
 (person columns take `<Name>Id`), resolve a demo_ref to a created item's
-Id (lookups also take `<Name>Id`), or compute a run-time date from a
+Id (lookups also take `<Name>Id`, and a multi-value one takes a collection
+through the same alias), or compute a run-time date from a
 `today+/-N` offset. Cadence-derived demo surfaces (Review due, overdue
 formatting, Tolerance due) must land on whatever day the demo runs.
 The Title prefix (validated mandatory) is the visible in-record sample-data
@@ -16,6 +17,7 @@ from typing import Any
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.typemap import (
+    MULTI_VALUE_LOOKUP_METADATA_TYPE,
     MULTI_VALUE_METADATA_TYPE,
     TODAY_SENTINEL,
     element_type,
@@ -38,13 +40,43 @@ _TODAY_OFFSET = TODAY_SENTINEL
 _DATE_TYPES = {"date", "datetime"}
 
 
-def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any] | None:
+def _field_plan(
+    col_type: str | None, name: str, value: Any, *, is_ref: bool = False,
+) -> dict[str, Any] | None:
     """The typed plan for one demo field, or None when the field is omitted."""
     # Keyed on `demo_ref` rather than on being a dict at all: a hyperlink
     # value is also a mapping, and a bare isinstance check claimed it as a
     # lookup reference and then raised KeyError.
     if isinstance(value, dict) and "demo_ref" in value:
         return {"name": name, "kind": "ref", "value": str(value["demo_ref"])}
+    # Ahead of the multi-value arm, which would otherwise plan the demo_ref
+    # objects as literal members and write them into the item body verbatim.
+    # `is_ref` comes from the column rather than from the value because an
+    # empty list has no member to read it off.
+    if is_ref and is_multi_value(col_type or ""):
+        if not isinstance(value, list):
+            raise ValueError(
+                f"{name}: a multi-value lookup demo value must be a list of "
+                f"{{demo_ref: <key>}} objects, got {value!r}.",
+            )
+        if not value:
+            return None                   # an empty list omits the field, as above
+        keys: list[str] = []
+        for member in value:
+            # DEMO_OBJECT_VALUE_INVALID reports this first, so reaching here
+            # means the validator and the planner have drifted.
+            if not isinstance(member, dict) or "demo_ref" not in member:
+                raise ValueError(
+                    f"{name}: every member of a multi-value lookup demo value "
+                    f"must be {{demo_ref: <key>}}, got {member!r}.",
+                )
+            keys.append(str(member["demo_ref"]))
+        return {
+            "name": name,
+            "kind": "multi_ref",
+            "metadata_type": MULTI_VALUE_LOOKUP_METADATA_TYPE,
+            "value": keys,
+        }
     if is_person(col_type):
         return {"name": name, "kind": "me", "value": None}
     if is_hyperlink(col_type):
@@ -130,9 +162,12 @@ def generate_demo_js(
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         table = tables_by_name[table_name]
         types_by_col = {c.name: c.type for c in table.columns}
+        refs = {c.name for c in table.columns if c.ref is not None}
         for item in bundle.mapping.demo_items.get(table_name, []):
             planned = (
-                _field_plan(types_by_col.get(name), name, value)
+                _field_plan(
+                    types_by_col.get(name), name, value, is_ref=name in refs,
+                )
                 for name, value in item.values.items()
             )
             demo_plan.append({

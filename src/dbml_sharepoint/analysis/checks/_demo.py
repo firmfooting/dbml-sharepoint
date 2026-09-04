@@ -17,8 +17,65 @@ from dbml_sharepoint.analysis.typemap import (
     is_multi_value,
     is_person,
 )
+from dbml_sharepoint.model.parser import Column
 
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _demo_ref_findings(
+    member: object,
+    *,
+    ctx: str,
+    col_name: str,
+    column: Column | None,
+    entity_name: str,
+    demo_keys: dict[str, str],
+    row_positions: dict[str, int],
+    position: int,
+    at: Location,
+) -> list[Finding]:
+    """The four rules a `{demo_ref: <key>}` value has to satisfy.
+
+    Extracted so a multi-value lookup, whose demo value is a LIST of these,
+    is judged member by member by the same rules rather than by a twin set
+    that can drift from them.
+    """
+    if not isinstance(member, dict) or set(member) != {"demo_ref"}:
+        return [Finding(
+            FindingCode.DEMO_OBJECT_VALUE_INVALID,
+            f"{ctx}: {col_name} object value must be exactly "
+            f"{{demo_ref: <key>}}.",
+            location=at,
+        )]
+    key = member["demo_ref"]
+    if key not in demo_keys:
+        return [Finding(
+            FindingCode.DEMO_REF_UNKNOWN_KEY,
+            f"{ctx}: {col_name} demo_ref {key!r} is not a declared demo key.",
+            location=at,
+        )]
+    target_entity = demo_keys[key]
+    if column is None or column.ref is None:
+        return [Finding(
+            FindingCode.DEMO_REF_ON_NON_LOOKUP,
+            f"{ctx}: {col_name} uses demo_ref but is not a lookup column.",
+            location=at,
+        )]
+    if column.ref.target_table != target_entity:
+        return [Finding(
+            FindingCode.DEMO_REF_TARGET_MISMATCH,
+            f"{ctx}: {col_name} targets {column.ref.target_table}, but "
+            f"demo_ref {key!r} belongs to {target_entity}.",
+            location=at,
+        )]
+    if target_entity == entity_name and row_positions.get(key, position) >= position:
+        return [Finding(
+            FindingCode.DEMO_REF_FORWARD_REFERENCE,
+            f"{ctx}: {col_name} demo_ref {key!r} must be "
+            f"declared before the row that uses it.",
+            location=at,
+        )]
+    return []
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -183,48 +240,36 @@ def check(vc: ValidationContext) -> list[Finding]:
                             location=at,
                         ))
                     continue
+                # A multi-value lookup carries a LIST of `{demo_ref: <key>}`,
+                # so its members are judged one at a time by the same rules
+                # the single-value form is judged by. The list arm is reached
+                # only for a ref column, because on any other multi-value
+                # column a list is the ordinary member collection and the
+                # enum rule below is what reads it.
+                column = columns.get(col_name)
+                ref_members: list[object] | None = None
                 if isinstance(value, dict):
-                    if set(value) != {"demo_ref"}:
-                        findings.append(Finding(
-                            FindingCode.DEMO_OBJECT_VALUE_INVALID,
-                            f"{ctx}: {col_name} object value must be exactly "
-                            f"{{demo_ref: <key>}}.",
-                            location=at,
+                    ref_members = [value]
+                elif (
+                    isinstance(value, list)
+                    and column is not None
+                    and column.ref is not None
+                    and is_multi_value(col_type or "")
+                ):
+                    ref_members = list(value)
+                if ref_members is not None:
+                    for member in ref_members:
+                        findings.extend(_demo_ref_findings(
+                            member,
+                            ctx=ctx,
+                            col_name=col_name,
+                            column=column,
+                            entity_name=entity_name,
+                            demo_keys=demo_keys,
+                            row_positions=row_positions,
+                            position=position,
+                            at=at,
                         ))
-                    elif value["demo_ref"] not in demo_keys:
-                        findings.append(Finding(
-                            FindingCode.DEMO_REF_UNKNOWN_KEY,
-                            f"{ctx}: {col_name} demo_ref "
-                            f"{value['demo_ref']!r} is not a declared demo "
-                            f"key.",
-                            location=at,
-                        ))
-                    else:
-                        column = columns.get(col_name)
-                        target_entity = demo_keys[value["demo_ref"]]
-                        if column is None or column.ref is None:
-                            findings.append(Finding(
-                                FindingCode.DEMO_REF_ON_NON_LOOKUP,
-                                f"{ctx}: {col_name} uses demo_ref but is not a lookup column.",
-                                location=at,
-                            ))
-                        elif column.ref.target_table != target_entity:
-                            findings.append(Finding(
-                                FindingCode.DEMO_REF_TARGET_MISMATCH,
-                                f"{ctx}: {col_name} targets {column.ref.target_table}, but "
-                                f"demo_ref {value['demo_ref']!r} belongs to {target_entity}.",
-                                location=at,
-                            ))
-                        elif (
-                            target_entity == entity_name
-                            and row_positions.get(value["demo_ref"], position) >= position
-                        ):
-                            findings.append(Finding(
-                                FindingCode.DEMO_REF_FORWARD_REFERENCE,
-                                f"{ctx}: {col_name} demo_ref {value['demo_ref']!r} must be "
-                                f"declared before the row that uses it.",
-                                location=at,
-                            ))
                     continue
                 if is_person(col_type):
                     if value != "@me":

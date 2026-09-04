@@ -1,0 +1,25 @@
+// test/fixtures/multilookup.dbml
+Project multilookup_test {
+  database_type: 'SharePoint Online'
+  Note: 'Fixture exercising a multi-value lookup through a whole build.'
+}
+
+Table Party {
+  Id    int      [pk, increment]
+  Title nvarchar [not null, note: 'Party name.']
+
+  Note: 'Fixture parties, any number of which one matter can involve.'
+}
+
+Table Matter {
+  Id      int      [pk, increment]
+  Title   nvarchar [not null]
+  Owner   int      [ref: > Party.Id, not null, note: 'The single-value control.']
+  Parties int[]    [ref: > Party.Id, note: 'The multi-value lookup under test.']
+
+  indexes {
+    Owner
+  }
+
+  Note: 'Fixture matters, each owned by one party and involving many.'
+}
