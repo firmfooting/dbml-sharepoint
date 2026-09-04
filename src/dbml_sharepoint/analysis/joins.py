@@ -57,6 +57,21 @@ field as ``<column><target>`` (e.g.
 `test/test_joins.py::test_a_lookup_projection_costs_no_join` is the test this
 paragraph was waiting for.
 
+A MULTI-VALUE LOOKUP COSTS ONE, the same as a single-value one. It is one
+column, one `LookupList` binding and one relationship, and the count here is a
+count of join-bearing COLUMNS, so `join_bearing_columns` already returns it once
+on the strength of `col.ref is not None` with no arity test anywhere. This row
+is INFERRED, not measured, like the `Created`/`Modified` row above: the
+2026-09-02 multi-lookup probe answered creation, indexing, mutability and write
+shape, and left join cost open (#409 Q3). It is recorded as one rather than more
+because a rule must never be stronger than what has been shown: counting two
+would refuse views that may well render, and nothing has been observed that
+says they do not. Closing it needs the same ceiling-plus-one shape every other
+row here was measured at, a view of 11 ordinary lookups plus one multi-value
+lookup against a list over the threshold. `test/test_joins.py::
+test_a_multi_value_lookup_costs_one_join_at_the_ceiling` pins the answer, so
+changing it is a deliberate act with a failing test attached.
+
 8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
 does not exist in SharePoint Online; there is no "default 8 raised by a
 cumulative update" here, that is the on-premises upgrade story. The strongest
@@ -109,6 +124,11 @@ def join_bearing_columns(table: Table, cross_site_cols: AbstractSet[str]) -> set
     Refs are collected separately from JOIN_BEARING_TYPES because a DBML `ref`
     is `int`-typed and a type test cannot see it. A ref named in
     `cross_site_reference_columns` is excluded: it never becomes a Lookup.
+
+    Arity is not tested, which is the decision and not an omission: a
+    multi-value ref (`int[] [ref: > X.Id]`, a LookupMulti) is one column and
+    costs one join. See the module docstring for why that is recorded as one
+    and what would settle it.
 
     The two system columns are always included. A declared view may name them,
     and the generated `All Items` always does.

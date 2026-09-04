@@ -86,10 +86,9 @@ def test_a_multi_value_choice_bears_no_join() -> None:
 
     That is a fact about arity NOT mattering here, which is why it is pinned.
     Multi-value Lookup and Person keep their `ref`/`person` shape and so are
-    join-bearing -- but what one of them COSTS is unmeasured (one join, or
-    one per selected value?), and settling it needs the 6,000-row fixture.
-    They are a separate issue for exactly that reason, so nothing here may
-    quietly start counting an array type as though the answer were known.
+    join-bearing. What a multi-value LOOKUP costs is settled at one by
+    `test_a_multi_value_lookup_costs_one_join_at_the_ceiling` below; multi-value
+    Person is still unresolved and nothing here may start counting it.
     """
     table = make_table(
         "Platform",
@@ -97,6 +96,36 @@ def test_a_multi_value_choice_bears_no_join() -> None:
         make_column("Events", "audit_event[]"),
     )
     assert join_bearing_columns(table, set()) == {"Author", "Editor"}
+
+
+def test_a_multi_value_lookup_costs_one_join_at_the_ceiling() -> None:
+    """A LookupMulti costs ONE join, same as a single-value lookup (#409 Q3).
+
+    Built at the ceiling PLUS EXACTLY ONE, the only shape that discriminates:
+    eleven single-value lookups render at 11, and the twelfth column decides
+    whether the view sits at the measured ceiling of 12 or over it. The pair of
+    tables differs in nothing but that column's arity, so a change that started
+    charging two for the multi-value one fails here and nowhere else.
+
+    The answer is INFERRED, not measured. `analysis/joins.py`'s docstring says
+    so and names the probe that would settle it. This test exists so the
+    inference cannot be revised by accident.
+    """
+    def _at_the_ceiling(twelfth: str) -> list[str]:
+        table = make_table(
+            "Matter",
+            make_column("Title"),
+            *(make_ref(f"Ref{n}", "Party.Id") for n in range(1, JOIN_LIMIT)),
+            make_column("Parties", twelfth, ref="Party.Id"),
+        )
+        named = ["Parties", *(f"Ref{n}" for n in range(1, JOIN_LIMIT))]
+        return joining_fields(named, join_bearing_columns(table, set()))
+
+    multi = _at_the_ceiling("int[]")
+    single = _at_the_ceiling("int")
+    assert multi == single
+    assert len(multi) == JOIN_LIMIT
+    assert "Parties" in multi
 
 
 def test_a_cross_site_ref_bears_no_join() -> None:
