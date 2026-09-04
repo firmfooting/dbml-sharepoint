@@ -5726,54 +5726,128 @@
       log('ERROR', 'Form-formatting ownership survey failed; aborting before any form is written.');
       return { ...summary, aborted: 'form-ownership-errors' };
     }
-    for (const form of SCHEMA.form_formatting) {
+    const formListPath = (title) => `web/lists/getbytitle('${odataName(title)}')`;
+    const formFailed = (form, err) => {
+      log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
+      summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
+    };
+    // Which content type each layout is written to, resolved for every list
+    // before the first write. The MERGE URL carries the content type's
+    // StringId, so this read has to happen first either way; batching it
+    // costs one request rather than one per list.
+    const formTargets = [];
+    if (SCHEMA.form_formatting.length > 0) {
+      let contentTypes = null;
       try {
-        // The content-type collection hangs off the list title, so the write and
-        // its readback are bracketed by the same identity, exactly as the ACL
-        // phase brackets its title-bound requests.
-        const formListId = formsOwned.get(form.list);
-        await ownedListIdentity(form.list, formListId, `before writing form formatting on '${form.list}'`);
-        digest = await getDigest();
-        const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
-        const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!ctResp.ok) {
-          const text = await ctResp.text();
-          throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
+        const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const form of SCHEMA.form_formatting) {
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`);
         }
-        const ctJson = await ctResp.json();
-        const contentTypes = (ctJson.d && ctJson.d.results) || [];
-        const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
-        if (!target) throw new Error('no default item content type found on the list');
-        if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-          const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
-            method: 'POST',
-            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-            body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
-          });
-          if (!r.ok) {
-            const text = await r.text();
-            throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
-          }
-        }
-        const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!verifyResp.ok) {
-          const text = await verifyResp.text();
-          throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
-        }
-        const verifyJson = await verifyResp.json();
-        const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
-        if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-          throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
-        }
-        await ownedListIdentity(form.list, formListId, `after writing form formatting on '${form.list}'`);
-        log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
+        contentTypes = await ctReader.done();
       } catch (err) {
-        log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
-        summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
+        // Fails closed: every list below then records that its content type
+        // was never resolved, rather than the phase skipping them silently.
+        log('ERROR', `Form content-type read: ${err.message}`);
+      }
+      for (let position = 0; position < SCHEMA.form_formatting.length; position += 1) {
+        const form = SCHEMA.form_formatting[position];
+        try {
+          if (!contentTypes) {
+            throw new Error('the batched content-type read did not answer, so this list was not formatted');
+          }
+          const listed = (contentTypes[position] && contentTypes[position].results) || [];
+          const target = listed.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+          if (!target) throw new Error('no default item content type found on the list');
+          // The survey above cannot see a same-titled replacement that copied
+          // the marker; only a second live read compared against the Id the
+          // survey captured can. Kept per list and kept BEFORE the write
+          // batch, so a list that fails it is dropped here and never reaches
+          // a ChangeSet part.
+          await ownedListIdentity(
+            form.list, formsOwned.get(form.list),
+            `before writing form formatting on '${form.list}'`,
+          );
+          formTargets.push({ form, target });
+        } catch (err) {
+          formFailed(form, err);
+        }
+      }
+    }
+    // ONE ChangeSet across every list, unlike the seal and index phases. The
+    // boundary those draw is the list, because same-list FIELD writes race
+    // into save conflicts; here each list takes at most one write, so there
+    // is no same-list pair to race and nothing that boundary would protect.
+    const drifted = formTargets.filter(({ form, target }) =>
+      canonicalFormFormatter(target.ClientFormCustomFormatter)
+        !== canonicalFormFormatter(form.client_form_custom_formatter));
+    if (drifted.length > 0) {
+      const formBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const { form, target } of drifted) {
+          // The same MERGE the single write sent, transport aside: same URL,
+          // same concrete metadata type, same tunnelled verb and IF-MATCH.
+          await formBatch.add(
+            'POST',
+            `${formListPath(form.list)}/contenttypes('${target.StringId}')`,
+            { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter },
+            { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
+          );
+        }
+        await formBatch.done();
+      } catch (err) {
+        // Named at phase level with the lists it covered. SharePoint does not
+        // roll a ChangeSet back and reports part statuses in queue order
+        // without saying which list each belongs to, so attributing the
+        // refusal to one of them would be a guess. Every list is still read
+        // back below, which is what says whether its layout landed.
+        log('ERROR', `Form formatting: ${err.message}`);
+      }
+    }
+    // Read back every declared layout and re-prove every list's identity, the
+    // shape the index phase established: the list is re-proved once now that
+    // all the writes have landed rather than bracketing each write, and the
+    // readbacks travel as top-level query parts. A list swapped between two
+    // readbacks is still caught, because the readback addresses the content
+    // type THROUGH the list title and a replacement answers with a different
+    // StringId, or with none.
+    if (formTargets.length > 0) {
+      const verifyOwned = await surveyOwnedListsForWrites(
+        formTargets.map(({ form }) => form.list), '3.2', 'Form readback',
+      );
+      let readbacks = null;
+      try {
+        const formReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const { form, target } of formTargets) {
+          await formReader.add(`${formListPath(form.list)}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`);
+        }
+        readbacks = await formReader.done();
+      } catch (err) {
+        log('ERROR', `Form formatting readback: ${err.message}`);
+      }
+      for (let position = 0; position < formTargets.length; position += 1) {
+        const { form } = formTargets[position];
+        try {
+          if (!verifyOwned) {
+            throw new Error('the list ownership re-check failed, so this list was not read back');
+          }
+          const listId = verifyOwned.get(form.list);
+          if (listId == null) {
+            throw new Error(`Declared list '${form.list}' disappeared across the form write`);
+          }
+          if (sharePointGuid(listId, 'list') !== sharePointGuid(formsOwned.get(form.list), 'list')) {
+            throw new Error(`List '${form.list}' changed identity across the form write`);
+          }
+          if (!readbacks) {
+            throw new Error('the batched readback did not answer, so this list was not read back');
+          }
+          const readback = readbacks[position] && readbacks[position].ClientFormCustomFormatter;
+          if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+            throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
+          }
+          log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
+        } catch (err) {
+          formFailed(form, err);
+        }
       }
     }
   }

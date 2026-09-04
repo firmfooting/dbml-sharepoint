@@ -3046,6 +3046,102 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
     )
 
 
+# Two lists with a declared layout, so a ChangeSet that coalesces them is
+# distinguishable from one request each.
+_TWO_FORM_LAYOUTS = """
+form_formatting:
+  Escalation:
+    body:
+      sections:
+        - { displayname: Main, fields: [Title, Note] }
+  Other:
+    body:
+      sections:
+        - { displayname: Main, fields: [Title, Note] }
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
+    """One ChangeSet for every list's layout, not one per list.
+
+    The boundary the seal and index phases draw is the LIST, because same-list
+    field writes race into save conflicts. A layout is one write per list, so
+    there is no same-list pair to race and nothing that boundary protects;
+    this pins the wider boundary rather than leaving it to be narrowed back by
+    a later change that reads the other two phases as the rule.
+
+    The content-type resolution ahead of the writes and the read-back after
+    them are both asserted to be single query batches, because they are what
+    the phase spent its requests on: one enumeration and one verify per list.
+    """
+    tables = ("Escalation", "Other")
+    body = _declared_deploy_js(tmp_path, _TWO_FORM_LAYOUTS, table_names=tables).rstrip()
+    assert body.endswith("})();")
+    # The plain harness only knows the default fixture's markers, and the
+    # second list would fail preflight for a reason unrelated to transport.
+    descriptions = _declared_list_descriptions(tmp_path, table_names=tables)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    )
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    summary = _summary_of(output)
+    assert summary.get("errors") == [], summary["errors"]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    writes = [
+        b for b in batches
+        if any("ClientFormCustomFormatter" in (op["body"] or "") for op in b["ops"])
+    ]
+    assert len(writes) == 1, (
+        f"two layouts went out as {len(writes)} $batch request(s)"
+    )
+    assert len(writes[0]["ops"]) == 2, (
+        f"expected both lists as parts, got {writes[0]['ops']}"
+    )
+    for op in writes[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "a layout part would POST rather than MERGE the content type"
+        )
+        assert "/contenttypes('" in op["url"], (
+            "a layout part addresses the content-type collection rather than "
+            "the default item content type the write it replaces named"
+        )
+    written = {
+        match.group(1) for match in (
+            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"])
+            for op in writes[0]["ops"]
+        ) if match
+    }
+    assert len(written) == 2, (
+        f"both parts wrote to the same list: {writes[0]['ops']}"
+    )
+
+    reads = [
+        b for b in batches
+        if all(op["method"] == "GET" for op in b["ops"])
+        and any("/contenttypes" in op["url"] for op in b["ops"])
+    ]
+    assert len(reads) == 2, (
+        "the content-type resolution and the read-back are one query batch "
+        f"each; got {len(reads)}: {[[op['url'] for op in b['ops']] for b in reads]}"
+    )
+    for batch in reads:
+        assert len(batch["ops"]) == 2, (
+            f"a query batch skipped a list: {[op['url'] for op in batch['ops']]}"
+        )
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None:
     """The DefaultValue MERGEs travel as ChangeSet parts, one $batch per list.

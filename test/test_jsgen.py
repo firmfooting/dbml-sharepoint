@@ -1192,16 +1192,18 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,
-    # forms, seal, ACLs, seeds. The index phase surveys twice, because its
-    # read-back is a second write-region boundary: the columns are read back
-    # after the last MERGE lands, so the ownership the pre-write survey proved
-    # is no longer current by then and is re-proved for the whole batch rather
-    # than per column.
-    assert _call_count(js, "surveyOwnedListsForWrites") == 9
-    assert _call_count(js, "ownedListIdentity") == 17
+    # forms, seal, ACLs, seeds. The index and form phases survey TWICE, because
+    # each has a read-back that is a second write-region boundary: the objects
+    # are read back after the last write lands, so the ownership the pre-write
+    # survey proved is no longer current by then and is re-proved for the whole
+    # batch rather than per object.
+    assert _call_count(js, "surveyOwnedListsForWrites") == 10
+    assert _call_count(js, "ownedListIdentity") == 16
     assert _call_count(js, "ownedFieldIdentity") == 2
     code = _without_line_comments(js)
-    assert code.count("new BatchReader(") == 1
+    # The index read-back, and the form phase's two: its content-type
+    # resolution and its layout read-back.
+    assert code.count("new BatchReader(") == 3
     assert "fieldShapePath(idx.list, idx.field)" in code
 
 
