@@ -9,13 +9,13 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 36. Findings: 117. Captures superseded: 1.
+Runs: 52. Findings: 130. Captures superseded: 1.
 
-Probes: 33. Probed: 25. Not yet probed: 8.
+Probes: 45. Probed: 40. Not yet probed: 5.
 
-Checks with a probe result, not settled: 115 of 542. Checks with a reviewed capture, not settled: 4 of 33.
+Checks with a probe result, not settled: 128 of 656. Checks with a reviewed capture, not settled: 4 of 36.
 
-## formula — 9 of 10 probes with evidence, 54 findings
+## formula — 9 of 10 probes with evidence, 64 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -43,6 +43,16 @@ Checks with a probe result, not settled: 115 of 542. Checks with a reviewed capt
 | [query.caml.control-bogus-element-refused](findings/datetime-sentinel-20260902-tz-gate-closed-query-caml-control-bogus-element-refused) | machine | failed | datetime-sentinel/20260902-tz-gate-closed | — |
 | [query.view-query.today-include-time-roundtrip](findings/datetime-sentinel-20260902-tz-gate-closed-query-view-query-today-include-time-roundtrip) | machine | open | datetime-sentinel/20260902-tz-gate-closed | — |
 | [query.view-query.today-include-time-selects](findings/datetime-sentinel-20260902-tz-gate-closed-query-view-query-today-include-time-selects) | machine | open | datetime-sentinel/20260902-tz-gate-closed | — |
+| [formula.datetime.control-today-allows-yesterday](findings/datetime-sentinel-20260903-fixed-sources-rerun-formula-datetime-control-today-allows-yesterday) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [formula.datetime.today-plus-one-allows-later-today](findings/datetime-sentinel-20260903-fixed-sources-rerun-formula-datetime-today-plus-one-allows-later-today) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [formula.datetime.today-rejects-earlier-today](findings/datetime-sentinel-20260903-fixed-sources-rerun-formula-datetime-today-rejects-earlier-today) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.caml-adhoc.now-element-discriminates](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-caml-adhoc-now-element-discriminates) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.caml-adhoc.now-element-include-time-discriminates](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-caml-adhoc-now-element-include-time-discriminates) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.caml-adhoc.today-element-date-granular](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-caml-adhoc-today-element-date-granular) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.caml-adhoc.today-element-include-time-discriminates](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-caml-adhoc-today-element-include-time-discriminates) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.caml.control-bogus-element-refused](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-caml-control-bogus-element-refused) | machine | failed | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.view-query.today-include-time-roundtrip](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-view-query-today-include-time-roundtrip) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
+| [query.view-query.today-include-time-selects](findings/datetime-sentinel-20260903-fixed-sources-rerun-query-view-query-today-include-time-selects) | machine | open | datetime-sentinel/20260903-fixed-sources-rerun | — |
 | [formula.validation.form-edit-today-under-modified-rule](findings/form-validation-20260902-form-steps-formula-validation-form-edit-today-under-modified-rule) | machine | open | form-validation/20260902-form-steps | — |
 | [formula.validation.form-edit-tomorrow-under-modified-rule](findings/form-validation-20260902-form-steps-formula-validation-form-edit-tomorrow-under-modified-rule) | machine | open | form-validation/20260902-form-steps | — |
 | [formula.validation.form-new-today-under-modified-rule](findings/form-validation-20260902-form-steps-formula-validation-form-new-today-under-modified-rule) | machine | open | form-validation/20260902-form-steps | — |
@@ -74,7 +84,7 @@ Checks with a probe result, not settled: 115 of 542. Checks with a reviewed capt
 | [query.caml-adhoc.today-element-site-date](findings/today-source-20260902-first-contact-query-caml-adhoc-today-element-site-date) | machine | failed | today-source/20260902-first-contact | — |
 | [query.caml-adhoc.today-offset-element-previous-day](findings/today-source-20260902-first-contact-query-caml-adhoc-today-offset-element-previous-day) | machine | failed | today-source/20260902-first-contact | — |
 
-205 further checks in this surface are settled.
+218 further checks in this surface are settled.
 
 Not yet probed: `hyperlink-validation-operand-probe.js`.
 
@@ -121,7 +131,7 @@ Not yet probed: `expression-text-operators-probe.js`, `form-visibility-evidence-
 
 Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe.js`.
 
-## field — 2 of 3 probes with evidence, 9 findings
+## field — 3 of 3 probes with evidence, 9 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -135,19 +145,16 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [query.view-query.multichoice-chain-selects](findings/multi-value-20260828-initial-query-view-query-multichoice-chain-selects) | machine | open | multi-value/20260828-initial | — |
 | [query.view-query.multichoice-membership-selects](findings/multi-value-20260828-initial-query-view-query-multichoice-membership-selects) | machine | open | multi-value/20260828-initial | — |
 
-29 further checks in this surface are settled.
+36 further checks in this surface are settled.
 
-Not yet probed: `projected-lookup-probe.js`.
-
-## text — 3 of 4 probes with evidence, 1 findings
+## text — 4 of 4 probes with evidence, 2 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
 | [text.group-desc.length-ceiling](findings/group-description-20260828-initial-text-group-desc-length-ceiling) | machine | failed | group-description/20260828-initial | — |
+| [text.role-desc.length-ceiling](findings/role-definition-20260903-sandbox-text-role-desc-length-ceiling) | machine | failed | role-definition/20260903-sandbox | — |
 
-55 further checks in this surface are settled.
-
-Not yet probed: `role-definition-probe.js`.
+64 further checks in this surface are settled.
 
 ## access — 4 of 4 probes with evidence, 15 findings
 
@@ -207,6 +214,11 @@ Not yet probed: `role-definition-probe.js`.
 
 9 further checks in this surface are settled.
 
-## library — no evidence
+## library — 13 of 13 probes with evidence, 2 findings
 
-Not yet probed: `document-library-probe.js`.
+| Finding | Lanes | State | Run | Observed as |
+| --- | --- | --- | --- | --- |
+| [library.access.unique-permissions-library](findings/library-access-20260903-sandbox-library-access-unique-permissions-library) | machine | open | library-access/20260903-sandbox | — |
+| [library.search.discovery-on-library](findings/library-view-search-20260904-sandbox-library-search-discovery-on-library) | machine | open | library-view-search/20260904-sandbox | — |
+
+72 further checks in this surface are settled.
