@@ -584,7 +584,7 @@ def test_number_default_is_string_in_create_and_merge_shapes() -> None:
     js = _generate_simple_js()
     assert '"DefaultValue": "0"' in js
     assert '"default_value": "0"' in js
-    assert "DefaultValue: fieldDefault.default_value" in js
+    assert "DefaultValue: entry.fieldDefault.default_value" in js
 
 
 def test_longtext_emits_plain_multiline_note_field() -> None:

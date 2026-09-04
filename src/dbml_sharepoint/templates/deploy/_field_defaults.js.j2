@@ -20,21 +20,64 @@
       log('ERROR', 'Field-default ownership survey failed; aborting before any default is written.');
       return { ...summary, aborted: 'default-ownership-errors' };
     }
+    // Approving a target is a read, and every one of them happens before the
+    // first write: the MERGEs that follow depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const defaultTargets = [];
     for (const fieldDefault of SCHEMA.field_defaults) {
       try {
-        digest = await getDigest();
-        const target = await ownedFieldIdentity(
-          fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
-        );
-        await patchFieldById(
-          target.listId,
-          target.field.Id,
-          {
-            __metadata: { type: fieldDefault.metadata_type },
-            DefaultValue: fieldDefault.default_value,
-          },
-          digest,
-        );
+        defaultTargets.push({
+          fieldDefault,
+          target: await ownedFieldIdentity(
+            fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
+          ),
+        });
+      } catch (err) {
+        log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+        summary.errors.push({
+          list: fieldDefault.list,
+          column: fieldDefault.field,
+          error: err.message,
+        });
+      }
+    }
+    // One $batch per list, the boundary the seal phase draws: lists are
+    // independent, and same-list field writes are the ones that race into
+    // save conflicts, so no wider claim is made here than there.
+    const defaultsByList = new Map();
+    for (const entry of defaultTargets) {
+      const listTitle = entry.fieldDefault.list;
+      if (!defaultsByList.has(listTitle)) defaultsByList.set(listTitle, []);
+      defaultsByList.get(listTitle).push(entry);
+    }
+    for (const [listTitle, entries] of defaultsByList) {
+      const defaultsBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          await defaultsBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            {
+              __metadata: { type: entry.fieldDefault.metadata_type },
+              DefaultValue: entry.fieldDefault.default_value,
+            },
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await defaultsBatch.done();
+      } catch (err) {
+        // Recorded at list level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back, so some of these may have landed.
+        // The per-column readback below is the finer evidence, and it is what
+        // turns a part that never landed into a named failure.
+        log('ERROR', `Default ${listTitle}: ${err.message}`);
+        summary.errors.push({ list: listTitle, error: err.message });
+      }
+    }
+    for (const { fieldDefault, target } of defaultTargets) {
+      try {
         const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
         if (!actual
             || normalizeDefaultValue(actual.DefaultValue)

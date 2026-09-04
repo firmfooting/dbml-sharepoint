@@ -2817,6 +2817,56 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None:
+    """The DefaultValue MERGEs travel as ChangeSet parts, one $batch per list.
+
+    Two declared defaults on one list, so a batch that coalesces them is
+    distinguishable from one request per column. The per-column readback that
+    follows is what still names a default that did not land, which a
+    ChangeSet refusal cannot do for itself.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "",
+        extra_lines=(
+            "Status nvarchar [default: 'open']",
+            "Owner nvarchar [default: 'nobody']",
+        ),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    writing = [
+        b for b in batches
+        if any('"DefaultValue"' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert writing, f"no default write travelled as a ChangeSet part: {batches}"
+    assert len(writing) == 1, (
+        f"the list's defaults went out as {len(writing)} $batch requests"
+    )
+    values = [json.loads(op["body"])["DefaultValue"] for op in writing[0]["ops"]]
+    assert values == ["open", "nobody"], (
+        f"expected both declared defaults as parts, got {writing[0]['ops']}"
+    )
+    for op in writing[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "a default part would POST rather than MERGE the field"
+        )
+        assert "/fields(guid'" in op["url"], (
+            "a default part addresses the field by name, which a rebind can "
+            "redirect; the write it replaces went by Id"
+        )
+
+
 def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 
