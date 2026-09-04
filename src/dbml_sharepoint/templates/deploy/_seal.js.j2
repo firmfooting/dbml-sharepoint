@@ -34,9 +34,13 @@
     // per-list invalidation forces a post-write re-enumeration.
     //
     // The lane boundary is also the batch boundary, so one list's seals are
-    // one ChangeSet: whether SharePoint processes the parts of a ChangeSet
-    // one at a time, or races them the way concurrent single writes do, is
-    // measured by test/manual/throttle-batch-probe.js and not assumed here.
+    // one ChangeSet. NOT PROVEN: that SharePoint applies same-list field
+    // MERGEs in a ChangeSet without the save conflicts concurrent single
+    // writes hit. OData v3 says the order of requests within a ChangeSet is
+    // not significant and a service MAY process them in any order, and
+    // test/manual/throttle-batch-probe.js batches item creates rather than
+    // schema writes, so neither settles it. The per-column verify below is
+    // what turns a conflict into a named failure instead of a silent one.
     const sealByList = new Map();
     for (const [listTitle, columnTitle] of sealDeclared) {
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);

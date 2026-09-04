@@ -354,19 +354,20 @@
 
     // One application/http part: a full request line, the JSON body, and
     // nometadata headers with the digest among them. The nometadata spelling
-    // is load-bearing, not cosmetic: a ChangeSet part carrying
+    // decides whether the part is accepted at all: a ChangeSet part carrying
     // odata=verbose is refused with HTTP 400 (live finding 2026-09-04; the
     // throttle-batch probe's parts used nometadata and landed; the shared
     // spHeaders verbosity is for single writes, not for batch parts).
     _part(op, digest, inner) {
       // A single SharePoint write tunnels MERGE and DELETE through
       // X-HTTP-Method on a POST, but a ChangeSet part carries the verb in its
-      // own request line: Learn's batch example spells a delete
-      // `DELETE <url> HTTP/1.1` with If-Match, and PnPjs (pnp/pnpjs
-      // packages/sp/batching.ts) reads X-HTTP-Method off the request, uses it
-      // as the request-line method and DELETES the header before writing the
-      // part. Translating here is what lets a caller hand add() the same
-      // method and headers the single-write helper sends.
+      // own request line. OData v3 batch processing is explicit that a batch
+      // request MUST NOT include an X-HTTP-Method header; Learn's batch
+      // example spells a delete `DELETE <url> HTTP/1.1` with If-Match, and
+      // PnPjs (pnp/pnpjs packages/sp/batching.ts) reads X-HTTP-Method off the
+      // request, uses it as the request-line method and DELETES the header
+      // before writing the part. Translating here is what lets a caller hand
+      // add() the same method and headers the single-write helper sends.
       const extra = { ...(op.extraHeaders || {}) };
       const tunnelled = extra['X-HTTP-Method'];
       delete extra['X-HTTP-Method'];
@@ -5562,9 +5563,13 @@
     // per-list invalidation forces a post-write re-enumeration.
     //
     // The lane boundary is also the batch boundary, so one list's seals are
-    // one ChangeSet: whether SharePoint processes the parts of a ChangeSet
-    // one at a time, or races them the way concurrent single writes do, is
-    // measured by test/manual/throttle-batch-probe.js and not assumed here.
+    // one ChangeSet. NOT PROVEN: that SharePoint applies same-list field
+    // MERGEs in a ChangeSet without the save conflicts concurrent single
+    // writes hit. OData v3 says the order of requests within a ChangeSet is
+    // not significant and a service MAY process them in any order, and
+    // test/manual/throttle-batch-probe.js batches item creates rather than
+    // schema writes, so neither settles it. The per-column verify below is
+    // what turns a conflict into a named failure instead of a silent one.
     const sealByList = new Map();
     for (const [listTitle, columnTitle] of sealDeclared) {
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
