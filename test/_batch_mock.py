@@ -7,8 +7,9 @@ harness that does not unpack it sees a single opaque POST and every
 assertion about what was written stops meaning anything.
 
 `BATCH_MOCK` splices in after a harness has defined `globalThis.fetch`. It
-unpacks each ChangeSet part back into the single request it stands for and
-dispatches it through `globalThis.fetch` again, so the mock underneath
+unpacks each ChangeSet or top-level query part back into the single request
+it stands for and dispatches it through `globalThis.fetch` again, so the
+mock underneath
 answers, applies and records it exactly as it did before the phase batched,
 and a sabotage wrapper installed later still sees the individual operation.
 """
@@ -22,8 +23,11 @@ BATCH_MOCK = r"""
   const _batches = [];
   const _partMarker =
     '\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\n';
-  const _parseParts = (text) => {
-    const inner = (String(text).match(/boundary=([^\r\n;]+)/) || [])[1];
+  const _parseParts = (text, outer) => {
+    // A ChangeSet envelope names its inner boundary in the body. A top-level
+    // query envelope has no inner boundary at all, so its parts are separated
+    // by the outer one, which is only in the request's own Content-Type.
+    const inner = (String(text).match(/boundary=([^\r\n;]+)/) || [])[1] || outer;
     const ops = [];
     for (const chunk of String(text).split(`--${inner}`)) {
       const at = chunk.indexOf(_partMarker);
@@ -54,13 +58,22 @@ BATCH_MOCK = r"""
   };
   globalThis.fetch = async (url, opts = {}) => {
     if (!/\/_api\/\$batch$/.test(String(url))) return _underBatch(url, opts);
-    const ops = _parseParts(opts.body);
+    const outer = (String((opts.headers || {})['Content-Type'] || '')
+      .match(/boundary=([^\r\n;]+)/) || [])[1];
+    const ops = _parseParts(opts.body, outer);
+    // A query envelope is all GETs and its caller reads the payloads back; a
+    // ChangeSet envelope is all writes and its caller reads only statuses.
+    // Only the first has its part bodies read, because a write mock's
+    // response need not offer text() at all and asking would fail the phase.
+    const reads = ops.length > 0 && ops.every((op) => op.method === 'GET');
     const statuses = [];
+    const bodies = [];
     for (const op of ops) {
       const r = await globalThis.fetch(op.url, {
         method: op.method, headers: op.headers, body: op.body,
       });
       statuses.push(r.status);
+      bodies.push(reads && r.text ? await r.text() : '');
     }
     // The parts AS SENT, verb and all, so a test can assert what travelled
     // as a ChangeSet rather than inferring it from the redispatched calls.
@@ -69,11 +82,14 @@ BATCH_MOCK = r"""
       url: op.url,
       body: op.body === undefined ? null : op.body,
     })) });
-    // Bodyless on purpose: the writer counts every 'HTTP/1.1 nnn' in the
-    // response text, so a part payload here would be counted as a status.
-    const text = statuses.map((status) =>
+    // Write parts answer bodyless on purpose: the writer counts every
+    // 'HTTP/1.1 nnn' in the response text, so a part payload there would be
+    // counted as a status. Query parts carry what the redispatched GET
+    // returned, which is the whole point of reading them.
+    const text = statuses.map((status, at) =>
       `--batchresponse_1\r\nContent-Type: application/http\r\n\r\n`
-      + `HTTP/1.1 ${status} Mocked\r\n\r\n`).join('') + '--batchresponse_1--\r\n';
+      + `HTTP/1.1 ${status} Mocked\r\n\r\n`
+      + (reads ? `${bodies[at]}\r\n` : '')).join('') + '--batchresponse_1--\r\n';
     return {
       ok: true, status: 200, url: String(url),
       headers: { get: () => null },

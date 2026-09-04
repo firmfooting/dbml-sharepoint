@@ -1,4 +1,5 @@
-{# Shared OData $batch writer. Included only by scripts that make writes
+{# Shared OData $batch transport: BatchWriter for ChangeSet writes and
+   BatchReader for top-level query parts. Included only by scripts that make writes
    (deploy, rollback, demo); the read-only assess script includes the
    transport partial alone, keeping its no-write property auditable from its
    text. Expects `spHeaders` from _http_write.js.j2, so a ChangeSet part
@@ -242,5 +243,176 @@
     // no second emptiness check that could disagree with it about one.
     async done() {
       return this.flush();
+    }
+  }
+
+  // The read companion. A $batch envelope carries query parts at the TOP
+  // level, outside any ChangeSet, and each answers with its own status line
+  // and JSON body, so a phase that verifies N objects can read them all in
+  // one request instead of N.
+  //
+  // MEASURED on a live tenant 2026-09-04, on the same site the index phase
+  // runs against: 58 field GETs sent as one $batch answered HTTP 200 with 58
+  // part statuses at 200 in 371 ms, where the same 58 GETs issued one at a
+  // time took 14.7 s. The outer request still needs X-RequestDigest even
+  // though every part is a read: without it the identical envelope came back
+  // HTTP 403, "The security validation for this page is invalid".
+  //
+  // Reads are counted separately from writes and never mixed into one
+  // envelope. BatchWriter reads its part statuses by counting every
+  // 'HTTP/1.1 nnn' in the response, which a query part's JSON body could
+  // otherwise contribute to.
+  class BatchReader {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      // Every answered part, in the order add() queued them, across as many
+      // requests as the budget forced. A caller compares by position, so a
+      // flush must never renumber what came before it.
+      this.results = [];
+    }
+
+    // `path` is what apiUrl() takes, so a read is spelled here exactly as it
+    // would be for a single GET.
+    async add(path) {
+      const op = { url: `${this.origin}${this.apiUrl(path)}` };
+      const cost = utf8Bytes(this._part(op, BATCH_BOUNDARY_SAMPLE));
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One top-level application/http part. No digest and no Content-Type: a
+    // query part carries no body, and the Accept is what makes the answer
+    // verbose OData, the same annotation the single-GET helpers ask for.
+    _part(op, outer) {
+      return `--${outer}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `GET ${op.url} HTTP/1.1\r\n`
+        + 'Accept: application/json;odata=verbose\r\n'
+        + '\r\n';
+    }
+
+    _encode(ops, outer) {
+      return ops.map((op) => this._part(op, outer)).join('') + `--${outer}--\r\n`;
+    }
+
+    // Each part's status and body, in order. The boundary is read off the
+    // response's own first line rather than its Content-Type header, because
+    // that is the one place it is spelled identically whatever the header
+    // casing, and a body that does not open with one is not a multipart
+    // answer at all.
+    _parts(text) {
+      const opening = String(text).split('\r\n', 1)[0].trim();
+      if (!opening.startsWith('--')) return null;
+      const boundary = opening.slice(2).replace(/--$/, '');
+      const parts = [];
+      for (const chunk of String(text).split(`--${boundary}`)) {
+        const at = chunk.indexOf('HTTP/1.1 ');
+        if (at === -1) continue;
+        const headEnd = chunk.indexOf('\r\n\r\n', at);
+        parts.push({
+          status: Number(chunk.slice(at + 9, at + 12)),
+          body: headEnd === -1 ? '' : chunk.slice(headEnd + 4).replace(/\r\n$/, ''),
+        });
+      }
+      return parts;
+    }
+
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, answered: 0 };
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const body = this._encode(ops, outer);
+      // No Accept on the outer request, for #401's reason: a JSON Accept
+      // turns the throttling-page redirect into a 406 only its URL names.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was throttled (HTTP ${response.status}) and none answered`,
+          { throttled: true, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const parts = this._parts(text);
+      if (!parts || parts.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) answered HTTP ${response.status} with `
+          + `${parts ? parts.length : 0} part status(es), so the reads cannot be accounted for`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const refused = parts.filter((part) => !(part.status >= 200 && part.status < 300));
+      if (refused.length) {
+        const throttledParts = refused.filter((part) => part.status === 429 || part.status === 503);
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s): ${parts.length - refused.length} answered, `
+          + `${refused.length} refused (part statuses ${parts.map((part) => part.status).join(', ')})`,
+          {
+            throttled: throttledParts.length > 0,
+            sent: ops.length, answered: parts.length - refused.length, refused: refused.length,
+          },
+        );
+      }
+      for (const part of parts) {
+        // The verbose envelope, unwrapped to the payload a single GET returns
+        // as `d`. A part that answered 2xx with something unparseable is a
+        // read that did not happen, so it refuses rather than yielding null.
+        let payload;
+        try {
+          payload = JSON.parse(part.body);
+        } catch {
+          throw this._refuse(
+            `$batch of ${ops.length} query part(s) answered a part that is not JSON, `
+            + 'so the reads cannot be accounted for',
+            { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+          );
+        }
+        this.results.push(payload && Object.prototype.hasOwnProperty.call(payload, 'd')
+          ? payload.d : payload);
+      }
+      dbg(`$batch read ${ops.length} query part(s) in ${utf8Bytes(body)} bytes; all answered.`);
+      return { requests: 1, answered: ops.length };
+    }
+
+    // Flushes what is left and hands back every part's payload in the order
+    // it was queued.
+    async done() {
+      await this.flush();
+      return this.results;
     }
   }

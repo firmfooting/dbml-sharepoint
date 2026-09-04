@@ -172,11 +172,16 @@
     return shapes;
   }
 
+  // getbyinternalnameortitle makes a renamed display Title repairable while
+  // still letting the immutable InternalName check reject a same-title
+  // impostor field. Shared so a batched read-back addresses a field by the
+  // same spelling the single-GET probe does rather than a second one that
+  // could drift from it.
+  const fieldShapePath = (listName, columnName) =>
+    `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+
   async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
-    // getbyinternalnameortitle makes a renamed display Title repairable while
-    // still letting the immutable InternalName check below reject a same-title
-    // impostor field.
-    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+    const fieldPath = fieldShapePath(listName, columnName);
     let shape;
     if (!fresh) {
       shape = (await listFieldShapes(listName)).get(columnName) || null;

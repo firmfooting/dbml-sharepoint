@@ -489,6 +489,177 @@
     }
   }
 
+  // The read companion. A $batch envelope carries query parts at the TOP
+  // level, outside any ChangeSet, and each answers with its own status line
+  // and JSON body, so a phase that verifies N objects can read them all in
+  // one request instead of N.
+  //
+  // MEASURED on a live tenant 2026-09-04, on the same site the index phase
+  // runs against: 58 field GETs sent as one $batch answered HTTP 200 with 58
+  // part statuses at 200 in 371 ms, where the same 58 GETs issued one at a
+  // time took 14.7 s. The outer request still needs X-RequestDigest even
+  // though every part is a read: without it the identical envelope came back
+  // HTTP 403, "The security validation for this page is invalid".
+  //
+  // Reads are counted separately from writes and never mixed into one
+  // envelope. BatchWriter reads its part statuses by counting every
+  // 'HTTP/1.1 nnn' in the response, which a query part's JSON body could
+  // otherwise contribute to.
+  class BatchReader {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      // Every answered part, in the order add() queued them, across as many
+      // requests as the budget forced. A caller compares by position, so a
+      // flush must never renumber what came before it.
+      this.results = [];
+    }
+
+    // `path` is what apiUrl() takes, so a read is spelled here exactly as it
+    // would be for a single GET.
+    async add(path) {
+      const op = { url: `${this.origin}${this.apiUrl(path)}` };
+      const cost = utf8Bytes(this._part(op, BATCH_BOUNDARY_SAMPLE));
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One top-level application/http part. No digest and no Content-Type: a
+    // query part carries no body, and the Accept is what makes the answer
+    // verbose OData, the same annotation the single-GET helpers ask for.
+    _part(op, outer) {
+      return `--${outer}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `GET ${op.url} HTTP/1.1\r\n`
+        + 'Accept: application/json;odata=verbose\r\n'
+        + '\r\n';
+    }
+
+    _encode(ops, outer) {
+      return ops.map((op) => this._part(op, outer)).join('') + `--${outer}--\r\n`;
+    }
+
+    // Each part's status and body, in order. The boundary is read off the
+    // response's own first line rather than its Content-Type header, because
+    // that is the one place it is spelled identically whatever the header
+    // casing, and a body that does not open with one is not a multipart
+    // answer at all.
+    _parts(text) {
+      const opening = String(text).split('\r\n', 1)[0].trim();
+      if (!opening.startsWith('--')) return null;
+      const boundary = opening.slice(2).replace(/--$/, '');
+      const parts = [];
+      for (const chunk of String(text).split(`--${boundary}`)) {
+        const at = chunk.indexOf('HTTP/1.1 ');
+        if (at === -1) continue;
+        const headEnd = chunk.indexOf('\r\n\r\n', at);
+        parts.push({
+          status: Number(chunk.slice(at + 9, at + 12)),
+          body: headEnd === -1 ? '' : chunk.slice(headEnd + 4).replace(/\r\n$/, ''),
+        });
+      }
+      return parts;
+    }
+
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, answered: 0 };
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const body = this._encode(ops, outer);
+      // No Accept on the outer request, for #401's reason: a JSON Accept
+      // turns the throttling-page redirect into a 406 only its URL names.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was throttled (HTTP ${response.status}) and none answered`,
+          { throttled: true, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const parts = this._parts(text);
+      if (!parts || parts.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) answered HTTP ${response.status} with `
+          + `${parts ? parts.length : 0} part status(es), so the reads cannot be accounted for`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const refused = parts.filter((part) => !(part.status >= 200 && part.status < 300));
+      if (refused.length) {
+        const throttledParts = refused.filter((part) => part.status === 429 || part.status === 503);
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s): ${parts.length - refused.length} answered, `
+          + `${refused.length} refused (part statuses ${parts.map((part) => part.status).join(', ')})`,
+          {
+            throttled: throttledParts.length > 0,
+            sent: ops.length, answered: parts.length - refused.length, refused: refused.length,
+          },
+        );
+      }
+      for (const part of parts) {
+        // The verbose envelope, unwrapped to the payload a single GET returns
+        // as `d`. A part that answered 2xx with something unparseable is a
+        // read that did not happen, so it refuses rather than yielding null.
+        let payload;
+        try {
+          payload = JSON.parse(part.body);
+        } catch {
+          throw this._refuse(
+            `$batch of ${ops.length} query part(s) answered a part that is not JSON, `
+            + 'so the reads cannot be accounted for',
+            { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+          );
+        }
+        this.results.push(payload && Object.prototype.hasOwnProperty.call(payload, 'd')
+          ? payload.d : payload);
+      }
+      dbg(`$batch read ${ops.length} query part(s) in ${utf8Bytes(body)} bytes; all answered.`);
+      return { requests: 1, answered: ops.length };
+    }
+
+    // Flushes what is left and hands back every part's payload in the order
+    // it was queued.
+    async done() {
+      await this.flush();
+      return this.results;
+    }
+  }
+
   let cachedDigest = null;
   let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
@@ -1241,11 +1412,16 @@
     return shapes;
   }
 
+  // getbyinternalnameortitle makes a renamed display Title repairable while
+  // still letting the immutable InternalName check reject a same-title
+  // impostor field. Shared so a batched read-back addresses a field by the
+  // same spelling the single-GET probe does rather than a second one that
+  // could drift from it.
+  const fieldShapePath = (listName, columnName) =>
+    `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+
   async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
-    // getbyinternalnameortitle makes a renamed display Title repairable while
-    // still letting the immutable InternalName check below reject a same-title
-    // impostor field.
-    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+    const fieldPath = fieldShapePath(listName, columnName);
     let shape;
     if (!fresh) {
       shape = (await listFieldShapes(listName)).get(columnName) || null;
@@ -4677,20 +4853,65 @@
         });
       }
     }
-    for (const { idx, target } of indexTargets) {
+    // Every column is still read back and compared. What changed is the
+    // transport and where each of the two facts comes from: the list identity
+    // is re-proved once per list now that all the writes have landed, and the
+    // field identities travel as top-level $batch query parts. Per column
+    // this was one forced list enumeration, one list GET and one field GET,
+    // sequentially, which is what made this the longest phase in the deploy.
+    if (indexTargets.length > 0) {
+      // Re-proved per LIST rather than per column. A list swapped between two
+      // columns' read-backs is still caught: the field read below addresses
+      // the field through the list TITLE, so a replacement answers with a
+      // different field Id, or with none, and fails that column's comparison.
+      const verifyOwned = await surveyOwnedListsForWrites(
+        indexTargets.map(entry => entry.idx.list), '2.3', 'Index readback',
+      );
+      let shapes = null;
       try {
-        // Identity read-back, not a value read-back. What SharePoint reports
-        // for Indexed immediately after the MERGE has not been measured here
-        // (it builds the index behind the flag asynchronously), so asserting
-        // it would be a guess; what IS asserted is that the write landed on
-        // the list and field the pre-write check approved.
-        const after = await ownedFieldIdentity(idx.list, idx.field, target.listId);
-        if (after.field.Id !== target.field.Id) {
-          throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.field.Id})`);
+        const indexReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const { idx } of indexTargets) {
+          await indexReader.add(`${fieldShapePath(idx.list, idx.field)}?$select=Id`);
         }
+        shapes = await indexReader.done();
       } catch (err) {
-        log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
-        summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+        // Fails closed, as a refused write batch does. Every column below then
+        // records that it was not read back, rather than the phase quietly
+        // reporting columns it never verified.
+        log('ERROR', `Index readback: ${err.message}`);
+      }
+      for (let position = 0; position < indexTargets.length; position += 1) {
+        const { idx, target } = indexTargets[position];
+        try {
+          if (!verifyOwned) {
+            throw new Error('the list ownership re-check failed, so this column was not read back');
+          }
+          const listId = verifyOwned.get(idx.list);
+          if (listId == null) {
+            throw new Error(`Declared list '${idx.list}' disappeared across the index write`);
+          }
+          if (sharePointGuid(listId, 'list') !== sharePointGuid(target.listId, 'list')) {
+            throw new Error(`List '${idx.list}' changed identity across the index write`);
+          }
+          if (!shapes) {
+            throw new Error('the batched read-back did not answer, so this column was not read back');
+          }
+          // Identity read-back, not a value read-back. What SharePoint reports
+          // for Indexed immediately after the MERGE has not been measured here
+          // (it builds the index behind the flag asynchronously), so asserting
+          // it would be a guess; what IS asserted is that the write landed on
+          // the list and field the pre-write check approved.
+          const after = shapes[position];
+          if (!after || typeof after.Id !== 'string') {
+            throw new Error(`Declared column '${idx.list}.${idx.field}' disappeared across the index write`);
+          }
+          if (after.Id !== target.field.Id) {
+            throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.Id})`);
+          }
+        } catch (err) {
+          log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+          summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+        }
       }
     }
   }

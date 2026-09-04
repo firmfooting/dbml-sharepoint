@@ -514,9 +514,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           const f = created[`${listTitle} ${named}`];
           if (!f) return { error: { code: '-2147024809, System.ArgumentException' } };
           // A derived-property probe (MaxLength, Choices, DisplayFormat...)
-          // names none of the shape columns; echo what the field was
-          // created with, which is what the declaration asked for.
-          if (!url.includes('InternalName')) return { d: f.__body };
+          // or a lookup-target probe names none of the shape columns; echo
+          // what the field was created with, which is what the declaration
+          // asked for. Every probe that wants the SHAPE selects Id first,
+          // which is what tells the two apart: the index read-back selects
+          // Id alone and is a shape probe, not a derived one.
+          if (!url.includes('$select=Id')) return { d: f.__body };
           return { d: f };
         }
         const own = Object.entries(created)
@@ -2814,6 +2817,137 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
     assert len(list_ids) == 1, (
         f"one ChangeSet spans {len(list_ids)} lists; the list is the boundary "
         "the seal phase draws and this phase makes no wider claim"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_index_readback_reads_every_column_as_one_query_batch(
+    tmp_path: Path,
+) -> None:
+    """The verification is batched, not sampled: N columns, N query parts.
+
+    `Indexed` is a property SharePoint can silently drop, so every declared
+    column is read back after the write and compared. What changed is only the
+    transport -- the read-backs travel as top-level `$batch` query parts in one
+    request instead of one GET each -- and this pins BOTH halves of that: the
+    count still matches the columns, and it still went out once.
+
+    The parts are asserted to address each field THROUGH ITS LIST TITLE. That
+    spelling is what makes the surviving list check safe to do once per list
+    rather than once per column: a list swapped out between two read-backs
+    answers with a different field Id, or with none, and the column still
+    fails.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    reads = [
+        b for b in batches
+        if b["ops"] and all(
+            op["method"] == "GET" and "/fields/getbyinternalnameortitle('" in op["url"]
+            for op in b["ops"]
+        )
+    ]
+    assert reads, (
+        f"no field read-back travelled as a $batch of query parts: {batches}"
+    )
+    assert len(reads) == 1, (
+        f"the index read-back went out as {len(reads)} $batch requests; two "
+        "columns fit in one envelope and splitting is the budget, not the phase"
+    )
+    assert len(reads[0]["ops"]) == 2, (
+        "the read-back did not read every indexed column back, which is the "
+        f"one thing batching them may not change: {reads[0]['ops']}"
+    )
+    for op in reads[0]["ops"]:
+        assert op["body"] is None, f"a query part carried a body: {op['body']}"
+        assert "$select=Id" in op["url"], (
+            "the read-back asks for more than the identity it compares: "
+            f"{op['url']}"
+        )
+        assert "/lists/getbytitle('" in op["url"], (
+            "a query part addresses its field through a list GUID; the "
+            "surviving per-list ownership check depends on the TITLE spelling "
+            f"to catch a swapped list: {op['url']}"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_index_readback_fails_every_column_closed(
+    tmp_path: Path,
+) -> None:
+    """A read-back that could not run is reported per column, not skipped.
+
+    Batching moves every column's verification behind ONE request, so a
+    refusal of that request is a phase-wide event where it used to be a
+    per-column one. The failure mode this exists to refuse is the phase
+    logging one transport error and then reporting the columns as verified.
+    Each column names itself, exactly as it would have under single GETs.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    # Refuses ONLY the read envelope, so the index writes still land: what is
+    # measured is a verification that could not run, not an index never
+    # written. An unparseable 200 is the shape that matters -- the outer
+    # request is `ok`, and a reader that trusted that would return nothing and
+    # report everything.
+    refuse_reads = textwrap.dedent(r"""
+        {
+          const _under = globalThis.fetch;
+          globalThis.fetch = async (url, opts = {}) => {
+            const sent = String((opts && opts.body) || '');
+            if (/\/_api\/\$batch$/.test(String(url)) && sent.includes('GET ')) {
+              return {
+                ok: true, status: 200, url: String(url),
+                headers: { get: () => null },
+                json: async () => ({}),
+                text: async () => 'nothing parseable here',
+              };
+            }
+            return _under(url, opts);
+          };
+        }
+    """)
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n{refuse_reads}\n({body[:-1]})"
+        ".then(r => console.log('__RESULT__' + JSON.stringify(r)));\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+
+    unread = [
+        err for err in (summary.get("errors") or [])
+        if "not read back" in str(err.get("error", ""))
+    ]
+    assert len(unread) == 2, (
+        "a refused read-back left indexed columns reported as verified; "
+        f"expected both named, got {summary.get('errors')}"
+    )
+    assert {err["column"] for err in unread} == {"Note", "Title"}, (
+        f"the columns that went unverified are not named: {unread}"
+    )
+    assert "[ERROR] Index readback:" in output, (
+        "the transport refusal never reached the transcript the operator "
+        "pastes back, so the per-column errors have no cause"
     )
 
 

@@ -1170,6 +1170,16 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     routing a phase back through a bare title write drops one of these numbers
     without touching the two above.
 
+    The index read-back is the one site that verifies without going through
+    `ownedFieldIdentity`, and it is pinned separately below rather than left to
+    that count. It reads its columns as one batch of query parts, so the list
+    half of the check comes from the phase's second survey and the field half
+    from the batched read. What makes that equivalent is the spelling of the
+    read: each column is addressed THROUGH ITS LIST TITLE, so a list swapped
+    between two columns' read-backs answers with a different field Id, or with
+    none, and still fails that column's comparison. Losing either assertion
+    below is a read-back that stopped proving the field it wrote to.
+
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
     comment on a line of code is still counted, which is the remaining hole.
@@ -1182,10 +1192,17 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,
-    # forms, seal, ACLs, seeds.
-    assert _call_count(js, "surveyOwnedListsForWrites") == 8
+    # forms, seal, ACLs, seeds. The index phase surveys twice, because its
+    # read-back is a second write-region boundary: the columns are read back
+    # after the last MERGE lands, so the ownership the pre-write survey proved
+    # is no longer current by then and is re-proved for the whole batch rather
+    # than per column.
+    assert _call_count(js, "surveyOwnedListsForWrites") == 9
     assert _call_count(js, "ownedListIdentity") == 17
-    assert _call_count(js, "ownedFieldIdentity") == 3
+    assert _call_count(js, "ownedFieldIdentity") == 2
+    code = _without_line_comments(js)
+    assert code.count("new BatchReader(") == 1
+    assert "fieldShapePath(idx.list, idx.field)" in code
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:

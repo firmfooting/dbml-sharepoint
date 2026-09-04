@@ -1,5 +1,5 @@
 # test/test_batch_writer_runtime.py
-"""Execute the emitted BatchWriter against a mock SharePoint.
+"""Execute the emitted BatchWriter and BatchReader against a mock SharePoint.
 
 `BatchWriter` is the transport primitive the write-capable scripts use to
 collapse many single writes into one OData `$batch` request, and two of its
@@ -11,9 +11,18 @@ properties cannot be seen anywhere else in the stack:
   `test/manual/throttle-batch-probe.js` (#404): 750 operations landed clean
   and 1000 came back 200 with 637 parts at 201 and 363 at 500.
 
-The class is LIFTED out of the emitted deploy script rather than copied, for
-the reason `test_transport_runtime.py` gives: a copy keeps passing after the
-real one changes.
+`BatchReader` is the read companion, and its one property that nothing else
+in the stack can show is the same one inverted: an envelope of top-level query
+parts answers HTTP 200 while individual parts 404, so a phase that verifies N
+objects through it and does not read the part statuses reports verification it
+never did. It is also the half that must NOT be trusted to a plausible
+encoding: query parts sit outside any ChangeSet and the outer request still
+needs `X-RequestDigest` even though every part is a read (measured live, 2026-
+09-04: the identical envelope without one came back HTTP 403).
+
+Both classes are LIFTED out of the emitted deploy script rather than copied,
+for the reason `test_transport_runtime.py` gives: a copy keeps passing after
+the real one changes.
 
 Node is required; the tests skip without it rather than failing.
 """
@@ -69,10 +78,11 @@ def _transport() -> str:
     start = js.index("  const DEBUG = false;")
     end = js.index("  let cachedDigest = null;")
     block = js[start:end]
-    assert "class BatchWriter {" in block, (
-        "the BatchWriter is no longer emitted between the transport partial "
-        "and the cached digest; this test is measuring the wrong text"
-    )
+    for name in ("class BatchWriter {", "class BatchReader {"):
+        assert name in block, (
+            f"`{name}` is no longer emitted between the transport partial and "
+            "the cached digest; this test is measuring the wrong text"
+        )
     return block
 
 
@@ -95,6 +105,20 @@ _HARNESS = textwrap.dedent("""
       return Array.from({ length: ops },
         () => '--r\\r\\nHTTP/1.1 201 Created\\r\\n\\r\\n{}\\r\\n').join('') + '--r--\\r\\n';
     };
+    // `readEcho: true` is the same trick for query parts, except that a read's
+    // PAYLOAD is what the caller wants back, so each answer names the field id
+    // its own request line asked for. A test about how a read is SPLIT cannot
+    // know the split in advance; answering from the request is what lets it
+    // assert the reader kept its results in order ACROSS requests.
+    const readEchoed = (opts) => {
+      const asked = String((opts && opts.body) || '').split('\\r\\n')
+        .filter((line) => line.startsWith('GET '))
+        .map((line) => (line.match(/getbyid\\('([^']+)'\\)/) || [])[1]);
+      return asked.map((id) =>
+        '--r\\r\\nContent-Type: application/http\\r\\n\\r\\nHTTP/1.1 200 OK\\r\\n'
+        + 'Content-Type: application/json;odata=verbose\\r\\n\\r\\n'
+        + JSON.stringify({ d: { Id: id } }) + '\\r\\n').join('') + '--r--\\r\\n';
+    };
     globalThis.fetch = async (url, opts) => {
       requests.push({ url: String(url), opts });
       const queue = RESPONSES[String(url)];
@@ -105,7 +129,11 @@ _HARNESS = textwrap.dedent("""
         url: next.url || String(url),
         headers: { get: (name) => (next.headers || {})[name] ?? null },
         json: async () => ({}),
-        text: async () => (next.echo ? echoed(opts) : (next.text || '')),
+        text: async () => {
+          if (next.echo) return echoed(opts);
+          if (next.readEcho) return readEchoed(opts);
+          return next.text || '';
+        },
       };
     };
     // A digest is fetched by the caller in the real script and handed in, so
@@ -503,3 +531,282 @@ def test_a_flushed_batch_is_not_sent_twice() -> None:
     assert result["sent"] == 1, "the refused batch was sent a second time"
     assert result["pending"] == 0
     assert result["after"] == {"requests": 0, "landed": 0, "statuses": []}
+
+
+def _query_response(parts: list[tuple[int, str]]) -> str:
+    """A $batch response body carrying one query part's status AND payload.
+
+    The payload is the difference. A ChangeSet response is read for its status
+    lines alone; a query response is read for what it answered, so these parts
+    carry a body and the reader has to get it back out from between the part
+    headers and the next boundary.
+    """
+    body = "".join(
+        f"--batchresponse_1\r\nContent-Type: application/http\r\n\r\n"
+        f"HTTP/1.1 {status} Whatever\r\n"
+        f"Content-Type: application/json;odata=verbose\r\n\r\n"
+        f"{payload}\r\n"
+        for status, payload in parts
+    )
+    return body + "--batchresponse_1--\r\n"
+
+
+def _shapes(*ids: str) -> str:
+    """A clean read of one `{ Id }` per part, in the order they were asked."""
+    return _query_response(
+        [(200, json.dumps({"d": {"Id": field_id}})) for field_id in ids],
+    )
+
+
+def _reader(*, transport: str = "fetchWithRetry", options: str = "") -> str:
+    return (
+        "const reader = new BatchReader({ getDigest, apiUrl, log, "
+        f"fetchWithRetry: {transport}{options} }});"
+    )
+
+
+def test_a_read_batch_encodes_its_query_parts_outside_any_changeset() -> None:
+    """The shape measured live: top-level GET parts, digest, no ChangeSet.
+
+    A ChangeSet is the atomic-write grouping; a read has nothing to group and
+    SharePoint refuses GETs inside one. What it does NOT let go of is the
+    digest: the identical envelope without `X-RequestDigest` came back HTTP
+    403, "The security validation for this page is invalid", even though every
+    part is a read. That is the one line here a live tenant had to confirm.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _shapes("11", "22")}]},
+        f"""
+        {_reader()}
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('11')?$select=Id");
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('22')?$select=Id");
+        await reader.done();
+        return {{ sent: requests.length, url: requests[0].url,
+                  method: requests[0].opts.method,
+                  headers: requests[0].opts.headers, body: requests[0].opts.body }};
+        """,
+    )
+    assert result["sent"] == 1, "two reads did not go out as one request"
+    assert result["url"] == BATCH_URL
+    assert result["method"] == "POST", "a $batch of reads is still POSTed"
+
+    headers = result["headers"]
+    assert headers["X-RequestDigest"] == DIGEST, (
+        "the outer request carries no digest; measured live, that is a 403 "
+        "even when every part inside it is a GET"
+    )
+    outer = headers["Content-Type"].removeprefix("multipart/mixed; boundary=")
+    assert outer.startswith("batch_") and outer != headers["Content-Type"]
+    assert "Accept" not in headers, (
+        "an Accept header turns the throttling-page redirect into a 406 that "
+        "only its URL identifies (#401); the write side omits it deliberately"
+    )
+
+    body = result["body"]
+    assert "multipart/mixed; boundary=changeset_" not in body, (
+        "the query parts were wrapped in a ChangeSet, which is the write "
+        "grouping; SharePoint reads a GET there as a malformed write"
+    )
+    assert body.count("Content-Type: application/http\r\n") == 2
+    assert body.count("Accept: application/json;odata=verbose\r\n") == 2
+    assert (
+        f"GET {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')/fields/"
+        "getbyid('11')?$select=Id HTTP/1.1\r\n" in body
+    ), "a query part's request line is not an absolute url"
+    assert "X-RequestDigest" not in body, (
+        "a digest on a query part is a write-part header the read does not need"
+    )
+    assert body.endswith(f"--{outer}--\r\n")
+
+
+def test_a_read_batch_answers_one_unwrapped_payload_per_part_in_order() -> None:
+    """Position is the only join between a part and what it was asked for.
+
+    A `$batch` response identifies its parts by order alone -- no request id,
+    no echo of the url. The caller pairs `results[i]` with its own `i`th read,
+    so the reader must never reorder, drop or coalesce one. `d` is the verbose
+    envelope and is unwrapped here so the caller compares a shape, not a
+    transport annotation.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _shapes("aa", "bb", "cc")}]},
+        f"""
+        {_reader()}
+        for (const id of ['aa', 'bb', 'cc']) {{
+          await reader.add(`web/lists/getbytitle('Risk')/fields/getbyid('${{id}}')?$select=Id`);
+        }}
+        const shapes = await reader.done();
+        return {{ shapes, requests: reader.requests }};
+        """,
+    )
+    assert result["shapes"] == [{"Id": "aa"}, {"Id": "bb"}, {"Id": "cc"}]
+    assert result["requests"] == 1
+
+
+def test_a_refused_query_part_fails_the_whole_read() -> None:
+    """The read-side of the reason this class exists at all.
+
+    The outer request is HTTP 200 and `response.ok` is true. A 404 on one part
+    is a column that was NOT read back, and a phase that took the 200 for an
+    answer would report verification it never performed. It fails closed, and
+    it says `query part` so a refusal cannot be mistaken for a lost write.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _query_response([
+            (200, '{"d":{"Id":"aa"}}'), (404, '{"error":{"message":"not found"}}'),
+        ])}]},
+        f"""
+        {_reader()}
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('aa')?$select=Id");
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('gone')?$select=Id");
+        try {{
+          const shapes = await reader.done();
+          return {{ threw: false, shapes }};
+        }} catch (err) {{
+          return {{ threw: true, message: err.message, batchFailure: err.batchFailure,
+                    throttled: err.throttled, sent: err.sent, answered: err.answered,
+                    refused: err.refused,
+                    logged: events.filter((e) => e.level === 'ERROR').length }};
+        }}
+        """,
+    )
+    assert result["threw"], "a read batch with a 404 part answered as a clean read"
+    assert result["batchFailure"] is True
+    assert (result["sent"], result["answered"], result["refused"]) == (2, 1, 1)
+    assert result["throttled"] is False, "a 404 is a refusal, not a throttle"
+    assert "query part(s)" in result["message"], result["message"]
+    assert "1 answered, 1 refused" in result["message"], result["message"]
+    assert "200, 404" in result["message"], result["message"]
+    assert result["logged"] >= 1, (
+        "the refusal never reached the transcript the operator pastes back"
+    )
+
+
+def test_a_query_part_that_is_not_json_is_refused() -> None:
+    """A part this cannot parse is not an answer, whatever its status says.
+
+    SharePoint answers an HTML error or a throttling page with a 200 part more
+    readily than it answers a malformed GET, and `JSON.parse` throwing inside
+    a verification loop would be reported as that column's failure rather than
+    as the read never having happened.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _query_response([
+            (200, '{"d":{"Id":"aa"}}'), (200, "<html>Throttled</html>"),
+        ])}]},
+        f"""
+        {_reader()}
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('aa')?$select=Id");
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('bb')?$select=Id");
+        try {{
+          return {{ threw: false, shapes: await reader.done() }};
+        }} catch (err) {{
+          return {{ threw: true, message: err.message, answered: err.answered }};
+        }}
+        """,
+    )
+    assert result["threw"], "an unparseable part passed as a read"
+    assert result["answered"] == 0, (
+        "a part that could not be parsed credited the parts before it, so the "
+        "caller would pair its columns against a short list"
+    )
+    assert "is not JSON" in result["message"], result["message"]
+
+
+def test_a_read_response_with_the_wrong_part_count_is_refused() -> None:
+    """Position is the join, so a short answer is unpairable, not partial.
+
+    Two reads answered by one part is not "the first one worked". Nothing in
+    the response says WHICH read the part belongs to, so crediting it would
+    pair a column against another column's shape.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _shapes("aa")}]},
+        f"""
+        {_reader()}
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('aa')?$select=Id");
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('bb')?$select=Id");
+        try {{
+          return {{ threw: false, shapes: await reader.done() }};
+        }} catch (err) {{
+          return {{ threw: true, message: err.message, answered: err.answered }};
+        }}
+        """,
+    )
+    assert result["threw"], "a $batch answering 1 of 2 reads passed"
+    assert result["answered"] == 0
+    assert "cannot be accounted for" in result["message"], result["message"]
+
+
+def test_a_throttled_read_is_reported_as_a_throttle() -> None:
+    """The browser gets a redirect to the throttling page, not a 429 (#401).
+
+    Same shape as the write side, and it has to stay distinguishable from a
+    refusal for the same reason: a caller that cannot tell them apart either
+    retries a refusal forever or gives up on a wait.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 406, "url": f"{ORIGIN}/_layouts/15/Throttle.htm"}]},
+        f"""
+        {_reader(transport="(url, opts) => fetchWithRetry(url, opts, 0)")}
+        await reader.add("web/lists/getbytitle('Risk')/fields/getbyid('aa')?$select=Id");
+        try {{
+          return {{ threw: false, shapes: await reader.done() }};
+        }} catch (err) {{
+          return {{ threw: true, throttled: err.throttled, answered: err.answered,
+                    message: err.message }};
+        }}
+        """,
+    )
+    assert result["threw"], "a throttled read batch answered as a clean read"
+    assert result["throttled"] is True
+    assert result["answered"] == 0
+    assert "query part(s)" in result["message"], result["message"]
+
+
+def test_the_read_body_budget_splits_and_keeps_the_answers_in_order() -> None:
+    """A split is invisible to the caller, which is the whole contract.
+
+    The same body ceiling applies -- it is a property of the endpoint, not of
+    the verb -- so a long verification splits. `results` accumulates across
+    flushes, so the caller still pairs `results[i]` with its `i`th read and
+    never learns how many requests that took.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "readEcho": True}]},
+        f"""
+        {_reader(options=", bodyBudgetBytes: 3000")}
+        const asked = [];
+        for (let i = 0; i < 40; i++) {{
+          asked.push(String(i));
+          await reader.add(`web/lists/getbytitle('Risk')/fields/getbyid('${{i}}')?$select=Id`);
+        }}
+        const shapes = await reader.done();
+        return {{ asked, shapes, sent: requests.length,
+                  sizes: requests.map((r) => r.opts.body.length) }};
+        """,
+    )
+    assert result["sent"] > 1, f"a 3000-byte budget did not split anything: {result}"
+    assert max(result["sizes"]) <= 3000
+    assert result["shapes"] == [{"Id": asked} for asked in result["asked"]], (
+        "the answers did not survive the split in the order they were asked"
+    )
+
+
+def test_an_empty_read_sends_nothing() -> None:
+    """Closing a reader nobody used must not POST an empty envelope.
+
+    The index phase builds one whether or not the schema declares an indexed
+    column, and an empty multipart body is a 400 rather than a no-op.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _shapes()}]},
+        f"""
+        {_reader()}
+        const shapes = await reader.done();
+        return {{ shapes, sent: requests.length, requests: reader.requests }};
+        """,
+    )
+    assert result["sent"] == 0, "an empty reader POSTed a $batch anyway"
+    assert result["requests"] == 0
+    assert result["shapes"] == []
