@@ -6,7 +6,6 @@
   log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
-  digest = await getDigest();
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -21,26 +20,115 @@
       log('ERROR', 'Index ownership survey failed; aborting before any index write.');
       return { ...summary, aborted: 'index-ownership-errors' };
     }
+    // Every target is resolved before the first write. Approving a field is a
+    // read, and once approved these MERGEs depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const indexTargets = [];
     for (const idx of SCHEMA.indexed_columns) {
       try {
-        digest = await getDigest();  // refresh per item (digest lifetime)
-        const target = await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list));
-        await patchFieldById(
-          target.listId, target.field.Id,
-          { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
-        );
-        // Identity read-back, not a value read-back. What SharePoint reports
-        // for Indexed immediately after the MERGE has not been measured here
-        // (it builds the index behind the flag asynchronously), so asserting
-        // it would be a guess; what IS asserted is that the write landed on
-        // the list and field the pre-write check approved.
-        const after = await ownedFieldIdentity(idx.list, idx.field, target.listId);
-        if (after.field.Id !== target.field.Id) {
-          throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.field.Id})`);
-        }
+        indexTargets.push({
+          idx,
+          target: await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list)),
+        });
       } catch (err) {
         log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
         summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+      }
+    }
+    // One $batch per list, the same boundary the seal phase draws. Lists are
+    // independent; same-list field writes are the ones that race into save
+    // conflicts, so the list stays the unit a ChangeSet is drawn around and
+    // this phase makes no claim the seal phase has not already made.
+    const indexByList = new Map();
+    for (const entry of indexTargets) {
+      if (!indexByList.has(entry.idx.list)) indexByList.set(entry.idx.list, []);
+      indexByList.get(entry.idx.list).push(entry);
+    }
+    for (const [listTitle, entries] of indexByList) {
+      const indexBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          await indexBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            { __metadata: { type: 'SP.Field' }, Indexed: true },
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await indexBatch.done();
+      } catch (err) {
+        // Named at list level with the columns it covered, not attributed to
+        // one of them: SharePoint does not roll a ChangeSet back, and the
+        // refusal reports part statuses in queue order rather than saying
+        // which column each belongs to.
+        log('ERROR', `Index ${listTitle}: ${err.message}`);
+        summary.errors.push({
+          list: listTitle, columns: entries.map(entry => entry.idx.field),
+          error: err.message,
+        });
+      }
+    }
+    // Every column is still read back and compared. What changed is the
+    // transport and where each of the two facts comes from: the list identity
+    // is re-proved once per list now that all the writes have landed, and the
+    // field identities travel as top-level $batch query parts. Per column
+    // this was one forced list enumeration, one list GET and one field GET,
+    // sequentially, which is what made this the longest phase in the deploy.
+    if (indexTargets.length > 0) {
+      // Re-proved per LIST rather than per column. A list swapped between two
+      // columns' read-backs is still caught: the field read below addresses
+      // the field through the list TITLE, so a replacement answers with a
+      // different field Id, or with none, and fails that column's comparison.
+      const verifyOwned = await surveyOwnedListsForWrites(
+        indexTargets.map(entry => entry.idx.list), '{{ phase.number }}', 'Index readback',
+      );
+      let shapes = null;
+      try {
+        const indexReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const { idx } of indexTargets) {
+          await indexReader.add(`${fieldShapePath(idx.list, idx.field)}?$select=Id`);
+        }
+        shapes = await indexReader.done();
+      } catch (err) {
+        // Fails closed, as a refused write batch does. Every column below then
+        // records that it was not read back, rather than the phase quietly
+        // reporting columns it never verified.
+        log('ERROR', `Index readback: ${err.message}`);
+      }
+      for (let position = 0; position < indexTargets.length; position += 1) {
+        const { idx, target } = indexTargets[position];
+        try {
+          if (!verifyOwned) {
+            throw new Error('the list ownership re-check failed, so this column was not read back');
+          }
+          const listId = verifyOwned.get(idx.list);
+          if (listId == null) {
+            throw new Error(`Declared list '${idx.list}' disappeared across the index write`);
+          }
+          if (sharePointGuid(listId, 'list') !== sharePointGuid(target.listId, 'list')) {
+            throw new Error(`List '${idx.list}' changed identity across the index write`);
+          }
+          if (!shapes) {
+            throw new Error('the batched read-back did not answer, so this column was not read back');
+          }
+          // Identity read-back, not a value read-back. What SharePoint reports
+          // for Indexed immediately after the MERGE has not been measured here
+          // (it builds the index behind the flag asynchronously), so asserting
+          // it would be a guess; what IS asserted is that the write landed on
+          // the list and field the pre-write check approved.
+          const after = shapes[position];
+          if (!after || typeof after.Id !== 'string') {
+            throw new Error(`Declared column '${idx.list}.${idx.field}' disappeared across the index write`);
+          }
+          if (after.Id !== target.field.Id) {
+            throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.Id})`);
+          }
+        } catch (err) {
+          log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+          summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+        }
       }
     }
   }

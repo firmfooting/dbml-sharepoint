@@ -7,10 +7,11 @@
 3. **On site**: **host** (the staff member responsible for them),
    location, **Signed In At** = now, badge ref if you issue them.
    *Signed Out At* isn't on the New form: nobody signs out on arrival.
-4. **Induction**: this section only appears for **Contractors** and
-   **Students / placements**. Tick *Induction sighted* only after actually
-   sighting it: the tick is the record that site induction happened
-   before work started. No induction, no work; call the host.
+4. **Induction**: this section is on every form, and the tick is asked of
+   **Contractors** and **Students / placements**. Leave it clear for
+   everyone else. Tick *Induction sighted* only after actually sighting it:
+   the tick is the record that site induction happened before work started.
+   No induction, no work; call the host.
 
 The form refuses a sign-in dated in the future and tells you why. It
 cannot check that the host exists or that the sign-out is later than the

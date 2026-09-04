@@ -190,9 +190,19 @@ views:
         SignedInAt: 170
         BadgeRef: 120
 
-# Nobody signs out at the moment they sign in, and an induction question
-# asked of a courier is a question that trains people to tick without
-# reading. Both fields therefore appear only when they mean something.
+# Nobody signs out at the moment they sign in, so Signed out at is absent
+# from the New form.
+#
+# Induction sighted is shown on every form, including a courier's. It was
+# declared `when VisitorType in [Contractor, Student / placement]` until a
+# live deploy on 2026-09-04 aborted on this field: SharePoint refuses a
+# validation formula on a Yes/No column ("This field type does not support
+# validation formulas", HTTP 500), and conditional visibility is carried by
+# exactly that property. The build now refuses the declaration
+# (form_visibility_condition_on_a_boolean_column). Who is expected to tick
+# it is carried by the column note, which renders as the field description
+# on the New form; nothing is lost from the record, because an unticked box
+# already means for a visitor what an absent field meant.
 #
 # reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy. Read
@@ -203,10 +213,7 @@ form_visibility:
     reconcile: exact
     columns:
       SignedOutAt: { new: false }
-      InductionSighted:
-        when:
-          - { field: VisitorType, op: in,
-              value: ["Contractor", "Student / placement"] }
+      InductionSighted: visible
 
 # Form layout: a strapline header and three sections. Per-field
 # description hints render on the NEW form only. SharePoint suppresses

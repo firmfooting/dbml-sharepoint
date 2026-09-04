@@ -584,7 +584,7 @@ def test_number_default_is_string_in_create_and_merge_shapes() -> None:
     js = _generate_simple_js()
     assert '"DefaultValue": "0"' in js
     assert '"default_value": "0"' in js
-    assert "DefaultValue: fieldDefault.default_value" in js
+    assert "DefaultValue: entry.fieldDefault.default_value" in js
 
 
 def test_longtext_emits_plain_multiline_note_field() -> None:
@@ -1170,6 +1170,16 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     routing a phase back through a bare title write drops one of these numbers
     without touching the two above.
 
+    The index read-back is the one site that verifies without going through
+    `ownedFieldIdentity`, and it is pinned separately below rather than left to
+    that count. It reads its columns as one batch of query parts, so the list
+    half of the check comes from the phase's second survey and the field half
+    from the batched read. What makes that equivalent is the spelling of the
+    read: each column is addressed THROUGH ITS LIST TITLE, so a list swapped
+    between two columns' read-backs answers with a different field Id, or with
+    none, and still fails that column's comparison. Losing either assertion
+    below is a read-back that stopped proving the field it wrote to.
+
     Whole-line `//` comments are excluded from the count, so a disarmed site
     cannot be papered over with a line of prose naming the function. A trailing
     comment on a line of code is still counted, which is the remaining hole.
@@ -1182,10 +1192,19 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,
-    # forms, seal, ACLs, seeds.
-    assert _call_count(js, "surveyOwnedListsForWrites") == 8
-    assert _call_count(js, "ownedListIdentity") == 17
-    assert _call_count(js, "ownedFieldIdentity") == 3
+    # forms, seal, ACLs, seeds. The index and form phases survey TWICE, because
+    # each has a read-back that is a second write-region boundary: the objects
+    # are read back after the last write lands, so the ownership the pre-write
+    # survey proved is no longer current by then and is re-proved for the whole
+    # batch rather than per object.
+    assert _call_count(js, "surveyOwnedListsForWrites") == 10
+    assert _call_count(js, "ownedListIdentity") == 16
+    assert _call_count(js, "ownedFieldIdentity") == 2
+    code = _without_line_comments(js)
+    # The index read-back, and the form phase's two: its content-type
+    # resolution and its layout read-back.
+    assert code.count("new BatchReader(") == 3
+    assert "fieldShapePath(idx.list, idx.field)" in code
 
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
@@ -1320,12 +1339,14 @@ def test_deploy_js_hardens_permission_and_role_checks() -> None:
       responses as errors rather than treating them as "already exists";
     - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.3 group
       owner reads all validate the HTTP result (fetch does not throw on 4xx/5xx).
+      The adds travel as one $batch, so the status each part came back with is
+      what BatchWriter inspects, and its refusal has to stay fatal here.
     """
     js = _generate_simple_js()
     assert "needsPermissions" in js
     assert "Probe for permission level" in js
     assert "Probe for site group" in js
-    assert "addroleassignment (principal" in js
+    assert "addroleassignment batch failed before reconciliation" in js
     assert "failed before reconciliation" in js
     assert "breakroleinheritance failed" in js
     assert "/owner?$select=Id,Title,PrincipalType" in js

@@ -15,9 +15,10 @@ errors) -> **paste** `build/deploy.js.txt` from a Site Owner's console ->
 - [ ] The paper book has a cutover date.
 - [ ] `VisitorType` matches the classes of person who actually arrive at
       your front door. Two of its members, **Contractor** and **Student /
-      placement**, are what make the *Induction sighted* tick appear on
-      the form, so renaming or removing them changes the form as well as
-      the enum. Decide **before first deploy**.
+      placement**, are the ones the *Induction sighted* tick is asked of,
+      and they are named in the *Contractors on site* view and the column
+      description, so renaming or removing them changes more than the enum.
+      Decide **before first deploy**.
 - [ ] The header shows `Visit: <name>` on a saved row and `New visit`
       before the name is typed, updating live as it is typed.
 
@@ -81,10 +82,10 @@ site that already holds real visits.
       `20-configure/formatting/visit-form-body.json`.
 - [ ] The form reacts as you fill it in. On a New form, **Signed Out At**
       is absent: nobody signs out at the moment they arrive, and it appears
-      on the Edit form. **Induction sighted** is absent until `VisitorType`
-      is set to **Contractor** or **Student / placement**, then appears;
-      set it back to **Visitor** and it disappears again, keeping whatever
-      was ticked.
+      on the Edit form. **Induction sighted** is on every form, whatever
+      `VisitorType` says: SharePoint refuses a validation formula on a
+      Yes/No column, so this one column cannot be shown conditionally, and
+      its description carries the rule instead.
 - [ ] Save rules: a **Signed In At** dated next month is refused, and so
       is a future **Signed Out At**; the save message carries a sentence
       for each. Both allow any time up to the moment you save. Each rule

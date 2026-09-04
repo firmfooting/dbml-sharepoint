@@ -16,10 +16,10 @@ the follow-up questions (who was on site that Tuesday?) that paper archives
 can't. Deployable in an afternoon; adopted by the first visitor.
 
 **What deploys with it:** four views (*On site now*, *Signed in today*,
-*Contractors on site*, *Never signed out*), a three-section form that only
-asks contractors and students about induction, save rules that refuse a
-future sign-in, and six demo visits behind `--seed` so the muster list has
-something in it the first time a warden opens it.
+*Contractors on site*, *Never signed out*), a three-section form with its
+own induction section, save rules that refuse a future sign-in, and six
+demo visits behind `--seed` so the muster list has something in it the
+first time a warden opens it.
 
 **Work the folders in order:**
 
@@ -32,7 +32,7 @@ something in it the first time a warden opens it.
 | 5 | `50-govern/` | Privacy retention, contractor rules, muster procedure |
 
 **Customisation points:** `VisitorType` (note that **Contractor** and
-**Student / placement** are the two members that drive the induction
-question on the form); and whether visitors self-serve on a kiosk/tablet
+**Student / placement** are the two members the induction question is
+asked of); and whether visitors self-serve on a kiosk/tablet
 (the New-item form on a mounted tablet works today, no extra software) or
 reception records for them.

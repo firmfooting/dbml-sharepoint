@@ -23,6 +23,7 @@ from typing import Any, ClassVar, NamedTuple
 from urllib.parse import quote
 
 import pytest
+from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, table
 from _node import NODE
 from _node import run_node as _run
@@ -121,7 +122,7 @@ _HARNESS = textwrap.dedent("""
       };
     };
     globalThis.__calls = calls;
-""")
+""") + BATCH_MOCK
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -241,6 +242,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const SABOTAGE_MODE = 'marker';
     const SABOTAGE_AFTER_READS = 0;
     const REPLACEMENT_LIST_ID = '55555555-5555-5555-5555-555555555555';
+    // Titles this site does NOT have, so the by-title list probe answers 404.
+    // Empty by default: every other test's fiction is that a probed list is
+    // there. Exposed as the array itself so a test can arm it mid-run.
+    const ABSENT_LIST_TITLES = [];
+    globalThis.__absentListTitles = ABSENT_LIST_TITLES;
     let sabotageArmed = false;
     const sabotageReads = Object.create(null);
     // The phase every request belongs to, read off the run's own phase
@@ -513,9 +519,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           const f = created[`${listTitle} ${named}`];
           if (!f) return { error: { code: '-2147024809, System.ArgumentException' } };
           // A derived-property probe (MaxLength, Choices, DisplayFormat...)
-          // names none of the shape columns; echo what the field was
-          // created with, which is what the declaration asked for.
-          if (!url.includes('InternalName')) return { d: f.__body };
+          // or a lookup-target probe names none of the shape columns; echo
+          // what the field was created with, which is what the declaration
+          // asked for. Every probe that wants the SHAPE selects Id first,
+          // which is what tells the two apart: the index read-back selects
+          // Id alone and is a shape probe, not a derived one.
+          if (!url.includes('$select=Id')) return { d: f.__body };
           return { d: f };
         }
         const own = Object.entries(created)
@@ -666,6 +675,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
         const probeTitle = listOf(url);
+        // Unless a test says the site does not have it. The branch above
+        // answers every title alike, which leaves the by-title 404 -- the
+        // only way a run learns a declared list is GONE, now that the
+        // ownership guard probes without enumerating first -- unreachable.
+        // Mutable, so a test can arm it after the run it measures.
+        if (ABSENT_LIST_TITLES.includes(probeTitle)) {
+          return { error: { code: 'List not found', status: 404 } };
+        }
         const sabotage = sabotageFor(probeTitle);
         // Called either way: it drives the read counter DROP_LIST_MARKER_
         // AFTER_READS uses, which must not depend on the sabotage knobs.
@@ -861,7 +878,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       };
     };
     globalThis.__calls = calls;
-""")
+""") + BATCH_MOCK
 
 
 def _run_deploy(harness: str, tail: str) -> str:
@@ -2612,6 +2629,582 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
+    """The seals travel as ChangeSet parts, one $batch per list.
+
+    A burst of one MERGE per column is the shape that got a nine-list run
+    throttled mid-phase (#401). Asserting the transport rather than the
+    outcome, because the outcome is identical either way: the columns end
+    sealed whether the writes went singly or batched, so nothing else in the
+    suite can see this stop working.
+    """
+    body = _declared_deploy_js(tmp_path, "").rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    sealing = [
+        b for b in batches
+        if any('"Sealed":true' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert sealing, f"no seal write travelled as a ChangeSet part: {batches}"
+    for batch in sealing:
+        list_ids = {
+            match.group(1) for match in (
+                re.search(r"lists\(guid'([^']+)'\)", op["url"]) for op in batch["ops"]
+            ) if match
+        }
+        assert len(list_ids) == 1, (
+            f"one ChangeSet spans {len(list_ids)} lists; the lane boundary is "
+            "the batch boundary because same-list field writes race"
+        )
+        for op in batch["ops"]:
+            assert op["method"] == "MERGE", (
+                "a seal part would POST rather than MERGE the field"
+            )
+            assert "/fields(guid'" in op["url"], (
+                "a seal part addresses the field by name, which a rebind can "
+                "redirect; patchFieldById addresses it by Id"
+            )
+
+    # The phase reports what LANDED, and every landed write was a part.
+    reported = sum(
+        int(match.group(1)) for match in (
+            re.search(r"\((\d+) newly sealed\)", ln) for ln in output.splitlines()
+        ) if match
+    )
+    parts = sum(
+        1 for b in sealing for op in b["ops"] if '"Sealed":true' in (op["body"] or "")
+    )
+    assert parts == reported, (
+        f"{parts} seal part(s) went out but the phase reported {reported} sealed"
+    )
+
+
+# Two groups on one level, so the list has two grants to make and a
+# ChangeSet that coalesces them is distinguishable from one that does not.
+# The harness's markers are spelled for the family it was written against,
+# so the declared family is substituted into them below.
+_TWO_GRANT_ACL = """
+permission_levels:
+  - name: "Schema Manager"
+    description: "Test permission level."
+    base_permissions:
+      - ViewListItems
+      - ManageLists
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+    require_empty_at_deploy: true
+  - name: "List Reader"
+    description: "Second test group."
+    owner_group: "Site Owners"
+    require_empty_at_deploy: true
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Schema Manager"
+      - principal: { kind: group, name: "List Reader" }
+        level: "Schema Manager"
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> None:
+    """The grants travel as ChangeSet parts; nothing ordered joins them.
+
+    addroleassignment is a function invocation with no body, and a list's
+    grants are independent of one another. breakroleinheritance is not: it
+    has to have run before any of them, and the enumeration that decides
+    which are missing has to have been read before that. So a ChangeSet here
+    must carry adds, all of the list's adds, and nothing else.
+    """
+    body = _declared_deploy_js(tmp_path, _TWO_GRANT_ACL).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS.replace('simple-test', 't')}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    adding = [
+        b for b in batches
+        if any("addroleassignment(" in op["url"] for op in b["ops"])
+    ]
+    assert adding, f"no role-assignment grant travelled as a ChangeSet part: {batches}"
+    assert len(adding) == 1, (
+        f"the list's two grants went out as {len(adding)} $batch requests; "
+        "they are settled by one read and belong in one ChangeSet"
+    )
+    assert len(adding[0]["ops"]) == 2, (
+        f"expected both declared grants as parts, got {adding[0]['ops']}"
+    )
+    for op in adding[0]["ops"]:
+        assert "addroleassignment(" in op["url"], (
+            f"an ordered ACL call shares a ChangeSet with the adds: {op['url']}"
+        )
+        assert op["method"] == "POST", (
+            "addroleassignment is a POST as a single write and stays one as a "
+            f"part, not {op['method']}"
+        )
+        assert op["body"] is None, (
+            "the arguments belong in the URL; a body here is not what the "
+            "single write sent"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
+    """Indexed:true travels as ChangeSet parts, one $batch per list.
+
+    Two indexed columns on one list, so a batch that coalesces them is
+    distinguishable from one request per column: the declared index on Note
+    plus the lookup display column the picker indexes.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    indexing = [
+        b for b in batches
+        if any('"Indexed":true' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert indexing, f"no index write travelled as a ChangeSet part: {batches}"
+    assert len(indexing) == 1, (
+        f"the list's index writes went out as {len(indexing)} $batch requests"
+    )
+    assert len(indexing[0]["ops"]) == 2, (
+        f"expected both indexed columns as parts, got {indexing[0]['ops']}"
+    )
+    for op in indexing[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "an index part would POST rather than MERGE the field"
+        )
+        assert "/fields(guid'" in op["url"], (
+            "an index part addresses the field by name, which a rebind can "
+            "redirect; the write it replaces went by Id"
+        )
+        assert '"Indexed":true' in (op["body"] or ""), (
+            f"an unrelated write shares the index ChangeSet: {op['body']}"
+        )
+    list_ids = {
+        match.group(1) for match in (
+            re.search(r"lists\(guid'([^']+)'\)", op["url"])
+            for op in indexing[0]["ops"]
+        ) if match
+    }
+    assert len(list_ids) == 1, (
+        f"one ChangeSet spans {len(list_ids)} lists; the list is the boundary "
+        "the seal phase draws and this phase makes no wider claim"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_index_readback_reads_every_column_as_one_query_batch(
+    tmp_path: Path,
+) -> None:
+    """The verification is batched, not sampled: N columns, N query parts.
+
+    `Indexed` is a property SharePoint can silently drop, so every declared
+    column is read back after the write and compared. What changed is only the
+    transport -- the read-backs travel as top-level `$batch` query parts in one
+    request instead of one GET each -- and this pins BOTH halves of that: the
+    count still matches the columns, and it still went out once.
+
+    The parts are asserted to address each field THROUGH ITS LIST TITLE. That
+    spelling is what makes the surviving list check safe to do once per list
+    rather than once per column: a list swapped out between two read-backs
+    answers with a different field Id, or with none, and the column still
+    fails.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    reads = [
+        b for b in batches
+        if b["ops"] and all(
+            op["method"] == "GET" and "/fields/getbyinternalnameortitle('" in op["url"]
+            for op in b["ops"]
+        )
+    ]
+    assert reads, (
+        f"no field read-back travelled as a $batch of query parts: {batches}"
+    )
+    assert len(reads) == 1, (
+        f"the index read-back went out as {len(reads)} $batch requests; two "
+        "columns fit in one envelope and splitting is the budget, not the phase"
+    )
+    assert len(reads[0]["ops"]) == 2, (
+        "the read-back did not read every indexed column back, which is the "
+        f"one thing batching them may not change: {reads[0]['ops']}"
+    )
+    for op in reads[0]["ops"]:
+        assert op["body"] is None, f"a query part carried a body: {op['body']}"
+        assert "$select=Id" in op["url"], (
+            "the read-back asks for more than the identity it compares: "
+            f"{op['url']}"
+        )
+        assert "/lists/getbytitle('" in op["url"], (
+            "a query part addresses its field through a list GUID; the "
+            "surviving per-list ownership check depends on the TITLE spelling "
+            f"to catch a swapped list: {op['url']}"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_index_readback_fails_every_column_closed(
+    tmp_path: Path,
+) -> None:
+    """A read-back that could not run is reported per column, not skipped.
+
+    Batching moves every column's verification behind ONE request, so a
+    refusal of that request is a phase-wide event where it used to be a
+    per-column one. The failure mode this exists to refuse is the phase
+    logging one transport error and then reporting the columns as verified.
+    Each column names itself, exactly as it would have under single GETs.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "", self_reference=True,
+        extra_lines=("indexes {", "(Note)", "}"),
+    ).rstrip()
+    assert body.endswith("})();")
+    # Refuses ONLY the read envelope, so the index writes still land: what is
+    # measured is a verification that could not run, not an index never
+    # written. An unparseable 200 is the shape that matters -- the outer
+    # request is `ok`, and a reader that trusted that would return nothing and
+    # report everything.
+    refuse_reads = textwrap.dedent(r"""
+        {
+          const _under = globalThis.fetch;
+          globalThis.fetch = async (url, opts = {}) => {
+            const sent = String((opts && opts.body) || '');
+            if (/\/_api\/\$batch$/.test(String(url)) && sent.includes('GET ')) {
+              return {
+                ok: true, status: 200, url: String(url),
+                headers: { get: () => null },
+                json: async () => ({}),
+                text: async () => 'nothing parseable here',
+              };
+            }
+            return _under(url, opts);
+          };
+        }
+    """)
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n{refuse_reads}\n({body[:-1]})"
+        ".then(r => console.log('__RESULT__' + JSON.stringify(r)));\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+
+    unread = [
+        err for err in (summary.get("errors") or [])
+        if "not read back" in str(err.get("error", ""))
+    ]
+    assert len(unread) == 2, (
+        "a refused read-back left indexed columns reported as verified; "
+        f"expected both named, got {summary.get('errors')}"
+    )
+    assert {err["column"] for err in unread} == {"Note", "Title"}, (
+        f"the columns that went unverified are not named: {unread}"
+    )
+    assert "[ERROR] Index readback:" in output, (
+        "the transport refusal never reached the transcript the operator "
+        "pastes back, so the per-column errors have no cause"
+    )
+
+
+# Two views on one list, declaring the SAME two columns in OPPOSITE orders.
+# That is what makes both claims below visible at once: a ChangeSet drawn
+# around the wrong unit merges them, and a transport that reorders parts
+# cannot produce two batches that disagree. Single-word titles for the same
+# reason `_GUARDED_VIEWS` uses them: a title equal to its own URL slug keeps
+# the mock's view state under one key across the create-then-rename.
+_TWO_VIEW_ORDERS = """
+views:
+  Escalation:
+    - title: "TitleFirst"
+      fields: [Title, Note]
+    - title: "NoteFirst"
+      fields: [Note, Title]
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
+    """The column reset and adds travel as ChangeSet parts, one $batch per view.
+
+    445 of the views phase's 1,221 requests on a ten-list family were
+    addviewfield, the largest single bucket in the deploy, and the deploy is
+    throttle-bound, so the count is what costs.
+
+    ORDER is asserted, not just membership. A view's column order is a
+    declared setting, OData v3 says a ChangeSet MAY be reordered, and the
+    live measurement that says SharePoint does not is recorded at the call
+    site. This pins the half that is ours: the parts leave in declared order,
+    with the reset first, so a reordering here would be a bug in the deploy
+    rather than in the tenant.
+    """
+    body = _declared_deploy_js(tmp_path, _TWO_VIEW_ORDERS).rstrip()
+    assert body.endswith("})();")
+    # The harness that keeps per-view state. `_ADOPTED_HARNESS` alone gives
+    # every view one id and one .aspx name, so two declared views read back
+    # as the same object and fail their own URL check. No policy: neither
+    # view is filtered, so the settings page it also serves is never asked
+    # for.
+    output = _run(
+        f"{_view_guard_harness({})}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    summary = _summary_of(output)
+    assert summary.get("errors") == [], summary["errors"]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    fielding = [
+        b for b in batches
+        if any("/viewfields/" in op["url"] for op in b["ops"])
+    ]
+    # Three views, not two: the deployer also reconciles the built-in All
+    # Items. One request each is the claim, and the view is the boundary
+    # because the reset clears the whole collection and a ChangeSet drawn any
+    # wider would wipe the adds queued ahead of it.
+    assert len(fielding) == 3, (
+        f"three views wrote their columns in {len(fielding)} $batch request(s)"
+    )
+    ordered = {}
+    for batch in fielding:
+        views = {
+            match.group(1) for match in (
+                re.search(r"views/getbytitle\('([^']+)'\)", op["url"])
+                for op in batch["ops"]
+            ) if match
+        }
+        assert len(views) == 1, (
+            f"one ChangeSet spans {len(views)} views: {views}"
+        )
+        for op in batch["ops"]:
+            assert op["method"] == "POST", (
+                "a view-field part would MERGE rather than POST the function"
+            )
+        assert "/viewfields/removeallviewfields" in batch["ops"][0]["url"], (
+            "the reset is not the first part, so the adds ahead of it are "
+            f"cleared by it: {[op['url'] for op in batch['ops']]}"
+        )
+        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"])
+                 for op in batch["ops"][1:]]
+        assert all(added), (
+            f"a part after the reset is not an addviewfield: {batch['ops']}"
+        )
+        ordered[views.pop()] = [m.group(1) for m in added if m]
+    declared = {k: v for k, v in ordered.items() if k in ("TitleFirst", "NoteFirst")}
+    assert declared == {"TitleFirst": ["Title", "Note"],
+                        "NoteFirst": ["Note", "Title"]}, (
+        f"the parts did not leave in each view's declared order: {ordered}"
+    )
+
+
+# Two lists with a declared layout, so a ChangeSet that coalesces them is
+# distinguishable from one request each.
+_TWO_FORM_LAYOUTS = """
+form_formatting:
+  Escalation:
+    body:
+      sections:
+        - { displayname: Main, fields: [Title, Note] }
+  Other:
+    body:
+      sections:
+        - { displayname: Main, fields: [Title, Note] }
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
+    """One ChangeSet for every list's layout, not one per list.
+
+    The boundary the seal and index phases draw is the LIST, because same-list
+    field writes race into save conflicts. A layout is one write per list, so
+    there is no same-list pair to race and nothing that boundary protects;
+    this pins the wider boundary rather than leaving it to be narrowed back by
+    a later change that reads the other two phases as the rule.
+
+    The content-type resolution ahead of the writes and the read-back after
+    them are both asserted to be single query batches, because they are what
+    the phase spent its requests on: one enumeration and one verify per list.
+    """
+    tables = ("Escalation", "Other")
+    body = _declared_deploy_js(tmp_path, _TWO_FORM_LAYOUTS, table_names=tables).rstrip()
+    assert body.endswith("})();")
+    # The plain harness only knows the default fixture's markers, and the
+    # second list would fail preflight for a reason unrelated to transport.
+    descriptions = _declared_list_descriptions(tmp_path, table_names=tables)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    )
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    summary = _summary_of(output)
+    assert summary.get("errors") == [], summary["errors"]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    writes = [
+        b for b in batches
+        if any("ClientFormCustomFormatter" in (op["body"] or "") for op in b["ops"])
+    ]
+    assert len(writes) == 1, (
+        f"two layouts went out as {len(writes)} $batch request(s)"
+    )
+    assert len(writes[0]["ops"]) == 2, (
+        f"expected both lists as parts, got {writes[0]['ops']}"
+    )
+    for op in writes[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "a layout part would POST rather than MERGE the content type"
+        )
+        assert "/contenttypes('" in op["url"], (
+            "a layout part addresses the content-type collection rather than "
+            "the default item content type the write it replaces named"
+        )
+    written = {
+        match.group(1) for match in (
+            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"])
+            for op in writes[0]["ops"]
+        ) if match
+    }
+    assert len(written) == 2, (
+        f"both parts wrote to the same list: {writes[0]['ops']}"
+    )
+
+    reads = [
+        b for b in batches
+        if all(op["method"] == "GET" for op in b["ops"])
+        and any("/contenttypes" in op["url"] for op in b["ops"])
+    ]
+    assert len(reads) == 2, (
+        "the content-type resolution and the read-back are one query batch "
+        f"each; got {len(reads)}: {[[op['url'] for op in b['ops']] for b in reads]}"
+    )
+    for batch in reads:
+        assert len(batch["ops"]) == 2, (
+            f"a query batch skipped a list: {[op['url'] for op in batch['ops']]}"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None:
+    """The DefaultValue MERGEs travel as ChangeSet parts, one $batch per list.
+
+    Two declared defaults on one list, so a batch that coalesces them is
+    distinguishable from one request per column. The per-column readback that
+    follows is what still names a default that did not land, which a
+    ChangeSet refusal cannot do for itself.
+    """
+    body = _declared_deploy_js(
+        tmp_path, "",
+        extra_lines=(
+            "Status nvarchar [default: 'open']",
+            "Owner nvarchar [default: 'nobody']",
+        ),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    writing = [
+        b for b in batches
+        if any('"DefaultValue"' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert writing, f"no default write travelled as a ChangeSet part: {batches}"
+    assert len(writing) == 1, (
+        f"the list's defaults went out as {len(writing)} $batch requests"
+    )
+    values = [json.loads(op["body"])["DefaultValue"] for op in writing[0]["ops"]]
+    assert values == ["open", "nobody"], (
+        f"expected both declared defaults as parts, got {writing[0]['ops']}"
+    )
+    for op in writing[0]["ops"]:
+        assert op["method"] == "MERGE", (
+            "a default part would POST rather than MERGE the field"
+        )
+        assert "/fields(guid'" in op["url"], (
+            "a default part addresses the field by name, which a rebind can "
+            "redirect; the write it replaces went by Id"
+        )
+
+
 def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 
@@ -2634,6 +3227,7 @@ def _declared_pack(
     *, table_name: str = "Escalation",
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
+    extra_lines: tuple[str, ...] = (),
 ) -> tuple[Any, Any]:
     """The (schema, bundle) behind `_declared_deploy_js`.
 
@@ -2651,6 +3245,11 @@ def _declared_pack(
     what puts a column in `phase2_lookups`: a lookup whose target does not
     exist yet when the field wave runs is deferred, and without one the
     deferred-lookup phase has nothing to do and cannot be reached from here.
+
+    `extra_lines` are further lines inside every table block, one per entry.
+    Columns are what `table()` normally takes, but a DBML `indexes { ... }`
+    block is also just lines, and declaring one is the only way to reach the
+    index phase with more than the lookup display column.
     """
     names = table_names or (table_name,)
     return pack(
@@ -2659,6 +3258,7 @@ def _declared_pack(
             table(
                 name, ID_PK, "Title nvarchar", "Note nvarchar",
                 *((f"Parent int [ref: > {name}.Id]",) if self_reference else ()),
+                *extra_lines,
             )
             for name in names
         ),
@@ -2672,6 +3272,7 @@ def _declared_deploy_js(
     *, table_name: str = "Escalation",
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
+    extra_lines: tuple[str, ...] = (),
 ) -> str:
     """deploy.js for an all-text schema that actually declares a formula.
 
@@ -2692,7 +3293,7 @@ def _declared_deploy_js(
     schema, bundle = _declared_pack(
         tmp_path, section, prefix,
         table_name=table_name, table_names=table_names,
-        self_reference=self_reference,
+        self_reference=self_reference, extra_lines=extra_lines,
     )
     return _without_assessment(generate_deploy_js(
         schema=schema,
@@ -5126,6 +5727,92 @@ def test_every_guarded_phase_writes_when_ownership_holds(tmp_path: Path) -> None
             f"phase {phase.key} ({pn(phase.key)}) wrote nothing, so the "
             f"refusal test for it proves nothing:\n{output[-3000:]}"
         )
+
+
+# The guard is a closure, not an export, so it is measured from INSIDE the
+# run: spliced ahead of the next function declaration, which runs before any
+# phase does. Attributing requests to it from the outside instead would mean
+# re-deriving which of a phase's list reads were its, and that attribution
+# shifts with every probe added anywhere else in the run.
+_GUARD_EXPORT_ANCHOR = "  async function assertDeclaredFieldOwnedNow(listName, field) {"
+
+_GUARD_COST_TAIL = """.then(async (r) => {
+  console.log('__RESULT__' + JSON.stringify(r));
+  const measure = async (title) => {
+    globalThis.__calls.length = 0;
+    let message = null;
+    try { await globalThis.__ownedGuard(title); } catch (err) { message = err.message; }
+    return { message, urls: globalThis.__calls.map((c) => c.url) };
+  };
+  const hit = await measure('APP_Escalation');
+  globalThis.__absentListTitles.push('APP_Escalation');
+  const miss = await measure('APP_Escalation');
+  console.log('__GUARD__' + JSON.stringify({ hit, miss }));
+});
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
+    """The guard reads the list by title, with no enumeration ahead of it.
+
+    It is the deploy's most-called function by a wide margin (462 calls on a
+    ten-list family, 21% of every request the run made when each cost two
+    GETs), so its per-call cost is pinned rather than left to be doubled
+    again by a later change routing it back through `readListShape`, whose
+    forced `web/lists?$select=Title` is right for the callers that expect
+    absence and wasted here, where absence is fatal.
+
+    Both paths, because the cheaper one is only safe if the refusal it
+    replaces is unchanged: the absent list still produces the same message,
+    for the same one request.
+    """
+    descriptions = _ownership_list_descriptions(tmp_path, ("Escalation", "Other"))
+    harness = _READER_ACL_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    ).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
+    )
+    js = _ownership_deploy_js(tmp_path, ("Escalation", "Other"))
+    exported = js.replace(
+        _GUARD_EXPORT_ANCHOR,
+        "  globalThis.__ownedGuard = (name) => assertDeclaredListOwnedNow(name);\n"
+        + _GUARD_EXPORT_ANCHOR,
+        1,
+    )
+    assert exported != js, "the guard export did not splice in"
+    # Wrapped rather than spliced on `})();`: one of the emitted comments
+    # names that sequence, and a multi-line tail replacing THAT occurrence
+    # escapes the comment and breaks the file.
+    body = exported.rstrip()
+    assert body.endswith("})();")
+    output = _run(f"{harness}\n({body[:-1]}){_GUARD_COST_TAIL}")
+    # A measurement taken against a broken run measures the wrong thing.
+    assert _summary_of(output).get("errors") == [], output[-3000:]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__GUARD__")), None,
+    )
+    assert line is not None, f"the guard was never measured:\n{output[-3000:]}"
+    measured = json.loads(line.removeprefix("__GUARD__"))
+
+    hit = measured["hit"]
+    assert hit["message"] is None, hit
+    assert len(hit["urls"]) == 1, (
+        f"an owned list cost {len(hit['urls'])} requests: {hit['urls']}"
+    )
+    assert f"getbytitle('{_OWNED_TITLE}')" in hit["urls"][0], hit["urls"]
+    assert "web/lists?" not in hit["urls"][0], hit["urls"]
+
+    miss = measured["miss"]
+    assert miss["message"] == (
+        f"Declared list '{_OWNED_TITLE}' disappeared before a field write"
+    ), miss
+    assert len(miss["urls"]) == 1, (
+        f"an absent list cost {len(miss['urls'])} requests: {miss['urls']}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

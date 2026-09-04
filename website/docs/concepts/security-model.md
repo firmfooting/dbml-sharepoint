@@ -55,6 +55,12 @@ target, and a mismatch aborts, *before* `WEB` is bound or any request is made.
 URL the browser can only send to the origin of the SharePoint page already
 open.
 
+The one exception is inside a `/_api/$batch` body, where the protocol requires
+each ChangeSet operation to carry an absolute request URL. Those are built as
+`window.location.origin` plus the same `apiUrl()` path, and the guard above has
+already refused to run unless that origin is the one the script was built for,
+so they reach no host a relative call could not.
+
 The current templates use these endpoint families:
 
 | Endpoint family | Purpose |
@@ -66,6 +72,7 @@ The current templates use these endpoint families:
 | `/_api/SP.CompliancePolicy.SPPolicyStoreProxy.GetAvailableTagsForSite(...)` | Read-only assessment of retention labels offered to the current site |
 | `/_api/SP_TenantSettings_Current` | Read-only assessment of the tenant app-catalog setting |
 | `/_api/ProcessQuery` | Read-only capability probe, and CSOM group-owner assignment where the REST surface cannot express that write |
+| `/_api/$batch` | Deliver many writes to the families above as one multipart request, in the write-capable scripts only |
 
 A reviewer grepping the generated scripts for `http://` or `https://` will
 find exactly two classes of hit, neither of them a request:

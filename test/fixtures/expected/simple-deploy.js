@@ -288,6 +288,378 @@
     ...extra,
   });
 
+  // The accumulated body is flushed before it passes this, and it is a
+  // constructor option. 200 KiB is far under both measured points above, and
+  // the digest each part repeats puts roughly 200 operations in it.
+  const BATCH_BODY_BUDGET_BYTES = 200 * 1024;
+  // What the envelope costs around the parts: the outer boundary, the
+  // ChangeSet content type, and both closing boundaries.
+  const BATCH_ENVELOPE_BYTES = 256;
+  // A boundary token is a fixed shape, so a placeholder of the same length
+  // measures a part exactly without committing to the token its request will
+  // eventually carry.
+  const BATCH_BOUNDARY_SAMPLE = 'changeset_0000000000000000';
+  const batchBoundary = (label) => {
+    const chunk = () => Math.random().toString(36).slice(2, 10);
+    return `${label}_${chunk()}${chunk()}`;
+  };
+  const utf8Bytes = (text) => new TextEncoder().encode(String(text)).length;
+
+  // Collapses many single writes into one $batch request. The JS equivalent
+  // of a context manager, since a script pasted into a console has no
+  // `with`: add() accumulates, flush() sends, done() sends what is left.
+  class BatchWriter {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      // The protocol wants an absolute operation URL in each request line and
+      // that is the spelling the probe proved. Safe to read off the page:
+      // _site_guard.js.j2 has already refused to run unless this origin is
+      // the one the script was built for.
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      this.opsSent = 0;
+    }
+
+    // `path` is what apiUrl() takes, so an operation is spelled here exactly
+    // as it would be for a single write. Awaitable because a batch that has
+    // reached the budget is flushed here rather than at the caller's
+    // discretion.
+    async add(method, path, body, extraHeaders = {}) {
+      const op = {
+        method,
+        url: `${this.origin}${this.apiUrl(path)}`,
+        // null, not '{}': a function invocation such as addroleassignment is
+        // a POST with no body as a single write, and a part reproduces it.
+        payload: body === undefined ? null : JSON.stringify(body),
+        extraHeaders,
+      };
+      // Measured off the encoder rather than from a table of header sizes, so
+      // the estimate cannot drift from what actually goes out. The digest is
+      // cached, so asking for it here costs no extra request.
+      const cost = utf8Bytes(this._part(op, await this.getDigest(), BATCH_BOUNDARY_SAMPLE));
+      // Flush BEFORE adding, so the request that goes out is the one already
+      // measured to fit rather than the one that just passed the budget.
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One application/http part: a full request line, the same verbose-OData
+    // write headers the single write sends, and the JSON body. Sending the
+    // single write's own headers is what keeps the body it was handed valid:
+    // a field body carries `__metadata`, which only exists in verbose OData,
+    // so a part declaring nometadata is refused HTTP 400 for a property that
+    // "does not exist on type 'SP.FieldText'" (live finding 2026-09-04).
+    _part(op, digest, inner) {
+      // A single SharePoint write tunnels MERGE and DELETE through
+      // X-HTTP-Method on a POST, but a ChangeSet part carries the verb in its
+      // own request line. OData v3 batch processing is explicit that a batch
+      // request MUST NOT include an X-HTTP-Method header; Learn's batch
+      // example spells a delete `DELETE <url> HTTP/1.1` with If-Match, and
+      // PnPjs (pnp/pnpjs packages/sp/batching.ts) reads X-HTTP-Method off the
+      // request, uses it as the request-line method and DELETES the header
+      // before writing the part. Measured to be required rather than merely
+      // documented: a part left carrying the header reaches SharePoint as a
+      // POST to the entity, which reads the body keys as method arguments and
+      // refuses with "The parameter Description does not exist in method
+      // GetById" (live finding 2026-09-04). Translating here is what lets a
+      // caller hand add() the same method and headers the single-write helper
+      // sends.
+      const extra = { ...(op.extraHeaders || {}) };
+      const tunnelled = extra['X-HTTP-Method'];
+      delete extra['X-HTTP-Method'];
+      const headers = Object.entries(spHeaders(digest, extra))
+        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      return `--${inner}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `${tunnelled || op.method} ${op.url} HTTP/1.1\r\n`
+        + headers
+        + '\r\n'
+        + (op.payload === null ? '' : `${op.payload}\r\n`);
+    }
+
+    // The multipart/mixed envelope holding one ChangeSet of those parts.
+    _encode(ops, digest, outer, inner) {
+      return `--${outer}\r\n`
+        + `Content-Type: multipart/mixed; boundary=${inner}\r\n`
+        + '\r\n'
+        + ops.map((op) => this._part(op, digest, inner)).join('')
+        + `--${inner}--\r\n`
+        + `--${outer}--\r\n`;
+    }
+
+    // Every part's status line, in order. The response echoes no request
+    // line, so each match is one operation's outcome.
+    _statuses(text) {
+      const statuses = [];
+      const statusRe = /HTTP\/1\.1\s+(\d{3})/g;
+      let match;
+      while ((match = statusRe.exec(text)) !== null) statuses.push(Number(match[1]));
+      return statuses;
+    }
+
+    // Refusals are logged as well as thrown: the transcript is what an
+    // operator pastes back, and a caller that swallows the error would
+    // otherwise leave no trace of writes that never landed.
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, landed: 0, statuses: [] };
+      // Taken before the request, so a throw cannot leave the same operations
+      // queued to be written a second time.
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const inner = batchBoundary('changeset');
+      const body = this._encode(ops, digest, outer, inner);
+      // No Accept header on purpose: #401 showed a JSON Accept turns the
+      // throttling-page redirect into a 406 that only its URL identifies.
+      // Omitting it keeps the redirect a plain page load.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      // A throttle that outlasted fetchWithRetry's retries is a tenant state
+      // the surrounding phase has to pace against, not a refused write. It is
+      // reported as its own thing so a caller can tell the two apart.
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) was throttled (HTTP ${response.status}) and none landed`,
+          { throttled: true, sent: ops.length, landed: 0, refused: ops.length, statuses: [] },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, landed: 0, refused: ops.length, statuses: [] },
+        );
+      }
+      // The outer request answers 200 even when ChangeSet parts fail, so the
+      // per-part statuses are the only thing that says a write landed. A
+      // plain ok() here would report success while silently dropping writes.
+      const statuses = this._statuses(text);
+      if (statuses.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) answered HTTP ${response.status} with `
+          + `${statuses.length} part status(es), so the writes cannot be accounted for`,
+          { throttled: false, sent: ops.length, landed: 0, refused: ops.length, statuses },
+        );
+      }
+      const landed = statuses.filter((status) => status >= 200 && status < 300).length;
+      const refused = statuses.length - landed;
+      this.opsSent += landed;
+      if (refused) {
+        const throttledParts = statuses.filter((status) => status === 429 || status === 503).length;
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s): ${landed} landed, ${refused} refused `
+          + `(part statuses ${statuses.join(', ')})`,
+          { throttled: throttledParts > 0, sent: ops.length, landed, refused, statuses },
+        );
+      }
+      dbg(`$batch sent ${ops.length} operation(s) in ${utf8Bytes(body)} bytes; all landed.`);
+      return { requests: 1, landed, statuses };
+    }
+
+    // The close. flush() is already a no-op on an empty queue, so this takes
+    // no second emptiness check that could disagree with it about one.
+    async done() {
+      return this.flush();
+    }
+  }
+
+  // The read companion. A $batch envelope carries query parts at the TOP
+  // level, outside any ChangeSet, and each answers with its own status line
+  // and JSON body, so a phase that verifies N objects can read them all in
+  // one request instead of N.
+  //
+  // MEASURED on a live tenant 2026-09-04, on the same site the index phase
+  // runs against: 58 field GETs sent as one $batch answered HTTP 200 with 58
+  // part statuses at 200 in 371 ms, where the same 58 GETs issued one at a
+  // time took 14.7 s. The outer request still needs X-RequestDigest even
+  // though every part is a read: without it the identical envelope came back
+  // HTTP 403, "The security validation for this page is invalid".
+  //
+  // Reads are counted separately from writes and never mixed into one
+  // envelope. BatchWriter reads its part statuses by counting every
+  // 'HTTP/1.1 nnn' in the response, which a query part's JSON body could
+  // otherwise contribute to.
+  class BatchReader {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      // Every answered part, in the order add() queued them, across as many
+      // requests as the budget forced. A caller compares by position, so a
+      // flush must never renumber what came before it.
+      this.results = [];
+    }
+
+    // `path` is what apiUrl() takes, so a read is spelled here exactly as it
+    // would be for a single GET.
+    async add(path) {
+      const op = { url: `${this.origin}${this.apiUrl(path)}` };
+      const cost = utf8Bytes(this._part(op, BATCH_BOUNDARY_SAMPLE));
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One top-level application/http part. No digest and no Content-Type: a
+    // query part carries no body, and the Accept is what makes the answer
+    // verbose OData, the same annotation the single-GET helpers ask for.
+    _part(op, outer) {
+      return `--${outer}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `GET ${op.url} HTTP/1.1\r\n`
+        + 'Accept: application/json;odata=verbose\r\n'
+        + '\r\n';
+    }
+
+    _encode(ops, outer) {
+      return ops.map((op) => this._part(op, outer)).join('') + `--${outer}--\r\n`;
+    }
+
+    // Each part's status and body, in order. The boundary is read off the
+    // response's own first line rather than its Content-Type header, because
+    // that is the one place it is spelled identically whatever the header
+    // casing, and a body that does not open with one is not a multipart
+    // answer at all.
+    _parts(text) {
+      const opening = String(text).split('\r\n', 1)[0].trim();
+      if (!opening.startsWith('--')) return null;
+      const boundary = opening.slice(2).replace(/--$/, '');
+      const parts = [];
+      for (const chunk of String(text).split(`--${boundary}`)) {
+        const at = chunk.indexOf('HTTP/1.1 ');
+        if (at === -1) continue;
+        const headEnd = chunk.indexOf('\r\n\r\n', at);
+        parts.push({
+          status: Number(chunk.slice(at + 9, at + 12)),
+          body: headEnd === -1 ? '' : chunk.slice(headEnd + 4).replace(/\r\n$/, ''),
+        });
+      }
+      return parts;
+    }
+
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, answered: 0 };
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const body = this._encode(ops, outer);
+      // No Accept on the outer request, for #401's reason: a JSON Accept
+      // turns the throttling-page redirect into a 406 only its URL names.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was throttled (HTTP ${response.status}) and none answered`,
+          { throttled: true, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const parts = this._parts(text);
+      if (!parts || parts.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) answered HTTP ${response.status} with `
+          + `${parts ? parts.length : 0} part status(es), so the reads cannot be accounted for`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const refused = parts.filter((part) => !(part.status >= 200 && part.status < 300));
+      if (refused.length) {
+        const throttledParts = refused.filter((part) => part.status === 429 || part.status === 503);
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s): ${parts.length - refused.length} answered, `
+          + `${refused.length} refused (part statuses ${parts.map((part) => part.status).join(', ')})`,
+          {
+            throttled: throttledParts.length > 0,
+            sent: ops.length, answered: parts.length - refused.length, refused: refused.length,
+          },
+        );
+      }
+      for (const part of parts) {
+        // The verbose envelope, unwrapped to the payload a single GET returns
+        // as `d`. A part that answered 2xx with something unparseable is a
+        // read that did not happen, so it refuses rather than yielding null.
+        let payload;
+        try {
+          payload = JSON.parse(part.body);
+        } catch {
+          throw this._refuse(
+            `$batch of ${ops.length} query part(s) answered a part that is not JSON, `
+            + 'so the reads cannot be accounted for',
+            { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+          );
+        }
+        this.results.push(payload && Object.prototype.hasOwnProperty.call(payload, 'd')
+          ? payload.d : payload);
+      }
+      dbg(`$batch read ${ops.length} query part(s) in ${utf8Bytes(body)} bytes; all answered.`);
+      return { requests: 1, answered: ops.length };
+    }
+
+    // Flushes what is left and hands back every part's payload in the order
+    // it was queued.
+    async done() {
+      await this.flush();
+      return this.results;
+    }
+  }
+
   let cachedDigest = null;
   let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
@@ -903,15 +1275,11 @@
     return knownListTitles;
   }
 
-  async function readListShape(name, fresh = false) {
-    // The existence check always runs, because asking getbytitle for an
-    // absent list answers 404, which the browser paints red and an operator
-    // reads as a failure. `fresh` re-enumerates rather than trusting the
-    // cache (a verification after a write must never have its own write
-    // confirmed by a cache); either way absence is learned from the
-    // enumeration, never a red 404.
-    const titles = await ensureKnownListTitles(fresh);
-    if (titles && !hasName(titles, name)) return null;
+  // The by-title read and its fail-closed shape gate, with nothing in front
+  // of it. Held apart from readListShape so a caller for whom an absent list
+  // is FATAL can spend one request rather than two: see
+  // assertDeclaredListOwnedNow, which argues why that is safe there.
+  async function probeListShapeByTitle(name) {
     // Description rides along on a request already being made: it is a
     // declared, reconciled setting (it carries the provenance marker), so
     // reading it here is what lets reconcileListDescription compare without
@@ -944,6 +1312,18 @@
       throw new Error(`List '${name}' shape probe returned an invalid response`);
     }
     return shape;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // The existence check runs first for every caller that comes through
+    // here, because asking getbytitle for an absent list answers 404, which
+    // the browser paints red and an operator reads as a failure. `fresh`
+    // re-enumerates rather than trusting the cache (a verification after a
+    // write must never have its own write confirmed by a cache); either way
+    // absence is learned from the enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
+    return probeListShapeByTitle(name);
   }
 
   // SharePoint's by-name getters do not uniformly 404 for a missing item:
@@ -1040,11 +1420,16 @@
     return shapes;
   }
 
+  // getbyinternalnameortitle makes a renamed display Title repairable while
+  // still letting the immutable InternalName check reject a same-title
+  // impostor field. Shared so a batched read-back addresses a field by the
+  // same spelling the single-GET probe does rather than a second one that
+  // could drift from it.
+  const fieldShapePath = (listName, columnName) =>
+    `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+
   async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
-    // getbyinternalnameortitle makes a renamed display Title repairable while
-    // still letting the immutable InternalName check below reject a same-title
-    // impostor field.
-    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+    const fieldPath = fieldShapePath(listName, columnName);
     let shape;
     if (!fresh) {
       shape = (await listFieldShapes(listName)).get(columnName) || null;
@@ -1204,13 +1589,21 @@
     return held;
   };
 
+  // The ONE spelling of a field MERGE: address and headers both. A phase that
+  // batches its field writes hands these to BatchWriter.add() instead of
+  // calling patchFieldById, so the batched part and the single write cannot
+  // drift into addressing different objects or sending different headers.
+  // Both GUIDs are validated here, on the path every caller of either form
+  // goes through.
+  const fieldMergePath = (listId, fieldId) => `web/lists(guid'${sharePointGuid(listId, 'list')}')/fields(guid'${sharePointGuid(fieldId, 'field')}')`;
+  const FIELD_MERGE_HEADERS = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
+
   async function patchFieldById(listId, fieldId, body, digest) {
-    const safeListId = sharePointGuid(listId, 'list');
     const safeFieldId = sharePointGuid(fieldId, 'field');
-    const url = apiUrl(`web/lists(guid'${safeListId}')/fields(guid'${safeFieldId}')`);
+    const url = apiUrl(fieldMergePath(listId, fieldId));
     const r = await fetchWithRetry(url, {
       method: 'POST',
-      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      headers: spHeaders(digest, FIELD_MERGE_HEADERS),
       body: JSON.stringify(body),
     });
     if (!r.ok) {
@@ -1931,11 +2324,35 @@
     }
   }
 
+  // ONE request per call, by probing the list by title with no enumeration
+  // ahead of it. `readListShape(name, true)` spends a forced
+  // web/lists?$select=Title enumeration first so that an absent list is
+  // answered locally instead of by a 404 the browser paints red. That trade
+  // is right where absence is the expected answer: a clean first provision,
+  // or surveyOwnedListsForWrites's allowAbsent branch, which both keep it.
+  // Here absence is FATAL. This guard runs only for a list this run has
+  // already created or adopted, so a miss costs the one 404 and then aborts
+  // the caller, while a hit is every call the guard actually makes on a
+  // healthy site. MEASURED on a ten-list family: 462 calls, 2 GETs each, 924
+  // of ~4,400 requests, the run's largest single bucket at 21%. Probing
+  // first drops 462 of them, about a tenth of the deploy, and the miss still
+  // costs one.
+  //
+  // Nothing weakens: the enumeration was never the authority for existence.
+  // It is capped at $top=5000, and ensureKnownListTitles already falls back
+  // to trusting this same probe whenever the enumeration is refused, so
+  // getbytitle has always been what decides. On a miss the cached title set
+  // is dropped rather than re-read: re-reading it cannot change the answer,
+  // and a re-read that failed would replace this function's precise absence
+  // message with a transport error.
   async function assertDeclaredListOwnedNow(listName) {
     const list = SCHEMA.lists.find(candidate => candidate.title === listName);
     if (!list) throw new Error(`No declaration found for list '${listName}'`);
-    const actual = await readListShape(listName, true);
-    if (!actual) throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    const actual = await probeListShapeByTitle(listName);
+    if (!actual) {
+      invalidateListShapes();  // it still claims a list that is not there
+      throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    }
     assertListAdoptable(list, actual);
     return actual;
   }
@@ -4404,7 +4821,6 @@
   markPhase('Phase 2.3: indexed columns');
   // === Phase 2.3: indexed columns ===
   log('INFO', 'Starting Phase 2.3: indexed columns.');
-  digest = await getDigest();
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -4419,26 +4835,115 @@
       log('ERROR', 'Index ownership survey failed; aborting before any index write.');
       return { ...summary, aborted: 'index-ownership-errors' };
     }
+    // Every target is resolved before the first write. Approving a field is a
+    // read, and once approved these MERGEs depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const indexTargets = [];
     for (const idx of SCHEMA.indexed_columns) {
       try {
-        digest = await getDigest();  // refresh per item (digest lifetime)
-        const target = await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list));
-        await patchFieldById(
-          target.listId, target.field.Id,
-          { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
-        );
-        // Identity read-back, not a value read-back. What SharePoint reports
-        // for Indexed immediately after the MERGE has not been measured here
-        // (it builds the index behind the flag asynchronously), so asserting
-        // it would be a guess; what IS asserted is that the write landed on
-        // the list and field the pre-write check approved.
-        const after = await ownedFieldIdentity(idx.list, idx.field, target.listId);
-        if (after.field.Id !== target.field.Id) {
-          throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.field.Id})`);
-        }
+        indexTargets.push({
+          idx,
+          target: await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list)),
+        });
       } catch (err) {
         log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
         summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+      }
+    }
+    // One $batch per list, the same boundary the seal phase draws. Lists are
+    // independent; same-list field writes are the ones that race into save
+    // conflicts, so the list stays the unit a ChangeSet is drawn around and
+    // this phase makes no claim the seal phase has not already made.
+    const indexByList = new Map();
+    for (const entry of indexTargets) {
+      if (!indexByList.has(entry.idx.list)) indexByList.set(entry.idx.list, []);
+      indexByList.get(entry.idx.list).push(entry);
+    }
+    for (const [listTitle, entries] of indexByList) {
+      const indexBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          await indexBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            { __metadata: { type: 'SP.Field' }, Indexed: true },
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await indexBatch.done();
+      } catch (err) {
+        // Named at list level with the columns it covered, not attributed to
+        // one of them: SharePoint does not roll a ChangeSet back, and the
+        // refusal reports part statuses in queue order rather than saying
+        // which column each belongs to.
+        log('ERROR', `Index ${listTitle}: ${err.message}`);
+        summary.errors.push({
+          list: listTitle, columns: entries.map(entry => entry.idx.field),
+          error: err.message,
+        });
+      }
+    }
+    // Every column is still read back and compared. What changed is the
+    // transport and where each of the two facts comes from: the list identity
+    // is re-proved once per list now that all the writes have landed, and the
+    // field identities travel as top-level $batch query parts. Per column
+    // this was one forced list enumeration, one list GET and one field GET,
+    // sequentially, which is what made this the longest phase in the deploy.
+    if (indexTargets.length > 0) {
+      // Re-proved per LIST rather than per column. A list swapped between two
+      // columns' read-backs is still caught: the field read below addresses
+      // the field through the list TITLE, so a replacement answers with a
+      // different field Id, or with none, and fails that column's comparison.
+      const verifyOwned = await surveyOwnedListsForWrites(
+        indexTargets.map(entry => entry.idx.list), '2.3', 'Index readback',
+      );
+      let shapes = null;
+      try {
+        const indexReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const { idx } of indexTargets) {
+          await indexReader.add(`${fieldShapePath(idx.list, idx.field)}?$select=Id`);
+        }
+        shapes = await indexReader.done();
+      } catch (err) {
+        // Fails closed, as a refused write batch does. Every column below then
+        // records that it was not read back, rather than the phase quietly
+        // reporting columns it never verified.
+        log('ERROR', `Index readback: ${err.message}`);
+      }
+      for (let position = 0; position < indexTargets.length; position += 1) {
+        const { idx, target } = indexTargets[position];
+        try {
+          if (!verifyOwned) {
+            throw new Error('the list ownership re-check failed, so this column was not read back');
+          }
+          const listId = verifyOwned.get(idx.list);
+          if (listId == null) {
+            throw new Error(`Declared list '${idx.list}' disappeared across the index write`);
+          }
+          if (sharePointGuid(listId, 'list') !== sharePointGuid(target.listId, 'list')) {
+            throw new Error(`List '${idx.list}' changed identity across the index write`);
+          }
+          if (!shapes) {
+            throw new Error('the batched read-back did not answer, so this column was not read back');
+          }
+          // Identity read-back, not a value read-back. What SharePoint reports
+          // for Indexed immediately after the MERGE has not been measured here
+          // (it builds the index behind the flag asynchronously), so asserting
+          // it would be a guess; what IS asserted is that the write landed on
+          // the list and field the pre-write check approved.
+          const after = shapes[position];
+          if (!after || typeof after.Id !== 'string') {
+            throw new Error(`Declared column '${idx.list}.${idx.field}' disappeared across the index write`);
+          }
+          if (after.Id !== target.field.Id) {
+            throw new Error(`column changed identity across the index write (was ${target.field.Id}, now ${after.Id})`);
+          }
+        } catch (err) {
+          log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+          summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+        }
       }
     }
   }
@@ -4463,21 +4968,64 @@
       log('ERROR', 'Field-default ownership survey failed; aborting before any default is written.');
       return { ...summary, aborted: 'default-ownership-errors' };
     }
+    // Approving a target is a read, and every one of them happens before the
+    // first write: the MERGEs that follow depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const defaultTargets = [];
     for (const fieldDefault of SCHEMA.field_defaults) {
       try {
-        digest = await getDigest();
-        const target = await ownedFieldIdentity(
-          fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
-        );
-        await patchFieldById(
-          target.listId,
-          target.field.Id,
-          {
-            __metadata: { type: fieldDefault.metadata_type },
-            DefaultValue: fieldDefault.default_value,
-          },
-          digest,
-        );
+        defaultTargets.push({
+          fieldDefault,
+          target: await ownedFieldIdentity(
+            fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
+          ),
+        });
+      } catch (err) {
+        log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+        summary.errors.push({
+          list: fieldDefault.list,
+          column: fieldDefault.field,
+          error: err.message,
+        });
+      }
+    }
+    // One $batch per list, the boundary the seal phase draws: lists are
+    // independent, and same-list field writes are the ones that race into
+    // save conflicts, so no wider claim is made here than there.
+    const defaultsByList = new Map();
+    for (const entry of defaultTargets) {
+      const listTitle = entry.fieldDefault.list;
+      if (!defaultsByList.has(listTitle)) defaultsByList.set(listTitle, []);
+      defaultsByList.get(listTitle).push(entry);
+    }
+    for (const [listTitle, entries] of defaultsByList) {
+      const defaultsBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          await defaultsBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            {
+              __metadata: { type: entry.fieldDefault.metadata_type },
+              DefaultValue: entry.fieldDefault.default_value,
+            },
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await defaultsBatch.done();
+      } catch (err) {
+        // Recorded at list level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back, so some of these may have landed.
+        // The per-column readback below is the finer evidence, and it is what
+        // turns a part that never landed into a named failure.
+        log('ERROR', `Default ${listTitle}: ${err.message}`);
+        summary.errors.push({ list: listTitle, error: err.message });
+      }
+    }
+    for (const { fieldDefault, target } of defaultTargets) {
+      try {
         const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
         if (!actual
             || normalizeDefaultValue(actual.DefaultValue)
@@ -4598,7 +5146,11 @@
       await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
       let viewDigest = await getDigest();
       const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
-      const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);
+      // Kept as a path as well as a URL: apiUrl() is what a $batch part takes,
+      // so the batched field writes below address the view by the same
+      // spelling every single write here does rather than a second one.
+      const viewPath = `${listPath}/views/getbytitle('${odataName(view.title)}')`;
+      const viewUrl = apiUrl(viewPath);
       const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);
       const desiredBasename = `${view.url_slug}.aspx`;
       const urlBasename = (v) => String(v && v.ServerRelativeUrl || '').split('/').pop();
@@ -4772,10 +5324,33 @@
       const sameFields = actualFields.length === view.view_fields.length
         && actualFields.every((name, index) => name === view.view_fields[index]);
       if (!sameFields) {
-        await postJson(`${viewUrl}/viewfields/removeallviewfields`, {}, viewDigest);
+        // One ChangeSet per view rather than one POST per column: the largest
+        // single bucket of requests in the whole deploy (445 of this phase's
+        // 1,221 on a ten-list family), and the deploy is throttle-bound, so
+        // the count is what costs.
+        //
+        // This depends on ORDER being preserved inside a ChangeSet, which
+        // OData v3 does not promise (it says order is "not significant" and a
+        // service MAY reorder) and which #410 deliberately left unproven for
+        // the phases whose writes commute. A view's column order is a
+        // declared, verified setting, so it was MEASURED instead: a live
+        // tenant, 2026-09-04, four runs, two scrambled orders per run that
+        // matched neither creation nor alphabetical order. removeallviewfields
+        // plus six addviewfield parts in ONE ChangeSet were accepted 7/7 and
+        // read back in the order sent, every run. Cost over twelve columns,
+        // same four runs: 0.33/0.46/0.47/0.36 s batched against
+        // 1.99/1.31/0.95/4.33 s sequential.
+        //
+        // Safe against that claim turning out to be tenant-specific: the
+        // readback below compares the column list position by position and
+        // fails this view closed, so a service that ever does reorder is
+        // reported rather than shipped.
+        const fieldBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+        await fieldBatch.add('POST', `${viewPath}/viewfields/removeallviewfields`, {});
         for (const name of view.view_fields) {
-          await postJson(`${viewUrl}/viewfields/addviewfield('${odataName(name)}')`, {}, viewDigest);
+          await fieldBatch.add('POST', `${viewPath}/viewfields/addviewfield('${odataName(name)}')`, {});
         }
+        await fieldBatch.done();
       }
       // Row formatting is a declared view setting; views without a
       // declaration keep any hand-applied format.
@@ -5183,54 +5758,128 @@
       log('ERROR', 'Form-formatting ownership survey failed; aborting before any form is written.');
       return { ...summary, aborted: 'form-ownership-errors' };
     }
-    for (const form of SCHEMA.form_formatting) {
+    const formListPath = (title) => `web/lists/getbytitle('${odataName(title)}')`;
+    const formFailed = (form, err) => {
+      log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
+      summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
+    };
+    // Which content type each layout is written to, resolved for every list
+    // before the first write. The MERGE URL carries the content type's
+    // StringId, so this read has to happen first either way; batching it
+    // costs one request rather than one per list.
+    const formTargets = [];
+    if (SCHEMA.form_formatting.length > 0) {
+      let contentTypes = null;
       try {
-        // The content-type collection hangs off the list title, so the write and
-        // its readback are bracketed by the same identity, exactly as the ACL
-        // phase brackets its title-bound requests.
-        const formListId = formsOwned.get(form.list);
-        await ownedListIdentity(form.list, formListId, `before writing form formatting on '${form.list}'`);
-        digest = await getDigest();
-        const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
-        const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!ctResp.ok) {
-          const text = await ctResp.text();
-          throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
+        const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const form of SCHEMA.form_formatting) {
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`);
         }
-        const ctJson = await ctResp.json();
-        const contentTypes = (ctJson.d && ctJson.d.results) || [];
-        const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
-        if (!target) throw new Error('no default item content type found on the list');
-        if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-          const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
-            method: 'POST',
-            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-            body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
-          });
-          if (!r.ok) {
-            const text = await r.text();
-            throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
-          }
-        }
-        const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!verifyResp.ok) {
-          const text = await verifyResp.text();
-          throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
-        }
-        const verifyJson = await verifyResp.json();
-        const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
-        if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
-          throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
-        }
-        await ownedListIdentity(form.list, formListId, `after writing form formatting on '${form.list}'`);
-        log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
+        contentTypes = await ctReader.done();
       } catch (err) {
-        log('ERROR', `Phase 3.2 form '${form.list}': ${err.message}`);
-        summary.errors.push({ phase: '3.2', list: form.list, error: err.message });
+        // Fails closed: every list below then records that its content type
+        // was never resolved, rather than the phase skipping them silently.
+        log('ERROR', `Form content-type read: ${err.message}`);
+      }
+      for (let position = 0; position < SCHEMA.form_formatting.length; position += 1) {
+        const form = SCHEMA.form_formatting[position];
+        try {
+          if (!contentTypes) {
+            throw new Error('the batched content-type read did not answer, so this list was not formatted');
+          }
+          const listed = (contentTypes[position] && contentTypes[position].results) || [];
+          const target = listed.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+          if (!target) throw new Error('no default item content type found on the list');
+          // The survey above cannot see a same-titled replacement that copied
+          // the marker; only a second live read compared against the Id the
+          // survey captured can. Kept per list and kept BEFORE the write
+          // batch, so a list that fails it is dropped here and never reaches
+          // a ChangeSet part.
+          await ownedListIdentity(
+            form.list, formsOwned.get(form.list),
+            `before writing form formatting on '${form.list}'`,
+          );
+          formTargets.push({ form, target });
+        } catch (err) {
+          formFailed(form, err);
+        }
+      }
+    }
+    // ONE ChangeSet across every list, unlike the seal and index phases. The
+    // boundary those draw is the list, because same-list FIELD writes race
+    // into save conflicts; here each list takes at most one write, so there
+    // is no same-list pair to race and nothing that boundary would protect.
+    const drifted = formTargets.filter(({ form, target }) =>
+      canonicalFormFormatter(target.ClientFormCustomFormatter)
+        !== canonicalFormFormatter(form.client_form_custom_formatter));
+    if (drifted.length > 0) {
+      const formBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const { form, target } of drifted) {
+          // The same MERGE the single write sent, transport aside: same URL,
+          // same concrete metadata type, same tunnelled verb and IF-MATCH.
+          await formBatch.add(
+            'POST',
+            `${formListPath(form.list)}/contenttypes('${target.StringId}')`,
+            { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter },
+            { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
+          );
+        }
+        await formBatch.done();
+      } catch (err) {
+        // Named at phase level with the lists it covered. SharePoint does not
+        // roll a ChangeSet back and reports part statuses in queue order
+        // without saying which list each belongs to, so attributing the
+        // refusal to one of them would be a guess. Every list is still read
+        // back below, which is what says whether its layout landed.
+        log('ERROR', `Form formatting: ${err.message}`);
+      }
+    }
+    // Read back every declared layout and re-prove every list's identity, the
+    // shape the index phase established: the list is re-proved once now that
+    // all the writes have landed rather than bracketing each write, and the
+    // readbacks travel as top-level query parts. A list swapped between two
+    // readbacks is still caught, because the readback addresses the content
+    // type THROUGH the list title and a replacement answers with a different
+    // StringId, or with none.
+    if (formTargets.length > 0) {
+      const verifyOwned = await surveyOwnedListsForWrites(
+        formTargets.map(({ form }) => form.list), '3.2', 'Form readback',
+      );
+      let readbacks = null;
+      try {
+        const formReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const { form, target } of formTargets) {
+          await formReader.add(`${formListPath(form.list)}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`);
+        }
+        readbacks = await formReader.done();
+      } catch (err) {
+        log('ERROR', `Form formatting readback: ${err.message}`);
+      }
+      for (let position = 0; position < formTargets.length; position += 1) {
+        const { form } = formTargets[position];
+        try {
+          if (!verifyOwned) {
+            throw new Error('the list ownership re-check failed, so this list was not read back');
+          }
+          const listId = verifyOwned.get(form.list);
+          if (listId == null) {
+            throw new Error(`Declared list '${form.list}' disappeared across the form write`);
+          }
+          if (sharePointGuid(listId, 'list') !== sharePointGuid(formsOwned.get(form.list), 'list')) {
+            throw new Error(`List '${form.list}' changed identity across the form write`);
+          }
+          if (!readbacks) {
+            throw new Error('the batched readback did not answer, so this list was not read back');
+          }
+          const readback = readbacks[position] && readbacks[position].ClientFormCustomFormatter;
+          if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+            throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
+          }
+          log('INFO', `[Phase 3.2] Form formatting on '${form.list}' verified.`);
+        } catch (err) {
+          formFailed(form, err);
+        }
       }
     }
   }
@@ -5268,6 +5917,15 @@
     // server evidence (live DEBUG timing: this phase alone was 13.3s of a
     // 52s run). Verification still never trusts phase-start state: the
     // per-list invalidation forces a post-write re-enumeration.
+    //
+    // The lane boundary is also the batch boundary, so one list's seals are
+    // one ChangeSet. NOT PROVEN: that SharePoint applies same-list field
+    // MERGEs in a ChangeSet without the save conflicts concurrent single
+    // writes hit. OData v3 says the order of requests within a ChangeSet is
+    // not significant and a service MAY process them in any order, and
+    // test/manual/throttle-batch-probe.js batches item creates rather than
+    // schema writes, so neither settles it. The per-column verify below is
+    // what turns a conflict into a named failure instead of a silent one.
     const sealByList = new Map();
     for (const [listTitle, columnTitle] of sealDeclared) {
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
@@ -5302,15 +5960,26 @@
         summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
         return;
       }
+      // The lane's seals go out as ONE $batch rather than one MERGE per
+      // column. They are independent writes with nothing read between them,
+      // and the burst is the shape that got a nine-list run throttled mid
+      // phase (#401). fieldMergePath and FIELD_MERGE_HEADERS are the same
+      // address and headers patchFieldById sends, so only the transport
+      // changes; the ChangeSet still addresses /lists(guid)/fields(guid),
+      // which no title rebind can redirect.
+      const sealBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
       for (const columnTitle of columns) {
         try {
           const shape = await readFieldShape(listTitle, columnTitle, null);
           if (!shape) throw new Error('declared column missing at seal time');
           writtenIds.set(columnTitle, sharePointGuid(shape.Id, 'field'));
           if (!shape.Sealed) {
-            const sealDigest = await getDigest();
-            await patchFieldById(laneListId, writtenIds.get(columnTitle), { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
-            sealedCount += 1;
+            await sealBatch.add(
+              'POST',
+              fieldMergePath(laneListId, writtenIds.get(columnTitle)),
+              { __metadata: { type: 'SP.Field' }, Sealed: true },
+              FIELD_MERGE_HEADERS,
+            );
           }
         } catch (err) {
           failed.add(columnTitle);
@@ -5318,6 +5987,20 @@
           summary.errors.push({ phase: '4.1', list: listTitle, column: columnTitle, error: err.message });
         }
       }
+      try {
+        await sealBatch.done();
+      } catch (err) {
+        // Recorded at lane level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back (Learn, "Make batch requests with
+        // the REST APIs"), so some of these writes may have landed. The
+        // verify pass below reads every column back and is the finer
+        // evidence about which ones did.
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+      }
+      // What the batch reports landed, not what the loop queued: a refused
+      // part must not be counted as a column this run sealed.
+      sealedCount += sealBatch.opsSent;
       invalidateFieldShapes(listTitle);  // verify from post-write state
       try {
         // The verify readback resolves the list by title, so the title has to
@@ -5579,6 +6262,13 @@
           return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
         };
 
+        // Which grants are missing is a question of reads, and it is settled
+        // for every declared assignment before the first add: the adds are
+        // independent of one another, so they go out as ONE $batch rather
+        // than one POST each. breakroleinheritance above and every removal
+        // below stay single, because those are ordered against the reads
+        // around them.
+        const missingGrants = [];
         for (const resolved of resolvedAssignments) {
           let desiredBindings = bindingsFor(resolved.principalId);
           if (desiredBindings === null) {
@@ -5596,19 +6286,32 @@
             }
           }
           const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-          if (!desiredPresent) {
-            await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
-              digest4 = await getDigest();
-              const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
-                method: 'POST',
-                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
-              });
-              if (!assignResp.ok) {
-                const text = await assignResp.text();
-                throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
+          if (!desiredPresent) missingGrants.push(resolved);
+        }
+        if (missingGrants.length > 0) {
+          // The bracket is no weaker for holding a batch, only wider: the
+          // title is proved to be the surveyed list immediately before the
+          // request and immediately after it, and every add sits inside that
+          // window, including one the body budget flushes early. A rebind can
+          // still only produce a failed phase, never a grant on a stranger.
+          await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
+            const addBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+            try {
+              for (const resolved of missingGrants) {
+                // No body: addroleassignment takes its arguments in the URL,
+                // exactly as the single POST this replaces did.
+                await addBatch.add('POST', `web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`);
               }
-            });
-          }
+              await addBatch.done();
+            } catch (err) {
+              // Still fatal for this list, and still before a single removal:
+              // exact mode must never prune against a desired state it failed
+              // to establish. SharePoint does not roll a ChangeSet back, so
+              // some grants may have landed; the phase is rerunnable and the
+              // next run reads the bindings again.
+              throw new Error(`addroleassignment batch failed before reconciliation: ${err.message}`);
+            }
+          });
         }
 
         if (la.reconcile_mode === 'exact') {

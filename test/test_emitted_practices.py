@@ -28,9 +28,15 @@ _TRANSPORT = "_http.js.j2"
 # after `createViewWithCleanUrl` has created it under that slug, `viewUrl`
 # after the rename to that title. `listViewShapes` is what answers the
 # existence question, which is the rule.
+#
+# `viewPath` is not a third resolution. It is the argument `viewUrl` is built
+# from, split out because a $batch part takes what apiUrl() takes; the two are
+# used at the same point on the same view, so recording it separately here
+# does not widen what this file permits.
 _GETBYTITLE_ALLOWED = {
     "deploy/_views.js.j2": {
-        "const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);",
+        "const viewPath = `${listPath}/views/getbytitle('${odataName(view.title)}')`;",
+        "const viewUrl = apiUrl(viewPath);",
         "const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);",
     },
 }
