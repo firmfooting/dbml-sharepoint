@@ -504,7 +504,7 @@ column_formatting:
     # Guarded on the two states where a sweep no longer means anything: a
     # mapped process and one ruled out are both settled, and a date that keeps
     # shouting after the decision trains people to ignore the colour.
-    ReviewDate:
+    NextReviewDue:
       style: overdue-date
       guard:
         field: MappingStatus
@@ -640,7 +640,8 @@ views:
     # The record of what was mapped, with the link to each map. The register's
     # whole durable value once the mapping work is done.
     - title: "Mapped"
-      fields: [Title, Function, Owner, Workstream, MapUrl, ReviewDate]
+      fields: [Title, Function, Owner, Workstream, MapUrl,
+               LastReviewedDate, NextReviewDue]
       where:
         - { field: MappingStatus, op: eq, value: "Mapped" }
       sort:
@@ -651,7 +652,8 @@ views:
         Owner: 160
         Workstream: 160
         MapUrl: 220
-        ReviewDate: 150
+        LastReviewedDate: 170
+        NextReviewDue: 150
 
   Workstream:
     # The whole programme on one screen, five to eight rows, read first at the
@@ -1581,11 +1583,15 @@ form_visibility:
 column_validation:
   BusinessProcess:
     columns:
-      ReviewDate:
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A sweep cannot have happened in the future. Use the date somebody actually checked this row, or leave it blank until one has."
+      NextReviewDue:
         when:
           any_of:
-            - { field: ReviewDate, op: is_null }
-            - { field: ReviewDate, op: leq, value: today+365 }
+            - { field: NextReviewDue, op: is_null }
+            - { field: NextReviewDue, op: leq, value: today+365 }
         message: "The register is swept annually. Pick a review date within the next twelve months, or leave it blank until somebody has actually looked at this process."
   Activity:
     columns:
@@ -1757,17 +1763,19 @@ list_validation:
 # owner or workstream; and seven decisions, three of them programme-wide, one
 # still Proposed and old enough to be stalled, one Ratified under delegation,
 # and one carrying the recommend-then-decide pair of forums.
-# Risk.ReviewDate was one hand-set date standing for both halves of a review,
+# ReviewDate was one hand-set date standing for both halves of a review,
 # so moving it forward destroyed the evidence that a review had happened.
 # Split into LastReviewedDate and NextReviewDue. The column stays declared and
 # deployer-managed until its values have been transferred and it is deleted
 # with the columns sidecar; deleting the declaration instead would leave a
 # live column the schema no longer knows about, reported as user-added drift
 # on every report refresh.
-#
-# BusinessProcess.ReviewDate is deliberately NOT split yet, so this family
-# carries both spellings until it is.
 retired_columns:
+  BusinessProcess:
+    ReviewDate:
+      retired: "2026-09-04"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
   Risk:
     ReviewDate:
       retired: "2026-09-04"
@@ -1792,7 +1800,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Mapping"
         Notes: "Demo row. Four teams act and none of them can name the order. A leaver kept mailbox access for three weeks in March because nobody owned the step after HR closed the record."
-        ReviewDate: "today-10"
+        LastReviewedDate: "today-40"
+        NextReviewDue: "today-10"
     - key: process-onboard
       values:
         Title: "[DEMO] Onboard a new starter"
@@ -1804,7 +1813,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Ready to map"
         Notes: "Demo row. Owner deliberately blank: HR, IT and facilities each own a part and nobody owns the whole, which is the finding rather than a gap to fill in."
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-30"
+        NextReviewDue: "today+60"
     - key: process-guest
       values:
         Title: "[DEMO] Grant a guest access to a Team"
@@ -1818,7 +1828,8 @@ demo_items:
         PriorityNote: "Demo row. Scores 6, called Now: the security workstream cannot finish its guest-access policy until this is mapped."
         MappingStatus: "Ready to map"
         Notes: "Demo row. Currently a request by email to whoever is around. No expiry, so guests accumulate."
-        ReviewDate: "today+30"
+        LastReviewedDate: "today-60"
+        NextReviewDue: "today+30"
     - key: process-create-team
       values:
         Title: "[DEMO] Create a Team"
@@ -1831,7 +1842,7 @@ demo_items:
         MappingPriority: "Next"
         MappingStatus: "Identified"
         Notes: "Demo row. Runs often enough that a map pays back quickly, but it mostly works today, so it waits behind the two that do not."
-        ReviewDate: "today+90"
+        NextReviewDue: "today+90"
     - key: process-shared-mailbox
       values:
         Title: "[DEMO] Request a shared mailbox"
@@ -1845,7 +1856,8 @@ demo_items:
         MappingStatus: "Mapped"
         MapUrl: "https://example.com/process-maps/demo-shared-mailbox"
         Notes: "Demo row. Mapped in March. The review date is long past and reads plain rather than red, because a mapped process is settled."
-        ReviewDate: "today-200"
+        LastReviewedDate: "today-200"
+        NextReviewDue: "today-200"
     - key: process-mobile
       values:
         Title: "[DEMO] Order a mobile phone"
@@ -1857,7 +1869,8 @@ demo_items:
         MappingPriority: "Later"
         MappingStatus: "Out of scope"
         Notes: "Demo row. Considered and ruled out: it touches no M365 surface the project is changing. Kept so the same question is not asked again in six months. No workstream, so it lands in the blank group under By workstream."
-        ReviewDate: "today+300"
+        LastReviewedDate: "today-15"
+        NextReviewDue: "today+300"
 
   Workstream:
     - key: ws-migration

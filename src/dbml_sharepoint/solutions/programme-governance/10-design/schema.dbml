@@ -555,7 +555,14 @@ Table BusinessProcess {
   MappingStatus   gov_mapping_status      [not null, default: 'Identified', note: 'Where this process is in the mapping work. Identified means somebody named it; Out of scope means it was considered and ruled out, which is a decision worth keeping']
   MapUrl          hyperlink               [note: 'The process map itself, wherever it is drawn. The map holds who does what, on which systems, in what order; this row holds only that it exists']
   Notes           richtext                [note: 'Why this needs mapping: where it breaks, who it burns, what nobody can currently explain about it']
-  ReviewDate      date                    [note: 'Next sweep of this row. The register is only useful while it is current']
+  // Same split as Risk, and for the same reason: one hand-set date recorded
+  // neither half, so moving it forward destroyed the evidence of a sweep.
+  // Nullable and undefaulted here, unlike Risk: creating a risk IS assessing
+  // it, but capturing a backlog row is not sweeping it, so a default would
+  // claim a check that never happened.
+  LastReviewedDate date                   [note: 'When somebody last checked this row is still true. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
+  NextReviewDue   date                    [note: 'Next sweep of this row. The register is only useful while it is current']
+  ReviewDate      date                    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
 
   indexes {
     Function
