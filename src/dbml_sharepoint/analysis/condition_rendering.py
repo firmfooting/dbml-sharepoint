@@ -1247,7 +1247,8 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: str) -> Non
             ConditionRefusalKind.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
             target,
             # The array remedy names the FORM, not this column's type.
-            # `map_column` accepts `<enum>[]` and nothing else, so the earlier
+            # `map_column` accepts `<enum>[]` and `<scalar>[]` on a ref
+            # column, so the earlier
             # `{declared_type}[]` was advice a text column could not take --
             # `nvarchar[]` is refused as an unknown type, and the message whose
             # job was to end one error started the next.
@@ -1264,8 +1265,8 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: str) -> Non
             f"operator {leaf.op!r} tests whether a column CONTAINS a value, and "
             f"{leaf.field!r} is {declared_type!r}, which holds exactly one. Use "
             f"{scalar!r} -- or, if it really does hold many, declare it as an "
-            f"array of an enum (`<enum>[]`), which is the only multi-value "
-            f"column this tool builds",
+            f"array of an enum (`<enum>[]`), which is the multi-value form this "
+            f"grammar can filter",
             where,
         )
 

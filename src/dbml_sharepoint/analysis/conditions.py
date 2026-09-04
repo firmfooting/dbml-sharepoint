@@ -18,7 +18,7 @@ from difflib import get_close_matches
 
 from dbml_sharepoint.analysis import condition_rendering as _rendering
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location
-from dbml_sharepoint.analysis.typemap import choice_enum_for
+from dbml_sharepoint.analysis.typemap import choice_enum_for, is_multi_value
 from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Group, Leaf
 
 # Bounds keep a pathological declaration a build error rather than a formula
@@ -290,7 +290,7 @@ def _condition_problems(
             )
             continue
         operand = _operand_problems(leaf, where, types=types, lookups=lookups)
-        lookup_problem = _lookup_problem(leaf, where, target, lookups)
+        lookup_problem = _lookup_problem(leaf, where, target, lookups, types)
         if lookup_problem:
             operand.append(lookup_problem)
         if operand:
@@ -620,12 +620,41 @@ def _lookup_problem(
     where: str,
     target: str,
     lookups: set[str],
+    types: dict[str, str],
 ) -> tuple[FindingCode, str] | None:
     """Lookups are int-typed in DBML, so the type map alone cannot see them."""
-    if target == _rendering.VALIDATION and leaf.field in lookups:
+    if leaf.field not in lookups:
+        return None
+    if target == _rendering.VALIDATION:
         return (
             FindingCode.CONDITION_LOOKUP_UNSUPPORTED_BY_TARGET,
             f"{where}: {leaf.field!r} is a lookup column, unsupported in validation formulas",
+        )
+    # ARITY AND REF TOGETHER, which is why this is here and not in the
+    # renderer: the renderer sees only a type string, and `int[]` cannot be
+    # told from a `<enum>[]` whose enum happens to be named `int` (the same
+    # collision `_check_arity` documents). `lookups` is the ref set the caller
+    # already has.
+    #
+    # Refused rather than rendered, and this is a fails-closed decision about
+    # EVIDENCE. The multi-value CAML vocabulary in `condition_rendering` was
+    # measured on 2026-08-10 against a Choice (multi-valued) column, over one
+    # fixture, and against nothing else. The 2026-09-02 multi-lookup probe
+    # (test/manual/multilookup-probe.js) answered creation, indexing,
+    # mutability and item write shape and asked nothing about CAML. A filter
+    # emitted on the assumption that the two behave alike would store, read
+    # back byte-identical, pass every deploy phase and return whatever rows
+    # SharePoint decides, which is the exact failure class this project exists
+    # to close.
+    if is_multi_value(types.get(leaf.field, "")):
+        return (
+            FindingCode.MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED,
+            (
+                f"{where}: {leaf.field!r} is a multi-value lookup, and the "
+                "multi-value CAML grammar was measured on 2026-08-10 against a "
+                "Choice (multi-valued) column only. Filter on a single-value "
+                "lookup, or on a projected or scalar column, instead"
+            ),
         )
     return None
 

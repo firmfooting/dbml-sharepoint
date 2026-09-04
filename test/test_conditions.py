@@ -2165,6 +2165,56 @@ def test_a_validation_formula_cannot_read_a_lookup() -> None:
     ).severity == "error"
 
 
+@pytest.mark.parametrize("op", ["includes", "not_includes", "is_null", "is_not_null"])
+def test_a_condition_on_a_multi_value_lookup_is_refused_as_unmeasured(op: str) -> None:
+    """The multi-value CAML grammar was measured against a Choice, not a Lookup.
+
+    Every operator the grammar allows a multi-value column is refused here,
+    including the two null tests, because none of them was asked of a Lookup
+    (multi-valued) column. Rendering them anyway would produce a filter that
+    saves, reads back intact and returns whatever SharePoint decides.
+
+    The null tests are the ones that matter: `includes` on a lookup is already
+    CONDITION_PROPERTY_REQUIRED, but `is_null` is exempt from the accessor
+    requirement, so without this refusal it would render.
+
+    Both facts are needed to reach it and neither alone is enough, which the
+    two controls below pin.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", op, 3),)),
+        types={"Parties": "int[]"},
+        lookups={"Parties"},
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED)
+    assert finding.severity == "error"
+    assert "2026-08-10" in finding.message
+
+
+def test_a_single_value_lookup_filter_is_still_accepted() -> None:
+    """The arity control. Removing `[]` leaves the one lookup filter a view can
+    express: a null test, exempt from the accessor requirement because
+    emptiness is a property of the field rather than of a name or an id."""
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", "is_null"),)),
+        types={"Parties": "int"},
+        lookups={"Parties"},
+    )
+
+    assert findings == []
+
+
+def test_a_multi_value_choice_filter_is_still_accepted() -> None:
+    """The ref control. An `int[]` that is not a ref cannot occur, so the
+    reachable near-miss is a multi-value column with no ref at all."""
+    findings = _findings(
+        Group("all_of", (Leaf("Events", "includes", "View"),)), types=MULTI_TYPES,
+    )
+
+    assert findings == []
+
+
 # The last two refusals in this module cannot be reached by anything you can
 # DECLARE today, and that is the design rather than a gap:
 #

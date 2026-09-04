@@ -882,9 +882,22 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED: (
         "An `indexes { }` entry names a multi-value column. Measured on "
-        "2026-08-10: SharePoint refuses the index and reads `Indexed` back "
-        "as false, against a control on a single-value Choice in the same "
-        "list that stuck. The same enum without the brackets is indexable."
+        "2026-08-10 for a Choice (multi-valued) column and on 2026-09-02 for "
+        "a Lookup (multi-valued) one: SharePoint refuses the index and reads "
+        "`Indexed` back as false, against single-value controls in the same "
+        "list that stuck. The lookup refusal is HTTP 500, \"This column type "
+        "is not supported for indexing\". The same column without the "
+        "brackets is indexable."
+    ),
+    FindingCode.MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED: (
+        "A condition tests a multi-value lookup column. The multi-value CAML "
+        "grammar this tool emits was measured against a Choice "
+        "(multi-valued) column on 2026-08-10 and against nothing else, so "
+        "what `<Eq>` means against a Lookup (multi-valued) column is "
+        "unknown: a filter built on the assumption would save, read back "
+        "intact and could return the wrong rows with no error. Filter on a "
+        "single-value lookup, or on a projected or scalar column, until a "
+        "probe settles it."
     ),
     FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN: (
         "`includes` or `not_includes` is used on a column that holds exactly "
