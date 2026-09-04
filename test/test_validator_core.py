@@ -850,6 +850,37 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
     none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
 
 
+def test_dbml_indexes_reject_a_multi_value_lookup() -> None:
+    """The same refusal at the other kind, measured 2026-09-02.
+
+    Setting `Indexed` on a multi-value lookup came back HTTP 500, "This
+    column type is not supported for indexing", and read back Indexed=false,
+    against a single-value lookup control in the same list that indexed. So
+    it is multiplicity that SharePoint refuses, not the Choice kind, and the
+    remedy sentence names the arity the author actually wrote.
+    """
+    schema = make_schema(
+        make_table("Party", make_column("Title")),
+        make_table(
+            "Matter",
+            make_column("Parties", "int[]", ref="Party.Id"),
+            indexes=["Parties"],
+        ),
+    )
+    findings = validate_against_mapping(
+        schema, make_bundle(entities=["Party", "Matter"]),
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "Parties" in finding.message
+    assert "Lookup (multi-valued)" in finding.message
+    # The remedy is the arity, not the enum: a lookup has no brackets-free
+    # enum to fall back to, it has a single-value `int` lookup.
+    assert "single-value 'int' lookup" in finding.message
+    none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
+
+
 def test_a_multi_value_member_holding_the_separator_is_refused() -> None:
     """The export joins members with "; ", so a member containing it makes
     the cell impossible to split back. Green build, clean deploy, and a
