@@ -3,9 +3,10 @@
  *
  * Creates two owned lists and asks whether a multi-value lookup can be
  * provisioned at all, whether it can be indexed, whether the multiplicity can
- * be changed after the fact, and what an item write and read look like. None
- * of that is known today. #409 asks four questions and this probe is the
- * machine half of all four.
+ * be changed after the fact, what an item write and read look like, and which
+ * CAML predicates a filter over one may be written in. None of that is known
+ * today. #409 asks four questions and this probe is the machine half of all
+ * four.
  *
  * Ids follow the grammar in `test/manual/SURFACES.md`,
  * `<surface>.<scope>.<question>`. `multilookup` was reserved as a scope under
@@ -24,6 +25,22 @@
  *   field.multilookup.source-index-carry                (index source-carry)
  *   field.multilookup.source-index-carry-at-create      (index source-carry)
  *   field.lookup.source-index-carry                     (index source-carry)
+ *   field.multilookup.fixture-caml-rows-seeded          (CAML grammar)
+ *   query.caml-adhoc.multilookup-eq-text                (CAML grammar)
+ *   query.caml-adhoc.multilookup-eq-lookupid            (CAML grammar)
+ *   query.caml-adhoc.multilookup-includes-text          (CAML grammar)
+ *   query.caml-adhoc.multilookup-includes-lookupid      (CAML grammar)
+ *   query.caml-adhoc.multilookup-neq-text               (CAML grammar)
+ *   query.caml-adhoc.multilookup-neq-lookupid           (CAML grammar)
+ *   query.caml-adhoc.multilookup-notincludes-text       (CAML grammar)
+ *   query.caml-adhoc.multilookup-notincludes-lookupid   (CAML grammar)
+ *   query.caml-adhoc.multilookup-in-text                (CAML grammar)
+ *   query.caml-adhoc.multilookup-in-lookupid            (CAML grammar)
+ *   query.caml-adhoc.multilookup-isnull                 (CAML grammar)
+ *   query.caml-adhoc.multilookup-isnotnull              (CAML grammar)
+ *   query.caml-adhoc.multilookup-and-membership         (CAML grammar)
+ *   query.caml-adhoc.multilookup-or-membership          (CAML grammar)
+ *   query.caml-adhoc.multilookup-neq-isnull-wrapper     (CAML grammar)
  *
  * The two controls ask single-VALUE lookup questions, and they exist only to
  * make the multi-value answers readable, so they take the `multilookup` scope
@@ -44,6 +61,24 @@
  * query over the column is unindexed at size. That is a `scale.index` question
  * over a list past the 5,000-item threshold, which this fixture is nowhere
  * near, and no row here may be read as answering it.
+ *
+ * THE PREDICATE ROWS FILE UNDER `query`. Fifteen rows below ask what a CAML
+ * predicate over a multi-value lookup returns. The subject of each is the
+ * query language rather than the column, so under SURFACES.md's keying rule
+ * they take `query.caml-adhoc`, exactly as `multi-value-probe.js`'s predicate
+ * rows do from a `field`-surface probe. `caml-adhoc` rather than `caml`
+ * because these are issued through `GetItems`, not read off a saved view.
+ * The fixture row that builds the four items they are read against stays
+ * `field.multilookup`, because seeding a column is a column question.
+ *
+ * WHY THEY ARE ASKED AT ALL. `analysis/condition_rendering.py` carries a
+ * multi-value CAML vocabulary measured on 2026-08-10, where the documented
+ * `<Includes>` returned an empty set with no error and the undocumented
+ * `<Eq>` did the membership test. That was measured against a MultiChoice
+ * column and against nothing else, so `analysis/conditions.py` refuses a
+ * filter on a multi-value LOOKUP rather than assume the two share a grammar.
+ * The fixture here is a deliberate analogue of that one so the two runs can be
+ * compared row for row.
  *
  * #409's remaining question, whether a multi-value lookup costs one join or
  * more against the ceiling of 12 in `analysis/joins.py`, is not here. It is
@@ -113,7 +148,9 @@
   const SINGLE_SRC = 'PartySrc';
   const MULTI_SRC = 'PartiesSrc';
   // Three rows so that "the two that were asked for" is distinguishable from
-  // "every row in the target list". Only the first two are ever written.
+  // "every row in the target list". The write-shape rows use the first two
+  // only; the CAML fixture uses all three, because a predicate that returns
+  // everything and a predicate that is right have to look different.
   const TARGET_ROWS = ['Alpha', 'Bravo', 'Charlie'];
 
 {% include "_probe_results_v1.js.j2" %}
@@ -129,6 +166,22 @@
   expect('field.multilookup.allow-multiple-values-mutability', 'AllowMultipleValues on an EXISTING lookup: can it be turned on, and can it be turned off again?');
   expect('field.multilookup.item-write-shape', 'which item WRITE shapes SharePoint accepts for a multi-value lookup');
   expect('field.multilookup.item-read-shape', 'what a multi-value lookup value READS BACK as');
+  expect('field.multilookup.fixture-caml-rows-seeded', 'the four-row CAML fixture built, and holding the members it was given');
+  expect('query.caml-adhoc.multilookup-eq-text', 'CAML <Eq> with a text operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-eq-lookupid', 'CAML <Eq> with a LookupId operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-includes-text', 'CAML <Includes> with a text operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-includes-lookupid', 'CAML <Includes> with a LookupId operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-neq-text', 'CAML <Neq> with a text operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-neq-lookupid', 'CAML <Neq> with a LookupId operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-notincludes-text', 'CAML <NotIncludes> with a text operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-notincludes-lookupid', 'CAML <NotIncludes> with a LookupId operand over a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-in-text', 'CAML <In> over a text <Values> list on a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-in-lookupid', 'CAML <In> over a LookupId <Values> list on a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-isnull', 'CAML <IsNull> on a multi-value lookup: does it find the row that was never given a value?');
+  expect('query.caml-adhoc.multilookup-isnotnull', 'CAML <IsNotNull> on a multi-value lookup: which rows?');
+  expect('query.caml-adhoc.multilookup-and-membership', 'CAML <And> of two membership tests on one multi-value lookup: is it "contains BOTH"?');
+  expect('query.caml-adhoc.multilookup-or-membership', 'CAML <Or> of two membership tests on one multi-value lookup: is it "contains EITHER"?');
+  expect('query.caml-adhoc.multilookup-neq-isnull-wrapper', 'the deployer\'s own not_includes wrapper (negation OR IsNull) on a multi-value lookup: which rows?');
 
 {% include "_probe_core_v2.js.j2" %}
 {% include "_probe_list_fixture_v1.js.j2" %}
@@ -806,6 +859,315 @@
       writesRunnable ? undefined : 'void',
     );
 
+    // === The CAML fixture =================================================
+    // The rows every query.caml-adhoc row below is read against, shaped as an
+    // exact analogue of multi-value-probe.js's MultiChoice fixture so the two
+    // measurements are directly comparable. That is the whole point of asking:
+    // the multi-value CAML vocabulary in `analysis/condition_rendering.py` was
+    // measured on 2026-08-10 against a Choice column and against nothing else,
+    // and `analysis/conditions.py` refuses a filter on a multi-value LOOKUP
+    // rather than assume the two behave alike.
+    //
+    //   MultiChoice          here
+    //   R1 {View}            L1 {Alpha}
+    //   R2 {View,Edit}       L2 {Alpha,Bravo}
+    //   R3 {Edit,Export}     L3 {Bravo,Charlie}
+    //   R4 {}                L4 {}
+    //
+    // THE FOUR W ITEMS ARE DELETED FIRST, and that is not tidiness. All four
+    // carry the same pair as L2, so every membership predicate below would
+    // return five rows where two are the answer and three are noise, on
+    // fifteen rows of prose an operator has to read. They have already served
+    // the write and read questions above, which are recorded.
+    //
+    // L4 OMITS THE COLUMN rather than writing an empty collection. "Never
+    // given a value" and "given the empty set" are not obviously the same row
+    // to SharePoint, and the null tests below are about the first one.
+    const acceptedShape = writeShapes.find(
+      (shape) => written.some((row) => row.shape === shape.name),
+    ) || null;
+    // All three target rows are needed, not the two the write shapes used:
+    // Charlie is what makes "contains Alpha" and "contains anything" different
+    // answers.
+    const camlRunnable = writesRunnable && !!acceptedShape
+      && targetIds.length === TARGET_ROWS.length;
+    const deleteItem = (id) => post(
+      `${itemsPath}(${id})`, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
+    );
+    const removedWrites = [];
+    if (camlRunnable) {
+      for (const row of written) {
+        if (row.id === null) continue;
+        const gone = await deleteItem(row.id);
+        removedWrites.push(`${row.shape}: ${httpNote(gone)}`);
+      }
+    }
+    const idFor = (title) => targetIds[TARGET_ROWS.indexOf(title)];
+    const CAML_ROWS = [
+      { title: 'L1', members: ['Alpha'] },
+      { title: 'L2', members: ['Alpha', 'Bravo'] },
+      { title: 'L3', members: ['Bravo', 'Charlie'] },
+      { title: 'L4', members: [] },
+    ];
+    const seedCamlErrors = [];
+    if (camlRunnable) {
+      for (const row of CAML_ROWS) {
+        const body = { __metadata: { type: itemType }, Title: row.title };
+        if (row.members.length) {
+          Object.assign(body, acceptedShape.build(row.members.map(idFor)));
+        }
+        const made = await post(`${listPath}/items`, body);
+        if (!made.ok) seedCamlErrors.push(`${row.title}: HTTP ${made.status} ${made.error}`);
+      }
+    }
+    // Read the fixture back before believing it. An accepted write shape that
+    // stored the wrong members would make every predicate below a report about
+    // a list nobody has seen, and that reads exactly like a working experiment.
+    const camlBack = camlRunnable
+      ? await get(`${itemsPath}?$select=Id,Title,${idField}&$orderby=Id`)
+      : null;
+    // The stored cell's own shape is item-read-shape's question and is not
+    // assumed here. Both forms that question could answer are unwrapped, and
+    // anything else leaves the fixture unverified rather than reported wrong.
+    const idsOf = (cell) => (Array.isArray(cell)
+      ? cell
+      : (cell && Array.isArray(cell.results) ? cell.results : null));
+    const observedRows = camlBack?.ok ? rowsOf(camlBack) : [];
+    const camlSeeded = camlRunnable && !seedCamlErrors.length
+      && observedRows.length === CAML_ROWS.length;
+    const camlVerified = camlSeeded && CAML_ROWS.every((row) => {
+      const stored = observedRows.find((candidate) => candidate.Title === row.title);
+      if (!stored) return false;
+      const ids = idsOf(stored[idField]) || [];
+      const wanted = row.members.map(idFor);
+      return ids.length === wanted.length && wanted.every((id) => ids.includes(id));
+    });
+    record(
+      'field.multilookup.fixture-caml-rows-seeded',
+      'the four-row CAML fixture actually built, and holds the members it was given',
+      camlVerified ? 'BUILT' : (camlRunnable ? 'SHORT' : 'NOT ESTABLISHED'),
+      camlRunnable
+        ? `write shape used: ${acceptedShape.name}. `
+          + `target ids ${show(TARGET_ROWS.map((title) => `${title}=${idFor(title)}`))}. `
+          + `W items removed: ${removedWrites.length ? removedWrites.join('; ') : 'none to remove'}. `
+          + `seed errors: ${seedCamlErrors.length ? seedCamlErrors.join('; ') : 'none'}. `
+          + `read back: ${camlBack.ok
+            ? show(observedRows.map((row) => ({ [row.Title]: row[idField] })))
+            : `FAILED HTTP ${camlBack.status} ${camlBack.error}`}. `
+          + 'SHORT means the rows exist and their stored members are not what was asked for, or could '
+          + 'not be compared with it at all, which is what happens when the value reads back in a shape '
+          + 'neither an array nor { results: [...] }. Every predicate row below is then a list of titles '
+          + 'and not an answer, and each says so on its own row rather than relying on this one being '
+          + 'read first.'
+        : (!writesRunnable
+          ? 'no item carrying a multi-value lookup could be written, so there was no fixture to build.'
+          : (!acceptedShape
+            ? 'no write shape was accepted, so there was no way to give a row its members.'
+            : `the target list seeded ${targetIds.length} row(s) rather than ${TARGET_ROWS.length}, `
+              + 'so a predicate that matched everything could not be told from one that was right.')),
+      camlRunnable ? undefined : 'void',
+    );
+
+    // === query.caml-adhoc.multilookup-*: what does each predicate return? ==
+    //
+    // NOTHING HERE IS ASSERTED, for the reason multi-value-probe.js gives over
+    // the same block: writing the expected set into a comparison would make the
+    // experiment fail the moment SharePoint answered something interesting.
+    // Each row records the titles that came back and, beside them, what each
+    // possible answer would mean for the grammar.
+    //
+    // TWO OPERAND DIALECTS, asked separately for every operator that takes a
+    // value. A lookup has both a display value and an id, and CAML spells them
+    // differently:
+    //
+    //   text      <FieldRef Name="X"/>              <Value Type="Lookup">Alpha</Value>
+    //   lookupid  <FieldRef Name="X" LookupId="TRUE"/>  <Value Type="Integer">7</Value>
+    //
+    // Which one a multi-value lookup answers to is the question the deployer
+    // has to settle: a mapping names a target row, and whether the emitted
+    // filter carries its title or its id decides whether the filter survives a
+    // rename. Neither is assumed to work and neither is assumed to fail.
+    const camlWhere = (where) => `<View><ViewFields><FieldRef Name="Title"/></ViewFields>`
+      + `<Query><Where>${where}</Where></Query><RowLimit>50</RowLimit></View>`;
+    // ViewFields is explicit so the projection is one non-join column. Without
+    // it the query projects the list's default fields, and this list carries
+    // several lookups by the time it gets here; a refusal for join reasons
+    // would be indistinguishable from an operator SharePoint will not accept.
+    const camlRows = async (where) => {
+      const r = await post(`${listPath}/GetItems?$select=Title`, {
+        query: { __metadata: { type: 'SP.CamlQuery' }, ViewXml: camlWhere(where) },
+      });
+      if (!r.ok) return { ok: false, error: `HTTP ${r.status} ${r.error}`, titles: null };
+      return { ok: true, error: null, titles: (r.d?.results || []).map((i) => i.Title).sort() };
+    };
+    const operand = {
+      text: (title) => `<FieldRef Name="${multiName}"/><Value Type="Lookup">${title}</Value>`,
+      lookupid: (title) => `<FieldRef Name="${multiName}" LookupId="TRUE"/>`
+        + `<Value Type="Integer">${idFor(title)}</Value>`,
+    };
+    const values = (dialect, titles) => `<Values>${titles.map((title) => (dialect === 'text'
+      ? `<Value Type="Lookup">${title}</Value>`
+      : `<Value Type="Integer">${idFor(title)}</Value>`)).join('')}</Values>`;
+    const fieldRef = (dialect) => (dialect === 'text'
+      ? `<FieldRef Name="${multiName}"/>`
+      : `<FieldRef Name="${multiName}" LookupId="TRUE"/>`);
+    const binary = (tag, dialect, title) => `<${tag}>${operand[dialect](title)}</${tag}>`;
+    const MEMBER_MEANS = 'L1+L2 is the membership reading: the two rows whose set contains Alpha. '
+      + 'L2 alone would mean it compares the WHOLE SET. Nothing means this spelling is unusable and '
+      + 'the grammar must not emit it.';
+    const NEGATIVE_MEANS = 'L3 only means the negative excludes the empty row L4, like every other '
+      + 'CAML negative, and the deployer\'s existing <Or><IsNull> wrapper is what that is for. L3+L4 '
+      + 'means it includes it. Nothing means negation has no spelling here and must be refused.';
+    const predicates = [
+      ['query.caml-adhoc.multilookup-eq-text', 'Eq(text) Alpha',
+        binary('Eq', 'text', 'Alpha'),
+        `${MEMBER_MEANS} <Eq> is the operator the MultiChoice run crowned on 2026-08-10, so this is `
+        + 'the row that says whether the measured Choice grammar transfers to a lookup unchanged.'],
+      ['query.caml-adhoc.multilookup-eq-lookupid', 'Eq(lookupid) Alpha',
+        binary('Eq', 'lookupid', 'Alpha'),
+        `${MEMBER_MEANS} If this works and the text form does not, an emitted filter must carry the `
+        + 'target row\'s ID, which survives a rename and needs the id resolved at build time.'],
+      ['query.caml-adhoc.multilookup-includes-text', 'Includes(text) Alpha',
+        binary('Includes', 'text', 'Alpha'),
+        `${MEMBER_MEANS} Learn documents <Includes> for a multi-value LOOKUP specifically, and `
+        + 'against a MultiChoice column it returned an EMPTY SET with no error. This is the row that '
+        + 'says whether the documented element works on the type it is documented for.'],
+      ['query.caml-adhoc.multilookup-includes-lookupid', 'Includes(lookupid) Alpha',
+        binary('Includes', 'lookupid', 'Alpha'),
+        `${MEMBER_MEANS} The documented element in the id dialect.`],
+      ['query.caml-adhoc.multilookup-neq-text', 'Neq(text) Alpha',
+        binary('Neq', 'text', 'Alpha'), NEGATIVE_MEANS],
+      ['query.caml-adhoc.multilookup-neq-lookupid', 'Neq(lookupid) Alpha',
+        binary('Neq', 'lookupid', 'Alpha'), NEGATIVE_MEANS],
+      ['query.caml-adhoc.multilookup-notincludes-text', 'NotIncludes(text) Alpha',
+        binary('NotIncludes', 'text', 'Alpha'),
+        `${NEGATIVE_MEANS} <NotIncludes> is the documented negation of <Includes>; against MultiChoice `
+        + 'it returned nothing, which is what left that grammar with no negative at all.'],
+      ['query.caml-adhoc.multilookup-notincludes-lookupid', 'NotIncludes(lookupid) Alpha',
+        binary('NotIncludes', 'lookupid', 'Alpha'), NEGATIVE_MEANS],
+      // <In> over two members, chosen so the answer separates "intersects"
+      // from "is exactly one of": Alpha is in L1 and L2, Charlie only in L3.
+      ['query.caml-adhoc.multilookup-in-text', 'In(text) [Alpha, Charlie]',
+        `<In>${fieldRef('text')}${values('text', ['Alpha', 'Charlie'])}</In>`,
+        'L1+L2+L3 means <In> is "the set intersects these", which is any_of in one element rather '
+        + 'than a nested <Or>. Anything narrower means it is not that, and any_of must keep composing '
+        + 'binary predicates. Nothing means <In> has no spelling here.'],
+      ['query.caml-adhoc.multilookup-in-lookupid', 'In(lookupid) [Alpha, Charlie]',
+        `<In>${fieldRef('lookupid')}${values('lookupid', ['Alpha', 'Charlie'])}</In>`,
+        'The same question in the id dialect. <In> with LookupId is the shape most often quoted for '
+        + 'lookups, so a difference between these two rows is the operand answer on its own.'],
+      ['query.caml-adhoc.multilookup-isnull', 'IsNull',
+        `<IsNull><FieldRef Name="${multiName}"/></IsNull>`,
+        'L4 only is the expected shape of a working null test. L4 was written with the column OMITTED '
+        + 'rather than set to an empty collection, so this asks about a row that was never given a value.'],
+      ['query.caml-adhoc.multilookup-isnotnull', 'IsNotNull',
+        `<IsNotNull><FieldRef Name="${multiName}"/></IsNotNull>`,
+        'L1+L2+L3 is the expected shape.'],
+    ];
+    // Only a SINGLE binary predicate in the value dialects may be crowned, and
+    // only if it returns EXACTLY the two rows containing Alpha. The compounds
+    // below are then written in the winner's operator and dialect, because a
+    // conjunction is only meaningful over a membership test that works, and
+    // mixing dialects across the arms would make a failure unattributable.
+    // <In> is excluded: it is a set operator, and all_of/any_of compose binary
+    // predicates.
+    const MEMBERSHIP_CANDIDATES = new Map([
+      ['query.caml-adhoc.multilookup-eq-text', { tag: 'Eq', negation: 'Neq', dialect: 'text' }],
+      ['query.caml-adhoc.multilookup-eq-lookupid', { tag: 'Eq', negation: 'Neq', dialect: 'lookupid' }],
+      ['query.caml-adhoc.multilookup-includes-text', { tag: 'Includes', negation: 'NotIncludes', dialect: 'text' }],
+      ['query.caml-adhoc.multilookup-includes-lookupid', { tag: 'Includes', negation: 'NotIncludes', dialect: 'lookupid' }],
+    ]);
+    let membershipWinner = null;
+    for (const [id, label, where, meaning] of predicates) {
+      const question = `CAML ${label} over a multi-value lookup returns which rows`;
+      if (!camlRunnable) {
+        // Not asked rather than asked and unanswered. With no column or no
+        // rows every query here would fail for a reason that has nothing to do
+        // with the operator, and a refusal is the one answer this block is for.
+        record(id, question, 'NOT ESTABLISHED',
+          'the CAML fixture did not build (see field.multilookup.fixture-caml-rows-seeded), so this '
+          + 'predicate was never issued.', 'void');
+        continue;
+      }
+      const got = await camlRows(where);
+      record(
+        id,
+        question,
+        got.ok ? (camlVerified ? 'RETURNED' : 'SHORT') : 'QUERY REFUSED',
+        got.ok
+          ? `${where} -> ${show(got.titles)} || `
+            + (camlVerified
+              ? meaning
+              : 'the fixture these rows are read against did not verify (see '
+                + 'field.multilookup.fixture-caml-rows-seeded), so this row is a list of titles and '
+                + 'not an answer. Do not read the meaning off it; fix the fixture and re-run.')
+          : `${where} -> ${got.error}`,
+      );
+      if (!membershipWinner && got.ok && camlVerified && MEMBERSHIP_CANDIDATES.has(id)
+          && got.titles.length === 2
+          && got.titles.includes('L1') && got.titles.includes('L2')) {
+        membershipWinner = { id, ...MEMBERSHIP_CANDIDATES.get(id) };
+      }
+    }
+
+    // The three compounds, in the winning membership spelling. Composition
+    // over a SET is not the same question as composition over a scalar, which
+    // is why they are asked rather than inferred from the rows above.
+    const compound = (tag, dialect, arms) => arms
+      .map(([element, title]) => binary(element, dialect, title)).join('');
+    const compounds = membershipWinner ? [
+      ['query.caml-adhoc.multilookup-and-membership',
+        `And[${membershipWinner.tag} Alpha, ${membershipWinner.tag} Bravo]`,
+        `<And>${compound(membershipWinner.tag, membershipWinner.dialect, [
+          [membershipWinner.tag, 'Alpha'], [membershipWinner.tag, 'Bravo'],
+        ])}</And>`,
+        'L2 only means <And> over two membership tests is "contains BOTH", which is what all_of would '
+        + 'emit. Nothing means SharePoint cannot conjoin two predicates over the same multi-value '
+        + 'lookup at all, and all_of must be refused on one.'],
+      ['query.caml-adhoc.multilookup-or-membership',
+        `Or[${membershipWinner.tag} Alpha, ${membershipWinner.tag} Charlie]`,
+        `<Or>${compound(membershipWinner.tag, membershipWinner.dialect, [
+          [membershipWinner.tag, 'Alpha'], [membershipWinner.tag, 'Charlie'],
+        ])}</Or>`,
+        'L1+L2+L3 means <Or> is "contains EITHER", which is what any_of would emit. Anything narrower '
+        + 'means it does not distribute over membership and any_of must be refused.'],
+      ['query.caml-adhoc.multilookup-neq-isnull-wrapper',
+        `Or[${membershipWinner.negation} Alpha, IsNull]`,
+        `<Or>${binary(membershipWinner.negation, membershipWinner.dialect, 'Alpha')}`
+        + `<IsNull><FieldRef Name="${multiName}"/></IsNull></Or>`,
+        'L3+L4 is what the deployer\'s existing not_includes wrapper is for: it exists so a row with '
+        + 'no value is not silently dropped by a negative. Anything else means the wrapper does not '
+        + 'compose with a multi-value lookup and the emitted spelling has to change.'],
+    ] : [];
+    for (const [id, label, where, meaning] of compounds) {
+      const got = await camlRows(where);
+      record(
+        id,
+        `CAML ${label} over a multi-value lookup returns which rows`,
+        got.ok ? 'RETURNED' : 'QUERY REFUSED',
+        got.ok ? `${where} -> ${show(got.titles)} || ${meaning}` : `${where} -> ${got.error}`,
+      );
+    }
+    if (!membershipWinner) {
+      for (const id of [
+        'query.caml-adhoc.multilookup-and-membership',
+        'query.caml-adhoc.multilookup-or-membership',
+        'query.caml-adhoc.multilookup-neq-isnull-wrapper',
+      ]) {
+        record(
+          id, 'CAML compound membership over a multi-value lookup returns which rows',
+          'NOT ESTABLISHED',
+          (camlRunnable
+            ? 'no single membership predicate returned exactly L1+L2, so there is no working membership '
+              + 'spelling to compose. '
+            : 'the CAML fixture did not build. ')
+          + 'A compound written in a spelling that does not work would return nothing for a reason '
+          + 'that has nothing to do with composition.',
+          'void',
+        );
+      }
+    }
+
     // === fixture-lists-created ============================================
     // Recorded last, because it reports on what everything above depended on.
     // Deliberately says nothing about the multi-value column: whether one can
@@ -842,7 +1204,9 @@
       + `single_value_carry=${observedFor('field.lookup.source-index-carry')} `
       + `mutability=${observedFor('field.multilookup.allow-multiple-values-mutability')} `
       + `write_shapes=${written.length ? written.map((w) => w.shape).join('+') : 'none'} `
-      + `read=${observedFor('field.multilookup.item-read-shape')}`,
+      + `read=${observedFor('field.multilookup.item-read-shape')} `
+      + `caml_fixture=${observedFor('field.multilookup.fixture-caml-rows-seeded')} `
+      + `caml_membership=${membershipWinner ? membershipWinner.id : 'none'}`,
     );
     log('INFO', 'Paste the VERDICT line and the whole table back. The TypeAsString and FieldTypeKind '
       + 'values are the point of the run: nothing in this codebase knows them yet.');

@@ -286,6 +286,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `datetime-sentinel-probe.js` | `formula` | `control-real-element-selects`, `bogus-element-accepted`, `now-element-*`, `today-element-*`, `today-include-time-*` (`CN` retired, `C1`–`C7`) | `query.caml.*`, `query.caml-adhoc.*`, `query.view-query.*` |
 | `datetime-sentinel-probe.js` | `formula` | `now-sentinel-stored` (was `E1`) | `expression.client-validation.*` |
 | `multi-value-probe.js` | `field` | `multichoice-eq`, `multichoice-contains`, `multichoice-includes`, `multichoice-notincludes` and the rest of the ad-hoc predicates (was `C1`–`C7`, `C9`–`C13`) | `query.caml-adhoc.*` |
+| `multilookup-probe.js` | `field` | the fifteen `multilookup-*` predicate checks, asking what each CAML operator returns over a multi-value lookup | `query.caml-adhoc.*` |
 | `multi-value-probe.js` | `field` | `multichoice-membership-selects`, `multichoice-chain-selects` (was `C8`, `C14`) | `query.view-query.*` |
 | `multi-value-probe.js` | `field` | `multichoice-operand` (was `V1`) | `formula.validation.*` |
 | `multi-value-probe.js` | `field` | `operand-multichoice` (was `F1`) | `formula.calc.*` |

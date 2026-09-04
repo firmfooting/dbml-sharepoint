@@ -576,7 +576,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00\u201320:00"
+        "site time 04:00–20:00"
       ],
       "scenarios": [
         {
@@ -4963,7 +4963,7 @@
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
-        "two fixed lists, three target rows, six lookup columns, four items",
+        "two fixed lists, three target rows, six lookup columns, eight items",
         "Indexed:true on the TARGET list's Title, the only write outside the probe list"
       ],
       "cleanup": {
@@ -5049,6 +5049,114 @@
               "depends_on": [
                 "field.multilookup.item-write-shape"
               ]
+            },
+            {
+              "id": "field.multilookup.fixture-caml-rows-seeded",
+              "depends_on": [
+                "field.multilookup.item-write-shape"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-eq-text",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-eq-lookupid",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-includes-text",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-includes-lookupid",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-neq-text",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-neq-lookupid",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-notincludes-text",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-notincludes-lookupid",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-in-text",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-in-lookupid",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-isnull",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-isnotnull",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-and-membership",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded",
+                "query.caml-adhoc.multilookup-eq-text",
+                "query.caml-adhoc.multilookup-eq-lookupid",
+                "query.caml-adhoc.multilookup-includes-text",
+                "query.caml-adhoc.multilookup-includes-lookupid"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-or-membership",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded",
+                "query.caml-adhoc.multilookup-eq-text",
+                "query.caml-adhoc.multilookup-eq-lookupid",
+                "query.caml-adhoc.multilookup-includes-text",
+                "query.caml-adhoc.multilookup-includes-lookupid"
+              ]
+            },
+            {
+              "id": "query.caml-adhoc.multilookup-neq-isnull-wrapper",
+              "depends_on": [
+                "field.multilookup.fixture-caml-rows-seeded",
+                "query.caml-adhoc.multilookup-eq-text",
+                "query.caml-adhoc.multilookup-eq-lookupid",
+                "query.caml-adhoc.multilookup-includes-text",
+                "query.caml-adhoc.multilookup-includes-lookupid"
+              ]
             }
           ],
           "states": [],
@@ -5056,7 +5164,8 @@
             "field.multilookup.fixture-lists-created",
             "field.multilookup.control-single-value-lookup-created",
             "field.multilookup.control-single-value-indexed",
-            "field.multilookup.control-source-title-indexed"
+            "field.multilookup.control-source-title-indexed",
+            "field.multilookup.fixture-caml-rows-seeded"
           ],
           "depends_on": []
         }
