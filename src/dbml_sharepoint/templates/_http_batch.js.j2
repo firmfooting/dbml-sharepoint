@@ -1,11 +1,12 @@
 {# Shared OData $batch writer. Included only by scripts that make writes
    (deploy, rollback, demo); the read-only assess script includes the
    transport partial alone, keeping its no-write property auditable from its
-   text. Expects `spHeaders` from _http_write.js.j2, so a ChangeSet part
-   carries exactly the headers a single write does, plus `isThrottled`,
-   `spError` and `dbg` from _http.js.j2. getDigest, fetchWithRetry, apiUrl
-   and log arrive as CONSTRUCTOR ARGUMENTS rather than off the enclosing
-   scope, so this stays a transport primitive with nothing to reimplement.
+   text. ChangeSet parts carry nometadata headers inline; a part with
+   odata=verbose is refused HTTP 400 (live finding 2026-09-04). Expects
+   `isThrottled`, `spError` and `dbg` from _http.js.j2. getDigest,
+   fetchWithRetry, apiUrl and log arrive as CONSTRUCTOR ARGUMENTS rather
+   than off the enclosing scope, so this stays a transport primitive with
+   nothing to reimplement.
 
    MEASURED on a live tenant by test/manual/throttle-batch-probe.js (#404),
    recorded 2026-09-04: 20, 100, 200, 500 and 750-operation batches all
@@ -78,11 +79,18 @@
       this.pendingBytes += cost;
     }
 
-    // One application/http part: a full request line, the verbose-OData write
-    // headers with the digest among them, and the JSON body.
+    // One application/http part: a full request line, the JSON body, and
+    // nometadata headers with the digest among them. The nometadata spelling
+    // is load-bearing, not cosmetic: a ChangeSet part carrying
+    // odata=verbose is refused with HTTP 400 (live finding 2026-09-04; the
+    // throttle-batch probe's parts used nometadata and landed; the shared
+    // spHeaders verbosity is for single writes, not for batch parts).
     _part(op, digest, inner) {
-      const headers = Object.entries(spHeaders(digest, op.extraHeaders))
-        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      const headers = 'Accept: application/json;odata=nometadata\r\n'
+        + 'Content-Type: application/json;odata=nometadata\r\n'
+        + `X-RequestDigest: ${digest}\r\n`
+        + Object.entries(op.extraHeaders || {})
+          .map(([name, value]) => `${name}: ${value}\r\n`).join('');
       return `--${inner}\r\n`
         + 'Content-Type: application/http\r\n'
         + 'Content-Transfer-Encoding: binary\r\n'

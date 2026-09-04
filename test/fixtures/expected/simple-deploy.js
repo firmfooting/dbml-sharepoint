@@ -350,11 +350,18 @@
       this.pendingBytes += cost;
     }
 
-    // One application/http part: a full request line, the verbose-OData write
-    // headers with the digest among them, and the JSON body.
+    // One application/http part: a full request line, the JSON body, and
+    // nometadata headers with the digest among them. The nometadata spelling
+    // is load-bearing, not cosmetic: a ChangeSet part carrying
+    // odata=verbose is refused with HTTP 400 (live finding 2026-09-04; the
+    // throttle-batch probe's parts used nometadata and landed; the shared
+    // spHeaders verbosity is for single writes, not for batch parts).
     _part(op, digest, inner) {
-      const headers = Object.entries(spHeaders(digest, op.extraHeaders))
-        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      const headers = 'Accept: application/json;odata=nometadata\r\n'
+        + 'Content-Type: application/json;odata=nometadata\r\n'
+        + `X-RequestDigest: ${digest}\r\n`
+        + Object.entries(op.extraHeaders || {})
+          .map(([name, value]) => `${name}: ${value}\r\n`).join('');
       return `--${inner}\r\n`
         + 'Content-Type: application/http\r\n'
         + 'Content-Transfer-Encoding: binary\r\n'

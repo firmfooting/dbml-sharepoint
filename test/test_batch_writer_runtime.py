@@ -199,8 +199,8 @@ def test_a_batch_body_encodes_every_operation() -> None:
     assert body.count(f"X-RequestDigest: {DIGEST}\r\n") == 3, (
         "the digest is not on every ChangeSet part"
     )
-    assert body.count("Accept: application/json;odata=verbose\r\n") == 3
-    assert body.count("Content-Type: application/json;odata=verbose\r\n") == 3
+    assert body.count("Accept: application/json;odata=nometadata\r\n") == 3
+    assert body.count("Content-Type: application/json;odata=nometadata\r\n") == 3
     assert (
         f"POST {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')/items HTTP/1.1\r\n" in body
     ), "an operation's request line is not an absolute url"
