@@ -4861,6 +4861,65 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "throttle-batch-probe.js",
+      "surface": "transport",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, many items"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "transport",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "transport.throttle.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "transport.batch.control-writes-applied",
+              "depends_on": [
+                "transport.throttle.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "transport.throttle.singles-throttle-point",
+              "depends_on": [
+                "transport.throttle.fixture-scratch-list",
+                "transport.batch.control-writes-applied"
+              ]
+            },
+            {
+              "id": "transport.throttle.batched-throttle-point",
+              "depends_on": [
+                "transport.throttle.fixture-scratch-list",
+                "transport.batch.control-writes-applied"
+              ]
+            },
+            {
+              "id": "transport.throttle.throttle-response-shape",
+              "depends_on": [
+                "transport.throttle.fixture-scratch-list",
+                "transport.batch.control-writes-applied"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "transport.throttle.fixture-scratch-list",
+            "transport.batch.control-writes-applied"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
