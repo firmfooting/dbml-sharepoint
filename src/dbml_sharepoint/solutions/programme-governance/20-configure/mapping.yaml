@@ -152,6 +152,14 @@ calculated_formulas:
     # The RelatedRisk picker shows this column. Blank for Closed means the
     # picker offers only live risks: below the 5,000-item threshold a blank
     # calculated label is simply omitted from the picker.
+    # Cadence: quarterly for High or Extreme, six-monthly where the response
+    # is Manage or Tolerate, otherwise annual, counted from Last Reviewed
+    # Date. risk-register's rule with its control-effectiveness and
+    # levels-above-target arms dropped, because this family carries neither
+    # column. Same month-end overflow as ConfirmationDue: DATE(Y, M+N, D)
+    # overflows rather than clamping, so a review recorded on 31 August
+    # falls due on 3 March rather than 28 February.
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])))'
     LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
   Decision:
     # Every picker onto this list shows this column. Approved and Ratified are
@@ -548,7 +556,8 @@ column_formatting:
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe,
                                     Extreme: blocked } } }
-    NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    NextReviewDue: { style: overdue-date, calculated: true,
+                     guard: { field: Status, not: [Closed] } }
   Action:
     Status: { style: severity,
               map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
@@ -1620,17 +1629,6 @@ column_validation:
         when:
           - { field: LastReviewedDate, op: leq, value: today }
         message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
-      # Capped, not scheduled: this refuses a review pushed years out and
-      # leaves the cadence to the programme. Neither rule can compare the two
-      # columns to each other, because a condition's value is a literal or a
-      # today token and the DSL has no field reference, so "the next review
-      # cannot precede the last one" is a governance check instead.
-      NextReviewDue:
-        when:
-          any_of:
-            - { field: NextReviewDue, op: is_null }
-            - { field: NextReviewDue, op: leq, value: today+365 }
-        message: "A risk reviewed less than once a year is not being reviewed. Pick a next review date within the next twelve months."
   Action:
     columns:
       # A forward-dated completion sorts to the top of "Done and dropped" and
@@ -2259,8 +2257,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        LastReviewedDate: "today-20"
-        NextReviewDue: "today+10"
+        LastReviewedDate: "today-110"
     - key: risk-adoption
       values:
         Title: "[DEMO] Frontline teams keep using the shared drives after cutover"
@@ -2271,8 +2268,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        LastReviewedDate: "today-35"
-        NextReviewDue: "today-5"
+        LastReviewedDate: "today-85"
     - key: risk-licensing
       values:
         Title: "[DEMO] The licensing uplift is not funded for the whole frontline"
@@ -2285,7 +2281,6 @@ demo_items:
         ToleranceDecision: { demo_ref: dec-licence-tier-revised }
         Status: "Open"
         LastReviewedDate: "today-15"
-        NextReviewDue: "today+45"
     - key: risk-champion-churn
       values:
         Title: "[DEMO] The champions network loses its most active members"
@@ -2297,7 +2292,6 @@ demo_items:
         RiskResponse: "Accept"
         Status: "Open"
         LastReviewedDate: "today-30"
-        NextReviewDue: "today+60"
     - key: risk-identity
       values:
         Title: "[DEMO] Conditional access locks staff out of unmanaged devices at go-live"
@@ -2309,7 +2303,6 @@ demo_items:
         RiskResponse: "Manage"
         Status: "Open"
         LastReviewedDate: "today-9"
-        NextReviewDue: "today+21"
     - key: risk-fax
       values:
         Title: "[DEMO] The fax gateway is switched off before its replacement is proven"
@@ -2321,7 +2314,6 @@ demo_items:
         RiskResponse: "Terminate"
         Status: "Closed"
         LastReviewedDate: "today-20"
-        NextReviewDue: "today-20"
         ClosureNote: "Demo row. Every route was moved and monitored for two clean weeks before the gateway was switched off, and the two clinics still sending were contacted individually. The risk can no longer happen."
   Action:
     - key: act-rehearse-migration

@@ -393,7 +393,11 @@ Table Risk {
   // nothing could tell an on-time review from a push-out by somebody who had
   // not looked. risk-register carries the same pair under the same names.
   LastReviewedDate date    [not null, default: '[today]', note: 'When this risk was last actually reviewed. Fills in when the risk is created; move it every time you complete a review, including the review at which you close it']
-  NextReviewDue    date    [not null, note: 'When this risk is next looked at. Only move it forward when Last Reviewed Date moves with it, because a date moved on its own is a review nobody did']
+  // Calculated, like risk-register's: a date a person could type is a date a
+  // person could push out, which is the defect the split was opened for. The
+  // cadence formula lives in mapping.yaml and reads the residual rating, so
+  // completing a review means moving Last Reviewed Date and nothing else.
+  NextReviewDue    calculated_date [note: 'When this risk is next looked at. Calculated from Last Reviewed Date and the residual rating: quarterly for High or Extreme, six-monthly under Manage or Tolerate, otherwise annual']
   ReviewDate       date    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   ClosureNote richtext          [note: 'Why the risk is being closed: it happened and became an issue, it can no longer happen, or the workstream ended']
 
@@ -408,7 +412,6 @@ Table Risk {
     Workstream
     RiskResponse
     ToleranceDecision
-    NextReviewDue
     LastReviewedDate
   }
 

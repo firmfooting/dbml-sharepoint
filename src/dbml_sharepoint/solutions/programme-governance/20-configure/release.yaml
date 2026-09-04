@@ -8,16 +8,23 @@ notes: |
   moving it forward destroyed the evidence that a review had happened and
   nothing could tell an on-time review from a push-out by somebody who had not
   looked. Risk also carried no save rule at all while BusinessProcess next to
-  it did, which had the guard on the register with the less consequence. Two
-  rules now hold each pair: a review cannot be dated in the future, and the
-  next one cannot be more than twelve months out.
+  it did, which had the guard on the register with the less consequence.
 
-  The two differ in one place, deliberately. Risk.LastReviewedDate is required
-  and defaults to today, because creating a risk is assessing it.
-  BusinessProcess.LastReviewedDate is optional with no default, because
-  capturing a backlog row is not sweeping it, and a default would claim a check
-  that never happened. Blank there means nobody has ever swept the row, which
-  is a finding in the same way a blank Owner is.
+  Risk now matches risk-register. LastReviewedDate is required and defaults to
+  today, because creating a risk is assessing it, and it cannot be dated in the
+  future. NextReviewDue is CALCULATED from it and the residual rating: three
+  months at High or Extreme, six where the response is Manage or Tolerate,
+  twelve otherwise. Nobody can type it, so nobody can push a review out without
+  claiming a review that did not happen. It carries the same month-end overflow
+  as ConfirmationDue, unfixed here for the same reason.
+
+  BusinessProcess is the deliberate exception on both counts. Its
+  LastReviewedDate is optional with no default, because capturing a backlog row
+  is not sweeping it and a default would claim a check that never happened;
+  blank there means nobody has ever swept the row, which is a finding in the
+  same way a blank Owner is. Its NextReviewDue stays a typed date capped at
+  twelve months, because a backlog sweep has no rating to derive a cadence
+  from.
 
   "Closed this quarter" filters and sorts on LastReviewedDate. It used to use
   the forward-looking date as a proxy, because closing a risk is a status

@@ -128,13 +128,17 @@ filter on, and the review at which a risk was closed is the closest dated
 event to it. It renders `ClosureNote` as a column so a blank is visible while
 reading. This is `raid-log` governance rule 2, unchanged.
 
-A second check on the same view, and a save rule cannot make it: **the next
-review must not precede the last one.** A condition's `value` is a literal or
-a `today` token and the DSL has no field reference, so no formula can compare
-`NextReviewDue` with `LastReviewedDate`. The two save rules that do exist cap
-each column on its own (a review cannot be dated in the future, and the next
-one cannot be more than twelve months out), which leaves a pair that is
-individually valid and jointly wrong to a human read.
+Nothing needs to check that the next review follows the last one, because on
+this list nobody sets it. `NextReviewDue` is calculated from
+`LastReviewedDate` and the residual rating: three months at High or Extreme,
+six where the response is Manage or Tolerate, twelve otherwise. Completing a
+review means moving `LastReviewedDate`, and the next date follows on its own.
+The one save rule left is that a review cannot be dated in the future.
+
+That is a deliberate difference from `GOV_BusinessProcess`, where
+`NextReviewDue` is typed by hand and capped at twelve months. A backlog sweep
+has no rating to derive a cadence from, so there the pairing of the two dates
+is a human read rather than arithmetic.
 
 **2. Every authorised service request names the person who authorised
 it, and every request being worked names its handler.**
