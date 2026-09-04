@@ -35,9 +35,9 @@ spends an afternoon trying:
   no host is a name at the assembly point with nobody who knows where they
   went; reception fills it in, and the log owner audits for blanks.
 
-The *Induction sighted* tick is likewise a record, not a gate: it appears
-on the form only for Contractors and Students, and nothing stops a
-contractor being signed in before it is ticked. That is deliberate. A
+The *Induction sighted* tick is likewise a record, not a gate: it is asked
+of Contractors and Students, and nothing stops a contractor being signed in
+before it is ticked. That is deliberate. A
 muster list must be able to record that somebody is in the building
 whether or not their paperwork is in order. Whether they may then *work*
 is the contractor rule below.
