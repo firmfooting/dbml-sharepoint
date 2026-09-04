@@ -479,15 +479,13 @@ class FindingCode(StrEnum):
     MULTI_VALUE_SET_EQUALITY_UNSUPPORTED = (
         "multi_value_set_equality_unsupported", "error"
     )
-    # A fourth, and the one that is about EVIDENCE rather than about a word
-    # meaning two things. The three above are settled by the 2026-08-10
-    # multi-value CAML measurements; those ran against a Choice (multi-valued)
-    # column and nothing else, so they say nothing about a Lookup (multi-valued)
-    # one. It is a separate code because the remedy is separate too: there is
-    # no rewording of the condition that fixes it, only a probe.
-    MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED = (
-        "multi_value_lookup_condition_unverified", "error"
-    )
+    # A fourth once stood here, `multi_value_lookup_condition_unverified`, and
+    # it was about EVIDENCE rather than about a word meaning two things: the
+    # 2026-08-10 measurements ran against a Choice (multi-valued) column, so
+    # they said nothing about a Lookup (multi-valued) one. The 2026-09-04 probe
+    # asked the same predicates of a multi-value lookup and got the same
+    # answers, so the code was retired rather than reworded. The three above
+    # cover it now, since they are about arity and a lookup has one.
 
     # --- schema-only rules, from validator.validate() ---
     AUTO_INCREMENT_PK_MUST_BE_ID = "auto_increment_pk_must_be_id", "error"

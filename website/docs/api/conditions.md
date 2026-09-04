@@ -50,7 +50,7 @@ everywhere else in this package.
 | `includes` | `<Eq><FieldRef Name="Events"/><Value Type="Text">View</Value></Eq>` | _not supported: operator 'includes' has no rendering_ | _not supported: operator 'includes' has no rendering_ |
 | `not_includes` | `<Or><IsNull><FieldRef Name="Events"/></IsNull><Neq><FieldRef Name="Events"/><Value Type="Text">View</Value></Neq></Or>` | _not supported: operator 'not_includes' has no rendering_ | _not supported: operator 'not_includes' has no rendering_ |
 | `measure: length` | _not supported: 'measure' cannot be rendered: CAML has no LEN_ | _not supported: 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types -- it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
-| `property (person)` | _not supported: CAML cannot reach person or lookup sub-properties_ | `[$Owner.title] != ''` | _not supported: person and lookup operands are unsupported in validation formulas_ |
+| `property (person)` | _not supported: CAML cannot reach person or lookup sub-properties. The one exception is a comparison against a MULTI-VALUE lookup, where 'lookupValue' and 'lookupId' name the two operand dialects measured on 2026-09-04; a null test is not a comparison and needs no operand, since a row with no value has neither a title nor an id_ | `[$Owner.title] != ''` | _not supported: person and lookup operands are unsupported in validation formulas_ |
 
 ## Not yet verified
 

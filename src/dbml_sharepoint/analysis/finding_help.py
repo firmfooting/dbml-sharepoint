@@ -859,14 +859,16 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED: (
         "A condition asks a multi-value column something with no verified "
-        "rendering. Measured on 2026-08-10: CAML's `<Eq>` against such a "
-        "column tests MEMBERSHIP rather than equality, so membership is "
-        "spelled `includes` and `eq` is refused rather than quietly meaning "
-        "two different things on two columns. `includes`, `not_includes`, "
-        "`is_null` and `is_not_null` are the four that were measured; "
-        "`contains` works but cannot be told apart from a substring match, "
-        "and `<Includes>`/`<NotIncludes>`, the two operators Microsoft "
-        "documents, returned nothing at all."
+        "rendering. Measured on 2026-08-10 for Choice and on 2026-09-04 for "
+        "Lookup: CAML's `<Eq>` against such a column tests MEMBERSHIP rather "
+        "than equality, so membership is spelled `includes` and `eq` is "
+        "refused rather than quietly meaning two different things on two "
+        "columns. `includes`, `not_includes`, `is_null` and `is_not_null` are "
+        "the four measured, on both kinds; `contains` works on a Choice but "
+        "cannot be told apart from a substring match. "
+        "`<Includes>`/`<NotIncludes>`, the two operators Microsoft documents, "
+        "returned nothing at all on a Choice; on a Lookup they work and "
+        "return what `<Eq>`/`<Neq>` return, so one rendering serves both."
     ),
     FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED: (
         "A multi-value column declares `default:`. DBML carries one scalar "
@@ -891,16 +893,6 @@ FINDING_HELP: dict[FindingCode, str] = {
         "any route: indexing the source list's column does not carry into it "
         "either, measured on 2026-09-04 with the lookup created before the "
         "source index and again with it created after."
-    ),
-    FindingCode.MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED: (
-        "A condition tests a multi-value lookup column. The multi-value CAML "
-        "grammar this tool emits was measured against a Choice "
-        "(multi-valued) column on 2026-08-10 and against nothing else, so "
-        "what `<Eq>` means against a Lookup (multi-valued) column is "
-        "unknown: a filter built on the assumption would save, read back "
-        "intact and could return the wrong rows with no error. Filter on a "
-        "single-value lookup, or on a projected or scalar column, until a "
-        "probe settles it."
     ),
     FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN: (
         "`includes` or `not_includes` is used on a column that holds exactly "
