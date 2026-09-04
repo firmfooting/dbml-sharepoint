@@ -107,11 +107,12 @@ seed a write it has not read back from a live list.
 - [ ] **My actions** shows *your* open actions and changes per signed-in
       user. Ask a colleague to open it and confirm they see theirs, not
       yours. That is the whole test.
-- [ ] List Settings -> Indexed columns shows `Status`, `RiskResponse` and
-      `ReviewDate` on Project Risk; `Status`, `AssignedTo`, `DueDate` and
-      `RelatedRisk` on Project Action; `Status`, `Severity`, `Owner`,
-      `RaisedDate` and `RelatedRisk` on Project Issue; and `DecisionDate`
-      on Project Decision. **`LiveRiskTitle` does not appear**, and that is
+- [ ] List Settings -> Indexed columns shows `Status`, `RiskResponse`,
+      `NextReviewDue` and `LastReviewedDate` on Project Risk; `Status`,
+      `AssignedTo`, `DueDate` and `RelatedRisk` on Project Action;
+      `Status`, `Severity`, `Owner`, `RaisedDate` and `RelatedRisk` on
+      Project Issue; and `DecisionDate` on Project Decision.
+      **`LiveRiskTitle` does not appear**, and that is
       correct: it is a calculated column and cannot be indexed. It is the
       `RelatedRisk` display column, and its being calculated is what blanks
       closed risks out of the picker. See the lookup note in
@@ -172,7 +173,8 @@ seed a write it has not read back from a live list.
       budget.
 - [ ] The action demands `AssignedTo` and `DueDate`, the issue demands
       `Owner` and `RaisedDate`, the risk demands `RiskOwner`, `Likelihood`,
-      `Consequence` and `ReviewDate`, and the decision demands
+      `Consequence`, `LastReviewedDate` and `NextReviewDue`, and the decision
+      demands
       `DecisionDate` (all required).
 - [ ] A new issue fills `Raised Date` with today automatically, and the
       date is still editable for something being recorded late.

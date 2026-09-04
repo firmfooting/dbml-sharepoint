@@ -122,10 +122,23 @@ the place somebody would add it. A closed risk with an empty closure note
 saves cleanly today and will keep saving.
 
 The control is the *Closed this quarter* view, read **monthly** at the
-steering group. It filters on `ReviewDate` within the last ninety days,
+steering group. It filters on `LastReviewedDate` within the last ninety days,
 because closing a risk is a status change and there is no closure date to
-filter on, and it renders `ClosureNote` as a column so a blank is visible
-while reading. This is `raid-log` governance rule 2, unchanged.
+filter on, and the review at which a risk was closed is the closest dated
+event to it. It renders `ClosureNote` as a column so a blank is visible while
+reading. This is `raid-log` governance rule 2, unchanged.
+
+Nothing needs to check that the next review follows the last one, because on
+this list nobody sets it. `NextReviewDue` is calculated from
+`LastReviewedDate` and the residual rating: three months at High or Extreme,
+six where the response is Manage or Tolerate, twelve otherwise. Completing a
+review means moving `LastReviewedDate`, and the next date follows on its own.
+The one save rule left is that a review cannot be dated in the future.
+
+That is a deliberate difference from `GOV_BusinessProcess`, where
+`NextReviewDue` is typed by hand and capped at twelve months. A backlog sweep
+has no rating to derive a cadence from, so there the pairing of the two dates
+is a human read rather than arithmetic.
 
 **2. Every authorised service request names the person who authorised
 it, and every request being worked names its handler.**

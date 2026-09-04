@@ -155,7 +155,7 @@ column_formatting:
     RiskScore: { style: data-bar, max: 25, calculated: true,
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
-    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
   ProjectAction:
     Status: { style: severity, map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
     DueDate: { style: overdue-date, guard: { field: Status, not: [Done, Dropped] } }
@@ -184,7 +184,7 @@ views:
     - title: "Open"
       default: true
       fields: [Title, Likelihood, Consequence, ResidualRiskRating, RiskScore,
-               RiskOwner, RiskResponse, Status, ReviewDate]
+               RiskOwner, RiskResponse, Status, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
       sort:
@@ -212,18 +212,18 @@ views:
         RiskOwner: 160
         RiskResponse: 130
         Status: 100
-        ReviewDate: 160
+        NextReviewDue: 160
     # The queue for the standing review item in the project meeting. It
     # includes risks whose review date has already passed, which is the point:
     # a review that slipped is exactly the row that needs the meeting.
     - title: "Review due"
       fields: [Title, ResidualRiskRating, RiskScore, RiskOwner, RiskResponse,
-               Status, ReviewDate]
+               Status, LastReviewedDate, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
-        - { field: ReviewDate, op: leq, value: today+30 }
+        - { field: NextReviewDue, op: leq, value: today+30 }
       sort:
-        - { field: ReviewDate, direction: asc }
+        - { field: NextReviewDue, direction: asc }
       widths:
         Title: 300
         ResidualRiskRating: 160
@@ -231,21 +231,26 @@ views:
         RiskOwner: 160
         RiskResponse: 130
         Status: 100
-        ReviewDate: 160
+        LastReviewedDate: 170
+        NextReviewDue: 160
+    # Sorted on the last review rather than the next one: closing a risk is a
+    # status change with no closure date, and the review at which it was closed
+    # is the closest dated event. That used to be a proxy read off a
+    # forward-looking column; LastReviewedDate is the thing itself.
     - title: "Closed"
       fields: [Title, ResidualRiskRating, RiskScore, RiskOwner, Status,
-               ReviewDate, ClosureNote]
+               LastReviewedDate, ClosureNote]
       where:
         - { field: Status, op: eq, value: "Closed" }
       sort:
-        - { field: ReviewDate, direction: desc }
+        - { field: LastReviewedDate, direction: desc }
       widths:
         Title: 260
         ResidualRiskRating: 160
         RiskScore: 140
         RiskOwner: 160
         Status: 100
-        ReviewDate: 160
+        LastReviewedDate: 170
         ClosureNote: 200
   ProjectAction:
     - title: "Open by person"
@@ -437,6 +442,26 @@ form_visibility:
 # message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
+  ProjectRisk:
+    columns:
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
+      # Capped, not scheduled: this refuses a review pushed years out and
+      # leaves the cadence itself to the project. Neither rule can compare the
+      # two columns to each other, because a condition's value is a literal or
+      # a today token and the DSL has no field reference. "The next review
+      # cannot precede the last one" is a governance check for that reason.
+      #
+      # The is_null branch is deliberate even though the column is required,
+      # so a row carrying no value yet still saves once somebody fills it in.
+      NextReviewDue:
+        when:
+          any_of:
+            - { field: NextReviewDue, op: is_null }
+            - { field: NextReviewDue, op: leq, value: today+365 }
+        message: "A risk reviewed less than once a year is not being reviewed. Pick a next review date within the next twelve months."
   ProjectAction:
     columns:
       # A forward-dated completion sorts to the top of "Done and dropped" and
@@ -491,6 +516,20 @@ list_validation:
 # the Critical one driving the issue row wash; and four decisions. Three
 # actions and two issues carry a RelatedRisk so the lookup demonstrates
 # itself, and the rest leave it blank, which is the ordinary case.
+# ReviewDate was one hand-set date standing for both halves of a review, so
+# moving it forward destroyed the evidence that a review had happened. Split
+# into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+retired_columns:
+  ProjectRisk:
+    ReviewDate:
+      retired: "2026-09-04"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
+
 demo_items:
   ProjectRisk:
     - key: risk-migration
@@ -502,7 +541,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+10"
+        LastReviewedDate: "today-20"
+        NextReviewDue: "today+10"
     - key: risk-supplier
       values:
         Title: "[DEMO] Supplier misses the integration milestone"
@@ -512,7 +552,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today-5"
+        LastReviewedDate: "today-35"
+        NextReviewDue: "today-5"
     - key: risk-adoption
       values:
         Title: "[DEMO] Frontline teams do not adopt the new process"
@@ -522,7 +563,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Monitor"
         Status: "Open"
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-30"
+        NextReviewDue: "today+60"
     - key: risk-resourcing
       values:
         Title: "[DEMO] Key analyst is pulled onto another project"
@@ -532,7 +574,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+45"
+        LastReviewedDate: "today-15"
+        NextReviewDue: "today+45"
     - key: risk-venue
       values:
         Title: "[DEMO] Training room is unavailable in the go-live week"
@@ -542,7 +585,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Accept"
         Status: "Open"
-        ReviewDate: "today+90"
+        LastReviewedDate: "today-5"
+        NextReviewDue: "today+90"
     - key: risk-access
       values:
         Title: "[DEMO] Test accounts are provisioned with live permissions"
@@ -552,7 +596,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Terminate"
         Status: "Closed"
-        ReviewDate: "today-20"
+        LastReviewedDate: "today-20"
+        NextReviewDue: "today-20"
         ClosureNote: "Demo row. Role removed, the provisioning script now grants the test role explicitly, and the remaining accounts were re-checked. The risk can no longer happen."
   ProjectAction:
     - key: act-rehearse

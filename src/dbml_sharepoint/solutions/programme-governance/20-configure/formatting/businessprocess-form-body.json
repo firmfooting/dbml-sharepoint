@@ -35,7 +35,8 @@
     {
       "displayname": "Review",
       "fields": [
-        "ReviewDate"
+        "LastReviewedDate",
+        "NextReviewDue"
       ]
     },
     {

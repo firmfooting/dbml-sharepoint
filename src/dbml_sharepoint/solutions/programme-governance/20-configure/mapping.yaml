@@ -152,6 +152,14 @@ calculated_formulas:
     # The RelatedRisk picker shows this column. Blank for Closed means the
     # picker offers only live risks: below the 5,000-item threshold a blank
     # calculated label is simply omitted from the picker.
+    # Cadence: quarterly for High or Extreme, six-monthly where the response
+    # is Manage or Tolerate, otherwise annual, counted from Last Reviewed
+    # Date. risk-register's rule with its control-effectiveness and
+    # levels-above-target arms dropped, because this family carries neither
+    # column. Same month-end overflow as ConfirmationDue: DATE(Y, M+N, D)
+    # overflows rather than clamping, so a review recorded on 31 August
+    # falls due on 3 March rather than 28 February.
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])))'
     LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
   Decision:
     # Every picker onto this list shows this column. Approved and Ratified are
@@ -504,7 +512,7 @@ column_formatting:
     # Guarded on the two states where a sweep no longer means anything: a
     # mapped process and one ruled out are both settled, and a date that keeps
     # shouting after the decision trains people to ignore the colour.
-    ReviewDate:
+    NextReviewDue:
       style: overdue-date
       guard:
         field: MappingStatus
@@ -548,7 +556,8 @@ column_formatting:
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe,
                                     Extreme: blocked } } }
-    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    NextReviewDue: { style: overdue-date, calculated: true,
+                     guard: { field: Status, not: [Closed] } }
   Action:
     Status: { style: severity,
               map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
@@ -640,7 +649,8 @@ views:
     # The record of what was mapped, with the link to each map. The register's
     # whole durable value once the mapping work is done.
     - title: "Mapped"
-      fields: [Title, Function, Owner, Workstream, MapUrl, ReviewDate]
+      fields: [Title, Function, Owner, Workstream, MapUrl,
+               LastReviewedDate, NextReviewDue]
       where:
         - { field: MappingStatus, op: eq, value: "Mapped" }
       sort:
@@ -651,7 +661,8 @@ views:
         Owner: 160
         Workstream: 160
         MapUrl: 220
-        ReviewDate: 150
+        LastReviewedDate: 170
+        NextReviewDue: 150
 
   Workstream:
     # The whole programme on one screen, five to eight rows, read first at the
@@ -1108,7 +1119,7 @@ views:
     - title: "Open"
       default: true
       fields: [Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
-               RiskScore, RiskOwner, RiskResponse, ReviewDate]
+               RiskScore, RiskOwner, RiskResponse, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
       sort:
@@ -1126,15 +1137,15 @@ views:
         RiskScore: 140
         RiskOwner: 160
         RiskResponse: 140
-        ReviewDate: 160
+        NextReviewDue: 160
     - title: "Review due"
       fields: [Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
-               RiskResponse, ReviewDate]
+               RiskResponse, LastReviewedDate, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
-        - { field: ReviewDate, op: leq, value: today+14 }
+        - { field: NextReviewDue, op: leq, value: today+14 }
       sort:
-        - { field: ReviewDate, direction: asc }
+        - { field: NextReviewDue, direction: asc }
       widths:
         Title: 300
         Workstream: 180
@@ -1142,27 +1153,29 @@ views:
         RiskScore: 140
         RiskOwner: 160
         RiskResponse: 140
-        ReviewDate: 160
-    # Read monthly, and the reason it is filtered on ReviewDate rather than on
-    # a closure date is that there is no closure date: closing a risk is a
-    # status change, and the last review is the closest dated event. Every row
-    # here should carry a closure note, which is a HUMAN check. ClosureNote is
-    # rich text and SharePoint validation formulas refuse multi-line operands,
-    # so no save rule can ask for it.
+        LastReviewedDate: 170
+        NextReviewDue: 160
+    # Read monthly. There is no closure date, because closing a risk is a
+    # status change, so this filters on the review at which it was closed.
+    # That used to be a proxy read off a forward-looking column; since the
+    # split, LastReviewedDate is the dated event itself. Every row here should
+    # carry a closure note, which is a HUMAN check. ClosureNote is rich text
+    # and SharePoint validation formulas refuse multi-line operands, so no
+    # save rule can ask for it.
     - title: "Closed this quarter"
-      fields: [Title, Workstream, ResidualRiskRating, RiskOwner, ReviewDate,
-               ClosureNote]
+      fields: [Title, Workstream, ResidualRiskRating, RiskOwner,
+               LastReviewedDate, ClosureNote]
       where:
         - { field: Status, op: eq, value: "Closed" }
-        - { field: ReviewDate, op: geq, value: today-90 }
+        - { field: LastReviewedDate, op: geq, value: today-90 }
       sort:
-        - { field: ReviewDate, direction: desc }
+        - { field: LastReviewedDate, direction: desc }
       widths:
         Title: 280
         Workstream: 180
         ResidualRiskRating: 160
         RiskOwner: 160
-        ReviewDate: 160
+        LastReviewedDate: 170
         ClosureNote: 240
   Action:
     # The weekly personal read and the default: what do I owe? AssignedTo is a
@@ -1579,11 +1592,15 @@ form_visibility:
 column_validation:
   BusinessProcess:
     columns:
-      ReviewDate:
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A sweep cannot have happened in the future. Use the date somebody actually checked this row, or leave it blank until one has."
+      NextReviewDue:
         when:
           any_of:
-            - { field: ReviewDate, op: is_null }
-            - { field: ReviewDate, op: leq, value: today+365 }
+            - { field: NextReviewDue, op: is_null }
+            - { field: NextReviewDue, op: leq, value: today+365 }
         message: "The register is swept annually. Pick a review date within the next twelve months, or leave it blank until somebody has actually looked at this process."
   Activity:
     columns:
@@ -1606,6 +1623,12 @@ column_validation:
         when:
           - { field: MinutesSpent, op: geq, value: 0 }
         message: "Minutes spent cannot be negative. Enter the running total of whole minutes spent on the request so far."
+  Risk:
+    columns:
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
   Action:
     columns:
       # A forward-dated completion sorts to the top of "Done and dropped" and
@@ -1738,6 +1761,25 @@ list_validation:
 # owner or workstream; and seven decisions, three of them programme-wide, one
 # still Proposed and old enough to be stalled, one Ratified under delegation,
 # and one carrying the recommend-then-decide pair of forums.
+# ReviewDate was one hand-set date standing for both halves of a review,
+# so moving it forward destroyed the evidence that a review had happened.
+# Split into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+retired_columns:
+  BusinessProcess:
+    ReviewDate:
+      retired: "2026-09-04"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
+  Risk:
+    ReviewDate:
+      retired: "2026-09-04"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
+
 demo_items:
   # Six processes covering every member of every formatted column, so each
   # renders at least once and each declared view returns rows. The subjects
@@ -1756,7 +1798,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Mapping"
         Notes: "Demo row. Four teams act and none of them can name the order. A leaver kept mailbox access for three weeks in March because nobody owned the step after HR closed the record."
-        ReviewDate: "today-10"
+        LastReviewedDate: "today-40"
+        NextReviewDue: "today-10"
     - key: process-onboard
       values:
         Title: "[DEMO] Onboard a new starter"
@@ -1768,7 +1811,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Ready to map"
         Notes: "Demo row. Owner deliberately blank: HR, IT and facilities each own a part and nobody owns the whole, which is the finding rather than a gap to fill in."
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-30"
+        NextReviewDue: "today+60"
     - key: process-guest
       values:
         Title: "[DEMO] Grant a guest access to a Team"
@@ -1782,7 +1826,8 @@ demo_items:
         PriorityNote: "Demo row. Scores 6, called Now: the security workstream cannot finish its guest-access policy until this is mapped."
         MappingStatus: "Ready to map"
         Notes: "Demo row. Currently a request by email to whoever is around. No expiry, so guests accumulate."
-        ReviewDate: "today+30"
+        LastReviewedDate: "today-60"
+        NextReviewDue: "today+30"
     - key: process-create-team
       values:
         Title: "[DEMO] Create a Team"
@@ -1795,7 +1840,7 @@ demo_items:
         MappingPriority: "Next"
         MappingStatus: "Identified"
         Notes: "Demo row. Runs often enough that a map pays back quickly, but it mostly works today, so it waits behind the two that do not."
-        ReviewDate: "today+90"
+        NextReviewDue: "today+90"
     - key: process-shared-mailbox
       values:
         Title: "[DEMO] Request a shared mailbox"
@@ -1809,7 +1854,8 @@ demo_items:
         MappingStatus: "Mapped"
         MapUrl: "https://example.com/process-maps/demo-shared-mailbox"
         Notes: "Demo row. Mapped in March. The review date is long past and reads plain rather than red, because a mapped process is settled."
-        ReviewDate: "today-200"
+        LastReviewedDate: "today-200"
+        NextReviewDue: "today-200"
     - key: process-mobile
       values:
         Title: "[DEMO] Order a mobile phone"
@@ -1821,7 +1867,8 @@ demo_items:
         MappingPriority: "Later"
         MappingStatus: "Out of scope"
         Notes: "Demo row. Considered and ruled out: it touches no M365 surface the project is changing. Kept so the same question is not asked again in six months. No workstream, so it lands in the blank group under By workstream."
-        ReviewDate: "today+300"
+        LastReviewedDate: "today-15"
+        NextReviewDue: "today+300"
 
   Workstream:
     - key: ws-migration
@@ -2210,7 +2257,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+10"
+        LastReviewedDate: "today-110"
     - key: risk-adoption
       values:
         Title: "[DEMO] Frontline teams keep using the shared drives after cutover"
@@ -2221,7 +2268,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today-5"
+        LastReviewedDate: "today-85"
     - key: risk-licensing
       values:
         Title: "[DEMO] The licensing uplift is not funded for the whole frontline"
@@ -2233,7 +2280,7 @@ demo_items:
         RiskResponse: "Tolerate"
         ToleranceDecision: { demo_ref: dec-licence-tier-revised }
         Status: "Open"
-        ReviewDate: "today+45"
+        LastReviewedDate: "today-15"
     - key: risk-champion-churn
       values:
         Title: "[DEMO] The champions network loses its most active members"
@@ -2244,7 +2291,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Accept"
         Status: "Open"
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-30"
     - key: risk-identity
       values:
         Title: "[DEMO] Conditional access locks staff out of unmanaged devices at go-live"
@@ -2255,7 +2302,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+21"
+        LastReviewedDate: "today-9"
     - key: risk-fax
       values:
         Title: "[DEMO] The fax gateway is switched off before its replacement is proven"
@@ -2266,7 +2313,7 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Terminate"
         Status: "Closed"
-        ReviewDate: "today-20"
+        LastReviewedDate: "today-20"
         ClosureNote: "Demo row. Every route was moved and monitored for two clean weeks before the gateway was switched off, and the two clinics still sending were contacted individually. The risk can no longer happen."
   Action:
     - key: act-rehearse-migration

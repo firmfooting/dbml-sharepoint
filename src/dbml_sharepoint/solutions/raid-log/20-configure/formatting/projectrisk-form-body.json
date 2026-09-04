@@ -14,7 +14,7 @@
     },
     {
       "displayname": "Review and closure",
-      "fields": ["Status", "ReviewDate", "ClosureNote"]
+      "fields": ["Status", "LastReviewedDate", "NextReviewDue", "ClosureNote"]
     },
     {
       "displayname": "System",

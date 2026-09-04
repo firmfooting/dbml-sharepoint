@@ -1,8 +1,40 @@
-release: "2.1.0"
-date: "2026-09-03"
+release: "2.2.0"
+date: "2026-09-04"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.1.0"
+schema_version: "2.2.0"
 notes: |
+  2.2.0 splits ReviewDate into LastReviewedDate and NextReviewDue on both Risk
+  and BusinessProcess. One hand-set date stood for both halves of a review, so
+  moving it forward destroyed the evidence that a review had happened and
+  nothing could tell an on-time review from a push-out by somebody who had not
+  looked. Risk also carried no save rule at all while BusinessProcess next to
+  it did, which had the guard on the register with the less consequence.
+
+  Risk now matches risk-register. LastReviewedDate is required and defaults to
+  today, because creating a risk is assessing it, and it cannot be dated in the
+  future. NextReviewDue is CALCULATED from it and the residual rating: three
+  months at High or Extreme, six where the response is Manage or Tolerate,
+  twelve otherwise. Nobody can type it, so nobody can push a review out without
+  claiming a review that did not happen. It carries the same month-end overflow
+  as ConfirmationDue, unfixed here for the same reason.
+
+  BusinessProcess is the deliberate exception on both counts. Its
+  LastReviewedDate is optional with no default, because capturing a backlog row
+  is not sweeping it and a default would claim a check that never happened;
+  blank there means nobody has ever swept the row, which is a finding in the
+  same way a blank Owner is. Its NextReviewDue stays a typed date capped at
+  twelve months, because a backlog sweep has no rating to derive a cadence
+  from.
+
+  "Closed this quarter" filters and sorts on LastReviewedDate. It used to use
+  the forward-looking date as a proxy, because closing a risk is a status
+  change with no closure date; the review at which it was closed is now a
+  column rather than a stand-in.
+
+  Both ReviewDate columns are RETIRED, not deleted. They keep their values,
+  drop off every view and the New form, and read "Review Date (retired)".
+  Transfer the values, then delete each column with the columns sidecar.
+
   2.1.0 adds GOV_BusinessProcess, the register of project-adjacent processes
   worth mapping: what each is for, the order to take them in, and where the
   map ended up. The maps themselves are made elsewhere, in a diagramming tool,

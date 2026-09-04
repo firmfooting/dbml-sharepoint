@@ -388,7 +388,17 @@ Table Risk {
   RiskResponse gov_risk_response [note: 'What the programme is doing about it. Tolerate is always for a set period and belongs in the decision log']
   ToleranceDecision int          [ref: > Decision.Id, note: 'The decision-log entry accepting this risk for a set period when Risk Response is Tolerate. Leave blank for every other response']
   Status      gov_risk_status [not null, default: 'Open', note: 'Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
-  ReviewDate  date              [not null, note: 'When this risk is next looked at. Set by hand, and moved forward every time it is actually reviewed']
+  // Two halves of a review, kept apart. One hand-set date recorded neither:
+  // moving it forward destroyed the evidence that a review had happened, so
+  // nothing could tell an on-time review from a push-out by somebody who had
+  // not looked. risk-register carries the same pair under the same names.
+  LastReviewedDate date    [not null, default: '[today]', note: 'When this risk was last actually reviewed. Fills in when the risk is created; move it every time you complete a review, including the review at which you close it']
+  // Calculated, like risk-register's: a date a person could type is a date a
+  // person could push out, which is the defect the split was opened for. The
+  // cadence formula lives in mapping.yaml and reads the residual rating, so
+  // completing a review means moving Last Reviewed Date and nothing else.
+  NextReviewDue    calculated_date [note: 'When this risk is next looked at. Calculated from Last Reviewed Date and the residual rating: quarterly for High or Extreme, six-monthly under Manage or Tolerate, otherwise annual']
+  ReviewDate       date    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   ClosureNote richtext          [note: 'Why the risk is being closed: it happened and became an issue, it can no longer happen, or the workstream ended']
 
   // Filter columns for the declared views. The three calculated columns
@@ -402,7 +412,7 @@ Table Risk {
     Workstream
     RiskResponse
     ToleranceDecision
-    ReviewDate
+    LastReviewedDate
   }
 
   Note: 'Uncertain events that could still stop a workstream delivering, each rated on the 5x5 matrix, owned by one person and reviewed on a date.'
@@ -548,7 +558,14 @@ Table BusinessProcess {
   MappingStatus   gov_mapping_status      [not null, default: 'Identified', note: 'Where this process is in the mapping work. Identified means somebody named it; Out of scope means it was considered and ruled out, which is a decision worth keeping']
   MapUrl          hyperlink               [note: 'The process map itself, wherever it is drawn. The map holds who does what, on which systems, in what order; this row holds only that it exists']
   Notes           richtext                [note: 'Why this needs mapping: where it breaks, who it burns, what nobody can currently explain about it']
-  ReviewDate      date                    [note: 'Next sweep of this row. The register is only useful while it is current']
+  // Same split as Risk, and for the same reason: one hand-set date recorded
+  // neither half, so moving it forward destroyed the evidence of a sweep.
+  // Nullable and undefaulted here, unlike Risk: creating a risk IS assessing
+  // it, but capturing a backlog row is not sweeping it, so a default would
+  // claim a check that never happened.
+  LastReviewedDate date                   [note: 'When somebody last checked this row is still true. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
+  NextReviewDue   date                    [note: 'Next sweep of this row. The register is only useful while it is current']
+  ReviewDate      date                    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
 
   indexes {
     Function
