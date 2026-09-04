@@ -78,8 +78,11 @@
  * That is deliberate and it is the only way to answer either question without
  * writing: question 1 needs built-in columns on lists this probe did not
  * make, and question 2 needs a list already past the threshold. It reads
- * titles, item counts, field metadata, and at most one item id per query.
- * It never reads item CONTENT.
+ * titles, item counts, field metadata, and at most one item id per filtered
+ * query. It reads item CONTENT once, and only for the positive control: up to
+ * twenty values of the single indexed column it filters on, to build a
+ * predicate that list is guaranteed to match. That value is never printed;
+ * the transcript carries the predicate's shape with the literal redacted.
  *
  * HOW TO RUN
  *   1. Open the SharePoint site you want the answer for.
@@ -294,7 +297,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -374,7 +381,7 @@
   expect('scale.native-idx.modified-property', 'Modified carries a platform-maintained index');
   expect('scale.native-idx.author-property', 'Author carries a platform-maintained index');
   expect('scale.native-idx.editor-property', 'Editor carries a platform-maintained index');
-  expect('scale.index.odata-comparison-found-list', 'Comparison filter on an indexed column survives the threshold');
+  expect('scale.index.odata-comparison-found-list', 'Comparison filter on an indexed column matches rows on this list past the threshold');
   expect('scale.index.odata-null-found-list', 'Null filter on an indexed column survives the threshold');
 
   const odata = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
@@ -538,7 +545,7 @@
       `(largest is ${largest}). Both threshold questions need a list already ` +
       `past it; this probe will not create one.`;
     record('scale.index.odata-comparison-found-list',
-           'Comparison filter on an indexed column survives the threshold',
+           'Comparison filter on an indexed column matches rows on this list past the threshold',
            'NOT ESTABLISHED', why);
     record('scale.index.odata-null-found-list',
            'Null filter on an indexed column survives the threshold',
@@ -554,7 +561,7 @@
   if (readFailed(fields)) {
     const why = `could not read fields of '${big.Title}': HTTP ${fields.status}`;
     record('scale.index.odata-comparison-found-list',
-           'Comparison filter on an indexed column survives the threshold',
+           'Comparison filter on an indexed column matches rows on this list past the threshold',
            'NOT ESTABLISHED', why);
     record('scale.index.odata-null-found-list',
            'Null filter on an indexed column survives the threshold',
@@ -566,19 +573,29 @@
   // indexing them does not avert the threshold. Including one here would
   // make a failure ambiguous between "null tests cannot use an index" and
   // "this was a lookup field all along", which is the whole finding.
+  //
+  // The type whitelist is separate from that exclusion and answers a different
+  // need: the positive control below builds a predicate the list must match, so
+  // the column has to be one an OData comparison literal can be written for. A
+  // Note column cannot be $filter'd by comparison at all, so picking one would
+  // fail the control for a reason with nothing to do with the threshold.
+  const FILTERABLE = [
+    'Text', 'Choice', 'Number', 'Currency', 'Integer', 'Counter', 'DateTime', 'Boolean',
+  ];
   const usable = (fields.body.value || []).find(
     (f) => f.Indexed === true
       && f.Hidden === false
       && !['Lookup', 'User', 'LookupMulti', 'UserMulti', 'TaxonomyFieldType']
         .includes(f.TypeAsString)
+      && FILTERABLE.includes(f.TypeAsString)
       && f.InternalName !== 'ID',
   );
   if (!usable) {
     const why =
-      `'${big.Title}' has no indexed, visible, non-lookup column to test with. ` +
+      `'${big.Title}' has no indexed, visible, comparison-filterable column to test with. ` +
       `Add an index to a Text, Number, Choice or Date column on it and re-run.`;
     record('scale.index.odata-comparison-found-list',
-           'Comparison filter on an indexed column survives the threshold',
+           'Comparison filter on an indexed column matches rows on this list past the threshold',
            'NOT ESTABLISHED', why);
     record('scale.index.odata-null-found-list',
            'Null filter on an indexed column survives the threshold',
@@ -592,27 +609,75 @@
   const items = `web/lists/getbytitle('${odata(big.Title)}')/items`;
   // $top=1 and $select=Id: this reads AT MOST one item id per query and never
   // item content. The question is whether SharePoint answers at all.
-  const ask = async (id, question, filter, state) => {
+  //
+  // `shown` is the filter as it reaches the transcript. The control's literal
+  // is a value this list actually holds, and a real column value is tenant
+  // content, so the printed form carries the shape and not the value.
+  const ask = async (id, question, filter, shown, state) => {
     const r = await spGet(`${items}?$select=Id&$top=1&$filter=${encodeURIComponent(filter)}`);
     const body = r.body ? JSON.stringify(r.body).slice(0, 400) : '(no JSON body)';
+    const rows = (r.ok && r.body && r.body.value) ? r.body.value.length : 0;
     record(
       id, question,
       r.ok ? 'SERVED' : (isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
-      `$filter=${filter} on ${big.ItemCount} items, HTTP ${r.status}: ${body}`,
+      `$filter=${shown} on ${big.ItemCount} items, HTTP ${r.status}, ${rows} row(s): ${body}`,
       state,
     );
-    return r.ok;
+    return { served: r.ok, rows };
   };
 
-  // The comparison filter FIRST, as the positive control. If the documented
-  // case is itself refused on this list, the null result below says nothing
-  // about null tests. It says this list cannot be queried by filter at all.
-  const compared = await ask(
-    'scale.index.odata-comparison-found-list',
-    'Comparison filter on an indexed column survives the threshold',
-    `${col} ne null`);
-  if (!compared) {
-    log('WARN', 'The documented comparison case was refused, so the null result');
+  // The positive control has to be a NON-NULL predicate, and it has to match.
+  //
+  // It used to be `${col} ne null`, the same null operator as the treatment
+  // below. A tenant that special-cases null tests past the threshold fails
+  // BOTH queries, so the control came back refused for exactly the reason the
+  // treatment did and certified nothing: the null row was voided by its own
+  // finding. The claim the null row needs behind it is narrower and different,
+  // that the query path matches rows on this list at all.
+  //
+  // The literal is read from the list rather than assumed, so the predicate
+  // must match at least the row it came from under any sane evaluation. A
+  // blind bound would only have moved the problem: it matches nothing when
+  // every value is null, which is the same conflation one step along.
+  const literalFor = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    if (usable.TypeAsString === 'Boolean') return value ? 'true' : 'false';
+    if (usable.TypeAsString === 'DateTime') return `datetime'${value}'`;
+    if (['Number', 'Currency', 'Integer', 'Counter'].includes(usable.TypeAsString)) {
+      return Number.isFinite(Number(value)) ? String(Number(value)) : null;
+    }
+    return `'${String(value).replace(/'/g, "''")}'`;
+  };
+  // One unfiltered page, which the threshold allows: the default ordering is
+  // by ID and ID is indexed. Twenty rows because the first one may be blank.
+  const seedPage = await spGet(`${items}?$select=Id,${col}&$top=20`);
+  const seed = readFailed(seedPage)
+    ? null
+    : ((seedPage.body.value || []).map((r) => literalFor(r[col])).find((v) => v !== null) || null);
+
+  let compared = { served: false, rows: 0 };
+  if (seed === null) {
+    record(
+      'scale.index.odata-comparison-found-list',
+      'Comparison filter on an indexed column matches rows on this list past the threshold',
+      'NOT ESTABLISHED',
+      readFailed(seedPage)
+        ? `could not sample '${col}' on '${big.Title}': HTTP ${seedPage.status}`
+        : `the first 20 rows of '${big.Title}' hold no non-empty ${usable.TypeAsString} value in '${col}', so no predicate over it is guaranteed to match`,
+    );
+  } else {
+    compared = await ask(
+      'scale.index.odata-comparison-found-list',
+      'Comparison filter on an indexed column matches rows on this list past the threshold',
+      `${col} eq ${seed}`,
+      `${col} eq <a ${usable.TypeAsString} value this list holds, redacted>`);
+  }
+  // SERVED is not enough. A comparison that returns zero rows against a value
+  // read out of the list is the query path not matching, which is the thing
+  // the control exists to rule out.
+  const controlHeld = compared.served && compared.rows > 0;
+  if (!controlHeld) {
+    log('WARN', 'The comparison control did not match rows, so the null result');
     log('WARN', 'below is NOT evidence about null tests. Report both rows together.');
   }
   // The prose already said the null row was not evidence when the control was
@@ -620,7 +685,7 @@
   await ask(
     'scale.index.odata-null-found-list',
     'Null filter on an indexed column survives the threshold',
-    `${col} eq null`, compared ? undefined : 'void');
+    `${col} eq null`, `${col} eq null`, controlHeld ? undefined : 'void');
 
   report();
   log('INFO', 'Read-only run complete. Nothing on this site was changed.');

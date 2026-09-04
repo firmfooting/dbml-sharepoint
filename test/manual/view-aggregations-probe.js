@@ -40,7 +40,9 @@
   // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
   // void, needs-human. An explicit state passed to record() always wins; the
   // classifier is the default for the rows nobody has ruled on yet.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  // ABORTED is open: it means the fixture never built, so the question was
+  // never asked and the run has nothing to settle it with.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (observed) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => observed.startsWith(p))) return 'awaiting-capture';
@@ -96,7 +98,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 5dced6f7; core v2; results v1.`);
+  log('INFO', `probe revision 015b5c29; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

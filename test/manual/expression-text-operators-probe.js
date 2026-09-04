@@ -83,9 +83,16 @@
  *   X0 failed again in the second pass (the nonsense function was stored
  *   byte-identical a second time), so the eyes-on table remains the only
  *   evidence here, and all six candidates storing cleanly means nothing on
- *   its own.
+ *   its own. X1-X6 therefore record VOID rather than settled whenever X0
+ *   does not hold: the stored bytes stay in the evidence, and the run stops
+ *   counting six storage results as six answers.
  *
  * WHAT YOU ANSWER (the eyes-on half)
+ *
+ *   expression.client-validation.candidates-discriminate-on-form
+ *        Which candidates actually discriminate on the New form? Recorded
+ *        MANUAL, so the summary counts a blank table as outstanding.
+ *
  *   The probe prints a four-row table. You open the New form, put each
  *   value into "ProbeText" (the last row is the box left EMPTY) and write
  *   down which of the six columns appear. A candidate that works shows for
@@ -268,7 +275,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -399,6 +410,12 @@
   for (const [id, , label] of CANDIDATES) {
     expect(id, `Candidate for ${label}: accepted, and stored byte-identical?`);
   }
+  // The eyes-on half gets a row of its own. It is the only thing here that can
+  // tell a working formula from one that stored perfectly and evaluates false,
+  // and it lived entirely in the prose printed after report(), which the tally
+  // cannot see, so a run with the whole table blank summarised as answered.
+  expect('expression.client-validation.candidates-discriminate-on-form',
+         'Which candidates actually discriminate on the New form, across the four values?');
 
   await resetList(LIST);
   let digest = await getDigest();
@@ -471,8 +488,10 @@
   const junkFormula = "=dbmlspNoSuchFunction([$" + SUBJECT + "], 'x')";
   const junk = await setExpression('ShowNegative', junkFormula);
   const junkStored = junk.ok ? (await readExpression('ShowNegative')).value : null;
+  const controlOutcome = junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED';
+  const controlHeld = controlOutcome === 'PASS';
   record('expression.client-validation.control-unknown-function-refused', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
-         junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
+         controlOutcome,
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
              + `${JSON.stringify(junkStored)}. SharePoint is not validating these `
@@ -513,18 +532,41 @@
       : stored === null ? 'ACCEPTED THEN DISCARDED'
       : stored === undefined ? 'NOT ESTABLISHED'
       : stored === formula ? 'ACCEPTED, BYTE-IDENTICAL' : 'ACCEPTED, NORMALISED';
+    const evidence = !read.ok
+      ? `sent ${JSON.stringify(formula)}; the MERGE returned HTTP ${set.status} `
+        + `but the read-back failed with HTTP ${read.status}`
+      : !read.parsed
+        ? `sent ${JSON.stringify(formula)}; the read-back returned HTTP `
+          + `${read.status} with a body that did not parse as JSON`
+        : stored === undefined
+          ? `sent ${JSON.stringify(formula)}; the read-back carried no `
+            + 'ClientValidationFormula property at all'
+          : `sent ${JSON.stringify(formula)}; stored ${JSON.stringify(stored)}`;
+    // X0 is what makes an ACCEPTED row mean anything. It failed on both runs
+    // so far, and these rows still settled, which reads as six working
+    // candidates. The bytes stay in the evidence; only the state changes.
+    // REFUSED is left alone above: a server rejecting what was sent is an
+    // observation that does not need the control to be worth anything.
+    const voided = !controlHeld && outcome.startsWith('ACCEPTED');
     record(id, `Candidate for ${label}: accepted, and stored byte-identical?`, outcome,
-           !read.ok
-             ? `sent ${JSON.stringify(formula)}; the MERGE returned HTTP ${set.status} `
-               + `but the read-back failed with HTTP ${read.status}`
-             : !read.parsed
-               ? `sent ${JSON.stringify(formula)}; the read-back returned HTTP `
-                 + `${read.status} with a body that did not parse as JSON`
-               : stored === undefined
-                 ? `sent ${JSON.stringify(formula)}; the read-back carried no `
-                   + 'ClientValidationFormula property at all'
-                 : `sent ${JSON.stringify(formula)}; stored ${JSON.stringify(stored)}`);
+           voided
+             ? `${evidence}. VOID: the negative control `
+               + '(expression.client-validation.control-unknown-function-refused) did not '
+               + 'hold, so "accepted" here describes storage and says nothing about the '
+               + 'formula being valid. The eyes-on table is the only evidence that '
+               + 'discriminates.'
+             : evidence,
+           voided ? 'void' : undefined);
   }
+
+  // MANUAL, so report() files it under awaiting-capture and prints that a run
+  // is still waiting on somebody to look, however clean the rows above are.
+  record('expression.client-validation.candidates-discriminate-on-form',
+         'Which candidates actually discriminate on the New form, across the four values?',
+         'MANUAL',
+         'nothing above measures this. Work the EYES-ON CHECKLIST below and report which of '
+         + `the ${CANDIDATES.length} Show* columns were visible for each of the ${CASES.length} `
+         + `values, all ${CANDIDATES.length * CASES.length} cells.`);
 
   report();
 

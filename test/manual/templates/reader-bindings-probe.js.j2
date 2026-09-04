@@ -14,7 +14,8 @@
  * where an administrator has customised the built-in, the permanently-enrolled
  * reporting account can hold edit or delete rights while the manifest still
  * reports it read-only. R2 reads the bitmap this site's `Read` actually
- * carries; R3 says whether it matches a stock one.
+ * carries; R3 says whether a CUSTOM level is wearing the name; R3b records
+ * that whether the BUILT-IN has been edited is still unanswered.
  *
  * #198: THE READER INHERITS WHATEVER ITS GROUP ALREADY HOLDS. The deploy adds
  * the account to a group found BY NAME and never inspects that group's
@@ -33,8 +34,10 @@
  * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. R2, R4 and R5 REPORT
  * what they find. They do not assert a particular bitmap or an empty binding
  * list. A site legitimately has either. R3 is the only one that judges, and
- * it judges against the value R2 read on this site, printed in full so the
- * comparison is auditable rather than hidden in a boolean.
+ * it judges ONE thing: the RoleTypeKind SharePoint stamps on the level named
+ * `Read`. It makes no comparison against any other level, on this site or
+ * elsewhere, and it cannot see an ADMINISTRATOR-EDITED built-in, which is why
+ * that question is a row of its own (R3b) rather than something R3 implies.
  *
  * THE NEGATIVE CONTROL IS R1, and it is doing real work here. Every other
  * question reports "what came back". A caller who cannot read
@@ -62,6 +65,11 @@
  *                                                          built-in Read carry?
  *   access.role-def.read-level-customised             (R3) is a custom level
  *                                                          wearing the name?
+ *   access.role-def.read-level-edited-from-stock     (R3b) has the built-in
+ *                                                          itself been edited?
+ *                                                          Open: there is no
+ *                                                          stock bitmap to
+ *                                                          compare against.
  *   access.role-binding.web-scope-by-group            (R4) which groups hold a
  *                                                          WEB-scope role
  *                                                          assignment, and what?
@@ -76,7 +84,7 @@
  *   access.group.site-group-census                    (R6) what groups does
  *                                                          this site have?
  *
- * All seven are `access` questions, which is the surface this probe files
+ * All eight are `access` questions, which is the surface this probe files
  * under, but they sit in three different scopes because they are about three
  * different things: what a level CAN do, what a principal HOLDS, and which
  * principals exist. R1 to R3 share the `role-def` scope with
@@ -158,21 +166,20 @@
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
 
-  // Learn's stock `Read`, for R3 to compare against. From "Permission levels
-  // in SharePoint": View Items, Open Items, View Versions, Create Alerts,
-  // Use Self-Service Site Creation, View Pages, Browse User Information, Use
-  // Remote Interfaces, Use Client Integration Features, Open.
+  // R3 reads ONE field and says so. The comment here used to claim it compared
+  // this site's Read against its neighbours; it never did, and the difference
+  // matters, because an administrator who edits the built-in leaves the name
+  // and the type alone. That question is R3b's, and R3b is open.
   //
-  // NOT hardcoded as a bitmap. The High/Low pair is a 64-bit mask whose exact
-  // value for a stock Read this project has never measured, and writing one
-  // from memory is the failure AGENTS.md opens with. R2 prints what this site
-  // has; R3 compares it to the OTHER built-ins on the SAME site, which is a
-  // comparison that needs no external constant.
-  const STOCK_READ_NOTE = 'compared against this site\'s own role definitions, not a remembered bitmap';
+  // No bitmap is hardcoded either. The High/Low pair for a stock Read is a
+  // 64-bit mask this project has measured on exactly one site (R2, run 1), and
+  // writing one from memory is the failure AGENTS.md opens with.
+  const TYPE_ONLY_NOTE = 'read from the RoleTypeKind SharePoint stamps on the level; no bitmap was compared';
 
   expect('access.role-def.control-roledefinitions-readable', 'CONTROL: can this caller read web/roledefinitions at all?');
   expect('access.role-def.read-level-basepermissions', 'What BasePermissions does THIS site\'s built-in Read carry?');
-  expect('access.role-def.read-level-customised', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?');
+  expect('access.role-def.read-level-customised', 'Is a CUSTOM level wearing the name Read on this site?');
+  expect('access.role-def.read-level-edited-from-stock', 'Has this site\'s BUILT-IN Read been edited away from stock?');
   expect('access.role-binding.web-scope-by-group', 'Which groups hold a WEB-scope role assignment, and what?');
   expect('access.role-binding.control-web-roleassignments-readable', 'CONTROL: can this caller enumerate web/roleassignments at all?');
   expect('access.role-binding.list-scope-by-group', 'Which groups hold a LIST-scope role assignment, and on what?');
@@ -221,11 +228,24 @@
   // site the mapping did not create.
   if (read) {
     const customType = read.RoleTypeKind === 0;
-    record('access.role-def.read-level-customised', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?',
+    record('access.role-def.read-level-customised', 'Is a CUSTOM level wearing the name Read on this site?',
       customType ? 'FAIL' : 'PASS',
       customType
-        ? `RoleTypeKind=0 means SharePoint does not consider this a built-in: a CUSTOM level is wearing the name 'Read' on this site, and the deploy would bind to it. ${STOCK_READ_NOTE}`
-        : `RoleTypeKind=${read.RoleTypeKind}, so SharePoint still regards this as the built-in Reader level. Its bitmap is reported in R2 and should be compared across tenants before anything relies on a specific value. ${STOCK_READ_NOTE}`);
+        ? `RoleTypeKind=0 means SharePoint does not consider this a built-in: a CUSTOM level is wearing the name 'Read' on this site, and the deploy would bind to it. ${TYPE_ONLY_NOTE}`
+        : `RoleTypeKind=${read.RoleTypeKind}, so SharePoint still regards this as the built-in Reader level. That is silent on whether the built-in has been EDITED, which is R3b. ${TYPE_ONLY_NOTE}`);
+
+    // ---- read-level-edited-from-stock (R3b): the half R3 cannot see -----------
+    // An administrator can edit a built-in level in place, and whether that
+    // changes its RoleTypeKind has never been measured here, so R3 passing does
+    // not rule an edit out. Deciding it needs a stock bitmap to compare
+    // against, and this project has one site's measurement, which is a
+    // reference point rather than a constant. Recorded open, with the pair this
+    // run saw, so accumulated runs build the reference the gate would need.
+    const high = read.BasePermissions && read.BasePermissions.High;
+    const low = read.BasePermissions && read.BasePermissions.Low;
+    record('access.role-def.read-level-edited-from-stock', 'Has this site\'s BUILT-IN Read been edited away from stock?',
+      'NOT ESTABLISHED',
+      `this site's Read is High=${high}, Low=${low}. Nothing compares that to a stock Read, because no stock bitmap has been measured on enough sites to be one: run 1 (2026-08-14) saw High=176, Low=138612833 on a single Team Site. Report the pair above. A second site that disagrees settles this question, and sites that agree give #209's fail-closed gate something to test against.`);
   }
 
   // ---- site-group-census (R6): survey every group on the site ---------------
@@ -351,9 +371,12 @@
   report();
   console.log('');
   console.log('=== WHAT TO DO WITH THIS ===');
-  console.log('R2/R3 answer #199 part 2: whether this site\'s Read is still Read,');
-  console.log('and whether a custom level is wearing the name. R3 FAIL means the');
+  console.log('R2/R3 answer half of #199 part 2: what this site\'s Read carries,');
+  console.log('and whether a CUSTOM level is wearing the name. R3 FAIL means the');
   console.log('deploy would bind the reporting account to a level nobody checked.');
+  console.log('R3b is the other half and stays open: nothing here can tell an');
+  console.log('EDITED built-in from a stock one, for want of a measured stock');
+  console.log('bitmap to compare against. Report the pair R3b prints.');
   console.log('R4/R5 answer #198: what a group already holds before the deploy');
   console.log('adds an account to it. Anything beyond Limited Access at web scope,');
   console.log('or any binding on a list outside the bundle, is privilege the');

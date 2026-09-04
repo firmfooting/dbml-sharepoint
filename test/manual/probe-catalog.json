@@ -1030,6 +1030,10 @@
               "depends_on": [
                 "expression.client-validation.control-unknown-function-refused"
               ]
+            },
+            {
+              "id": "expression.client-validation.candidates-discriminate-on-form",
+              "depends_on": []
             }
           ],
           "states": [
@@ -2097,6 +2101,24 @@
             {
               "id": "text.col-fmt.width-attribute",
               "depends_on": []
+            },
+            {
+              "id": "text.view-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.view-fmt.combined-markers"
+              ]
+            },
+            {
+              "id": "text.col-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.col-fmt.combined-markers"
+              ]
+            },
+            {
+              "id": "text.form-fmt.markers-render-on-page",
+              "depends_on": [
+                "text.form-fmt.combined-markers"
+              ]
             }
           ],
           "states": [
@@ -2908,6 +2930,12 @@
             },
             {
               "id": "access.role-def.read-level-customised",
+              "depends_on": [
+                "access.role-def.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.role-def.read-level-edited-from-stock",
               "depends_on": [
                 "access.role-def.control-roledefinitions-readable"
               ]

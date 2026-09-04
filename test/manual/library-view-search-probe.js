@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW TOTALS AND SEARCH DISCOVERY
  *
- * REVISION: 8cf73952
+ * REVISION: 9e764550
  *
  * ONE QUESTION:
  *   Do a document library's view totals and its search discoverability
@@ -249,7 +249,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -303,7 +307,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 8cf73952. Quote this when reporting results.');
+  log('INFO', 'probe revision 9e764550. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewSearch';
   const TWIN = 'dbmlsp Probe LibViewSearchRows';

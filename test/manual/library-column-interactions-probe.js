@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY COLUMN INTERACTIONS
  *
- * REVISION: 9c5ee9ae
+ * REVISION: aae7420d
  *
  * ONE QUESTION:
  *   How do multi-value columns and custom column formatting behave on a document library?
@@ -211,7 +211,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -265,7 +269,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 9c5ee9ae. Quote this when reporting results.');
+  log('INFO', 'probe revision aae7420d. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibColInteractions';
   const TARGET_LIB = 'dbmlsp Probe LibColTarget';

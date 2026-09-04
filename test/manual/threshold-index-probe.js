@@ -639,7 +639,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -698,7 +702,7 @@
   // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision e79a97d8. Quote this when reporting results.');
+  log('INFO', 'probe revision 0b064f54. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read

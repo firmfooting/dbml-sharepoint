@@ -242,6 +242,8 @@ def test_every_registry_emits_a_state_from_the_shared_vocabulary() -> None:
     heads = [
         "NOT ESTABLISHED",
         "SHORT: 3 of 12 disjuncts",
+        "ABORTED",
+        "ABORTED: list 'dbmlsp Probe Dates' not found",
         "MANUAL",
         "NOT REACHED",
         "PASS",
@@ -256,6 +258,8 @@ def test_every_registry_emits_a_state_from_the_shared_vocabulary() -> None:
         # VOID classifying as settled is why record() takes an explicit state:
         # a probe that voids a row passes it rather than spelling it in prose.
         assert classified == [
+            "open",
+            "open",
             "open",
             "open",
             "awaiting-capture",
