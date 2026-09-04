@@ -535,6 +535,31 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
         assert marker in text, f"the probe of record no longer mentions {marker}"
 
 
+def test_the_caml_control_rests_on_an_element_that_can_actually_select() -> None:
+    """A control whose positive arm is a known-inert element cannot pass.
+
+    `query.caml.control-bogus-element-refused` compared <Now/> with an
+    invented <Nowww/> and demanded different row counts. <Now/> in a
+    comparison is inert, measured by the A/B of 2026-07-29 that
+    condition_rendering.py records, so both arms return nothing on a site
+    behaving exactly as documented here and the control reported FAIL on
+    every correct run. Its replacement anchors the positive arm on
+    <Today/>, which the same run showed selecting rows.
+    """
+    text = (MANUAL / "datetime-sentinel-probe.js").read_text(encoding="utf-8")
+
+    assert "query.caml.control-bogus-element-refused" not in text
+    for check in (
+        "query.caml.control-real-element-selects",
+        "query.caml.bogus-element-accepted",
+        "query.caml-adhoc.now-element-inert",
+    ):
+        assert f"expect('{check}'" in text, f"{check} is not registered up front"
+    # Not a control-: a failing control voids its dependants, and SharePoint
+    # accepting an unknown element name is the answer, not a broken probe.
+    assert "control-bogus-element-accepted" not in text
+
+
 def test_now_takes_no_offset_form_and_says_so() -> None:
     """`today±N` has a verified rendering; `now±N` does not, and unverified
     is treated as unknown.

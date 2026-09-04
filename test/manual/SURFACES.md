@@ -248,13 +248,14 @@ behave on libraries.
 
 Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`,
 `folder`, `content-type`, `form`, `view`, `formula`, `access`, `query`,
-`field`
+`field`, `search`
 
 Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`,
 `library-column-interactions-probe.js`, `library-form-probe.js`,
 `library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`,
-`library-query-probe.js`, `library-field-probe.js`
+`library-query-probe.js`, `library-field-probe.js`,
+`library-view-search-probe.js`
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -271,7 +272,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `caml-chain-depth-probe.js` | `query` | the ten `-editable` shape checks, `readonlyview-*`, `edit-page-*`, `ui-chain-40` (was `E*`, `P*`, `R*`, `T2`, `U2`, `W2`, `W4`, `G*`) | `view.filter-editor.*` |
 | `caml-chain-depth-probe.js` | `query` | `chain-40-rows-listed` (was `U1`) | `view.view-page.*` |
 | `calculated-choice-operand.js` | `formula` | `person-operand`, `lookup-operand` (was `P2`, `L3`) | `expression.client-validation.*` |
-| `datetime-sentinel-probe.js` | `formula` | `control-bogus-element-refused`, `now-element-*`, `today-element-*`, `today-include-time-*` (was `CN`, `C1`–`C7`) | `query.caml.*`, `query.caml-adhoc.*`, `query.view-query.*` |
+| `datetime-sentinel-probe.js` | `formula` | `control-real-element-selects`, `bogus-element-accepted`, `now-element-*`, `today-element-*`, `today-include-time-*` (`CN` retired, `C1`–`C7`) | `query.caml.*`, `query.caml-adhoc.*`, `query.view-query.*` |
 | `datetime-sentinel-probe.js` | `formula` | `now-sentinel-stored` (was `E1`) | `expression.client-validation.*` |
 | `multi-value-probe.js` | `field` | `multichoice-eq`, `multichoice-contains`, `multichoice-includes`, `multichoice-notincludes` and the rest of the ad-hoc predicates (was `C1`–`C7`, `C9`–`C13`) | `query.caml-adhoc.*` |
 | `multi-value-probe.js` | `field` | `multichoice-membership-selects`, `multichoice-chain-selects` (was `C8`, `C14`) | `query.view-query.*` |

@@ -106,12 +106,42 @@
  *
  *
  *   -- CAML view filters, which file under `query` -------------------------
- *   query.caml.control-bogus-element-refused  (CN)
- *        NEGATIVE CONTROL: is a CAML query containing a bogus <Nowww/>
- *        element refused? The 2026-09-02 run says no: SharePoint ACCEPTED
- *        it and returned nothing. So the control reads the row counts
- *        instead, and only identical counts from <Now/> and <Nowww/> mean
- *        the element name is ignored and C1 through C5 prove nothing.
+ *   query.caml.control-real-element-selects  (replaces CN)
+ *        CONTROL: does a REAL element select rows where an invented one
+ *        selects none? <Today/> and <Nowww/> are run back to back over the
+ *        same list, and the control passes when <Today/> returns the row
+ *        stamped 27 hours ago and <Nowww/> returns nothing.
+ *
+ *        It replaces a control that could not pass. CN compared <Now/>
+ *        against <Nowww/> and demanded different row counts, but <Now/> in
+ *        a comparison is INERT: the A/B of 2026-07-29 built two views over
+ *        the same list at the same moment, differing only in that element,
+ *        and the <Today/>+IncludeTimeValue view listed rows while the
+ *        <Now/> view listed none (the full record is in
+ *        analysis/condition_rendering.py). Identical zero counts from a
+ *        known-inert element and an invented one are therefore the
+ *        PREDICTED result, not a probe failure, and CN reported FAIL on
+ *        every run that worked exactly as expected. Anchoring the positive
+ *        arm on <Today/> instead asks the question C1 to C7 actually need
+ *        answered: is the query shape parsed and the element name read?
+ *   query.caml.bogus-element-accepted
+ *        And what does SharePoint do with an unknown element inside
+ *        <Value>? Not a control, deliberately: a failing `control-` id
+ *        voids its dependants, and being ACCEPTED is the answer here
+ *        rather than a broken instrument. A CAML query naming a column
+ *        that does not exist is refused with HTTP 500 (the DM rows of the
+ *        today-source run on 2026-09-02, quoted in today-source-probe.js),
+ *        so if an unknown element name is accepted instead, a wrong
+ *        element in an emitted ViewQuery saves, reads back byte-identical
+ *        and renders an empty view. Nothing in a build or a deploy sees
+ *        that.
+ *   query.caml-adhoc.now-element-inert
+ *        Does <Now/> select anything at all? Asked in the same run and
+ *        against the same rows as the control: <Today/> returns the row
+ *        stamped 27 hours ago and <Now/> is expected to return nothing.
+ *        Ungated by the time-of-day gate, because it reads only that row,
+ *        which is strictly earlier than site-local midnight under either
+ *        candidate offset. <Now/> returning rows would be news.
  *   query.view-query.now-element-roundtrip  (C1)
  *        does a VIEW whose ViewQuery contains <Now/> save, and read back
  *        still containing it? This is the deploy surface: deploy.js writes
@@ -184,10 +214,12 @@
  *        they are about the ValidationFormula literal grammar, and the
  *        only thing they share with the rest of this probe is the list.
  *
- * READ VN AND CN FIRST. They are the only rows establishing that this probe
- * can tell acceptance from refusal on each surface. If either NEGATIVE
- * CONTROL is itself accepted, treat every result on that surface as
- * unproven rather than as evidence.
+ * READ THE TWO CONTROLS FIRST. formula.datetime.control-missing-column-refused
+ * establishes that this probe can tell acceptance from refusal on the
+ * validation surface, and query.caml.control-real-element-selects establishes
+ * that a CAML query's element name reaches the comparison at all. If the
+ * negative control is itself accepted, or the CAML control does not split,
+ * treat every result on that surface as unproven rather than as evidence.
  *
  * TIME-OF-DAY GATE: the same-day questions need "three hours ago" and
  * "three hours from now" to fall on the SAME server-local day. Run this
@@ -437,8 +469,9 @@
     log('INFO', 'column, then set several validation formulas on it and try to');
     log('INFO', 'save items stamped earlier today, later today, two days out');
     log('INFO', 'and tomorrow night, recording which SharePoint refuses. Then');
-    log('INFO', 'it runs five CAML queries testing <Now/>, <Today/> and');
-    log('INFO', 'IncludeTimeValue, plus two negative controls.');
+    log('INFO', 'it runs several CAML queries testing <Now/>, <Today/> and');
+    log('INFO', 'IncludeTimeValue, plus a negative control on the validation');
+    log('INFO', 'surface and a real-against-invented element control on CAML.');
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first, with its items.`);
     } else {
@@ -467,7 +500,9 @@
   expect('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves');
   expect('formula.datetime.today-plus-one-rejects-two-days-out', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected');
   expect('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)');
-  expect('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused');
+  expect('query.caml.control-real-element-selects', 'CONTROL: <Today/> selects rows where an invented <Nowww/> selects none');
+  expect('query.caml.bogus-element-accepted', 'What CAML does with an unknown element name inside <Value>');
+  expect('query.caml-adhoc.now-element-inert', '<Now/> against the rows <Today/> selected: does it select anything');
   expect('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact');
   expect('query.caml-adhoc.now-element-discriminates', '<Now/> WITHOUT IncludeTimeValue discriminates within one day');
   expect('query.caml-adhoc.now-element-include-time-discriminates', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day");
@@ -926,60 +961,127 @@
   const has = (titles, t) => titles.includes(t);
   // The whole point: "earlier today" in and "later today" out. Anything
   // else means the comparison is not seeing the time portion.
-  const verdictFor = (r) => {
+  const verdictFor = (r, inner) => {
     const e = has(r.titles, 'CAML earlier today');
     const l = has(r.titles, 'CAML later today');
+    // An empty result from <Now/> is the INERT signature, not a broken
+    // query: the element does not resolve, the value is empty and nothing
+    // matches, which is what an invented element does in the same position
+    // (control-real-element-selects, and the A/B of 2026-07-29). Reporting
+    // it as "yesterday not returned" would file the predicted answer as a
+    // fault in the probe.
+    if (inner === '<Now/>' && r.titles.length === 0) {
+      return 'INERT: element not resolved (matches the invented-element result)';
+    }
+    // Yesterday's row is the sanity check otherwise: any sane "< now-ish"
+    // filter must return it. If it does not, the query ran but is not doing
+    // what its shape suggests, and the earlier/later reading is not worth
+    // having.
+    if (!has(r.titles, 'CAML yesterday')) return 'SUSPECT: yesterday not returned';
     if (e && !l) return 'DISCRIMINATES (time compared)';
     if (e && l) return 'BOTH RETURNED (time ignored, compared as a later boundary)';
     if (!e && !l) return 'NEITHER RETURNED (time ignored, compared as midnight)';
     return 'INVERTED: later-today returned but earlier-today did not';
   };
 
-  // ---- control-bogus-element-refused (CN): the CAML control -----------
+  // ---- control-real-element-selects: the CAML control -----------------
+  // The control here has to have a POSITIVE arm that can actually select.
+  // The one this replaces compared <Now/> with <Nowww/> and asked for
+  // different row counts, but <Now/> in a comparison is inert, so both
+  // arms return nothing on a working site and the control failed by
+  // construction. <Today/> is the element known to select, so the pair that
+  // discriminates is <Today/> against an invented name. All three rows below
+  // read the row stamped 27 hours ago, which is strictly earlier than
+  // site-local midnight under either candidate offset, so none of them is
+  // gated on the time of day.
+  const CONTROL_ROWS = [
+    'query.caml.control-real-element-selects',
+    'query.caml.bogus-element-accepted',
+    'query.caml-adhoc.now-element-inert',
+  ];
   if (!camlReady) {
-    record('query.caml.control-bogus-element-refused', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
-           'NOT ESTABLISHED', 'the fixture rows could not be created');
+    for (const id of CONTROL_ROWS) {
+      record(id, RESULTS.find((r) => r.id === id).question,
+             'NOT ESTABLISHED', 'the fixture rows could not be created');
+    }
   } else {
-    // The control was written expecting SharePoint to REFUSE an unknown
-    // element. The 2026-09-02 run showed it does not, and that is a finding
-    // about SharePoint the evidence keeps. What still discriminates is the
-    // row count: an element being interpreted matches rows, an invented one
-    // matches none, and only IDENTICAL counts mean the name is being ignored.
+    const controlQuestion = 'CONTROL: <Today/> selects rows where an invented <Nowww/> selects none';
+    const real = await caml(ltWhen('<Today/>', false), false);
     const junk = await caml(ltWhen('<Nowww/>', false), false);
-    const question = 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused';
-    if (!junk.ok) {
-      record('query.caml.control-bogus-element-refused', question,
-             isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
-             isRefusal(junk.status)
+    const arms = `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
+      + `<Nowww/> -> ${junk.ok ? JSON.stringify(junk.titles) : `HTTP ${junk.status}`}`;
+
+    // Read positively, and NOT as a control-: what SharePoint does with an
+    // unknown element name is a finding in its own right, and voiding the
+    // C-rows on the answer it actually gives would suppress it.
+    //
+    // 4xx only. A 500 is the shape a missing FieldRef already produces, so
+    // it cannot be told apart from the query failing for another reason.
+    const refusedByName = isRefusal(junk.status) && junk.status < 500;
+    record('query.caml.bogus-element-accepted', 'What CAML does with an unknown element name inside <Value>',
+           junk.ok ? 'ACCEPTED (no element-name validation)'
+                   : refusedByName ? 'REFUSED' : 'NOT ESTABLISHED',
+           junk.ok
+             ? `HTTP ${junk.status} and ${junk.titles.length} row(s) for ${junk.viewXml}. A CAML `
+               + 'query naming a column that does not exist was refused with HTTP 500 on the '
+               + 'today-source run of 2026-09-02, so the element name inside <Value> is the '
+               + 'part nothing validates: a wrong element in an emitted ViewQuery saves, reads '
+               + 'back byte-identical and renders an empty view, where a wrong FieldRef would '
+               + 'have been refused outright.'
+             : refusedByName
                ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
-               : `the request failed with HTTP ${junk.status}, which is not the server `
-                 + 'rejecting the element. C1-C7 are unproven rather than answered: '
-                 + junk.text.slice(0, 200));
+               : `HTTP ${junk.status}, which is the request failing rather than the server `
+                 + `ruling on the element name: ${junk.text.slice(0, 200)}`);
+
+    if (!real.ok || !junk.ok) {
+      record('query.caml.control-real-element-selects', controlQuestion, 'NOT ESTABLISHED',
+             `${arms}. One arm did not run, so nothing was compared and C1-C7 are `
+             + 'unproven rather than answered: '
+             + (real.ok ? junk.text : real.text).slice(0, 200));
+    } else if (!has(real.titles, 'CAML yesterday')) {
+      record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
+             `${arms}. <Today/> did not return the row stamped 27 hours ago, which is `
+             + 'earlier than site-local midnight under either candidate offset, so the '
+             + 'comparison is not reaching the column and C1-C7 prove nothing.');
+    } else if (junk.titles.length > 0) {
+      record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
+             `${arms}. The invented element matched rows, so the element name is being `
+             + 'ignored and C1-C7 prove nothing about which element was read.');
     } else {
-      const real = await caml(ltWhen('<Now/>', false), false);
-      const counts = `unknown element accepted (no validation); `
-        + `<Now/>=${real.ok ? real.titles.length : 'refused'} rows vs <Nowww/>=${junk.titles.length} rows`;
-      if (!real.ok) {
-        record('query.caml.control-bogus-element-refused', question, 'NOT ESTABLISHED',
-               `${counts}. The <Nowww/> query was accepted and the <Now/> query it has to `
-               + `be compared against failed with HTTP ${real.status}, so nothing was `
-               + 'compared: ' + real.text.slice(0, 200));
-      } else if (real.titles.length === junk.titles.length) {
-        record('query.caml.control-bogus-element-refused', question, 'FAIL',
-               `${counts}, the SAME count, so the element name is not being interpreted `
-               + 'and C1-C5 prove nothing about <Now/> being real');
-      } else if (real.titles.length > 0 && junk.titles.length === 0) {
-        record('query.caml.control-bogus-element-refused', question, 'PASS',
-               `${counts}, so <Now/> is interpreted. SharePoint accepted an unknown `
-               + 'element without error, which is worth recording on its own, but it '
-               + 'matched nothing while the real element matched rows, and that split '
-               + 'is what the control needs.');
-      } else {
-        record('query.caml.control-bogus-element-refused', question, 'NOT ESTABLISHED',
-               `${counts}, which is neither the same count nor the empty-against-`
-               + 'populated split this control can read. C1-C5 are unproven rather '
-               + 'than answered.');
-      }
+      record('query.caml.control-real-element-selects', controlQuestion, 'PASS',
+             `${arms}, the split this control needs: the real element matched and the `
+             + 'invented one matched nothing, so the query shape is parsed and the '
+             + 'element name reaches the comparison.');
+    }
+
+    // now-element-inert: the same question the retired control was asking
+    // backwards. <Now/> is compared against the arm that just selected, so
+    // an empty result is an answer rather than an absence.
+    const inertQuestion = '<Now/> against the rows <Today/> selected: does it select anything';
+    const nowArm = await caml(ltWhen('<Now/>', false), false);
+    if (!real.ok || !nowArm.ok) {
+      record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
+             `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
+             + `<Now/> -> ${nowArm.ok ? JSON.stringify(nowArm.titles) : `HTTP ${nowArm.status}`}. `
+             + 'One arm did not run, so the two were not compared: '
+             + (real.ok ? nowArm.text : real.text).slice(0, 200));
+    } else if (!has(real.titles, 'CAML yesterday')) {
+      record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
+             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
+             + 'The <Today/> arm did not return the dependency row either, so an empty '
+             + '<Now/> result says nothing about <Now/>.');
+    } else if (nowArm.titles.length === 0) {
+      record('query.caml-adhoc.now-element-inert', inertQuestion, 'INERT (matches the invented-element signature)',
+             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> [], from the same list at `
+             + 'the same moment with only the element changed. That is the signature an '
+             + 'invented element leaves in the same position, and it agrees with the A/B '
+             + 'of 2026-07-29 recorded in analysis/condition_rendering.py.');
+    } else {
+      record('query.caml-adhoc.now-element-inert', inertQuestion, 'SELECTS (time compared)',
+             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
+             + '<Now/> matched rows, which contradicts the 2026-07-29 A/B and the filter '
+             + 'panel showing an empty value for that element. Re-run before acting on it, '
+             + 'and if it holds, conditions.py has a rendering to reconsider.');
     }
   }
 
@@ -1061,11 +1163,7 @@
       record(id, question, 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 260)}`);
       continue;
     }
-    // Yesterday's row is the sanity check: any sane "< now-ish" filter must
-    // return it. If it does not, the query ran but is not doing what its
-    // shape suggests, and the earlier/later reading is not worth having.
-    const sane = has(r.titles, 'CAML yesterday');
-    record(id, question, sane ? verdictFor(r) : 'SUSPECT: yesterday not returned',
+    record(id, question, verdictFor(r, inner),
            `${r.viewXml} -> ${JSON.stringify(r.titles)}`);
   }
 
@@ -1282,9 +1380,13 @@
   report();
   console.log('\nHOW TO READ THIS RUN');
   console.log('  The two control- rows, formula.datetime.control-missing-column-');
-  console.log('  refused and query.caml.control-bogus-element-refused, must both be');
+  console.log('  refused and query.caml.control-real-element-selects, must both be');
   console.log('  PASS. If either is FAIL, the surface it guards proved nothing and');
   console.log('  its rows are unproven, not wrong.');
+  console.log('  now-element-inert reporting INERT is the EXPECTED answer, not a');
+  console.log('  failure: <Now/> does not resolve in a comparison, and the row');
+  console.log('  records that positively. bogus-element-accepted is a finding');
+  console.log('  rather than a control, so ACCEPTED there voids nothing.');
   console.log('  control-now-function-allows-past and control-today-allows-');
   console.log('  yesterday are POSITIVE CONTROLS, and now-function-rejects-future');
   console.log('  and today-rejects-earlier-today are only evidence when their');
@@ -1295,7 +1397,7 @@
   console.log('  night decides whether it is a 24-hour or 48-hour window, and only');
   console.log('  answers when control-site-time-zone says this browser shares the');
   console.log('  site day.');
-  console.log('  The two query.caml-adhoc.now-element-* rows decide whether a `now`');
+  console.log('  The query.caml-adhoc.now-element-* rows decide whether a `now`');
   console.log('  sentinel could do anything a view cannot already do; today-element-');
   console.log('  date-granular confirms what seven shipped views get today.');
   console.log('  The two query.view-query.today-include-time-* rows are the ones');
