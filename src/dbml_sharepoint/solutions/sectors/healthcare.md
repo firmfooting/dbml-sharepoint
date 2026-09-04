@@ -67,7 +67,7 @@ A SharePoint list never replaces a mandated system:
 | Where digitised records may be filed | records-digitisation | One row per platform: can it keep a record, or only store a file. The register a digitisation program needs before it scans anything |
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
 | Corporate risk tiers | risk-register | See boundary 2 |
-| Project delivery risk, actions, issues, decisions | raid-log | The standing RAID log for one project site; a risk that grows beyond the project graduates to risk-register |
+| Project delivery risk, actions, issues, decisions | programme-governance | Risks, actions, issues and decisions on one site with the accountabilities that answer for them; a risk that grows beyond the programme graduates to risk-register |
 | Everything else | the general library | Assets, contracts, onboarding, training, service requests... |
 
 ## A pragmatic first-90-days sequence

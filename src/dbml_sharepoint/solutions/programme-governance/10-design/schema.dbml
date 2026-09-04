@@ -20,9 +20,8 @@ Enum gov_workstream_phase {
   "Closed"
 }
 
-// Matrix rows 1-5, and matrix columns 1-5. Both are lifted unchanged from
-// raid-log: the matrix formulas in mapping.yaml are keyed to exactly these
-// members in exactly this order.
+// Matrix rows 1-5, and matrix columns 1-5. The matrix formulas in mapping.yaml
+// are keyed to exactly these members in exactly this order.
 Enum gov_likelihood {
   "Rare"
   "Unlikely"
@@ -39,9 +38,9 @@ Enum gov_consequence {
   "Business Critical"
 }
 
-// Open or closed, with no Provisional step, unchanged from raid-log. A
-// programme risk has a named owner from the moment it is raised, so a draft
-// state would only be a queue nobody drains.
+// Open or closed, with no Provisional step. A programme risk has a named owner
+// from the moment it is raised, so a draft state would only be a queue nobody
+// drains.
 Enum gov_risk_status {
   "Open"
   "Closed"
@@ -297,9 +296,9 @@ Table Activity {
   ReviewStatus     gov_review_status  [not null, default: 'Current', note: 'Set Needs review the moment you know a row is wrong; that is what makes it visible. Retired keeps the history without cluttering the register']
   LastConfirmed    date                 [note: 'The date somebody last checked that this row is still true. Blank until the first confirmation actually happens; the whole confirmation cadence counts from here']
   ConfirmedBy      person               [note: 'Who did that check. Not the same as who last edited the row; an edit is not a confirmation']
-  // Calculated: the cadence formula lives in mapping.yaml. It carries
-  // raci-matrix issue #5 unchanged, where adding months overflows rather than
-  // clamping at month end; fixing it here would fork a defect fixed upstream.
+  // Calculated: the cadence formula lives in mapping.yaml, and carries the
+  // month-end overflow documented there. NextReviewDue on Risk has the same
+  // one; the two should be fixed together.
   ConfirmationDue  calculated_date      [note: 'When this row must be re-confirmed. Calculated from Last Confirmed and Criticality; blank on a retired row']
 
   // Domain is dropped; Workstream replaces it as the grouping axis. The

@@ -64,7 +64,7 @@ def test_non_title_display_column_defers_lookup_to_phase2() -> None:
 
     The field wave runs one lane per list in parallel, so a lookup reading a
     non-Title display field can read it before the target's lane has created
-    it. Regression: the raid-log `RelatedRisk` displayed the calculated
+    it. Regression: a `RelatedRisk` lookup displayed the calculated
     `LiveRiskTitle` and failed with "target display field ... does not exist".
     """
     schema = parse_dbml(FIXTURES / "simple.dbml")

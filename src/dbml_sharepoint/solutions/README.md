@@ -44,7 +44,6 @@ hand-off into that same improvement/investment chain.
 | Template | Process | Highlights |
 | --- | --- | --- |
 | [risk-register](risk-register/) | Organisational risk | **Self-rating 5x5 matrix**: rating and score calculated, matrix-inconsistent entries impossible |
-| [raid-log](raid-log/) | Project RAID log | Risks, actions, issues and decisions for one project, read together in the project meeting |
 | [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
@@ -52,7 +51,6 @@ hand-off into that same improvement/investment chain.
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation -> owner -> evidence -> review |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation, the lookup every other register's "per your delegations" points at |
-| [raci-matrix](raci-matrix/) | Who does what, and who answers for it | One Accountable per row, structurally; consulted parties must state their input; criticality-driven re-confirmation |
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
 | [records-digitisation](records-digitisation/) | Can a digitised record be kept in this platform? | Platform-by-platform capability assessment: six answers that can each say *Unknown*, three multi-value evidence lists, and a verdict a person types |
 | [programme-governance](programme-governance/) | Programme delivery, accountability and provider requests | Nine lists on one site: RAID and RACI merged, plus the service requests only the provider can action |

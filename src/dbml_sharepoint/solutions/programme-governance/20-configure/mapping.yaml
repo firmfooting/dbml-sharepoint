@@ -1,8 +1,9 @@
-# Programme governance: physical mapping. Ten lists on one site, merging a
-# programme delivery layer (raid-log) with a standing accountability layer
-# (raci-matrix) and a service request queue for tenant-level change.
-# GOV names what the lists are, governance, which is the level the other
-# families name at (RR, RACI, RAID), rather than the programme instance.
+# Programme governance: physical mapping. Ten lists on one site: a programme
+# delivery layer (risks, actions, issues, decisions), a standing accountability
+# layer (activities, stakeholders, involvements) and a service request queue
+# for tenant-level change. The first two shipped as separate families until
+# 2026-09-04, when keeping three families in step stopped being worth it.
+# GOV names what the lists are, governance, rather than the programme instance.
 # Groups and levels take the stem through the {prefix} placeholder.
 prefix: "GOV_"
 # The live site was provisioned with no list prefix while its groups and
@@ -25,7 +26,8 @@ entities:
   ServiceRequest: { kind: List, base_template: 100, site_role: default,
                     renamed_from: [TenantRequest] }
   # The RelatedRisk picker shows LiveRiskTitle, which is calculated and so
-  # cannot be indexed. raid-log's trade, taken for the same reason.
+  # cannot be indexed. A picker that offers a closed risk is worse than an
+  # unindexed display column on a list this size.
   Risk:           { kind: List, base_template: 100, site_role: default,
                     display_column: LiveRiskTitle,
                     accept_unindexable_display_column: true,
@@ -59,7 +61,7 @@ reporting:
 # 200 on the three accountability lists because version history is this
 # family's audit for self-service confirmation: anyone named Responsible or
 # Accountable may correct their own row, and the quarterly review reads the
-# history of every row changed since the last one. raci-matrix's number.
+# history of every row changed since the last one.
 versioning:
   default:
     enable_versioning: true
@@ -118,7 +120,7 @@ watched_lists:
   # from both forms, and rendered only because a watched column must be.
   - { entity: Issue, column: NotifiedAt }
 
-# The 5x5 matrix, carried from raid-log unchanged (rows = likelihood
+# The 5x5 matrix (rows = likelihood
 # Rare..Almost Certain; columns = consequence Minor..Business Critical):
 #
 #                 Minor   Moderate  Substantial  Major    Business Critical
@@ -135,11 +137,13 @@ watched_lists:
 # the worst case rather than failing. The matrix is 5x5, so changing the enums
 # means rewriting the 25 cells anyway.
 #
-# ConfirmationDue carries raci-matrix's known month-end overflow (its issue
-# #5): DATE(YEAR(d), MONTH(d)+N, DAY(d)) overflows rather than clamping, so a
-# confirmation recorded on 31 August falls due on 3 March rather than 28
-# February. Not fixed here on purpose. Fixing it in one of three families that
-# share the formula forks a defect that should be fixed once, upstream.
+# KNOWN, AND NOW OWNED HERE. ConfirmationDue and NextReviewDue both add months
+# with DATE(YEAR(d), MONTH(d)+N, DAY(d)), which overflows rather than clamping,
+# so a confirmation recorded on 31 August falls due on 3 March rather than 28
+# February. This was carried unfixed while raci-matrix held the same formula
+# and the fix belonged upstream; that family is retired, so the only other
+# copy is risk-register's NextReviewDue. Tracked rather than fixed in passing,
+# because the two copies should be fixed together.
 calculated_formulas:
   # Criticality x frequency, on process-register's 1-to-9 shape but NOT its
   # factors. That register scores what to digitise, where pain is the driver;
@@ -467,7 +471,7 @@ display_names:
 #
 # Deliberate omissions. ActivityKind and ActivityRole are axes rather than
 # states (what the activity IS, and what standing position it confers), and
-# raci-matrix leaves the first unformatted for that reason; colouring them
+# the accountability layer has always left the first unformatted; colouring them
 # would hand the fleet's severity vocabulary a second meaning. RiskResponse is
 # a taxonomy of strategies, same reason. RaisedDate, ResolvedDate,
 # AuthorisedDate, EscalatedDate and DecisionDate record when something
@@ -1124,8 +1128,8 @@ views:
         - { field: Status, op: eq, value: "Open" }
       sort:
         - { field: RiskScore, direction: desc }
-      # The second row-level signal, reserved for Extreme and carried from
-      # raid-log. The wash reads ResidualRiskRating, so it must stay in this
+      # The second row-level signal, reserved for Extreme. The wash reads
+      # ResidualRiskRating, so it must stay in this
       # view's fields: view formatting can only read columns the view shows.
       formatting: formatting/row-extreme.json
       widths:
@@ -1502,8 +1506,8 @@ form_visibility:
       # Defaults to today and is corrected on the Edit form when the row is
       # actually re-confirmed. An edit is not a confirmation.
       LastConfirmed: { new: false }
-      # Widened from raci-matrix's two conditions to three, to match the
-      # third branch of the save rule below. Edit the two together.
+      # Three conditions, matching the third branch of the save rule below.
+      # Edit the two together.
       EscalationRoute:
         when:
           any_of:
