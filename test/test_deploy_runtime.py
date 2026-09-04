@@ -2951,6 +2951,101 @@ def test_a_refused_index_readback_fails_every_column_closed(
     )
 
 
+# Two views on one list, declaring the SAME two columns in OPPOSITE orders.
+# That is what makes both claims below visible at once: a ChangeSet drawn
+# around the wrong unit merges them, and a transport that reorders parts
+# cannot produce two batches that disagree. Single-word titles for the same
+# reason `_GUARDED_VIEWS` uses them: a title equal to its own URL slug keeps
+# the mock's view state under one key across the create-then-rename.
+_TWO_VIEW_ORDERS = """
+views:
+  Escalation:
+    - title: "TitleFirst"
+      fields: [Title, Note]
+    - title: "NoteFirst"
+      fields: [Note, Title]
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
+    """The column reset and adds travel as ChangeSet parts, one $batch per view.
+
+    445 of the views phase's 1,221 requests on a ten-list family were
+    addviewfield, the largest single bucket in the deploy, and the deploy is
+    throttle-bound, so the count is what costs.
+
+    ORDER is asserted, not just membership. A view's column order is a
+    declared setting, OData v3 says a ChangeSet MAY be reordered, and the
+    live measurement that says SharePoint does not is recorded at the call
+    site. This pins the half that is ours: the parts leave in declared order,
+    with the reset first, so a reordering here would be a bug in the deploy
+    rather than in the tenant.
+    """
+    body = _declared_deploy_js(tmp_path, _TWO_VIEW_ORDERS).rstrip()
+    assert body.endswith("})();")
+    # The harness that keeps per-view state. `_ADOPTED_HARNESS` alone gives
+    # every view one id and one .aspx name, so two declared views read back
+    # as the same object and fail their own URL check. No policy: neither
+    # view is filtered, so the settings page it also serves is never asked
+    # for.
+    output = _run(
+        f"{_view_guard_harness({})}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    summary = _summary_of(output)
+    assert summary.get("errors") == [], summary["errors"]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    fielding = [
+        b for b in batches
+        if any("/viewfields/" in op["url"] for op in b["ops"])
+    ]
+    # Three views, not two: the deployer also reconciles the built-in All
+    # Items. One request each is the claim, and the view is the boundary
+    # because the reset clears the whole collection and a ChangeSet drawn any
+    # wider would wipe the adds queued ahead of it.
+    assert len(fielding) == 3, (
+        f"three views wrote their columns in {len(fielding)} $batch request(s)"
+    )
+    ordered = {}
+    for batch in fielding:
+        views = {
+            match.group(1) for match in (
+                re.search(r"views/getbytitle\('([^']+)'\)", op["url"])
+                for op in batch["ops"]
+            ) if match
+        }
+        assert len(views) == 1, (
+            f"one ChangeSet spans {len(views)} views: {views}"
+        )
+        for op in batch["ops"]:
+            assert op["method"] == "POST", (
+                "a view-field part would MERGE rather than POST the function"
+            )
+        assert "/viewfields/removeallviewfields" in batch["ops"][0]["url"], (
+            "the reset is not the first part, so the adds ahead of it are "
+            f"cleared by it: {[op['url'] for op in batch['ops']]}"
+        )
+        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"])
+                 for op in batch["ops"][1:]]
+        assert all(added), (
+            f"a part after the reset is not an addviewfield: {batch['ops']}"
+        )
+        ordered[views.pop()] = [m.group(1) for m in added if m]
+    declared = {k: v for k, v in ordered.items() if k in ("TitleFirst", "NoteFirst")}
+    assert declared == {"TitleFirst": ["Title", "Note"],
+                        "NoteFirst": ["Note", "Title"]}, (
+        f"the parts did not leave in each view's declared order: {ordered}"
+    )
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None:
     """The DefaultValue MERGEs travel as ChangeSet parts, one $batch per list.

@@ -5114,7 +5114,11 @@
       await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
       let viewDigest = await getDigest();
       const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
-      const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);
+      // Kept as a path as well as a URL: apiUrl() is what a $batch part takes,
+      // so the batched field writes below address the view by the same
+      // spelling every single write here does rather than a second one.
+      const viewPath = `${listPath}/views/getbytitle('${odataName(view.title)}')`;
+      const viewUrl = apiUrl(viewPath);
       const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);
       const desiredBasename = `${view.url_slug}.aspx`;
       const urlBasename = (v) => String(v && v.ServerRelativeUrl || '').split('/').pop();
@@ -5288,10 +5292,33 @@
       const sameFields = actualFields.length === view.view_fields.length
         && actualFields.every((name, index) => name === view.view_fields[index]);
       if (!sameFields) {
-        await postJson(`${viewUrl}/viewfields/removeallviewfields`, {}, viewDigest);
+        // One ChangeSet per view rather than one POST per column: the largest
+        // single bucket of requests in the whole deploy (445 of this phase's
+        // 1,221 on a ten-list family), and the deploy is throttle-bound, so
+        // the count is what costs.
+        //
+        // This depends on ORDER being preserved inside a ChangeSet, which
+        // OData v3 does not promise (it says order is "not significant" and a
+        // service MAY reorder) and which #410 deliberately left unproven for
+        // the phases whose writes commute. A view's column order is a
+        // declared, verified setting, so it was MEASURED instead: a live
+        // tenant, 2026-09-04, four runs, two scrambled orders per run that
+        // matched neither creation nor alphabetical order. removeallviewfields
+        // plus six addviewfield parts in ONE ChangeSet were accepted 7/7 and
+        // read back in the order sent, every run. Cost over twelve columns,
+        // same four runs: 0.33/0.46/0.47/0.36 s batched against
+        // 1.99/1.31/0.95/4.33 s sequential.
+        //
+        // Safe against that claim turning out to be tenant-specific: the
+        // readback below compares the column list position by position and
+        // fails this view closed, so a service that ever does reorder is
+        // reported rather than shipped.
+        const fieldBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+        await fieldBatch.add('POST', `${viewPath}/viewfields/removeallviewfields`, {});
         for (const name of view.view_fields) {
-          await postJson(`${viewUrl}/viewfields/addviewfield('${odataName(name)}')`, {}, viewDigest);
+          await fieldBatch.add('POST', `${viewPath}/viewfields/addviewfield('${odataName(name)}')`, {});
         }
+        await fieldBatch.done();
       }
       // Row formatting is a declared view setting; views without a
       // declaration keep any hand-applied format.
