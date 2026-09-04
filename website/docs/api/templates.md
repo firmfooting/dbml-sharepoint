@@ -111,6 +111,12 @@ Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `ext
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
+### `_http_batch.js.j2`
+
+Included by: `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
+
+Shared OData $batch writer. Included only by scripts that make writes (deploy, rollback, demo); the read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text. Expects `spHeaders` from _http_write.js.j2, so a ChangeSet part carries exactly the headers a single write does, plus `isThrottled`, `spError` and `dbg` from _http.js.j2. getDigest, fetchWithRetry, apiUrl and log arrive as CONSTRUCTOR ARGUMENTS rather than off the enclosing scope, so this stays a transport primitive with nothing to reimplement. MEASURED on a live tenant by test/manual/throttle-batch-probe.js (#404), recorded 2026-09-04: 20, 100, 200, 500 and 750-operation batches all landed clean, and a 1000-operation batch came back HTTP 200 with 637 parts at 201 and 363 at 500. A clean 750 beside a partial 1000 says the ceiling is body SIZE and not operation count, which is why this budgets bytes. The probe's control read the item count back and confirmed the ChangeSet parts were accepted, so the encoding below is the proven spelling rather than a plausible one, digest on both the outer request and every part included.
+
 ### `_http_write.js.j2`
 
 Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`

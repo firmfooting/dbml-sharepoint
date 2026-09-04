@@ -288,6 +288,184 @@
     ...extra,
   });
 
+  // The accumulated body is flushed before it passes this, and it is a
+  // constructor option. 200 KiB is far under both measured points above, and
+  // the digest each part repeats puts roughly 200 operations in it.
+  const BATCH_BODY_BUDGET_BYTES = 200 * 1024;
+  // What the envelope costs around the parts: the outer boundary, the
+  // ChangeSet content type, and both closing boundaries.
+  const BATCH_ENVELOPE_BYTES = 256;
+  // A boundary token is a fixed shape, so a placeholder of the same length
+  // measures a part exactly without committing to the token its request will
+  // eventually carry.
+  const BATCH_BOUNDARY_SAMPLE = 'changeset_0000000000000000';
+  const batchBoundary = (label) => {
+    const chunk = () => Math.random().toString(36).slice(2, 10);
+    return `${label}_${chunk()}${chunk()}`;
+  };
+  const utf8Bytes = (text) => new TextEncoder().encode(String(text)).length;
+
+  // Collapses many single writes into one $batch request. The JS equivalent
+  // of a context manager, since a script pasted into a console has no
+  // `with`: add() accumulates, flush() sends, done() sends what is left.
+  class BatchWriter {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      // The protocol wants an absolute operation URL in each request line and
+      // that is the spelling the probe proved. Safe to read off the page:
+      // _site_guard.js.j2 has already refused to run unless this origin is
+      // the one the script was built for.
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      this.opsSent = 0;
+    }
+
+    // `path` is what apiUrl() takes, so an operation is spelled here exactly
+    // as it would be for a single write. Awaitable because a batch that has
+    // reached the budget is flushed here rather than at the caller's
+    // discretion.
+    async add(method, path, body, extraHeaders = {}) {
+      const op = {
+        method,
+        url: `${this.origin}${this.apiUrl(path)}`,
+        payload: JSON.stringify(body === undefined ? {} : body),
+        extraHeaders,
+      };
+      // Measured off the encoder rather than from a table of header sizes, so
+      // the estimate cannot drift from what actually goes out. The digest is
+      // cached, so asking for it here costs no extra request.
+      const cost = utf8Bytes(this._part(op, await this.getDigest(), BATCH_BOUNDARY_SAMPLE));
+      // Flush BEFORE adding, so the request that goes out is the one already
+      // measured to fit rather than the one that just passed the budget.
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One application/http part: a full request line, the verbose-OData write
+    // headers with the digest among them, and the JSON body.
+    _part(op, digest, inner) {
+      const headers = Object.entries(spHeaders(digest, op.extraHeaders))
+        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      return `--${inner}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `${op.method} ${op.url} HTTP/1.1\r\n`
+        + headers
+        + '\r\n'
+        + `${op.payload}\r\n`;
+    }
+
+    // The multipart/mixed envelope holding one ChangeSet of those parts.
+    _encode(ops, digest, outer, inner) {
+      return `--${outer}\r\n`
+        + `Content-Type: multipart/mixed; boundary=${inner}\r\n`
+        + '\r\n'
+        + ops.map((op) => this._part(op, digest, inner)).join('')
+        + `--${inner}--\r\n`
+        + `--${outer}--\r\n`;
+    }
+
+    // Every part's status line, in order. The response echoes no request
+    // line, so each match is one operation's outcome.
+    _statuses(text) {
+      const statuses = [];
+      const statusRe = /HTTP\/1\.1\s+(\d{3})/g;
+      let match;
+      while ((match = statusRe.exec(text)) !== null) statuses.push(Number(match[1]));
+      return statuses;
+    }
+
+    // Refusals are logged as well as thrown: the transcript is what an
+    // operator pastes back, and a caller that swallows the error would
+    // otherwise leave no trace of writes that never landed.
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, landed: 0, statuses: [] };
+      // Taken before the request, so a throw cannot leave the same operations
+      // queued to be written a second time.
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const inner = batchBoundary('changeset');
+      const body = this._encode(ops, digest, outer, inner);
+      // No Accept header on purpose: #401 showed a JSON Accept turns the
+      // throttling-page redirect into a 406 that only its URL identifies.
+      // Omitting it keeps the redirect a plain page load.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      // A throttle that outlasted fetchWithRetry's retries is a tenant state
+      // the surrounding phase has to pace against, not a refused write. It is
+      // reported as its own thing so a caller can tell the two apart.
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) was throttled (HTTP ${response.status}) and none landed`,
+          { throttled: true, sent: ops.length, landed: 0, refused: ops.length, statuses: [] },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, landed: 0, refused: ops.length, statuses: [] },
+        );
+      }
+      // The outer request answers 200 even when ChangeSet parts fail, so the
+      // per-part statuses are the only thing that says a write landed. A
+      // plain ok() here would report success while silently dropping writes.
+      const statuses = this._statuses(text);
+      if (statuses.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s) answered HTTP ${response.status} with `
+          + `${statuses.length} part status(es), so the writes cannot be accounted for`,
+          { throttled: false, sent: ops.length, landed: 0, refused: ops.length, statuses },
+        );
+      }
+      const landed = statuses.filter((status) => status >= 200 && status < 300).length;
+      const refused = statuses.length - landed;
+      this.opsSent += landed;
+      if (refused) {
+        const throttledParts = statuses.filter((status) => status === 429 || status === 503).length;
+        throw this._refuse(
+          `$batch of ${ops.length} operation(s): ${landed} landed, ${refused} refused `
+          + `(part statuses ${statuses.join(', ')})`,
+          { throttled: throttledParts > 0, sent: ops.length, landed, refused, statuses },
+        );
+      }
+      dbg(`$batch sent ${ops.length} operation(s) in ${utf8Bytes(body)} bytes; all landed.`);
+      return { requests: 1, landed, statuses };
+    }
+
+    // The close. flush() is already a no-op on an empty queue, so this takes
+    // no second emptiness check that could disagree with it about one.
+    async done() {
+      return this.flush();
+    }
+  }
+
   let cachedDigest = null;
   let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
