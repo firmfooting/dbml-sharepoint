@@ -1,15 +1,14 @@
 {# Shared OData $batch writer. Included only by scripts that make writes
    (deploy, rollback, demo); the read-only assess script includes the
    transport partial alone, keeping its no-write property auditable from its
-   text. ChangeSet parts carry nometadata headers inline; a part with
-   odata=verbose is refused HTTP 400 (live finding 2026-09-04). A part's verb
-   goes in its request line rather than in an X-HTTP-Method header, so a
-   caller passes the method and headers of the single write it replaces and
-   the part still comes out in the documented shape. Expects
-   `isThrottled`, `spError` and `dbg` from _http.js.j2. getDigest,
-   fetchWithRetry, apiUrl and log arrive as CONSTRUCTOR ARGUMENTS rather
-   than off the enclosing scope, so this stays a transport primitive with
-   nothing to reimplement.
+   text. Expects `spHeaders` from _http_write.js.j2, so a ChangeSet part
+   carries exactly the headers a single write does, plus `isThrottled`,
+   `spError` and `dbg` from _http.js.j2. A part's verb goes in its request
+   line rather than in an X-HTTP-Method header, so a caller passes the
+   method and headers of the single write it replaces and the part still
+   comes out in the documented shape. getDigest, fetchWithRetry, apiUrl and
+   log arrive as CONSTRUCTOR ARGUMENTS rather than off the enclosing scope,
+   so this stays a transport primitive with nothing to reimplement.
 
    MEASURED on a live tenant by test/manual/throttle-batch-probe.js (#404),
    recorded 2026-09-04: 20, 100, 200, 500 and 750-operation batches all
@@ -19,7 +18,32 @@
    bytes. The probe's control read the item count back and confirmed the
    ChangeSet parts were accepted, so the encoding below is the proven
    spelling rather than a plausible one, digest on both the outer request
-   and every part included. #}
+   and every part included.
+
+   The PART ENCODING was measured separately, recorded 2026-09-04, after a
+   live governance deploy landed every POST part and refused every MERGE
+   part with HTTP 400. Nine candidate spellings were sent one per $batch
+   against a scratch list and each verdict read back off the object rather
+   than off the part status. Two things decide acceptance, and the earlier
+   reading of that 400 had them the wrong way round:
+
+     1. The VERB MUST BE IN THE REQUEST LINE. X-HTTP-Method does not tunnel
+        inside a part. SharePoint reads the part as the verb it was given,
+        so a tunnelled MERGE arrives as a POST to the entity and its body
+        keys are read as method arguments: "The parameter Description does
+        not exist in method GetById". `POST` + X-HTTP-Method: MERGE was
+        refused under both nometadata and verbose parts.
+     2. THE BODY ANNOTATION MUST MATCH THE PART'S CONTENT TYPE. `__metadata`
+        is the verbose transport annotation, so a part declaring
+        odata=nometadata is refused with "The property '__metadata' does not
+        exist on type 'SP.FieldText'".
+
+   `MERGE <url>` with verbose part headers and a __metadata body was
+   accepted (HTTP 204, read back applied), as was a bodyless function POST
+   under verbose part headers. odata=verbose is therefore NOT what a part is
+   refused for; the earlier finding to that effect was drawn from a shape
+   that also carried the tunnelled header, which is what SharePoint was
+   actually refusing. Parts carry spHeaders for that reason. #}
   // The accumulated body is flushed before it passes this, and it is a
   // constructor option. 200 KiB is far under both measured points above, and
   // the digest each part repeats puts roughly 200 operations in it.
@@ -84,12 +108,12 @@
       this.pendingBytes += cost;
     }
 
-    // One application/http part: a full request line, the JSON body, and
-    // nometadata headers with the digest among them. The nometadata spelling
-    // decides whether the part is accepted at all: a ChangeSet part carrying
-    // odata=verbose is refused with HTTP 400 (live finding 2026-09-04; the
-    // throttle-batch probe's parts used nometadata and landed; the shared
-    // spHeaders verbosity is for single writes, not for batch parts).
+    // One application/http part: a full request line, the same verbose-OData
+    // write headers the single write sends, and the JSON body. Sending the
+    // single write's own headers is what keeps the body it was handed valid:
+    // a field body carries `__metadata`, which only exists in verbose OData,
+    // so a part declaring nometadata is refused HTTP 400 for a property that
+    // "does not exist on type 'SP.FieldText'" (live finding 2026-09-04).
     _part(op, digest, inner) {
       // A single SharePoint write tunnels MERGE and DELETE through
       // X-HTTP-Method on a POST, but a ChangeSet part carries the verb in its
@@ -98,16 +122,18 @@
       // example spells a delete `DELETE <url> HTTP/1.1` with If-Match, and
       // PnPjs (pnp/pnpjs packages/sp/batching.ts) reads X-HTTP-Method off the
       // request, uses it as the request-line method and DELETES the header
-      // before writing the part. Translating here is what lets a caller hand
-      // add() the same method and headers the single-write helper sends.
+      // before writing the part. Measured to be required rather than merely
+      // documented: a part left carrying the header reaches SharePoint as a
+      // POST to the entity, which reads the body keys as method arguments and
+      // refuses with "The parameter Description does not exist in method
+      // GetById" (live finding 2026-09-04). Translating here is what lets a
+      // caller hand add() the same method and headers the single-write helper
+      // sends.
       const extra = { ...(op.extraHeaders || {}) };
       const tunnelled = extra['X-HTTP-Method'];
       delete extra['X-HTTP-Method'];
-      const headers = 'Accept: application/json;odata=nometadata\r\n'
-        + 'Content-Type: application/json;odata=nometadata\r\n'
-        + `X-RequestDigest: ${digest}\r\n`
-        + Object.entries(extra)
-          .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      const headers = Object.entries(spHeaders(digest, extra))
+        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
       return `--${inner}\r\n`
         + 'Content-Type: application/http\r\n'
         + 'Content-Transfer-Encoding: binary\r\n'

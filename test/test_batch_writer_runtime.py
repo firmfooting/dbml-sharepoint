@@ -199,8 +199,8 @@ def test_a_batch_body_encodes_every_operation() -> None:
     assert body.count(f"X-RequestDigest: {DIGEST}\r\n") == 3, (
         "the digest is not on every ChangeSet part"
     )
-    assert body.count("Accept: application/json;odata=nometadata\r\n") == 3
-    assert body.count("Content-Type: application/json;odata=nometadata\r\n") == 3
+    assert body.count("Accept: application/json;odata=verbose\r\n") == 3
+    assert body.count("Content-Type: application/json;odata=verbose\r\n") == 3
     assert (
         f"POST {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')/items HTTP/1.1\r\n" in body
     ), "an operation's request line is not an absolute url"
@@ -245,6 +245,44 @@ def test_a_part_with_no_body_carries_no_payload() -> None:
     assert body.count(f"X-RequestDigest: {DIGEST}\r\n") == 1, (
         "the part carries no digest"
     )
+
+
+def test_a_metadata_body_goes_out_under_a_verbose_part() -> None:
+    """`__metadata` and the part's content type have to agree.
+
+    Every field write the deploy batches carries a `__metadata` annotation,
+    because that is what the single write it replaces carries. The annotation
+    only exists in verbose OData, so a part declaring nometadata is refused
+    HTTP 400: "The property '__metadata' does not exist on type
+    'SP.FieldText'" (live finding 2026-09-04, measured one candidate spelling
+    per $batch with each verdict read back off the field). A whole live deploy
+    of Index, Default and seal writes was lost to that mismatch, and nothing
+    between here and the tenant can see it, so the pairing is pinned.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _multipart_response([204])}]},
+        f"""
+        {_writer()}
+        await writer.add(
+          'POST',
+          "web/lists(guid'11111111-1111-1111-1111-111111111111')"
+          + "/fields(guid'22222222-2222-2222-2222-222222222222')",
+          {{ __metadata: {{ type: 'SP.Field' }}, Indexed: true }},
+          {{ 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }},
+        );
+        await writer.done();
+        return {{ body: requests[0].opts.body }};
+        """,
+    )
+    body = result["body"]
+    assert '"__metadata":{"type":"SP.Field"}' in body, (
+        "the caller's __metadata annotation did not survive into the part"
+    )
+    assert "Content-Type: application/json;odata=verbose\r\n" in body, (
+        "a __metadata body went out under a part that does not declare verbose "
+        "OData, which SharePoint refuses HTTP 400 for an unknown property"
+    )
+    assert "odata=nometadata" not in body
 
 
 def test_the_body_budget_flushes_before_the_measured_ceiling() -> None:

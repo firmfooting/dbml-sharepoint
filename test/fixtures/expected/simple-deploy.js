@@ -352,12 +352,12 @@
       this.pendingBytes += cost;
     }
 
-    // One application/http part: a full request line, the JSON body, and
-    // nometadata headers with the digest among them. The nometadata spelling
-    // decides whether the part is accepted at all: a ChangeSet part carrying
-    // odata=verbose is refused with HTTP 400 (live finding 2026-09-04; the
-    // throttle-batch probe's parts used nometadata and landed; the shared
-    // spHeaders verbosity is for single writes, not for batch parts).
+    // One application/http part: a full request line, the same verbose-OData
+    // write headers the single write sends, and the JSON body. Sending the
+    // single write's own headers is what keeps the body it was handed valid:
+    // a field body carries `__metadata`, which only exists in verbose OData,
+    // so a part declaring nometadata is refused HTTP 400 for a property that
+    // "does not exist on type 'SP.FieldText'" (live finding 2026-09-04).
     _part(op, digest, inner) {
       // A single SharePoint write tunnels MERGE and DELETE through
       // X-HTTP-Method on a POST, but a ChangeSet part carries the verb in its
@@ -366,16 +366,18 @@
       // example spells a delete `DELETE <url> HTTP/1.1` with If-Match, and
       // PnPjs (pnp/pnpjs packages/sp/batching.ts) reads X-HTTP-Method off the
       // request, uses it as the request-line method and DELETES the header
-      // before writing the part. Translating here is what lets a caller hand
-      // add() the same method and headers the single-write helper sends.
+      // before writing the part. Measured to be required rather than merely
+      // documented: a part left carrying the header reaches SharePoint as a
+      // POST to the entity, which reads the body keys as method arguments and
+      // refuses with "The parameter Description does not exist in method
+      // GetById" (live finding 2026-09-04). Translating here is what lets a
+      // caller hand add() the same method and headers the single-write helper
+      // sends.
       const extra = { ...(op.extraHeaders || {}) };
       const tunnelled = extra['X-HTTP-Method'];
       delete extra['X-HTTP-Method'];
-      const headers = 'Accept: application/json;odata=nometadata\r\n'
-        + 'Content-Type: application/json;odata=nometadata\r\n'
-        + `X-RequestDigest: ${digest}\r\n`
-        + Object.entries(extra)
-          .map(([name, value]) => `${name}: ${value}\r\n`).join('');
+      const headers = Object.entries(spHeaders(digest, extra))
+        .map(([name, value]) => `${name}: ${value}\r\n`).join('');
       return `--${inner}\r\n`
         + 'Content-Type: application/http\r\n'
         + 'Content-Transfer-Encoding: binary\r\n'
