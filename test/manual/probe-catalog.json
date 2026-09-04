@@ -4956,6 +4956,82 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "multilookup-probe.js",
+      "surface": "field",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed lists, three target rows, four lookup columns, four items"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.multilookup.fixture-lists-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.multilookup.control-single-value-lookup-created",
+              "depends_on": [
+                "field.multilookup.fixture-lists-created"
+              ]
+            },
+            {
+              "id": "field.multilookup.create-readback-type",
+              "depends_on": [
+                "field.multilookup.control-single-value-lookup-created"
+              ]
+            },
+            {
+              "id": "field.multilookup.control-single-value-indexed",
+              "depends_on": [
+                "field.multilookup.control-single-value-lookup-created"
+              ]
+            },
+            {
+              "id": "field.multilookup.indexed-property",
+              "depends_on": [
+                "field.multilookup.control-single-value-indexed",
+                "field.multilookup.create-readback-type"
+              ]
+            },
+            {
+              "id": "field.multilookup.allow-multiple-values-mutability",
+              "depends_on": [
+                "field.multilookup.control-single-value-lookup-created"
+              ]
+            },
+            {
+              "id": "field.multilookup.item-write-shape",
+              "depends_on": [
+                "field.multilookup.create-readback-type"
+              ]
+            },
+            {
+              "id": "field.multilookup.item-read-shape",
+              "depends_on": [
+                "field.multilookup.item-write-shape"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.multilookup.fixture-lists-created",
+            "field.multilookup.control-single-value-lookup-created",
+            "field.multilookup.control-single-value-indexed"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
