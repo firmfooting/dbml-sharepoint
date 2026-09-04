@@ -20,13 +20,30 @@
  *   field.multilookup.allow-multiple-values-mutability  (#409 question 3)
  *   field.multilookup.item-write-shape                  (#409 question 4)
  *   field.multilookup.item-read-shape                   (#409 question 4)
+ *   field.multilookup.control-source-title-indexed      (index source-carry)
+ *   field.multilookup.source-index-carry                (index source-carry)
+ *   field.multilookup.source-index-carry-at-create      (index source-carry)
+ *   field.lookup.source-index-carry                     (index source-carry)
  *
- * Every question is about the multi-value lookup column type, so nothing files
- * under another surface. The two controls ask single-VALUE lookup questions,
- * and they exist only to make the multi-value answers readable, so they take
- * the `multilookup` scope of the questions they guard. That follows
+ * The two controls ask single-VALUE lookup questions, and they exist only to
+ * make the multi-value answers readable, so they take the `multilookup` scope
+ * of the questions they guard. That follows
  * `field.multichoice.control-single-value-indexed`, which is a single-value
  * Choice question filed under `multichoice` for the same reason.
+ *
+ * ONE ROW FILES UNDER ANOTHER SCOPE. `field.lookup.source-index-carry` asks
+ * what a SINGLE-value lookup's `Indexed` reads back as over an indexed source,
+ * and under SURFACES.md's keying rule a check is keyed to the surface of its
+ * own question rather than its probe's. It is not a `control-` row: both of
+ * its outcomes are informative, and neither voids anything. It is here because
+ * without it "the multi-value one reads false" cannot be told apart from "no
+ * lookup's `Indexed` ever mirrors its source", which are different findings
+ * and only one of them is about multiplicity.
+ *
+ * WHAT SOURCE-CARRY IS NOT. `Indexed` reading false does not establish that a
+ * query over the column is unindexed at size. That is a `scale.index` question
+ * over a list past the 5,000-item threshold, which this fixture is nowhere
+ * near, and no row here may be read as answering it.
  *
  * #409's remaining question, whether a multi-value lookup costs one join or
  * more against the ceiling of 12 in `analysis/joins.py`, is not here. It is
@@ -80,9 +97,21 @@
   //           Kept apart from SINGLE so the index control is never asked
   //           about a column this probe has mutated.
   //   MULTI   the column under test.
+  //
+  // Two more are created LATER, once the target's Title has been indexed, so
+  // that "created over an indexed source" is asked as its own case rather than
+  // inferred from a column that predates the index:
+  //
+  //   SINGLE_SRC  a single-value lookup over the indexed source, never itself
+  //               written to with Indexed. SINGLE cannot do this job: the
+  //               index control writes Indexed on it directly, so its `Indexed`
+  //               is true for a reason that has nothing to do with the source.
+  //   MULTI_SRC   the multi-value column over the indexed source.
   const SINGLE = 'Party';
   const FLIP = 'PartyFlip';
   const MULTI = 'Parties';
+  const SINGLE_SRC = 'PartySrc';
+  const MULTI_SRC = 'PartiesSrc';
   // Three rows so that "the two that were asked for" is distinguishable from
   // "every row in the target list". Only the first two are ever written.
   const TARGET_ROWS = ['Alpha', 'Bravo', 'Charlie'];
@@ -93,6 +122,10 @@
   expect('field.multilookup.create-readback-type', 'which create path takes AllowMultipleValues:true, and what the field reads back as');
   expect('field.multilookup.control-single-value-indexed', 'CONTROL: Indexed:true on the SINGLE-value Lookup, which this repository already provisions');
   expect('field.multilookup.indexed-property', 'Indexed:true on a multi-value Lookup: accepted? and what does it read back as?');
+  expect('field.multilookup.control-source-title-indexed', 'CONTROL: the TARGET list\'s Title, the column a lookup projects, takes Indexed:true');
+  expect('field.multilookup.source-index-carry', 'Does an EXISTING multi-value lookup read back Indexed once its source is indexed?');
+  expect('field.multilookup.source-index-carry-at-create', 'Does a multi-value lookup CREATED over an indexed source read back Indexed?');
+  expect('field.lookup.source-index-carry', 'Does a SINGLE-value lookup over an indexed source read back Indexed?');
   expect('field.multilookup.allow-multiple-values-mutability', 'AllowMultipleValues on an EXISTING lookup: can it be turned on, and can it be turned off again?');
   expect('field.multilookup.item-write-shape', 'which item WRITE shapes SharePoint accepts for a multi-value lookup');
   expect('field.multilookup.item-read-shape', 'what a multi-value lookup value READS BACK as');
@@ -271,27 +304,31 @@
     // same mechanism the mutability row measures independently on its own
     // field, which is a replication rather than waste: if one works and the
     // other does not, that disagreement is itself the finding.
+    //
+    // Each candidate takes the COLUMN NAME rather than closing over MULTI, so
+    // the winner can be replayed for the second multi-value column the
+    // source-index rows need. One spelling of each create path, used twice.
     const createCandidates = [
       {
         name: 'addfield-allowmultiplevalues',
-        run: () => addLookup(MULTI, { AllowMultipleValues: true }),
+        run: (name) => addLookup(name, { AllowMultipleValues: true }),
       },
       {
         name: 'createfieldasxml-lookupmulti',
-        run: () => post(`${listPath}/fields/createfieldasxml`, {
+        run: (name) => post(`${listPath}/fields/createfieldasxml`, {
           parameters: {
-            SchemaXml: `<Field Type="LookupMulti" Mult="TRUE" DisplayName="${MULTI}" `
-              + `Name="${MULTI}" List="{${targetListId}}" ShowField="Title"/>`,
+            SchemaXml: `<Field Type="LookupMulti" Mult="TRUE" DisplayName="${name}" `
+              + `Name="${name}" List="{${targetListId}}" ShowField="Title"/>`,
             Options: 8,
           },
         }),
       },
       {
         name: 'addfield-then-merge-allowmultiplevalues',
-        run: async () => {
-          const made = await addLookup(MULTI);
+        run: async (name) => {
+          const made = await addLookup(name);
           if (!made.ok) return made;
-          return merge(fieldPath(MULTI), {
+          return merge(fieldPath(name), {
             __metadata: { type: 'SP.FieldLookup' }, AllowMultipleValues: true,
           });
         },
@@ -304,7 +341,7 @@
     let multiShape = null;
     if (controlLookupHeld) {
       for (const candidate of createCandidates) {
-        const attempt = await candidate.run();
+        const attempt = await candidate.run(MULTI);
         const back = await get(`${fieldPath(MULTI)}${FIELD_SELECT}`);
         createAttempts.push(
           `${candidate.name}: write ${httpNote(attempt)}, readback ${back.ok
@@ -437,6 +474,165 @@
             + 'is the outcome native-index-probe.js hit with its own control on 2026-07-30.'
           : 'no multi-value lookup column was created, so there was nothing to index.'),
       (indexControlHeld && winningCreate) ? undefined : 'void',
+    );
+
+    // === source-index-carry: does an indexed SOURCE show through? =========
+    // The row above asks whether the multi-value column takes an index of its
+    // own. This asks the question that outcome leaves open, and the answer
+    // decides whether the rule the implementation added is "a multi-value
+    // lookup can never be indexed" or "it cannot be indexed DIRECTLY, and
+    // inherits its source's index".
+    //
+    // The source is the target list's `Title`, which is the column every
+    // lookup here projects through `LookupFieldName`. Indexing it is a write
+    // to the OTHER list, and it is the only write this probe makes outside the
+    // probe list.
+    //
+    // Three readings, because creation order could matter and guessing which
+    // way is exactly what this directory exists to stop:
+    //
+    //   MULTI      existed BEFORE the source was indexed. Re-read, and the
+    //              direct Indexed:true write re-attempted, because a refusal
+    //              that is conditional on the source's index is a different
+    //              rule from an unconditional one.
+    //   MULTI_SRC  created AFTER. If this reads true and MULTI does not, the
+    //              deployer must index the target before creating the lookup.
+    //   SINGLE_SRC the comparator, and the reason this block is readable at
+    //              all. If a SINGLE-value lookup over the same indexed source
+    //              also reads false, then `Indexed` on a lookup field is its
+    //              own index and never mirrors its source, which is a fact
+    //              about lookups rather than about multiplicity.
+    //
+    // NOTHING HERE IS ASSERTED. Each row records what came back. In
+    // particular, `Indexed=false` is not recorded as "the source index does
+    // not help": what a query does at size is a `scale.index` question over a
+    // list past the threshold, and this fixture holds a handful of rows.
+    const titlePath = `${targetPath}/fields/getbyinternalnameortitle('Title')`;
+    // The type is read rather than named. A MERGE quoting the wrong entity
+    // type is refused, and that refusal would be recorded as an answer about
+    // indexing rather than about the guess that produced it.
+    const titleBefore = createdTargetList
+      ? await get(`${titlePath}?$select=Indexed,TypeAsString`)
+      : { ok: false, status: 0, error: 'the target list was never created', d: null };
+    const sourceIndex = titleBefore.ok
+      ? await indexOne(titlePath, titleBefore.d?.__metadata?.type || 'SP.Field')
+      : { wrote: notAttempted, back: notAttempted };
+    const sourceIndexed = sourceIndex.wrote.ok && sourceIndex.back.ok
+      && sourceIndex.back.d?.Indexed === true;
+    record(
+      'field.multilookup.control-source-title-indexed',
+      'CONTROL: the TARGET list\'s Title, the column a lookup projects, takes Indexed:true',
+      titleBefore.ok
+        ? (sourceIndexed
+          ? 'STUCK'
+          : (sourceIndex.wrote.ok && !sourceIndex.back.ok ? 'READBACK UNREADABLE' : 'DID NOT STICK'))
+        : 'NOT ESTABLISHED',
+      titleBefore.ok
+        ? `'Title' on '${TARGET_LIST}' read back TypeAsString=${show(titleBefore.d?.TypeAsString)} `
+          + `Indexed=${show(titleBefore.d?.Indexed)} before the write; write `
+          + `${httpNote(sourceIndex.wrote)}, readback Indexed=${indexReadback(sourceIndex)}. `
+          + 'Every carry row below is void while this does not hold: with no index on the source there '
+          + 'is nothing for a lookup to inherit, and a column reading false would say nothing.'
+        : `the source column could not be read (${httpNote(titleBefore)}), so it was never indexed.`,
+    );
+
+    // MULTI, re-read and re-asked. Its Indexed BEFORE the source was indexed
+    // is whatever the row above observed, so the pair is a before/after on one
+    // column and the only thing that changed between them is the source.
+    const multiBeforeSource = multiIndex.back.ok ? show(multiIndex.back.d?.Indexed) : 'unread';
+    const multiAfterSource = (sourceIndexed && winningCreate)
+      ? await get(`${fieldPath(MULTI)}${FIELD_SELECT}`)
+      : { ok: false, status: 0, error: 'not attempted', d: null };
+    const multiReindex = (sourceIndexed && winningCreate)
+      ? await indexOne(fieldPath(MULTI), multiMetaType)
+      : { wrote: notAttempted, back: notAttempted };
+    record(
+      'field.multilookup.source-index-carry',
+      'Does an EXISTING multi-value lookup read back Indexed once its source is indexed?',
+      (sourceIndexed && winningCreate)
+        ? (multiAfterSource.ok
+          ? (multiAfterSource.d?.Indexed === true ? 'CARRIES' : 'DOES NOT CARRY')
+          : 'READBACK UNREADABLE')
+        : 'NOT ESTABLISHED',
+      (sourceIndexed && winningCreate)
+        ? `'${multiName}' read Indexed=${multiBeforeSource} before the source was indexed and `
+          + `Indexed=${multiAfterSource.ok ? show(multiAfterSource.d?.Indexed) : `UNREADABLE HTTP ${multiAfterSource.status} ${multiAfterSource.error}`} `
+          + `after, with TypeAsString=${multiAfterSource.ok ? show(multiAfterSource.d?.TypeAsString) : '(unread)'} `
+          + `FieldTypeKind=${multiAfterSource.ok ? show(multiAfterSource.d?.FieldTypeKind) : '(unread)'}. `
+          + `Re-attempting the direct write with the source now indexed: ${httpNote(multiReindex.wrote)}, `
+          + `readback Indexed=${indexReadback(multiReindex)}. `
+          + 'A direct write that is refused BOTH times makes the refusal unconditional. One that is taken '
+          + 'only now makes it conditional on the source, which is a narrower rule and a different '
+          + 'remedy. Report both HTTP statuses verbatim.'
+        : (winningCreate
+          ? 'the source was never indexed, so there was no index for this column to carry.'
+          : 'no multi-value lookup column was created, so there was nothing to read.'),
+      (sourceIndexed && winningCreate) ? undefined : 'void',
+    );
+
+    // The two columns created over the already-indexed source. Both go through
+    // paths this run has already proved: the winning create path for the
+    // multi-value one, the deployer's AddField for the single-value one.
+    const madeMultiSrc = (sourceIndexed && winningCreate)
+      ? await winningCreate.run(MULTI_SRC)
+      : notAttempted;
+    const multiSrcBack = madeMultiSrc.ok
+      ? await get(`${fieldPath(MULTI_SRC)}${FIELD_SELECT}`)
+      : { ok: false, status: 0, error: 'the field was never created', d: null };
+    const madeSingleSrc = sourceIndexed && controlLookupHeld
+      ? await addLookup(SINGLE_SRC)
+      : notAttempted;
+    const singleSrcBack = madeSingleSrc.ok
+      ? await get(`${fieldPath(SINGLE_SRC)}${FIELD_SELECT}`)
+      : { ok: false, status: 0, error: 'the field was never created', d: null };
+    // Only a field that reads back multi-value answers the multi-value
+    // question, for the reason the create row gives: a single-value column
+    // answering here would report an index behaviour about the wrong arity.
+    const multiSrcIsMulti = multiSrcBack.ok && multiSrcBack.d?.AllowMultipleValues === true;
+    record(
+      'field.multilookup.source-index-carry-at-create',
+      'Does a multi-value lookup CREATED over an indexed source read back Indexed?',
+      multiSrcIsMulti
+        ? (multiSrcBack.d?.Indexed === true ? 'CARRIES' : 'DOES NOT CARRY')
+        : 'NOT ESTABLISHED',
+      multiSrcIsMulti
+        ? `'${MULTI_SRC}' created by ${winningCreate.name} while '${TARGET_LIST}' Title was indexed: `
+          + `Indexed=${show(multiSrcBack.d?.Indexed)} TypeAsString=${show(multiSrcBack.d?.TypeAsString)} `
+          + `FieldTypeKind=${show(multiSrcBack.d?.FieldTypeKind)} `
+          + `AllowMultipleValues=${show(multiSrcBack.d?.AllowMultipleValues)} `
+          + `LookupField=${show(multiSrcBack.d?.LookupField)}. `
+          + 'CARRIES here with DOES NOT CARRY above means creation order decides it, and the deployer '
+          + 'would have to index the target before creating the lookup rather than after. Read this '
+          + 'beside the single-value row: if that one does not carry either, nothing here is about arity.'
+        : (!sourceIndexed
+          ? 'the source was never indexed, so this column was not created.'
+          : (madeMultiSrc.ok
+            ? `'${MULTI_SRC}' was created and does not read back AllowMultipleValues=true `
+              + `(${multiSrcBack.ok ? show(multiSrcBack.d?.AllowMultipleValues) : `readback failed HTTP ${multiSrcBack.status}`}), `
+              + 'so it would answer about a single-value column.'
+            : `'${MULTI_SRC}' could not be created: ${httpNote(madeMultiSrc)}.`)),
+      multiSrcIsMulti ? undefined : 'void',
+    );
+    record(
+      'field.lookup.source-index-carry',
+      'Does a SINGLE-value lookup over an indexed source read back Indexed?',
+      singleSrcBack.ok
+        ? (singleSrcBack.d?.Indexed === true ? 'CARRIES' : 'DOES NOT CARRY')
+        : 'NOT ESTABLISHED',
+      singleSrcBack.ok
+        ? `'${SINGLE_SRC}' created by AddField while '${TARGET_LIST}' Title was indexed, and never `
+          + `written to with Indexed: Indexed=${show(singleSrcBack.d?.Indexed)} `
+          + `TypeAsString=${show(singleSrcBack.d?.TypeAsString)} `
+          + `LookupField=${show(singleSrcBack.d?.LookupField)}. `
+          + 'This is the comparator, not a control: both outcomes are informative. DOES NOT CARRY makes '
+          + '`Indexed` on a lookup field its OWN index, mirroring nothing, and the multi-value rows above '
+          + 'then say nothing about the source. CARRIES makes the property a source mirror, and a '
+          + 'multi-value column reading false beside it IS about multiplicity.'
+        : (!sourceIndexed
+          ? 'the source was never indexed, so this column was not created.'
+          : `'${SINGLE_SRC}' could not be created or read: ${httpNote(madeSingleSrc)}, `
+            + `readback HTTP ${singleSrcBack.status} ${singleSrcBack.error}.`),
+      singleSrcBack.ok ? undefined : 'void',
     );
 
     // === allow-multiple-values-mutability (#409 question 3) ===============
@@ -641,6 +837,9 @@
       + `type_as_string=${show(multiShape?.d?.TypeAsString)} `
       + `field_type_kind=${show(multiShape?.d?.FieldTypeKind)} `
       + `indexed=${observedFor('field.multilookup.indexed-property')} `
+      + `source_index_carry=${observedFor('field.multilookup.source-index-carry')} `
+      + `source_index_carry_at_create=${observedFor('field.multilookup.source-index-carry-at-create')} `
+      + `single_value_carry=${observedFor('field.lookup.source-index-carry')} `
       + `mutability=${observedFor('field.multilookup.allow-multiple-values-mutability')} `
       + `write_shapes=${written.length ? written.map((w) => w.shape).join('+') : 'none'} `
       + `read=${observedFor('field.multilookup.item-read-shape')}`,

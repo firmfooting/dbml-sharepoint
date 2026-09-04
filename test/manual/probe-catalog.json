@@ -4963,7 +4963,8 @@
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
-        "two fixed lists, three target rows, four lookup columns, four items"
+        "two fixed lists, three target rows, six lookup columns, four items",
+        "Indexed:true on the TARGET list's Title, the only write outside the probe list"
       ],
       "cleanup": {
         "policy": "manual"
@@ -5005,6 +5006,33 @@
               ]
             },
             {
+              "id": "field.multilookup.control-source-title-indexed",
+              "depends_on": [
+                "field.multilookup.fixture-lists-created"
+              ]
+            },
+            {
+              "id": "field.multilookup.source-index-carry",
+              "depends_on": [
+                "field.multilookup.control-source-title-indexed",
+                "field.multilookup.create-readback-type"
+              ]
+            },
+            {
+              "id": "field.multilookup.source-index-carry-at-create",
+              "depends_on": [
+                "field.multilookup.control-source-title-indexed",
+                "field.multilookup.create-readback-type"
+              ]
+            },
+            {
+              "id": "field.lookup.source-index-carry",
+              "depends_on": [
+                "field.multilookup.control-source-title-indexed",
+                "field.multilookup.control-single-value-lookup-created"
+              ]
+            },
+            {
               "id": "field.multilookup.allow-multiple-values-mutability",
               "depends_on": [
                 "field.multilookup.control-single-value-lookup-created"
@@ -5027,7 +5055,8 @@
           "controls": [
             "field.multilookup.fixture-lists-created",
             "field.multilookup.control-single-value-lookup-created",
-            "field.multilookup.control-single-value-indexed"
+            "field.multilookup.control-single-value-indexed",
+            "field.multilookup.control-source-title-indexed"
           ],
           "depends_on": []
         }

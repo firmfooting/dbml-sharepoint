@@ -309,6 +309,7 @@ surface boundary, and are listed for the same reason:
 | --- | --- | --- |
 | `list-description-probe.js` | the `group-description-512-ceiling` header finding | `text.group-desc.ceiling-512` |
 | `formatter-xml-probe.js` | `width-attribute` (was `D_WIDTH`) | `text.col-fmt.width-attribute` |
+| `multilookup-probe.js` | `source-index-carry`, asked of a SINGLE-value lookup over an indexed source | `field.lookup.source-index-carry` |
 | `calculated-choice-operand.js` | `lookup-operand-accepted`, `control-person-operand-refused` (was `L1`, `N1`) | `formula.calc.*` |
 | `calculated-choice-operand.js` | `person-operand`, `lookup-operand` (was `P1`, `L2`) | `formula.validation.*` |
 | `datetime-sentinel-probe.js` | the four `*-quote-literal` questions (was `Q1`–`Q4`) | `formula.validation.*` |
@@ -341,6 +342,8 @@ different questions and take different ids. They do not merge.
 | Is a tautology inert as a right-hand conjunct | a twelve-clause chain, past the threshold | `query.caml.tautology-conjunct-inert` |
 | Does the tautology alone return every row | a three-row list, where "every" is countable by eye | `query.caml.tautology-alone-partitions` |
 | Does the tautology alone return every row | a forty-eight-member list built for the chain | `query.caml.tautology-always-true` |
+| Does a multi-value lookup carry its source's index | the column existed before the source was indexed | `field.multilookup.source-index-carry` |
+| Does a multi-value lookup carry its source's index | the column was created after the source was indexed | `field.multilookup.source-index-carry-at-create` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
