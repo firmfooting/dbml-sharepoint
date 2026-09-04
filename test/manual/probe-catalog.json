@@ -4963,7 +4963,7 @@
       "harness": "shared-v2",
       "authority": "allow-writes",
       "writes": [
-        "two fixed lists, three target rows, six lookup columns, eight items",
+        "two fixed lists, three target rows, twenty lookup columns, eight items",
         "Indexed:true on the TARGET list's Title, the only write outside the probe list"
       ],
       "cleanup": {
@@ -5157,6 +5157,19 @@
                 "query.caml-adhoc.multilookup-includes-text",
                 "query.caml-adhoc.multilookup-includes-lookupid"
               ]
+            },
+            {
+              "id": "scale.join.control-ceiling-small-list",
+              "depends_on": [
+                "field.multilookup.fixture-lists-created"
+              ]
+            },
+            {
+              "id": "scale.join.multi-value-lookup-costs-a-join",
+              "depends_on": [
+                "scale.join.control-ceiling-small-list",
+                "field.multilookup.create-readback-type"
+              ]
             }
           ],
           "states": [],
@@ -5165,7 +5178,8 @@
             "field.multilookup.control-single-value-lookup-created",
             "field.multilookup.control-single-value-indexed",
             "field.multilookup.control-source-title-indexed",
-            "field.multilookup.fixture-caml-rows-seeded"
+            "field.multilookup.fixture-caml-rows-seeded",
+            "scale.join.control-ceiling-small-list"
           ],
           "depends_on": []
         }

@@ -66,11 +66,20 @@ is INFERRED, not measured, like the `Created`/`Modified` row above: the
 shape, and left join cost open (#409 Q3). It is recorded as one rather than more
 because a rule must never be stronger than what has been shown: counting two
 would refuse views that may well render, and nothing has been observed that
-says they do not. Closing it needs the same ceiling-plus-one shape every other
-row here was measured at, a view of 11 ordinary lookups plus one multi-value
-lookup against a list over the threshold. `test/test_joins.py::
+says they do not. `test/test_joins.py::
 test_a_multi_value_lookup_costs_one_join_at_the_ceiling` pins the answer, so
 changing it is a deliberate act with a failing test attached.
+
+The instrument that closes it now exists and has not been run.
+`multilookup-probe.js` walks single-value lookups to the ceiling, walks again
+with the multi-value column appended, and reports the difference as
+`scale.join.multi-value-lookup-costs-a-join`. It reports a NUMBER rather than a
+confirmation, and it subtracts rather than sitting at a fixed width, so it does
+not assume the ceiling is 12. Its fixture holds four items rather than 6,000,
+which is why `scale.join.control-ceiling-small-list` runs first: if no ceiling
+appears at that size the cost row is void, and settling this needs
+`threshold-index-probe.js`'s fixture instead. That control also measures the
+SHAPE-not-size claim in the second paragraph above, which is itself unmeasured.
 
 8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
 does not exist in SharePoint Online; there is no "default 8 raised by a

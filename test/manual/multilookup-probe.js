@@ -80,9 +80,22 @@
  * The fixture here is a deliberate analogue of that one so the two runs can be
  * compared row for row.
  *
- * #409's remaining question, whether a multi-value lookup costs one join or
- * more against the ceiling of 12 in `analysis/joins.py`, is not here. It is
- * answered by counting what the deployer emits, not by asking a tenant.
+ * THE JOIN ROWS ALSO FILE UNDER ANOTHER SURFACE. #409's remaining question,
+ * whether a multi-value lookup costs one join or more against the ceiling of
+ * 12 in `analysis/joins.py`, is measured here by the two `scale.join` rows.
+ * SURFACES.md gives `scale` the join limits, and the subject is the ceiling
+ * rather than the column, so they key there, as `threshold-index-probe.js`'s
+ * join rows already do. `analysis/joins.py` counts a multi-value lookup as one
+ * join and its docstring records that as inferred rather than measured; these
+ * rows report a NUMBER, not a confirmation.
+ *
+ *   scale.join.control-ceiling-small-list
+ *   scale.join.multi-value-lookup-costs-a-join
+ *
+ * The control is a real control. This list holds four items and the ceiling
+ * was only ever measured past the item threshold, so if no ceiling appears
+ * here the cost row is void rather than reassuring, and the question goes to
+ * `threshold-index-probe.js`'s 6,000-row fixture instead.
  *
  * WHAT THIS PROBE MUST NOT ASSERT. SharePoint has no distinct multi-value
  * lookup entity type: the column is an `SP.FieldLookup` carrying
@@ -120,6 +133,11 @@
   const CLEANUP = false;
   const TARGET_LIST = 'zzz dbmlsp multilookup target';
   const PROBE_LIST = 'zzz dbmlsp multilookup probe';
+  // How many empty single-value lookups the join block creates to walk up to
+  // the ceiling with. 14 is what threshold-index-probe.js used to find 12, so
+  // it leaves headroom on either side of the documented number. Set it to 0 to
+  // skip the join rows and everything they cost.
+  const JOIN_COLUMNS = 14;
   // ------------------------------------------------------------------------
 
   // The three columns on the probe list. All three point at the same target
@@ -142,6 +160,11 @@
   //               index control writes Indexed on it directly, so its `Indexed`
   //               is true for a reason that has nothing to do with the source.
   //   MULTI_SRC   the multi-value column over the indexed source.
+  //
+  // The join block adds Join1..JoinN last, after every other question has been
+  // recorded, because they exist to be counted rather than read and putting
+  // twenty lookups on the list earlier would give any refusal above a second
+  // possible cause.
   const SINGLE = 'Party';
   const FLIP = 'PartyFlip';
   const MULTI = 'Parties';
@@ -218,6 +241,8 @@
   expect('query.caml-adhoc.multilookup-and-membership', 'CAML <And> of two membership tests on one multi-value lookup: is it "contains BOTH"?');
   expect('query.caml-adhoc.multilookup-or-membership', 'CAML <Or> of two membership tests on one multi-value lookup: is it "contains EITHER"?');
   expect('query.caml-adhoc.multilookup-neq-isnull-wrapper', 'the deployer\'s own not_includes wrapper (negation OR IsNull) on a multi-value lookup: which rows?');
+  expect('scale.join.control-ceiling-small-list', 'CONTROL: does the join ceiling bite on a SMALL list, or only past the item threshold?');
+  expect('scale.join.multi-value-lookup-costs-a-join', 'How many joins does a multi-value lookup cost against the view ceiling?');
 
   // Shared probe core v2: context guard, bounded transport and REST helpers.
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
@@ -238,7 +263,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision b39db298; core v2; results v1.`);
+  log('INFO', `probe revision a34d8c1b; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1388,6 +1413,151 @@
       }
     }
 
+    // === scale.join.*: how many joins does a multi-value lookup cost? =====
+    //
+    // `analysis/joins.py` counts a multi-value lookup as ONE join against a
+    // ceiling of 12, and says in its own docstring that the row is inferred
+    // rather than measured. This block measures it.
+    //
+    // THE SHAPE IS SELF-CALIBRATING and reports a NUMBER, not a boolean. Walk
+    // single-value lookups up until the render stops, giving `worked`, the
+    // ceiling on this fixture. Walk again with the multi-value column appended,
+    // giving `workedWithMulti`. If the multi-value column costs c joins then
+    // workedWithMulti + c = worked, so the cost is the difference.
+    //
+    // Written this way rather than as "9 singles plus the multi renders" so
+    // that nothing here assumes the ceiling is 12. If this tenant answers 8, or
+    // 14, the subtraction is still the cost; a fixture pinned to 9 would report
+    // the wrong answer confidently. That is also why the walk stops at the
+    // first failure rather than testing each width independently: the ceiling
+    // is what the first failure means.
+    //
+    // JOIN COLUMNS ARE EMPTY, never written to. Whether an empty lookup still
+    // costs a join is part of the question, and threshold-index-probe.js
+    // measured its ceiling the same way, so the two runs are comparable.
+    //
+    // THE VIEW IS PROJECTED EXPLICITLY, through RenderListDataAsStream with
+    // <ViewFields>, so All Items' automatic Author and Editor are not in the
+    // count and the only variable across rows is how many lookups are asked
+    // for.
+    //
+    // RenderListDataAsStream is read at odata=nometadata. The shared post()
+    // asks for verbose and returns the `d` envelope, and this method's verbose
+    // form wraps its payload in a JSON string needing a second parse.
+    // threshold-index-probe.js reads it at nometadata too, so the two join
+    // measurements are made through one dialect rather than two.
+    const renderStream = async (fields) => {
+      const viewXml = '<View><Query></Query>'
+        + `<ViewFields>${fields.map((f) => `<FieldRef Name='${f}'/>`).join('')}</ViewFields>`
+        + '<RowLimit>50</RowLimit></View>';
+      const digest = await getDigest();
+      const response = await fetchWithRetry(apiUrl(`${listPath}/RenderListDataAsStream`), {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=verbose',
+          'X-RequestDigest': digest,
+        },
+        body: JSON.stringify({ parameters: { ViewXml: viewXml } }),
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        return {
+          ok: false, status: response.status, error: spError(text), present: () => false, rows: 0,
+        };
+      }
+      let body = null;
+      try { body = JSON.parse(text); } catch { body = null; }
+      const rows = Array.isArray(body?.Row) ? body.Row : [];
+      const keys = rows.length ? Object.keys(rows[0]) : [];
+      // A view that renders is only evidence about join cost if the column
+      // under test was actually PROJECTED. A silently dropped ViewField looks
+      // exactly like a join that was free, and threshold-index-probe.js was
+      // caught by that once on its own fixture.
+      const present = (name) => keys.some(
+        (k) => k === name || k.startsWith(`${name}.`) || k === `${name}Id`,
+      );
+      return { ok: true, status: response.status, error: null, present, rows: rows.length };
+    };
+    const joinColumns = [];
+    const joinCreateErrors = [];
+    for (let n = 1; n <= JOIN_COLUMNS; n += 1) {
+      const name = `Join${n}`;
+      const made = await addLookup(name);
+      if (made.ok) {
+        joinColumns.push(name);
+      } else {
+        joinCreateErrors.push(`${name}: HTTP ${made.status} ${made.error}`);
+        break;
+      }
+    }
+    let joinCeiling = 0;
+    let joinFailure = '';
+    for (let n = 1; n <= joinColumns.length; n += 1) {
+      const r = await renderStream(['Title', ...joinColumns.slice(0, n)]);
+      if (r.ok && r.present(joinColumns[n - 1])) { joinCeiling = n; continue; }
+      joinFailure = r.ok
+        ? `HTTP ${r.status} but '${joinColumns[n - 1]}' was not projected (${r.rows} row(s) returned)`
+        : `HTTP ${r.status} ${r.error}`;
+      break;
+    }
+    const ceilingFound = joinCeiling > 0 && joinCeiling < joinColumns.length;
+    record(
+      'scale.join.control-ceiling-small-list',
+      'CONTROL: does the join ceiling bite on a SMALL list, or only past the item threshold?',
+      joinColumns.length === 0
+        ? 'NOT ESTABLISHED'
+        : (ceilingFound ? `CEILING ${joinCeiling}` : `NO CEILING FOUND (${joinCeiling} projected of ${joinColumns.length})`),
+      `${joinColumns.length} empty single-value lookup(s) created`
+      + `${joinCreateErrors.length ? `, then ${joinCreateErrors.join('; ')}` : ''}. `
+      + `${joinCeiling} render(s); ${joinCeiling + 1} ${joinFailure || 'was not reachable'}. `
+      + 'This list holds four items, nowhere near the 5,000-item threshold. '
+      + '`analysis/joins.py` says the ceiling is a property of the view\'s SHAPE rather than the '
+      + 'list\'s SIZE and records that as unmeasured, so a ceiling here settles that claim as a '
+      + 'by-product. NO CEILING FOUND means the opposite: the limit needs size, this fixture cannot '
+      + 'reach it, and the cost row below is void. Take that question to '
+      + 'threshold-index-probe.js, whose 6,000-row fixture found a ceiling of 12 on 2026-07-31.',
+      joinColumns.length ? undefined : 'void',
+    );
+    let joinWithMulti = -1;
+    let joinWithMultiFailure = '';
+    if (ceilingFound && winningCreate) {
+      for (let n = 0; n <= joinColumns.length; n += 1) {
+        const r = await renderStream(['Title', ...joinColumns.slice(0, n), multiName]);
+        if (r.ok && r.present(multiName)) { joinWithMulti = n; continue; }
+        joinWithMultiFailure = r.ok
+          ? `HTTP ${r.status} but '${multiName}' was not projected (${r.rows} row(s) returned)`
+          : `HTTP ${r.status} ${r.error}`;
+        break;
+      }
+    }
+    const joinCost = joinWithMulti >= 0 ? joinCeiling - joinWithMulti : null;
+    record(
+      'scale.join.multi-value-lookup-costs-a-join',
+      'How many joins does a multi-value lookup cost against the view ceiling?',
+      joinCost === null
+        ? 'NOT ESTABLISHED'
+        : (joinCost < 0 ? `SHORT: the two walks disagree (${joinCost})` : `COSTS ${joinCost}`),
+      joinCost === null
+        ? (!winningCreate
+          ? 'no multi-value lookup column was created, so there was nothing to add to the view.'
+          : (!ceilingFound
+            ? 'no ceiling was found on this list, so there is nothing to sit at and the difference '
+              + 'between the two walks would be meaningless.'
+            : `'${multiName}' could not be projected even on its own: ${joinWithMultiFailure}. `
+              + 'A column that will not render alone says nothing about what it costs.'))
+        : `${joinCeiling} single-value lookup(s) render alone; ${joinWithMulti} render(s) alongside `
+          + `'${multiName}', and ${joinWithMulti + 1} `
+          + `${joinWithMultiFailure || 'was not reachable, which is why this number may be a floor'}. `
+          + `The difference is the cost, so this multi-value lookup counts as ${joinCost} join(s). `
+          + '`analysis/joins.py` counts it as ONE and says so is inferred rather than measured. '
+          + 'COSTS 1 confirms that count. Any other number contradicts it, and JOIN_LIMIT, '
+          + 'JOIN_WARN_AT and the docstring all have to change together. A negative difference is '
+          + 'not an answer: it means the two walks measured different things, and the run has to be '
+          + 'repeated on a fresh fixture before either number is quoted.',
+      joinCost === null ? 'void' : undefined,
+    );
+
     // === fixture-lists-created ============================================
     // Recorded last, because it reports on what everything above depended on.
     // Deliberately says nothing about the multi-value column: whether one can
@@ -1426,7 +1596,9 @@
       + `write_shapes=${written.length ? written.map((w) => w.shape).join('+') : 'none'} `
       + `read=${observedFor('field.multilookup.item-read-shape')} `
       + `caml_fixture=${observedFor('field.multilookup.fixture-caml-rows-seeded')} `
-      + `caml_membership=${membershipWinner ? membershipWinner.id : 'none'}`,
+      + `caml_membership=${membershipWinner ? membershipWinner.id : 'none'} `
+      + `join_ceiling=${observedFor('scale.join.control-ceiling-small-list')} `
+      + `join_cost=${observedFor('scale.join.multi-value-lookup-costs-a-join')}`,
     );
     log('INFO', 'Paste the VERDICT line and the whole table back. The TypeAsString and FieldTypeKind '
       + 'values are the point of the run: nothing in this codebase knows them yet.');
