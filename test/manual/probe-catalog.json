@@ -1076,6 +1076,552 @@
       ]
     },
     {
+      "file": "file-operations-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, file, file content, versions and a rename"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.file.name-field-is-leafref",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.file.upload-path-files-add",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.file.control-missing-column-refused",
+              "depends_on": [
+                "library.file.upload-path-files-add"
+              ]
+            },
+            {
+              "id": "library.file.file-system-object-type",
+              "depends_on": [
+                "library.file.upload-path-files-add"
+              ]
+            },
+            {
+              "id": "library.file.versioning-read-back",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.check-out-check-in",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.file-rename",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.name-field-is-leafref",
+                "library.file.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.file.file-delete",
+              "depends_on": [
+                "library.file.upload-path-files-add",
+                "library.file.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.file.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "folder-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, folder, child file, folder metadata, rename, and recycle"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.folder.creation-path",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.folder.control-missing-column-refused",
+              "depends_on": [
+                "library.folder.creation-path"
+              ]
+            },
+            {
+              "id": "library.folder.filesystem-object-type",
+              "depends_on": [
+                "library.folder.creation-path"
+              ]
+            },
+            {
+              "id": "library.folder.carries-metadata",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.folder.name-field",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.folder.delete-recycles",
+              "depends_on": [
+                "library.folder.creation-path",
+                "library.folder.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.folder.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-column-interactions-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, lookup target list, multi-value and formatted columns, test files, and column formatting JSON"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.column.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.column.multi-choice-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.multi-lookup-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.custom-column-formatting",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.column.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-columns-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, lookup target list, metadata columns, test files, and list validation formula"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.column.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.column.choice-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.lookup-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.calculated-column-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.required-column-enforced-on-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.validation.validation-formula-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.column.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.column.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-content-type-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, site and list content types, test files, column, and field link bindings"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.content-type.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.content-type.default-content-types",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.content-type.custom-content-type-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.content-type.content-type-at-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.custom-content-type-on-library",
+                "library.content-type.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.content-type.column-bound-to-one-content-type",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.content-type.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.content-type.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-form-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, test file, test columns, and content type field link order"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.form.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.form.edit-form-field-order",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.form.form-field-reorder",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.form.control-missing-column-refused"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "state-matrix",
+          "findings": [
+            {
+              "id": "library.form.rendered-edit-form",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "edit-form",
+              "page": "uploaded file edit form",
+              "assertions": [
+                "rendered edit form leads with the file name",
+                "metadata columns present"
+              ]
+            }
+          ],
+          "controls": [
+            "library.doc-lib.fixture-library-created"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "library-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, test files, and a grouped view"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.group-by-metadata-column",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.group-by-folder",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-formula-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a small lookup target list, two test files, calculated and validation columns, and a library ValidationFormula"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.formula.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.formula.calc-datetime-sentinel",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.formula.calc-choice-lookup-operand",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.formula.validation-url-operand",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.formula.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.formula.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "form-visibility-evidence-probe.js",
       "surface": "expression",
       "harness": "helper",
@@ -4099,6 +4645,176 @@
           ],
           "depends_on": [],
           "surface": "formula"
+        }
+      ]
+    },
+    {
+      "file": "library-access-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, one test file, and its permission model (break inheritance, role assignment, restore)"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.access.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.access.unique-permissions-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.access.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.access.role-assignment-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.access.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.access.file-scoped-unique-permission",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.access.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.access.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-query-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, three metadata columns, and twelve test files with distinct metadata values"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.query.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.query.caml-chain-depth",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.query.guarded-single-clause",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.query.order-by-multi-field",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.query.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.query.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-field-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a plain lookup target list with two coded rows, a file upload, and dependent-lookup and date columns on the library"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.field.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.field.dependent-lookup-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.date-column-round-trip",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.field.control-missing-column-refused"
+          ],
+          "depends_on": []
         }
       ]
     }

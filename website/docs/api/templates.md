@@ -25,7 +25,7 @@ dbml-sharepoint COLUMNS script for one list.
 
 Target site: List: Deployer:     v Generated at:
 
-Lists the custom columns as a numbered table, asks for a number, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
+Lists the custom columns, asks for one by internal name, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed again after that scan, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
 
 Deleting a column removes its values from every item, and neither the column nor the values go to the recycle bin (Microsoft Learn, SharePoint data deletion). The item scan is what keeps that from being a surprise.
 
@@ -109,7 +109,7 @@ Shared formula canonicalisation: how a stored Formula or ValidationFormula is co
 
 Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
-Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them.
+Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
 ### `_http_write.js.j2`
 

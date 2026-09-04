@@ -1,0 +1,48 @@
+{
+  "sections": [
+    {
+      "displayname": "Name the process",
+      "fields": [
+        "Title",
+        "Function",
+        "Owner",
+        "Workstream",
+        "Purpose"
+      ]
+    },
+    {
+      "displayname": "Score it",
+      "fields": [
+        "Criticality",
+        "Frequency"
+      ]
+    },
+    {
+      "displayname": "Decide the order",
+      "fields": [
+        "MappingPriority",
+        "PriorityNote"
+      ]
+    },
+    {
+      "displayname": "Map it",
+      "fields": [
+        "MappingStatus",
+        "MapUrl",
+        "Notes"
+      ]
+    },
+    {
+      "displayname": "Review",
+      "fields": [
+        "ReviewDate"
+      ]
+    },
+    {
+      "displayname": "System",
+      "fields": [
+        "PriorityScore"
+      ]
+    }
+  ]
+}

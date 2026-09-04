@@ -1,6 +1,6 @@
-# M365 adoption programme: governance
+# Programme governance: how the family is governed
 
-Nine lists enforce what SharePoint can enforce, and `20-configure/mapping.yaml`
+Ten lists enforce what SharePoint can enforce, and `20-configure/mapping.yaml`
 holds every one of those rules. This document holds the rest: the obligations
 the platform cannot express, who performs them and when, and what is safe to
 change once the programme is running.
@@ -106,11 +106,12 @@ for up to two years in its Routine half.
 9. **Read version history and reconcile group membership.** See
    "Self-service confirmation" below.
 
-## Two checks no save rule can make
+## Three checks no save rule can make
 
-Both are human work, both are stated here rather than implied, and neither
-is a gap somebody forgot to close. SharePoint validation formulas refuse
-multi-line and person operands outright, which is where each of these dies.
+All three are human work, all three are stated here rather than implied, and
+none is a gap somebody forgot to close. SharePoint validation formulas refuse
+multi-line, person and hyperlink operands outright, which is where each of
+these dies.
 
 **1. Every closed risk carries a closure note.**
 
@@ -144,10 +145,51 @@ internal-authorisation control cannot survive, because the assertion at an
 audit is a named person on a dated record, and a request In progress with
 no handler is one nobody is working.
 
+**3. Every process marked Mapped carries a link to its map.**
+
+`MapUrl` is a hyperlink column, which SharePoint refuses inside a validation
+formula. The build says so by name (`condition_operand_type_unsupported`)
+rather than emitting a rule that would save, read back byte-identical, pass
+every deploy phase and never fire.
+
+The control is the *Mapped* view, which renders `MapUrl` beside every row
+that claims to be finished. A blank cell in a column of links is the whole
+check, and it is read at the annual sweep. A process marked Mapped with no
+map has not been mapped; it has been remembered, and the register's one
+durable promise is that the map can be found.
+
 Two more checks of the same shape live in "The provider boundary" below: an
 External stakeholder names a `ServiceDeskAddress` while every other non-Forum
 stakeholder names a `Contact`, and the provider is never the Accountable. Both
 are refused for the same reason and both have a view behind them.
+
+## Scoring a process, and overruling the score
+
+`PriorityScore` is **criticality multiplied by frequency**, one to nine. It is
+advice. `MappingPriority` is the decision, and it is what the mapping queue
+runs on.
+
+**Criticality** is how much it matters that the process works at all. High
+means a failure is felt outside the team that runs it: a leaver keeping
+access, a starter who cannot work on day one. Medium means the work is
+delayed or redone. Low means it is an irritation.
+
+**Frequency** is how often it runs, which is how often a map pays back. Daily
+or weekly, monthly, or a few times a year. It is a count, not a judgement, and
+somebody filling the form in cannot really get it wrong.
+
+**Reach was considered and rejected**, in favour of frequency. Measured
+against the real population, every project-adjacent process here reaches the
+whole organisation, so scoring on reach gave every row the same second factor
+and the score collapsed to criticality alone. A scale that does not vary
+across the things being scored is worse than no scale, because it reads as
+information.
+
+**The call may disagree with the score, and `PriorityNote` is where that is
+defended.** A six called Now because a workstream is blocked behind it is a
+good decision; a six called Now for no stated reason is the register drifting
+back into whoever asked last. Write the note only when the two disagree, since
+a matching pair needs no defence.
 
 ## The departed-person workflow
 
@@ -434,7 +476,7 @@ afterwards can authorise it a moment later.
 | Consultation is not concentrated on one stakeholder | Quarterly | A judgement about a distribution, which no formula reads |
 | Narrative fields are sampled for identifiable content | Quarterly, programme owner | Multi-line columns cannot be validation operands, and a length measure is refused in conditions |
 | Escalation levels 3 and 4 are counted, and the minutes spent on closed requests are totalled | Annually | The programme's evidence at the agreement review; *Closed* carries the total |
-| Attachments are disabled on all nine lists | At deploy, and after any list-settings change | There is no `attachments` key in `mapping.yaml`, and the deployer neither sets nor reconciles the setting |
+| Attachments are disabled on all ten lists | At deploy, and after any list-settings change | There is no `attachments` key in `mapping.yaml`, and the deployer neither sets nor reconciles the setting |
 | The site home page and navigation are built and verified | At deploy | The bundle provisions lists, views, forms and permissions, and has no site-home or navigation declaration |
 
 ### Guidance only
@@ -654,7 +696,7 @@ This family uses the fleet-standard hardening declared in `mapping.yaml`.
 `seal_columns: true` blocks UI schema edits and column deletion on every
 deployed column, even for site admins, and a display-name rename still gets
 through as drift that the next re-paste reverts and reports.
-`prevent_list_deletion: true` removes "Delete this list" from all nine
+`prevent_list_deletion: true` removes "Delete this list" from all ten
 lists for everyone. Both are friction and tamper-evidence rather than
 enforcement against a determined site collection administrator working
 through the API. See "Hardening and drift detection" in
@@ -664,7 +706,7 @@ protection per list after you confirm that list.
 
 **Attachments are the gap those two do not close.** There is no
 `attachments` key in `mapping.yaml`, the deployer neither sets nor
-reconciles the setting, and disabling attachments on all nine lists is a
+reconciles the setting, and disabling attachments on all ten lists is a
 manual step in `30-deploy/deploy.md` with a line in the verification
 checklist. For a family carrying a healthcare boundary that is the
 uncomfortable one, because it is the **only** privacy control a redeploy
@@ -720,7 +762,7 @@ manager said so, in writing, with a date. Record that here when it happens.
 Run in this order, and record the whole sequence as one
 `GOV_Decision` row before any of it is executed.
 
-1. **Export all nine lists**, before anything is decommissioned. Where
+1. **Export all ten lists**, before anything is decommissioned. Where
    version history is the audit (the three accountability lists and
    `GOV_ServiceRequest`), export the history too. An Excel export of
    current rows is not the audit. Export `GOV_Involvement` with

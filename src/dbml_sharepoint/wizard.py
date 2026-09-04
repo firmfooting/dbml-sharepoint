@@ -63,7 +63,9 @@ from dbml_sharepoint.catalogue import (
     PLACEHOLDER_SITE_URL,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    Journey,
     Solution,
+    available_journeys,
     available_solutions,
 )
 from dbml_sharepoint.model.env_file import (
@@ -230,6 +232,80 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
             str(index), solution.id, str(len(solution.lists)), solution.title,
         )
     return table
+
+
+#: What the journey step accepts to mean "show me everything".
+_BROWSE_ALL = "all"
+
+
+def _journey_table(journeys: list[Journey]) -> Table:
+    table = Table(
+        title="Where to start",
+        header_style="bold",
+        title_style="bold",
+        show_lines=False,
+        expand=False,
+    )
+    table.add_column("#", justify="right", style="dim", no_wrap=True)
+    table.add_column("Journey", no_wrap=True)
+    table.add_column("Templates", justify="right", no_wrap=True)
+    table.add_column("What it covers")
+    for index, journey in enumerate(journeys, start=1):
+        table.add_row(
+            str(index), journey.id, str(len(journey.solution_ids)), journey.summary,
+        )
+    table.add_row("", _BROWSE_ALL, "", "Every template, in one list")
+    return table
+
+
+def _pick_journey(
+    console: Console, journeys: list[Journey], solutions: list[Solution],
+) -> Solution | list[Solution]:
+    """Narrow the catalogue to one reading order, or answer the whole question.
+
+    The whole shelf in one table is a wall, and the number beside each row
+    changes whenever a template is added. A journey answers the question
+    somebody actually arrives with, which is what they are trying to do
+    rather than which register they already know the name of.
+
+    A TEMPLATE NAME IS ALSO AN ANSWER HERE, returned as the choice itself.
+    The name has always been the stable handle -- it is what the docs and the
+    rebuild command use -- so somebody who arrives knowing `risk-register`
+    types it once rather than passing through a menu that exists for people
+    who do not.
+    """
+    if not journeys:
+        return solutions
+    by_id = {s.id: s for s in solutions}
+    console.print(_journey_table(journeys))
+    while True:
+        answer = Prompt.ask(
+            f"[bold]Journey[/bold] (number, name, {_BROWSE_ALL}, or a template)",
+            console=console,
+        ).strip()
+        if not answer:
+            continue
+        if answer == _BROWSE_ALL:
+            return solutions
+        if answer in by_id:
+            return by_id[answer]
+        chosen = next((j for j in journeys if j.id == answer), None)
+        if chosen is None and answer.isdigit() and 1 <= int(answer) <= len(journeys):
+            chosen = journeys[int(answer) - 1]
+        if chosen is None:
+            console.print(
+                f"[red]No journey or template {answer!r}.[/red] "
+                f"Pick a number, a name, or {_BROWSE_ALL}.",
+            )
+            continue
+        # A journey names ids; anything it names that is not on the shelf is
+        # a broken journey, and `test_journeys.py` fails the build for it. Be
+        # forgiving here anyway rather than crash a picker over a doc file.
+        narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
+        if not narrowed:
+            console.print(f"[red]Journey {answer!r} names no template that exists.[/red]")
+            continue
+        return narrowed
 
 
 def _pick_solution(console: Console, solutions: list[Solution]) -> Solution:
@@ -1113,6 +1189,10 @@ def _next_panel(answers: Answers) -> Panel:
 
 def _run(console: Console) -> int:
     solutions = available_solutions()
+    # A journey is navigation, not a template. A build that shipped without
+    # any still offers every template, so this never turns a cosmetic problem
+    # into a wizard that refuses to run.
+    journeys = available_journeys()
     if not solutions:
         console.print(
             "[red]No templates found.[/red] This build of dbml-sharepoint "
@@ -1137,7 +1217,8 @@ def _run(console: Console) -> int:
     # `characters=` argument is passed. The section TITLES are literals in
     # this module and must stay ASCII regardless.
     console.rule("Template")
-    solution = _pick_solution(console, solutions)
+    picked = _pick_journey(console, journeys, solutions)
+    solution = picked if isinstance(picked, Solution) else _pick_solution(console, picked)
     _describe(console, solution)
     # A template declaring no prefix has one possible answer to this
     # question, and a question with one possible answer is not a question --

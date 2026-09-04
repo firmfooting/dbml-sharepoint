@@ -85,7 +85,18 @@
   const readFields = () => getAll(`${listPath}/fields?$select=${FIELD_SELECT}`, `fields of '${LIST_TITLE}'`);
   // Custom means a column somebody added: not hidden, not inherited from
   // the base type, and not one SharePoint itself refuses to delete.
-  const isCustom = (f) => !f.Hidden && !f.FromBaseType && f.CanBeDeleted !== false;
+  //
+  // A SEAL IS NOT THAT REFUSAL. Sealing a column is what makes SharePoint
+  // report CanBeDeleted:false -- MEASURED 2026-09-03 on a live list, where all
+  // 11 sealed columns read false and all 3 unsealed ones read true. This tool
+  // sealed those columns and can unseal them, so filtering on CanBeDeleted
+  // alone hid every column these scripts exist to act on: the delete path
+  // unseals and reads back before deleting, and the protection script's
+  // unseal verb had no targets at all. A column refusing deletion while
+  // UNSEALED is refusing for SharePoint's own reasons, and still does not
+  // belong on the menu.
+  const isCustom = (f) => !f.Hidden && !f.FromBaseType
+    && (f.CanBeDeleted !== false || f.Sealed === true);
 
   const mismatch = (message) => {
     const err = new Error(message);

@@ -368,7 +368,7 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The decision": "Identify",
         "Why": "Assess",
     },
-    # m365-adoption-program is the first family to merge two vocabularies, so
+    # programme-governance is the first family to merge two vocabularies, so
     # it inherits both rather than inventing a third: its four delivery lists
     # keep raid-log's section names exactly, and ProgramActivity,
     # ProgramInvolvement and ProgramStakeholders keep raci-matrix's. Somebody who
@@ -381,53 +381,67 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # is handling it, and how far it was escalated. Splitting them gives the
     # escalation block a heading somebody can ignore on the nine requests in
     # ten that never escalate.
-    ("m365-adoption-program", "Workstream"): {
+    # The same five beats process-register declares for the same table. The
+    # arc is a property of the shape, so two families carrying it should not
+    # tell the reader two different stories about it.
+    # A mapping backlog, not process-register's digitisation inventory, so the
+    # Act beat is split: deciding the order is one act, doing the mapping is
+    # another, and the register records both.
+    ("programme-governance", "BusinessProcess"): {
+        "Name the process": "Identify",
+        "Score it": "Assess",
+        "Decide the order": "Act",
+        "Map it": "Act",
+        "Review": "Govern",
+        "System": "System",
+    },
+    ("programme-governance", "Workstream"): {
         "Name the workstream": "Identify",
         "Sequence and dates": "Act",
         "Phase and closure": "Govern",
     },
-    ("m365-adoption-program", "Stakeholder"): {
+    ("programme-governance", "Stakeholder"): {
         "Name the stakeholder": "Identify",
         "How to reach them": "Act",
         "Status and notes": "Govern",
     },
-    ("m365-adoption-program", "Activity"): {
+    ("programme-governance", "Activity"): {
         "Describe the activity": "Identify",
         "Classify it": "Assess",
         "Assign it": "Act",
         "Keep it current": "Govern",
         "System": "System",
     },
-    ("m365-adoption-program", "Involvement"): {
+    ("programme-governance", "Involvement"): {
         "State the input": "Identify",
         "How they are involved": "Act",
     },
-    ("m365-adoption-program", "ServiceRequest"): {
+    ("programme-governance", "ServiceRequest"): {
         "Describe the request": "Identify",
         "Who needs it and when": "Act",
         "Internal authorisation": "Govern",
         "Handling": "Govern",
         "Escalation": "Govern",
     },
-    ("m365-adoption-program", "Risk"): {
+    ("programme-governance", "Risk"): {
         "Describe the risk": "Identify",
         "Assess the risk": "Assess",
         "Response and owner": "Act",
         "Review and closure": "Govern",
         "System": "System",
     },
-    ("m365-adoption-program", "Action"): {
+    ("programme-governance", "Action"): {
         "The action": "Identify",
         "Owner and date": "Act",
         "Progress": "Govern",
     },
-    ("m365-adoption-program", "Issue"): {
+    ("programme-governance", "Issue"): {
         "Describe the issue": "Identify",
         "Severity and owner": "Assess",
         "Progress": "Act",
         "Resolution and closure": "Govern",
     },
-    ("m365-adoption-program", "Decision"): {
+    ("programme-governance", "Decision"): {
         "The decision": "Identify",
         "Why": "Assess",
         "Endorsement route": "Govern",
@@ -1667,11 +1681,11 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     still raci-matrix/Activity at 6.
 
     RE-MEASURED 2026-08-28 across 35 templates / 71 entities, when
-    m365-adoption-program joined the roster: 2 -> 8, 3 -> 32, 4 -> 25,
+    programme-governance joined the roster: 2 -> 8, 3 -> 32, 4 -> 25,
     5 -> 2, 6 -> 2, 7 -> 2. The new worst is 7, shared by
-    m365-adoption-program/ProgramActivity (Responsible, Accountable,
+    programme-governance/ProgramActivity (Responsible, Accountable,
     ConfirmedBy, the Workstream and AccountableForum Lookups, Author and
-    Editor) and m365-adoption-program/TenantRequest (RequestedBy,
+    Editor) and programme-governance/TenantRequest (RequestedBy,
     InternalAccountable, AuthorisedBy, EscalatedBy, the Workstream Lookup,
     Author and Editor). Both are raci-matrix/Activity's shape with a
     workstream added: a family that merges an accountability register with an
@@ -1680,7 +1694,7 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     reach 7, so the next one to add a person column to either entity should
     check `hide_from_all_items` rather than the ceiling.
 
-    RE-MEASURED 2026-08-28 after m365-adoption-program added four nullable
+    RE-MEASURED 2026-08-28 after programme-governance added four nullable
     reporting joins: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 4, 6 -> 1, 7 -> 2,
     8 -> 1. TenantRequest is the new worst at 8 after adding its authorising
     decision. ProgramAction moves from 6 to 7, while ProgramRisk and
@@ -1688,7 +1702,7 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     `hide_from_all_items` is reserved for an entity that would otherwise
     exceed the measured ceiling and would warn as unnecessary here.
 
-    RE-MEASURED 2026-08-28 after m365-adoption-program added the decision
+    RE-MEASURED 2026-08-28 after programme-governance added the decision
     route: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1, 8 -> 4. The band at 7
     empties and four entities now sit at 8: ProgramActivity (DecisionRoute),
     ProgramAction (AuthorisingDecision), ProgramDecision (Activity,
@@ -1699,7 +1713,7 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     what kept it there: the four decision lookups each project the target's
     Title, and a projection is a dependent field that costs no join.
 
-    RE-MEASURED 2026-09-02 after m365-adoption-program made TenantRequest
+    RE-MEASURED 2026-09-02 after programme-governance made TenantRequest
     the ServiceRequest surface: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1,
     8 -> 3, 9 -> 1. ServiceRequest is the new worst at 9 (RequestedBy,
     InternalAccountable, AuthorisedBy, EscalatedBy, AssignedTo, the
