@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMS AND FIELD ORDER
  *
- * REVISION: 575c348e
+ * REVISION: 14e092e4
  *
  * ONE QUESTION:
  *   How do document library forms behave over REST, and can their field order be customised?
@@ -231,7 +231,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -285,7 +289,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 575c348e. Quote this when reporting results.');
+  log('INFO', 'probe revision 14e092e4. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibForm';
   const FILE = 'dbmlsp-form-doc.txt';

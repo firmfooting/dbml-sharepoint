@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW GROUPING
  *
- * REVISION: a7c321ee
+ * REVISION: 91487010
  *
  * ONE QUESTION:
  *   How does view grouping behave on a document library, and does it diverge from generic lists?
@@ -219,7 +219,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -273,7 +277,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a7c321ee. Quote this when reporting results.');
+  log('INFO', 'probe revision 91487010. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibView';
   const FOLDER = 'FolderAlpha';
