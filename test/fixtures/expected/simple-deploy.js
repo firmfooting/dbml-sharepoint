@@ -334,7 +334,9 @@
       const op = {
         method,
         url: `${this.origin}${this.apiUrl(path)}`,
-        payload: JSON.stringify(body === undefined ? {} : body),
+        // null, not '{}': a function invocation such as addroleassignment is
+        // a POST with no body as a single write, and a part reproduces it.
+        payload: body === undefined ? null : JSON.stringify(body),
         extraHeaders,
       };
       // Measured off the encoder rather than from a table of header sizes, so
@@ -357,19 +359,30 @@
     // throttle-batch probe's parts used nometadata and landed; the shared
     // spHeaders verbosity is for single writes, not for batch parts).
     _part(op, digest, inner) {
+      // A single SharePoint write tunnels MERGE and DELETE through
+      // X-HTTP-Method on a POST, but a ChangeSet part carries the verb in its
+      // own request line: Learn's batch example spells a delete
+      // `DELETE <url> HTTP/1.1` with If-Match, and PnPjs (pnp/pnpjs
+      // packages/sp/batching.ts) reads X-HTTP-Method off the request, uses it
+      // as the request-line method and DELETES the header before writing the
+      // part. Translating here is what lets a caller hand add() the same
+      // method and headers the single-write helper sends.
+      const extra = { ...(op.extraHeaders || {}) };
+      const tunnelled = extra['X-HTTP-Method'];
+      delete extra['X-HTTP-Method'];
       const headers = 'Accept: application/json;odata=nometadata\r\n'
         + 'Content-Type: application/json;odata=nometadata\r\n'
         + `X-RequestDigest: ${digest}\r\n`
-        + Object.entries(op.extraHeaders || {})
+        + Object.entries(extra)
           .map(([name, value]) => `${name}: ${value}\r\n`).join('');
       return `--${inner}\r\n`
         + 'Content-Type: application/http\r\n'
         + 'Content-Transfer-Encoding: binary\r\n'
         + '\r\n'
-        + `${op.method} ${op.url} HTTP/1.1\r\n`
+        + `${tunnelled || op.method} ${op.url} HTTP/1.1\r\n`
         + headers
         + '\r\n'
-        + `${op.payload}\r\n`;
+        + (op.payload === null ? '' : `${op.payload}\r\n`);
     }
 
     // The multipart/mixed envelope holding one ChangeSet of those parts.

@@ -205,10 +205,46 @@ def test_a_batch_body_encodes_every_operation() -> None:
         f"POST {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')/items HTTP/1.1\r\n" in body
     ), "an operation's request line is not an absolute url"
     assert '{"Title":"A"}\r\n' in body and '{"Title":"C"}\r\n' in body
-    assert "X-HTTP-Method: MERGE\r\n" in body and "IF-MATCH: *\r\n" in body, (
-        "extraHeaders did not reach the ChangeSet part, so a MERGE would POST"
+    assert "IF-MATCH: *\r\n" in body, "extraHeaders did not reach the ChangeSet part"
+    assert f"MERGE {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')/items(" in body, (
+        "a tunnelled MERGE did not become the part's request-line verb, so it would POST"
+    )
+    assert "X-HTTP-Method" not in body, (
+        "X-HTTP-Method survived into the part; Learn's batch example and PnPjs "
+        "both put the verb in the request line and send no override header"
     )
     assert body.endswith(f"--{inner}--\r\n--{outer}--\r\n")
+
+
+def test_a_part_with_no_body_carries_no_payload() -> None:
+    """A function invocation is a POST with no body, batched or not.
+
+    `addroleassignment` and friends take their arguments in the URL. The
+    single write sends no body at all, so neither does the part that replaces
+    it: PnPjs writes a part's body only when the request has one.
+    """
+    result = _run_batch(
+        {BATCH_URL: [{"status": 200, "text": _multipart_response([200])}]},
+        f"""
+        {_writer()}
+        await writer.add(
+          'POST',
+          "web/lists/getbytitle('Risk')/roleassignments/addroleassignment(principalid=7,roleDefId=1073741826)",
+        );
+        await writer.done();
+        return {{ body: requests[0].opts.body }};
+        """,
+    )
+    body = result["body"]
+    assert (
+        f"POST {ORIGIN}{WEB}/_api/web/lists/getbytitle('Risk')"
+        "/roleassignments/addroleassignment(principalid=7,roleDefId=1073741826)"
+        " HTTP/1.1\r\n" in body
+    )
+    assert "{}" not in body, "a bodyless operation invented a payload"
+    assert body.count(f"X-RequestDigest: {DIGEST}\r\n") == 1, (
+        "the part carries no digest"
+    )
 
 
 def test_the_body_budget_flushes_before_the_measured_ceiling() -> None:
