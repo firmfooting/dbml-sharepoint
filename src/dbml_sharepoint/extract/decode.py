@@ -347,14 +347,26 @@ def _column_type(
             ))
         return calculated
 
-    if raw.sp_type == "Lookup":
+    if raw.sp_type in ("Lookup", "LookupMulti"):
         # A lookup's target is a list GUID in the XML. Resolving it needs the
         # site's other lists, which only the live path reads, and a `ref` to
         # the wrong table is worse than none.
+        #
+        # `LookupMulti` is the same kind at a different arity, measured
+        # 2026-09-02: a multi-value lookup reads back Type="LookupMulti" over
+        # FieldTypeKind 7, the Lookup kind. It rides the same arm because the
+        # target is equally unresolvable, and the ARITY is named here so the
+        # hand-added ref carries the brackets.
+        multi = raw.sp_type == "LookupMulti"
+        arity = (
+            f" as an array (`int{MULTI_VALUE_SUFFIX}`), because it holds many"
+            if multi else ""
+        )
         unrecovered.append(Unrecovered(
             "lookup-target", subject,
-            f"a Lookup column pointing at list {raw.lookup_list or 'unknown'}; "
-            "add the `ref` by hand once the target entity is in the schema.",
+            f"a {raw.sp_type} column pointing at list "
+            f"{raw.lookup_list or 'unknown'}; add the `ref` by hand{arity} "
+            f"once the target entity is in the schema.",
         ))
         return None
 
