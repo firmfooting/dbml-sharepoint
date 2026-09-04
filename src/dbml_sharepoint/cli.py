@@ -1217,11 +1217,12 @@ def extract_script(
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     seeded = seed(
         list_title=target.list_title,
+        list_path=target.list_path,
         site_url=used,
         generated_at=generated_at,
         script=out,
     )
-    typer.echo(f"Reading the list {target.list_title!r} on {used}.")
+    typer.echo(f"Reading the list at {target.list_path!r} on {used}.")
     typer.echo(
         f"Wrote {seeded.script}. Open it, copy all of it, and paste it into the "
         f"browser console on {used}. It makes no changes.",
@@ -1254,10 +1255,15 @@ def _maintenance_script(
 ) -> None:
     """Write one list-maintenance script from a pasted list URL.
 
-    The site and the list title are split out of the one string the address
-    bar holds, then the site half meets the same rule an operator-typed
-    `--site-url` does. Default location: a folder named after the list, the
-    same place `extract-script` writes to, so the scripts for one list stay
+    The site and the list's server-relative path are split out of the one
+    string the address bar holds, then the site half meets the same rule an
+    operator-typed `--site-url` does.
+
+    THE SCRIPT RESOLVES BY PATH, NOT BY THE SLUG. A list renamed in place
+    keeps the slug it was created with, so on any site that has been through a
+    `renamed_from` migration the slug is not the list's title and a by-title
+    script 404s on its first read. The slug still names the output folder,
+    which is where `extract-script` writes too, so one list's scripts stay
     together.
     """
     try:
@@ -1268,9 +1274,12 @@ def _maintenance_script(
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     path = out if out is not None else folder_for(target.list_title) / script_name
     write_artifact(path, render(
-        site_url=used, list_title=target.list_title, generated_at=generated_at,
+        site_url=used, list_title=target.list_title,
+        list_path=target.list_path, generated_at=generated_at,
     ))
-    typer.echo(f"Wrote {path} for the list {target.list_title!r} on {used}.")
+    # The PATH is echoed, because that is what the script resolves and what an
+    # operator can check against the address bar. Its title may differ.
+    typer.echo(f"Wrote {path} for the list at {target.list_path!r} on {used}.")
     typer.echo(
         "Open it, copy all of it, and paste it into the browser console on "
         f"{used} from a classic page such as _layouts/15/settings.aspx. It {does}",

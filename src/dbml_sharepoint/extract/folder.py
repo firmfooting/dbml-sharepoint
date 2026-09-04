@@ -145,6 +145,7 @@ def render_readme(*, list_title: str, site_url: str) -> str:
 def seed(
     *,
     list_title: str,
+    list_path: str,
     site_url: str,
     generated_at: str,
     script: Path | None = None,
@@ -155,10 +156,14 @@ def seed(
     The readme follows it, because the two are one document in two files and
     a script in a directory with no procedure beside it is the state this
     module exists to avoid.
+
+    `list_title` is the URL slug and names the FOLDER; `list_path` is the
+    server-relative URL and is what the emitted script RESOLVES BY. They stop
+    being the same string the moment the list is renamed in place.
     """
     path = script if script is not None else folder_for(list_title) / EXTRACT_SCRIPT
     write_artifact(path, generate_extract_js(
-        site_url=site_url, list_titles=[list_title], generated_at=generated_at,
+        site_url=site_url, list_paths=[list_path], generated_at=generated_at,
     ))
     readme = path.parent / README_FILENAME
     if readme.exists():

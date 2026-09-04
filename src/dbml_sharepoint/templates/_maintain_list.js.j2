@@ -1,10 +1,16 @@
 {# Shared list resolution for the two maintenance scripts (protection.js,
-   columns.js). Expects log, LIST_TITLE, summary, apiUrl, odataName,
-   fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits
-   the ManageLists preflight, the by-title list read that names what does
-   exist on a miss, the guid-addressed list and field paths, the custom
-   column filter, and the MERGE helpers every write here goes through. #}
+   columns.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl,
+   odataName, fetchWithRetry, spError, spHeaders and getDigest to be
+   defined. Emits the ManageLists preflight, the by-URL list read that names
+   what does exist on a miss, the guid-addressed list and field paths, the
+   custom column filter, and the MERGE helpers every write goes through.
+
+   RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the
+   reason. LIST_TITLE is read back from the list here, so every message below
+   names what the list is called now rather than what its folder is called. #}
   const verbose = () => ({ headers: { 'Accept': 'application/json;odata=verbose' } });
+
+{% include "_get_list_by_path.js.j2" %}
 
   // One entity read. Throws with SharePoint's own reason rather than a bare status.
   async function getOne(suffix, what) {
@@ -42,30 +48,32 @@
     }
   }
 
-  const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const sharePointGuid = (value, label) => {
-    const held = String(value || '');
-    if (!GUID.test(held)) throw new Error(`Invalid ${label} GUID returned by SharePoint`);
-    return held;
-  };
+{% include "_guid.js.j2" %}
 
-  // The list, by the title the operator pasted. A by-title GET on an absent
-  // list answers 404, which the console paints red, so the failure names
-  // the lists that do exist instead of leaving a red line to decode.
+  // The list, by the server-relative URL the operator pasted. A GET on an
+  // absent path answers 404, which the console paints red, so the failure
+  // names the lists that do exist instead of leaving a red line to decode.
   let list;
   {
     const r = await fetchWithRetry(
-      apiUrl(`web/lists/getbytitle('${odataName(LIST_TITLE)}')?$select=Id,Title,Description,AllowDeletion,ItemCount`),
+      listByPathUrl(LIST_PATH, '&$select=Id,Title,Description,AllowDeletion,ItemCount'),
       verbose(),
     );
     if (r.status === 404) {
       const titles = (await getAll('web/lists?$select=Title,Hidden&$top=5000', 'list enumeration'))
         .filter((l) => !l.Hidden).map((l) => l.Title).sort();
-      log('ERROR', `No list titled '${LIST_TITLE}' on this web. Lists here: ${titles.join(', ') || '(none)'}.`);
+      log('ERROR', `No list at '${LIST_PATH}' on this web. Lists here: ${titles.join(', ') || '(none)'}.`);
       return { ...summary, aborted: 'list-not-found' };
     }
-    if (!r.ok) throw new Error(`list '${LIST_TITLE}': HTTP ${r.status} ${spError(await r.text())}`);
+    if (!r.ok) throw new Error(`list at '${LIST_PATH}': HTTP ${r.status} ${spError(await r.text())}`);
     list = ((await r.json()) || {}).d || {};
+  }
+  // What the list is CALLED, read back rather than guessed from the folder.
+  // These differ on any renamed list, and the operator needs to see the name
+  // before confirming a destructive write against it.
+  const LIST_TITLE = String(list.Title || LIST_SLUG);
+  if (LIST_TITLE !== LIST_SLUG) {
+    log('INFO', `'${LIST_PATH}' is the list titled '${LIST_TITLE}'; its URL keeps the slug it was created with.`);
   }
   const LIST_ID = sharePointGuid(list.Id, 'list');
   const listPath = `web/lists(guid'${LIST_ID}')`;

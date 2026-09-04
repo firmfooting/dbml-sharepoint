@@ -76,7 +76,13 @@ def ask_list_url(console: Console) -> ListUrl:
         except typer.BadParameter as exc:
             console.print(f"[red]{escape(exc.message)}[/red]")
             continue
-        return ListUrl(site_url=site_url, list_title=target.list_title)
+        # The path is server-relative and so is unaffected by the site URL
+        # being replaced with the validator's cleaned form.
+        return ListUrl(
+            site_url=site_url,
+            list_title=target.list_title,
+            list_path=target.list_path,
+        )
 
 
 def _paste_panel(seeded: Seeded, download: Path) -> Panel:
@@ -164,6 +170,7 @@ def _run(
     try:
         seeded = seed(
             list_title=target.list_title,
+            list_path=target.list_path,
             site_url=target.site_url,
             generated_at=generated_at,
         )

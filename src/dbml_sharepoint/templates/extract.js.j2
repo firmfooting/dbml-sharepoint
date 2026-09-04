@@ -5,7 +5,9 @@
  * Target site:  {{ site_url | comment_safe }}
  * Deployer:     v{{ deployer_version | comment_safe }}
  * Generated at: {{ generated_at | comment_safe }}
- * Lists:        {{ list_titles | join(', ') | comment_safe }}
+ * Lists:        {{ list_paths | join(', ') | comment_safe }}
+ *               (resolved by URL; each title is read back at run time,
+ *                because a renamed list keeps its original slug)
  *
  * Reads each list's field definitions, content types and views, and offers
  * the result as a JSON download. Makes NO changes: every request is a GET,
@@ -23,7 +25,7 @@
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
-  const LIST_TITLES = {{ list_titles | tojson(indent=2) }};
+  const LIST_PATHS = {{ list_paths | tojson(indent=2) }};
   const FORMAT = {{ live_format | tojson }};
   const DOWNLOAD_NAME = {{ download_name | tojson }};
   const GENERATED_AT = {{ generated_at | tojson }};
@@ -34,6 +36,10 @@
 {% include "_site_guard.js.j2" %}
 
 {% include "_http.js.j2" %}
+
+{% include "_guid.js.j2" %}
+
+{% include "_get_list_by_path.js.j2" %}
   log('INFO', 'Read-only extraction. No changes are made.');
 
   const verbose = () => ({ headers: { 'Accept': 'application/json;odata=verbose' } });
@@ -67,9 +73,9 @@
     return rows;
   }
 
-  // Every title on the web, so a mistyped list name is answered with the
-  // names that DO exist. A by-title GET on an absent list answers 404, which
-  // the console paints red and operators read as a broken script.
+  // Every title on the web, so a path naming no list is answered with the
+  // lists that DO exist. A GET on an absent path answers 404, which the
+  // console paints red and operators read as a broken script.
   let titlesOnWeb = null;
   async function knownTitles() {
     if (titlesOnWeb === null) {
@@ -79,9 +85,14 @@
     return titlesOnWeb;
   }
 
-  async function readList(title) {
-    const listPath = `web/lists/getbytitle('${odataName(title)}')`;
-    const meta = await getOne(`${listPath}?$select=Title,Description,BaseTemplate,ItemCount`, `list '${title}'`);
+  // Resolved by path, then addressed by GUID for every subsequent read, so
+  // one lookup settles which list this is and nothing after it can drift.
+  async function readList(path) {
+    const meta = await getOne(
+      listByPathUrl(path, '&$select=Id,Title,Description,BaseTemplate,ItemCount'), `list at '${path}'`,
+    );
+    const title = String(meta.Title || '');
+    const listPath = `web/lists(guid'${sharePointGuid(meta.Id, 'list')}')`;
 
     // SchemaXml holds each field's whole CAML <Field> element, which is
     // everything the Python decoder reads. Proven in this repository by
@@ -140,9 +151,9 @@
   }
 
   const lists = [];
-  for (const title of LIST_TITLES) {
+  for (const path of LIST_PATHS) {
     try {
-      lists.push(await readList(title));
+      lists.push(await readList(path));
     } catch (err) {
       // Abort rather than download what was read so far. A partial
       // extraction produces a schema that parses, builds and is missing a

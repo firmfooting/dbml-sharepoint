@@ -25,10 +25,17 @@ PROTECTION_SCRIPT = "protection.js.txt"
 COLUMNS_SCRIPT = "columns.js.txt"
 
 
-def _render(template: str, *, site_url: str, list_title: str, generated_at: str) -> str:
+def _render(
+    template: str, *, site_url: str, list_title: str, list_path: str, generated_at: str,
+) -> str:
     return script_env().get_template(template).render(
         site_url=site_url,
+        # BOTH, and they are different things. `list_path` is what the script
+        # resolves the list by; `list_title` is the URL slug, which names the
+        # output folder and the header comment and stops being the list's
+        # title the moment the list is renamed in place.
         list_title=list_title,
+        list_path=list_path,
         generated_at=generated_at,
         deployer_version=__version__,
         # Passed in rather than typed into the template, so the scripts and
@@ -37,15 +44,31 @@ def _render(template: str, *, site_url: str, list_title: str, generated_at: str)
     )
 
 
-def generate_protection_js(*, site_url: str, list_title: str, generated_at: str) -> str:
-    """The pasteable script that locks, unlocks, seals or unseals one list."""
+def generate_protection_js(
+    *, site_url: str, list_title: str, list_path: str, generated_at: str,
+) -> str:
+    """The pasteable script that locks, unlocks, seals or unseals one list.
+
+    `list_path` is the list's server-relative URL and is what the script
+    resolves by; `list_title` is the slug from that URL, and the two differ on
+    any list renamed in place.
+    """
     return _render(
-        "protection.js.j2", site_url=site_url, list_title=list_title, generated_at=generated_at,
+        "protection.js.j2", site_url=site_url, list_title=list_title,
+        list_path=list_path, generated_at=generated_at,
     )
 
 
-def generate_columns_js(*, site_url: str, list_title: str, generated_at: str) -> str:
-    """The pasteable script that enumerates and deletes one list's custom columns."""
+def generate_columns_js(
+    *, site_url: str, list_title: str, list_path: str, generated_at: str,
+) -> str:
+    """The pasteable script that enumerates and deletes one list's custom columns.
+
+    `list_path` is the list's server-relative URL and is what the script
+    resolves by; `list_title` is the slug from that URL, and the two differ on
+    any list renamed in place.
+    """
     return _render(
-        "columns.js.j2", site_url=site_url, list_title=list_title, generated_at=generated_at,
+        "columns.js.j2", site_url=site_url, list_title=list_title,
+        list_path=list_path, generated_at=generated_at,
     )
