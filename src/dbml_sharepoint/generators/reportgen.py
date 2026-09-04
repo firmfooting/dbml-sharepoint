@@ -82,10 +82,13 @@ class _ListPlan:
     record_expands: list[tuple[str, str, str, str]] = field(default_factory=list)
     # (output column, M type token)
     m_types: list[tuple[str, str]] = field(default_factory=list)
-    # Multi-value columns joined to one text cell. Deliberately NOT in
-    # `m_types`: the join step ascribes their type, because the raw list must
-    # never reach `Table.TransformColumnTypes` at all.
-    multi_value_joins: list[str] = field(default_factory=list)
+    # Multi-value columns joined to one text cell, each with whether its
+    # members arrive as text. Deliberately NOT in `m_types`: the join step
+    # ascribes their type, because the raw list must never reach
+    # `Table.TransformColumnTypes` at all. A multi-value LOOKUP arrives as a
+    # list of ids rather than of strings, and `Text.Combine` over numbers
+    # raises, so the flag decides whether the members are converted first.
+    multi_value_joins: list[tuple[str, bool]] = field(default_factory=list)
     # (landed column, SQL type)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
     # (fk column, target list title, target display column)
@@ -290,8 +293,33 @@ def _build_plans(
                         sp.name, enum_members.get(sp.choices_enum or "", []),
                     )
                     plan.selects.append(sp.name)
-                    plan.multi_value_joins.append(sp.name)
+                    plan.multi_value_joins.append((sp.name, True))
                     plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
+                case "LookupMulti":
+                    # Everything the MultiChoice arm above argues applies here
+                    # too: the cell holds a list, so it is joined to one text
+                    # cell before anything types anything, and the joined
+                    # string is NVARCHAR(MAX) because a set has no bound worth
+                    # guessing.
+                    #
+                    # THREE THINGS DIVERGE FROM THE SINGLE-VALUE Lookup ARM.
+                    # No `$expand`: expanding a collection yields a nested
+                    # TABLE per row rather than a record, and there is no
+                    # machinery here that flattens one. No star-schema join
+                    # either, because `joins` maps one foreign key to one
+                    # dimension row and a set of ids is not one key. And the
+                    # members are ids, measured 2026-09-02 as
+                    # Collection(Edm.Int32) in verbose and a bare array of
+                    # numbers under nometadata (the dialect this layer
+                    # speaks), so they are converted to text before the join.
+                    #
+                    # The cell therefore holds ids, not titles. Joining the
+                    # target's display column would need the expand this arm
+                    # does not do; the ids resolve against the target list's
+                    # own query, which the same bundle emits.
+                    plan.selects.append(f"{sp.name}Id")
+                    plan.multi_value_joins.append((f"{sp.name}Id", False))
+                    plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
                 case "Calculated":
                     plan.selects.append(sp.name)
                     if sp.output_type == 9:
@@ -363,7 +391,7 @@ def _build_plans(
             # display title.
             for out_name in (
                 [name for name, _ in plan.m_types]
-                + plan.multi_value_joins
+                + [name for name, _ in plan.multi_value_joins]
                 + ["ItemURL"]
             ):
                 if out_name in system_outputs:
@@ -636,12 +664,15 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
             f"        {prev},",
             "        {",
         ]
-        for name in plan.multi_value_joins:
+        for name, members_are_text in plan.multi_value_joins:
+            # A multi-value lookup's members are ids, and Text.Combine over a
+            # list of numbers raises, so they are converted first.
+            members = "_" if members_are_text else "List.Transform(_, Text.From)"
             lines += [
                 (f'            {{"{name}", each if _ = null '
                  "or List.IsEmpty(_) then null"),
-                (f'                else Text.Combine(_, "{MULTI_VALUE_JOIN}"), '
-                 "type text},"),
+                (f'                else Text.Combine({members}, '
+                 f'"{MULTI_VALUE_JOIN}"), type text}},'),
             ]
         # M list literals do not allow a trailing comma.
         lines[-1] = lines[-1].rstrip(",")
@@ -661,7 +692,10 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     # declared set is selected here. `multi_value_joins` is the one output
     # column not in `m_types` (the join step types it), and a selection built
     # from `m_types` alone would drop it silently.
-    declared = [name for name, _ in plan.m_types] + plan.multi_value_joins
+    declared = (
+        [name for name, _ in plan.m_types]
+        + [name for name, _ in plan.multi_value_joins]
+    )
     lines += [
         "        }",
         "    ),",
@@ -1355,6 +1389,16 @@ def _sp_type_cell(
             return "Person"
         case "Lookup":
             return f"Lookup -> {prefix}{sp.target_list}"
+        case "LookupMulti":
+            # Says what the cell holds and what to split on, like the
+            # MultiChoice arm, and says IDS because that is what the export
+            # lands: this column takes no $expand, so no title comes back
+            # with it.
+            return (
+                f"Lookup (multiple) -> {prefix}{sp.target_list} (a set of "
+                f"item ids; the Power Query export joins them into one text "
+                f'cell separated by "{MULTI_VALUE_JOIN}")'
+            )
         case "Calculated":
             output = {9: "Number", 4: "Date"}.get(sp.output_type or 0, "Text")
             if formula:
