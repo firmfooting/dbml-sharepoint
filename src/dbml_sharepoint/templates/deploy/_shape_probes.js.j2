@@ -35,15 +35,11 @@
     return knownListTitles;
   }
 
-  async function readListShape(name, fresh = false) {
-    // The existence check always runs, because asking getbytitle for an
-    // absent list answers 404, which the browser paints red and an operator
-    // reads as a failure. `fresh` re-enumerates rather than trusting the
-    // cache (a verification after a write must never have its own write
-    // confirmed by a cache); either way absence is learned from the
-    // enumeration, never a red 404.
-    const titles = await ensureKnownListTitles(fresh);
-    if (titles && !hasName(titles, name)) return null;
+  // The by-title read and its fail-closed shape gate, with nothing in front
+  // of it. Held apart from readListShape so a caller for whom an absent list
+  // is FATAL can spend one request rather than two: see
+  // assertDeclaredListOwnedNow, which argues why that is safe there.
+  async function probeListShapeByTitle(name) {
     // Description rides along on a request already being made: it is a
     // declared, reconciled setting (it carries the provenance marker), so
     // reading it here is what lets reconcileListDescription compare without
@@ -76,6 +72,18 @@
       throw new Error(`List '${name}' shape probe returned an invalid response`);
     }
     return shape;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // The existence check runs first for every caller that comes through
+    // here, because asking getbytitle for an absent list answers 404, which
+    // the browser paints red and an operator reads as a failure. `fresh`
+    // re-enumerates rather than trusting the cache (a verification after a
+    // write must never have its own write confirmed by a cache); either way
+    // absence is learned from the enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
+    return probeListShapeByTitle(name);
   }
 
   // SharePoint's by-name getters do not uniformly 404 for a missing item:

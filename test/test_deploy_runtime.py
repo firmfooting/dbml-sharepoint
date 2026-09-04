@@ -242,6 +242,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const SABOTAGE_MODE = 'marker';
     const SABOTAGE_AFTER_READS = 0;
     const REPLACEMENT_LIST_ID = '55555555-5555-5555-5555-555555555555';
+    // Titles this site does NOT have, so the by-title list probe answers 404.
+    // Empty by default: every other test's fiction is that a probed list is
+    // there. Exposed as the array itself so a test can arm it mid-run.
+    const ABSENT_LIST_TITLES = [];
+    globalThis.__absentListTitles = ABSENT_LIST_TITLES;
     let sabotageArmed = false;
     const sabotageReads = Object.create(null);
     // The phase every request belongs to, read off the run's own phase
@@ -670,6 +675,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
         const probeTitle = listOf(url);
+        // Unless a test says the site does not have it. The branch above
+        // answers every title alike, which leaves the by-title 404 -- the
+        // only way a run learns a declared list is GONE, now that the
+        // ownership guard probes without enumerating first -- unreachable.
+        // Mutable, so a test can arm it after the run it measures.
+        if (ABSENT_LIST_TITLES.includes(probeTitle)) {
+          return { error: { code: 'List not found', status: 404 } };
+        }
         const sabotage = sabotageFor(probeTitle);
         // Called either way: it drives the read counter DROP_LIST_MARKER_
         // AFTER_READS uses, which must not depend on the sabotage knobs.
@@ -5714,6 +5727,92 @@ def test_every_guarded_phase_writes_when_ownership_holds(tmp_path: Path) -> None
             f"phase {phase.key} ({pn(phase.key)}) wrote nothing, so the "
             f"refusal test for it proves nothing:\n{output[-3000:]}"
         )
+
+
+# The guard is a closure, not an export, so it is measured from INSIDE the
+# run: spliced ahead of the next function declaration, which runs before any
+# phase does. Attributing requests to it from the outside instead would mean
+# re-deriving which of a phase's list reads were its, and that attribution
+# shifts with every probe added anywhere else in the run.
+_GUARD_EXPORT_ANCHOR = "  async function assertDeclaredFieldOwnedNow(listName, field) {"
+
+_GUARD_COST_TAIL = """.then(async (r) => {
+  console.log('__RESULT__' + JSON.stringify(r));
+  const measure = async (title) => {
+    globalThis.__calls.length = 0;
+    let message = null;
+    try { await globalThis.__ownedGuard(title); } catch (err) { message = err.message; }
+    return { message, urls: globalThis.__calls.map((c) => c.url) };
+  };
+  const hit = await measure('APP_Escalation');
+  globalThis.__absentListTitles.push('APP_Escalation');
+  const miss = await measure('APP_Escalation');
+  console.log('__GUARD__' + JSON.stringify({ hit, miss }));
+});
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
+    """The guard reads the list by title, with no enumeration ahead of it.
+
+    It is the deploy's most-called function by a wide margin (462 calls on a
+    ten-list family, 21% of every request the run made when each cost two
+    GETs), so its per-call cost is pinned rather than left to be doubled
+    again by a later change routing it back through `readListShape`, whose
+    forced `web/lists?$select=Title` is right for the callers that expect
+    absence and wasted here, where absence is fatal.
+
+    Both paths, because the cheaper one is only safe if the refusal it
+    replaces is unchanged: the absent list still produces the same message,
+    for the same one request.
+    """
+    descriptions = _ownership_list_descriptions(tmp_path, ("Escalation", "Other"))
+    harness = _READER_ACL_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    ).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
+    )
+    js = _ownership_deploy_js(tmp_path, ("Escalation", "Other"))
+    exported = js.replace(
+        _GUARD_EXPORT_ANCHOR,
+        "  globalThis.__ownedGuard = (name) => assertDeclaredListOwnedNow(name);\n"
+        + _GUARD_EXPORT_ANCHOR,
+        1,
+    )
+    assert exported != js, "the guard export did not splice in"
+    # Wrapped rather than spliced on `})();`: one of the emitted comments
+    # names that sequence, and a multi-line tail replacing THAT occurrence
+    # escapes the comment and breaks the file.
+    body = exported.rstrip()
+    assert body.endswith("})();")
+    output = _run(f"{harness}\n({body[:-1]}){_GUARD_COST_TAIL}")
+    # A measurement taken against a broken run measures the wrong thing.
+    assert _summary_of(output).get("errors") == [], output[-3000:]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__GUARD__")), None,
+    )
+    assert line is not None, f"the guard was never measured:\n{output[-3000:]}"
+    measured = json.loads(line.removeprefix("__GUARD__"))
+
+    hit = measured["hit"]
+    assert hit["message"] is None, hit
+    assert len(hit["urls"]) == 1, (
+        f"an owned list cost {len(hit['urls'])} requests: {hit['urls']}"
+    )
+    assert f"getbytitle('{_OWNED_TITLE}')" in hit["urls"][0], hit["urls"]
+    assert "web/lists?" not in hit["urls"][0], hit["urls"]
+
+    miss = measured["miss"]
+    assert miss["message"] == (
+        f"Declared list '{_OWNED_TITLE}' disappeared before a field write"
+    ), miss
+    assert len(miss["urls"]) == 1, (
+        f"an absent list cost {len(miss['urls'])} requests: {miss['urls']}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

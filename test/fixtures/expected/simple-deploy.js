@@ -1275,15 +1275,11 @@
     return knownListTitles;
   }
 
-  async function readListShape(name, fresh = false) {
-    // The existence check always runs, because asking getbytitle for an
-    // absent list answers 404, which the browser paints red and an operator
-    // reads as a failure. `fresh` re-enumerates rather than trusting the
-    // cache (a verification after a write must never have its own write
-    // confirmed by a cache); either way absence is learned from the
-    // enumeration, never a red 404.
-    const titles = await ensureKnownListTitles(fresh);
-    if (titles && !hasName(titles, name)) return null;
+  // The by-title read and its fail-closed shape gate, with nothing in front
+  // of it. Held apart from readListShape so a caller for whom an absent list
+  // is FATAL can spend one request rather than two: see
+  // assertDeclaredListOwnedNow, which argues why that is safe there.
+  async function probeListShapeByTitle(name) {
     // Description rides along on a request already being made: it is a
     // declared, reconciled setting (it carries the provenance marker), so
     // reading it here is what lets reconcileListDescription compare without
@@ -1316,6 +1312,18 @@
       throw new Error(`List '${name}' shape probe returned an invalid response`);
     }
     return shape;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // The existence check runs first for every caller that comes through
+    // here, because asking getbytitle for an absent list answers 404, which
+    // the browser paints red and an operator reads as a failure. `fresh`
+    // re-enumerates rather than trusting the cache (a verification after a
+    // write must never have its own write confirmed by a cache); either way
+    // absence is learned from the enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
+    return probeListShapeByTitle(name);
   }
 
   // SharePoint's by-name getters do not uniformly 404 for a missing item:
@@ -2316,11 +2324,35 @@
     }
   }
 
+  // ONE request per call, by probing the list by title with no enumeration
+  // ahead of it. `readListShape(name, true)` spends a forced
+  // web/lists?$select=Title enumeration first so that an absent list is
+  // answered locally instead of by a 404 the browser paints red. That trade
+  // is right where absence is the expected answer: a clean first provision,
+  // or surveyOwnedListsForWrites's allowAbsent branch, which both keep it.
+  // Here absence is FATAL. This guard runs only for a list this run has
+  // already created or adopted, so a miss costs the one 404 and then aborts
+  // the caller, while a hit is every call the guard actually makes on a
+  // healthy site. MEASURED on a ten-list family: 462 calls, 2 GETs each, 924
+  // of ~4,400 requests, the run's largest single bucket at 21%. Probing
+  // first drops 462 of them, about a tenth of the deploy, and the miss still
+  // costs one.
+  //
+  // Nothing weakens: the enumeration was never the authority for existence.
+  // It is capped at $top=5000, and ensureKnownListTitles already falls back
+  // to trusting this same probe whenever the enumeration is refused, so
+  // getbytitle has always been what decides. On a miss the cached title set
+  // is dropped rather than re-read: re-reading it cannot change the answer,
+  // and a re-read that failed would replace this function's precise absence
+  // message with a transport error.
   async function assertDeclaredListOwnedNow(listName) {
     const list = SCHEMA.lists.find(candidate => candidate.title === listName);
     if (!list) throw new Error(`No declaration found for list '${listName}'`);
-    const actual = await readListShape(listName, true);
-    if (!actual) throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    const actual = await probeListShapeByTitle(listName);
+    if (!actual) {
+      invalidateListShapes();  // it still claims a list that is not there
+      throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    }
     assertListAdoptable(list, actual);
     return actual;
   }

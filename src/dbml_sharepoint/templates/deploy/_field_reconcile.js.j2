@@ -239,11 +239,35 @@
     }
   }
 
+  // ONE request per call, by probing the list by title with no enumeration
+  // ahead of it. `readListShape(name, true)` spends a forced
+  // web/lists?$select=Title enumeration first so that an absent list is
+  // answered locally instead of by a 404 the browser paints red. That trade
+  // is right where absence is the expected answer: a clean first provision,
+  // or surveyOwnedListsForWrites's allowAbsent branch, which both keep it.
+  // Here absence is FATAL. This guard runs only for a list this run has
+  // already created or adopted, so a miss costs the one 404 and then aborts
+  // the caller, while a hit is every call the guard actually makes on a
+  // healthy site. MEASURED on a ten-list family: 462 calls, 2 GETs each, 924
+  // of ~4,400 requests, the run's largest single bucket at 21%. Probing
+  // first drops 462 of them, about a tenth of the deploy, and the miss still
+  // costs one.
+  //
+  // Nothing weakens: the enumeration was never the authority for existence.
+  // It is capped at $top=5000, and ensureKnownListTitles already falls back
+  // to trusting this same probe whenever the enumeration is refused, so
+  // getbytitle has always been what decides. On a miss the cached title set
+  // is dropped rather than re-read: re-reading it cannot change the answer,
+  // and a re-read that failed would replace this function's precise absence
+  // message with a transport error.
   async function assertDeclaredListOwnedNow(listName) {
     const list = SCHEMA.lists.find(candidate => candidate.title === listName);
     if (!list) throw new Error(`No declaration found for list '${listName}'`);
-    const actual = await readListShape(listName, true);
-    if (!actual) throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    const actual = await probeListShapeByTitle(listName);
+    if (!actual) {
+      invalidateListShapes();  // it still claims a list that is not there
+      throw new Error(`Declared list '${listName}' disappeared before a field write`);
+    }
     assertListAdoptable(list, actual);
     return actual;
   }

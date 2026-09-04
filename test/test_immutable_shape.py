@@ -117,9 +117,17 @@ def test_every_lookup_property_is_in_the_conditional_probe_select() -> None:
 
 
 def test_every_list_property_is_in_the_select_it_is_read_with() -> None:
+    """`probeListShapeByTitle` is the one function that reads a list shape.
+
+    `readListShape` is the existence-checked wrapper around it, and the
+    ownership guard calls the probe directly, so the select this pins has to
+    be read off the probe or it stops covering the guard's own read.
+    """
     probe = PROBES.read_text(encoding="utf-8")
     select = re.search(
-        r"const select = \[(.*?)\]", _function_body(probe, "readListShape"), re.DOTALL,
+        r"const select = \[(.*?)\]",
+        _function_body(probe, "probeListShapeByTitle"),
+        re.DOTALL,
     )
     assert select is not None
     for name in IMMUTABLE_LIST_PROPERTIES:
