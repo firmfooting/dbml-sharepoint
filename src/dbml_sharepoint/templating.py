@@ -12,7 +12,13 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from dbml_sharepoint.analysis.typemap import TYPE_AS_STRING_PAIRS
+from dbml_sharepoint.analysis.typemap import (
+    BASE_TYPE_AS_STRING_PAIRS,
+    DERIVED_FIELD_PROPERTIES,
+    DERIVED_FIELD_PROPERTY_KINDS,
+    MULTI_TYPE_AS_STRING_PAIRS,
+    TYPE_AS_STRING_PAIRS,
+)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -50,4 +56,14 @@ def script_env() -> Environment:
     # `analysis/typemap.py` owns the pairing; `test_typemap.py` asserts the
     # rendered Map covers every FieldKind.
     env.globals["type_as_string_by_kind"] = TYPE_AS_STRING_PAIRS
+    # The arity half of the same fact. A LookupMulti reads back the same
+    # FieldTypeKind as a Lookup, so the number alone no longer names the type
+    # and the deployer picks between these two maps on AllowMultipleValues.
+    env.globals["multi_type_as_string_by_kind"] = MULTI_TYPE_AS_STRING_PAIRS
+    env.globals["base_type_as_string"] = BASE_TYPE_AS_STRING_PAIRS
+    # Rendered into both the probe that SELECTS these properties and the
+    # reconciler that COMPARES them, which were two hand-kept copies of one
+    # list.
+    env.globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
+    env.globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
     return env

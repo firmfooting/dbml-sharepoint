@@ -257,6 +257,15 @@ _CAML_OP_TAGS: dict[str, str] = {
     # project's exact failure class. The two operators Learn documents are the
     # two that are broken, so the authored names borrow their spelling and
     # emit what was measured instead.
+    #
+    # ON A MULTI-VALUE LOOKUP ALL FOUR WORK, measured 2026-09-04
+    # (`query.caml-adhoc.multilookup-{eq,includes}-{text,lookupid}` and the
+    # four negatives): the documented elements do work on the type they are
+    # documented for, and <Eq>/<Neq> answer identically there. So the mapping
+    # does not have to branch on which multi-value kind the column is, which
+    # matters because this module sees a declared TYPE STRING and cannot tell
+    # `int[]` from `audit_event[]` in the first place. One spelling, measured
+    # correct on both kinds.
     "includes": "Eq",
     "not_includes": "Neq",
 }
@@ -354,7 +363,13 @@ _UNSUPPORTED_MEASURE: dict[str, str] = {
 # at all. Rendering the accessor away (comparing a display name to an email
 # address) is a view that silently returns the wrong rows, so it is refused.
 _UNSUPPORTED_PROPERTY: dict[str, str] = {
-    CAML: "CAML cannot reach person or lookup sub-properties",
+    CAML: (
+        "CAML cannot reach person or lookup sub-properties. The one exception "
+        "is a comparison against a MULTI-VALUE lookup, where 'lookupValue' and "
+        "'lookupId' name the two operand dialects measured on 2026-09-04; a "
+        "null test is not a comparison and needs no operand, since a row with "
+        "no value has neither a title nor an id"
+    ),
     VALIDATION: "person and lookup operands are unsupported in validation formulas",
 }
 
@@ -417,7 +432,8 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
 # `<Eq>` against a single member returning the rows that contain it, `<Neq>`
 # returning the rows that do not plus the empty ones, and the predicate
 # surviving being stored as a view's ViewQuery. Adding CAML here would refuse
-# a filter SharePoint demonstrably serves.
+# a filter SharePoint demonstrably serves. Measured again on 2026-09-04 over a
+# multi-value LOOKUP, in both operand dialects, with the same answers.
 #
 # The two that ARE here refuse for different evidence, and each says which:
 # VALIDATION was measured, EXPRESSION is documented.
@@ -492,11 +508,63 @@ _MEMBERSHIP_OPS = frozenset({"includes", "not_includes"})
 #     `includes`, so nothing measured becomes inexpressible.
 #   * `in`/`not_in` would be "intersects" rather than "is one of" -- the same
 #     arity-overloading trap as `eq`, one level up. `any_of`/`all_of` over
-#     `includes` says it in the author's own vocabulary.
+#     `includes` says it in the author's own vocabulary. MEASURED on
+#     2026-09-04 (`query.caml-adhoc.multilookup-in-text`, `-in-lookupid`):
+#     <In> over two members returned every row holding EITHER, so the reading
+#     that was refused as ambiguous is the one SharePoint has. It stays
+#     refused -- the reason was never that <In> might not work, it was that
+#     one authored word would mean "is one of" on a scalar and "intersects"
+#     on a set. `any_of[includes, includes]` emits <Or> and returns the same
+#     rows (`-or-membership`), so nothing measured is inexpressible.
 #   * the ordering operators and `begins_with` were never asked, and a set has
 #     no order.
+#
+# THE SAME FOUR WERE MEASURED ON A MULTI-VALUE LOOKUP on 2026-09-04, over an
+# analogue fixture (L1 {Alpha} L2 {Alpha,Bravo} L3 {Bravo,Charlie} L4 {}), in
+# both operand dialects and row for row against the Choice run:
+#   includes      -> <Eq>          L1 + L2, in text and in id
+#   not_includes  -> <Or><IsNull><Neq></Or>
+#                                  L3 + L4 from the composed form
+#                                  (`-neq-isnull-wrapper`), and L3 from the
+#                                  bare negative. Unlike MultiChoice the
+#                                  wrapper is doing work here rather than being
+#                                  uniform for its own sake: see `_leaf`.
+#   is_null       -> <IsNull>      L4
+#   is_not_null   -> <IsNotNull>   L1 + L2 + L3
+# `contains` was not asked of a lookup at all, so its refusal above needs no
+# revisiting on that side either.
 _MULTI_VALUE_OPERATORS: dict[str, frozenset[str]] = {
     CAML: _MEMBERSHIP_OPS | VALUELESS_OPS,
+}
+
+# THE TWO OPERAND DIALECTS a multi-value lookup answers in, and the deadlock
+# they break. A lookup carries no defensible default operand -- the item's
+# title and the item's id are different values -- so `PROPERTY_ACCESSORS`
+# makes the author name one. CAML then refused every accessor
+# (`_UNSUPPORTED_PROPERTY`), which left a lookup filterable only by a null
+# test. That refusal was honest while nothing had been measured; on
+# 2026-09-04 both dialects were, over a multi-value lookup, and they returned
+# the same rows for every one of the fifteen predicates:
+#
+#   lookupValue -> <FieldRef Name="X"/>
+#                  <Value Type="Lookup">Alpha</Value>
+#   lookupId    -> <FieldRef Name="X" LookupId="TRUE"/>
+#                  <Value Type="Integer">3</Value>
+#
+# Type="Lookup" and Type="Integer" are what was measured. Neither is what
+# `_ACCESSOR_TYPES` would have produced (Text and Number), which is why this
+# table exists rather than a mapping onto the scalar types -- emitting an
+# operand spelling nobody sent is how a filter comes back with the wrong rows
+# and no error.
+#
+# SINGLE-VALUE LOOKUPS ARE NOT INCLUDED, and the asymmetry is evidence rather
+# than principle: the probe asked its predicates of a multi-value column, and
+# a single-value lookup appeared in that run only as the index control. The
+# spellings would very likely work there too, and "very likely" is what this
+# file does not emit.
+_CAML_LOOKUP_ACCESSORS: dict[str, str] = {
+    "lookupValue": "Lookup",
+    "lookupId": "Integer",
 }
 
 # SharePoint's own separator between the members of a set on the wire.
@@ -662,7 +730,29 @@ def _reject(
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def _check(leaf: Leaf, target: str, at: str) -> None:
+def _caml_lookup_accessor(leaf: Leaf, declared_type: str, target: str) -> str | None:
+    """The CAML operand dialect this leaf names, or None for every other leaf.
+
+    ARITY DECIDES, so this cannot live in the accessor rules themselves: only
+    a MULTI-VALUE lookup's dialects were measured (see
+    `_CAML_LOOKUP_ACCESSORS`), and a valueless operator has no operand to put
+    in one. A `None` here means the ordinary CAML property refusal applies,
+    which is the fails-closed direction.
+
+    Like every other rule in this module it reads a declared TYPE, so it
+    cannot tell an `int[]` lookup from an `<enum>[]` Choice. It does not have
+    to: `conditions.py` refuses an accessor on a column that is not a person
+    or a lookup before anything is rendered, and it holds the ref set that
+    settles which this is.
+    """
+    if target != CAML or leaf.op in VALUELESS_OPS or leaf.measure:
+        return None
+    if not is_multi_value(declared_type):
+        return None
+    return leaf.property if leaf.property in _CAML_LOOKUP_ACCESSORS else None
+
+
+def _check(leaf: Leaf, target: str, at: str, accessor: str | None = None) -> None:
     if isinstance(leaf.value, str) and (bad := _CONTROL_CHARS.search(leaf.value)):
         # XML 1.0 forbids these, so a CAML <Value> containing one is not a
         # formula SharePoint can parse -- and `_xml_escape` handles &, < and >
@@ -736,7 +826,7 @@ def _check(leaf: Leaf, target: str, at: str) -> None:
             f"'measure' cannot be rendered: {_UNSUPPORTED_MEASURE[target]}",
             at,
         )
-    if leaf.property and target in _UNSUPPORTED_PROPERTY:
+    if leaf.property and target in _UNSUPPORTED_PROPERTY and accessor is None:
         raise _reject(
             ConditionRefusalKind.PROPERTY_UNRENDERABLE,
             target,
@@ -1224,7 +1314,9 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: str) -> Non
                 f"word mean two things. Available here: "
                 f"{', '.join(sorted(allowed))}; combine several with "
                 f"all_of/any_of. (<Includes>/<NotIncludes>, which Microsoft "
-                f"documents, returned nothing at all and are not emitted.)",
+                f"documents, returned nothing at all against a Choice and are "
+                f"not emitted; against a multi-value LOOKUP they work and "
+                f"return what <Eq>/<Neq> return, measured 2026-09-04.)",
                 where,
             )
         if leaf.op in _MEMBERSHIP_OPS and _SET_DELIMITER in str(leaf.value):
@@ -1247,7 +1339,8 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: str) -> Non
             ConditionRefusalKind.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
             target,
             # The array remedy names the FORM, not this column's type.
-            # `map_column` accepts `<enum>[]` and nothing else, so the earlier
+            # `map_column` accepts `<enum>[]` and `<scalar>[]` on a ref
+            # column, so the earlier
             # `{declared_type}[]` was advice a text column could not take --
             # `nvarchar[]` is refused as an unknown type, and the message whose
             # job was to end one error started the next.
@@ -1264,15 +1357,21 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: str) -> Non
             f"operator {leaf.op!r} tests whether a column CONTAINS a value, and "
             f"{leaf.field!r} is {declared_type!r}, which holds exactly one. Use "
             f"{scalar!r} -- or, if it really does hold many, declare it as an "
-            f"array of an enum (`<enum>[]`), which is the only multi-value "
-            f"column this tool builds",
+            f"array of an enum (`<enum>[]`), which is the multi-value form this "
+            f"grammar can filter",
             where,
         )
 
 
 def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
     where = _at(at, leaf.field)
-    _check(leaf, target, where)
+    # Resolved before `_check` because the property rule it feeds runs there,
+    # and read with `.get` because an unknown column is `_column_type`'s
+    # refusal to make, two lines below. A missing type is not multi-value, so
+    # an unknown column with an accessor keeps refusing on the accessor,
+    # exactly as it did before this dialect existed.
+    accessor = _caml_lookup_accessor(leaf, types.get(leaf.field, ""), target)
+    _check(leaf, target, where, accessor)
     # Gate on the REAL column type first. Substituting "number" for a
     # measure ahead of this check lets LEN([MultiLine]) past a rule that
     # is_not_null on the same column hits, the tool contradicting itself,
@@ -1343,7 +1442,8 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
                 _reject_meaningless_now(item, column_type, leaf.field, target, where)
                 _check_date_literal(item, column_type, target, where)
             parts = [
-                f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>" for item in leaf.value
+                f"<Neq>{ref}{_caml_value(column_type, item, where, accessor)}</Neq>"
+                for item in leaf.value
             ]
             excluded = _combine(parts, conjunction=True, target=CAML)
             return f"<Or><IsNull>{ref}</IsNull>{excluded}</Or>"
@@ -1390,27 +1490,49 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
         )
 
     if target == CAML:
-        ref = f'<FieldRef Name="{leaf.field}"/>'
+        # Two refs, and the difference is measured rather than tidy. The id
+        # dialect compares the lookup's ID and says so on the FieldRef; the
+        # <IsNull> arm below keeps the BARE ref in either dialect, because
+        # emptiness is a property of the field (a row with no value has
+        # neither a title nor an id) and because bare is the spelling the
+        # null tests and the composed wrapper were measured in.
+        bare_ref = f'<FieldRef Name="{leaf.field}"/>'
+        ref = (
+            f'<FieldRef Name="{leaf.field}" LookupId="TRUE"/>'
+            if accessor == "lookupId" else bare_ref
+        )
         tag = _CAML_OP_TAGS[leaf.op]
         if leaf.op in VALUELESS_OPS:
-            return f"<{tag}>{ref}</{tag}>"
-        rendered = f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
+            return f"<{tag}>{bare_ref}</{tag}>"
+        rendered = f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where, accessor)}</{tag}>"
         if leaf.op in ("neq", "not_includes"):
             # Neq is the exact inverse of Eq in the authored grammar. CAML
             # comparisons are three-valued, so make the empty case explicit
             # to match the expression and validation targets.
             #
-            # `not_includes` takes the SAME wrapper, and measurement says it
-            # need not: on a multi-value column a bare <Neq> already returns
-            # the empty row (probe C9, 2026-08-10, R3 + R4), unlike every
+            # `not_includes` takes the SAME wrapper, and on a MultiChoice
+            # measurement says it need not: a bare <Neq> already returns the
+            # empty row there (probe C9, 2026-08-10, R3 + R4), unlike every
             # single-value column, and C10 measured the composed form
-            # returning exactly the same rows. So the wrapper is redundant
-            # here rather than wrong, and it is kept because uniformity is
-            # worth more than the four elements it saves -- one `neq`
+            # returning exactly the same rows. So on that kind the wrapper is
+            # redundant rather than wrong, and it was kept because uniformity
+            # is worth more than the four elements it saves -- one `neq`
             # rendering, correct on both arities, with no branch to get
             # backwards. Nothing rests on <Or> child order either: C9 gives
             # R3 + R4 and C6's <IsNull> gives R4, a subset.
-            return f"<Or><IsNull>{ref}</IsNull>{rendered}</Or>"
+            #
+            # ON A MULTI-VALUE LOOKUP THE WRAPPER DOES REAL WORK, measured
+            # 2026-09-04: a bare negative there returns L3 alone and drops the
+            # empty L4, as every single-value negative does and unlike
+            # MultiChoice. So the two kinds differ in whether the wrapper is
+            # needed and agree on what it emits, which is what makes one
+            # rendering right for both.
+            # `query.caml-adhoc.multilookup-neq-isnull-wrapper` measured the
+            # composed form and got L3 + L4. It sent the negation first and
+            # this emits <IsNull> first; the union is the same either way and
+            # is established twice over, since <IsNull> alone measured L4 and
+            # the negative alone measured L3.
+            return f"<Or><IsNull>{bare_ref}</IsNull>{rendered}</Or>"
         return rendered
 
     if target == EXPRESSION:
@@ -1539,7 +1661,26 @@ def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
     return f"{ref}{_VALIDATION_OPS[leaf.op]}{literal}"
 
 
-def _caml_value(column_type: str, value: object, where: str) -> str:
+def _caml_value(
+    column_type: str, value: object, where: str, accessor: str | None = None,
+) -> str:
+    # First, because the accessor names the operand outright and the type
+    # tests below would answer for the column instead. `_ACCESSOR_TYPES` has
+    # already rewritten `column_type` to nvarchar/number for these two, which
+    # is what the numeric guard wants and NOT what the Type= attribute wants:
+    # the measured spellings are Lookup and Integer (see
+    # `_CAML_LOOKUP_ACCESSORS`). `_number` still runs on the id dialect, so a
+    # non-numeric id is a named build error rather than a filter that returns
+    # nothing.
+    if accessor is not None:
+        # The table carries the attribute; the branch is on the ACCESSOR rather
+        # than on what the table returned, because it is about the value being
+        # numeric and not about how the attribute is spelled.
+        spelling = _CAML_LOOKUP_ACCESSORS[accessor]
+        if accessor == "lookupId":
+            return f'<Value Type="{spelling}">{_number(value, where, CAML)}</Value>'
+        escaped = _xml_escape(str(value), {chr(34): "&quot;"})
+        return f'<Value Type="{spelling}">{escaped}</Value>'
     if is_current_user_sentinel(value, column_type):
         # SharePoint's own "[Me]" filter, and the only spelling by which a
         # person column can be compared in CAML at all.

@@ -23,7 +23,9 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
+from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DemoItem
+from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 # The Note row tests no unnecessary readback and no demo_ref into an unverified row.
@@ -70,6 +72,7 @@ _HARNESS = textwrap.dedent(r"""
       userId: 1,
     };
     const STORED = null;
+    const STORED_ROW = null;
     const READBACK_STATUS = 200;
     let nextId = 100;
     globalThis.fetch = async (url, opts = {}) => {
@@ -90,7 +93,7 @@ _HARNESS = textwrap.dedent(r"""
       } else if (/\/items\(\d+\)/.test(u)) {
         status = READBACK_STATUS;
         payload = status === 200
-          ? { d: { Events: STORED } }
+          ? { d: STORED_ROW === null ? { Events: STORED } : STORED_ROW }
           : { error: { message: { value: 'read-back refused' } } };
       }
       return {
@@ -311,4 +314,110 @@ def test_the_created_item_is_posted_as_the_measured_collection() -> None:
 def test_the_readback_uses_the_same_metadata_type_as_the_write_plan() -> None:
     js = _demo_js(_MEMBERS)
     assert "metadata.type !== field.metadata_type" in js
-    assert "storedMembers(item, f, stored[f.name])" in js
+    assert "storedMembers(item, m.field, stored[m.select], m.memberType)" in js
+
+
+# === multi-value LOOKUP ===================================================
+# Its own fixture because it diverges from the multi-value Choice above in
+# every part of the round trip: it is written through the `<Name>Id` alias
+# rather than the field name, its members are ids rather than member names,
+# and its collection type is Collection(Edm.Int32).
+
+_MULTI_LOOKUP_STORED = {
+    "PartiesId": {"__metadata": {"type": "Collection(Edm.Int32)"}, "results": [100, 101]},
+}
+
+
+def _multi_lookup_js() -> str:
+    return generate_demo_js(
+        schema=parse_dbml(FIXTURES / "multilookup.dbml"),
+        bundle=load_mapping(FIXTURES / "multilookup-mapping.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="multilookup.dbml",
+        generated_at="2026-09-02T00:00:00Z",
+    )
+
+
+def _seed_multi_lookup(
+    *, stored: Any = _MULTI_LOOKUP_STORED,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Run the multilookup fixture's demo-data.js against the mock."""
+    harness = _HARNESS.replace(
+        "const STORED_ROW = null;", f"const STORED_ROW = {json.dumps(stored)};", 1,
+    )
+    script = harness + "\n" + _multi_lookup_js().replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r)); "
+        "console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    lines = output.splitlines()
+    result = next((ln for ln in lines if ln.startswith("__RESULT__")), None)
+    calls = next((ln for ln in lines if ln.startswith("__CALLS__")), None)
+    assert result is not None, f"demo-data.js did not return a summary:\n{output[-3000:]}"
+    assert calls is not None, f"demo-data.js did not reach the call log:\n{output[-3000:]}"
+    return (
+        json.loads(result.removeprefix("__RESULT__")),
+        json.loads(calls.removeprefix("__CALLS__")),
+    )
+
+
+def test_a_multi_value_lookup_is_written_as_a_results_object() -> None:
+    """A bare array was refused HTTP 400 (measured 2026-09-02), so the ids go
+    out under the `<Name>Id` alias wrapped in a `{ results: [...] }` object."""
+    _, calls = _seed_multi_lookup()
+    posts = [
+        json.loads(c["body"]) for c in calls
+        if c["method"] == "POST" and c["body"] and "PartiesId" in c["body"]
+    ]
+
+    assert len(posts) == 1
+    assert posts[0]["PartiesId"] == {"results": [100, 101]}
+    # The single-value control in the same row keeps its bare id.
+    assert posts[0]["OwnerId"] == 100
+
+
+def test_a_multi_value_lookup_is_read_back_through_the_id_alias() -> None:
+    """The write is not a fact until the stored ids have been seen, and the
+    read has to ask for the alias it wrote through rather than the field."""
+    summary, calls = _seed_multi_lookup()
+    reads = _readbacks(calls)
+
+    assert len(reads) == 1, f"expected one read-back, got {[c['url'] for c in reads]}"
+    assert "PartiesId" in reads[0]["url"]
+    assert reads[0]["headers"]["Accept"] == "application/json;odata=verbose"
+    assert _keys(summary["created"]) == {"acme", "globex", "m1"}
+
+
+def test_a_multi_value_lookup_storing_other_ids_is_not_recorded_created() -> None:
+    """SharePoint accepting the POST is not evidence that it stored what was
+    asked for, which is the whole reason the read-back exists."""
+    summary, _ = _seed_multi_lookup(
+        stored={
+            "PartiesId": {
+                "__metadata": {"type": "Collection(Edm.Int32)"}, "results": [100],
+            },
+        },
+    )
+
+    assert "m1" not in _keys(summary["created"])
+    assert "Parties" in _error_for(summary, "m1")
+
+
+def test_a_multi_value_lookup_read_back_as_strings_is_refused() -> None:
+    """The members were measured as Collection(Edm.Int32). A shape this code
+    does not recognise is refused rather than coerced, because a coercion
+    that happens to match is indistinguishable from a verified write."""
+    summary, _ = _seed_multi_lookup(
+        stored={
+            "PartiesId": {
+                "__metadata": {"type": "Collection(Edm.Int32)"},
+                "results": ["100", "101"],
+            },
+        },
+    )
+
+    assert "m1" not in _keys(summary["created"])
+    assert "unrecognised shape" in _error_for(summary, "m1")

@@ -376,6 +376,10 @@ def _lookup_filter_inputs(*, indexed: bool) -> tuple[Schema, MappingBundle]:
     is exempt from the accessor requirement (emptiness is a property of the
     field, not of a name or an id) and CAML's IsNull takes a bare FieldRef.
 
+    Both accessors DO render against a MULTI-value lookup, measured 2026-09-04.
+    This column is single-value, which the probe asked nothing of, so the two
+    refusals above are still the ones it gets.
+
     This fixture used to declare `{field: Parent, op: eq, value: 1}` with no
     accessor, which is the first of those two errors. Nothing in the test
     mentioned it: the threshold check is gated only on the fields resolving,

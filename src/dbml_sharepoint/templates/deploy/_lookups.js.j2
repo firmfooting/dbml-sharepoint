@@ -43,15 +43,7 @@
       )) {
         summary.columnsSkipped += 1;
       } else {
-        const parameters = {
-          ...lookup.field.lookup_creation_parameters,
-          LookupListId: targetGuid,
-        };
-        await postJson(
-          apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
-          { parameters },
-          digest,
-        );
+        await createDeclaredLookupField(lookup.list, lookup.field, targetGuid, digest);
         invalidateFieldShapes();  // new field: next probe re-enumerates
         await reconcileDeclaredField(
           lookup.list, lookup.field, targetGuid, digest, false,

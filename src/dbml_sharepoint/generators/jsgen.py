@@ -982,7 +982,7 @@ def _field_body(
             body["DisplayFormat"] = sp.display_format
         case "User":
             body["SelectionMode"] = sp.selection_mode
-        case "Lookup":
+        case "Lookup" | "LookupMulti":
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
             # Membership -> DisplayName) renders that instead. A bare "Title"
@@ -996,35 +996,72 @@ def _field_body(
                 entities.get(sp.target_list) if entities and sp.target_list else None,
             )
             body["LookupField"] = lookup_field
-            # A lookup is the one field type SharePoint refuses through a
-            # normal POST of SP.FieldLookup to the /fields collection. Keep
-            # the complete desired SP.FieldLookup body above for post-create
-            # reconciliation/readback, but give deploy.js the supported
-            # FieldCollection.AddField creation shape separately. The target
-            # GUID is only known in the browser and is added there as
-            # LookupListId.
-            #
-            # SP.FieldCreationInformation carries no EnforceUniqueValues or
-            # Indexed, so a [unique] lookup is the one field type where both
-            # arrive by the MERGE that reconcileDeclaredField issues straight
-            # after AddField, rather than in the create call. Microsoft
-            # requires a unique column to be indexed; the reconciler sends
-            # both properties in a single patch body, which is the same shape
-            # it already uses to repair a drifted unique Text column.
-            creation_parameters = {
-                "__metadata": {"type": "SP.FieldCreationInformation"},
-                "FieldTypeKind": sp.field_type_kind,
-                "Title": sp.name,
-                "Required": sp.required,
-                "LookupFieldName": lookup_field,
-            }
+            # ARITY IS DECLARED ON BOTH ARMS, false included. It is an ordinary
+            # reconciled property (measured mutable in both directions on
+            # 2026-09-02, HTTP 204 each way), so the deployer compares it,
+            # MERGEs it and reads it back like any other. Omitting it from the
+            # single-value arm would leave a lookup somebody had widened by
+            # hand reading back as multi-value with nothing declared to
+            # compare against, and the reconciler cannot narrow a property it
+            # was never told about.
+            body["AllowMultipleValues"] = sp.kind == "LookupMulti"
             target = list_title_prefix + (sp.target_list or "")
-            return {
+            out: dict[str, Any] = {
                 "title": sp.name,
                 "body": body,
                 "target_list": target,
-                "lookup_creation_parameters": creation_parameters,
             }
+            if sp.kind == "LookupMulti":
+                # A MULTI-VALUE LOOKUP CANNOT BE CREATED BY AddField.
+                # SP.FieldCreationInformation has no AllowMultipleValues
+                # property and the POST is refused HTTP 400 outright
+                # (measured 2026-09-02, test/manual/multilookup-probe.js,
+                # `field.multilookup.create-readback-type`). createfieldasxml
+                # with this attribute set and Options 8 returned HTTP 201 and
+                # read back TypeAsString="LookupMulti", FieldTypeKind=7,
+                # AllowMultipleValues=true, entity type SP.FieldLookup.
+                #
+                # EXACTLY THE MEASURED ATTRIBUTES, and no more. `Required` and
+                # `Description` are not attributes here; they arrive on the
+                # MERGE the reconciler issues straight after, which is already
+                # how a [unique] single-value lookup gets EnforceUniqueValues.
+                # Adding an unmeasured attribute to schema XML is the silent
+                # failure class this project exists to close: SharePoint
+                # accepts unknown attributes and ignores them.
+                #
+                # `Mult="TRUE"` is the arity, spelled the way the schema
+                # grammar spells it; `AllowMultipleValues` is the REST
+                # property the same field reads back as, not an XML attribute.
+                out["lookup_creation_xml"] = {
+                    "type": sp.kind,
+                    "name": sp.name,
+                    "show_field": lookup_field,
+                }
+            else:
+                # A lookup is the one field type SharePoint refuses through a
+                # normal POST of SP.FieldLookup to the /fields collection.
+                # Keep the complete desired SP.FieldLookup body above for
+                # post-create reconciliation/readback, but give deploy.js the
+                # supported FieldCollection.AddField creation shape
+                # separately. The target GUID is only known in the browser and
+                # is added there as LookupListId.
+                #
+                # SP.FieldCreationInformation carries no EnforceUniqueValues
+                # or Indexed, so a [unique] lookup is the one field type where
+                # both arrive by the MERGE that reconcileDeclaredField issues
+                # straight after AddField, rather than in the create call.
+                # Microsoft requires a unique column to be indexed; the
+                # reconciler sends both properties in a single patch body,
+                # which is the same shape it already uses to repair a drifted
+                # unique Text column.
+                out["lookup_creation_parameters"] = {
+                    "__metadata": {"type": "SP.FieldCreationInformation"},
+                    "FieldTypeKind": sp.field_type_kind,
+                    "Title": sp.name,
+                    "Required": sp.required,
+                    "LookupFieldName": lookup_field,
+                }
+            return out
         case "Number":
             if sp.default is not None:
                 # SP.Field.DefaultValue is a string even for Number fields.
@@ -1064,6 +1101,11 @@ def _meta_type(kind: str) -> str:
         # the /fields collection on 2026-08-10, HTTP 201.
         "MultiChoice": "SP.FieldMultiChoice",
         "Lookup": "SP.FieldLookup",
+        # Not SP.FieldLookupMulti, which does not exist. A LookupMulti field
+        # reads back with entity type SP.FieldLookup, and the MERGE that
+        # flips AllowMultipleValues was accepted under that type in both
+        # directions (measured 2026-09-02).
+        "LookupMulti": "SP.FieldLookup",
         "Boolean": "SP.Field",
         "Number": "SP.FieldNumber",
         "URL": "SP.FieldUrl",

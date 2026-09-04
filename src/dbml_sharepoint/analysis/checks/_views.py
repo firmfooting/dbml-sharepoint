@@ -762,10 +762,17 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # selective filter column" is right for every scalar and
                     # impossible here -- SharePoint refuses an index on a
                     # Choice (multi-valued) column, measured 2026-08-10
-                    # against a control that stuck on a single-value Choice --
+                    # against a control that stuck on a single-value Choice,
+                    # and on a Lookup (multi-valued) one, measured 2026-09-02
+                    # the same way (HTTP 500 "This column type is not
+                    # supported for indexing", readback still Indexed=false,
+                    # against a single-value lookup control that indexed) --
                     # so an author who followed it would land on
                     # `multi_value_index_unsupported`, sent there by this
-                    # tool. The `not covered` gate is shared deliberately: one
+                    # tool. "Can never index" covers the indirect route too,
+                    # measured 2026-09-04: an index on the SOURCE list's column
+                    # does not carry into a lookup, whether the lookup is
+                    # created before or after it. The `not covered` gate is shared deliberately: one
                     # indexed condition still serves the query, so a
                     # multi-value column beside an indexed one is not an
                     # exposure and must not warn.

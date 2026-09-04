@@ -621,8 +621,19 @@ def _lookup_problem(
     target: str,
     lookups: set[str],
 ) -> tuple[FindingCode, str] | None:
-    """Lookups are int-typed in DBML, so the type map alone cannot see them."""
-    if target == _rendering.VALIDATION and leaf.field in lookups:
+    """Lookups are int-typed in DBML, so the type map alone cannot see them.
+
+    A MULTI-value lookup was refused here as unmeasured until 2026-09-04, when
+    `multilookup-probe.js` asked fifteen CAML predicates of one and got the
+    expected rows from every one, in both operand dialects. What governs it now
+    is the same machinery every other multi-value column goes through:
+    `_check_arity` for the operator, `_CAML_LOOKUP_ACCESSORS` for the operand
+    spelling. The accessor rules in `_operand_problems` still apply, so a
+    comparison against one still has to name lookupValue or lookupId.
+    """
+    if leaf.field not in lookups:
+        return None
+    if target == _rendering.VALIDATION:
         return (
             FindingCode.CONDITION_LOOKUP_UNSUPPORTED_BY_TARGET,
             f"{where}: {leaf.field!r} is a lookup column, unsupported in validation formulas",

@@ -1,0 +1,44 @@
+# test/fixtures/multilookup-mapping.yaml
+# Pairs with multilookup.dbml. The point of the fixture is that a build runs
+# over a multi-value lookup end to end: the deploy field, the demo row, the
+# Power Query step and the SQL column all come from one real build rather
+# than from a hand-built plan.
+prefix: "APP_"
+prefix_owner: "Test"
+prefix_registry: "test/registry.md"
+
+entities:
+  Party:  { kind: List, base_template: 100, site_role: default }
+  Matter: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+display_names:
+  mode: auto
+
+views:
+  Matter:
+    - title: "All matters"
+      default: true
+      fields: [Title, Owner, Parties]
+      sort:
+        - { field: Title, direction: asc }
+
+demo_items:
+  Party:
+    - key: acme
+      values: { Title: "[DEMO] Acme" }
+    - key: globex
+      values: { Title: "[DEMO] Globex" }
+  Matter:
+    - key: m1
+      values:
+        Title: "[DEMO] Matter"
+        Owner: { demo_ref: acme }
+        Parties:
+          - { demo_ref: acme }
+          - { demo_ref: globex }
+
+versioning:
+  default:
+    enable_versioning: true

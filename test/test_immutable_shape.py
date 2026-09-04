@@ -9,6 +9,10 @@ from dbml_sharepoint.analysis.immutable_shape import (
     IMMUTABLE_LIST_PROPERTIES,
     IMMUTABLE_LOOKUP_PROPERTIES,
 )
+from dbml_sharepoint.analysis.typemap import (
+    DERIVED_FIELD_PROPERTIES,
+    DERIVED_FIELD_PROPERTY_KINDS,
+)
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -33,6 +37,23 @@ def test_the_immutable_lookup_properties_are_separate_because_the_probe_is() -> 
     set would describe a shape that is never read.
     """
     assert IMMUTABLE_LOOKUP_PROPERTIES == ("LookupList", "LookupField")
+
+
+def test_a_lookups_arity_is_reconciled_rather_than_frozen() -> None:
+    """`AllowMultipleValues` is deliberately absent from the immutable set.
+
+    It flipped both ways on an existing lookup, HTTP 204 in each direction,
+    measured 2026-09-02 by test/manual/multilookup-probe.js
+    (`field.multilookup.arity-mutability`). Freezing it would abort a field
+    the tenant is willing to change, and the doctrine is that an enforced
+    rule must never be stronger than what the surface actually satisfies.
+    """
+    assert "AllowMultipleValues" not in IMMUTABLE_LOOKUP_PROPERTIES
+    assert "AllowMultipleValues" not in IMMUTABLE_FIELD_PROPERTIES
+    # Absent from the frozen set is only half the claim; it has to be in the
+    # reconciled set, or the arity would simply go unchecked.
+    assert "AllowMultipleValues" in DERIVED_FIELD_PROPERTIES
+    assert DERIVED_FIELD_PROPERTY_KINDS["AllowMultipleValues"] == "boolean"
 
 
 def test_the_immutable_list_properties_are_the_ones_the_deploy_asserts() -> None:

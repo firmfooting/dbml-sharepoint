@@ -475,7 +475,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const fieldShape = (listTitle, name, b) => ({
       Id: '33333333-3333-3333-3333-333333333333',
       InternalName: name, Title: name,
-      TypeAsString: TYPE_BY_KIND[b.FieldTypeKind] || 'Text',
+      // A multi-value lookup keeps FieldTypeKind 7 and is told apart only by
+      // TypeAsString and AllowMultipleValues (measured 2026-09-02), so the
+      // kind alone cannot name it.
+      TypeAsString: b.FieldTypeKind === 7 && b.AllowMultipleValues === true
+        ? 'LookupMulti' : (TYPE_BY_KIND[b.FieldTypeKind] || 'Text'),
       Description: b.Description == null ? '' : b.Description,
       Required: b.Required === true,
       EnforceUniqueValues: b.EnforceUniqueValues === true,
@@ -739,6 +743,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
                              'Indexed', 'EnforceUniqueValues']) {
               if (parsed[k] !== undefined) f[k] = parsed[k];
             }
+            // Derived properties are read back off __body, not off the shape,
+            // so a reconciled one has to be written where the probe looks.
+            // AllowMultipleValues flips both ways on a live lookup (measured
+            // 2026-09-02); a mock that kept the create-time value would fail
+            // the read-back of a legitimate arity change.
+            if (parsed.AllowMultipleValues !== undefined) {
+              f.__body.AllowMultipleValues = parsed.AllowMultipleValues;
+            }
           }
         } else if (parsed.Title) {
           created[`${listTitle} ${parsed.Title}`] = fieldShape(listTitle, parsed.Title, parsed);
@@ -757,7 +769,27 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             // route every hand-seeded lookup in this file already takes.
             LookupList: p.LookupListId,
             LookupField: p.LookupFieldName,
+            // AddField cannot make a multi-value lookup: the property is not
+            // on SP.FieldCreationInformation and the call is refused HTTP 400
+            // (measured 2026-09-02). Anything created this way reads back
+            // single-valued, and the derived probe selects the property.
+            AllowMultipleValues: false,
           });
+        } else if (parsed.parameters && parsed.parameters.SchemaXml) {
+          // createfieldasxml, the only route that makes a multi-value lookup.
+          // Without this branch the column is never recorded and the phase
+          // that created it fails its own read-back.
+          const xml = parsed.parameters.SchemaXml;
+          const attr = (name) => (xml.match(new RegExp(`${name}="([^"]*)"`)) || [])[1];
+          const name = attr('Name');
+          if (name) {
+            created[`${listTitle} ${name}`] = fieldShape(listTitle, name, {
+              FieldTypeKind: 7,
+              AllowMultipleValues: attr('Mult') === 'TRUE',
+              LookupList: attr('List'),
+              LookupField: attr('ShowField'),
+            });
+          }
         }
       }
       // A MERGE onto the LIST object itself. The URL ends at getbytitle(...)
@@ -2198,6 +2230,8 @@ _UNRESOLVABLE_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS.replace(
 ) + textwrap.dedent(r"""
     created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
       FieldTypeKind: 7, Title: 'Project', Required: true,
+      // The declaration selects it, so the shape probe reads it back.
+      AllowMultipleValues: false,
       LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
     });
 """)
@@ -2354,6 +2388,8 @@ def test_a_list_with_a_wrong_template_still_reports_its_columns() -> None:
 _UNREADABLE_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
     created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
       FieldTypeKind: 7, Title: 'Project', Required: true,
+      // The declaration selects it, so the shape probe reads it back.
+      AllowMultipleValues: false,
       LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
     });
     const _passThrough = globalThis.fetch;
@@ -2438,6 +2474,8 @@ def test_an_unreadable_list_reports_that_no_column_was_checked() -> None:
 _ABSENT_LOOKUP_TARGET_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
     created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {
       FieldTypeKind: 7, Title: 'Project', Required: true,
+      // The declaration selects it, so the shape probe reads it back.
+      AllowMultipleValues: false,
       LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
     });
     const _passThrough = globalThis.fetch;
@@ -2564,7 +2602,14 @@ def test_the_field_collector_records_what_it_compared_and_what_it_could_not() ->
     script = _deploy_js()
     program = "\n".join([
         _COLLECTOR_STUBS,
-        next(ln for ln in script.splitlines() if "const normalizeGuid =" in ln),
+        *(
+            next(ln for ln in script.splitlines() if declaration in ln)
+            for declaration in (
+                "const normalizeGuid =",
+                "const BASE_TYPE_AS_STRING =",
+                "const baseTypeAsString =",
+            )
+        ),
         _lifted(script, "async function expectedLookupFieldInternalName"),
         _lifted(script, "async function immutableFieldMismatches"),
         _COLLECTOR_SCENARIOS,

@@ -247,11 +247,13 @@
     // subtype. Query only the properties this declaration actually owns, then
     // reconcile/read them back with the matching concrete metadata type.
     const body = (declaredField && declaredField.body) || {};
-    const derivedSelect = [
-      'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
-      'FillInChoice', 'DisplayFormat', 'SelectionMode',
-      'Formula', 'OutputType',
-    ].filter(name => Object.prototype.hasOwnProperty.call(body, name));
+    {# Rendered from analysis/typemap.py, not typed out. This list and the one
+       _field_reconcile.js.j2 compares against were two hand-kept copies of
+       the same names, so a property added to the comparison and not to this
+       select compares a declared value against `undefined` and reports
+       permanent drift on a field that is correct. #}
+    const derivedSelect = {{ derived_field_properties | tojson }}
+      .filter(name => Object.prototype.hasOwnProperty.call(body, name));
     if (derivedSelect.length > 0) {
       const derivedResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${derivedSelect.join(',')}`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
@@ -265,19 +267,24 @@
       if (!derived) {
         throw new Error(`Field '${listName}.${columnName}' derived-shape probe returned an invalid response`);
       }
+      {# Each property's expected read-back shape, rendered beside the list
+         above so the two cannot name different properties. The default is an
+         integer, which is what the length and format properties are. #}
+      const derivedKinds = new Map(Object.entries({{ derived_field_property_kinds | tojson }}));
       for (const name of derivedSelect) {
         const value = derived[name];
-        if (name === 'Choices') {
+        const kind = derivedKinds.get(name) || 'integer';
+        if (kind === 'strings') {
           if (!value || !Array.isArray(value.results) || value.results.some(item => typeof item !== 'string')) {
-            throw new Error(`Field '${listName}.${columnName}' Choices probe returned an invalid response`);
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
-        } else if (name === 'RichText' || name === 'AppendOnly' || name === 'FillInChoice') {
+        } else if (kind === 'boolean') {
           if (typeof value !== 'boolean') {
             throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
-        } else if (name === 'Formula') {
+        } else if (kind === 'string') {
           if (typeof value !== 'string') {
-            throw new Error(`Field '${listName}.${columnName}' Formula probe returned an invalid response`);
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
         } else if (!Number.isInteger(value)) {
           throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);

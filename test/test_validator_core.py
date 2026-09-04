@@ -843,10 +843,55 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
     assert finding.severity == "error"
     assert "Events" in finding.message
     assert "Choice (multi-valued)" in finding.message
+    # The source-index sentence belongs to the lookup arm alone. A Choice has
+    # no source list to index, so saying it here would name a route that does
+    # not exist for this kind.
+    assert "does not carry into the lookup" not in finding.message
     # Its own code, and only its own: the generic rule names an unindexable
     # TYPE and its remedy is "pick a different column", while this one has a
     # second remedy the generic rule cannot offer -- the same enum without the
     # brackets is indexable. Both firing would be two findings for one entry.
+    none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
+
+
+def test_dbml_indexes_reject_a_multi_value_lookup() -> None:
+    """The same refusal at the other kind, measured 2026-09-02.
+
+    Setting `Indexed` on a multi-value lookup came back HTTP 500, "This
+    column type is not supported for indexing", and read back Indexed=false,
+    against a single-value lookup control in the same list that indexed. So
+    it is multiplicity that SharePoint refuses, not the Choice kind, and the
+    remedy sentence names the arity the author actually wrote.
+
+    The 2026-09-04 follow-on closed the way round it: an index on the source
+    list's column does not carry into the lookup, whether the column predates
+    the index or is created after it. The message says never because nothing
+    is left that would make it sometimes.
+    """
+    schema = make_schema(
+        make_table("Party", make_column("Title")),
+        make_table(
+            "Matter",
+            make_column("Parties", "int[]", ref="Party.Id"),
+            indexes=["Parties"],
+        ),
+    )
+    findings = validate_against_mapping(
+        schema, make_bundle(entities=["Party", "Matter"]),
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "Parties" in finding.message
+    assert "Lookup (multi-valued)" in finding.message
+    # The remedy is the arity, not the enum: a lookup has no brackets-free
+    # enum to fall back to, it has a single-value `int` lookup.
+    assert "single-value 'int' lookup" in finding.message
+    # The lookup arm alone says never, and says both halves of why. Asserted
+    # because the measurement is the whole difference between this message
+    # and a weaker one that leaves an indexed source looking like a way out.
+    assert "Nothing can index it" in finding.message
+    assert "does not carry into the lookup" in finding.message
     none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
 
 

@@ -859,14 +859,16 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED: (
         "A condition asks a multi-value column something with no verified "
-        "rendering. Measured on 2026-08-10: CAML's `<Eq>` against such a "
-        "column tests MEMBERSHIP rather than equality, so membership is "
-        "spelled `includes` and `eq` is refused rather than quietly meaning "
-        "two different things on two columns. `includes`, `not_includes`, "
-        "`is_null` and `is_not_null` are the four that were measured; "
-        "`contains` works but cannot be told apart from a substring match, "
-        "and `<Includes>`/`<NotIncludes>`, the two operators Microsoft "
-        "documents, returned nothing at all."
+        "rendering. Measured on 2026-08-10 for Choice and on 2026-09-04 for "
+        "Lookup: CAML's `<Eq>` against such a column tests MEMBERSHIP rather "
+        "than equality, so membership is spelled `includes` and `eq` is "
+        "refused rather than quietly meaning two different things on two "
+        "columns. `includes`, `not_includes`, `is_null` and `is_not_null` are "
+        "the four measured, on both kinds; `contains` works on a Choice but "
+        "cannot be told apart from a substring match. "
+        "`<Includes>`/`<NotIncludes>`, the two operators Microsoft documents, "
+        "returned nothing at all on a Choice; on a Lookup they work and "
+        "return what `<Eq>`/`<Neq>` return, so one rendering serves both."
     ),
     FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED: (
         "A multi-value column declares `default:`. DBML carries one scalar "
@@ -882,9 +884,15 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED: (
         "An `indexes { }` entry names a multi-value column. Measured on "
-        "2026-08-10: SharePoint refuses the index and reads `Indexed` back "
-        "as false, against a control on a single-value Choice in the same "
-        "list that stuck. The same enum without the brackets is indexable."
+        "2026-08-10 for a Choice (multi-valued) column and on 2026-09-02 for "
+        "a Lookup (multi-valued) one: SharePoint refuses the index and reads "
+        "`Indexed` back as false, against single-value controls in the same "
+        "list that stuck. The lookup refusal is HTTP 500, \"This column type "
+        "is not supported for indexing\". The same column without the "
+        "brackets is indexable. A multi-value lookup can never be indexed by "
+        "any route: indexing the source list's column does not carry into it "
+        "either, measured on 2026-09-04 with the lookup created before the "
+        "source index and again with it created after."
     ),
     FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN: (
         "`includes` or `not_includes` is used on a column that holds exactly "

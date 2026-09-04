@@ -191,24 +191,37 @@ def _check_column(
             at,
             "legacy 'choice' type -- migrate to a named DBML enum.",
         ))
-    elif (
-        col.type not in typemap.KNOWN_SCALARS
-        and col.type not in typemap.CALCULATED_TYPES
-        # Both arities in one question, and the same one `map_column` asks.
-        # Only an enum qualifies, so `person[]` and a multi-value lookup stay
-        # unknown types here exactly as they do there. The two must agree:
-        # `build` reports this as a Finding while `report` reaches the raising
-        # site in typemap, and a type one accepts and the other refuses reads
-        # as the two commands disagreeing about the file.
-        and typemap.choice_enum_for(col.type, enums) is None
-        and not is_pk_id
-    ):
-        findings.append(_report(
-            FindingCode.UNKNOWN_COLUMN_TYPE,
-            at,
-            f"unknown type {col.type!r}. "
-            + typemap.describe_unknown_type(col.type, enums=enums),
-        ))
+    else:
+        # A MULTI-VALUE LOOKUP IS DECLARED ON ITS ELEMENT TYPE. `int[] [ref: >
+        # Party.Id]` is `int [ref: ...]` repeated, and `int` is the type every
+        # lookup is declared as, so the vocabulary question is asked about the
+        # element. Asked through `element_type` rather than by exempting the
+        # column outright, so `blob[] [ref: ...]` stays exactly as unknown as
+        # `blob [ref: ...]` -- the resolver treats those two the same way and
+        # this rule has to as well.
+        declared_type = (
+            typemap.element_type(col.type)
+            if typemap.is_multi_value_lookup(col, enums)
+            else col.type
+        )
+        if (
+            declared_type not in typemap.KNOWN_SCALARS
+            and declared_type not in typemap.CALCULATED_TYPES
+            # Both arities in one question, and the same one `map_column` asks.
+            # Only an enum or a `ref` qualifies, so `person[]` stays an unknown
+            # type here exactly as it does there. The two must agree: `build`
+            # reports this as a Finding while `report` reaches the raising site
+            # in typemap, and a type one accepts and the other refuses reads as
+            # the two commands disagreeing about the file.
+            and typemap.choice_enum_for(col.type, enums) is None
+            and not is_pk_id
+        ):
+            findings.append(_report(
+                FindingCode.UNKNOWN_COLUMN_TYPE,
+                at,
+                f"unknown type {col.type!r}. "
+                + typemap.describe_unknown_type(col.type, enums=enums),
+            ))
 
     if col.type in enums and col.default is not None:
         members = enums[col.type]
@@ -295,19 +308,30 @@ def _check_column(
         # that SharePoint refuses.
         #
         # Documented and then measured: Microsoft lists "Choice
-        # (multi-valued)" among the types unique values cannot be enforced
-        # for, and a probe on 2026-08-10 set EnforceUniqueValues on a live
-        # MultiChoice field and got HTTP 500 back. Loud rather than
-        # accepted-and-ignored, which is the good outcome -- but the build
-        # still refuses first, so a deploy fails closed before it starts
-        # writing to somebody's site.
+        # (multi-valued)" and "Lookup (multi-valued)" among the types unique
+        # values cannot be enforced for, and a probe on 2026-08-10 set
+        # EnforceUniqueValues on a live MultiChoice field and got HTTP 500
+        # back. Loud rather than accepted-and-ignored, which is the good
+        # outcome -- but the build still refuses first, so a deploy fails
+        # closed before it starts writing to somebody's site.
+        #
+        # The lookup arm names the same refusal for the type an author
+        # actually declared. Only the indexing half of it has been measured
+        # for a multi-value lookup (2026-09-02, HTTP 500, "This column type is
+        # not supported for indexing"); EnforceUniqueValues is refused here on
+        # Microsoft's documented list plus the measured MultiChoice
+        # precedent, which is the same footing every other arity refusal in
+        # this rule already stands on.
         # https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
+        sp_type = typemap.multi_value_sp_type_name(
+            lookup=typemap.is_multi_value_lookup(col, enums),
+        )
         findings.append(_report(
             FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED,
             at,
             f"[unique] is not supported on a multi-value column -- "
             f"SharePoint cannot enforce unique values on a "
-            f"{typemap.MULTI_VALUE_SP_TYPE_NAME} column, and refuses the "
+            f"{sp_type} column, and refuses the "
             f"setting outright. Drop [unique], or declare the column as a "
             f"single-value {typemap.element_type(col.type)!r} if one value "
             f"per item was what was meant.",

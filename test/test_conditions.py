@@ -2165,6 +2165,107 @@ def test_a_validation_formula_cannot_read_a_lookup() -> None:
     ).severity == "error"
 
 
+@pytest.mark.parametrize("accessor", ["lookupValue", "lookupId"])
+@pytest.mark.parametrize("op", ["includes", "not_includes"])
+def test_a_membership_test_on_a_multi_value_lookup_is_accepted(
+    op: str, accessor: str,
+) -> None:
+    """Refused as unmeasured until 2026-09-04, when it was measured.
+
+    `multilookup-probe.js` asked fifteen CAML predicates of a multi-value
+    lookup, in both operand dialects, and every one returned the rows it should
+    (`query.caml-adhoc.multilookup-*`). The refusal that stood here said the
+    grammar had only ever been measured against a Choice, which was true when it
+    was written and is no longer.
+
+    Both dialects are driven because they are two different emitted spellings,
+    not two names for one; what each emits is pinned at the bottom of this
+    module.
+    """
+    value = "Alpha" if accessor == "lookupValue" else 3
+
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", op, value, property=accessor),)),
+        types={"Parties": "int[]"},
+        lookups={"Parties"},
+    )
+
+    assert findings == []
+
+
+@pytest.mark.parametrize("op", ["is_null", "is_not_null"])
+def test_a_null_test_on_a_multi_value_lookup_needs_no_accessor(op: str) -> None:
+    """The null tests were the ones the old refusal actually cost.
+
+    `includes` without an accessor is CONDITION_PROPERTY_REQUIRED anyway, but a
+    null test is exempt from that requirement, so it was renderable and refused
+    only by the evidence rule. Measured on 2026-09-04 (L4 for `<IsNull>`, L1 +
+    L2 + L3 for `<IsNotNull>`), so it renders.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", op),)),
+        types={"Parties": "int[]"},
+        lookups={"Parties"},
+    )
+
+    assert findings == []
+
+
+def test_a_comparison_against_a_multi_value_lookup_still_needs_an_accessor() -> None:
+    """What the measurement settled is the OPERAND SPELLING, not the deadlock
+    that made one necessary. A lookup still has no defensible default between
+    the item's title and the item's id, so the author names one."""
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", "includes", "Alpha"),)),
+        types={"Parties": "int[]"},
+        lookups={"Parties"},
+    )
+
+    assert only(findings, FindingCode.CONDITION_PROPERTY_REQUIRED).severity == "error"
+
+
+def test_a_single_value_lookup_comparison_is_still_refused_on_caml() -> None:
+    """THE EVIDENCE BOUNDARY, and the reason this asymmetry is not an oversight.
+
+    The probe asked its fifteen predicates of a MULTI-value lookup; a
+    single-value one appeared in that run only as an index control. The two
+    dialects would very likely work there too, and "very likely" is not what
+    this tool emits, so removing `[]` puts the accessor back out of CAML's
+    reach. A null test remains the one filter a single-value lookup can express.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", "eq", 3, property="lookupId"),)),
+        types={"Parties": "int"},
+        lookups={"Parties"},
+    )
+
+    assert only(findings, FindingCode.CONDITION_PROPERTY_UNRENDERABLE).severity == "error"
+
+
+def test_a_single_value_lookup_filter_is_still_accepted() -> None:
+    """The arity control. Removing `[]` leaves the one lookup filter a view can
+    express: a null test, exempt from the accessor requirement because
+    emptiness is a property of the field rather than of a name or an id."""
+    findings = _findings(
+        Group("all_of", (Leaf("Parties", "is_null"),)),
+        types={"Parties": "int"},
+        lookups={"Parties"},
+    )
+
+    assert findings == []
+
+
+def test_a_multi_value_choice_filter_is_still_accepted() -> None:
+    """The ref control. A multi-value column with no ref at all takes no
+    accessor: `property` applies to person and lookup columns only, and the
+    lookup dialects must not start being demanded of a Choice."""
+    findings = _findings(
+        Group("all_of", (Leaf("Events", "includes", "View"),)), types=MULTI_TYPES,
+    )
+
+    assert findings == []
+
+
 # The last two refusals in this module cannot be reached by anything you can
 # DECLARE today, and that is the design rather than a gap:
 #
@@ -2427,6 +2528,133 @@ def test_membership_has_no_rendering_on_the_formula_targets(target: str) -> None
     )
 
     assert only(findings, FindingCode.CONDITION_OPERATOR_UNRENDERABLE).severity == "error"
+
+
+# --- A multi-value lookup's two operand dialects ------------------------------
+#
+# The same four operators, over a Lookup (multi-valued) column rather than a
+# Choice one, measured on a live tenant on 2026-09-04 against the analogue
+# fixture L1 {Alpha} L2 {Alpha,Bravo} L3 {Bravo,Charlie} L4 {}. Fifteen
+# predicates, every one returning the rows it should.
+#
+# What is new here is the OPERAND, not the operator. A lookup carries both a
+# display value and an id, CAML spells them differently, and both were asked:
+#
+#   lookupValue -> <FieldRef Name="X"/>              <Value Type="Lookup">
+#   lookupId    -> <FieldRef Name="X" LookupId="TRUE"/>  <Value Type="Integer">
+#
+# Asserted as exact strings for the reason the Choice ones are: the string is
+# the evidence. `Type="Text"` and `Type="Number"` are what the scalar accessor
+# types would have produced and are not what was sent.
+
+LOOKUP_MULTI_TYPES = {"Parties": "int[]"}
+
+_PARTIES_REF = '<FieldRef Name="Parties"/>'
+_PARTIES_ID_REF = '<FieldRef Name="Parties" LookupId="TRUE"/>'
+_ALPHA_VALUE = '<Value Type="Lookup">Alpha</Value>'
+_ID_VALUE = '<Value Type="Integer">3</Value>'
+
+
+@pytest.mark.parametrize(
+    ("accessor", "value", "expected"),
+    [
+        ("lookupValue", "Alpha", f"<Eq>{_PARTIES_REF}{_ALPHA_VALUE}</Eq>"),
+        ("lookupId", 3, f"<Eq>{_PARTIES_ID_REF}{_ID_VALUE}</Eq>"),
+    ],
+)
+def test_includes_on_a_multi_value_lookup_renders_the_dialect_measured(
+    accessor: str, value: object, expected: str,
+) -> None:
+    """Byte-for-byte the predicates `-eq-text` and `-eq-lookupid` sent, both of
+    which returned L1 and L2: the rows CONTAINING Alpha, not the row whose whole
+    set is {Alpha}. The membership reading the Choice run found transfers.
+
+    `<Eq>` rather than `<Includes>` even though Learn documents the latter for a
+    lookup specifically, and both were measured working here: `<Eq>` is the one
+    spelling that also works on a Choice, so there is one rendering rather than
+    a branch on which multi-value kind the column is.
+    """
+    rendered = to_caml(
+        Leaf("Parties", "includes", value, property=accessor), LOOKUP_MULTI_TYPES,
+    )
+
+    assert rendered == expected
+
+
+@pytest.mark.parametrize(
+    ("accessor", "value", "ref", "operand"),
+    [
+        ("lookupValue", "Alpha", _PARTIES_REF, _ALPHA_VALUE),
+        ("lookupId", 3, _PARTIES_ID_REF, _ID_VALUE),
+    ],
+)
+def test_not_includes_on_a_multi_value_lookup_null_tests_a_bare_field_ref(
+    accessor: str, value: object, ref: str, operand: str,
+) -> None:
+    """The wrapper earns its place here, unlike on a Choice.
+
+    A bare `<Neq>` against this column returned L3 alone, dropping the empty L4,
+    which is how every single-value negative behaves and is NOT how the
+    MultiChoice one behaved. `-neq-isnull-wrapper` measured the composed form
+    returning L3 and L4.
+
+    The `<IsNull>` arm keeps a BARE FieldRef in both dialects, which is the
+    spelling that was measured and also the only one that means anything: a row
+    with no value has neither a title nor an id to compare.
+    """
+    rendered = to_caml(
+        Leaf("Parties", "not_includes", value, property=accessor), LOOKUP_MULTI_TYPES,
+    )
+
+    assert rendered == (
+        f"<Or><IsNull>{_PARTIES_REF}</IsNull><Neq>{ref}{operand}</Neq></Or>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("is_null", f"<IsNull>{_PARTIES_REF}</IsNull>"),
+        ("is_not_null", f"<IsNotNull>{_PARTIES_REF}</IsNotNull>"),
+    ],
+)
+def test_the_null_tests_on_a_multi_value_lookup_render_bare(
+    op: str, expected: str,
+) -> None:
+    """Measured `-isnull` (L4 alone) and `-isnotnull` (L1, L2, L3). Neither
+    takes an operand, so neither takes a dialect."""
+    assert to_caml(Leaf("Parties", op, None), LOOKUP_MULTI_TYPES) == expected
+
+
+def test_a_null_test_on_a_multi_value_lookup_still_refuses_an_accessor() -> None:
+    """The dialects are for COMPARISONS. A null test has nothing to compare, so
+    an accessor beside one is a declaration that means nothing, and the rule
+    that refused every CAML accessor keeps refusing this one -- the same answer
+    a person null test gets."""
+    condition = parse_condition(
+        [{"field": "Parties", "property": "lookupId", "op": "is_null"}], "c",
+    )
+    with pytest.raises(ValueError, match="sub-propert"):
+        to_caml(condition, LOOKUP_MULTI_TYPES)
+
+
+def test_a_multi_value_lookup_id_operand_must_be_a_number() -> None:
+    """`Type="Integer"` is what was sent, so a title in the id dialect is a
+    build error rather than an operand SharePoint will read as zero."""
+    with pytest.raises(ValueError, match="not a number"):
+        to_caml(
+            Leaf("Parties", "includes", "Alpha", property="lookupId"),
+            LOOKUP_MULTI_TYPES,
+        )
+
+
+def test_the_lookup_dialects_do_not_leak_onto_a_multi_value_choice() -> None:
+    """The Choice rendering is untouched by the dialect table: its operand is
+    `Type="Text"`, measured 2026-08-10, and a lookup accessor is not a Choice
+    accessor at all."""
+    assert to_caml(Leaf("Events", "includes", "View"), MULTI_TYPES) == (
+        f"<Eq>{_EVENTS_REF}{_VIEW_VALUE}</Eq>"
+    )
 
 
 def test_the_multi_value_operand_refusal_still_covers_the_formula_targets() -> None:

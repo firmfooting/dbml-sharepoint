@@ -53,8 +53,10 @@
     return rows.length > 0 ? rows[0].Id : null;
   }
 
-  // Accept only the measured verbose-OData collection shape (probes M3/M4, 2026-08-17).
-  function storedMembers(item, field, raw) {
+  // Accept only the measured verbose-OData collection shape (probes M3/M4,
+  // 2026-08-17 for a Choice; field.multilookup.item-read-shape, 2026-09-02 for
+  // a Lookup, whose members come back as ids rather than as member names).
+  function storedMembers(item, field, raw, memberType) {
     const name = field.name;
     if (raw == null) return [];
     const keys = typeof raw === 'object' && !Array.isArray(raw) ? Object.keys(raw).sort() : [];
@@ -62,17 +64,25 @@
     const results = raw && raw.results;
     if (keys.join(',') !== '__metadata,results'
         || !metadata || metadata.type !== field.metadata_type
-        || !Array.isArray(results) || results.some((m) => typeof m !== 'string')) {
+        || !Array.isArray(results) || results.some((m) => typeof m !== memberType)) {
       throw new Error(`${name} read back in an unrecognised shape (${JSON.stringify(raw)}), so the members written to demo row '${item.key}' cannot be verified`);
     }
     return results;
   }
 
   // Verify every declared multi-value member before recording the row as created.
-  async function verifyMultiValues(item, itemId) {
-    const multi = item.fields.filter((f) => f.kind === 'multi_value');
+  async function verifyMultiValues(item, itemId, writtenRefIds) {
+    // A multi-value lookup reads back through the same <Name>Id alias it was
+    // written through, and its members are ids, so each kind carries the
+    // select name, the member type and the written values it was measured
+    // with instead of the two sharing one set.
+    const multi = item.fields
+      .filter((f) => f.kind === 'multi_value' || f.kind === 'multi_ref')
+      .map((f) => (f.kind === 'multi_value'
+        ? { field: f, select: f.name, memberType: 'string', written: f.results }
+        : { field: f, select: `${f.name}Id`, memberType: 'number', written: writtenRefIds.get(f.name) || [] }));
     if (!multi.length) return;  // a single-value row keeps its one POST
-    const select = multi.map((f) => odataName(f.name)).join(',');
+    const select = multi.map((m) => odataName(m.select)).join(',');
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items(${itemId})?$select=${select}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -80,13 +90,13 @@
       throw new Error(`the read-back of Id ${itemId} failed (HTTP ${r.status}), so the multi-value members written to demo row '${item.key}' are unverified`);
     }
     const stored = (await r.json()).d || {};
-    for (const f of multi) {
-      const got = storedMembers(item, f, stored[f.name]);
+    for (const m of multi) {
+      const got = storedMembers(item, m.field, stored[m.select], m.memberType);
       // Compare membership and count because member order is not a declared contract.
-      const missing = f.results.filter((m) => !got.includes(m));
-      const extra = got.filter((m) => !f.results.includes(m));
-      if (missing.length || extra.length || got.length !== f.results.length) {
-        throw new Error(`${f.name} was written ${JSON.stringify(f.results)} and read back ${JSON.stringify(got)}`);
+      const missing = m.written.filter((v) => !got.includes(v));
+      const extra = got.filter((v) => !m.written.includes(v));
+      if (missing.length || extra.length || got.length !== m.written.length) {
+        throw new Error(`${m.field.name} was written ${JSON.stringify(m.written)} and read back ${JSON.stringify(got)}`);
       }
     }
   }
@@ -106,6 +116,7 @@
         continue;
       }
       const body = { __metadata: { type: await entityTypeFor(item.list) } };
+      const writtenRefIds = new Map();  // resolved ids, for the read-back below
       for (const f of item.fields) {
         if (f.kind === 'literal') {
           body[f.name] = f.value;
@@ -128,6 +139,17 @@
           const refId = createdIds.get(f.value);
           if (refId == null) throw new Error(`demo_ref '${f.value}' has no created item`);
           body[`${f.name}Id`] = refId;
+        } else if (f.kind === 'multi_ref') {
+          // A multi-value lookup writes through the SAME <Name>Id alias, but
+          // takes a { results: [...] } object. A bare array is refused HTTP
+          // 400 (probe field.multilookup.item-write-shape, 2026-09-02).
+          const refIds = f.value.map((key) => {
+            const refId = createdIds.get(key);
+            if (refId == null) throw new Error(`demo_ref '${key}' has no created item`);
+            return refId;
+          });
+          writtenRefIds.set(f.name, refIds);
+          body[`${f.name}Id`] = { results: refIds };
         } else if (f.kind === 'date_offset') {
           // Resolved at RUN time so cadence-derived surfaces (Review due,
           // overdue, Tolerance due) land on whatever day the demo runs.
@@ -142,7 +164,7 @@
       }
       const createdId = (await createResp.json()).d.Id;
       // Before `createdIds`, so an unverified row resolves no later demo_ref.
-      await verifyMultiValues(item, createdId);
+      await verifyMultiValues(item, createdId, writtenRefIds);
       createdIds.set(item.key, createdId);
       summary.created.push({ list: item.list, key: item.key, id: createdId });
       log('INFO', `'${item.list}': created demo row '${item.key}' (Id ${createdId}).`);

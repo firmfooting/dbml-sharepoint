@@ -1487,11 +1487,8 @@
     // subtype. Query only the properties this declaration actually owns, then
     // reconcile/read them back with the matching concrete metadata type.
     const body = (declaredField && declaredField.body) || {};
-    const derivedSelect = [
-      'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
-      'FillInChoice', 'DisplayFormat', 'SelectionMode',
-      'Formula', 'OutputType',
-    ].filter(name => Object.prototype.hasOwnProperty.call(body, name));
+    const derivedSelect = ["MaxLength", "RichText", "NumberOfLines", "AppendOnly", "Choices", "FillInChoice", "DisplayFormat", "SelectionMode", "Formula", "OutputType", "AllowMultipleValues"]
+      .filter(name => Object.prototype.hasOwnProperty.call(body, name));
     if (derivedSelect.length > 0) {
       const derivedResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${derivedSelect.join(',')}`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
@@ -1505,19 +1502,21 @@
       if (!derived) {
         throw new Error(`Field '${listName}.${columnName}' derived-shape probe returned an invalid response`);
       }
+      const derivedKinds = new Map(Object.entries({"AllowMultipleValues": "boolean", "AppendOnly": "boolean", "Choices": "strings", "FillInChoice": "boolean", "Formula": "string", "RichText": "boolean"}));
       for (const name of derivedSelect) {
         const value = derived[name];
-        if (name === 'Choices') {
+        const kind = derivedKinds.get(name) || 'integer';
+        if (kind === 'strings') {
           if (!value || !Array.isArray(value.results) || value.results.some(item => typeof item !== 'string')) {
-            throw new Error(`Field '${listName}.${columnName}' Choices probe returned an invalid response`);
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
-        } else if (name === 'RichText' || name === 'AppendOnly' || name === 'FillInChoice') {
+        } else if (kind === 'boolean') {
           if (typeof value !== 'boolean') {
             throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
-        } else if (name === 'Formula') {
+        } else if (kind === 'string') {
           if (typeof value !== 'string') {
-            throw new Error(`Field '${listName}.${columnName}' Formula probe returned an invalid response`);
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
           }
         } else if (!Number.isInteger(value)) {
           throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
@@ -1867,6 +1866,7 @@
       "fields_phase1": [
         {
           "body": {
+            "AllowMultipleValues": false,
             "FieldTypeKind": 7,
             "LookupField": "Title",
             "Required": true,
@@ -2078,6 +2078,9 @@
 };
 
   const TYPE_AS_STRING_BY_KIND = new Map([[2, "Text"], [3, "Note"], [4, "DateTime"], [6, "Choice"], [7, "Lookup"], [8, "Boolean"], [9, "Number"], [11, "URL"], [15, "MultiChoice"], [17, "Calculated"], [20, "User"]]);
+  const MULTI_TYPE_AS_STRING_BY_KIND = new Map([[7, "LookupMulti"]]);
+  const BASE_TYPE_AS_STRING = new Map([["LookupMulti", "Lookup"]]);
+  const baseTypeAsString = (name) => BASE_TYPE_AS_STRING.get(name) || name;
   const indexedFieldKeys = new Set(
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
   );
@@ -2094,11 +2097,7 @@
   // since SharePoint does normalise those and canonicalFormula exists for it.
   const normalizeDescription = (value) => value == null ? '' : String(value);
   const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
-  const DERIVED_FIELD_PROPERTIES = [
-    'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
-    'FillInChoice', 'DisplayFormat', 'SelectionMode',
-    'Formula', 'OutputType',
-  ];
+  const DERIVED_FIELD_PROPERTIES = ["MaxLength", "RichText", "NumberOfLines", "AppendOnly", "Choices", "FillInChoice", "DisplayFormat", "SelectionMode", "Formula", "OutputType", "AllowMultipleValues"];
 
   // Distinguishes "clear this value" from "not managed here". Declared
   // before any consumer: the synthetic Title patch in _lists.js.j2 needs it
@@ -2235,9 +2234,15 @@
   }
 
   function declaredFieldState(listName, field) {
-    const typeAsString = TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind);
+    // Arity first, because one FieldTypeKind can name two types. A declared
+    // AllowMultipleValues on a kind with no multi spelling is a generator bug
+    // and fails closed here rather than comparing against `undefined`.
+    const multiValued = field.body.AllowMultipleValues === true;
+    const typeAsString = multiValued
+      ? MULTI_TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind)
+      : TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind);
     if (!typeAsString) {
-      throw new Error(`Field '${listName}.${field.title}' has unsupported declared FieldTypeKind ${field.body.FieldTypeKind}`);
+      throw new Error(`Field '${listName}.${field.title}' has unsupported declared FieldTypeKind ${field.body.FieldTypeKind}${multiValued ? ' with AllowMultipleValues' : ''}`);
     }
     const enforceUniqueValues = field.body.EnforceUniqueValues === true;
     const derived = Object.fromEntries(
@@ -2254,6 +2259,43 @@
       defaultValue: normalizeDefaultValue(field.body.DefaultValue),
       derived,
     };
+  }
+
+  // The ONE create call for a declared lookup, both arities, because the two
+  // phases that create one (_lists.js.j2 for the acyclic ones, _lookups.js.j2
+  // for the deferred ones) would otherwise each hold their own copy of the
+  // route choice.
+  //
+  // AddField CANNOT MAKE A MULTI-VALUE LOOKUP. SP.FieldCreationInformation has
+  // no AllowMultipleValues property and the POST is refused HTTP 400
+  // (measured 2026-09-02, test/manual/multilookup-probe.js,
+  // `field.multilookup.create-readback-type`). createfieldasxml with
+  // Type="LookupMulti" Mult="TRUE" and Options 8 returned HTTP 201 and read
+  // back TypeAsString="LookupMulti", FieldTypeKind=7,
+  // AllowMultipleValues=true, entity type SP.FieldLookup.
+  //
+  // Neither route can carry Description, and the XML route cannot carry
+  // Required either. Both are applied by the reconcileDeclaredField MERGE the
+  // callers issue straight after, which is already how a [unique] single-value
+  // lookup gets EnforceUniqueValues and Indexed.
+  async function createDeclaredLookupField(listName, field, targetGuid, digest) {
+    const listPath = `web/lists/getbytitle('${odataName(listName)}')`;
+    if (field.lookup_creation_xml) {
+      const spec = field.lookup_creation_xml;
+      const xml = `<Field Type="${spec.type}" Mult="TRUE" DisplayName="${spec.name}" `
+        + `Name="${spec.name}" List="{${targetGuid}}" ShowField="${spec.show_field}"/>`;
+      await postJson(
+        apiUrl(`${listPath}/fields/createfieldasxml`),
+        { parameters: { SchemaXml: xml, Options: 8 } },
+        digest,
+      );
+      return;
+    }
+    await postJson(
+      apiUrl(`${listPath}/fields/addfield`),
+      { parameters: { ...field.lookup_creation_parameters, LookupListId: targetGuid } },
+      digest,
+    );
   }
 
   function declaredFieldsForList(list) {
@@ -2636,7 +2678,12 @@
       mismatch('InternalName', field.title, actual.InternalName,
         `Existing field '${listName}.${field.title}' resolves to immutable InternalName '${actual.InternalName}'; expected '${field.title}'`);
     }
-    if (actual.TypeAsString !== desired.typeAsString) {
+    // COMPARED AS BASE TYPES. What is immutable is that a Lookup can never
+    // become a Text; arity is not, so a single-value lookup widened to
+    // multi-value in the DBML must reconcile rather than abort. The arity
+    // itself is verified as a derived property (AllowMultipleValues), read
+    // back and drift-reported like any other.
+    if (baseTypeAsString(actual.TypeAsString) !== baseTypeAsString(desired.typeAsString)) {
       mismatch('TypeAsString', desired.typeAsString, actual.TypeAsString,
         `Existing field '${listName}.${field.title}' has immutable TypeAsString '${actual.TypeAsString}'; expected '${desired.typeAsString}'`);
     }
@@ -4622,30 +4669,23 @@
           )) {
             summary.columnsSkipped += 1;
           } else {
-            let createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`);
-            let createBody = col.body;
-            if (col.target_list) {
-              // SharePoint rejects POSTing an SP.FieldLookup directly to
-              // /fields ("Please use addfield to add a lookup field"). Use the
-              // supported FieldCollection.AddField REST method and keep its
-              // SP.FieldCreationInformation object nested under `parameters`.
-              // Properties that type does not carry are MERGEd and read back by
-              // reconcileDeclaredField immediately below.
-              const parameters = {
-                ...col.lookup_creation_parameters,
-                LookupListId: targetGuid,
-              };
-              createUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/addfield`);
-              createBody = { parameters };
-            }
             await assertLaneOwnership();
             targetGuid = await resolveTargetGuid();
-            if (col.target_list) createBody.parameters.LookupListId = targetGuid;
-            await postJson(
-              createUrl,
-              createBody,
-              laneDigest,
-            );
+            if (col.target_list) {
+              // SharePoint rejects POSTing an SP.FieldLookup directly to
+              // /fields ("Please use addfield to add a lookup field"), and
+              // refuses AddField outright for a multi-value one. Both routes
+              // live in createDeclaredLookupField; properties neither can
+              // carry are MERGEd and read back by reconcileDeclaredField
+              // immediately below.
+              await createDeclaredLookupField(list.title, col, targetGuid, laneDigest);
+            } else {
+              await postJson(
+                apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields`),
+                col.body,
+                laneDigest,
+              );
+            }
             invalidateFieldShapes();  // new field: next probe re-enumerates
             await assertLaneOwnership();
             targetGuid = await resolveTargetGuid();
@@ -4766,15 +4806,7 @@
       )) {
         summary.columnsSkipped += 1;
       } else {
-        const parameters = {
-          ...lookup.field.lookup_creation_parameters,
-          LookupListId: targetGuid,
-        };
-        await postJson(
-          apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
-          { parameters },
-          digest,
-        );
+        await createDeclaredLookupField(lookup.list, lookup.field, targetGuid, digest);
         invalidateFieldShapes();  // new field: next probe re-enumerates
         await reconcileDeclaredField(
           lookup.list, lookup.field, targetGuid, digest, false,

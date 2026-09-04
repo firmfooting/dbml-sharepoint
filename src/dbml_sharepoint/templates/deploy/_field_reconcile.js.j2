@@ -18,6 +18,19 @@
      fail a test; it threw `TYPE_AS_STRING_BY_KIND.get(...)` undefined in the
      operator's browser, part-way through a deploy, on a customer site. #}
   const TYPE_AS_STRING_BY_KIND = new Map({{ type_as_string_by_kind | tojson }});
+  {# The arity half. A LookupMulti reads back FieldTypeKind=7, the same number
+     a single-value Lookup reads back, so the number alone stopped naming the
+     type on 2026-09-02 and the declaration's AllowMultipleValues is what
+     picks between the two maps. Measured by test/manual/multilookup-probe.js
+     (`field.multilookup.create-readback-type`). #}
+  const MULTI_TYPE_AS_STRING_BY_KIND = new Map({{ multi_type_as_string_by_kind | tojson }});
+  {# ...and the collapse back, for the immutable-shape assertion. Arity is
+     MUTABLE on a live lookup (both directions HTTP 204, measured the same
+     day), so comparing the raw TypeAsString would abort a field the tenant is
+     willing to change. The assertion compares base types; arity reconciles as
+     an ordinary derived property below. #}
+  const BASE_TYPE_AS_STRING = new Map({{ base_type_as_string | tojson }});
+  const baseTypeAsString = (name) => BASE_TYPE_AS_STRING.get(name) || name;
   const indexedFieldKeys = new Set(
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
   );
@@ -34,11 +47,11 @@
   // since SharePoint does normalise those and canonicalFormula exists for it.
   const normalizeDescription = (value) => value == null ? '' : String(value);
   const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
-  const DERIVED_FIELD_PROPERTIES = [
-    'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
-    'FillInChoice', 'DisplayFormat', 'SelectionMode',
-    'Formula', 'OutputType',
-  ];
+  {# Rendered from analysis/typemap.py, not typed out. The same list is read
+     by _shape_probes.js.j2 to SELECT these properties, and a name present in
+     one copy and not the other compares a declared value against `undefined`
+     and reports permanent drift on a field that is correct. #}
+  const DERIVED_FIELD_PROPERTIES = {{ derived_field_properties | tojson }};
 
   // Distinguishes "clear this value" from "not managed here". Declared
   // before any consumer: the synthetic Title patch in _lists.js.j2 needs it
@@ -150,9 +163,15 @@
   }
 
   function declaredFieldState(listName, field) {
-    const typeAsString = TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind);
+    // Arity first, because one FieldTypeKind can name two types. A declared
+    // AllowMultipleValues on a kind with no multi spelling is a generator bug
+    // and fails closed here rather than comparing against `undefined`.
+    const multiValued = field.body.AllowMultipleValues === true;
+    const typeAsString = multiValued
+      ? MULTI_TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind)
+      : TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind);
     if (!typeAsString) {
-      throw new Error(`Field '${listName}.${field.title}' has unsupported declared FieldTypeKind ${field.body.FieldTypeKind}`);
+      throw new Error(`Field '${listName}.${field.title}' has unsupported declared FieldTypeKind ${field.body.FieldTypeKind}${multiValued ? ' with AllowMultipleValues' : ''}`);
     }
     const enforceUniqueValues = field.body.EnforceUniqueValues === true;
     const derived = Object.fromEntries(
@@ -169,6 +188,43 @@
       defaultValue: normalizeDefaultValue(field.body.DefaultValue),
       derived,
     };
+  }
+
+  // The ONE create call for a declared lookup, both arities, because the two
+  // phases that create one (_lists.js.j2 for the acyclic ones, _lookups.js.j2
+  // for the deferred ones) would otherwise each hold their own copy of the
+  // route choice.
+  //
+  // AddField CANNOT MAKE A MULTI-VALUE LOOKUP. SP.FieldCreationInformation has
+  // no AllowMultipleValues property and the POST is refused HTTP 400
+  // (measured 2026-09-02, test/manual/multilookup-probe.js,
+  // `field.multilookup.create-readback-type`). createfieldasxml with
+  // Type="LookupMulti" Mult="TRUE" and Options 8 returned HTTP 201 and read
+  // back TypeAsString="LookupMulti", FieldTypeKind=7,
+  // AllowMultipleValues=true, entity type SP.FieldLookup.
+  //
+  // Neither route can carry Description, and the XML route cannot carry
+  // Required either. Both are applied by the reconcileDeclaredField MERGE the
+  // callers issue straight after, which is already how a [unique] single-value
+  // lookup gets EnforceUniqueValues and Indexed.
+  async function createDeclaredLookupField(listName, field, targetGuid, digest) {
+    const listPath = `web/lists/getbytitle('${odataName(listName)}')`;
+    if (field.lookup_creation_xml) {
+      const spec = field.lookup_creation_xml;
+      const xml = `<Field Type="${spec.type}" Mult="TRUE" DisplayName="${spec.name}" `
+        + `Name="${spec.name}" List="{${targetGuid}}" ShowField="${spec.show_field}"/>`;
+      await postJson(
+        apiUrl(`${listPath}/fields/createfieldasxml`),
+        { parameters: { SchemaXml: xml, Options: 8 } },
+        digest,
+      );
+      return;
+    }
+    await postJson(
+      apiUrl(`${listPath}/fields/addfield`),
+      { parameters: { ...field.lookup_creation_parameters, LookupListId: targetGuid } },
+      digest,
+    );
   }
 
   function declaredFieldsForList(list) {
@@ -551,7 +607,12 @@
       mismatch('InternalName', field.title, actual.InternalName,
         `Existing field '${listName}.${field.title}' resolves to immutable InternalName '${actual.InternalName}'; expected '${field.title}'`);
     }
-    if (actual.TypeAsString !== desired.typeAsString) {
+    // COMPARED AS BASE TYPES. What is immutable is that a Lookup can never
+    // become a Text; arity is not, so a single-value lookup widened to
+    // multi-value in the DBML must reconcile rather than abort. The arity
+    // itself is verified as a derived property (AllowMultipleValues), read
+    // back and drift-reported like any other.
+    if (baseTypeAsString(actual.TypeAsString) !== baseTypeAsString(desired.typeAsString)) {
       mismatch('TypeAsString', desired.typeAsString, actual.TypeAsString,
         `Existing field '${listName}.${field.title}' has immutable TypeAsString '${actual.TypeAsString}'; expected '${desired.typeAsString}'`);
     }

@@ -198,11 +198,13 @@ def test_phase_one_lookup_refreshes_owned_target_before_reconcile() -> None:
     reconcile = wave_two.index("await reconcileDeclaredField", target_guid)
     assert target_read < target_guid < reconcile
     refreshed = wave_two.index("targetGuid = await resolveTargetGuid()", reconcile)
-    body_refresh = wave_two.index(
-        "createBody.parameters.LookupListId = targetGuid", refreshed,
+    # The create takes the re-resolved GUID as an argument. Before the
+    # multi-value route existed it was patched into a create body built
+    # earlier, which is the same ordering constraint under another spelling.
+    create = wave_two.index(
+        "await createDeclaredLookupField(list.title, col, targetGuid,", refreshed,
     )
-    create = wave_two.index("await postJson", body_refresh)
-    assert refreshed < body_refresh < create
+    assert refreshed < create
 
 
 def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
@@ -682,6 +684,11 @@ def test_lookup_defaults_to_title_without_display_column() -> None:
     assert field["lookup_creation_parameters"]["LookupFieldName"] == "Title"
 
 
+def _lookup_create_helper(js: str) -> str:
+    """The body of `createDeclaredLookupField`, which both lookup phases call."""
+    return js.split("async function createDeclaredLookupField", 1)[1].split("\n  }", 1)[0]
+
+
 def test_immediate_lookup_uses_addfield_creation_information() -> None:
     """A normal Phase-1 lookup uses FieldCollection.AddField's exact shape."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
@@ -704,12 +711,17 @@ def test_immediate_lookup_uses_addfield_creation_information() -> None:
     phase1 = js.split(f"Starting Phase {pn('lists')}")[1].split(
         f"Starting Phase {pn('lookups')}")[0]
 
-    assert "...col.lookup_creation_parameters" in phase1
-    assert "LookupListId: targetGuid" in phase1
-    assert "/fields/addfield`" in phase1
-    assert "createBody = { parameters };" in phase1
+    # Both lookup phases create through one shared helper, because a
+    # multi-value lookup needs a second route (createfieldasxml) that AddField
+    # cannot express. AddField is still what a single-value lookup takes.
+    assert "await createDeclaredLookupField(list.title, col," in phase1
     assert "{ ...col.body, LookupList:" not in phase1
     assert "reconcileDeclaredField" in phase1
+
+    helper = _lookup_create_helper(js)
+    assert "...field.lookup_creation_parameters" in helper
+    assert "LookupListId: targetGuid" in helper
+    assert "/fields/addfield`" in helper
 
 
 def test_deferred_circular_lookup_uses_addfield_creation_information(
@@ -746,12 +758,14 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
     )
     phase2 = js.split(f"Starting Phase {pn('lookups')}")[1].split(
         f"Starting Phase {pn('indexes')}")[0]
-    assert "...lookup.field.lookup_creation_parameters" in phase2
-    assert "LookupListId: targetGuid" in phase2
-    assert "/fields/addfield`" in phase2
-    assert "{ parameters }," in phase2
+    assert "await createDeclaredLookupField(lookup.list, lookup.field," in phase2
     assert "{ ...lookup.field.body, LookupList:" not in phase2
     assert "reconcileDeclaredField" in phase2
+
+    helper = _lookup_create_helper(js)
+    assert "...field.lookup_creation_parameters" in helper
+    assert "LookupListId: targetGuid" in helper
+    assert "/fields/addfield`" in helper
 
 
 def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> None:
@@ -1882,7 +1896,9 @@ def test_calculated_kind_wired_into_reconciliation_machinery() -> None:
     # Double-quoted since the map became `| tojson` of the Python pairing.
     assert '[17, "Calculated"]' in js
     # Once in readFieldShape's probe list, once in DERIVED_FIELD_PROPERTIES.
-    assert js.count("'Formula', 'OutputType'") >= 2
+    # Both are now rendered from typemap.DERIVED_FIELD_PROPERTIES, hence the
+    # JSON spelling.
+    assert js.count('"Formula", "OutputType"') >= 2
 
 
 def test_permission_level_probe_uses_filter_not_getbyname() -> None:
