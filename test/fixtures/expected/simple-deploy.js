@@ -5815,6 +5815,13 @@
           return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
         };
 
+        // Which grants are missing is a question of reads, and it is settled
+        // for every declared assignment before the first add: the adds are
+        // independent of one another, so they go out as ONE $batch rather
+        // than one POST each. breakroleinheritance above and every removal
+        // below stay single, because those are ordered against the reads
+        // around them.
+        const missingGrants = [];
         for (const resolved of resolvedAssignments) {
           let desiredBindings = bindingsFor(resolved.principalId);
           if (desiredBindings === null) {
@@ -5832,19 +5839,32 @@
             }
           }
           const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-          if (!desiredPresent) {
-            await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
-              digest4 = await getDigest();
-              const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
-                method: 'POST',
-                headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
-              });
-              if (!assignResp.ok) {
-                const text = await assignResp.text();
-                throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
+          if (!desiredPresent) missingGrants.push(resolved);
+        }
+        if (missingGrants.length > 0) {
+          // The bracket is no weaker for holding a batch, only wider: the
+          // title is proved to be the surveyed list immediately before the
+          // request and immediately after it, and every add sits inside that
+          // window, including one the body budget flushes early. A rebind can
+          // still only produce a failed phase, never a grant on a stranger.
+          await withOwnedList(la.list, aclListId, `addroleassignment on '${la.list}'`, async () => {
+            const addBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+            try {
+              for (const resolved of missingGrants) {
+                // No body: addroleassignment takes its arguments in the URL,
+                // exactly as the single POST this replaces did.
+                await addBatch.add('POST', `web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`);
               }
-            });
-          }
+              await addBatch.done();
+            } catch (err) {
+              // Still fatal for this list, and still before a single removal:
+              // exact mode must never prune against a desired state it failed
+              // to establish. SharePoint does not roll a ChangeSet back, so
+              // some grants may have landed; the phase is rerunnable and the
+              // next run reads the bindings again.
+              throw new Error(`addroleassignment batch failed before reconciliation: ${err.message}`);
+            }
+          });
         }
 
         if (la.reconcile_mode === 'exact') {

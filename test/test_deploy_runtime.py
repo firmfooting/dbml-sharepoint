@@ -2675,6 +2675,90 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
     )
 
 
+# Two groups on one level, so the list has two grants to make and a
+# ChangeSet that coalesces them is distinguishable from one that does not.
+# The harness's markers are spelled for the family it was written against,
+# so the declared family is substituted into them below.
+_TWO_GRANT_ACL = """
+permission_levels:
+  - name: "Schema Manager"
+    description: "Test permission level."
+    base_permissions:
+      - ViewListItems
+      - ManageLists
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+    require_empty_at_deploy: true
+  - name: "List Reader"
+    description: "Second test group."
+    owner_group: "Site Owners"
+    require_empty_at_deploy: true
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Schema Manager"
+      - principal: { kind: group, name: "List Reader" }
+        level: "Schema Manager"
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> None:
+    """The grants travel as ChangeSet parts; nothing ordered joins them.
+
+    addroleassignment is a function invocation with no body, and a list's
+    grants are independent of one another. breakroleinheritance is not: it
+    has to have run before any of them, and the enumeration that decides
+    which are missing has to have been read before that. So a ChangeSet here
+    must carry adds, all of the list's adds, and nothing else.
+    """
+    body = _declared_deploy_js(tmp_path, _TWO_GRANT_ACL).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS.replace('simple-test', 't')}\n({body[:-1]}).then(() => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    adding = [
+        b for b in batches
+        if any("addroleassignment(" in op["url"] for op in b["ops"])
+    ]
+    assert adding, f"no role-assignment grant travelled as a ChangeSet part: {batches}"
+    assert len(adding) == 1, (
+        f"the list's two grants went out as {len(adding)} $batch requests; "
+        "they are settled by one read and belong in one ChangeSet"
+    )
+    assert len(adding[0]["ops"]) == 2, (
+        f"expected both declared grants as parts, got {adding[0]['ops']}"
+    )
+    for op in adding[0]["ops"]:
+        assert "addroleassignment(" in op["url"], (
+            f"an ordered ACL call shares a ChangeSet with the adds: {op['url']}"
+        )
+        assert op["method"] == "POST", (
+            "addroleassignment is a POST as a single write and stays one as a "
+            f"part, not {op['method']}"
+        )
+        assert op["body"] is None, (
+            "the arguments belong in the URL; a body here is not what the "
+            "single write sent"
+        )
+
+
 def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 

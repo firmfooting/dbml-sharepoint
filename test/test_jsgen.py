@@ -1320,12 +1320,14 @@ def test_deploy_js_hardens_permission_and_role_checks() -> None:
       responses as errors rather than treating them as "already exists";
     - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.3 group
       owner reads all validate the HTTP result (fetch does not throw on 4xx/5xx).
+      The adds travel as one $batch, so the status each part came back with is
+      what BatchWriter inspects, and its refusal has to stay fatal here.
     """
     js = _generate_simple_js()
     assert "needsPermissions" in js
     assert "Probe for permission level" in js
     assert "Probe for site group" in js
-    assert "addroleassignment (principal" in js
+    assert "addroleassignment batch failed before reconciliation" in js
     assert "failed before reconciliation" in js
     assert "breakroleinheritance failed" in js
     assert "/owner?$select=Id,Title,PrincipalType" in js
