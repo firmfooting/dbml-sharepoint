@@ -1,0 +1,885 @@
+/**
+ * dbml-sharepoint PROBE: DOES OData $batch BUY THROTTLING HEADROOM?
+ *
+ * ONE QUESTION:
+ *   When SharePoint Online throttles, is a throttled request counted per
+ *   REQUEST or per underlying OPERATION -- and what does a throttled
+ *   $batch request look like when it arrives in a browser context?
+ *
+ * REVISION: df3b3314
+ *
+ * WHY: issue #404. Microsoft Graph documentation says requests inside a
+ * $batch are charged per operation; Microsoft Learn ("Avoid getting
+ * throttled or blocked in SharePoint Online") says SharePoint REST and CSOM
+ * requests have "no predetermined resource unit cost". Both can be true:
+ * the first is about Graph's budget and the second is about SharePoint's
+ * lack of one, which is exactly why this has to be measured on a tenant
+ * rather than assumed. If batching is counted per request, 20 item writes
+ * in one $batch request buy roughly 20x the headroom of 20 single writes;
+ * if it is counted per operation, batching buys round trips and nothing
+ * else. A nine-list deploy (#401) was throttled in the middle of a phase;
+ * knowing which of the two is true decides whether emitting batched writes
+ * is worth the complexity.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`,
+ * `<surface>.<scope>.<question>`, all under the new `transport` surface.
+ *
+ *   transport.throttle.fixture-scratch-list         does a fresh scratch
+ *       list exist for the two passes to write into?
+ *   transport.batch.control-writes-applied          CONTROL: did the
+ *       single writes actually apply, AND was each $batch body well-formed
+ *       with its ChangeSet parts accepted? (the item count is read back
+ *       and compared with the writes the passes counted landed)
+ *   transport.throttle.singles-throttle-point       OBSERVE: at what write
+ *       count and elapsed time did the singles pass throttle (or the cap)?
+ *   transport.throttle.batched-throttle-point       OBSERVE: at what
+ *       operation count (and $batch request count) and elapsed time did
+ *       the batched pass throttle (or the cap)?
+ *   transport.throttle.throttle-response-shape      OBSERVE: what did the
+ *       throttled request come back as -- HTTP 429, HTTP 503, or a
+ *       redirect to /_layouts/15/Throttle.htm -- and was a Retry-After
+ *       header present?
+ *
+ * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
+ *   Depends on (asserted, read back): the scratch list exists (fixture);
+ *   each write the passes counted landed actually applied, and the $batch
+ *   bodies were well-formed with ChangeSet parts accepted (control, proven
+ *   by the item count read back against the writes counted landed).
+ *   Observes (recorded, never asserted): the request/operation count at
+ *   which throttling began and the elapsed time, the response shape when
+ *   it did (429 / 503 / redirect to /_layouts/15/Throttle.htm), and
+ *   whether a Retry-After header was present. The two throttle-point rows
+ *   and the shape row depend on the fixture and the control: if the
+ *   control fails, the write counts cannot be trusted and the rows are
+ *   void.
+ *
+ * THE MEASUREMENT. One comparison, two passes against the same scratch
+ * list, back to back so tenant conditions are close:
+ *
+ *   1. SINGLES. Issue single item writes until the tenant throttles, and
+ *      record how many landed and the elapsed time.
+ *   2. BATCHED. Issue the same fixed write cap, delivered as /_api/$batch
+ *      requests of 20 (one ChangeSet of POSTs per batch), and record how
+ *      many landed before the throttle and the elapsed time.
+ *
+ *   If the batched run gets roughly 20x further in REQUESTS before
+ *   throttling, batching is counted per request and buys headroom. If it
+ *   throttles after a similar number of underlying OPERATIONS, batching is
+ *   counted per operation and buys only round trips.
+ *
+ *   Each pass is capped at 2000 writes. A tenant that never throttles
+ *   within the cap is recorded honestly ("no throttle within the
+ *   2000-write cap"), never asserted to have a throttle point. The scratch
+ *   list is recycled on the way out whatever happened, so a capped or
+ *   throttled run leaves no litter.
+ *
+ * THE THROTTLE SIGNALS. #401 established that a BROWSER-context caller is
+ * redirected to /_layouts/15/Throttle.htm (an HTML page, carrying no
+ * Retry-After) where an application caller gets HTTP 429 or 503. This
+ * probe is the first to record what a *$batch* request gets when
+ * throttled, which may differ again: SharePoint may throttle the outer
+ * $batch request (429/503 or the redirect) or may answer the outer request
+ * and throttle ChangeSet operations one by one inside the multipart
+ * envelope. All three are detected and recorded: status 429, status 503,
+ * and a final URL matching /_layouts/15/Throttle.htm, plus Retry-After
+ * presence on each. There is deliberately NO retry: a probe that retried a
+ * throttled request would hide the very throttle point it exists to find.
+ *
+ * SCOPE OF CLAIMS: this measures one tenant, one caller context (the
+ * operator's own signed-in browser), one list and one burst pattern. A
+ * throttle point recorded here is evidence about THIS TENANT at THIS
+ * MOMENT, not a number to carry to another tenant.
+ *
+ * HOW TO RUN
+ *   1. Open the sandbox site you own.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true (CLEANUP = true recycles a
+ *      leftover scratch list first; a clean fixture needs an empty list),
+ *      paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete -- the probe recycles its own scratch
+ * list before it reports. Expect the run to take several minutes and to
+ * end THROTTLED or at the cap, whichever comes first.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+  log('INFO', 'probe revision df3b3314. Quote this when reporting results.');
+
+  const SCRATCH = 'dbmlsp Probe ThrottleBatch';
+  const listPath = `web/lists/getbytitle('${SCRATCH}')`;
+  // The fixed write cap for EACH pass (the brief's safety cap): a tenant
+  // that never throttles must not hang the probe, and 2000 is also the
+  // most items the final read-back can page in one go.
+  const WRITE_CAP = 2000;
+  // One ChangeSet of POSTs per $batch request.
+  const BATCH = 20;
+  // A fresh digest is fetched every DIGEST_EVERY requests of a pass. The
+  // digest request never counts as a write, but a throttled digest fetch
+  // still stops the pass and is recorded as such.
+  const DIGEST_EVERY = 20;
+
+  const Q_FIXTURE = 'fixture: a fresh scratch list exists for the two passes to write into';
+  const Q_CONTROL = 'control: the single writes applied AND each $batch body was well-formed with its ChangeSet parts accepted (the item count read back matches the writes the passes counted landed)';
+  const Q_SINGLES = 'observe: at what write count and elapsed time did the singles pass throttle (or did it reach the 2000-write cap)?';
+  const Q_BATCHED = 'observe: at what operation count (and $batch request count) and elapsed time did the batched pass throttle (or did it reach the 2000-operation cap)?';
+  const Q_SHAPE = 'observe: what did the throttled request come back as -- HTTP 429, HTTP 503, or a redirect to /_layouts/15/Throttle.htm -- and was a Retry-After header present?';
+
+  expect('transport.throttle.fixture-scratch-list', Q_FIXTURE);
+  expect('transport.batch.control-writes-applied', Q_CONTROL);
+  expect('transport.throttle.singles-throttle-point', Q_SINGLES);
+  expect('transport.throttle.batched-throttle-point', Q_BATCHED);
+  expect('transport.throttle.throttle-response-shape', Q_SHAPE);
+
+  const CONTROL_ID = 'transport.batch.control-writes-applied';
+  const OBSERVE_IDS = ['transport.throttle.singles-throttle-point',
+                       'transport.throttle.batched-throttle-point',
+                       'transport.throttle.throttle-response-shape'];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a scratch list '${SCRATCH}' on ${WEB}, then run two passes`);
+    log('INFO', `of item writes against it, back to back: singles until the tenant throttles`);
+    log('INFO', `(capped at ${WRITE_CAP}), then the same cap delivered as /_api/$batch requests`);
+    log('INFO', `of ${BATCH} (one ChangeSet of POSTs per batch). It would record the write count`);
+    log('INFO', 'and elapsed time at which each pass throttled, the response shape of the');
+    log('INFO', 'throttle (429 / 503 / redirect to /_layouts/15/Throttle.htm) and whether a');
+    log('INFO', 'Retry-After header was present. The scratch list is recycled on the way out.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${SCRATCH}' would be RECYCLED first, so the fixture starts empty.`);
+    } else {
+      log('INFO', 'CLEANUP is off: a leftover list with items in it would corrupt the count');
+      log('INFO', 'read-backs, so the probe REFUSES to measure on one. Set CLEANUP = true for a');
+      log('INFO', 'clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  // ---- Tenant redaction -------------------------------------------------
+  // Recorded evidence must not name the tenant. A $batch request carries
+  // ABSOLUTE operation URLs (the protocol requires them) and a throttled
+  // request may end redirected to an absolute /_layouts/15/Throttle.htm
+  // URL, so evidence built from responses can leak the host. The
+  // scheme+host is replaced with [TENANT], case-insensitively, wherever it
+  // appears, leaving the path visible.
+  const ORIGIN = (() => {
+    const afterScheme = WEB.indexOf('//');
+    if (afterScheme === -1) return WEB;
+    const firstSlash = WEB.indexOf('/', afterScheme + 2);
+    return firstSlash === -1 ? WEB : WEB.slice(0, firstSlash);
+  })();
+  const redact = (value) => {
+    const s = String(value);
+    if (!ORIGIN) return s;
+    const needle = ORIGIN.toLowerCase();
+    const hay = s.toLowerCase();
+    let out = '';
+    let from = 0;
+    for (;;) {
+      const hit = hay.indexOf(needle, from);
+      if (hit === -1) return out + s.slice(from);
+      out += s.slice(from, hit) + '[TENANT]';
+      from = hit + ORIGIN.length;
+    }
+  };
+
+  // ---- Throttle detection ----------------------------------------------
+  // The page a throttled BROWSER is redirected to (#401). Matched on the
+  // FINAL URL rather than the status: the page is HTML and the status a
+  // caller sees is a property of its own Accept header (406 for JSON), so
+  // keying on a status would miss the throttle and keying on 406 would
+  // call every content-negotiation refusal a throttle.
+  const THROTTLE_PAGE = /\/_layouts\/15\/throttle\.htm(\?|$)/i;
+  const shapeOf = (status, url) => {
+    if (THROTTLE_PAGE.test(url || '')) return 'redirect to /_layouts/15/Throttle.htm';
+    if (status === 429) return 'HTTP 429';
+    if (status === 503) return 'HTTP 503';
+    return null;
+  };
+  const describeEvent = (event) => {
+    const ra = event.retryAfter
+      ? `with a Retry-After header present (${event.retryAfter}s)`
+      : 'with no Retry-After header';
+    return `${event.kind}, ${ra}`;
+  };
+
+  // ---- Pass machinery ---------------------------------------------------
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  let seq = 0;
+  const nextTitle = () => `dbmlsp throttle probe ${++seq}`;
+
+  // contextinfo with the throttle detail the harness's throwing getDigest
+  // discards: a throttled digest fetch has to stop a pass as recorded
+  // evidence, not crash it.
+  const refreshDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    const text = await res.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch { /* non-JSON response */ }
+    return {
+      ok: res.ok,
+      status: res.status,
+      url: res.url,
+      retryAfter: res.headers.get('Retry-After'),
+      text,
+      digest: body ? body.d.GetContextWebInformation.FormDigestValue : null,
+    };
+  };
+
+  // One single item write, exposing url and Retry-After so a throttle can
+  // be classified. Fetch errors come back as status 0 rather than thrown.
+  const postItem = async (digest) => {
+    let res;
+    try {
+      res = await fetch(`${WEB}/_api/${listPath}/items`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+        },
+        body: JSON.stringify({ Title: nextTitle() }),
+      });
+    } catch (err) {
+      return { ok: false, status: 0, url: '', retryAfter: null, text: String(err) };
+    }
+    const text = await res.text();
+    return {
+      ok: res.ok, status: res.status, url: res.url,
+      retryAfter: res.headers.get('Retry-After'), text,
+    };
+  };
+
+  const boundaryToken = (label) => {
+    const rnd = () => Math.random().toString(36).slice(2, 10);
+    return `${label}_${rnd()}${rnd()}`;
+  };
+
+  // One $batch request holding one ChangeSet of `count` POSTs (the OData
+  // v3 multipart shape Microsoft Learn documents for /_api/$batch). The
+  // digest rides on the OUTER request and on each ChangeSet part, both
+  // spellings appearing in real-world samples; the outer is the one
+  // SharePoint's security validation answers to. Per-op statuses are
+  // parsed out of the multipart envelope so a throttle delivered INSIDE an
+  // accepted batch can be told from one delivered on the outer request.
+  const batchOne = async (digest, count) => {
+    const outer = boundaryToken('batch');
+    const inner = boundaryToken('changeset');
+    const opUrl = `${WEB}/_api/${listPath}/items`;
+    const ops = [];
+    for (let i = 0; i < count; i++) {
+      ops.push(
+        `--${inner}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `POST ${opUrl} HTTP/1.1\r\n`
+        + 'Accept: application/json;odata=nometadata\r\n'
+        + 'Content-Type: application/json;odata=nometadata\r\n'
+        + `X-RequestDigest: ${digest}\r\n`
+        + '\r\n'
+        + `${JSON.stringify({ Title: nextTitle() })}\r\n`
+      );
+    }
+    const body =
+        `--${outer}\r\n`
+      + 'Content-Type: multipart/mixed; boundary=' + inner + '\r\n'
+      + '\r\n'
+      + ops.join('')
+      + `--${inner}--\r\n`
+      + `--${outer}--\r\n`;
+    let res;
+    try {
+      // No Accept header on purpose: the throttling page is HTML, and #401
+      // showed a JSON Accept turns the redirect into a 406 that still has
+      // to be recognised as a throttle by its URL. Omitting Accept keeps
+      // the redirect a plain page load and the final URL unmistakeable.
+      res = await fetch(`${WEB}/_api/$batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+    } catch (err) {
+      return {
+        ok: false, status: 0, url: '', retryAfter: null,
+        text: String(err), statuses: [],
+      };
+    }
+    const text = await res.text();
+    const statuses = [];
+    const statusRe = /HTTP\/1\.1\s+(\d{3})/g;
+    let m;
+    while ((m = statusRe.exec(text)) !== null) statuses.push(Number(m[1]));
+    return {
+      ok: res.ok, status: res.status, url: res.url,
+      retryAfter: res.headers.get('Retry-After'),
+      text, statuses,
+    };
+  };
+
+  // A pass ends one of four ways, and each way is recorded distinctly:
+  //   'throttle' - a throttled response stopped it (event carries the shape)
+  //   'cap'      - WRITE_CAP writes landed with no throttle at all
+  //   'aborted'  - a non-throttle refusal or fetch failure stopped it
+  const runSingles = async (startDigest) => {
+    const t0 = Date.now();
+    let digest = startDigest;
+    let landed = 0;
+    let attempted = 0;
+    let stopped = 'cap';
+    let event = null;
+    let aborted = null;
+    for (let i = 0; i < WRITE_CAP; i++) {
+      if (i > 0 && i % DIGEST_EVERY === 0) {
+        const fresh = await refreshDigest();
+        if (!fresh.ok) {
+          const kind = shapeOf(fresh.status, fresh.url);
+          if (kind) {
+            event = { kind, retryAfter: fresh.retryAfter,
+              note: `the digest refresh was throttled (HTTP ${fresh.status})` };
+            stopped = 'throttle';
+            break;
+          }
+          aborted = `the digest refresh was refused with HTTP ${fresh.status}: `
+            + redact(fresh.text).slice(0, 160);
+          stopped = 'aborted';
+          break;
+        }
+        digest = fresh.digest;
+      }
+      const r = await postItem(digest);
+      attempted += 1;
+      const kind = r.ok ? null : shapeOf(r.status, r.url);
+      if (kind) {
+        event = { kind, retryAfter: r.retryAfter,
+          note: `the next single write was throttled (HTTP ${r.status})` };
+        stopped = 'throttle';
+        break;
+      }
+      if (r.ok) {
+        landed += 1;
+        continue;
+      }
+      aborted = `a single write was refused with HTTP ${r.status}: `
+        + redact(r.text).slice(0, 160);
+      stopped = 'aborted';
+      break;
+    }
+    return {
+      landed, attempted, stopped, event, aborted,
+      elapsedSec: (Date.now() - t0) / 1000,
+    };
+  };
+
+  const runBatched = async (startDigest) => {
+    const t0 = Date.now();
+    let digest = startDigest;
+    let landed = 0;
+    let requests = 0;
+    let attempted = 0;
+    let stopped = 'cap';
+    let event = null;
+    let aborted = null;
+    let refusedParts = false;
+    while (attempted < WRITE_CAP) {
+      if (requests > 0 && requests % DIGEST_EVERY === 0) {
+        const fresh = await refreshDigest();
+        if (!fresh.ok) {
+          const kind = shapeOf(fresh.status, fresh.url);
+          if (kind) {
+            event = { kind, retryAfter: fresh.retryAfter,
+              note: `the digest refresh was throttled (HTTP ${fresh.status})` };
+            stopped = 'throttle';
+            break;
+          }
+          aborted = `the digest refresh was refused with HTTP ${fresh.status}: `
+            + redact(fresh.text).slice(0, 160);
+          stopped = 'aborted';
+          break;
+        }
+        digest = fresh.digest;
+      }
+      const count = Math.min(BATCH, WRITE_CAP - attempted);
+      const r = await batchOne(digest, count);
+      requests += 1;
+      attempted += count;
+      const kind = r.ok ? null : shapeOf(r.status, r.url);
+      if (kind) {
+        event = { kind, retryAfter: r.retryAfter,
+          note: `the $batch request was throttled (HTTP ${r.status})` };
+        stopped = 'throttle';
+        break;
+      }
+      if (!r.ok) {
+        aborted = `a $batch request was refused with HTTP ${r.status}: `
+          + redact(r.text).slice(0, 160);
+        stopped = 'aborted';
+        break;
+      }
+      if (r.statuses.length === 0) {
+        // The outer request was accepted but no per-op status line came
+        // back to count. Credit the ops and let the read-back control
+        // arbitrate: if they did not land, the control fails and the
+        // observe rows are voided.
+        log('WARN', `$batch answered HTTP ${r.status} with no parseable per-op `
+          + `statuses; credited ${count} ops and let the control read-back arbitrate.`);
+        landed += count;
+        continue;
+      }
+      const throttled = r.statuses.filter((s) => s === 429 || s === 503).length;
+      const ok = r.statuses.filter((s) => s >= 200 && s < 300).length;
+      const other = r.statuses.length - throttled - ok;
+      if (throttled > 0) {
+        // The throttle arrived INSIDE an accepted envelope, per operation.
+        // That is a distinct response shape from an outer 429/503/redirect
+        // and is exactly what the probe exists to tell apart.
+        landed += ok;
+        const kind = throttled === r.statuses.length
+          ? `per-op HTTP ${r.statuses[0]} inside the $batch envelope`
+          : 'per-op 429/503 inside the $batch envelope';
+        event = { kind, retryAfter: null,
+          note: `${throttled} of ${r.statuses.length} ChangeSet ops were `
+            + 'throttled inside an accepted envelope' };
+        stopped = 'throttle';
+        break;
+      }
+      if (other > 0) {
+        // A ChangeSet part was REFUSED: the $batch body was not accepted as
+        // well-formed, which fails the control regardless of the counts.
+        landed += ok;
+        refusedParts = true;
+        aborted = `${other} ChangeSet op(s) were refused inside an accepted `
+          + `envelope (per-op statuses: ${r.statuses.join(', ')}); the $batch body `
+          + 'was not accepted as well-formed';
+        stopped = 'aborted';
+        break;
+      }
+      landed += ok;
+    }
+    return {
+      landed, requests, attempted, stopped, event, aborted, refusedParts,
+      elapsedSec: (Date.now() - t0) / 1000,
+    };
+  };
+
+  // ---- The run ----------------------------------------------------------
+  let created = false;
+  const recycleScratch = async () => {
+    // The recycle request itself can land inside the throttle window that
+    // ended the run, so it is retried briefly before giving up.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let gone;
+      try {
+        const digest = await getDigest();
+        gone = await spPost(`web/lists/getbytitle('${SCRATCH}')/recycle`, {}, digest);
+      } catch (err) {
+        gone = { ok: false, status: 0, text: String(err) };
+      }
+      if (gone.ok) {
+        log('OK', `Recycled scratch list '${SCRATCH}'. Nothing left behind.`);
+        return;
+      }
+      if (attempt === 2) {
+        log('FAIL', `Could not recycle '${SCRATCH}': HTTP ${gone.status} `
+          + `${redact(gone.text).slice(0, 160)}. Recycle it by hand.`);
+      } else {
+        log('WARN', `Recycle of '${SCRATCH}' failed (HTTP ${gone.status}); `
+          + 'retrying in 15s.');
+        await sleep(15000);
+      }
+    }
+  };
+
+  const qOf = (id) => RESULTS.find((row) => row.id === id).question;
+  const recordVoid = (id, evidence) =>
+    record(id, qOf(id), 'NOT ESTABLISHED', evidence, 'void');
+
+  try {
+    await resetList(SCRATCH);
+    let digest = await getDigest();
+
+    // ---- fixture-scratch-list: the list --------------------------------
+    const pre = await spGet(`${listPath}?$select=Id`);
+    if (pre.ok) {
+      // resetList only recycles when CLEANUP is on, so reaching this with
+      // the list still present means CLEANUP was off and a list survived a
+      // previous run. Its items would corrupt both count read-backs.
+      record('transport.throttle.fixture-scratch-list', Q_FIXTURE, 'FAIL',
+             `a list named '${SCRATCH}' already exists (left by a run that did not `
+             + 'finish, or a manual creation) and CLEANUP is off. Measuring on it '
+             + 'would count its existing items.');
+      throw new Error('fixture: set CLEANUP = true so the leftover list is recycled first');
+    }
+    const made = await spPost('web/lists', {
+      Title: SCRATCH,
+      BaseTemplate: 100,
+      Description: 'dbml-sharepoint throttle-batch probe scratch list. Safe to delete.',
+    }, digest);
+    if (!made.ok) {
+      record('transport.throttle.fixture-scratch-list', Q_FIXTURE, 'FAIL',
+             `create refused with HTTP ${made.status}: ${redact(made.text).slice(0, 300)}`);
+      throw new Error('fixture: the scratch list create was refused');
+    }
+    created = true;
+    const back = await spGet(`${listPath}?$select=Id`);
+    if (!back.ok) {
+      record('transport.throttle.fixture-scratch-list', Q_FIXTURE, 'FAIL',
+             `created '${SCRATCH}' but the read-back failed with HTTP ${back.status}`);
+      throw new Error('fixture: the scratch list did not read back after create');
+    }
+    record('transport.throttle.fixture-scratch-list', Q_FIXTURE, 'PASS',
+           `created '${SCRATCH}' (read back OK)`);
+
+    // ---- The two passes, back to back ----------------------------------
+    const singles = await runSingles(digest);
+    const batched = await runBatched(digest);
+
+    // ---- control-writes-applied: read the count back --------------------
+    const backItems = await spGet(`${listPath}/items?$select=Id&$top=5000`);
+    const backRows = (backItems.ok && backItems.body && Array.isArray(backItems.body.value))
+      ? backItems.body.value
+      : null;
+    const actual = backRows === null ? -1 : backRows.length;
+    const landedTotal = singles.landed + batched.landed;
+
+    let controlOutcome;
+    let controlEvidence;
+    if (backRows === null) {
+      const kind = shapeOf(backItems.status, '');
+      controlOutcome = 'NOT ESTABLISHED';
+      controlEvidence = `the item count read-back failed (HTTP ${backItems.status}`
+        + `${kind ? `, ${kind}` : ''}), so the write counts are unconfirmed`;
+    } else if (landedTotal === 0) {
+      controlOutcome = 'NOT ESTABLISHED';
+      controlEvidence = 'no write landed in either pass, so there is nothing for a '
+        + 'read-back to prove applied. The passes were throttled or refused before '
+        + 'the first write landed.';
+    } else if (batched.refusedParts) {
+      controlOutcome = 'FAIL';
+      controlEvidence = `a ChangeSet op was refused inside an accepted $batch `
+        + `envelope (${batched.aborted}); the $batch body was not accepted as `
+        + 'well-formed, so the batched count is not proven by the read-back';
+    } else if (actual !== landedTotal) {
+      controlOutcome = 'FAIL';
+      controlEvidence = `read back ${actual} items but the passes counted `
+        + `${landedTotal} writes applied (${singles.landed} single + `
+        + `${batched.landed} batched); some writes silently did not apply`;
+    } else {
+      controlOutcome = 'PASS';
+      controlEvidence = `read back ${actual} items = ${singles.landed} single `
+        + `writes + ${batched.landed} batched operations. Each write the passes `
+        + 'counted landed actually applied, so the $batch bodies were well-formed '
+        + 'and their ChangeSet parts accepted.';
+    }
+    record(CONTROL_ID, Q_CONTROL, controlOutcome, controlEvidence);
+
+    if (controlOutcome !== 'PASS') {
+      // A control that failed or could not be established voids the rows
+      // that depend on it: their counts are exactly what the control exists
+      // to certify.
+      for (const id of OBSERVE_IDS) {
+        recordVoid(id, `control-writes-applied is ${controlOutcome}: `
+          + controlEvidence.slice(0, 200));
+      }
+    } else {
+      // ---- singles-throttle-point --------------------------------------
+      if (singles.stopped === 'throttle') {
+        record('transport.throttle.singles-throttle-point', Q_SINGLES, 'THROTTLED',
+          `singles pass: ${singles.landed} of ${singles.attempted} single writes `
+          + `landed, then ${singles.event.note} -- ${describeEvent(singles.event)} -- `
+          + `in ${singles.elapsedSec.toFixed(1)}s.`);
+      } else if (singles.stopped === 'cap') {
+        record('transport.throttle.singles-throttle-point', Q_SINGLES,
+          'NO THROTTLE WITHIN CAP',
+          `no throttle within the ${WRITE_CAP}-write cap: all ${singles.landed} `
+          + `single writes landed in ${singles.elapsedSec.toFixed(1)}s.`);
+      } else {
+        record('transport.throttle.singles-throttle-point', Q_SINGLES, 'ABORTED',
+          `singles pass stopped at ${singles.landed} landed single writes in `
+          + `${singles.elapsedSec.toFixed(1)}s: ${singles.aborted}. No throttle `
+          + 'was reached.');
+      }
+
+      // ---- batched-throttle-point ---------------------------------------
+      if (batched.stopped === 'throttle') {
+        record('transport.throttle.batched-throttle-point', Q_BATCHED, 'THROTTLED',
+          `batched pass: ${batched.landed} of ${batched.attempted} operations `
+          + `landed (${batched.requests} $batch requests of up to ${BATCH}), then `
+          + `${batched.event.note} -- ${describeEvent(batched.event)} -- in `
+          + `${batched.elapsedSec.toFixed(1)}s.`);
+      } else if (batched.stopped === 'cap') {
+        record('transport.throttle.batched-throttle-point', Q_BATCHED,
+          'NO THROTTLE WITHIN CAP',
+          `no throttle within the ${WRITE_CAP}-write cap: all ${batched.landed} `
+          + `operations landed in ${batched.elapsedSec.toFixed(1)}s, delivered as `
+          + `${batched.requests} $batch requests of ${BATCH}.`);
+      } else {
+        record('transport.throttle.batched-throttle-point', Q_BATCHED, 'ABORTED',
+          `batched pass stopped at ${batched.landed} landed operations `
+          + `(${batched.requests} $batch requests) in `
+          + `${batched.elapsedSec.toFixed(1)}s: ${batched.aborted}. No throttle `
+          + 'was reached.');
+      }
+
+      // ---- throttle-response-shape --------------------------------------
+      const seen = [];
+      if (singles.event) {
+        seen.push(`singles pass: throttled with ${describeEvent(singles.event)}`);
+      }
+      if (batched.event) {
+        seen.push(`batched pass: throttled with ${describeEvent(batched.event)}`);
+      }
+      if (seen.length) {
+        record('transport.throttle.throttle-response-shape', Q_SHAPE,
+          'THROTTLE RESPONSE RECORDED', seen.join('; '));
+      } else {
+        record('transport.throttle.throttle-response-shape', Q_SHAPE,
+          'NO THROTTLE RESPONSE',
+          'neither pass throttled within the 2000-write cap, so no throttled '
+          + 'response was observed to classify.');
+      }
+    }
+  } catch (err) {
+    const message = redact(String((err && err.message) || err));
+    if (message.indexOf('fixture:') === 0) {
+      // The fixture row was recorded FAIL above; the rows that were never
+      // asked keep the harness default and stay open for a clean re-run.
+      log('INFO', `${message.slice(7)} The unasked rows stay open.`);
+    } else {
+      log('FAIL', `probe aborted with an uncaught error: ${message.slice(0, 240)}`);
+    }
+  } finally {
+    // Recycle the scratch list whatever happened, so a capped or throttled
+    // run leaves no litter.
+    if (created) await recycleScratch();
+  }
+
+  return report();
+})();

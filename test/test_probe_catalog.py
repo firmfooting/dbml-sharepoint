@@ -57,7 +57,7 @@ def _catalog() -> dict[str, Any]:
 def _surface_registry() -> dict[str, set[str]]:
     """The surface list and its probe membership, read from the authority file.
 
-    SURFACES.md is the sole authority for the eleven surfaces, so the catalogue
+    SURFACES.md is the sole authority for the twelve surfaces, so the catalogue
     is checked against what that file says rather than against a second copy of
     the list kept here.
     """
@@ -116,7 +116,7 @@ def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     actual = {path.name for path in MANUAL.glob("*.js")}
 
     assert catalog["schema_version"] == "1.2"
-    assert len(descriptors) == 45
+    assert len(descriptors) == 46
     assert catalogued == actual
 
 
@@ -124,7 +124,7 @@ def test_probe_catalog_declares_the_surface_the_registry_files_each_probe_under(
     registry = _surface_registry()
     descriptors = _catalog()["probes"]
 
-    assert len(registry) == 11
+    assert len(registry) == 12
     assert set().union(*registry.values()) == {
         descriptor["file"] for descriptor in descriptors
     }

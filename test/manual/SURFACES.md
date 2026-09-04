@@ -9,7 +9,7 @@ This file is the sole authority for the surface list, the scope registries and
 the check-id grammar. `dbml-sharepoint` validates its probes against it and
 `dbml-sharepoint-test-agent` validates its evidence against it. Adding a scope
 is a one-line edit here plus the probe change in the same commit. Adding a
-surface should be rare: if a probe fits none of the eleven, that is a finding
+surface should be rare: if a probe fits none of the twelve, that is a finding
 about the map, and it is worth discussing before it is worth encoding.
 
 **A note on the word.** `surface` here means a subject area. It does not mean
@@ -23,7 +23,7 @@ accessibility snapshot / visible content. Those are always spelled in full.
 <surface>.<scope>.<question>
 
 check-id := surface "." scope "." question
-surface  := one of the eleven tokens below
+surface  := one of the twelve tokens below
 scope    := a token from that surface's registry
 question := [ "control-" | "fixture-" ] token
 token    := [a-z0-9]+ ( "-" [a-z0-9]+ )*
@@ -46,7 +46,7 @@ answers it carry one identifier, not two.
 
 ### The three parts
 
-- **`surface`**: one of the eleven below. Fixed vocabulary.
+- **`surface`**: one of the twelve below. Fixed vocabulary.
 - **`scope`**: which slot, object or mechanism within the surface. Per-surface
   registry below.
 - **`question`**: what is being asked. A phrase, never a number:
@@ -72,7 +72,7 @@ _CHECK_ID_RE = re.compile(
 )
 ```
 
-Structural validity is not enough. `surface` must be one of the eleven and
+Structural validity is not enough. `surface` must be one of the twelve and
 `scope` must be in that surface's registry, both read from this file, and the
 80-character maximum is checked alongside the pattern rather than inside it.
 
@@ -102,7 +102,7 @@ file elsewhere. A reader who wants to know what is known about CAML predicates
 gets the chain-depth spine, the multi-value CAML block and the datetime sentinel
 queries all under `query`, without knowing that three probes touched them.
 
-## The eleven surfaces
+## The twelve surfaces
 
 Reading order, roughly outward from the data model. This is also the catalogue's
 sort order.
@@ -262,6 +262,17 @@ by merging it into something larger: a surface holding one probe is the statemen
 that the surface is almost entirely unprobed. `library` was in that position
 until `file-operations-probe.js`, `library-columns-probe.js`, `folder-probe.js`,
 and `library-content-type-probe.js`, the four probes taking it out.
+
+### 12. `transport`: how requests are delivered and throttled
+
+The HTTP transport the emitted scripts ride on: OData `$batch` multipart
+encoding and whether batching is counted per request or per operation, how
+throttling is signalled (429/503 status versus a redirect to
+`/_layouts/15/Throttle.htm`), and `Retry-After` presence.
+
+Scopes: `batch`, `throttle`, `retry`
+
+Probes: `throttle-batch-probe.js`
 
 ## Checks that file under a different surface than their probe
 
