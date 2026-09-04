@@ -1402,13 +1402,21 @@
     return held;
   };
 
+  // The ONE spelling of a field MERGE: address and headers both. A phase that
+  // batches its field writes hands these to BatchWriter.add() instead of
+  // calling patchFieldById, so the batched part and the single write cannot
+  // drift into addressing different objects or sending different headers.
+  // Both GUIDs are validated here, on the path every caller of either form
+  // goes through.
+  const fieldMergePath = (listId, fieldId) => `web/lists(guid'${sharePointGuid(listId, 'list')}')/fields(guid'${sharePointGuid(fieldId, 'field')}')`;
+  const FIELD_MERGE_HEADERS = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
+
   async function patchFieldById(listId, fieldId, body, digest) {
-    const safeListId = sharePointGuid(listId, 'list');
     const safeFieldId = sharePointGuid(fieldId, 'field');
-    const url = apiUrl(`web/lists(guid'${safeListId}')/fields(guid'${safeFieldId}')`);
+    const url = apiUrl(fieldMergePath(listId, fieldId));
     const r = await fetchWithRetry(url, {
       method: 'POST',
-      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      headers: spHeaders(digest, FIELD_MERGE_HEADERS),
       body: JSON.stringify(body),
     });
     if (!r.ok) {
@@ -5466,6 +5474,11 @@
     // server evidence (live DEBUG timing: this phase alone was 13.3s of a
     // 52s run). Verification still never trusts phase-start state: the
     // per-list invalidation forces a post-write re-enumeration.
+    //
+    // The lane boundary is also the batch boundary, so one list's seals are
+    // one ChangeSet: whether SharePoint processes the parts of a ChangeSet
+    // one at a time, or races them the way concurrent single writes do, is
+    // measured by test/manual/throttle-batch-probe.js and not assumed here.
     const sealByList = new Map();
     for (const [listTitle, columnTitle] of sealDeclared) {
       if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
@@ -5500,15 +5513,26 @@
         summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
         return;
       }
+      // The lane's seals go out as ONE $batch rather than one MERGE per
+      // column. They are independent writes with nothing read between them,
+      // and the burst is the shape that got a nine-list run throttled mid
+      // phase (#401). fieldMergePath and FIELD_MERGE_HEADERS are the same
+      // address and headers patchFieldById sends, so only the transport
+      // changes; the ChangeSet still addresses /lists(guid)/fields(guid),
+      // which no title rebind can redirect.
+      const sealBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
       for (const columnTitle of columns) {
         try {
           const shape = await readFieldShape(listTitle, columnTitle, null);
           if (!shape) throw new Error('declared column missing at seal time');
           writtenIds.set(columnTitle, sharePointGuid(shape.Id, 'field'));
           if (!shape.Sealed) {
-            const sealDigest = await getDigest();
-            await patchFieldById(laneListId, writtenIds.get(columnTitle), { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
-            sealedCount += 1;
+            await sealBatch.add(
+              'POST',
+              fieldMergePath(laneListId, writtenIds.get(columnTitle)),
+              { __metadata: { type: 'SP.Field' }, Sealed: true },
+              FIELD_MERGE_HEADERS,
+            );
           }
         } catch (err) {
           failed.add(columnTitle);
@@ -5516,6 +5540,20 @@
           summary.errors.push({ phase: '4.1', list: listTitle, column: columnTitle, error: err.message });
         }
       }
+      try {
+        await sealBatch.done();
+      } catch (err) {
+        // Recorded at lane level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back (Learn, "Make batch requests with
+        // the REST APIs"), so some of these writes may have landed. The
+        // verify pass below reads every column back and is the finer
+        // evidence about which ones did.
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+      }
+      // What the batch reports landed, not what the loop queued: a refused
+      // part must not be counted as a column this run sealed.
+      sealedCount += sealBatch.opsSent;
       invalidateFieldShapes(listTitle);  // verify from post-write state
       try {
         // The verify readback resolves the list by title, so the title has to

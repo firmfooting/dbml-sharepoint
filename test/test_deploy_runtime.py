@@ -23,6 +23,7 @@ from typing import Any, ClassVar, NamedTuple
 from urllib.parse import quote
 
 import pytest
+from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, table
 from _node import NODE
 from _node import run_node as _run
@@ -121,7 +122,7 @@ _HARNESS = textwrap.dedent("""
       };
     };
     globalThis.__calls = calls;
-""")
+""") + BATCH_MOCK
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -861,7 +862,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       };
     };
     globalThis.__calls = calls;
-""")
+""") + BATCH_MOCK
 
 
 def _run_deploy(harness: str, tail: str) -> str:
@@ -2610,6 +2611,68 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     for phase in (pn("preflight"), pn("unseal"), pn("lists"), pn("views"),
                   pn("seal"), pn("seeds")):
         assert phase in reached, f"phase {phase} not reached: {reached}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
+    """The seals travel as ChangeSet parts, one $batch per list.
+
+    A burst of one MERGE per column is the shape that got a nine-list run
+    throttled mid-phase (#401). Asserting the transport rather than the
+    outcome, because the outcome is identical either way: the columns end
+    sealed whether the writes went singly or batched, so nothing else in the
+    suite can see this stop working.
+    """
+    body = _declared_deploy_js(tmp_path, "").rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{_ADOPTED_HARNESS}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    sealing = [
+        b for b in batches
+        if any('"Sealed":true' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert sealing, f"no seal write travelled as a ChangeSet part: {batches}"
+    for batch in sealing:
+        list_ids = {
+            match.group(1) for match in (
+                re.search(r"lists\(guid'([^']+)'\)", op["url"]) for op in batch["ops"]
+            ) if match
+        }
+        assert len(list_ids) == 1, (
+            f"one ChangeSet spans {len(list_ids)} lists; the lane boundary is "
+            "the batch boundary because same-list field writes race"
+        )
+        for op in batch["ops"]:
+            assert op["method"] == "MERGE", (
+                "a seal part would POST rather than MERGE the field"
+            )
+            assert "/fields(guid'" in op["url"], (
+                "a seal part addresses the field by name, which a rebind can "
+                "redirect; patchFieldById addresses it by Id"
+            )
+
+    # The phase reports what LANDED, and every landed write was a part.
+    reported = sum(
+        int(match.group(1)) for match in (
+            re.search(r"\((\d+) newly sealed\)", ln) for ln in output.splitlines()
+        ) if match
+    )
+    parts = sum(
+        1 for b in sealing for op in b["ops"] if '"Sealed":true' in (op["body"] or "")
+    )
+    assert parts == reported, (
+        f"{parts} seal part(s) went out but the phase reported {reported} sealed"
+    )
 
 
 def test_generated_deploy_js_carries_no_control_characters() -> None:

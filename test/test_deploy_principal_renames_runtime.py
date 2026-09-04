@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _batch_mock import BATCH_MOCK
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE
@@ -195,7 +196,7 @@ _HARNESS = textwrap.dedent(r"""
       }
       return reply(200, { d: { results: [] } });
     };
-""")
+""") + BATCH_MOCK
 
 
 def _family() -> str:

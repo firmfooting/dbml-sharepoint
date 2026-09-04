@@ -59,13 +59,21 @@
     return held;
   };
 
+  // The ONE spelling of a field MERGE: address and headers both. A phase that
+  // batches its field writes hands these to BatchWriter.add() instead of
+  // calling patchFieldById, so the batched part and the single write cannot
+  // drift into addressing different objects or sending different headers.
+  // Both GUIDs are validated here, on the path every caller of either form
+  // goes through.
+  const fieldMergePath = (listId, fieldId) => `web/lists(guid'${sharePointGuid(listId, 'list')}')/fields(guid'${sharePointGuid(fieldId, 'field')}')`;
+  const FIELD_MERGE_HEADERS = { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' };
+
   async function patchFieldById(listId, fieldId, body, digest) {
-    const safeListId = sharePointGuid(listId, 'list');
     const safeFieldId = sharePointGuid(fieldId, 'field');
-    const url = apiUrl(`web/lists(guid'${safeListId}')/fields(guid'${safeFieldId}')`);
+    const url = apiUrl(fieldMergePath(listId, fieldId));
     const r = await fetchWithRetry(url, {
       method: 'POST',
-      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      headers: spHeaders(digest, FIELD_MERGE_HEADERS),
       body: JSON.stringify(body),
     });
     if (!r.ok) {

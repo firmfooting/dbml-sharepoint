@@ -18,6 +18,7 @@ import textwrap
 from typing import Any
 
 import pytest
+from _batch_mock import BATCH_MOCK
 from _model import bundle as make_bundle
 from _model import column
 from _model import schema as make_schema
@@ -109,7 +110,7 @@ _HARNESS = textwrap.dedent(r"""
       }
       return reply(200, { d: { results: [] } });
     };
-""")
+""") + BATCH_MOCK
 
 
 def _deploy_js(*, with_assessment: bool = False) -> str:
@@ -357,7 +358,7 @@ _LOOKUP_HARNESS = textwrap.dedent(r"""
       }
       return reply(200, { d: { results: [] } });
     };
-""")
+""") + BATCH_MOCK
 
 
 def _lookup_schema(*, display_column: bool = False) -> Schema:
