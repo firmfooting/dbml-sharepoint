@@ -6,7 +6,7 @@
  *   REQUEST or per underlying OPERATION -- and what does a throttled
  *   $batch request look like when it arrives in a browser context?
  *
- * REVISION: df3b3314
+ * REVISION: 746bf361
  *
  * WHY: issue #404. Microsoft Graph documentation says requests inside a
  * $batch are charged per operation; Microsoft Learn ("Avoid getting
@@ -268,7 +268,11 @@
   // state and that always wins; the classifier below is the default for the
   // rows nobody has ruled on yet, and it reproduces exactly what report()
   // used to derive from the outcome head.
-  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
     if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
@@ -321,7 +325,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision df3b3314. Quote this when reporting results.');
+  log('INFO', 'probe revision 746bf361. Quote this when reporting results.');
 
   const SCRATCH = 'dbmlsp Probe ThrottleBatch';
   const listPath = `web/lists/getbytitle('${SCRATCH}')`;
