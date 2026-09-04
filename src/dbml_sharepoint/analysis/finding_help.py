@@ -887,7 +887,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`Indexed` back as false, against single-value controls in the same "
         "list that stuck. The lookup refusal is HTTP 500, \"This column type "
         "is not supported for indexing\". The same column without the "
-        "brackets is indexable."
+        "brackets is indexable. A multi-value lookup can never be indexed by "
+        "any route: indexing the source list's column does not carry into it "
+        "either, measured on 2026-09-04 with the lookup created before the "
+        "source index and again with it created after."
     ),
     FindingCode.MULTI_VALUE_LOOKUP_CONDITION_UNVERIFIED: (
         "A condition tests a multi-value lookup column. The multi-value CAML "

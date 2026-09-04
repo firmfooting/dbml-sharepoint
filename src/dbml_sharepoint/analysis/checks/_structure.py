@@ -910,20 +910,38 @@ def _indexable_columns(
             # and the shape of the single-value remedy differ, because
             # dropping the brackets off a lookup leaves a lookup and off an
             # enum leaves a Choice.
+            #
+            # THE SECOND WAY IN IS SHUT TOO, measured 2026-09-04
+            # (`field.multilookup.source-index-carry` and
+            # `.source-index-carry-at-create`). The open question was
+            # whether "cannot be indexed directly" left the column indexed
+            # anyway through an indexed source, which would have made this
+            # refusal a remedy rather than a wall. It does not: the
+            # multi-value column read Indexed=false over an indexed source
+            # both when it predated the index and when it was created
+            # after it. `field.lookup.source-index-carry` says the same of
+            # a SINGLE-value lookup, so `Indexed` is a lookup's own flag
+            # and never its target's, and the message can say never.
             remedy = (
                 f"declare it as a single-value "
                 f"{element_type(column.type)!r} lookup by dropping the "
-                f"{MULTI_VALUE_SUFFIX!r}, which can carry an index"
+                f"{MULTI_VALUE_SUFFIX!r}, which takes an index directly"
                 if is_lookup else
                 f"declare it as a single-value "
                 f"{element_type(column.type)!r} column, which can carry "
                 f"an index"
             )
+            never = (
+                " Nothing can index it: SharePoint refuses the write, and "
+                "an index on the source list's column does not carry into "
+                "the lookup."
+                if is_lookup else ""
+            )
             findings.append(Finding(
                 FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED,
                 f"{entity_name}.indexes: {col_name!r} is a multi-value "
                 f"column, which SharePoint refuses to index -- it is a "
-                f"{unindexable} column. Remove it from "
+                f"{unindexable} column.{never} Remove it from "
                 f"indexes {{ }}, or {remedy}.",
                 location=Location(
                     Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
