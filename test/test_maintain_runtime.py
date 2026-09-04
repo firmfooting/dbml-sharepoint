@@ -27,6 +27,11 @@ from dbml_sharepoint.generators.maintaingen import (
 
 SITE = "https://example.sharepoint.com/sites/test"
 LIST_ID = "11111111-1111-1111-1111-111111111111"
+#: The fixture list's URL slug and the path it is served at. Both differ from
+#: its title on purpose; see the note in `_config`.
+LIST_SLUG = "OldThing"
+LIST_PATH = f"/sites/test/Lists/{LIST_SLUG}"
+
 OTHER_LIST_ID = "22222222-2222-2222-2222-222222222222"
 GONE_LIST_ID = "33333333-3333-3333-3333-333333333333"
 
@@ -87,9 +92,15 @@ _HARNESS = textwrap.dedent(r"""
       if (u.includes("web/lists?$select=Title,Hidden")) {
         return reply(200, { d: { results: [{ Title: state.list.Title, Hidden: false }] } });
       }
-      const byTitle = /getbytitle\('([^']+)'\)/.exec(u);
-      if (byTitle) {
-        if (byTitle[1] !== state.list.Title) return notFound('list');
+      if (/web\/lists\/getbytitle\(/.test(u)) {
+        // The live site resolves a renamed list by PATH only. Answering a
+        // by-title read here would let a regression pass, so this fake
+        // refuses it the way a renamed list does.
+        return notFound('list');
+      }
+      const byPath = /GetList\(@listUrl\)\?@listUrl='([^']+)'/.exec(u);
+      if (byPath) {
+        if (byPath[1] !== state.list.Path) return notFound('list');
         return reply(200, { d: {
           Id: state.list.Id, Title: state.list.Title, Description: state.list.Description,
           AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length,
@@ -217,8 +228,13 @@ def _config(
     description = f"{MARKER_PREFIX} from demo for list Thing." if ours else "A hand-made list."
     return {
         "list": {
-            "Id": LIST_ID, "Title": "APP_Thing", "Description": description,
-            "AllowDeletion": allow_deletion,
+            # RENAMED, deliberately: the fixture list is TITLED APP_Thing and
+            # SERVED at /Lists/OldThing, which is what a list that has been
+            # through a `renamed_from` migration looks like. Every runtime
+            # test therefore exercises the case #385 was filed for, and a
+            # script that resolves by the slug fails all of them.
+            "Id": LIST_ID, "Title": "APP_Thing", "Path": LIST_PATH,
+            "Description": description, "AllowDeletion": allow_deletion,
         },
         "fields": fields if fields is not None else _fields(),
         "items": items if items is not None else [],
@@ -233,15 +249,18 @@ def _tag(line: str, marker: str) -> Any:
 Run = tuple[dict[str, Any], list[dict[str, Any]], list[str], list[Any]]
 
 
-def _run_script(
+def _wrap(
     body: str,
     config: dict[str, Any],
     answers: list[str],
     flags: dict[str, Any] | None = None,
-) -> Run:
-    """Run one emitted script against the mock.
+) -> str:
+    """The emitted script, plus the mock, as one runnable file.
 
-    Returns (summary, calls, prompts, tables)."""
+    Separate from `_run_script` so a test can read the script's own log lines
+    rather than only the four JSON markers. Both go through here, so what runs
+    is the same file either way.
+    """
     harness = _HARNESS.replace(
         "const CONFIG = {};", f"const CONFIG = {json.dumps(config)};", 1,
     ).replace(
@@ -253,7 +272,7 @@ def _run_script(
     assert body.endswith("})();")
     # Wrap the emitted IIFE rather than editing inside it, so what runs is
     # the artefact byte for byte.
-    script = (
+    return (
         f"{harness}\n({body[:-1]}).then((r) => {{\n"
         "  console.log('__RESULT__' + JSON.stringify(r));\n"
         "  console.log('__CALLS__' + JSON.stringify(calls));\n"
@@ -261,7 +280,18 @@ def _run_script(
         "  console.log('__TABLES__' + JSON.stringify(tables));\n"
         "});\n"
     )
-    output = _run(script)
+
+
+def _run_script(
+    body: str,
+    config: dict[str, Any],
+    answers: list[str],
+    flags: dict[str, Any] | None = None,
+) -> Run:
+    """Run one emitted script against the mock.
+
+    Returns (summary, calls, prompts, tables)."""
+    output = _run(_wrap(body, config, answers, flags))
     lines = output.splitlines()
     markers = ("__RESULT__", "__CALLS__", "__PROMPTS__", "__TABLES__")
     found = {
@@ -280,14 +310,20 @@ GENERATED_AT = "2026-09-02T00:00:00Z"
 def _protection(
     config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
 ) -> Run:
-    js = generate_protection_js(site_url=SITE, list_title="APP_Thing", generated_at=GENERATED_AT)
+    js = generate_protection_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
     return _run_script(js, config, answers, flags)
 
 
 def _columns(
     config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
 ) -> Run:
-    js = generate_columns_js(site_url=SITE, list_title="APP_Thing", generated_at=GENERATED_AT)
+    js = generate_columns_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
     return _run_script(js, config, answers, flags)
 
 
@@ -384,7 +420,8 @@ def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
 
 def test_a_missing_list_aborts_and_names_what_exists() -> None:
     js = generate_protection_js(
-        site_url=SITE, list_title="APP_Missing", generated_at=GENERATED_AT,
+        site_url=SITE, list_title="APP_Missing",
+        list_path="/sites/test/Lists/APP_Missing", generated_at=GENERATED_AT,
     )
     summary, calls, _prompts, _tables = _run_script(js, _config(), [""])
     assert summary["aborted"] == "list-not-found"
@@ -573,3 +610,61 @@ def test_a_lookup_value_prints_its_id_projection() -> None:
     _summary, _calls, _prompts, tables = _columns(_config(items=items), ["Related", ""])
     values = next(t for t in tables if t and "item" in t[0])
     assert values == [{"item": 4, "value": 7}]
+
+
+# --- Resolution by URL rather than by title (#385) --------------------------
+
+
+def test_a_renamed_list_resolves_and_reports_the_title_it_has_now() -> None:
+    """The defect this closes, from the operator's side.
+
+    The fixture list is served at `/Lists/OldThing` and titled `APP_Thing`,
+    which is what a list looks like after a `renamed_from` migration. A script
+    resolving by the slug asks for a list called `OldThing` and gets 404 on
+    every request; the mock refuses by-title reads outright so that regression
+    cannot pass here.
+
+    Asserted on the resolved TITLE, not merely on a clean run: the point is
+    that the script reports what the list is called now rather than echoing
+    back the folder name it was given.
+    """
+    summary, calls, _prompts, _tables = _columns(_config(), [""])
+    assert summary.get("aborted") is None, summary
+    assert summary["list"]["title"] == "APP_Thing"
+    resolved = [c for c in calls if "GetList(@listUrl)" in c["url"]]
+    assert len(resolved) == 1, "the list is resolved once, then addressed by id"
+    assert LIST_PATH in resolved[0]["url"]
+
+
+def test_the_run_says_the_slug_and_the_title_differ() -> None:
+    """A destructive script must name the list it is actually pointed at.
+
+    An operator pastes a URL reading `OldThing` and is about to be asked to
+    confirm deletions on it. Saying which list that is, once, is what stops
+    the confirmation being taken on trust.
+    """
+    js = generate_columns_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, _config(), [""]))
+    assert f"'{LIST_PATH}' is the list titled 'APP_Thing'" in out
+
+
+def test_a_path_naming_no_list_names_the_path_not_a_title() -> None:
+    """The message an operator gets when the URL is wrong.
+
+    Before this change it read "No list titled 'OldThing'", which sent people
+    looking for a list by that name. The path is the thing that was wrong.
+    """
+    js = generate_columns_js(
+        site_url=SITE, list_title="Nope", list_path="/sites/test/Lists/Nope",
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, _config(), []))
+    assert "__RESULT__" in out
+    # The PATH, and only the path. Asserted on the message rather than on the
+    # abort code, because a by-title script aborts with the same code and this
+    # test would pass against the defect it exists to pin.
+    assert "No list at '/sites/test/Lists/Nope'" in out
+    assert "No list titled" not in out

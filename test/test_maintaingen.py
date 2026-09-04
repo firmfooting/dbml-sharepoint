@@ -24,11 +24,17 @@ GENERATED_AT = "2026-09-02T00:00:00Z"
 
 
 def _protection() -> str:
-    return generate_protection_js(site_url=SITE, list_title="RR_Risk", generated_at=GENERATED_AT)
+    return generate_protection_js(
+        site_url=SITE, list_title="RR_Risk",
+        list_path="/sites/risk/Lists/RR_Risk", generated_at=GENERATED_AT,
+    )
 
 
 def _columns() -> str:
-    return generate_columns_js(site_url=SITE, list_title="RR_Risk", generated_at=GENERATED_AT)
+    return generate_columns_js(
+        site_url=SITE, list_title="RR_Risk",
+        list_path="/sites/risk/Lists/RR_Risk", generated_at=GENERATED_AT,
+    )
 
 
 def test_the_script_names_are_pasteable_text_files() -> None:
@@ -48,7 +54,15 @@ def test_each_script_carries_the_site_guard_and_its_own_log_prefix(
     assert "_spPageContextInfo" in js
     assert "site-mismatch" in js
     assert prefix in js
-    assert 'const LIST_TITLE = "RR_Risk"' in js
+    # BOTH, and the pair is the point: the script resolves by LIST_PATH and
+    # keeps LIST_SLUG only to say what the operator pasted. A script emitting
+    # the slug alone is the defect this pins (#385).
+    assert 'const LIST_SLUG = "RR_Risk"' in js
+    assert 'const LIST_PATH = "/sites/risk/Lists/RR_Risk"' in js
+    assert "web/lists/getbytitle(" not in js, (
+        "resolves the list by title; a renamed list keeps its old slug and "
+        "every request would 404"
+    )
     assert f'const SITE_URL = "{SITE}"' in js
 
 
@@ -106,7 +120,8 @@ def test_the_columns_script_says_a_deleted_column_is_not_recoverable() -> None:
 
 def test_a_crafted_title_cannot_close_the_header_comment() -> None:
     js = generate_columns_js(
-        site_url=SITE, list_title="x */ alert(1) /*", generated_at=GENERATED_AT,
+        site_url=SITE, list_title="x */ alert(1) /*",
+        list_path="/sites/risk/Lists/x */ alert(1) /*", generated_at=GENERATED_AT,
     )
     header = js.split("(async () => {")[0]
     assert "*/ alert" not in header

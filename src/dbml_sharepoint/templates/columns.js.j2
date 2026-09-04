@@ -3,7 +3,9 @@
  * dbml-sharepoint COLUMNS script for one list.
  *
  * Target site:  {{ site_url | comment_safe }}
- * List:         {{ list_title | comment_safe }}
+ * List:         {{ list_path | comment_safe }}
+ *               (resolved by URL; its title is read back at run time,
+ *                because a renamed list keeps its original slug)
  * Deployer:     v{{ deployer_version | comment_safe }}
  * Generated at: {{ generated_at | comment_safe }}
  *
@@ -28,7 +30,8 @@
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
-  const LIST_TITLE = {{ list_title | tojson }};
+  const LIST_PATH = {{ list_path | tojson }};
+  const LIST_SLUG = {{ list_title | tojson }};
 
   const log = (level, msg) => console.log(`[SP-COLUMNS] [${level}] ${msg}`);
   const summary = { list: null, deleted: [], skipped: [], errors: [] };

@@ -23,7 +23,7 @@ Probes the site's capabilities against this pack's requirements and prints a COM
 
 dbml-sharepoint COLUMNS script for one list.
 
-Target site: List: Deployer:     v Generated at:
+Target site: List: (resolved by URL; its title is read back at run time, because a renamed list keeps its original slug) Deployer:     v Generated at:
 
 Lists the custom columns, asks for one by internal name, and deletes that column after four guards: built-in and hidden fields never appear on the menu; every item is read to see whether the column holds a value, and the values found are printed so they can be re-keyed into a replacement column; an empty column needs its internal name typed again after that scan, and one that holds values, or whose values could not be read, needs DELETE NON-EMPTY typed; a sealed column is unsealed and read back before the delete, and the column is read back after it and must answer 404. A readback that disagrees stops the run. The table is printed again after each delete, and a blank answer finishes.
 
@@ -47,7 +47,7 @@ Paste into the SharePoint browser console and press Enter. Wait for the [SP-DEPL
 
 dbml-sharepoint SCHEMA EXTRACTION script (READ-ONLY).
 
-Target site: Deployer:     v Generated at: Lists:
+Target site: Deployer:     v Generated at: Lists: (resolved by URL; each title is read back at run time, because a renamed list keeps its original slug)
 
 Reads each list's field definitions, content types and views, and offers the result as a JSON download. Makes NO changes: every request is a GET, and this script carries no write helpers at all.
 
@@ -65,7 +65,7 @@ The operator-facing deploy manifest: supported mode, step-by-step run instructio
 
 dbml-sharepoint PROTECTION script for one list.
 
-Target site: List: Deployer:     v Generated at:
+Target site: List: (resolved by URL; its title is read back at run time, because a renamed list keeps its original slug) Deployer:     v Generated at:
 
 Reads the list's deletion lock and the Sealed flag on each custom column, prints them, then takes one word at a time until you leave the prompt blank: lock or unlock sets AllowDeletion; seal or unseal sets Sealed on every custom column not already in that state. Each write is read back, and a readback that disagrees stops the run with the list as it stands.
 
@@ -105,6 +105,18 @@ Included by: `deploy/_field_reconcile.js.j2`, `verify.js.j2`
 
 Shared formula canonicalisation: how a stored Formula or ValidationFormula is compared with what was written. Expects nothing; defines xmlDecode and canonicalFormula. Included by deploy/_field_reconcile.js.j2 and by the verify script, so both read a formula back the same way.
 
+### `_get_list_by_path.js.j2`
+
+Included by: `_maintain_list.js.j2`, `extract.js.j2`
+
+Resolve one list by its server-relative URL rather than by its title. Expects `apiUrl` and `odataName`, both emitted by `_site_guard.js.j2`. WHY NOT getbytitle. A list renamed in place keeps the slug it was created with, which is this project's own documented behaviour and the point of `renamed_from`. So on any site that has been through a rename, the segment the address bar shows is NOT the list's title, and every script that resolves by that segment 404s on its first read. Seen live 2026-09-03 (issue #385): lists answering at /Lists/ProgramRisk/ titled GOV_Risk. `web/GetList` takes the server-relative URL instead, which is the string the operator actually copied. Microsoft Learn, "Working with lists and list items with REST", documents the alias-parameter form used here. The deploy, rollback, verify and assess scripts keep getbytitle and are right to: the mapping DECLARES those titles and the deploy renames lists to match. Only the operator-pasted scripts infer a name from a URL.
+
+### `_guid.js.j2`
+
+Included by: `_maintain_list.js.j2`, `extract.js.j2`
+
+A GUID SharePoint returned, checked before it is spliced into a URL. Every id here comes back from the API and is then interpolated into a path like `web/lists(guid'<id>')`, so the shape is asserted rather than trusted: an id that is not a GUID means the read did not return what was asked for, and the failure should say so at the read rather than as a malformed URL two calls later. `deploy/_helpers.js.j2` carries the same function for the deploy bundle. The two are deliberately not shared yet: folding them together edits the emitted deploy and moves `test/fixtures/expected/simple-deploy.js`, which is a golden review of its own and does not belong in a maintenance fix.
+
 ### `_http.js.j2`
 
 Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
@@ -121,7 +133,7 @@ Shared SP WRITE-request headers. Included only by scripts that make writes (depl
 
 Included by: `columns.js.j2`, `protection.js.j2`
 
-Shared list resolution for the two maintenance scripts (protection.js, columns.js). Expects log, LIST_TITLE, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-title list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, and the MERGE helpers every write here goes through.
+Shared list resolution for the two maintenance scripts (protection.js, columns.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-URL list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, and the MERGE helpers every write goes through. RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the reason. LIST_TITLE is read back from the list here, so every message below names what the list is called now rather than what its folder is called.
 
 ### `_provenance.js.j2`
 

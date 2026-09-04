@@ -89,6 +89,7 @@ from dbml_sharepoint.generators.extractgen import (
     NoListsError,
     download_name,
     generate_extract_js,
+    slug_from_path,
 )
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -99,6 +100,9 @@ SAMPLE = FIXTURES / "rg-project-live-extract.json"
 #: The one list the fixture is a read of, and the table name every test
 #: here gives it.
 LIST_TITLE = "RG_Project"
+#: The server-relative URL that list is served at, which is what the
+#: emitted script resolves by.
+LIST_PATH = f"/sites/Risk/Lists/{LIST_TITLE}"
 ENTITY = "Project"
 
 #: A site and the address-bar URL of `LIST_TITLE` on it. Not the fixture's
@@ -1006,6 +1010,7 @@ def test_seeding_writes_the_script_and_the_readme(tmp_path: Path) -> None:
     the script and the readme follows it."""
     seeded = seed(
         list_title=LIST_TITLE,
+        list_path=LIST_PATH,
         site_url=SITE_URL,
         generated_at=GENERATED_AT,
         script=tmp_path / LIST_TITLE / EXTRACT_SCRIPT,
@@ -1025,6 +1030,7 @@ def test_seeding_leaves_an_existing_readme_alone(tmp_path: Path) -> None:
     (tmp_path / README_FILENAME).write_text("mine\n", encoding="utf-8")
     seeded = seed(
         list_title=LIST_TITLE,
+        list_path=LIST_PATH,
         site_url=SITE_URL,
         generated_at=GENERATED_AT,
         script=tmp_path / EXTRACT_SCRIPT,
@@ -1167,10 +1173,12 @@ def test_the_download_is_read_whatever_it_was_renamed_to(tmp_path: Path) -> None
 # --- The browser-paste script ----------------------------------------------
 
 
-def _extract_js(titles: list[str] | None = None) -> str:
+def _extract_js(paths: list[str] | None = None) -> str:
+    # A path whose slug is NOT the list's title, because that is the case the
+    # script has to survive and the one a by-title read got wrong (#385).
     return generate_extract_js(
         site_url="https://example.sharepoint.com/sites/risk",
-        list_titles=titles or ["RR_Risk"],
+        list_paths=paths or ["/sites/risk/Lists/OldRisk"],
         generated_at=GENERATED_AT,
     )
 
@@ -1233,7 +1241,7 @@ def test_the_script_refuses_to_read_nothing() -> None:
     with pytest.raises(NoListsError, match="no lists were named"):
         generate_extract_js(
             site_url="https://example.sharepoint.com/sites/x",
-            list_titles=[], generated_at=GENERATED_AT,
+            list_paths=[], generated_at=GENERATED_AT,
         )
 
 
@@ -1392,7 +1400,9 @@ def test_extract_script_writes_a_pasteable_file(tmp_path: Path) -> None:
     result = _run("extract-script", LIST_URL, "--out", str(out))
     assert result.exit_code == 0, result.output
     assert "makes no changes" in result.output
-    assert f"'{LIST_TITLE}'" in result.output
+    # The PATH is echoed, not the slug alone: it is what the script resolves
+    # and what an operator can check against the address bar.
+    assert f"'{LIST_PATH}'" in result.output
     assert SITE_URL in result.output
     text = out.read_text(encoding="utf-8")
     assert "\r" not in text
@@ -1686,3 +1696,53 @@ def test_a_stored_rule_the_build_now_refuses_reports_the_renderers_reason() -> N
     )
     assert isinstance(result, Unrenderable)
     assert "now" in result.reason
+
+
+def test_a_list_url_carries_the_server_relative_path_it_resolves_by() -> None:
+    """The slug and the path are both wanted, and they are different jobs.
+
+    The slug names the local folder; the path is what the emitted scripts
+    resolve the list by. Sliced from the pasted URL rather than rebuilt, so
+    the casing of the `/Lists/` segment is whatever the site serves.
+    """
+    parsed = parse_list_url(
+        "https://contoso.sharepoint.com/sites/Risk/lists/RG_Project/AllItems.aspx?web=1",
+    )
+    assert parsed.site_url == "https://contoso.sharepoint.com/sites/Risk"
+    assert parsed.list_title == "RG_Project"
+    assert parsed.list_path == "/sites/Risk/lists/RG_Project"
+
+
+def test_a_percent_encoded_slug_is_decoded_once() -> None:
+    """The emitted script encodes the whole OData literal itself, so a path
+    still holding `%20` here would reach SharePoint double-encoded."""
+    parsed = parse_list_url(
+        "https://contoso.sharepoint.com/sites/A/Lists/My%20List/AllItems.aspx",
+    )
+    assert parsed.list_path == "/sites/A/Lists/My List"
+
+
+def test_an_encoded_separator_in_the_slug_is_refused() -> None:
+    """A slug is ONE segment, and this path is what `columns-script` points
+    its deletes at. `%2F` decodes to a separator, so a crafted URL could
+    otherwise widen the target into a different folder."""
+    with pytest.raises(ListUrlError, match="encoded path separator"):
+        parse_list_url(
+            "https://contoso.sharepoint.com/sites/A/Lists/x%2F..%2FOther/AllItems.aspx",
+        )
+
+
+@pytest.mark.parametrize(("path", "expected"), [
+    ("/sites/A/Lists/RG_Project", "RG_Project"),
+    ("/sites/A/Lists/RG_Project/", "RG_Project"),
+    ("/Lists/Bare", "Bare"),
+    ("/sites/A/Lists/My List", "My List"),
+])
+def test_the_download_name_comes_from_the_paths_last_segment(
+    path: str, expected: str,
+) -> None:
+    """The download name is derived from the path rather than passed beside
+    it, so the file an operator saves and the list the script reads cannot be
+    handed over out of step."""
+    assert slug_from_path(path) == expected
+    assert download_name([slug_from_path(path)]) == download_name([expected])

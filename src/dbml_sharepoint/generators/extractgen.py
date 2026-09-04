@@ -50,6 +50,21 @@ def list_slug(title: str) -> str:
     return _UNSAFE_IN_FILENAME.sub("-", title).strip("-.")
 
 
+def slug_from_path(list_path: str) -> str:
+    """The last segment of a server-relative list URL.
+
+    Not `list_slug`, which folds a name down to what a filesystem accepts.
+    This one only splits a path; its result is then passed THROUGH
+    `list_slug` by `download_name`.
+
+    The slug is what names the local extraction folder and the downloaded
+    file, and it is what an operator sees in the address bar, so it stays the
+    right thing to name local artefacts after even once it has stopped being
+    the list's title.
+    """
+    return list_path.rstrip("/").rsplit("/", 1)[-1]
+
+
 def download_name(list_titles: list[str]) -> str:
     """The file name the browser saves the payload as.
 
@@ -65,20 +80,31 @@ def download_name(list_titles: list[str]) -> str:
 def generate_extract_js(
     *,
     site_url: str,
-    list_titles: list[str],
+    list_paths: list[str],
     generated_at: str,
 ) -> str:
-    """The pasteable extraction script for one site and its named lists."""
-    if not list_titles:
+    """The pasteable extraction script for one site and its named lists.
+
+    PATHS, NOT TITLES. Each entry is a list's server-relative URL, which is
+    what the script resolves by: a list renamed in place keeps the slug it
+    was created with, so the segment the address bar shows stops being the
+    list's title and a by-title read 404s. `_get_list_by_path.js.j2` carries
+    the full reason.
+
+    The download name still comes from the slug, because it names a local
+    file rather than a list. It is derived from the path here rather than
+    taken as a second argument, so the two cannot be passed out of step.
+    """
+    if not list_paths:
         raise NoListsError(
             "no lists were named, so the script would read nothing. Pass "
             "--list once per list to extract.",
         )
     return script_env().get_template("extract.js.j2").render(
         site_url=site_url,
-        list_titles=list_titles,
+        list_paths=list_paths,
         generated_at=generated_at,
         deployer_version=__version__,
         live_format=LIVE_FORMAT,
-        download_name=download_name(list_titles),
+        download_name=download_name([slug_from_path(p) for p in list_paths]),
     )
