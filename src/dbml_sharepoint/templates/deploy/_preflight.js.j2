@@ -25,7 +25,10 @@
   // writes. A previous title without its marker, present beside the current
   // title, or present twice over is an error, never a guess.
   const renamePlan = Object.create(null);
-  const probeTitleFor = (list) => (renamePlan[list.title] ? renamePlan[list.title].from : list.title);
+  // By declared TITLE, so a lookup can resolve its target the same way the
+  // owning list resolves itself. Renames have not run yet at preflight.
+  const probeTitle = (title) => (renamePlan[title] ? renamePlan[title].from : title);
+  const probeTitleFor = (list) => probeTitle(list.title);
   async function previousTitleShapes(list) {
     const found = [];
     for (const previous of (list.renamed_from || [])) {
@@ -110,6 +113,7 @@
         const mismatches = await immutableFieldMismatches(
           list.title, field, actual, targetGuid,
           field.target_list ? listOutcomes[field.target_list] : null,
+          probeTitle,
         );
         if (mismatches.length === 0) continue;
         const message = [...new Set(mismatches.map(m => m.message))].join(' ');

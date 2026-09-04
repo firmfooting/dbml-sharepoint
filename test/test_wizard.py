@@ -730,15 +730,59 @@ def test_a_template_can_be_picked_by_number(tmp_path: Path) -> None:
     is added, so the name has to keep working -- but the number is what a
     user reaches for first."""
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, template="1"))
+    # "all" opens the full template table; the number is a row in THAT table,
+    # not a journey.
+    console = ScriptedConsole(["all", *_answers(destination, template="1")])
 
     assert wizard.run_wizard(console) == 0
     assert (destination / "README.md").is_file()
 
 
+def test_a_journey_narrows_the_table_to_its_own_templates(tmp_path: Path) -> None:
+    """The step exists to make the shelf approachable, so it must actually
+    narrow. `the-front-desk` names three; nothing outside them may appear in
+    the table it opens."""
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "the-front-desk",
+        *_answers(destination, template="visitor-log", prefix="VI_"),
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    rendered = _collapsed(console)
+    assert "switchboard-log" in rendered and "service-requests" in rendered
+    assert "risk-register" not in rendered, (
+        "a template outside the chosen journey reached the table"
+    )
+
+
+def test_a_template_name_answers_the_journey_step_outright(tmp_path: Path) -> None:
+    """The name has always been the stable handle, and somebody who knows it
+    should not be walked through a menu built for people who do not."""
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination))
+
+    assert wizard.run_wizard(console) == 0
+    assert (destination / "README.md").is_file()
+    # The template picker's own prompt. The journey table has a column headed
+    # "Templates", so the word alone does not distinguish the two steps.
+    assert "(number or name)" not in _collapsed(console), (
+        "the full template table was rendered for an operator who named a template"
+    )
+
+
+def test_an_unknown_journey_reprompts_rather_than_exiting(tmp_path: Path) -> None:
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(["no-such-journey", *_answers(destination)])
+
+    assert wizard.run_wizard(console) == 0
+    assert "No journey or template" in console.text
+
+
 def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
+        "all",
         "no-such-template",
         "risk-register",
         "y",   # prefix gate
@@ -1210,6 +1254,7 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
     """
     destination = tmp_path / "proj"
     console = ScriptedConsole([
+        "all",
         "0",     # refused
         "999",   # refused
         "risk-register",
@@ -2443,8 +2488,8 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     solutions = available_solutions()
     # A guard, not a formality: the loop below would pass just as happily
     # over an empty roster, proving nothing while looking like it walked
-    # every family. `test_no_two_templates_declare_the_same_entity_name`
-    # in test_template_standard.py uses the same shape for the same reason.
+    # every family. `test_every_family_appears_in_at_least_one_journey`
+    # in test_journeys.py uses the same shape for the same reason.
     assert len(solutions) == 35, (
         f"{len(solutions)} templates discovered, not the 35 this walk was "
         "measured against -- re-verify the invariant before trusting an "

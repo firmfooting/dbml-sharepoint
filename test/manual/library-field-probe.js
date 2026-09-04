@@ -1,0 +1,730 @@
+/**
+ * dbml-sharepoint PROBE: FIELD DIVERGENCE ON A DOCUMENT LIBRARY
+ *
+ * REVISION: f78ed486
+ *
+ * ONE QUESTION:
+ *   Does the field surface of a document library diverge from a generic list?
+ *
+ * The generic-list field probes projected-lookup-probe.js (a dependent lookup
+ * whose FieldRef names a primary lookup) and date-storage-probe.js (what
+ * instant a date column stores) never ran against a document library.
+ * library-columns-probe.js already established the plain lookup column on a
+ * library. This probe asks the two remaining field divergence questions: does
+ * createfieldasxml honour a FieldRef-linked dependent lookup on a library, and
+ * does a user date/time column round-trip on a file item's metadata the way it
+ * does on a list item? It does not re-probe the rest of the field surface.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101), together with the
+ *     lookup target list, two target rows, and a fixture file whose metadata
+ *     row the two field legs write against.
+ *   library.field.control-missing-column-refused
+ *     NEGATIVE CONTROL: a field read naming a column that does not exist is
+ *     REFUSED. Without it, a refusal observed below could be any server
+ *     answer, and no divergence claim is proven.
+ *   library.field.dependent-lookup-on-library
+ *     A second Lookup field whose FieldRef names the primary lookup's GUID:
+ *     does createfieldasxml honour the FieldRef on a document library, and
+ *     does the dependent Id auto-fill when the primary is set, the way it does
+ *     on a generic list? The generic-list answer is ACCEPTED with the
+ *     dependent Id propagating (projected-lookup-probe.js,
+ *     field.lookup.dependent-fieldref-accepted). A provisioning refusal on
+ *     the library is the divergence to name.
+ *   library.field.date-column-round-trip
+ *     A user date/time column on a library: does it store and read back the
+ *     written instant on a file item's metadata the way it does on a list
+ *     item? A library file carries Created/Modified as its native timestamps,
+ *     so the question is whether a user date column behaves the same.
+ *
+ * RETIRED QUESTION:
+ *   field.date.stored-instant-form-picked (the what-instant-a-date-column-
+ *   stores question from date-storage-probe.js) was retired before authoring:
+ *   date-storage-probe.js already owns that question on generic lists, and the
+ *   brief for this probe limits it to the round-trip identity of a user
+ *   date/time column on a library. Re-deriving the storage-instant semantics
+ *   on a library would re-probe the whole date surface.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   List creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   Field creation via POST to `fields/createfieldasxml`:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   File upload via `RootFolder/Files/add(url=,overwrite=)`:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   Item metadata updates via MERGE to `items(...)`:
+ *     "Working with lists and list items with REST"
+ *   Dependent lookup fields and the FieldRef attribute:
+ *     "List field types and options: Lookup field", dn600182(v=office.15)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the library and the target list it created.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  log('INFO', 'probe revision f78ed486. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe LibField';
+  const TARGET = 'dbmlsp Probe LibField Target';
+  const FILE = 'dbmlsp-field-probe.txt';
+  const ROW_A = 'Target Alpha';
+  const ROW_B = 'Target Beta';
+  const CODE_A = 'CODE-A';
+  const CODE_B = 'CODE-B';
+  const DATE_VALUE = '2026-01-14T02:30:00Z';
+  const listPath = `web/lists/getbytitle('${LIB}')`;
+  const targetPath = `web/lists/getbytitle('${TARGET}')`;
+
+  // Internal names equal display names. The primary lookup's ShowField is the
+  // target's FieldCode text column, so the dependent lookup, which projects
+  // Title, shows a genuinely different field than the primary.
+  const CODE = 'FieldCode';
+  const PRIMARY = 'FieldPrimary';
+  const DEPENDENT = 'FieldDepTitle';
+  const DATE_COL = 'FieldDueDate';
+
+  const Q_FIXTURE = 'A document library is created (BaseTemplate 101)';
+  const Q_CONTROL =
+    'NEGATIVE CONTROL: a field read naming a column that does not exist is refused';
+  const Q_DEP =
+    'Dependent lookup on a library: does a second Lookup field whose FieldRef ' +
+    'names the primary lookup provision and resolve the way it does on a generic list';
+  const Q_DATE =
+    'Date/time column on a library: does a user date column store and read back ' +
+    'the written instant on a file item the way it does on a list item';
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' and lookup TARGET LIST '${TARGET}' on ${WEB}.`);
+    log('INFO', `Would add a primary lookup, a FieldRef-linked dependent lookup, and a date column to '${LIB}'.`);
+    log('INFO', `Would upload '${FILE}', send a negative control field read, and ask`);
+    log('INFO', 'two field divergence questions about the library.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${TARGET}' and '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library and target list would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const rawPost = async (path, body, digest, extraHeaders = {}) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+          ...extraHeaders,
+        },
+        body,
+      });
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* plain text response */ }
+      return { ok: res.ok, status: res.status, body: parsed, text };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: String(err) };
+    }
+  };
+
+  expect('library.doc-lib.fixture-library-created', Q_FIXTURE);
+  expect('library.field.control-missing-column-refused', Q_CONTROL);
+  expect('library.field.dependent-lookup-on-library', Q_DEP);
+  expect('library.field.date-column-round-trip', Q_DATE);
+
+  await resetList(TARGET);
+  await resetList(LIB);
+
+  let digest = await getDigest();
+
+  // ---- Fixture: lookup target list with two coded rows ------------------
+  const addField = async (path, schemaXml) => {
+    digest = await getDigest();
+    return spPost(`${path}/fields/createfieldasxml`, {
+      parameters: { SchemaXml: schemaXml, Options: 8 },
+    }, digest);
+  };
+  const fieldExists = async (path, name) =>
+    (await spGet(`${path}/getbyinternalnameortitle('${name}')`)).ok;
+  const targetFieldExists = async (name) => fieldExists(targetPath, name);
+
+  const existingTarget = await spGet(targetPath);
+  let targetListId = (existingTarget.ok && existingTarget.body)
+    ? existingTarget.body.Id
+    : null;
+  if (targetListId === null) {
+    digest = await getDigest();
+    const madeTarget = await spPost('web/lists', {
+      Title: TARGET,
+      BaseTemplate: 100,
+      Description: 'dbml-sharepoint field probe lookup target. Safe to delete.',
+    }, digest);
+    if (madeTarget.ok && madeTarget.body) {
+      targetListId = madeTarget.body.Id;
+      log('OK', `Created target list '${TARGET}' (${targetListId}).`);
+    } else {
+      log('WARN', `Could not create target list '${TARGET}': HTTP ${madeTarget.status}`);
+    }
+  }
+
+  let codeOk = false;
+  if (targetListId !== null) {
+    if (!(await targetFieldExists(CODE))) {
+      const codeMade = await addField(targetPath,
+        `<Field Type="Text" DisplayName="${CODE}" Name="${CODE}"/>`);
+      codeOk = codeMade.ok;
+      if (!codeOk) {
+        log('WARN', `Could not add '${CODE}' to the target list: HTTP ${codeMade.status}`);
+      }
+    } else {
+      codeOk = true;
+    }
+  }
+
+  // Two rows make the dependent-lookup resolution leg discriminating: the
+  // dependent must follow whichever row the primary points at, so a lookup
+  // bound to the wrong row cannot read as a pass.
+  const ensureTargetRow = async (title, code) => {
+    const rows = await spGet(`${targetPath}/items?$select=Id,Title,${CODE}&$top=50`);
+    const found = (rows.ok && Array.isArray(rows.body && rows.body.value))
+      ? rows.body.value.find((r) => r.Title === title)
+      : null;
+    if (found) {
+      if (found[CODE] !== code) {
+        digest = await getDigest();
+        const fix = await spPost(`${targetPath}/items(${found.Id})`, { [CODE]: code },
+                                 digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+        if (!fix.ok) log('WARN', `Could not set ${CODE} on '${title}': HTTP ${fix.status}`);
+      }
+      return found.Id;
+    }
+    digest = await getDigest();
+    const made = await spPost(`${targetPath}/items`, { Title: title, [CODE]: code }, digest);
+    return made.ok ? made.body.Id : null;
+  };
+
+  const alphaId = (targetListId !== null && codeOk)
+    ? await ensureTargetRow(ROW_A, CODE_A)
+    : null;
+  const betaId = (targetListId !== null && codeOk)
+    ? await ensureTargetRow(ROW_B, CODE_B)
+    : null;
+  // Both rows must exist for the dependent-lookup resolution leg to be
+  // discriminating: pointing the primary at Beta only proves the dependent
+  // follows if a different row (Alpha) exists for a wrongly-bound dependent
+  // to fall back on.
+  const rowsReady = alphaId !== null && betaId !== null;
+  if (!rowsReady) {
+    log('WARN', `Target rows incomplete: Alpha=${alphaId}, Beta=${betaId}.`);
+  }
+
+  // ---- Fixture: the document library ------------------------------------
+  const existing = await spGet(listPath);
+  if (existing.ok) {
+    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
+           'ALREADY PRESENT',
+           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
+  } else {
+    digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint field probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    if (!made.ok) {
+      for (const id of ['library.field.control-missing-column-refused',
+                        'library.field.dependent-lookup-on-library',
+                        'library.field.date-column-round-trip']) {
+        record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+               `fixture incomplete: library creation failed (HTTP ${made.status})`,
+               'void');
+      }
+      return report();
+    }
+  }
+
+  // ---- Fixture: the file the metadata legs write against ----------------
+  const root = await spGet(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
+  const folderUrl = (root.ok && root.body) ? root.body.ServerRelativeUrl : null;
+  if (!folderUrl) {
+    log('FAIL', `Could not read RootFolder for '${LIB}': HTTP ${root.status}`);
+    for (const id of ['library.field.control-missing-column-refused',
+                      'library.field.dependent-lookup-on-library',
+                      'library.field.date-column-round-trip']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+             `fixture incomplete: library RootFolder did not read back (HTTP ${root.status})`,
+             'void');
+    }
+    return report();
+  }
+
+  digest = await getDigest();
+  await rawPost(
+    `web/GetFolderByServerRelativeUrl('${folderUrl}')/Files/add(url='${FILE}',overwrite=true)`,
+    'dbmlsp field probe file',
+    digest
+  );
+
+  const findItem = async (name) => {
+    const items = await spGet(`${listPath}/items?$select=Id,FileLeafRef&$top=50`);
+    const rows = (items.ok && items.body && Array.isArray(items.body.value))
+      ? items.body.value
+      : [];
+    const match = rows.find((i) => i.FileLeafRef === name);
+    return match ? match.Id : null;
+  };
+
+  const itemId = await findItem(FILE);
+  if (itemId === null) {
+    for (const id of ['library.field.control-missing-column-refused',
+                      'library.field.dependent-lookup-on-library',
+                      'library.field.date-column-round-trip']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+             `fixture incomplete: no list item was found for '${FILE}' after upload`,
+             'void');
+    }
+    return report();
+  }
+
+  // ---- Primary lookup into the target list ------------------------------
+  let primaryId = null;
+  let primaryMade = null;
+  if (targetListId !== null && codeOk && rowsReady) {
+    if (!(await fieldExists(listPath, PRIMARY))) {
+      primaryMade = await addField(listPath,
+        `<Field Type="Lookup" DisplayName="${PRIMARY}" Name="${PRIMARY}" ` +
+        `List="{${targetListId}}" ShowField="${CODE}"/>`);
+      if (!primaryMade.ok) {
+        log('WARN', `Could not add primary lookup '${PRIMARY}': HTTP ${primaryMade.status}`);
+      }
+    }
+    const primaryField = await spGet(
+      `${listPath}/fields/getbyinternalnameortitle('${PRIMARY}')`);
+    primaryId = (primaryField.ok && primaryField.body) ? primaryField.body.Id : null;
+    if (primaryId === null) {
+      log('WARN', `Primary lookup '${PRIMARY}' did not read back: HTTP ${primaryField.status}`);
+    }
+  }
+
+  // ---- control-missing-column-refused: NEGATIVE CONTROL -----------------
+  // A field read naming a column that does not exist. This probe's answers
+  // rest on reading fields back and on provisioning refusals, so the control
+  // must show that a nonexistent column name is refused rather than answered.
+  const junk = await spGet(`${listPath}/fields/getbyinternalnameortitle('dbmlspNoSuchField')`);
+  const controlHeld = !junk.ok && isRefusal(junk.status);
+  record('library.field.control-missing-column-refused', Q_CONTROL,
+         controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
+         controlHeld
+           ? `refused with HTTP ${junk.status}`
+           : (junk.ok
+             ? 'the field read naming a missing column was ACCEPTED. This probe cannot '
+               + 'detect a refusal, so the two rows below are unproven'
+             : `the field read failed with non-refusal HTTP ${junk.status}`));
+
+  const voidBoth = async (reason) => {
+    for (const id of ['library.field.dependent-lookup-on-library',
+                      'library.field.date-column-round-trip']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+    return report();
+  };
+
+  if (!controlHeld) {
+    return voidBoth(
+      'negative control did not hold, so a refusal below could not be told from '
+      + `any other server answer (HTTP ${junk.status})`);
+  }
+
+  // ---- Q: date/time column round-trip -----------------------------------
+  const dateColumnMade = (await fieldExists(listPath, DATE_COL))
+    ? { ok: true, already: true, status: 200, text: '' }
+    : await addField(listPath,
+      `<Field Type="DateTime" DisplayName="${DATE_COL}" Name="${DATE_COL}" Format="DateTime"/>`);
+
+  // ---- Q: dependent lookup via FieldRef ---------------------------------
+  if (primaryId === null) {
+    record('library.field.dependent-lookup-on-library', Q_DEP, 'NOT ESTABLISHED',
+           'fixture incomplete: no primary lookup on the library, so the FieldRef '
+           + 'leg has nothing to reference (target list id = '
+           + `${targetListId === null ? 'absent' : 'present'}, code column = `
+           + `${codeOk ? 'present' : 'absent'}, target rows = `
+           + `${rowsReady ? 'present' : 'missing'}).`, 'void');
+  } else {
+    const depAlready = await fieldExists(listPath, DEPENDENT);
+    const depMade = depAlready
+      ? { ok: true, already: true, status: 200, text: '' }
+      : await addField(listPath,
+        `<Field Type="Lookup" DisplayName="${DEPENDENT}" Name="${DEPENDENT}" ` +
+        `List="{${targetListId}}" ShowField="Title" FieldRef="{${primaryId}}" ReadOnly="TRUE"/>`);
+
+    if (!depMade.ok && !depAlready && isRefusal(depMade.status)) {
+      record('library.field.dependent-lookup-on-library', Q_DEP,
+             'PROVISION REFUSED',
+             `createfieldasxml refused the FieldRef-linked dependent lookup on the `
+             + `library (HTTP ${depMade.status}: ${depMade.text.slice(0, 260)}). On a `
+             + 'generic list the same schema is ACCEPTED and the dependent Id '
+             + 'propagates (projected-lookup-probe.js, '
+             + 'field.lookup.dependent-fieldref-accepted), so this is the divergence.');
+    } else {
+      const depField = await spGet(
+        `${listPath}/fields/getbyinternalnameortitle('${DEPENDENT}')`);
+      if (readFailed(depField)) {
+        record('library.field.dependent-lookup-on-library', Q_DEP,
+               'NOT ESTABLISHED',
+               `dependent field did not read back after provisioning: HTTP ${depField.status}`);
+      } else {
+        const depFlag = depField.body.IsDependentLookup;
+        const primRef = depField.body.PrimaryFieldId;
+        const depSchemaOk = depFlag === true && primRef !== null && primRef !== undefined;
+
+        digest = await getDigest();
+        const linked = await spPost(`${listPath}/items(${itemId})`, { [`${PRIMARY}Id`]: betaId },
+                                    digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+        const linkedRead = linked.ok
+          ? await spGet(`${listPath}/items(${itemId})?$select=${PRIMARY}Id,${DEPENDENT}Id`)
+          : { ok: false };
+        const primaryNow = (linkedRead.ok && linkedRead.body) ? linkedRead.body[`${PRIMARY}Id`] : null;
+        const depNow = (linkedRead.ok && linkedRead.body) ? linkedRead.body[`${DEPENDENT}Id`] : null;
+        const autoFilled = linkedRead.ok && primaryNow === betaId && depNow === betaId;
+
+        const schemaEvidence =
+          `IsDependentLookup=${depFlag}; PrimaryFieldId=${primRef || '(absent)'}; ` +
+          `TypeAsString=${depField.body.TypeAsString}; ` +
+          `create=${depMade.ok ? (depMade.already ? 'already present' : 'accepted') : `refused HTTP ${depMade.status}`}; ` +
+          `set ${PRIMARY}Id to target row ${betaId} on the file item, read back ` +
+          `${PRIMARY}Id=${primaryNow === null ? '(absent)' : primaryNow}, ` +
+          `${DEPENDENT}Id=${depNow === null ? '(absent)' : depNow} ` +
+          `(expect ${betaId})`;
+
+        if (!depSchemaOk) {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'NOT DEPENDENT',
+                 `${schemaEvidence}. On a generic list the FieldRef-linked field reads `
+                 + 'back IsDependentLookup=true with PrimaryFieldId set '
+                 + '(projected-lookup-probe.js, field.lookup.isdependentlookup-readback), '
+                 + 'so a library that creates the field but not the dependency diverges.');
+        } else if (!linked.ok && isRefusal(linked.status)) {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'PRIMARY LOOKUP WRITE REFUSED',
+                 `${schemaEvidence}; the MERGE setting the primary lookup on the file `
+                 + `item was refused (HTTP ${linked.status}: ${linked.text.slice(0, 220)}). `
+                 + 'On a generic list the same write is accepted and the dependent Id '
+                 + 'follows (projected-lookup-probe.js, field.lookup.dependent-fill-'
+                 + 'live-label), so a library refusal is the divergence.');
+        } else if (!linked.ok) {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'NOT ESTABLISHED',
+                 `${schemaEvidence}; the MERGE setting the primary lookup failed with `
+                 + `non-refusal HTTP ${linked.status}: ${linked.text.slice(0, 200)}.`);
+        } else if (!linkedRead.ok) {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'NOT ESTABLISHED',
+                 `${schemaEvidence}; the item read back failed (HTTP ${linkedRead.status}).`);
+        } else if (!autoFilled) {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'DEPENDENT ID NOT AUTO-FILLED',
+                 `${schemaEvidence}. On a generic list the dependent Id follows the `
+                 + 'primary to the same target row (projected-lookup-probe.js, '
+                 + 'field.lookup.dependent-fill-live-label), so a library whose '
+                 + 'dependent does not follow diverges.');
+        } else {
+          record('library.field.dependent-lookup-on-library', Q_DEP,
+                 'SAME AS LIST',
+                 `${schemaEvidence}. The FieldRef-linked dependent lookup provisions `
+                 + 'and the dependent Id auto-fills on a library exactly as on a '
+                 + 'generic list.');
+        }
+      }
+    }
+  }
+
+  // ---- Q: date/time column round-trip -----------------------------------
+  if (!dateColumnMade.ok) {
+    record('library.field.date-column-round-trip', Q_DATE,
+           isRefusal(dateColumnMade.status) ? 'DATE COLUMN PROVISION REFUSED' : 'NOT ESTABLISHED',
+           `createfieldasxml did not create the DateTime column (HTTP `
+           + `${dateColumnMade.status}: ${dateColumnMade.text.slice(0, 220)}). A generic `
+           + 'list accepts the same DateTime schema and stores the written instant, so '
+           + 'a library refusal is the divergence.');
+  } else {
+    digest = await getDigest();
+    const dated = await spPost(`${listPath}/items(${itemId})`, { [DATE_COL]: DATE_VALUE },
+                               digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    if (!dated.ok && isRefusal(dated.status)) {
+      record('library.field.date-column-round-trip', Q_DATE,
+             'DATE WRITE REFUSED',
+             `the MERGE writing ${DATE_COL}=${DATE_VALUE} to the file item was refused `
+             + `(HTTP ${dated.status}: ${dated.text.slice(0, 220)}). On a list item the `
+             + 'same write is accepted and reads back the instant, so a library '
+             + 'refusal is the divergence.');
+    } else if (!dated.ok) {
+      record('library.field.date-column-round-trip', Q_DATE,
+             'NOT ESTABLISHED',
+             `the MERGE writing the date value failed with non-refusal HTTP `
+             + `${dated.status}: ${dated.text.slice(0, 200)}`);
+    } else {
+      const dateRead = await spGet(`${listPath}/items(${itemId})?$select=${DATE_COL}`);
+      const stored = (dateRead.ok && dateRead.body) ? dateRead.body[DATE_COL] : null;
+      if (readFailed(dateRead)) {
+        record('library.field.date-column-round-trip', Q_DATE,
+               'NOT ESTABLISHED',
+               `the MERGE was accepted but the date column did not read back: HTTP ${dateRead.status}`);
+      } else if (stored === null || stored === undefined) {
+        record('library.field.date-column-round-trip', Q_DATE,
+               'VALUE NOT STORED',
+               `wrote ${DATE_COL}=${DATE_VALUE} and the item reads back no value for `
+               + 'the column. A list item stores and returns the written instant, '
+               + 'so a library that drops the value diverges.');
+      } else {
+        const wroteMs = Date.parse(DATE_VALUE);
+        const storedMs = Date.parse(stored);
+        const sameInstant = !Number.isNaN(wroteMs) && !Number.isNaN(storedMs)
+          && wroteMs === storedMs;
+        record('library.field.date-column-round-trip', Q_DATE,
+               sameInstant ? 'SAME AS LIST' : 'READ BACK DIFFERENT',
+               sameInstant
+                 ? `wrote ${DATE_COL}=${DATE_VALUE} and read back ${stored}. The `
+                   + 'user date column round-trips on the file item exactly as on a '
+                   + 'generic list item.'
+                 : `wrote ${DATE_COL}=${DATE_VALUE} and read back ${stored}. A list `
+                   + 'item returns the written instant unchanged, so a library that '
+                   + 'returns a different instant diverges.');
+      }
+    }
+  }
+
+  return report();
+})();

@@ -16,7 +16,7 @@ incidents belong in your mandated clinical-incident system
 here. Where a corporate incident touches a clinical event, record the
 corporate substance and reference the clinical system's identifier; no
 patient-identifiable detail enters this list. See
-[templates/healthcare.md](../../healthcare.md).
+[sectors/healthcare.md](../../sectors/healthcare.md).
 
 The seeded demo data holds nothing clinical, for the same reason.
 

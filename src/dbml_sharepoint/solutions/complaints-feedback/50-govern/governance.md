@@ -17,7 +17,7 @@ schemes). Where mandated, use this register only for what the mandate
 does not cover, and record referrals as the escalation section describes.
 No patient-identifiable clinical detail enters this list: complaint
 substance at process level, clinical content in clinical systems. See
-[templates/healthcare.md](../../healthcare.md).
+[sectors/healthcare.md](../../sectors/healthcare.md).
 
 ## Severity definitions & response SLAs (put statutory timeframes here)
 

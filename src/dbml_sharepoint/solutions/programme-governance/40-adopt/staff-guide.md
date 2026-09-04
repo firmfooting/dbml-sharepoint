@@ -1,6 +1,6 @@
-# M365 adoption programme: programme team guide
+# Programme governance: programme team guide
 
-Nine lists on one site, holding two layers of one programme. The standing
+Ten lists on one site, holding two layers of one programme. The standing
 layer records who owes what permanently: `GOV_Activity`, the
 stakeholders it names in `GOV_Stakeholder`, and the involvements that join
 them in `GOV_Involvement`. The moving layer records what is
@@ -21,9 +21,10 @@ For step-by-step instructions - raising an issue, completing an action,
 recording a decision, confirming an accountability, and the rest - see
 `workflows/`, one short guide per task.
 
-Seven of the nine lists carry a `Program` stem because the plain names
-belong to other templates in this library. On screen they read *Program
-Risk*, *Action*, *Activity* and so on.
+All ten lists carry the `GOV_` prefix, so on screen they read *GOV_Risk*,
+*GOV_Action*, *GOV_Activity* and so on. The prefix is what keeps this family
+apart from the other registers on a shared site; the name after it is the
+plain one.
 
 ## Which list does this go on?
 
@@ -426,7 +427,7 @@ backs it up is that there are few places to type prose at all
 (**Justification** on a service request, **Detail** and **Resolution** on
 an issue, **Detail** and the **Closure Note** on a risk, **Notes** on an
 action, **Detail** on an activity and on a decision), that attachments
-are turned off on all nine lists as a go-live
+are turned off on all ten lists as a go-live
 step, and that the programme owner samples the narrative fields every
 quarter and redacts what should not be there.
 

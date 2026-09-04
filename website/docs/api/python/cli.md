@@ -279,10 +279,11 @@ def columns_script(url: str = ..., out: pathlib.Path | None = ...) -> None
 
 Generate the browser-paste script that enumerates and deletes one list's custom columns.
 
-The script prints the custom columns as a numbered table and asks for a
-number. Built-in and hidden fields never appear. Every item is read to
-see whether the column holds a value: an empty column needs its internal
-name typed, and one with values, or whose values cannot be read, needs
+The script prints the custom columns and asks for one by internal name,
+never by position. Built-in and hidden fields never appear. Every item is
+read to see whether the column holds a value: an empty column needs its
+internal name typed again after that scan, and one with values, or whose
+values cannot be read, needs
 DELETE NON-EMPTY typed. A sealed column is unsealed and read back before
 the delete, and the column is read back after it and must be gone. The
 table is printed again after each delete; a blank answer finishes.

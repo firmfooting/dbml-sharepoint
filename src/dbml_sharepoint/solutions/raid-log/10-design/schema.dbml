@@ -7,11 +7,16 @@
 
 Project raid_log { database_type: 'SharePoint Online Lists' }
 
-// The four lists are named Project* because the unprefixed list name has to
-// stay unique across the shipped families: risk-register already owns Risk and
-// meeting-actions already owns Decision, and two families sharing a name would
-// collide the moment either deployed without a prefix.
-// See test_no_two_templates_declare_the_same_entity_name.
+// The four lists are named Project* so an unprefixed deploy of this family
+// cannot collide with risk-register, which owns Risk, or meeting-actions,
+// which owns Decision.
+//
+// This is a CHOICE this family makes, not a rule the library enforces.
+// programme-governance declares Activity, Involvement, Risk and Decision, all
+// owned elsewhere, and relies on its GOV_ prefix to keep them apart; the test
+// that once required global uniqueness was retired when it did. Keeping the
+// Project* stem here costs a longer name and buys a family that is still safe
+// to deploy with no prefix at all.
 
 // Matrix rows 1-5, and matrix columns 1-5. Both are lifted unchanged from
 // risk-register: the matrix formulas in mapping.yaml are keyed to exactly

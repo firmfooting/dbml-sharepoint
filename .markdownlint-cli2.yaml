@@ -45,6 +45,16 @@ ignores:
   # itself carries a "Do not edit by hand" banner.
   - "website/docs/reference/findings.md"
 
+  # Written by release-please from the squashed commit subjects on main. The
+  # same rationale, one step further out: the generator is not ours, so there
+  # is no Python to fix and no compliant release note to write without
+  # rewriting history. It arrived failing with the 0.4.0 release commit
+  # (MD013 line length, MD012 consecutive blanks) and reddened the `markdown`
+  # job on every pull request after it, none of which had touched a line of
+  # it. A gate that fails on work nobody did is one people learn to ignore,
+  # which costs more than the rule was worth here.
+  - "CHANGELOG.md"
+
 config:
   # MD013 (line-length) is KEPT ON, deliberately. The obvious reason to turn
   # it off does not apply here: this repository's committed markdown is hard

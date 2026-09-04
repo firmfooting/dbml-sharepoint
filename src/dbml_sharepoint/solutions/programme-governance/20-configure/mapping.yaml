@@ -1,4 +1,4 @@
-# M365 adoption programme: physical mapping. Nine lists on one site, merging a
+# Programme governance: physical mapping. Ten lists on one site, merging a
 # programme delivery layer (raid-log) with a standing accountability layer
 # (raci-matrix) and a service request queue for tenant-level change.
 # GOV names what the lists are, governance, which is the level the other
@@ -42,6 +42,8 @@ entities:
                     display_column: LiveDecisionTitle,
                     accept_unindexable_display_column: true,
                     renamed_from: [ProgramDecision] }
+  # New in 2.1.0, so no renamed_from: no site was ever provisioned with it.
+  BusinessProcess: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
 
@@ -139,6 +141,11 @@ watched_lists:
 # February. Not fixed here on purpose. Fixing it in one of three families that
 # share the formula forks a defect that should be fixed once, upstream.
 calculated_formulas:
+  # Criticality x frequency, on process-register's 1-to-9 shape but NOT its
+  # factors. That register scores what to digitise, where pain is the driver;
+  # this one scores what to map, where the return is per run.
+  BusinessProcess:
+    PriorityScore: '=IF(OR(ISBLANK([Criticality]),ISBLANK([Frequency])),"",IF([Criticality]="Low",1,IF([Criticality]="Medium",2,3))*IF([Frequency]="A few times a year",1,IF([Frequency]="Monthly",2,3)))'
   Risk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
     RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
@@ -431,7 +438,7 @@ list_permissions:
 #
 # Attachments are the gap these two do not close. There is no attachments key
 # in mapping.yaml and the deployer neither sets nor reconciles the setting, so
-# disabling attachments on all nine lists is a manual go-live step in
+# disabling attachments on all ten lists is a manual go-live step in
 # 30-deploy/deploy.md. It is the only privacy control a redeploy does not
 # reassert.
 seal_columns: true
@@ -461,6 +468,47 @@ display_names:
 # not more or less severe, but a proposal nobody has answered yet reads
 # differently from one that was approved.
 column_formatting:
+  BusinessProcess:
+    Criticality: { style: severity, map: { Low: good, Medium: warning, High: severe } }
+    # Not a severity: how often a thing runs is a fact, not a problem. Read as
+    # weight, which is what it contributes to the score.
+    Frequency:
+      style: severity
+      map:
+        "A few times a year": neutral
+        "Monthly": low
+        "Daily or weekly": warning
+    MappingPriority:
+      style: severity
+      map:
+        "Now": severe
+        "Next": warning
+        "Later": neutral
+    MappingStatus:
+      style: severity
+      map:
+        "Identified": neutral
+        "Ready to map": low
+        "Mapping": low
+        "Mapped": good
+        "Out of scope": muted
+    PriorityScore:
+      style: data-bar
+      max: 9
+      calculated: true
+      # Coloured by criticality rather than the score, so a critical process
+      # still reads red when a low frequency drags its number down.
+      color_by:
+        field: Criticality
+        map: { Low: good, Medium: warning, High: severe }
+    # Guarded on the two states where a sweep no longer means anything: a
+    # mapped process and one ruled out are both settled, and a date that keeps
+    # shouting after the decision trains people to ignore the colour.
+    ReviewDate:
+      style: overdue-date
+      guard:
+        field: MappingStatus
+        not: ["Mapped", "Out of scope"]
   Workstream:
     Phase: { style: pill,
              map: { "Not started": muted, Discovery: neutral, Pilot: low,
@@ -536,6 +584,75 @@ field_sets:
 # Each list's default is the view its readers open it on: the question that
 # list answers, asked in the first person where the reader is a person.
 views:
+  BusinessProcess:
+    # The queue. MappingPriority leads because it is the decision; the score
+    # only breaks ties within a band. Sorting by score alone would show the
+    # advice as though it were the plan.
+    - title: "The mapping queue"
+      default: true
+      fields: [Title, Function, MappingPriority, PriorityScore, Criticality,
+               Frequency, MappingStatus, Owner, Workstream]
+      where:
+        - { field: MappingStatus, op: not_in, value: ["Mapped", "Out of scope"] }
+      sort:
+        - { field: MappingPriority, direction: asc }
+        - { field: PriorityScore, direction: desc }
+      widths:
+        Title: 300
+        Function: 150
+        MappingPriority: 110
+        PriorityScore: 110
+        Criticality: 110
+        Frequency: 150
+        MappingStatus: 140
+        Owner: 160
+        Workstream: 160
+    # A project-adjacent process nobody owns is the finding this register
+    # exists to surface, so it gets its own view rather than a filter somebody
+    # has to remember to apply.
+    - title: "Unowned"
+      fields: [Title, Function, Criticality, Frequency, PriorityScore, MappingStatus]
+      where:
+        - { field: Owner, op: is_null }
+      sort:
+        - { field: PriorityScore, direction: desc }
+      widths:
+        Title: 320
+        Function: 160
+        Criticality: 110
+        Frequency: 150
+        PriorityScore: 110
+        MappingStatus: 140
+    # Which workstream has claimed a process, and which have not been claimed.
+    # A blank group is the finding.
+    - title: "By workstream"
+      fields: [Title, Function, MappingPriority, PriorityScore, MappingStatus, Owner]
+      sort:
+        - { field: PriorityScore, direction: desc }
+      group_by: { field: Workstream, collapsed: false }
+      widths:
+        Title: 320
+        Function: 150
+        MappingPriority: 110
+        PriorityScore: 110
+        MappingStatus: 140
+        Owner: 160
+    # The record of what was mapped, with the link to each map. The register's
+    # whole durable value once the mapping work is done.
+    - title: "Mapped"
+      fields: [Title, Function, Owner, Workstream, MapUrl, ReviewDate]
+      where:
+        - { field: MappingStatus, op: eq, value: "Mapped" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Function: 150
+        Owner: 160
+        Workstream: 160
+        MapUrl: 220
+        ReviewDate: 150
+
   Workstream:
     # The whole programme on one screen, five to eight rows, read first at the
     # monthly steering group.
@@ -1305,6 +1422,9 @@ views:
 # model, the payload restrictions on the phase-2 flows, and the quarterly
 # sampling of narrative fields.
 form_formatting:
+  BusinessProcess:
+    header: formatting/businessprocess-form-header.json
+    body: formatting/businessprocess-form-body.json
   Workstream:
     header: formatting/workstream-form-header.json
     body: formatting/workstream-form-body.json
@@ -1348,6 +1468,16 @@ form_formatting:
 # readback compares equal and the phase passes, but the form never reacts.
 # The build refuses it.
 form_visibility:
+  BusinessProcess:
+    columns:
+      # Only worth writing when the call disagrees with the score, which is
+      # the only time it needs defending.
+      PriorityNote:
+        when:
+          - { field: MappingPriority, op: neq, value: "Later" }
+      MapUrl:
+        when:
+          - { field: MappingStatus, op: in, value: ["Mapping", "Mapped"] }
   Workstream:
     columns:
       ClosureNote:
@@ -1447,6 +1577,14 @@ form_visibility:
 # message, and they all run, unlike list_validation, where a list has ONE
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
+  BusinessProcess:
+    columns:
+      ReviewDate:
+        when:
+          any_of:
+            - { field: ReviewDate, op: is_null }
+            - { field: ReviewDate, op: leq, value: today+365 }
+        message: "The register is swept annually. Pick a review date within the next twelve months, or leave it blank until somebody has actually looked at this process."
   Activity:
     columns:
       LastConfirmed:
@@ -1506,6 +1644,12 @@ column_validation:
 # Accountable" and "an External stakeholder names a service desk address" are
 # quarterly checks rather than save rules.
 list_validation:
+  # NO RULE for BusinessProcess. "Mapped needs a link to its map" is the one
+  # worth enforcing, and it cannot be: MapUrl is a hyperlink column, which
+  # SharePoint refuses inside a validation formula. The build says so
+  # (condition_operand_type_unsupported) rather than emitting a rule that
+  # would save, read back and never fire. It is a human check in the annual
+  # sweep, and governance.md carries it as one.
   Activity:
     when:
       - any_of:
@@ -1595,6 +1739,90 @@ list_validation:
 # still Proposed and old enough to be stalled, one Ratified under delegation,
 # and one carrying the recommend-then-decide pair of forums.
 demo_items:
+  # Six processes covering every member of every formatted column, so each
+  # renders at least once and each declared view returns rows. The subjects
+  # are the ones this register was built for: the project-adjacent processes
+  # around identity, Teams and guests.
+  BusinessProcess:
+    - key: process-offboard
+      values:
+        Title: "[DEMO] Offboard a leaver"
+        Function: "People and culture"
+        Owner: "@me"
+        Workstream: "ws-security"
+        Purpose: "Demo row. Removes a departing person's access, reclaims their licences and decides what happens to the files they owned."
+        Criticality: "High"
+        Frequency: "Daily or weekly"
+        MappingPriority: "Now"
+        MappingStatus: "Mapping"
+        Notes: "Demo row. Four teams act and none of them can name the order. A leaver kept mailbox access for three weeks in March because nobody owned the step after HR closed the record."
+        ReviewDate: "today-10"
+    - key: process-onboard
+      values:
+        Title: "[DEMO] Onboard a new starter"
+        Function: "People and culture"
+        Workstream: "ws-security"
+        Purpose: "Demo row. Everything between an accepted offer and a person who can do their job on day one."
+        Criticality: "High"
+        Frequency: "Daily or weekly"
+        MappingPriority: "Now"
+        MappingStatus: "Ready to map"
+        Notes: "Demo row. Owner deliberately blank: HR, IT and facilities each own a part and nobody owns the whole, which is the finding rather than a gap to fill in."
+        ReviewDate: "today+60"
+    - key: process-guest
+      values:
+        Title: "[DEMO] Grant a guest access to a Team"
+        Function: "Digital"
+        Owner: "@me"
+        Workstream: "ws-security"
+        Purpose: "Demo row. Lets somebody outside the organisation into a Team, and decides who approves it and when it lapses."
+        Criticality: "High"
+        Frequency: "Monthly"
+        MappingPriority: "Now"
+        PriorityNote: "Demo row. Scores 6, called Now: the security workstream cannot finish its guest-access policy until this is mapped."
+        MappingStatus: "Ready to map"
+        Notes: "Demo row. Currently a request by email to whoever is around. No expiry, so guests accumulate."
+        ReviewDate: "today+30"
+    - key: process-create-team
+      values:
+        Title: "[DEMO] Create a Team"
+        Function: "Digital"
+        Owner: "@me"
+        Workstream: "ws-teams"
+        Purpose: "Demo row. Takes a request for a new Team through naming, ownership, membership and the sensitivity label it carries."
+        Criticality: "Medium"
+        Frequency: "Daily or weekly"
+        MappingPriority: "Next"
+        MappingStatus: "Identified"
+        Notes: "Demo row. Runs often enough that a map pays back quickly, but it mostly works today, so it waits behind the two that do not."
+        ReviewDate: "today+90"
+    - key: process-shared-mailbox
+      values:
+        Title: "[DEMO] Request a shared mailbox"
+        Function: "Digital"
+        Owner: "@me"
+        Workstream: "ws-legacy"
+        Purpose: "Demo row. Creates a shared mailbox, names its owner and grants the people who need to send from it."
+        Criticality: "Medium"
+        Frequency: "Monthly"
+        MappingPriority: "Later"
+        MappingStatus: "Mapped"
+        MapUrl: "https://example.com/process-maps/demo-shared-mailbox"
+        Notes: "Demo row. Mapped in March. The review date is long past and reads plain rather than red, because a mapped process is settled."
+        ReviewDate: "today-200"
+    - key: process-mobile
+      values:
+        Title: "[DEMO] Order a mobile phone"
+        Function: "Corporate services"
+        Owner: "@me"
+        Purpose: "Demo row. Orders a handset and a plan against the directorate budget."
+        Criticality: "Low"
+        Frequency: "A few times a year"
+        MappingPriority: "Later"
+        MappingStatus: "Out of scope"
+        Notes: "Demo row. Considered and ruled out: it touches no M365 surface the project is changing. Kept so the same question is not asked again in six months. No workstream, so it lands in the blank group under By workstream."
+        ReviewDate: "today+300"
+
   Workstream:
     - key: ws-migration
       values:
