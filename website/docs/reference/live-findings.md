@@ -9,11 +9,11 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 52. Findings: 130. Captures superseded: 1.
+Runs: 53. Findings: 130. Captures superseded: 1.
 
-Probes: 45. Probed: 40. Not yet probed: 5.
+Probes: 46. Probed: 41. Not yet probed: 5.
 
-Checks with a probe result, not settled: 128 of 656. Checks with a reviewed capture, not settled: 4 of 36.
+Checks with a probe result, not settled: 128 of 661. Checks with a reviewed capture, not settled: 4 of 36.
 
 ## formula — 9 of 10 probes with evidence, 64 findings
 
@@ -222,3 +222,9 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [library.search.discovery-on-library](findings/library-view-search-20260904-sandbox-library-search-discovery-on-library) | machine | open | library-view-search/20260904-sandbox | — |
 
 72 further checks in this surface are settled.
+
+## transport — 1 of 1 probes with evidence, 0 findings
+
+No findings in this surface.
+
+5 further checks in this surface are settled.
