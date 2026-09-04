@@ -1,8 +1,29 @@
-release: "2.1.0"
-date: "2026-09-03"
+release: "2.2.0"
+date: "2026-09-04"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.1.0"
+schema_version: "2.2.0"
 notes: |
+  2.2.0 splits Risk.ReviewDate into LastReviewedDate and NextReviewDue. One
+  hand-set date stood for both halves of a review, so moving it forward
+  destroyed the evidence that a review had happened and nothing could tell an
+  on-time review from a push-out by somebody who had not looked. Risk also
+  carried no save rule at all while BusinessProcess next to it did, which had
+  the guard on the register with the less consequence. Two rules now hold the
+  pair: a review cannot be dated in the future, and the next one cannot be
+  more than twelve months out.
+
+  "Closed this quarter" filters and sorts on LastReviewedDate. It used to use
+  the forward-looking date as a proxy, because closing a risk is a status
+  change with no closure date; the review at which it was closed is now a
+  column rather than a stand-in.
+
+  Risk.ReviewDate is RETIRED, not deleted. It keeps its values, drops off
+  every view and the New form, and reads "Review Date (retired)". Transfer
+  the values, then delete the column with the columns sidecar.
+
+  BusinessProcess.ReviewDate is deliberately unchanged, so this release
+  carries both spellings until that half is done.
+
   2.1.0 adds GOV_BusinessProcess, the register of project-adjacent processes
   worth mapping: what each is for, the order to take them in, and where the
   map ended up. The maps themselves are made elsewhere, in a diagramming tool,

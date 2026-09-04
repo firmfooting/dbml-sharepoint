@@ -122,10 +122,19 @@ the place somebody would add it. A closed risk with an empty closure note
 saves cleanly today and will keep saving.
 
 The control is the *Closed this quarter* view, read **monthly** at the
-steering group. It filters on `ReviewDate` within the last ninety days,
+steering group. It filters on `LastReviewedDate` within the last ninety days,
 because closing a risk is a status change and there is no closure date to
-filter on, and it renders `ClosureNote` as a column so a blank is visible
-while reading. This is `raid-log` governance rule 2, unchanged.
+filter on, and the review at which a risk was closed is the closest dated
+event to it. It renders `ClosureNote` as a column so a blank is visible while
+reading. This is `raid-log` governance rule 2, unchanged.
+
+A second check on the same view, and a save rule cannot make it: **the next
+review must not precede the last one.** A condition's `value` is a literal or
+a `today` token and the DSL has no field reference, so no formula can compare
+`NextReviewDue` with `LastReviewedDate`. The two save rules that do exist cap
+each column on its own (a review cannot be dated in the future, and the next
+one cannot be more than twelve months out), which leaves a pair that is
+individually valid and jointly wrong to a human read.
 
 **2. Every authorised service request names the person who authorised
 it, and every request being worked names its handler.**

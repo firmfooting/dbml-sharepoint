@@ -388,7 +388,13 @@ Table Risk {
   RiskResponse gov_risk_response [note: 'What the programme is doing about it. Tolerate is always for a set period and belongs in the decision log']
   ToleranceDecision int          [ref: > Decision.Id, note: 'The decision-log entry accepting this risk for a set period when Risk Response is Tolerate. Leave blank for every other response']
   Status      gov_risk_status [not null, default: 'Open', note: 'Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
-  ReviewDate  date              [not null, note: 'When this risk is next looked at. Set by hand, and moved forward every time it is actually reviewed']
+  // Two halves of a review, kept apart. One hand-set date recorded neither:
+  // moving it forward destroyed the evidence that a review had happened, so
+  // nothing could tell an on-time review from a push-out by somebody who had
+  // not looked. risk-register carries the same pair under the same names.
+  LastReviewedDate date    [not null, default: '[today]', note: 'When this risk was last actually reviewed. Fills in when the risk is created; move it every time you complete a review, including the review at which you close it']
+  NextReviewDue    date    [not null, note: 'When this risk is next looked at. Only move it forward when Last Reviewed Date moves with it, because a date moved on its own is a review nobody did']
+  ReviewDate       date    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   ClosureNote richtext          [note: 'Why the risk is being closed: it happened and became an issue, it can no longer happen, or the workstream ended']
 
   // Filter columns for the declared views. The three calculated columns
@@ -402,7 +408,8 @@ Table Risk {
     Workstream
     RiskResponse
     ToleranceDecision
-    ReviewDate
+    NextReviewDue
+    LastReviewedDate
   }
 
   Note: 'Uncertain events that could still stop a workstream delivering, each rated on the 5x5 matrix, owned by one person and reviewed on a date.'

@@ -3,7 +3,7 @@
     { "displayname": "Describe the risk", "fields": ["Title", "Workstream", "Detail"] },
     { "displayname": "Assess the risk", "fields": ["Likelihood", "Consequence"] },
     { "displayname": "Response and owner", "fields": ["RiskResponse", "ToleranceDecision", "RiskOwner"] },
-    { "displayname": "Review and closure", "fields": ["Status", "ReviewDate", "ClosureNote"] },
+    { "displayname": "Review and closure", "fields": ["Status", "LastReviewedDate", "NextReviewDue", "ClosureNote"] },
     { "displayname": "System", "fields": ["ResidualRiskRating", "RiskScore", "LiveRiskTitle"] }
   ]
 }

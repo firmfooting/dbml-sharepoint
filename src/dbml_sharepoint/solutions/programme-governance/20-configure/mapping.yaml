@@ -548,7 +548,7 @@ column_formatting:
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe,
                                     Extreme: blocked } } }
-    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
   Action:
     Status: { style: severity,
               map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
@@ -1108,7 +1108,7 @@ views:
     - title: "Open"
       default: true
       fields: [Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
-               RiskScore, RiskOwner, RiskResponse, ReviewDate]
+               RiskScore, RiskOwner, RiskResponse, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
       sort:
@@ -1126,15 +1126,15 @@ views:
         RiskScore: 140
         RiskOwner: 160
         RiskResponse: 140
-        ReviewDate: 160
+        NextReviewDue: 160
     - title: "Review due"
       fields: [Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
-               RiskResponse, ReviewDate]
+               RiskResponse, LastReviewedDate, NextReviewDue]
       where:
         - { field: Status, op: eq, value: "Open" }
-        - { field: ReviewDate, op: leq, value: today+14 }
+        - { field: NextReviewDue, op: leq, value: today+14 }
       sort:
-        - { field: ReviewDate, direction: asc }
+        - { field: NextReviewDue, direction: asc }
       widths:
         Title: 300
         Workstream: 180
@@ -1142,27 +1142,29 @@ views:
         RiskScore: 140
         RiskOwner: 160
         RiskResponse: 140
-        ReviewDate: 160
-    # Read monthly, and the reason it is filtered on ReviewDate rather than on
-    # a closure date is that there is no closure date: closing a risk is a
-    # status change, and the last review is the closest dated event. Every row
-    # here should carry a closure note, which is a HUMAN check. ClosureNote is
-    # rich text and SharePoint validation formulas refuse multi-line operands,
-    # so no save rule can ask for it.
+        LastReviewedDate: 170
+        NextReviewDue: 160
+    # Read monthly. There is no closure date, because closing a risk is a
+    # status change, so this filters on the review at which it was closed.
+    # That used to be a proxy read off a forward-looking column; since the
+    # split, LastReviewedDate is the dated event itself. Every row here should
+    # carry a closure note, which is a HUMAN check. ClosureNote is rich text
+    # and SharePoint validation formulas refuse multi-line operands, so no
+    # save rule can ask for it.
     - title: "Closed this quarter"
-      fields: [Title, Workstream, ResidualRiskRating, RiskOwner, ReviewDate,
-               ClosureNote]
+      fields: [Title, Workstream, ResidualRiskRating, RiskOwner,
+               LastReviewedDate, ClosureNote]
       where:
         - { field: Status, op: eq, value: "Closed" }
-        - { field: ReviewDate, op: geq, value: today-90 }
+        - { field: LastReviewedDate, op: geq, value: today-90 }
       sort:
-        - { field: ReviewDate, direction: desc }
+        - { field: LastReviewedDate, direction: desc }
       widths:
         Title: 280
         Workstream: 180
         ResidualRiskRating: 160
         RiskOwner: 160
-        ReviewDate: 160
+        LastReviewedDate: 170
         ClosureNote: 240
   Action:
     # The weekly personal read and the default: what do I owe? AssignedTo is a
@@ -1606,6 +1608,23 @@ column_validation:
         when:
           - { field: MinutesSpent, op: geq, value: 0 }
         message: "Minutes spent cannot be negative. Enter the running total of whole minutes spent on the request so far."
+  Risk:
+    columns:
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
+      # Capped, not scheduled: this refuses a review pushed years out and
+      # leaves the cadence to the programme. Neither rule can compare the two
+      # columns to each other, because a condition's value is a literal or a
+      # today token and the DSL has no field reference, so "the next review
+      # cannot precede the last one" is a governance check instead.
+      NextReviewDue:
+        when:
+          any_of:
+            - { field: NextReviewDue, op: is_null }
+            - { field: NextReviewDue, op: leq, value: today+365 }
+        message: "A risk reviewed less than once a year is not being reviewed. Pick a next review date within the next twelve months."
   Action:
     columns:
       # A forward-dated completion sorts to the top of "Done and dropped" and
@@ -1738,6 +1757,23 @@ list_validation:
 # owner or workstream; and seven decisions, three of them programme-wide, one
 # still Proposed and old enough to be stalled, one Ratified under delegation,
 # and one carrying the recommend-then-decide pair of forums.
+# Risk.ReviewDate was one hand-set date standing for both halves of a review,
+# so moving it forward destroyed the evidence that a review had happened.
+# Split into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+#
+# BusinessProcess.ReviewDate is deliberately NOT split yet, so this family
+# carries both spellings until it is.
+retired_columns:
+  Risk:
+    ReviewDate:
+      retired: "2026-09-04"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
+
 demo_items:
   # Six processes covering every member of every formatted column, so each
   # renders at least once and each declared view returns rows. The subjects
@@ -2210,7 +2246,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+10"
+        LastReviewedDate: "today-20"
+        NextReviewDue: "today+10"
     - key: risk-adoption
       values:
         Title: "[DEMO] Frontline teams keep using the shared drives after cutover"
@@ -2221,7 +2258,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today-5"
+        LastReviewedDate: "today-35"
+        NextReviewDue: "today-5"
     - key: risk-licensing
       values:
         Title: "[DEMO] The licensing uplift is not funded for the whole frontline"
@@ -2233,7 +2271,8 @@ demo_items:
         RiskResponse: "Tolerate"
         ToleranceDecision: { demo_ref: dec-licence-tier-revised }
         Status: "Open"
-        ReviewDate: "today+45"
+        LastReviewedDate: "today-15"
+        NextReviewDue: "today+45"
     - key: risk-champion-churn
       values:
         Title: "[DEMO] The champions network loses its most active members"
@@ -2244,7 +2283,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Accept"
         Status: "Open"
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-30"
+        NextReviewDue: "today+60"
     - key: risk-identity
       values:
         Title: "[DEMO] Conditional access locks staff out of unmanaged devices at go-live"
@@ -2255,7 +2295,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Manage"
         Status: "Open"
-        ReviewDate: "today+21"
+        LastReviewedDate: "today-9"
+        NextReviewDue: "today+21"
     - key: risk-fax
       values:
         Title: "[DEMO] The fax gateway is switched off before its replacement is proven"
@@ -2266,7 +2307,8 @@ demo_items:
         RiskOwner: "@me"
         RiskResponse: "Terminate"
         Status: "Closed"
-        ReviewDate: "today-20"
+        LastReviewedDate: "today-20"
+        NextReviewDue: "today-20"
         ClosureNote: "Demo row. Every route was moved and monitored for two clean weeks before the gateway was switched off, and the two clinics still sending were contacted individually. The risk can no longer happen."
   Action:
     - key: act-rehearse-migration
