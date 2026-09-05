@@ -2140,16 +2140,18 @@ def test_sidecar_lists_are_ensured_by_default_and_the_external_log_is_probed(
     assert "finishRunLog" in js
 
 
-def test_no_sidecars_emits_no_logging_phase_at_all(
+def test_no_sidecars_suppresses_the_site_lists_and_nothing_else(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`--no-sidecars` is a full opt-out, not a quiet mode.
+    """`--no-sidecars` is an opt-out of the SITE's two lists.
 
-    No sidecar constants may reach the script, because a constant that is
-    declared but never ensured is exactly how a script comes to stamp into
-    a list it never created. The logging phase renders empty; the buffered
-    change events from renames are dropped on the floor, which is what the
-    operator asked for.
+    It was a full opt-out when the site was the only sink. Since the logging
+    phase decides central-first, a run with a reachable central log was never
+    going to create a sidecar, so the flag changes nothing about it; what it
+    opts out of is the LOCAL fallback. The central probe therefore still
+    renders, and the two sidecar constants must not, because a constant
+    declared but never ensured is exactly how a script comes to stamp into a
+    list it never created.
     """
     monkeypatch.chdir(_project(tmp_path))
 
@@ -2160,15 +2162,43 @@ def test_no_sidecars_emits_no_logging_phase_at_all(
     assert result.exit_code == 0, result.output
 
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
-    assert "dbml Local Log" not in js
-    assert "dbml_Logs" not in js
-    assert "dbml-deployment-log" not in js
+    # The QUOTED forms: the phase body still renders, and its prose names both
+    # lists while declaring neither.
+    assert '"dbml Local Log"' not in js
+    assert '"dbml_Logs"' not in js
+    assert '"dbml-deployment-log"' in js
+    assert "const RUN_LOG_TITLE = null;" in js
 
     # The manifest is the pre-paste contract: it must not advertise lists
     # the bundle will not create.
     manifest = (Path("build") / "deploy-manifest.md").read_text(encoding="utf-8")
     assert "Run and change logs" not in manifest
     assert "dbml Local Log" not in manifest
+
+
+def test_no_sidecars_with_no_central_log_emits_no_logging_phase_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both sinks declined: the phase body renders as a comment.
+
+    This is the state the flag used to produce on its own, and it is still
+    reachable -- it just takes saying so about both sinks now. The buffered
+    change events from renames are dropped on the floor, which is what an
+    operator who turned off every log asked for.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--no-sidecars", "--deployment-log-site", "",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert "dbml Local Log" not in js
+    assert "dbml_Logs" not in js
+    assert "dbml-deployment-log" not in js
+    assert "const RUN_LOG_TITLE" not in js
 
 
 def test_an_empty_deployment_log_list_disables_the_external_probe(

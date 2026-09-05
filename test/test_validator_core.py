@@ -47,6 +47,7 @@ from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
     EntityMapping,
+    ItemSecurity,
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
@@ -1718,6 +1719,7 @@ def _reader_findings(
     *, require_empty: bool = False, level: str | None = "Read",
     second_reader: bool = False, override_level: str | None = None,
     enroll_operator: bool = False, members_edit: bool = False,
+    trim_reads: bool = False,
 ) -> list[Finding]:
     """One correctly-shaped mapping with a single knob turned per test.
 
@@ -1725,6 +1727,10 @@ def _reader_findings(
     block granting the first reader group that level -- an override carries
     its OWN complete assignment list rather than adding to the default, so
     this is the only way to exercise that path rather than the default one.
+
+    `trim_reads` declares `item_security.default.read: own`, which is what
+    turns the over-privileged rule off and the trimmed-list rule on. The two
+    are a pair and neither is readable without the other.
     """
     def reader(name: str) -> SiteGroup:
         return SiteGroup(
@@ -1762,6 +1768,7 @@ def _reader_findings(
         make_schema(make_table("Risk")),
         make_bundle(
             entities=["Risk"],
+            item_security_default=ItemSecurity(read="own" if trim_reads else "all"),
             permissions=PermissionsConfig(
                 levels=[], groups=groups,
                 default_policy=ListPermissionPolicy(
@@ -1838,6 +1845,47 @@ def test_a_reader_group_granted_nothing_is_refused() -> None:
 def test_a_reader_group_granted_more_than_read_is_refused() -> None:
     """An "Enterprise Reader" holding Contribute is the whole point of this
     guard: the name would go on telling the truth while the grant did not."""
+    only(
+        _reader_findings(level="Contribute"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+
+
+def test_a_reader_granted_read_on_a_read_trimmed_list_is_warned_about() -> None:
+    """The compensating half of the over-privileged rule.
+
+    `item_security.read: own` means the built-in Read reaches only the rows
+    the caller created, and a reporting account creates none. So on a
+    trimming family Read is not the safe answer, it is the answer that reads
+    as an empty register -- indistinguishable from a register nobody has
+    written to yet.
+
+    A warning rather than an error: which levels clear created-by trimming
+    has not been measured here (`deployment-log`'s 30-deploy/deploy.md
+    carries the probe), so this states the problem without dictating the
+    posture.
+    """
+    finding = only(
+        _reader_findings(trim_reads=True),
+        FindingCode.ENTERPRISE_READER_ON_TRIMMED_LIST,
+    )
+    assert finding.severity == "warning"
+    assert "XX Enterprise Readers" in finding.message
+
+
+def test_a_read_trimmed_list_stops_holding_its_reader_to_read() -> None:
+    """The other side of the same exception, and the reason it is narrow.
+
+    With reads trimmed, a level above Read is no longer knowably unearned,
+    so the over-privileged rule stops firing. Without the trimming declared
+    it fires exactly as before, which is what keeps the weakening keyed to
+    the mapping that creates the problem rather than available to any family
+    that wants a bigger grant.
+    """
+    assert not [
+        f for f in _reader_findings(level="Contribute", trim_reads=True)
+        if f.code is FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED
+    ]
     only(
         _reader_findings(level="Contribute"),
         FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,

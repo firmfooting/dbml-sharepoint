@@ -427,16 +427,57 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"enrolling an account into it would grant nothing.",
                     location=_GROUPS,
                 ))
+            # THE ONE EXCEPTION, and it is a weakening of this guard, so it
+            # is argued here rather than assumed.
+            #
+            # The rule's premise is that 'Read' lets the reporting account
+            # see everything it needs, so anything above it is unearned. A
+            # mapping declaring `item_security.read: own` breaks that
+            # premise outright: on such a list the built-in Read reaches
+            # only the rows the reporting account itself created, which for
+            # an account that writes nothing is no rows at all. Holding the
+            # rule there would refuse every posture that works and permit
+            # only the one that does not.
+            #
+            # So the exception is keyed on read trimming and nothing else.
+            # No shipped family except `deployment-log` declares it, so the
+            # guard is unchanged for all of them, and a custom mapping only
+            # reaches the exception by declaring the trimming that creates
+            # the problem it answers.
+            #
+            # It is NOT a claim that the elevated level clears the trim.
+            # Which levels bypass created-by trimming has not been measured
+            # here; `deployment-log`'s `30-deploy/deploy.md` carries the
+            # probe. What this rule can say is that Read demonstrably does
+            # not solve it, and that is all it stops saying.
+            trims_reads = bundle.mapping.declares_item_read_trimming()
             over_privileged = sorted(
                 {(level, origin) for level, origin in grants if level != "Read"},
                 key=lambda pair: (pair[0], pair[1].path),
             )
-            for level, origin in over_privileged:
+            if not trims_reads:
+                for level, origin in over_privileged:
+                    findings.append(Finding(
+                        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+                        f"list_permissions: {grp.name!r} is an "
+                        f"enterprise-reader group granted {level!r}; only "
+                        f"the built-in 'Read' is allowed.",
+                        location=origin,
+                    ))
+            # The compensating half. Dropping the rule above would otherwise
+            # make a trimming family's reader posture invisible either way:
+            # elevated is allowed and Read is silently useless.
+            for level, origin in sorted(
+                {(level, origin) for level, origin in grants if level == "Read"}
+                if trims_reads else set(),
+                key=lambda pair: (pair[0], pair[1].path),
+            ):
                 findings.append(Finding(
-                    FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+                    FindingCode.ENTERPRISE_READER_ON_TRIMMED_LIST,
                     f"list_permissions: {grp.name!r} is an enterprise-reader "
-                    f"group granted {level!r}; only the built-in 'Read' is "
-                    f"allowed.",
+                    f"group granted {level!r} where item_security trims "
+                    f"reads to the caller's own items. A reporting account "
+                    f"that writes nothing then reads nothing.",
                     location=origin,
                 ))
 

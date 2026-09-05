@@ -616,8 +616,9 @@ def build(
         None,
         "--deployment-log-list",
         help="Title of the central deployment log list to stamp start, stop "
-        "and provenance rows into. Probed on the central logging site, never "
-        f"created. Default: probes '{EXTERNAL_LOG_DEFAULT}' on site "
+        "and provenance rows into. Created by deploying the deployment-log "
+        "family to the logging site; every other deploy stamps it when it can "
+        f"reach it. Default: '{EXTERNAL_LOG_DEFAULT}' on site "
         f"'{CENTRAL_LOG_SITE_DEFAULT}' unless {ENV_FILENAME} names another; "
         "pass '' to disable the external stamps.",
     ),
@@ -625,8 +626,9 @@ def build(
         None,
         "--deployment-log-site",
         help="Title of the central logging SITE the deployment log list "
-        f"lives on. Default: '{CENTRAL_LOG_SITE_DEFAULT}' unless "
-        f"{ENV_FILENAME} names another; pass '' to disable the stamps.",
+        "lives on. Created by hand from the SharePoint start page: this tool "
+        f"provisions lists, never sites. Default: '{CENTRAL_LOG_SITE_DEFAULT}' "
+        f"unless {ENV_FILENAME} names another; pass '' to disable the stamps.",
     ),
     change_log_list: str | None = typer.Option(
         None,
@@ -640,7 +642,9 @@ def build(
         False,
         "--no-sidecars",
         help="Skip both built-in sidecar lists (the run log and the change "
-        "log) entirely: no lists created, no stamps, no change rows.",
+        "log) entirely: no lists created, no stamps, no change rows. Only "
+        "bites when the central deployment log is out of reach, since a run "
+        "that finds it writes there and makes no sidecars either way.",
     ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.

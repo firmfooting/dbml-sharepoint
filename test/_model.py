@@ -39,6 +39,7 @@ from dbml_sharepoint.model.mapping_types import (
     EntitySection,
     FormFormatting,
     FormVisibility,
+    ItemSecurity,
     ListValidation,
     Mapping,
     MappingBundle,
@@ -203,6 +204,8 @@ class MappingSections(TypedDict, total=False):
     cross_site_reference_columns: list[CrossSiteRef]
     versioning_default: Versioning
     versioning_overrides: dict[str, dict[str, Any]]
+    item_security_default: ItemSecurity
+    item_security_overrides: dict[str, dict[str, Any]]
     enum_sources: dict[str, Path]
     watched_lists: list[WatchedList]
     polymorphic_patterns: list[PolymorphicPattern]
@@ -258,6 +261,8 @@ def _loader_defaults() -> MappingSections:
         "cross_site_reference_columns": [],
         "versioning_default": Versioning(),
         "versioning_overrides": {},
+        "item_security_default": ItemSecurity(),
+        "item_security_overrides": {},
         "enum_sources": {},
         "watched_lists": [],
         "permissions": PermissionsConfig(

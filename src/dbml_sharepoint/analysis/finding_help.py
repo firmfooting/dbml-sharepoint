@@ -625,6 +625,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "reader is enrolled in Phase 1.5 and stays, so the next deploy "
         "fails its own empty-group gate in Phase 1.3. Drop one."
     ),
+    FindingCode.ENTERPRISE_READER_ON_TRIMMED_LIST: (
+        "A group marked `enroll_enterprise_reader` holds the built-in "
+        "`Read` while `item_security` trims reads to the caller's own "
+        "items. Read then reaches only the rows the reporting account "
+        "itself created, and a reporting account writes nothing, so it "
+        "reads nothing. The deploy still reports success, which is why "
+        "this is raised at build time. Either drop the read trimming or "
+        "grant the reader a level that clears it -- and measure which "
+        "levels do on the tenant you are deploying to, because that is "
+        "not established here."
+    ),
     FindingCode.ENTITY_HAS_NO_NOTE: (
         "A table has no `Note:`, so the list it provisions deploys with a "
         "Description holding nothing but the provenance marker. Fleet "

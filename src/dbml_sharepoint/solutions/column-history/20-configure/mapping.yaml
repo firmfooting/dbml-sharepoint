@@ -1,0 +1,439 @@
+# Column history: physical mapping. ONE list, deployed ONCE, to the central
+# logging site. Power Automate writes every row; the deployer writes none.
+#
+# THE PREFIX IS PART OF THE CONTRACT. A deployed list is titled
+# `<prefix><EntityName>`, so `dbml_` plus `ColumnHistory` is what makes the
+# list `dbml_ColumnHistory`: one word, no spaces, so a flow binds
+# `getbytitle('dbml_ColumnHistory')` and a browser URL without escaping.
+# Rewriting `prefix:` renames the list and breaks every flow already bound to
+# it, which is not true of the other families in this library.
+prefix: "dbml_"
+
+entities:
+  ColumnHistory: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+# The reporting pack carries Created By, Created, Modified By and Modified on
+# every list. Created By is what the monthly Changed By check compares against:
+# every row here is written by the flow's service account, so a Changed By
+# equal to the row's own Created By is a row the flow attributed to itself.
+# Without this switch that comparison cannot be made in Power BI at all.
+#
+# users_table is deliberately off. It exists to join person columns to a user
+# dimension for department and job-title reporting, and the one person column
+# here names somebody out in the estate rather than anybody this site knows.
+reporting:
+  system_columns: true
+
+# Versioning is ON, at a low ceiling. Rows are append-only in normal use, so
+# versions accrue only when somebody corrects one by hand, and that is exactly
+# the edit worth being able to see.
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 20
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# Security: the flow's service account writes, everybody reads. Members and
+# Owners deliberately do NOT hold Contribute: a hand-typed row here is a false
+# history that reporting cannot tell from a real one, and correcting the
+# register is what the register is for. Grant Contribute to the flow identity
+# by hand after the deploy; 30-deploy/deploy.md says how and why.
+groups:
+  - name: "{prefix} History Writers"
+    description: "The Power Automate service accounts that write column-change rows. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "{prefix} History Writers" }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible: drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement. See
+# "The shared security model" in templates/README.md.
+#
+# Sealing earns more here than elsewhere: a renamed or deleted column
+# breaks every flow bound to its internal name, and the flow reports that
+# as a run failure long after whoever edited the list has moved on.
+seal_columns: true
+prevent_list_deletion: true
+
+# Internal names stay authoritative (flows bind to them); only the display
+# title changes. Three columns need a hand.
+#
+# SiteUrl and ListTitle: auto splitting gives "Site Url" and "List Title",
+# which are the two names the REPORTING PACK adds to every list itself
+# (analysis/report_columns.py). The build refuses the collision
+# (display_title_collides_with_report_column) and it is right to: the
+# generated Power Query would add its own column and then rename this one
+# onto the same name, failing the refresh rather than the build.
+#
+# The clash is semantic as well as nominal, which is why "Source" is the
+# right word rather than a workaround. The reporting pack's Site Url and
+# List Title say where THIS ROW lives, which for every row here is the one
+# central logging list. These two say where the CHANGE happened, out in the
+# estate, and that is the whole content of the row.
+#
+# ChangedUtc: auto gives "Changed Utc", and the zone is the point of the
+# column, so it is spelled the way a reader expects to see it.
+display_names:
+  mode: auto
+  overrides:
+    ColumnHistory:
+      ChangedUtc: "Changed (UTC)"
+      SiteUrl: "Source Site Url"
+      ListTitle: "Source List Title"
+
+# Deliberately NOT declared: column_formatting.
+#
+# The style library covers severity, pill, data-bar, trend and overdue-date,
+# and every one of them keys a `map:` on a closed vocabulary. This list has
+# no enums at all: Column Name, Site Url and the two values are free text
+# written by a flow, and a map over them would be a guess that renders
+# nothing the day a new register is watched. A bespoke formatter would face
+# the same problem with none of the library's review behind it.
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "All changes" is the default because this list
+# is read by report tools far more often than by people, and a filtered
+# default hides rows from anyone who opens it expecting the whole feed.
+#
+# Every view except "All changes" carries a selective filter on an INDEXED
+# column (see the schema's indexes block), and it takes both. The index is
+# what lets SharePoint narrow the query; the filter is what makes the result
+# small enough to come back whole. Measured at 6,000 items and written up in
+# analysis/checks/_views.py: an unindexed filter returned HTTP 200 holding 50
+# of the 60 rows that matched, with no error, and an unfiltered view doing
+# real work across every row was refused whatever was indexed. That matters
+# more here than anywhere else in the library, because this list has no
+# natural ceiling.
+#
+# GROUPING IS NOT A FILTER. "By site" and "By column" group on an indexed
+# column, which is necessary; whether an index alone serves a grouped view
+# past the threshold is unmeasured here and nothing in the build can see it.
+# So both carry a 90-day bound as well, which puts them on the shape that IS
+# measured to be served. "All changes" is exposed by design and
+# 50-govern/governance.md says what to do about that.
+#
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names. The build
+# rewrites them to display titles, and ColumnWidth binds by display name.
+views:
+  ColumnHistory:
+    - title: "All changes"
+      default: true
+      fields: [Title, ChangedUtc, ChangedBy, SiteUrl, ListTitle, ItemId,
+               ItemTitle, ColumnName, OldValue, NewValue]
+      sort:
+        - { field: ChangedUtc, direction: desc }
+      widths:
+        Title: 300
+        ChangedUtc: 170
+        ChangedBy: 160
+        SiteUrl: 220
+        ListTitle: 150
+        ItemId: 100
+        ItemTitle: 200
+        ColumnName: 150
+        OldValue: 180
+        NewValue: 180
+    # One site per group, which is how an operator answers "is that register
+    # even wired up yet" without knowing its URL. Bounded to 90 days as well
+    # as grouped: a grouping is not a filter, so without the where this view
+    # asks the whole list a question no index is measured to answer. Ninety
+    # days is long enough that a quarterly review sees a quiet register.
+    - title: "By site"
+      fields: [Title, SiteUrl, ListTitle, ColumnName, ChangedUtc, ChangedBy]
+      group_by:
+        field: SiteUrl
+        collapsed: true
+      where:
+        - { field: ChangedUtc, op: geq, value: today-90 }
+      sort:
+        - { field: ChangedUtc, direction: desc }
+      widths:
+        Title: 300
+        SiteUrl: 220
+        ListTitle: 150
+        ColumnName: 150
+        ChangedUtc: 170
+        ChangedBy: 160
+    # Grouped on the INTERNAL name rather than the display name. A column
+    # renamed in SharePoint keeps its internal name, so this grouping holds
+    # history together across the rename; grouping on Column Name would
+    # split one column's history into two groups on the day it was retitled.
+    # Bounded to 90 days for the same reason as "By site".
+    - title: "By column"
+      fields: [Title, ColumnInternal, ColumnName, ListTitle, OldValue,
+               NewValue, ChangedUtc]
+      group_by:
+        field: ColumnInternal
+        collapsed: true
+      where:
+        - { field: ChangedUtc, op: geq, value: today-90 }
+      sort:
+        - { field: ChangedUtc, direction: desc }
+      widths:
+        Title: 300
+        ColumnInternal: 180
+        ColumnName: 150
+        ListTitle: 150
+        OldValue: 180
+        NewValue: 180
+        ChangedUtc: 170
+    # The top-of-feed check after wiring a flow up: did anything arrive.
+    # `row_limit` caps the page; the filter is what keeps the query cheap,
+    # and ChangedUtc is indexed so it stays served as the list grows.
+    - title: "Recent"
+      fields: [Title, ChangedUtc, ChangedBy, ListTitle, ColumnName, OldValue,
+               NewValue]
+      where:
+        - { field: ChangedUtc, op: geq, value: today-7 }
+      sort:
+        - { field: ChangedUtc, direction: desc }
+      row_limit: 100
+      widths:
+        Title: 300
+        ChangedUtc: 170
+        ChangedBy: 160
+        ListTitle: 150
+        ColumnName: 150
+        OldValue: 180
+        NewValue: 180
+    # Reads the person the FLOW copied off the trigger item, not the row's
+    # own Editor. If this view is empty for everybody while rows keep
+    # arriving, the flow is not mapping Changed By; 30-deploy/deploy.md
+    # leads with it.
+    #
+    # It only catches the BLANK version of that mistake. A flow that writes
+    # its own identity rather than the trigger item's Editor fills this view
+    # for the service account and empties it for everybody else, which looks
+    # the same from any one person's seat. The check that separates the two
+    # is Changed By against the row's own Created By, and it is monthly in
+    # 50-govern/governance.md rather than visible here.
+    - title: "My changes"
+      fields: [Title, ChangedUtc, SiteUrl, ListTitle, ItemTitle, ColumnName,
+               OldValue, NewValue]
+      where:
+        - { field: ChangedBy, op: eq, value: me }
+      sort:
+        - { field: ChangedUtc, direction: desc }
+      widths:
+        Title: 300
+        ChangedUtc: 170
+        SiteUrl: 220
+        ListTitle: 150
+        ItemTitle: 200
+        ColumnName: 150
+        OldValue: 180
+        NewValue: 180
+
+# Every column stays on every form. Nothing here is filled by a person in
+# normal use, so there is no capture friction to spare anybody, and the one
+# time a human opens this form is to read or correct a row a flow wrote
+# wrong. Hiding a field then is hiding the evidence.
+#
+# reconcile: exact makes this file authoritative for the whole list; every
+# other column's conditional formula is cleared on each deploy. Read the
+# Reconciliation section of the mapping reference before copying the pattern
+# onto a hand-configured list.
+form_visibility:
+  ColumnHistory:
+    reconcile: exact
+    columns:
+      ChangeKey: visible
+
+# Form layout: a strapline header and four sections. Per-field description
+# hints render on the NEW form only; SharePoint suppresses column
+# descriptions on the Edit form. Section field lists are authored with
+# INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  ColumnHistory:
+    header: formatting/column-history-form-header.json
+    body: formatting/column-history-form-body.json
+
+# Per-column save rules, each with its own message.
+#
+# `now` rather than `today`: TODAY() in a validation formula is midnight, so
+# `leq today` on a datetime rejects everything stamped after 00:00. Bare
+# `now` is what the 2026-07-29 probe established (test/manual/
+# datetime-sentinel-probe.js); there is no verified `now+/-N` form.
+#
+# This one rule is worth its cost. A flow that writes the flow-run time
+# instead of the trigger item's Modified stamp is the single most likely
+# wiring mistake after Changed By, and it is invisible in the data: the row
+# looks fine, and only the durations computed from it are wrong. A clock
+# skew or a template that reaches for utcNow() of the NEXT run shows up here
+# as a refused write the flow author sees immediately.
+column_validation:
+  ColumnHistory:
+    columns:
+      ChangedUtc:
+        when:
+          - { field: ChangedUtc, op: leq, value: now }
+        message: "A change cannot have happened in the future. Write the trigger item's Modified timestamp here, not the time the flow ran."
+
+# Deliberately NOT declared: list_validation.
+#
+# The rule this list wants is "Change Key equals Site Url, List Title and
+# Item Id joined by |", and this deployer cannot declare it. Its condition
+# grammar is field / operator / value (model/conditions.py), and `value` is
+# a literal or a dated sentinel; there is no way to write another column
+# there, so no declaration can say three columns concatenate into a fourth.
+#
+# That is a limit of the DECLARATION, not a statement about SharePoint. The
+# rule above this one renders as `[Changed (UTC)]<=[Modified]`, because the
+# `now` sentinel resolves to [Modified] (analysis/clock_cells.py), so the
+# emitted formulas already compare one column against another. Whether
+# SharePoint would accept the CONCATENATE form has not been probed here, and
+# nothing in this file should be read as saying it would not.
+#
+# It stays a governance check, and 50-govern/governance.md carries the exact
+# expression a reviewer compares against.
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " so sample data stays visible in every view and form.
+# Rollback requires per-list confirmation before every delete. Dates are
+# today+/-N so "Recent" lands on whatever day the demo runs; "@me" is the
+# pasting operator.
+#
+# Coverage is by VIEW, which is what the family standard checks: two sites
+# so "By site" has two groups, three internal names so "By column" has
+# three, four rows inside the seven-day window for "Recent", and Changed By
+# set on all but one so "My changes" fills. The blank Old Value row is the
+# first-observation case a change-column trigger produces, and the blank
+# Changed By row is what a flow that has NOT been wired to the trigger
+# item's Editor looks like: both are shapes the real feed contains.
+#
+# The OTHER Changed By failure, every row naming the flow's service account,
+# is named here rather than seeded. A demo row is written by the operator
+# pasting it, so the writer and the named person are the same account either
+# way and the seeded list cannot tell the two shapes apart. 50-govern/
+# governance.md carries the check that can.
+#
+# The list titles are the DEPLOYED titles of other families in this library
+# (RR_Risk, AU_Recommendation, IN_Incident), because a key built from a title
+# no register actually carries demonstrates a join that could never happen.
+#
+# Every Change Key below is Site Url, List Title and Item Id joined by "|",
+# which is the expression 50-govern/governance.md pins.
+demo_items:
+  ColumnHistory:
+    - key: ch-risk-status
+      values:
+        Title: "[DEMO] RR_Risk 42 Status: Open -> Closed"
+        ChangedUtc: "today"
+        ChangedBy: "@me"
+        SiteUrl: "https://example.sharepoint.com/sites/quality"
+        ListTitle: "RR_Risk"
+        ItemId: 42
+        ItemTitle: "[DEMO] Untested data migration corrupts records"
+        ColumnName: "Status"
+        ColumnInternal: "Status"
+        OldValue: "Open"
+        NewValue: "Closed"
+        ChangeKey: "https://example.sharepoint.com/sites/quality|RR_Risk|42"
+    - key: ch-risk-rating
+      values:
+        Title: "[DEMO] RR_Risk 42 Target Risk Rating: High -> Medium"
+        ChangedUtc: "today-1"
+        ChangedBy: "@me"
+        SiteUrl: "https://example.sharepoint.com/sites/quality"
+        ListTitle: "RR_Risk"
+        ItemId: 42
+        ItemTitle: "[DEMO] Untested data migration corrupts records"
+        ColumnName: "Target Risk Rating"
+        ColumnInternal: "TargetRiskRating"
+        OldValue: "High"
+        NewValue: "Medium"
+        ChangeKey: "https://example.sharepoint.com/sites/quality|RR_Risk|42"
+    # First observation of the column: a change-column trigger fires on the
+    # value it finds and has nothing to report as a before-value.
+    - key: ch-first-observation
+      values:
+        Title: "[DEMO] AU_Recommendation 7 Status: (first seen) -> In progress"
+        ChangedUtc: "today-2"
+        ChangedBy: "@me"
+        SiteUrl: "https://example.sharepoint.com/sites/quality"
+        ListTitle: "AU_Recommendation"
+        ItemId: 7
+        ItemTitle: "[DEMO] Close out the medication-chart audit finding"
+        ColumnName: "Status"
+        ColumnInternal: "Status"
+        NewValue: "In progress"
+        ChangeKey: "https://example.sharepoint.com/sites/quality|AU_Recommendation|7"
+    - key: ch-other-site
+      values:
+        Title: "[DEMO] IN_Incident 118 Severity: Moderate -> Major"
+        ChangedUtc: "today-3"
+        ChangedBy: "@me"
+        SiteUrl: "https://example.sharepoint.com/sites/operations"
+        ListTitle: "IN_Incident"
+        ItemId: 118
+        ItemTitle: "[DEMO] Cold-chain excursion in the vaccine fridge"
+        ColumnName: "Severity"
+        ColumnInternal: "Severity"
+        OldValue: "Moderate"
+        NewValue: "Major"
+        ChangeKey: "https://example.sharepoint.com/sites/operations|IN_Incident|118"
+    # No Changed By: what every row looks like when the flow was never
+    # wired to the trigger item's Editor. It falls out of "My changes" for
+    # everybody, which is the symptom 30-deploy/deploy.md tells you to check.
+    - key: ch-unattributed
+      values:
+        Title: "[DEMO] IN_Incident 118 Status: Under review -> Closed"
+        ChangedUtc: "today-20"
+        SiteUrl: "https://example.sharepoint.com/sites/operations"
+        ListTitle: "IN_Incident"
+        ItemId: 118
+        ItemTitle: "[DEMO] Cold-chain excursion in the vaccine fridge"
+        ColumnName: "Status"
+        ColumnInternal: "Status"
+        OldValue: "Under review"
+        NewValue: "Closed"
+        ChangeKey: "https://example.sharepoint.com/sites/operations|IN_Incident|118"

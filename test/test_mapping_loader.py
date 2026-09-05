@@ -11,6 +11,7 @@ from dbml_sharepoint.model import mapping_loader, mapping_types
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
+    ItemSecurity,
     ListPermissionPolicy,
     RetiredColumn,
     Versioning,
@@ -2399,6 +2400,9 @@ def test_an_empty_list_where_a_mapping_belongs_is_refused(
 _NESTED_WRONG_SHAPES = [
     ("versioning", "versioning: []\n"),
     ("versioning.default", "versioning:\n  default: []\n"),
+    ("item_security", "item_security: []\n"),
+    ("item_security.default", "item_security:\n  default: []\n"),
+    ("item_security.overrides", "item_security:\n  overrides: []\n"),
     ("list_permissions", "list_permissions: []\n"),
     ("list_permissions.overrides", "list_permissions:\n  overrides: []\n"),
 ]
@@ -2683,3 +2687,107 @@ def test_a_literal_previous_group_name_is_not_re_prefixed(tmp_path: Path) -> Non
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert perms.groups[0].previous_names == ("Editors", "Register Editors")
+
+
+# --- item_security ----------------------------------------------------------
+#
+# Two settings whose wrong value is invisible after deploy. ReadSecurity 2
+# trims a list to the rows the caller created, so a mapping that meant to set
+# it and did not leaves every row readable by everyone, and every page, every
+# view and every deploy phase looks identical either way.
+
+
+def test_item_security_defaults_to_the_whole_list(tmp_path: Path) -> None:
+    """A mapping that says nothing gets SharePoint's own default.
+
+    `all`, which is ReadSecurity 1, and the generator emits NO item-security
+    reconcile for it: an undeclared setting must not become a declared one,
+    or every existing list in the fleet would be MERGEd on the next deploy.
+    """
+    write_mapping(tmp_path, _views_yaml(""))
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    assert mapping.item_security_default == ItemSecurity()
+    assert (mapping.item_security_default.read, mapping.item_security_default.write) == (
+        "all", "all",
+    )
+    assert mapping.item_security_for("Project").declared is False
+    assert mapping.declares_item_read_trimming() is False
+
+
+def test_item_security_reads_own_as_the_created_by_trim(tmp_path: Path) -> None:
+    """`own` is ReadSecurity/WriteSecurity 2, the created-by trim.
+
+    The numbers are the contract with SharePoint and the words are the
+    contract with the mapping author, so both are pinned: a mapping cannot
+    say `own` and deploy 1, and a future reading of `own` as 3 or 4 has to
+    face this test.
+    """
+    write_mapping(tmp_path, _views_yaml("""
+        item_security:
+          default:
+            read: own
+            write: own
+    """))
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    security = mapping.item_security_for("Project")
+    assert (security.read_security, security.write_security) == (2, 2)
+    assert security.declared is True
+    assert mapping.declares_item_read_trimming() is True
+
+
+def test_an_item_security_override_merges_onto_the_default(tmp_path: Path) -> None:
+    """Key by key, the same merge `versioning_for` does.
+
+    An override naming only `read` must keep the default's `write`, or a
+    mapping tightening one half would silently loosen the other.
+    """
+    write_mapping(tmp_path, _views_yaml("""
+        item_security:
+          default:
+            read: own
+            write: own
+          overrides:
+            Project:
+              read: all
+    """))
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    overridden = mapping.item_security_for("Project")
+    assert (overridden.read, overridden.write) == ("all", "own")
+    assert (overridden.read_security, overridden.write_security) == (1, 2)
+    assert mapping.item_security_for("Risk").read == "own"
+    # One entity still trimming is enough: the reader guard is about whether
+    # ANY declared list trims, not whether all of them do.
+    assert mapping.declares_item_read_trimming() is True
+
+
+@pytest.mark.parametrize("fragment", [
+    "item_security:\n  default:\n    read: mine\n",
+    "item_security:\n  default:\n    write: creator\n",
+    "item_security:\n  overrides:\n    Project:\n      read: 2\n",
+])
+def test_an_unknown_item_security_scope_is_refused(
+    tmp_path: Path, fragment: str,
+) -> None:
+    """Refused, not coerced.
+
+    `read: mine` is what somebody writes meaning `own`. Coercing it to the
+    default would deploy a list with no trimming at all, which is the exact
+    opposite of what the line asks for, on a surface where nothing later can
+    tell.
+    """
+    path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
+    with pytest.raises(ValueError, match="item_security"):
+        load_mapping(path)
+
+
+def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
+    """`item_security.defaults` is a plausible spelling of a section that
+    would then be silently ignored, taking the whole posture with it."""
+    path = write_mapping(tmp_path, with_tail(
+        entities("Project"), "item_security:\n  defaults:\n    read: own\n",
+    ))
+    with pytest.raises(ValueError, match=r"item_security: unknown key"):
+        load_mapping(path)
