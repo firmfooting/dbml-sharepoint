@@ -1,8 +1,13 @@
-release: "2.2.0"
-date: "2026-09-04"
+release: "2.2.1"
+date: "2026-09-05"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.2.0"
+schema_version: "2.2.1"
 notes: |
+  2.2.1 says on BusinessProcess.NextReviewDue that you set the date yourself.
+  The column is typed here and calculated on Risk, in one family, and the two
+  were indistinguishable by name (#412). Description text only; no column,
+  view, form or rule changes.
+
   2.2.0 splits ReviewDate into LastReviewedDate and NextReviewDue on both Risk
   and BusinessProcess. One hand-set date stood for both halves of a review, so
   moving it forward destroyed the evidence that a review had happened and

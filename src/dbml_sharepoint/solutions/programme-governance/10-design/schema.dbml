@@ -563,7 +563,9 @@ Table BusinessProcess {
   // it, but capturing a backlog row is not sweeping it, so a default would
   // claim a check that never happened.
   LastReviewedDate date                   [note: 'When somebody last checked this row is still true. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
-  NextReviewDue   date                    [note: 'Next sweep of this row. The register is only useful while it is current']
+  // Typed here and calculated on Risk above, in one family, and the note has
+  // to say which (#412): a backlog row has no rating to derive a cadence from.
+  NextReviewDue   date                    [note: 'Next sweep of this row. You set this date yourself: a backlog row carries no rating to calculate a cadence from. The register is only useful while it is current']
   ReviewDate      date                    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
 
   indexes {

@@ -89,7 +89,11 @@ Table ServiceIssue {
   RemedyDueDate        date               [note: 'The date the agreed remedy falls due']
 
   IssueOwner           person             [note: 'The person carrying this issue. Naming someone here does not grant them access']
-  NextReviewDue        date               [note: 'When you will next look at this']
+  // Typed, not calculated, and the note has to say so (#412). The name means
+  // the same thing everywhere on the shelf; the mechanism differs because a
+  // cadence formula needs a written policy to encode and a service-evidence
+  // theme has none.
+  NextReviewDue        date               [note: 'When you will next look at this. You set this date yourself: there is no review policy here to calculate one from']
   Outcome              longtext           [note: 'How it ended, including anything left unresolved']
   ClosedDate           date               [note: 'The date this theme was closed']
 
