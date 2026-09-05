@@ -380,13 +380,32 @@
         }
       }
     }
-    const stampExternal = async (digest, kind, text) => {
+    // A cross-web write needs a digest issued by the CENTRAL web: SharePoint
+    // scopes digest validation to the issuing web (live finding 2026-09-05:
+    // a TestSampleTeam digest POSTed to firmfooting-logging answered 403
+    // "security validation ... invalid"; the central web's own digest
+    // answered 201). Fetched per stamp, not cached: stamps are a handful of
+    // POSTs per run and the ~30-minute cache lifetime is not worth a second
+    // invalidation rule.
+    const externalDigest = async () => {
+      const r = await fetchWithRetry(externalApi('contextinfo'), {
+        method: 'POST',
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        throw new Error(`central contextinfo: HTTP ${r.status} ${spError(await r.text())}`);
+      }
+      const digest = ((((await r.json()).d || {}).GetContextWebInformation || {}).FormDigestValue) || '';
+      if (!digest) throw new Error('central contextinfo carried no FormDigestValue');
+      return digest;
+    };
+    const stampExternal = async (kind, text) => {
       if (!externalReady) return;
       try {
         const resp = await fetchWithRetry(externalApi(
           `lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
         ), {
-          method: 'POST', headers: spHeaders(digest),
+          method: 'POST', headers: spHeaders(await externalDigest()),
           body: JSON.stringify({ Title: `dbml-sharepoint ${kind}: ${text}`.slice(0, 255) }),
         });
         if (!resp.ok) {
@@ -398,10 +417,10 @@
       }
     };
     if (externalReady) {
-      await stampExternal(await getDigest(), 'deployment start',
+      await stampExternal('deployment start',
         `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
         + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')} on {{ site_url }}`);
-      await stampExternal(await getDigest(), 'provenance',
+      await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
         + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`.slice(0, 255));
     }
@@ -448,7 +467,7 @@
         recordFailure(`run log ${kind}`, err);
       }
       if (EXTERNAL_LOG_TITLE) {
-        await stampExternal(await getDigest(), kind,
+        await stampExternal(kind,
           `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`.slice(0, 255));
       }
     };

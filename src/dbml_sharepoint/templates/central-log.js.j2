@@ -58,6 +58,27 @@
   // tenant-wide, not web-scoped, so any web's contextinfo serves.
   const SITE_PATH = (/^\/sites\/[^/]+/.exec(window.location.pathname) || [''])[0];
   const apiUrl = (suffix) => `${SITE_PATH}/_api/${suffix}`;
+  // BUT the digest must come from the CENTRAL web, not the pasted page's
+  // web: SharePoint scopes a form digest's validation to the web that
+  // issued it (live finding 2026-09-05: a TestSampleTeam digest POSTed to
+  // firmfooting-logging answered 403 "security validation ... invalid",
+  // the same body's own digest answered 201). crossWebPost() is the
+  // cross-web write the sidecar uses everywhere.
+  const crossWebPost = (site, suffix, body) => {
+    const digestUrl = `${TENANT_ROOT}/sites/${odataName(site)}/_api/contextinfo`;
+    return fetchWithRetry(digestUrl, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    }).then((r) => r.json()).then((j) => {
+      const digest = (((j.d || {}).GetContextWebInformation || {}).FormDigestValue) || '';
+      if (!digest) throw new Error(`contextinfo for '${site}' carried no digest`);
+      return fetchWithRetry(centralApi(suffix), {
+        method: 'POST',
+        headers: spHeaders(digest),
+        body: JSON.stringify(body),
+      });
+    });
+  };
   // The central web's API: the cross-web form of apiUrl() -- same suffix
   // discipline, pointed at the central logging site. Same origin, so the
   // session cookies ride along. WEB and odataName come from the context
@@ -154,17 +175,12 @@
     log('INFO', `List '${CENTRAL_LIST}' already exists and carries this tool's marker; nothing to do.`);
     summary.adopted.push(`list ${CENTRAL_LIST}`);
   } else {
-    const digest = await getDigest();
-    const createdList = await fetchWithRetry(centralApi('lists'), {
-      method: 'POST',
-      headers: spHeaders(digest),
-      body: JSON.stringify({
-        __metadata: { type: 'SP.List' },
-        Title: CENTRAL_LIST,
-        BaseTemplate: 100,
-        Description: CENTRAL_MARKER,
-        Hidden: true,
-      }),
+    const createdList = await crossWebPost(CENTRAL_SITE, 'lists', {
+      __metadata: { type: 'SP.List' },
+      Title: CENTRAL_LIST,
+      BaseTemplate: 100,
+      Description: CENTRAL_MARKER,
+      Hidden: true,
     });
     if (!createdList.ok && createdList.status !== 409) {
       const text = await createdList.text();
@@ -216,18 +232,18 @@
     log('WARN', `Could not resolve the list's entity type (HTTP ${typeResp.status}); the provenance row needs it, so it was skipped. The list itself is ready.`);
   } else {
     const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
-    const stamp = await fetchWithRetry(centralApi(`lists/getbytitle('${odataName(CENTRAL_LIST)}')/items`), {
-      method: 'POST',
-      headers: spHeaders(await getDigest()),
-      body: JSON.stringify({
+    const stamp = await crossWebPost(
+      CENTRAL_SITE,
+      `lists/getbytitle('${odataName(CENTRAL_LIST)}')/items`,
+      {
         // WEB is the strict guard's variable; this script is cross-web and
         // deliberately does not define it. The pasted page's own path names
         // where the provisioning happened, which is the audit fact wanted.
         __metadata: { type: entityType },
         Title: `dbml-sharepoint provenance: central log provisioned by deployer v${DEPLOYER_VERSION} `
           + `at ${GENERATED_AT} from ${window.location.pathname}`.slice(0, 255),
-      }),
-    });
+      },
+    );
     if (!stamp.ok && stamp.status !== 409) {
       const text = await stamp.text();
       log('WARN', `Central log is ready, but the provenance row was refused: HTTP ${stamp.status} `
@@ -241,4 +257,5 @@
   log('DONE', `Central log ready: site '${CENTRAL_SITE}', list '${CENTRAL_LIST}'. Every firmfooting `
     + `deploy that can reach it will now stamp its start, stop and provenance rows here.`);
   console.log(summary);
+  return summary;
 })();

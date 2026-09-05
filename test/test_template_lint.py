@@ -317,6 +317,7 @@ def test_one_helper_builds_every_api_url() -> None:
         "central-log.js.j2": {
             "const apiUrl = (suffix) => `${SITE_PATH}/_api/${suffix}`;",
             "const create = await fetchWithRetry(`${TENANT_ROOT}/_api/web/Webs/Add`, {",
+            "const digestUrl = `${TENANT_ROOT}/sites/${odataName(site)}/_api/contextinfo`;",
         },
     }
     offenders = {}
