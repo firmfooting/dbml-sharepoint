@@ -35,6 +35,7 @@ Every string literal in this module must be ASCII: it is in `_CONSOLE_BOUND`
 and `test_messages_bound_for_a_console_are_ascii` walks the AST.
 """
 
+import json
 import re
 import shutil
 import sys
@@ -714,7 +715,63 @@ def _ask_seed(console: Console) -> bool:
     return Confirm.ask("Add the demo rows?", default=False, console=console)
 
 
-def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
+def _drop_chosen_from_previous_prefixes(
+    text: str, prefix: str,
+) -> tuple[str, tuple[str, ...]]:
+    """`text` with `prefix` removed from its `previous_prefixes` declaration.
+
+    The prefix gate can hand the copy the very stem the template already
+    lists as a previous one. `programme-governance` declares
+    `previous_prefixes: ["", "ADOPT_"]` because its live site was
+    provisioned unprefixed, and pressing Enter at the gate (the default)
+    chooses "". `_parse_previous_prefixes` refuses that pair, so the wizard
+    wrote the mapping and then failed loading it back, naming the loader
+    rather than the answer that caused it (#378).
+
+    DROPPING THE ENTRY LOSES NO MIGRATION PATH. Both consumers build their
+    candidate stems as `[prefix, *previous_prefixes]` -- `previous_titles`
+    in `mapping_types` and `previous_object_names` in `mapping_loader` --
+    and both skip a candidate equal to the current name or already listed,
+    so an entry repeating the current prefix could only ever produce
+    duplicates of what the first stem already tried. The rename search the
+    entry exists for is still made, under the current prefix.
+
+    Not silent: the dropped entries come back so the wizard can say so, and
+    the rewritten line carries the reason for whoever reads the mapping
+    afterwards. The prose comment ABOVE the declaration is left alone. It
+    documents the family's own history, and rewriting English by regex is
+    the guessing the rest of this function refuses.
+    """
+    matches = list(re.finditer(r"^previous_prefixes:(.*)$", text, flags=re.MULTILINE))
+    if not matches:
+        return text, ()
+    if len(matches) > 1:
+        raise WizardError(
+            f"the template declares `previous_prefixes:` {len(matches)} times; "
+            f"refusing to guess which one the build will load.",
+        )
+    match = matches[0]
+    # Parsed as YAML rather than split on the brackets, so a trailing
+    # comment on the line is handled by the parser that will read it back.
+    declared = yaml.safe_load(match.group(1))
+    if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
+        raise WizardError(
+            f"`previous_prefixes:` is not a single flow-style list of strings "
+            f"({match.group(0).strip()!r}). A block list would need more than "
+            f"the one-line rewrite this wizard makes; refusing to edit it.",
+        )
+    if prefix not in declared:
+        return text, ()
+    kept = [p for p in declared if p != prefix]
+    line = (
+        f"previous_prefixes: {json.dumps(kept)}"
+        f"  # {json.dumps(prefix)} dropped: it is this project's own prefix, "
+        f"which every rename search already tries first"
+    )
+    return text[: match.start()] + line + text[match.end() :], (prefix,)
+
+
+def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
     """Set `prefix:` in the copied mapping, then read it back and verify.
 
     A targeted line rewrite, not a YAML round-trip. Every shipped mapping
@@ -725,6 +782,9 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
     Verified through the real loader rather than by re-reading the text:
     what matters is whether the mapping the build will load carries the
     prefix the user asked for, not whether the line changed.
+
+    Returns the `previous_prefixes` entries dropped as no longer previous,
+    for the caller to report.
     """
     text = mapping_path.read_text(encoding="utf-8")
     new_text, count = re.subn(
@@ -736,6 +796,7 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"(found {count}). The template does not match the family "
             f"standard; refusing to guess where the prefix belongs.",
         )
+    new_text, dropped = _drop_chosen_from_previous_prefixes(new_text, prefix)
     # `write_artifact`, not `write_text`. The defect AGENTS.md records is
     # per-call-site: text mode inherits the platform newline, so this wrote
     # CRLF on Windows and handed the operator a mapping whose line endings
@@ -748,6 +809,7 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"wrote prefix {prefix!r} to {mapping_path} but the mapping "
             f"loaded back as {bundle.mapping.prefix!r}.",
         )
+    return dropped
 
 
 @dataclass(frozen=True)
@@ -850,9 +912,16 @@ def _repoint_docs(
     return changed, applied
 
 
-def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
+def _scaffold(
+    answers: Answers,
+) -> tuple[list[Path], list[_Substitution], list[str]]:
     changed: list[Path] = []
     applied: list[_Substitution] = []
+    # What `_rewrite_prefix` dropped, per template, phrased for the console.
+    # A third return rather than a print from inside the copy loop: this
+    # function writes files and reports what it wrote, and the caller owns
+    # the console.
+    dropped: list[str] = []
     for choice in answers.templates:
         root = _template_root(answers, choice)
         shutil.copytree(
@@ -865,10 +934,13 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
             # path it had just told the user was fine.
             dirs_exist_ok=True,
         )
-        _rewrite_prefix(
-            root / MAPPING_RELPATH,
-            choice.prefix,
-        )
+        for gone in _rewrite_prefix(root / MAPPING_RELPATH, choice.prefix):
+            named = "the unprefixed entry" if gone == "" else repr(gone)
+            dropped.append(
+                f"{choice.solution.id}: dropped {named} from "
+                f"previous_prefixes, since that is the prefix you chose. "
+                f"Existing lists are still found under it",
+            )
         template_changed, template_applied = _repoint_docs(
             root,
             (
@@ -879,7 +951,7 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
         changed.extend(template_changed)
         applied.extend(s for s in template_applied if s not in applied)
     _preserve_env_file(answers)
-    return changed, applied
+    return changed, applied, dropped
 
 
 def _is_setting_line(line: str, key: str) -> bool:
@@ -1301,12 +1373,17 @@ def _run(console: Console) -> int:
         return 0
 
     try:
-        repointed, applied = _scaffold(answers)
+        repointed, applied, dropped = _scaffold(answers)
     except (WizardError, OSError) as exc:
         console.print(f"[red]Could not scaffold the project:[/red] {exc}")
         return 1
 
     console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
+    for note in dropped:
+        # The mapping the operator now owns declares one fewer previous
+        # prefix than the template did, so say which and why here rather
+        # than leaving it to be noticed in a diff against the shipped file.
+        console.print(escape(note) + ".")
     if repointed:
         # Said plainly, and NOT dimmed: this reports edits the wizard made to
         # the operator's own new files. Naming the substitutions matters

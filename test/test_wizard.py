@@ -21,6 +21,7 @@ from _console import collapsed as _collapsed
 
 from dbml_sharepoint import wizard
 from dbml_sharepoint.catalogue import (
+    MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
     Solution,
     available_solutions,
@@ -28,7 +29,7 @@ from dbml_sharepoint.catalogue import (
 )
 from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
-from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping, previous_object_names
 
 
 @pytest.fixture(autouse=True)
@@ -548,7 +549,7 @@ def test_each_template_repoints_only_its_own_documentation(
         seed=False,
     )
 
-    changed, _ = wizard._scaffold(answers)
+    changed, _, _ = wizard._scaffold(answers)
 
     risk_docs = "\n".join(
         p.read_text(encoding="utf-8")
@@ -922,6 +923,122 @@ def test_a_mapping_with_no_prefix_line_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(wizard.WizardError, match="no top-level `prefix:` line"):
         wizard._rewrite_prefix(mapping, "NEW_")
+
+
+def _shipped_mapping(solution_id: str, tmp_path: Path) -> Path:
+    """A writable copy of one shipped family's mapping.
+
+    The whole directory, because a mapping names its formatter JSON and its
+    enum sources by a path relative to itself, and the loader reads them.
+    """
+    source = load_solution(solution_id).root / MAPPING_RELPATH
+    shutil.copytree(source.parent, tmp_path / source.parent.name)
+    return tmp_path / source.parent.name / source.name
+
+
+def test_the_chosen_prefix_stops_being_a_previous_one(tmp_path: Path) -> None:
+    """#378, and it fires on the gate's OWN DEFAULT, not on an odd answer.
+
+    `programme-governance` declares "" among its previous prefixes because
+    its live site was provisioned unprefixed, and the prefix gate defaults
+    to no prefix -- so pressing Enter chose a prefix the same file already
+    listed as previous. `_parse_previous_prefixes` refuses that pair, so the
+    wizard wrote the copy and then failed loading it back, reporting the
+    loader's sentence about a prefix "still in use" for a project that had
+    never been deployed anywhere.
+    """
+    mapping = _shipped_mapping("programme-governance", tmp_path)
+    assert load_mapping(mapping).mapping.previous_prefixes == ("", "ADOPT_")
+
+    assert wizard._rewrite_prefix(mapping, "") == ("",)
+
+    bundle = load_mapping(mapping)
+    assert bundle.mapping.prefix == ""
+    assert bundle.mapping.previous_prefixes == ("ADOPT_",)
+
+
+def test_dropping_the_chosen_prefix_removes_no_rename_candidate(
+    tmp_path: Path,
+) -> None:
+    """The objection on #378 was that dropping the entry drops a migration
+    path. It does not, and this is the measurement rather than the argument.
+
+    Both consumers build their stems as `[prefix, *previous_prefixes]` and
+    both skip a candidate equal to the current name or already listed, so an
+    entry repeating the current prefix only ever produced duplicates of what
+    the first stem tried. The refused shape is built with `replace`, since
+    the loader is what refuses it and the point is what it would have meant.
+    """
+    shipped = load_mapping(_shipped_mapping("programme-governance", tmp_path)).mapping
+    # What the wizard writes, against what it wrote before #378.
+    written = replace(shipped, prefix="", previous_prefixes=("ADOPT_",))
+    refused = replace(shipped, prefix="", previous_prefixes=("", "ADOPT_"))
+
+    for entity in shipped.entities:
+        assert written.previous_titles(entity) == refused.previous_titles(entity)
+        # Not vacuous: the entry the wizard keeps still does its work.
+        assert any(t.startswith("ADOPT_") for t, _ in written.previous_titles(entity))
+
+    group = "{prefix}Owners"
+    assert previous_object_names(
+        group, ("{prefix}Admins",), "", ("ADOPT_",), "groups[0]",
+    ) == previous_object_names(
+        group, ("{prefix}Admins",), "", ("", "ADOPT_"), "groups[0]",
+    )
+
+
+def test_a_previous_prefix_that_is_not_the_chosen_one_is_kept(
+    tmp_path: Path,
+) -> None:
+    """The filter is exact. Choosing GOV_ leaves the declaration alone, and
+    choosing ADOPT_ drops only that entry."""
+    mapping = _shipped_mapping("programme-governance", tmp_path)
+    assert wizard._rewrite_prefix(mapping, "GOV_") == ()
+    assert load_mapping(mapping).mapping.previous_prefixes == ("", "ADOPT_")
+
+    other = _shipped_mapping("programme-governance", tmp_path / "other")
+    assert wizard._rewrite_prefix(other, "ADOPT_") == ("ADOPT_",)
+    assert load_mapping(other).mapping.previous_prefixes == ("",)
+
+
+def test_a_block_style_previous_prefixes_is_refused(tmp_path: Path) -> None:
+    """A one-line rewrite cannot edit a list spread over several lines: it
+    would replace the `previous_prefixes:` line and leave the entries under
+    it dangling as a second document-level list. Fail closed instead."""
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes:\n  - ""\n  - "ADOPT_"\nentities: {}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(wizard.WizardError, match="not a single flow-style list"):
+        wizard._rewrite_prefix(mapping, "")
+
+
+def test_the_dropped_previous_prefix_is_reported_not_silent(
+    tmp_path: Path,
+) -> None:
+    """A mapping that no longer matches the template it was copied from is
+    said out loud, because the copy is the operator's to maintain."""
+    destination = tmp_path / "site"
+    choice = wizard.TemplateChoice(load_solution("programme-governance"), "", ())
+    answers = wizard.Answers(
+        destination=destination,
+        site_url="https://contoso.sharepoint.com/sites/x",
+        site_role="default",
+        templates=(choice,),
+        build=False,
+        reader="",
+        seed=False,
+    )
+
+    _, _, dropped = wizard._scaffold(answers)
+
+    assert dropped == [(
+        "programme-governance: dropped the unprefixed entry from "
+        "previous_prefixes, since that is the prefix you chose. "
+        "Existing lists are still found under it"
+    )]
 
 
 def test_the_declined_build_prints_a_runnable_command(tmp_path: Path) -> None:
@@ -2480,10 +2597,12 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
 
     The wizard reads roles, demo items and the reader group from the SHIPPED
     mapping so it can ask about them before writing anything. That is only
-    sound because `_rewrite_prefix` is a single-line regex on `^prefix:` --
-    entities, permissions and demo_items are byte-identical in the copy.
-    Argued once in the spec; pinned here, because a future rewrite that
-    touched a second line would make every gate answer the wrong question.
+    sound because `_rewrite_prefix` edits two named lines and no others:
+    `prefix:`, and `previous_prefixes:` when the prefix chosen is one the
+    template already listed as previous (#378). Entities, permissions and
+    demo_items are byte-identical in the copy. Argued once in the spec;
+    pinned here, because a rewrite reaching a third line would make every
+    gate answer the wrong question.
     """
     solutions = available_solutions()
     # A guard, not a formality: the loop below would pass just as happily
