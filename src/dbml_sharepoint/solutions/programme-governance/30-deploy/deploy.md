@@ -119,7 +119,7 @@ and a mail gateway treat them as text, and node refuses an unknown
 extension with `ERR_UNKNOWN_FILE_EXTENSION` before it parses anything.
 Feeding the file on stdin and naming the dialect is the form CI uses.
 
-Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 101
+Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 105
 non-lookup columns, 6 phase-2 lookup columns, 58 indexed columns, 57 views,
 26 formatted columns, and **0 validation errors and 0 validation
 warnings**. A number that differs from these means the schema or the
@@ -203,19 +203,39 @@ visible.
       A **NOT-VERIFIED** with date cases skipped means the browser's zone
       differs from the site's; paste from a browser set to the site's zone.
 - [ ] All ten lists exist, created in this order: `GOV_Workstream`,
-      `GOV_Stakeholder`, `GOV_Activity`,
-      `GOV_Involvement`, `GOV_ServiceRequest`,
-      `GOV_Risk`, `GOV_Action`, `GOV_Issue`,
-      `GOV_Decision`. A list title is the prefix and the bare entity name;
-      it is the columns that carry spaced display titles.
-- [ ] Both deferred lookups resolved: `RelatedRisk` on
-      `GOV_Action` and on `GOV_Issue`, each pointing at
-      `GOV_Risk`. Create a test risk and confirm both pickers
-      offer it by title.
+      `GOV_Stakeholder`, `GOV_BusinessProcess`, `GOV_Activity`,
+      `GOV_Involvement`, `GOV_Decision`, `GOV_ServiceRequest`,
+      `GOV_Risk`, `GOV_Issue`, `GOV_Action`. A list title is the prefix
+      and the bare entity name; it is the columns that carry spaced
+      display titles.
+- [ ] All six deferred lookups resolved. A lookup is deferred to Phase 2.2
+      when its target's display column is not the built-in `Title`, and
+      both `GOV_Risk` and `GOV_Decision` display a calculated one
+      (`LiveRiskTitle`, `LiveDecisionTitle`), so every lookup into either
+      is deferred, the `GOV_Decision` self-reference included. The
+      manifest's Phase 2.2 table is the list:
+
+      | List | Column | Target |
+      | --- | --- | --- |
+      | `GOV_Decision` | `SupersedesDecision` | `GOV_Decision` |
+      | `GOV_ServiceRequest` | `AuthorisingDecision` | `GOV_Decision` |
+      | `GOV_Risk` | `ToleranceDecision` | `GOV_Decision` |
+      | `GOV_Issue` | `RelatedRisk` | `GOV_Risk` |
+      | `GOV_Action` | `RelatedRisk` | `GOV_Risk` |
+      | `GOV_Action` | `AuthorisingDecision` | `GOV_Decision` |
+
+- [ ] The two pickers show only live rows, which is the property the
+      deferral exists to deliver and the one nothing else checks. Create a
+      test risk and confirm both `RelatedRisk` pickers offer it by title,
+      then close it and confirm it drops out. Create a decision, leave it
+      `Proposed`, and confirm none of the four `GOV_Decision` pickers offer
+      it; approve it and confirm all four do.
 - [ ] All forty-seven declared views appear:
       - **Workstream**: *The programme* (the default).
       - **Stakeholder**: *Active stakeholders* (the default), *By kind*,
         *Retired stakeholders*, *Changed since last review*.
+      - **Business Process**: *The mapping queue* (the default), *Unowned*,
+        *By workstream*, *Mapped*.
       - **Activity**: *My accountabilities* (the default),
         *Confirmation due*, *Never confirmed*, *Needs review*, *By workstream*,
         *Workstream leads*, *Decisions and approvals*, *Retired*, *Changed
