@@ -1749,11 +1749,11 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
             counted += 1
             worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
     # The template count alone cannot see this. A family that gains or loses a
-    # LIST keeps the roster at 33 while the distribution above moves under it,
+    # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 65, (
-        f"{counted} entities were surveyed, not the 65 the distribution above "
+    assert counted == 66, (
+        f"{counted} entities were surveyed, not the 66 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."
