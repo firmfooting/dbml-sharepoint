@@ -673,6 +673,16 @@ LIFECYCLE_SUFFIXES: tuple[str, ...] = ("Status", "State", "Rating", "Severity", 
 DEADLINE_NAME = re.compile(r"(Due|Expiry|Expires|Expiration|Deadline|Renewal)", re.IGNORECASE)
 DATE_TYPES: frozenset[str] = frozenset({"date", "datetime", "calculated_date"})
 
+# The one shared column name that is two mechanisms on purpose (#412). Both
+# shapes are legitimate and the pair is deliberately NOT collapsed to one, so
+# what is pinned is that each declaration's note names its own mechanism.
+# Anything outside these two types is a shape nobody has argued for.
+REVIEW_DUE_NAME = "NextReviewDue"
+REVIEW_DUE_TYPES: dict[str, re.Pattern[str]] = {
+    "calculated_date": re.compile(r"\bcalculated\b", re.IGNORECASE),
+    "date": re.compile(r"\byou set this\b", re.IGNORECASE),
+}
+
 _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
 
 
@@ -872,6 +882,45 @@ def test_lifecycle_and_deadline_columns_carry_column_formatting(template: str) -
                 problems.append(f"{entity}.{name} ({column_type}): lifecycle/severity, unformatted")
             elif deadline:
                 problems.append(f"{entity}.{name} ({column_type}): deadline date, unformatted")
+    assert not problems, f"{template}: " + "; ".join(problems)
+
+
+@pytest.mark.parametrize("template", _uplifted())
+def test_a_next_review_due_declares_who_sets_it(template: str) -> None:
+    """#412: `NextReviewDue` is calculated in some families and typed in
+    others, and the two are indistinguishable by name.
+
+    The divergence is deliberate. The name states WHEN the next review falls,
+    which is the same fact everywhere; the mechanism differs because a cadence
+    formula needs a written review policy to encode, and a backlog sweep or an
+    evidence theme has none. `programme-governance` ships both shapes in one
+    family for exactly that reason.
+
+    What must never diverge is whether the column says which it is, because
+    the note becomes the column's Description and is the only part of this
+    reaching somebody reading the list. Without it, a report joining across
+    two families treats a derived value and a hand-keyed one as one measure.
+    """
+    loaded = _load(template)
+    problems: list[str] = []
+    for entity in sorted(loaded.mapping.entities):
+        for table in loaded.schema.tables:
+            if table.name != entity:
+                continue
+            for column in table.columns:
+                if column.name != REVIEW_DUE_NAME:
+                    continue
+                if column.type not in REVIEW_DUE_TYPES:
+                    problems.append(
+                        f"{entity}.{column.name}: type {column.type!r} is a third shape",
+                    )
+                    continue
+                wanted = REVIEW_DUE_TYPES[column.type]
+                if not wanted.search(column.note):
+                    problems.append(
+                        f"{entity}.{column.name} ({column.type}): the note does not match "
+                        f"{wanted.pattern}, so the list will not say who sets it",
+                    )
     assert not problems, f"{template}: " + "; ".join(problems)
 
 
