@@ -169,7 +169,7 @@
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
           ), {
             method: 'POST', headers: spHeaders(digestF),
-            body: JSON.stringify(fieldBody),
+            body: JSON.stringify(createBody),
           });
           if (!addResp.ok) {
             throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
@@ -569,9 +569,46 @@
     // ---- The start stamp, last -----------------------------------------
     // Written once the phase's own setup has fully succeeded, so a start
     // stamp exists only for a run that got past creating its log lists.
+<<<<<<< HEAD
     await stampRunLog('deployment start',
       `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; `
       + `site {{ site_url }}; role {{ site_role }}`);
+=======
+    // The item POST carries the run log's real entity type: a typeless
+    // entry is refused (live finding 2026-09-05, "An entry without a type
+    // name was found").
+    try {
+      const runTypeResp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')?$select=ListItemEntityTypeFullName`
+      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!runTypeResp.ok) {
+        throw new Error(`entity-type probe: HTTP ${runTypeResp.status}`);
+      }
+      const runEntityType = (await runTypeResp.json()).d.ListItemEntityTypeFullName;
+      const digest = await getDigest();
+      const resp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
+      ), {
+        method: 'POST', headers: spHeaders(digest),
+        body: JSON.stringify({
+          __metadata: { type: runEntityType },
+          Title: `dbml-sharepoint deployment start: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
+            + `at ${new Date().toISOString()}`.slice(0, 255),
+          StampKind: 'deployment start',
+          StampUtc: new Date().toISOString(),
+          ReleaseTag: RELEASE_TAG,
+          SchemaVersion: SCHEMA_VERSION,
+          Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
+          Details: `site {{ site_url }}; role {{ site_role }}`.slice(0, 255),
+        }),
+      });
+      if (!resp.ok) {
+        recordFailure('run log start', new Error(`HTTP ${resp.status} ${await resp.text()}`));
+      }
+    } catch (err) {
+      recordFailure('run log start', err);
+    }
+>>>>>>> origin/feat/deployment-logging
     log('INFO', `Run log '${RUN_LOG_TITLE}' stamped; `
       + (changeLogReady
         ? `change log '${CHANGE_LOG_TITLE}' ready.`
