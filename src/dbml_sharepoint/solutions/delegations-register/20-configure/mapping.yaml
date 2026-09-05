@@ -16,6 +16,30 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
+# One calculated column, and only one. What is computed here is the review
+# cadence, so that the date cannot be pushed out by somebody who has not
+# checked the row against the instrument.
+#
+# Twelve months on from the last review, which is the annual instrument
+# review 50-govern sets and which the register review rides along with. Flat
+# rather than banded: this register has nothing to band on, because a
+# delegation is not more or less likely to drift by its area or its limit. It
+# drifts when the instrument changes, and the instrument changes for all of
+# them at once.
+#
+# Blank until a first review is dated, which the list rule below then makes
+# unreachable on a Current row. A Superseded row keeps its date: the
+# arithmetic is a fact about when the row was last verified, and the
+# escalation colour is what the formatting guard suppresses.
+#
+# The month-end clamp: DATE(Y, M+12, D) alone overflows rather than clamping,
+# so a review recorded on 31 August would fall due on 3 March rather than 28
+# February (#418). MIN against DATE(Y, M+13, 0), the day before the first of
+# the following month, holds it to the last real day of the target month.
+calculated_formulas:
+  Delegation:
+    NextReviewDue: '=IF(ISBLANK([LastReviewedDate]),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0)))'
+
 # Security: the register transcribes a formally approved instrument, so
 # governance coordinators maintain; everyone reads (that is the point);
 # Full Control confined to the empty-by-default admin group.
@@ -99,10 +123,15 @@ column_formatting:
     # a superseded row's review date is a fact about a delegation that no
     # longer exists, and a date that keeps shouting after the row is
     # finished trains people to ignore the colour.
-    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Superseded] } }
-    # ApprovedDate is deliberately unformatted. It stamps when the
-    # delegating authority approved the instrument this row came from,
-    # a historical fact with no late state.
+    NextReviewDue:
+      style: overdue-date
+      calculated: true
+      guard: { field: Status, not: [Superseded] }
+    # ApprovedDate and LastReviewedDate are deliberately unformatted. One
+    # stamps when the delegating authority approved the instrument this row
+    # came from, the other when somebody last checked the row against it.
+    # Both are historical facts with no late state, and an overdue treatment
+    # on either would colour every mature row red.
 
 # Every lens shows the same four identifying columns before its own
 # payload, so the spine is declared once (section 1.9).
@@ -154,25 +183,32 @@ views:
         DelegationLimit: 200
         Conditions: 220
         SourceInstrument: 220
-    # The published table filtered on ReviewDate alone. Status is added
+    # The published table filtered on the review date alone. Status is added
     # here: a superseded row's review date is a fact about a delegation
     # that no longer exists, and leaving those in the queue asks the
     # quarterly spot-check to re-review authority nobody holds. today+90 is
     # a ROLLING ninety days; CAML has no calendar-period predicate, and
     # 50-govern's cadence is quarterly, so rolling is also the honest read.
+    #
+    # Both halves of the review are on it. The queue is ordered by the
+    # forward date, and the backward one beside it is what tells a
+    # coordinator whether a row is due because a year has passed or due
+    # because nobody has looked since the instrument was signed.
     - title: "Reviews due"
-      fields: ["@identity", ReviewDate, ApprovedDate, SourceInstrument]
+      fields: ["@identity", NextReviewDue, LastReviewedDate, ApprovedDate,
+               SourceInstrument]
       where:
         - { field: Status, op: eq, value: "Current" }
-        - { field: ReviewDate, op: leq, value: today+90 }
+        - { field: NextReviewDue, op: leq, value: today+90 }
       sort:
-        - { field: ReviewDate, direction: asc }
+        - { field: NextReviewDue, direction: asc }
       widths:
         Title: 300
         DelegationArea: 220
         RoleHolder: 200
         Status: 110
-        ReviewDate: 160
+        NextReviewDue: 160
+        LastReviewedDate: 180
         ApprovedDate: 160
         SourceInstrument: 220
     # The audit trail of authority over time. Notes is in this view rather
@@ -217,7 +253,9 @@ views:
 # conditional: every column applies to every row, including a superseded
 # one, whose limit and conditions are precisely what an auditor is reading.
 # Hiding Notes until supersession was considered and rejected: it also
-# carries interpretation rulings, which belong on live rows.
+# carries interpretation rulings, which belong on live rows. The manifest
+# does show one entry: retiring ReviewDate synthesises its own, which is how
+# a retired column leaves the New form.
 form_formatting:
   Delegation:
     header: formatting/delegation-form-header.json
@@ -238,9 +276,27 @@ column_validation:
         when:
           - { field: ApprovedDate, op: leq, value: today }
         message: "An instrument cannot have been approved in the future. Use the date the delegating authority actually approved it."
+      # The backward half of the review, and the baseline the whole cadence
+      # counts from: NextReviewDue is computed from it, "Reviews due"
+      # filters on that, and the overdue formatting keys off it. A date
+      # typed with next year's year pushes the next review out by a year and
+      # drops the delegation off the queue silently.
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date somebody actually checked this row against the instrument."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# ONE rule, written as an implication: `if A then B` is `any_of[not A, B]`.
+# TWO rules, chained. A list has ONE ValidationFormula, so both share this
+# slot: the top-level list is an AND, so they compose, and each is written as
+# an implication: `if A then B` is `any_of[not A, B]`, which is why both
+# branches start with the case the rule does not apply to.
+#
+# They also share ONE message, which is the real cost and the reason a rule
+# belongs on its column whenever it can reference only that column (see
+# column_validation above). The message names both checks rather than
+# describing one, because SharePoint cannot tell the author which branch
+# failed.
 list_validation:
   Delegation:
     when:
@@ -252,7 +308,32 @@ list_validation:
       - any_of:
           - { field: Status, op: neq, value: "Superseded" }
           - { field: Notes, op: is_not_null }
-    message: "A superseded delegation needs its supersession recorded in Notes: which instrument version replaced it, and where the authority went. The History view is only an audit trail if that line is there."
+      # ReviewDate was `not null`, so every row carried a review date. This
+      # is where that strength goes: a Current row still cannot be saved
+      # without one, and a Superseded row may leave it blank, because
+      # nobody is going to review an authority that no longer exists and
+      # inventing a date for the History view would be worse than a gap.
+      # Without it a live delegation has no NextReviewDue, never reaches
+      # the Reviews due queue, and nobody is asked whether it still matches
+      # the instrument.
+      - any_of:
+          - { field: Status, op: neq, value: "Current" }
+          - { field: LastReviewedDate, op: is_not_null }
+    message: "This delegation cannot be saved yet. Check both: a superseded delegation needs its supersession recorded in Notes (which instrument version replaced it, and where the authority went), because the History view is only an audit trail if that line is there; and a current delegation needs a Last Reviewed Date, because that is what the next review is counted from."
+
+# ReviewDate was one hand-set date standing for both halves of a review, so
+# moving it forward destroyed the evidence that a review had happened (#413).
+# Split into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+retired_columns:
+  Delegation:
+    ReviewDate:
+      retired: "2026-09-06"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " so sample data stays visible in every view and form.
@@ -262,7 +343,9 @@ list_validation:
 # Coverage: four current authorities across four areas and four roles, so
 # both grouped views have more than one group, two of them inside the
 # ninety-day review window, and one superseded row carrying its
-# supersession trail.
+# supersession trail. Rows carry LastReviewedDate only; NextReviewDue is
+# calculated, so SharePoint fills it in, and each date is set twelve months
+# before the review the row is meant to land on.
 demo_items:
   Delegation:
     - key: dg-opex
@@ -274,7 +357,7 @@ demo_items:
         Conditions: "two signatories above $20,000; excludes own directorate"
         SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s3.1(b)"
         ApprovedDate: "today-200"
-        ReviewDate: "today+165"
+        LastReviewedDate: "today-200"
         Status: "Current"
     - key: dg-procure
       values:
@@ -285,7 +368,7 @@ demo_items:
         Conditions: "competitive process completed; probity sign-off above $150,000"
         SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s4.2(a)"
         ApprovedDate: "today-200"
-        ReviewDate: "today+40"
+        LastReviewedDate: "today-325"
         Status: "Current"
     - key: dg-hire
       values:
@@ -296,7 +379,7 @@ demo_items:
         Conditions: "position exists in the approved establishment and is funded"
         SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s6.1"
         ApprovedDate: "today-200"
-        ReviewDate: "today+60"
+        LastReviewedDate: "today-305"
         Status: "Current"
     - key: dg-records
       values:
@@ -307,7 +390,7 @@ demo_items:
         Conditions: "legal advice obtained where the basis is contested"
         SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s8.3"
         ApprovedDate: "today-200"
-        ReviewDate: "today+300"
+        LastReviewedDate: "today-65"
         Status: "Current"
     - key: dg-superseded
       values:
@@ -318,6 +401,6 @@ demo_items:
         Conditions: "own cost centre only"
         SourceInstrument: "[DEMO] Instrument of Delegation v3.6, s3.1(c)"
         ApprovedDate: "today-900"
-        ReviewDate: "today-500"
+        LastReviewedDate: "today-865"
         Status: "Superseded"
         Notes: "Demo row. Superseded by v4.2 s3.1(b), which raised the limit and moved the authority to the Director of Nursing. Approvals dated before that version still read against this row."

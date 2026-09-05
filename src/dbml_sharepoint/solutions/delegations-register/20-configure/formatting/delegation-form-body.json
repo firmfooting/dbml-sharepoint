@@ -10,7 +10,7 @@
     },
     {
       "displayname": "Source and review",
-      "fields": ["SourceInstrument", "ApprovedDate", "ReviewDate", "Status", "Notes"]
+      "fields": ["SourceInstrument", "ApprovedDate", "LastReviewedDate", "NextReviewDue", "Status", "Notes"]
     }
   ]
 }

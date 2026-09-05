@@ -4,7 +4,7 @@
 
 Who may approve what, up to what limit, under which instrument. One list:
 `DG_Delegation`: each authority stated as a **role** (not a person), with
-its limit, conditions, source and review date.
+its limit, conditions, source and review dates.
 
 **The value case.** Every approval process in the organisation leans on
 delegations, and in most organisations they live in a PDF nobody can
@@ -20,7 +20,15 @@ authorised?", the second half of the answer comes from here.
 lookup), *By role* (the ten-second check before you sign), *Reviews due*,
 and *History*, which is how an approval made three years ago is read back
 against the authority that existed then. A superseded delegation cannot be
-saved without recording what replaced it. The form header links straight
+saved without recording what replaced it.
+
+**The review cadence is calculated, not typed.** `Last reviewed date`
+records the check that happened; `Next review due` is twelve months after
+it, the annual instrument review, and nobody can edit it. A review cannot
+be pushed out without claiming a check that did not happen, and a current
+delegation cannot be saved without a last reviewed date.
+
+The form header links straight
 to the instrument, because when the two disagree the instrument wins;
 substituting that URL is a blocking step in `30-deploy/deploy.md`. Build
 with `--seed` and five demo rows show every view working before you

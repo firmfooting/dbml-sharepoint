@@ -1,7 +1,43 @@
-release: "1.0.0"
-date: "2026-07-22"
+release: "1.1.0"
+date: "2026-09-06"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.0.1"
+schema_version: "1.1.0"
 notes: |
-  Delegations register template. Bump schema_version on any DBML/mapping
+  1.1.0 splits ReviewDate into LastReviewedDate and NextReviewDue. One
+  hand-set date stood for both halves of a review, so moving it forward
+  destroyed the evidence that a review had happened and nothing could tell a
+  register checked against the instrument from one nobody had opened (#413).
+
+  LastReviewedDate is the backward half: when somebody last checked the row
+  still matches the instrument, clause and wording. It cannot be dated in the
+  future.
+
+  NextReviewDue is CALCULATED from it, twelve months on, which is the annual
+  instrument review 50-govern sets and which the register review rides along
+  with. Nobody can type it, so nobody can push a review out. Flat rather than
+  banded: a delegation does not drift by its area or its limit, it drifts when
+  the instrument changes, and the instrument changes for all of them at once.
+
+  The cadence clamps at month end. A review dated 31 August falls due on
+  28 February, not 3 March: DATE(Y, M+12, D) alone overflows, so the formula
+  takes the MIN of it and the last day of the target month (#418).
+
+  ReviewDate was `not null`, so every row carried a review date. That strength
+  moves to a second arm of the list rule: a Current row cannot be saved
+  without a LastReviewedDate, and a Superseded one may leave it blank, because
+  nobody reviews an authority that no longer exists. The list message now
+  names both checks, since SharePoint cannot say which branch failed.
+
+  "Reviews due" filters and sorts on NextReviewDue and carries
+  LastReviewedDate beside it, which is what separates a row due because a year
+  has passed from one due because nobody has looked since the instrument was
+  signed.
+
+  ReviewDate is RETIRED, not deleted. It keeps its values, drops off every
+  view and the New form, and reads "Review Date (retired)". The two dates do
+  not mean the same thing, so transferring them is a judgement per row rather
+  than a copy; 30-deploy/deploy.md says how. Then delete the column with the
+  columns sidecar.
+
+  1.0.0 delegations register template. Bump schema_version on any DBML/mapping
   change before redeploying.

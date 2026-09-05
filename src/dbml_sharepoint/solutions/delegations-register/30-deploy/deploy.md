@@ -31,8 +31,15 @@ follow.
       (`10-design/schema.dbml`). It is the grouping level of the default
       view, so its members become that view's headings.
 - [ ] **Decide your review horizon before first deploy.** The *Reviews
-      due* view filters `ReviewDate <= today+90`. Change the `today+90` in
-      `mapping.yaml` now if your governance calendar differs.
+      due* view filters `NextReviewDue <= today+90`. Change the `today+90`
+      in `mapping.yaml` now if your governance calendar differs.
+- [ ] **Decide your review cadence before first deploy.** `NextReviewDue`
+      is calculated twelve months after `LastReviewedDate`, which is the
+      annual instrument review in `50-govern/governance.md`. If yours runs
+      on another period, change both `+12` and the `+13` beside it in
+      `calculated_formulas` now: the second is the month-end clamp and has
+      to stay one month ahead of the first. Changing it after rows exist
+      recalculates every one of them.
 - [ ] You know who forms **DG Governance Coordinators**.
 - [ ] The header shows `Delegation: <title>` on a saved row and
       `New delegation` before the title is filled in, updating live as it
@@ -69,8 +76,9 @@ approved.
 
 ## After the paste: verification checklist
 
-- [ ] `DG_Delegation` exists; `RoleHolder`, `SourceInstrument` and
-      `ReviewDate` required.
+- [ ] `DG_Delegation` exists; `RoleHolder` and `SourceInstrument` required.
+      `Review Date (retired)` is present, off every view and off the New
+      form, and no longer required.
 - [ ] All four declared views appear: **By area** (the default),
       **By role**, **Reviews due**, **History**. If you seeded, none of
       them is empty. The generated **All Items** recovery view is hidden
@@ -86,7 +94,11 @@ approved.
       longer exists, and leaving those in the queue asks the quarterly
       spot-check to re-review authority nobody holds. It is also a
       **rolling** ninety days, not "this quarter": CAML has no
-      calendar-period predicate, and the two differ at every boundary.
+      calendar-period predicate, and the two differ at every boundary. It
+      carries both halves of the review: `Next review due`, which orders the
+      queue, and `Last reviewed date` beside it, which is what separates a
+      row due because a year has passed from one due because nobody has
+      looked since the instrument was signed.
 - [ ] **History** sorts on `ApprovedDate` descending and shows `Notes`,
       which is where the supersession trail lives.
 - [ ] The instrument link in the form header opens **your** instrument,
@@ -99,16 +111,33 @@ approved.
       `20-configure/formatting/delegation-form-body.json`. There is no
       System section, and nothing on this form is conditional: every
       column applies to every row, including a superseded one, whose limit
-      and conditions are exactly what an auditor is reading.
-- [ ] The list carries **one** save rule: set `Status` to **Superseded**
-      with `Notes` empty and the save is refused, naming what the note has
-      to say.
-- [ ] `ApprovedDate` refuses a future date with its own message. That rule
-      lives on its column rather than on the list because a column rule
-      keeps a message of its own; the list has only one to share.
-- [ ] `ReviewDate` escalates to the severe treatment once it is past, and
-      the escalation is suppressed on a **Superseded** row. Set a test row
-      to Superseded and confirm the colour drops.
+      and conditions are exactly what an auditor is reading. `Next review
+      due` is absent from the New form, because calculated columns never
+      render on entry forms, and `Review Date (retired)` is absent because
+      it is retired.
+- [ ] **`Next review due` is calculated and cannot be typed.** Open any
+      delegation for edit: the field is read-only and reads exactly twelve
+      months after `Last reviewed date`. Move the last reviewed date back a
+      month and the due date moves with it. That is the point of the split:
+      a review cannot be pushed out without claiming a check that did not
+      happen.
+- [ ] **The month end clamps.** Set `Last reviewed date` to 31 August and
+      `Next review due` reads 28 February (29 in a leap year), not 3 March.
+- [ ] The list carries **two** save rules, sharing one message because
+      SharePoint gives a list one. Set `Status` to **Superseded** with
+      `Notes` empty and the save is refused; clear `Last reviewed date` on a
+      **Current** row and it is refused too. The message names both checks,
+      because SharePoint cannot say which branch failed.
+- [ ] `ApprovedDate` and `Last reviewed date` both refuse a future date.
+      Their sentences are joined onto the list message: a date rule that
+      compares against `today` is enforced on the list rather than on its
+      column, because the formula clock behind `TODAY()` runs hours behind
+      the site (see the manifest's List validation section).
+- [ ] `Next review due` escalates to the severe treatment once it is past,
+      and the escalation is suppressed on a **Superseded** row. Set a test
+      row to Superseded and confirm the colour drops. The date itself stays:
+      it says when the authority was last verified, which is what the
+      History view is read for.
 - [ ] As an ordinary Member: read-only.
 - [ ] **Load from the instrument**: one row per delegable authority,
       role-not-person, limits and conditions in the instrument's own
@@ -141,6 +170,33 @@ declaration: a view retitled by hand comes back under its declared title.
 **Re-check the header link after any redeploy**: the header JSON is
 reconciled from the file, so a URL edited in the SharePoint UI is reverted
 to whatever the file says.
+
+### Coming from 1.0.x: transferring Review date
+
+1.1.0 splits `ReviewDate` into `Last reviewed date` and a calculated `Next
+review due`. The old column is **retired, not deleted**: it keeps its values,
+drops off every view and the New form, and reads `Review Date (retired)`.
+
+The two dates do not mean the same thing, so this is not a copy. `ReviewDate`
+held the *next* review; `Last reviewed date` holds the *last* one, and nobody
+recorded it. For each Current row, set `Last reviewed date` to the date
+somebody actually last checked the row against the instrument. Where nobody
+knows, the instrument's own `Approved date` is the honest floor: the row was
+transcribed from that version, so it was true then and has not been checked
+since. `ReviewDate` minus twelve months is available as a reconstruction where
+the row genuinely was on the annual cycle, and it lands the row in the same
+place in the queue.
+
+**Do this before the first edit, not after.** Until a Current row has a `Last
+reviewed date` it has no `Next review due`, so it is missing from *Reviews
+due* entirely rather than sitting in it overdue. The save rule catches it the
+moment anybody edits the row, which makes the transfer unavoidable but not
+immediate; the view is empty in the meantime and that is not the register
+being up to date.
+
+Once every row is transferred, run the columns sidecar on `DG_Delegation` to
+delete `ReviewDate`, plus anything else its table shows that the schema no
+longer declares.
 
 ## Enterprise reporting access
 
