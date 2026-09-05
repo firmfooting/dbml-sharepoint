@@ -216,14 +216,14 @@ visible.
       is deferred, the `GOV_Decision` self-reference included. The
       manifest's Phase 2.2 table is the list:
 
-      | List | Column | Target |
-      | --- | --- | --- |
-      | `GOV_Decision` | `SupersedesDecision` | `GOV_Decision` |
-      | `GOV_ServiceRequest` | `AuthorisingDecision` | `GOV_Decision` |
-      | `GOV_Risk` | `ToleranceDecision` | `GOV_Decision` |
-      | `GOV_Issue` | `RelatedRisk` | `GOV_Risk` |
-      | `GOV_Action` | `RelatedRisk` | `GOV_Risk` |
-      | `GOV_Action` | `AuthorisingDecision` | `GOV_Decision` |
+| List | Column | Target |
+| --- | --- | --- |
+| `GOV_Decision` | `SupersedesDecision` | `GOV_Decision` |
+| `GOV_ServiceRequest` | `AuthorisingDecision` | `GOV_Decision` |
+| `GOV_Risk` | `ToleranceDecision` | `GOV_Decision` |
+| `GOV_Issue` | `RelatedRisk` | `GOV_Risk` |
+| `GOV_Action` | `RelatedRisk` | `GOV_Risk` |
+| `GOV_Action` | `AuthorisingDecision` | `GOV_Decision` |
 
 - [ ] The two pickers show only live rows, which is the property the
       deferral exists to deliver and the one nothing else checks. Create a
