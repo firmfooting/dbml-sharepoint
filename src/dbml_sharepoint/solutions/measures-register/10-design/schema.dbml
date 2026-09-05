@@ -37,7 +37,9 @@ Table Measure {
   Target      nvarchar           [note: 'The target and its unit: "95%", "under 10 days", "between 85 and 100". Blank = monitored, not targeted']
   ReportedTo  nvarchar           [not null, note: 'The forum(s) that see it: team meeting, executive, board, regulator']
   Status      measure_status     [not null, default: 'Active']
-  ReviewDate  date               [note: 'Next definition/usefulness review, at least annual']
+  LastReviewedDate date          [note: 'When the definition was last actually re-tested against the two-strangers test. Blank means nobody ever has, which is why an Active measure cannot be saved without it']
+  NextReviewDue    calculated_date [note: 'When the definition is next re-tested. Calculated twelve months on from Last Reviewed Date, which is the cadence 50-govern sets. Nobody can type it, so nobody can push a review out. Blank on a retired measure and until the first review is dated']
+  ReviewDate  date               [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   Notes       richtext           [note: 'Definition change history (dated), known data caveats']
 
   indexes {

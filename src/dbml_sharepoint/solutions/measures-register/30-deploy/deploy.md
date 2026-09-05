@@ -69,14 +69,22 @@ site that already holds real measures.
 - [ ] **By forum** groups by `ReportedTo` with the groups collapsed, so the
       first thing you see is the list of forums rather than the list of
       measures. Retired measures are absent.
-- [ ] **Definition reviews due** shows Active measures with a review date
-      within 60 days, oldest first. On the seeded build the overdue one
-      sorts to the top and its date carries the red overdue treatment.
-- [ ] **Retired** shows the retired measure and its date renders **plain**,
-      not red, even though it is long past. That is the guard on the
-      overdue formatting working: a retired measure's review date is
-      history, and a date that keeps shouting after retirement trains
-      people to ignore the colour.
+- [ ] **Definition reviews due** shows Active measures whose `Next Review
+      Due` falls within 60 days, oldest first, with `Last Reviewed Date`
+      beside it. On the seeded build the overdue one sorts to the top and
+      its due date carries the red overdue treatment.
+- [ ] **`Next Review Due` is calculated and cannot be typed.** Open any
+      measure for edit: the field is read-only and reads exactly twelve
+      months after `Last Reviewed Date`. Move `Last Reviewed Date` back a
+      month and the due date moves back a month with it. That is the point
+      of the split: a review cannot be pushed out without claiming a review
+      that did not happen.
+- [ ] **The month end clamps.** Set `Last Reviewed Date` to 31 August and
+      `Next Review Due` reads 28 February (29 in a leap year), not 3 March.
+- [ ] **Retired** shows the retired measure with its `Last Reviewed Date`
+      and no due date at all. A retired measure's definition is history,
+      kept so old reports can be read, so the formula returns blank rather
+      than a date that keeps shouting after retirement.
 - [ ] List Settings -> Indexed columns shows `Status`, `MeasureArea` and
       `Frequency`. The build manifest lists the same three.
 - [ ] The New form shows four sections in order: **Name the measure**,
@@ -89,13 +97,13 @@ site that already holds real measures.
 - [ ] Nothing on this form appears or disappears as you fill it in. That is
       correct: no column here is conditional on another, so no
       `form_visibility` is declared and none is deployed.
-- [ ] **The two save rules.** Set `Status` to **Active** and clear
-      `ReviewDate`: the save is refused, naming the review date. Then set
-      a review date **two years** out: refused again, with its own
-      message about the annual cadence, because that rule reads only its
-      own column and so keeps its own wording. Leave the date blank on an
-      **Under development** measure and it saves: the list rule requires it
-      of Active measures only.
+- [ ] **The two save rules.** Set `Status` to **Active** and clear `Last
+      Reviewed Date`: the save is refused, naming the last reviewed date.
+      Then set a last reviewed date in the **future**: refused again, with
+      its own message, because that rule reads only its own column and so
+      keeps its own wording. Leave the date blank on an **Under
+      development** measure and it saves: the list rule requires it of
+      Active measures only.
 - [ ] **Load the current KPIs**: everything on today's dashboards and
       committee packs goes in now, including (especially) the ones whose
       definitions turn out to be folklore when someone tries to write them
@@ -113,6 +121,23 @@ site that already holds real measures.
 Bump `schema_version`, rebuild, re-paste. The five declared views are
 reconciled every run; views you create yourself are user content and are
 never touched.
+
+### Coming from 1.0.x: transferring Review Date
+
+1.1.0 splits `ReviewDate` into `Last Reviewed Date` and a calculated `Next
+Review Due`. The old column is **retired, not deleted**: it keeps its values,
+drops off every view and the New form, and reads `Review Date (retired)`.
+
+The two dates do not mean the same thing, so this is not a copy. `ReviewDate`
+held the *next* review; `Last Reviewed Date` holds the *last* one, and nobody
+recorded it. For each Active measure, set `Last Reviewed Date` to the date the
+definition was actually last re-tested. Where nobody knows, `ReviewDate` minus
+twelve months is the honest reconstruction of what the old column was
+asserting, and it lands the row in the same place in the review queue.
+
+Once every row is transferred, run the columns sidecar on `MR_Measure` to
+delete `ReviewDate`, plus anything else its table shows that the schema no
+longer declares.
 
 ## Enterprise reporting access
 

@@ -14,7 +14,7 @@
     },
     {
       "displayname": "Govern it",
-      "fields": ["Status", "ReviewDate", "Notes"]
+      "fields": ["Status", "LastReviewedDate", "NextReviewDue", "Notes"]
     }
   ]
 }
