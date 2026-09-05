@@ -16,17 +16,18 @@ against the checklist below. Template-specific notes follow.
       names **before** loading the catalogue: "The catalogue" groups on
       this column, and "Quality", "quality" and "Quality & Safety" group as
       three areas.
-- [ ] Decide the review cadence you will actually run. The save rule ships
-      at **twelve months**: a review date further out than that is
-      refused, because a measure nobody re-tests within a year has quietly
-      left the annual cull in `50-govern/governance.md`. Changing the
-      cadence means changing `column_validation` in `mapping.yaml` before
-      first deploy.
+- [ ] Decide the review cadence you will actually run. It ships at **twelve
+      months**, which is the annual cull in `50-govern/governance.md`, and it
+      is **calculated**: `Next Review Due` is twelve months after `Last
+      Reviewed Date` and cannot be typed. Changing the cadence means changing
+      the formula in `calculated_formulas` in `mapping.yaml` before first
+      deploy.
 - [ ] The header shows `Measure: <title>` on a saved row and `New measure`
-      before the title is typed, updating live. This list has no calculated
-      columns, so the header trap that bites the rest of the theme (a
-      calculated column always resolves empty in a form header, silently)
-      does not arise here. It still applies if you add one.
+      before the title is typed, updating live. The one calculated column on
+      this list, `NextReviewDue`, is on the form **body**, so the header trap
+      that bites the rest of the theme (a calculated column always resolves
+      empty in a form header, silently) does not arise. It applies the moment
+      anyone puts a calculated column in the header.
 
 ## Optional: the seeded demonstration build
 
@@ -48,8 +49,9 @@ dbml-sharepoint build \
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
 then `demo-data.js.txt`, from the same bundle. It creates six rows (four Active
 measures across four areas and four forums, one Under development with no
-review date, and one Retired), enough that every declared view has content
-and every status colour renders.
+review date at all, and one Retired), enough that every declared view has
+content and every status colour renders. The demo rows carry `Last Reviewed
+Date` only; `Next Review Due` is calculated, so SharePoint fills it in.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO]`, so they are obvious in every view, they are matched by Title on
