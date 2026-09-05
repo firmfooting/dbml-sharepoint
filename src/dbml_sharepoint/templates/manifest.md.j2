@@ -150,13 +150,20 @@ before any register is written:
 
 - **{{ sidecar_run_log_title }}** records this run: a start stamp, provenance
   naming the release and schema version the bundle was built from (and what the
-  env file supplied, if one was read), and a stop stamp written on every way out
-  -- success, abort, or error -- with the outcome and elapsed time. Nothing is
-  granted on it beyond what the running operator already holds.
+  env file supplied, if one was read), and a stop stamp with the outcome and
+  elapsed time. The stop stamp is written from the script's exit path, so every
+  way out of a run that REACHED this phase gets one -- success, abort, or
+  uncaught error. A run that dies before this phase has no log lists to stamp
+  and leaves no record, which is the state every deploy before this phase
+  existed in. Nothing is granted on the list beyond what the running operator
+  already holds.
 - **{{ sidecar_change_log_title }}** records CHANGES as type-2 rows: list
   creates, renames (old value and new value side by side), and enterprise-reader
-  enrolments, each with an effective-from time and the previous row closed out
-  with an effective-to time. Rows are insert-only from the deploy's side; the
+  enrolments, each carrying its key in `ChangeKey`, an effective-from time, and
+  the previous row for that key closed out with an effective-to time and
+  `IsCurrent` cleared. `ChangeKey` and `IsCurrent` are indexed: the close reads
+  them together in one filter, and this list is deliberately unbounded.
+  Rows are insert-only from the deploy's side; the
   enterprise-reader group is granted Read on this list so an external reader can
   collect them without touching the registers.
 
@@ -165,32 +172,30 @@ in the Description, compared whole. A list of the same title that is NOT this
 tool's stops the run rather than being written into. Neither list is created
 when the bundle was built with `--no-sidecars`, and neither is deleted by
 `rollback.js.txt`.
+
+Those two ownership refusals are the ONLY logging problems that stop a run.
+Every other one -- a column that would not create, a change row that would not
+write, a stamp SharePoint refused -- is recorded and carried past, because the
+registers this deploy maintains must not depend on the logs that document them.
+A `[WARN]` line counts them, once at the end of the phase for what its own
+setup could not do and once at the end of the run for everything after, and the
+returned summary lists each under `loggingFailures`, kept apart from `errors` so
+that a logging failure cannot trip a later phase's abort gate.
 {% if deployment_log_list %}
 
 This bundle also stamps a **central deployment log**: the site
 `{{ deployment_log_site }}` and the list `{{ deployment_log_list }}` on it,
-shared by every firmfooting application. What is created locally is the two
-sidecar lists above; what is written centrally is a start row, a provenance
-row and a stop row, sent cross-site to that list.
-
-The script checks three things before its first stamp -- the site exists, the
-list exists on it, and this account holds AddListItems (Contribute or better)
-on the list -- reading the permission from the list itself, not the web. Any
-miss degrades to an INFO line and the run carries on; the run log on THIS site
-always holds the record regardless.
-
-Neither the central site nor the central list is created by this deploy. The
-site is created by hand from the SharePoint start page, because this tool
-provisions lists and never sites. The list exists because somebody deployed
-the `deployment-log` template family to that site, which is an ordinary
-deploy of an ordinary family: it declares `{{ deployment_log_list }}` and
-provisions it like any other list. That first run stamps nothing centrally,
-because this phase probes for the list before any list is created; every
-deploy after it does. Point this bundle somewhere else with
-`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables). A list
-this tool did not provision still receives stamps, with the Title column
-filled and nothing else, because Title is the one column every generic
-SharePoint list has.
+shared by every firmfooting application. The script checks three things before
+its first stamp -- the site exists, the list exists on it, and this account
+holds AddListItems (Contribute or better) on the list -- reading the
+permission from the list itself, not the web. A miss on any of the three
+degrades to an INFO line and the run carries on. A stamp that gets past all
+three and is still refused is a logging failure like any other: a `[WARN]`
+count and an entry under `loggingFailures`, never an abort. The run log on
+THIS site holds the record either way. The central site and list are never
+created by a deploy: create
+them once with the deploy-central-log sidecar, or override both with
+`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables).
 {% endif %}
 {% endif %}
 

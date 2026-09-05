@@ -9,7 +9,6 @@ from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
-from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE, RUN_LOG_TITLE
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
@@ -32,8 +31,8 @@ def generate_manifest(
     manifest_extras: ManifestExtras | None = None,
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
-    sidecar_run_log_title: str | None = RUN_LOG_TITLE,
-    sidecar_change_log_title: str | None = CHANGE_LOG_TITLE,
+    sidecar_run_log_title: str | None = None,
+    sidecar_change_log_title: str | None = None,
     deployment_log_list: str = "",
     deployment_log_site: str = "",
 ) -> str:
@@ -50,6 +49,13 @@ def generate_manifest(
     ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
     required: this function has 19 call sites, and a required parameter
     would break every one of them.
+
+    The two ``sidecar_*_title`` parameters default to None, the SAME default
+    ``jsgen.generate_deploy_js`` carries. They used to default to the sidecar
+    titles, so a caller that passed neither to either function got a manifest
+    promising two log lists the deploy script it documents never emits. The
+    manifest describes what was built, so the default has to be the built
+    default and not the module's idea of a title.
     """
     template = script_env().get_template("manifest.md.j2")
 

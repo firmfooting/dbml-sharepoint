@@ -8,15 +8,13 @@ tool:
   deployment stop stamp, and provenance documentation naming what built
   the bundle, from which release, read at which time, by whom. Free text,
   no schema beyond Title, so the stamps stay human-readable in list
-  settings and reporting. The STRUCTURED form of the same stamps is the
-  central deployment log, which is a shipped template family rather than
-  a hand-rolled sidecar.
+  settings and reporting.
 
 - ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
-  one row per change with the old value and the new value side by side.
-  Hidden and insert-only from the deploy's point of view. The enterprise
-  reader group holds Read on it so a Power Automate enterprise reader can
-  pick rows up without touching the registers.
+  one row per change with the old value and the new value side by side,
+  keyed by ``ChangeKey``. Hidden and insert-only from the deploy's point of
+  view. The enterprise reader group holds Read on it so a Power Automate
+  enterprise reader can pick rows up without touching the registers.
 
 Both follow the verify scratch list's ownership pattern: the marker in the
 Description compared WHOLE, tool-owned (no family), fail closed on a list
@@ -35,24 +33,26 @@ RUN_LOG_TITLE = "dbml Local Log"
 #: has a name that survives a copy between environments.
 CHANGE_LOG_TITLE = "dbml_Logs"
 
-#: The CENTRAL deployment log every deploy stamps when it can reach one.
-#: Not created by a deploy: the list is what the `deployment-log` template
-#: family provisions, so it exists because somebody deployed that family
-#: to the central site. A deploy of any OTHER family probes this title and
-#: appends; it never creates it, and never creates the site it sits on.
+#: The external deployment log this tool appends to only when it already
+#: exists. Probed, never created: its absence means the site does not run
+#: one, and inventing it here would fight whoever owns it. Empty default:
+#: nothing is probed unless the operator names a list.
 EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
 
-#: The CENTRAL logging site the deployment log lives on, and the default
-#: every build probes unless the operator names another. One site per org
-#: collects every firmfooting application's deployment rows, so
+#: The CENTRAL logging site the external deployment log lives on, and the
+#: default every build probes unless the operator names another. One site
+#: per org collects every firmfooting application's deployment rows, so
 #: cross-application reporting reads one list instead of visiting each
-#: site. The SITE is created by hand (SharePoint start page, Create site):
-#: this tool provisions lists, never sites. A deploy that finds the site
-#: absent says so once and carries on.
+#: site. Probed, never created by a DEPLOY: a run that finds the site
+#: absent notes that and carries on. Creating it is the sidecar's job,
+#: because creating a whole site is a consent-shaped act, not a side
+#: effect of provisioning a register.
 CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
 
-#: The prefix every stamp's Title carries, so a row is recognisable as this
-#: tool's in a list somebody is reading by eye.
+#: The title-only row the external log receives. The list belongs to its
+#: operator and its schema is unknown, so the ONLY column every generic
+#: list is guaranteed is Title. Anything richer would make this tool
+#: refuse on somebody else's schema.
 EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
 
 #: The stamp columns the `deployment-log` family declares on the central
@@ -100,6 +100,14 @@ def scratch_marker_for(title: str) -> str:
     )
 
 
+#: The central deployment log's marker. Same grammar, own name: the sidecar
+#: owns the list by this Description compared whole, exactly like the
+#: on-site sidecars.
+def central_log_marker() -> str:
+    """The exact Description the sidecar owns ``dbml-deployment-log`` by."""
+    return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
+
+
 def run_log_title() -> str:
     """The run log's title, for templates and tests to share."""
     return RUN_LOG_TITLE
@@ -114,18 +122,29 @@ def change_log_title() -> str:
 #: when the list is first created. Single source of truth: the template
 #: renders these, so the runtime column set cannot drift from this
 #: declaration. Internal names follow from the titles SharePoint assigns
-#: (no spaces in any title). Title carries the change key; EffectiveTo and
-#: IsCurrent are the type-2 close; OldValue/NewValue are the payload the
+#: (no spaces in any title). ChangeKey carries the change key; EffectiveTo
+#: and IsCurrent are the type-2 close; OldValue/NewValue are the payload the
 #: Power Automate reader diffs.
 #:
-#: The __metadata type names are load-bearing, measured live 2026-09-05
-#: against dbml_Logs on firmfooting-logging: the verbose OData parser
-#: refuses a metadata-less entry ("An entry without a type name was
-#: found") and resolves only the type names its model knows. SP.FieldText
-#: and SP.FieldDateTime resolve; SP.FieldBoolean does NOT (FieldTypeKind 8
-#: must be announced as the base SP.Field); SP.Field resolves for anything
-#: else. Change the type name and the field create 400s.
+#: ``Indexed`` is part of the DECLARATION, not of the create body: the
+#: template strips it before the POST and asserts it with the same field
+#: MERGE `deploy/_indexes.js.j2` uses. A log created before a column was
+#: declared indexed carries it unindexed, and only a MERGE reaches those.
+#:
+#: ChangeKey and IsCurrent are indexed because the type-2 close reads
+#: ``$filter=ChangeKey eq '...' and IsCurrent eq true``, and BOTH sides of
+#: an AND must be indexed for the filter to survive the 5,000-item list view
+#: threshold. This list is deliberately unbounded: it gains a row per change
+#: forever.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "ChangeKey",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Indexed": True,
+        "Description": "The reporting row key this row belongs to.",
+    },
     {
         "__metadata": {"type": "SP.FieldText"},
         "Title": "ChangeKind",
@@ -169,9 +188,10 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "Description": "When the next change for this key took effect.",
     },
     {
-        "__metadata": {"type": "SP.Field"},
+        "__metadata": {"type": "SP.FieldBoolean"},
         "Title": "IsCurrent",
         "FieldTypeKind": 8,
+        "Indexed": True,
         "Description": "Whether this row is the current one for its key.",
     },
     {

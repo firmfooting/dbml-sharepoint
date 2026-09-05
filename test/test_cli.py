@@ -1,8 +1,12 @@
+import ast
 import hashlib
+import inspect
 import re
 import shutil
 import subprocess
 import sys
+import textwrap
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +29,13 @@ from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
 )
-from dbml_sharepoint.cli import app
+from dbml_sharepoint.cli import (
+    app,
+    build,
+    execute_build,
+    execute_extraction,
+    extract,
+)
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 
@@ -2235,6 +2245,182 @@ def test_an_env_file_can_supply_both_log_lists_and_a_flag_wins(
     )
     js2 = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
     assert '"dbml-deployment-log"' in js2  # the flag's value is what ships
+
+
+#: Every command that hands its whole option set to a shared executor, and
+#: the executor it hands them to. Both pairs, not just the one that broke:
+#: the defect is a property of the SHAPE, so a third pair added later is
+#: covered the day it is written.
+_DELEGATING_COMMANDS = ((build, execute_build), (extract, execute_extraction))
+
+
+def _forwarded_arguments(
+    command: Callable[..., Any], executor: Callable[..., Any],
+) -> dict[str, set[str]]:
+    """Read `command`'s call to `executor` out of `command`'s own source.
+
+    Source, not a call recorded through a monkeypatch: a parameter that is
+    never forwarded still has a DEFAULT on the other side, so a recorded
+    call carries the key regardless and the defect is invisible. What
+    distinguishes a forwarded parameter from a dropped one is whether the
+    call site mentions it at all, and only the source says that.
+
+    Returns one entry per argument, holding the names its value expression
+    reads, so `schema=_project_input(schema, ...)` counts as forwarding
+    `schema` while a keyword wired to the wrong variable does not. A
+    POSITIONAL argument is named from the executor's own signature, which
+    is how `extract` forwards its `source`.
+    """
+    def reads(value: ast.expr) -> set[str]:
+        return {inner.id for inner in ast.walk(value) if isinstance(inner, ast.Name)}
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(command)))
+    positional = list(inspect.signature(executor).parameters)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == executor.__name__
+        ):
+            forwarded = {
+                name: reads(value)
+                for name, value in zip(positional, node.args, strict=False)
+            }
+            forwarded.update({
+                keyword.arg: reads(keyword.value)
+                for keyword in node.keywords
+                if keyword.arg is not None
+            })
+            return forwarded
+    raise AssertionError(
+        f"{command.__name__}() no longer calls {executor.__name__}(...) by "
+        f"name; this guard reads that call out of the source and cannot find it.",
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "executor", "option"),
+    [
+        pytest.param(command, executor, option,
+                     id=f"{command.__name__}-{option}")
+        for command, executor in _DELEGATING_COMMANDS
+        for option in sorted(inspect.signature(command).parameters)
+    ],
+)
+def test_every_command_option_reaches_its_executor(
+    command: Callable[..., Any], executor: Callable[..., Any], option: str,
+) -> None:
+    """Every option a delegating command accepts is forwarded to its executor.
+
+    `--deployment-log-site` was declared, resolved, validated, echoed in
+    the provenance line, and then not passed: the flag and its documented
+    `''` disable were both silent no-ops, and a build naming a completely
+    different central site still emitted the default one. Nothing failed,
+    because `execute_build` has a default for that parameter and used it.
+
+    Parametrised per option so a failure names the dropped one rather than
+    reporting that a set comparison did not match. Structural on purpose:
+    it holds for the NEXT option added as well, which an end-to-end
+    assertion about one flag cannot do.
+    """
+    forwarded = _forwarded_arguments(command, executor)
+    assert option in forwarded, (
+        f"`{command.__name__}` accepts --{option.replace('_', '-')} but never "
+        f"passes it to {executor.__name__}(), so the option is a no-op however "
+        f"carefully it is validated. Add `{option}={option},` to the call."
+    )
+    assert option in forwarded[option], (
+        f"`{command.__name__}` passes {option}= to {executor.__name__}(), but "
+        f"the value it passes never reads the `{option}` parameter, so the "
+        f"option is still a no-op."
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "executor"), _DELEGATING_COMMANDS,
+    ids=[command.__name__ for command, _ in _DELEGATING_COMMANDS],
+)
+def test_no_command_option_is_forwarded_that_its_executor_cannot_accept(
+    command: Callable[..., Any], executor: Callable[..., Any],
+) -> None:
+    """The other half: nothing is forwarded under a name that is not a
+    parameter.
+
+    A keyword the executor does not declare is a TypeError at runtime
+    rather than a silent no-op, so this is the cheaper failure of the two.
+    It is here because the guard above only reads one direction, and a
+    rename applied to one side is exactly the edit that breaks the other.
+    """
+    accepted = set(inspect.signature(executor).parameters)
+    forwarded = set(_forwarded_arguments(command, executor))
+    assert forwarded <= accepted, (
+        f"{command.__name__}() forwards {sorted(forwarded - accepted)} to "
+        f"{executor.__name__}(), which does not accept it."
+    )
+
+
+def test_the_deployment_log_site_flag_reaches_the_emitted_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--deployment-log-site` names the site the script actually stamps.
+
+    The end-to-end half of the guard above. A build naming another org's
+    logging site used to emit the DEFAULT site name, so the operator read
+    a correct-looking flag in their build command and pasted a script that
+    wrote somebody else's log. Asserted on the emitted constant, because
+    that is the only thing the browser reads.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-site", "clientB-logging",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert 'EXTERNAL_LOG_SITE = "clientB-logging"' in js
+    # The CONSTANT, not the whole file: the default site name is also named
+    # in a live-finding comment about cross-web digests, which no build
+    # substitutes and no browser reads.
+    assert 'EXTERNAL_LOG_SITE = "firmfooting-logging"' not in js
+
+
+def test_an_empty_deployment_log_site_disables_the_external_stamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--deployment-log-site ''` is the disable, and disables both halves.
+
+    The site and the list are one feature: a script that knows a list name
+    and no site has nowhere to write it. Both constants have to come out
+    empty, or the emitted probe reads a site the operator turned off.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-site", "",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert 'EXTERNAL_LOG_SITE = ""' in js
+    assert 'EXTERNAL_LOG_TITLE = ""' in js
+    assert '"dbml Local Log"' in js  # the built-in sidecars stay
+
+    padded = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-site", " ",
+    ])
+    assert padded.exit_code == 2
+    assert "padded, or whitespace" in _normalise_rendered_output(padded.output)
+
+    spaced = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-site", "client B logging",
+    ])
+    assert spaced.exit_code == 2
+    assert "contains no spaces" in _normalise_rendered_output(spaced.output)
 
 
 def test_an_explicit_path_beats_the_project_default(

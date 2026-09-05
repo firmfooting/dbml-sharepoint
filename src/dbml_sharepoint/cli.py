@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
     EXTERNAL_LOG_DEFAULT,
+    run_log_title,
 )
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
@@ -543,19 +544,33 @@ def validate_enterprise_reader(address: str) -> None:
 
 
 def _env_keys_epilog() -> str:
-    """The `build` epilog: every env key with its full help, one per line.
+    """The `build` epilog: every env key with its full help, one per entry.
 
     Typer renders the epilog below the options table at FULL console width,
     so the prose column's width games don't apply and a long key can never
-    be ellipsised by an option name growing elsewhere. One key per line
-    keeps each name an unbreakable token even on a narrow console. The
+    be ellipsised by an option name growing elsewhere. The
     `--env-file` option help carries the bare key names; this panel is the
     authoritative key/help listing (live CI finding 2026-09-05: keys inside
     the options-table prose ellipsised at the windows runner's width once
     the deployment-log options widened the name column).
+
+    Entries are separated by a BLANK line, not a single newline: rich
+    reflows an epilog paragraph, so single newlines are collapsed and the
+    entries run together into one wrapped block on a narrow console. A blank
+    line is the paragraph break rich honours. Square brackets are escaped
+    for the same renderer -- `[x]` in a key's help would be read as markup
+    and disappear from the panel entirely.
     """
-    lines = [f"{setting.key}: {setting.help}" for setting in ENV_SETTINGS]
-    return "Environment file keys (dbml-sharepoint.env):\n" + "\n".join(lines)
+    lines = [
+        f"{_escape_rich(setting.key)}: {_escape_rich(setting.help)}"
+        for setting in ENV_SETTINGS
+    ]
+    return "Environment file keys (dbml-sharepoint.env):\n\n" + "\n\n".join(lines)
+
+
+def _escape_rich(text: str) -> str:
+    """Make `text` render literally in a rich-formatted help panel."""
+    return text.replace("[", r"\[")
 
 
 @app.command(epilog=_env_keys_epilog())
@@ -679,6 +694,7 @@ def build(
         enterprise_reader=enterprise_reader,
         env_file=_resolve_env_file(env_file),
         deployment_log_list=deployment_log_list,
+        deployment_log_site=deployment_log_site,
         change_log_list=change_log_list,
         no_sidecars=no_sidecars,
     )
@@ -735,6 +751,36 @@ def _validate_list_title(value: str, flag: str) -> None:
     if len(value) > MAX_DISPLAY_TITLE:
         raise typer.BadParameter(
             f"{flag} must be at most {MAX_DISPLAY_TITLE} characters.",
+        )
+
+
+def _validate_site_name(value: str, flag: str) -> None:
+    """Refuse a central-logging SITE name that cannot address a web.
+
+    A site name is not a list title: it is the last segment of
+    `/sites/<name>`, interpolated by `crossWebApi`, so the display-title
+    length limit is the wrong rule and a space is fatal rather than merely
+    confusing. What matters is that the segment stays one segment -- a
+    leading or trailing slash would produce `/sites//name` or a trailing
+    empty segment, and an embedded slash would silently address a different
+    web than the operator named.
+
+    The empty string is NOT validated here: `--deployment-log-site ''` is the
+    documented disable, checked by the caller before this runs.
+    """
+    if not value or value != value.strip():
+        raise typer.BadParameter(f"{flag} must not be empty, padded, or whitespace.")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
+        raise typer.BadParameter(f"{flag} must not contain control characters.")
+    if any(c.isspace() for c in value):
+        raise typer.BadParameter(
+            f"{flag} names a site's URL segment, which contains no spaces "
+            f"(got {value!r}). Use the name as it appears in /sites/<name>.",
+        )
+    if value.startswith("/") or value.endswith("/"):
+        raise typer.BadParameter(
+            f"{flag} must be the site's name alone, with no leading or "
+            f"trailing '/' (got {value!r}).",
         )
 
 
@@ -939,7 +985,7 @@ def execute_build(
     if resolved_external is not None and resolved_external != "":
         _validate_list_title(resolved_external, "--deployment-log-list")
     if resolved_site is not None and resolved_site != "":
-        _validate_list_title(resolved_site, "--deployment-log-site")
+        _validate_site_name(resolved_site, "--deployment-log-site")
     if resolved_change is not None:
         _validate_list_title(resolved_change, "--change-log-list")
     external_log = (
@@ -1051,7 +1097,7 @@ def execute_build(
         # done once the errors are fixed.
         enterprise_reader=resolved_enterprise_reader,
         env_provenance=env_provenance,
-        sidecar_run_log_title=None if no_sidecars else "dbml Local Log",
+        sidecar_run_log_title=None if no_sidecars else run_log_title(),
         sidecar_change_log_title=None if no_sidecars else change_log,
         deployment_log_list=external_log or "",
         deployment_log_site=external_site or "",

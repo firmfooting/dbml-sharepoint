@@ -45,6 +45,13 @@
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
+    // The logging phase's OWN failure list, deliberately not `errors`.
+    // `errors` is the abort bus every phase gate reads, and the registers
+    // this deploy maintains must never depend on the logs that document
+    // them: a change row that would not write must not stop a deploy that
+    // otherwise succeeded. Declared here, beside `errors`, so the summary
+    // has one shape whether or not the logging phase renders.
+    loggingFailures: [],
     releaseTag: RELEASE_TAG,
     schemaVersion: SCHEMA_VERSION,
   };

@@ -105,7 +105,7 @@ here are stable across display renames. Write these:
 | `Title` | A composed one-liner: `RR_Risk 42 Status: Open -> Closed` |
 | `ChangedUtc` | The **trigger item's** `Modified` timestamp, in UTC |
 | `ChangedBy` | The **trigger item's** `Editor`, `triggerOutputs()?['body/Editor']` |
-| `SiteUrl` | Absolute URL of the register's site, no trailing slash |
+| `SiteUrl` | Absolute URL of the register's site, no trailing slash. **Copy it, never retype it**: the authoritative spelling is the `SiteUrl = "..."` literal in the register bundle's `reporting/powerquery/<ListTitle>.pq`. `.../sites/Quality` and `.../sites/quality` both look right in a browser; only the byte-exact form joins in Power BI. A case mismatch passes every visible check while the relationship matches zero rows. |
 | `ListTitle` | The register's deployed list title, prefix included: `RR_Risk` |
 | `ItemId` | The trigger item's `ID` |
 | `ItemTitle` | The trigger item's `Title` |
@@ -182,17 +182,30 @@ values verbatim:
 - Empty as an empty string, not the word `null`.
 - Multi-value columns as a delimited list with a fixed separator and a fixed
   order, or they will read as changed every time SharePoint returns them in a
-  different order.
+  different order. Use `;#` between values and sort before joining, and do
+  NOT reuse `|`: that is `ChangeKey`'s separator, and a `|` inside a value
+  makes the key's own parse ambiguous.
+- Lookup columns by their display value (`Value`, not the JSON of
+  `{Id, Value}` the trigger supplies). Never write the lookup's `Id`: when a
+  target row is renamed, its Id is unchanged, so writing Ids makes every
+  later save of the SAME item read as a change on a column that did not
+  change, and writes `Id`s that mean nothing to a reader who only sees the
+  history list.
 
 ### Change Key, which has to match byte for byte
 
 `ChangeKey` is what lets Power BI relate a history row to the register row it
 describes, with no bridge table, and it only works because it is identical to
-the row key the deployer's own reporting pack builds for that register:
+the row key the deployer's own reporting pack builds for that register. The
+authority is `_row_key_m` in the deployer's `generators/reportgen.py`; its
+Power Query shape, for a row of the register:
 
 ```text
-<SiteRoot>|<ListTitle>|<ItemId>
+SiteRoot & "|" & "<ListTitle>" & "|" & Number.ToText([Id])
 ```
+
+which produces three parts joined by pipes with no spaces,
+`<SiteRoot>|<ListTitle>|<ItemId>`, written by the flow as literal text:
 
 Three parts, pipe separated, no spaces around the pipes. Two of them are
 easy to get subtly wrong:

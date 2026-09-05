@@ -136,7 +136,13 @@
       fieldShapesByList[listName] = empty;
       return empty;
     }
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
+    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: with
+    // no explicit page size the page size is the server's, and this read is
+    // UNFILTERED, so an ordinary list's ~40 built-in fields plus its
+    // declared ones sit close to the default. A truncated map reads exactly
+    // like a list missing columns, and this map is what every phase's
+    // create-or-reconcile decision is made from.
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=500`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) {
