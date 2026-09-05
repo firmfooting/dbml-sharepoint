@@ -158,17 +158,18 @@
         for (const fieldBody of CHANGE_FIELDS) {
           if (present.has(fieldBody.Title)) continue;
           const digestF = await getDigest();
-          // The __metadata annotation is transport framing for ITEM posts;
-          // a field CREATE names its type through FieldTypeKind, and a
-          // metadata block here makes SharePoint try to resolve an SP.Field
-          // subtype name that does not exist (live: SP.FieldBoolean 400).
-          const createBody = { ...fieldBody };
-          delete createBody.__metadata;
+          // Field creates need BOTH the verbose transport (spHeaders) and the
+          // __metadata type: without it the verbose parser demands an expected
+          // entry type ("An entry without a type name was found", live
+          // 2026-09-05), and the subtype name SP.FieldText/SP.FieldNote is
+          // exactly what it wants. (An earlier comment here claimed the
+          // opposite from a misread probe: the 400s that experiment saw came
+          // from a plain-JSON Content-Type, not from the metadata block.)
           const addResp = await fetchWithRetry(apiUrl(
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
           ), {
             method: 'POST', headers: spHeaders(digestF),
-            body: JSON.stringify(createBody),
+            body: JSON.stringify(fieldBody),
           });
           if (!addResp.ok) {
             throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
