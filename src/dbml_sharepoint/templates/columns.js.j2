@@ -83,6 +83,29 @@
     return fields;
   }
 
+  // The delete's readback. Strict 404 read a successful delete as a failure
+  // and aborted the run (#383, live 2026-09-03): the by-GUID read of a
+  // just-deleted field answered HTTP 400, and each invocation deleted one
+  // column and then reported it had not.
+  //
+  // 404 and a recognised absent-400 both mean gone. Any OTHER status is
+  // settled by re-reading the fields collection, because whether the
+  // by-GUID getter carries the same absent-400 shape as the by-name ones
+  // has not been measured, and absence enumerated is a measurement rather
+  // than a claim about an error body. A delete that really failed still
+  // finds the column there and still aborts.
+  async function confirmDeleted(field) {
+    const gone = await fetchWithRetry(fieldUrl(field.Id, '?$select=Id'), verbose());
+    if (gone.status === 404) return 'HTTP 404 on readback';
+    if (isAbsent400(gone.status, await gone.text())) {
+      return 'HTTP 400 absent-field on readback';
+    }
+    if ((await readFields()).some((f) => f.InternalName === field.InternalName)) {
+      throw mismatch(`'${field.InternalName}' still reads back after the delete (HTTP ${gone.status})`);
+    }
+    return `absent from the fields collection; the readback answered HTTP ${gone.status}`;
+  }
+
   const hasValue = (v) => {
     if (v === null || v === undefined || v === '') return false;
     if (typeof v === 'object' && Array.isArray(v.results)) return v.results.length > 0;
@@ -182,12 +205,9 @@
         headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
       });
       if (!r.ok) throw new Error(`DELETE refused: HTTP ${r.status} ${spError(await r.text())}`);
-      const gone = await fetchWithRetry(fieldUrl(field.Id, '?$select=Id'), verbose());
-      if (gone.status !== 404) {
-        throw mismatch(`'${field.InternalName}' still reads back after the delete (HTTP ${gone.status})`);
-      }
+      const how = await confirmDeleted(field);
       summary.deleted.push(field.InternalName);
-      log('INFO', `Deleted '${field.InternalName}' and confirmed it is gone (HTTP 404 on readback).`);
+      log('INFO', `Deleted '${field.InternalName}' and confirmed it is gone (${how}).`);
     } catch (err) {
       summary.errors.push({ column: field.InternalName, error: err.message });
       log('ERROR', `'${field.InternalName}': ${err.message}`);

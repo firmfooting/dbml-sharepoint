@@ -227,6 +227,25 @@
     return String(message).slice(0, 300);
   };
 
+  // SharePoint's by-name getters do not uniformly 404 for a missing item:
+  // fields/getbyinternalnameortitle ("Column 'X' does not exist") and
+  // views/getbytitle ("The specified view is invalid.") both throw
+  // System.ArgumentException as HTTP 400 with locale-invariant code
+  // -2147024809. Exactly that shape means "absent"; anything else stays
+  // fatal in the caller.
+  //
+  // Here rather than in deploy/_shape_probes.js.j2, where it was, because
+  // the maintenance sidecars need the same fact: columns.js.txt read its
+  // own successful delete as a failure for want of it (#383, live
+  // 2026-09-03). AGENTS.md: where both sides need the same fact, it lives
+  // in a shared module.
+  const isAbsent400 = (status, text) => {
+    if (status !== 400) return false;
+    let code = '';
+    try { code = String(JSON.parse(text)?.error?.code || ''); } catch { return false; }
+    return code.includes('-2147024809') && code.includes('System.ArgumentException');
+  };
+
   // The page a throttled BROWSER is redirected to. Matched on the final URL
   // rather than on the status, because the status is a property of OUR
   // request: the page is HTML and every call here asks for JSON, so it
@@ -1333,18 +1352,8 @@
     return probeListShapeByTitle(name);
   }
 
-  // SharePoint's by-name getters do not uniformly 404 for a missing item:
-  // fields/getbyinternalnameortitle ("Column 'X' does not exist") and
-  // views/getbytitle ("The specified view is invalid.") both throw
-  // System.ArgumentException as HTTP 400 with locale-invariant code
-  // -2147024809. Exactly that shape means "absent"; anything else stays
-  // fatal in the caller.
-  const isAbsent400 = (status, text) => {
-    if (status !== 400) return false;
-    let code = '';
-    try { code = String(JSON.parse(text)?.error?.code || ''); } catch { return false; }
-    return code.includes('-2147024809') && code.includes('System.ArgumentException');
-  };
+  // `isAbsent400` lives in _http.js.j2, which every script including this
+  // one already carries: the maintenance sidecars need the same fact.
 
   // Base field shapes come from ONE fields enumeration per list, cached in a
   // name -> shape map (keyed by InternalName AND display Title, matching

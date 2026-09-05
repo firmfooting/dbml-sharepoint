@@ -70,6 +70,25 @@ _HARNESS = textwrap.dedent(r"""
       text: async () => JSON.stringify(payload),
     });
     const notFound = (what) => reply(404, { error: { message: { value: `${what} not found` } } });
+    // What a by-GUID read of a field that is no longer there answers. 404 is
+    // the shape the mock assumed; live on 2026-09-03 a just-deleted field
+    // answered 400 instead (#383), so the flag makes both reachable, plus a
+    // 400 the absent-shape test does not recognise.
+    const absentField = () => {
+      if (FLAGS.absentField === 'absent400') {
+        return reply(400, { error: {
+          code: '-2147024809, System.ArgumentException',
+          message: { value: 'Value does not fall within the expected range.' },
+        } });
+      }
+      if (FLAGS.absentField === 'other400') {
+        return reply(400, { error: {
+          code: '-2130575252, Microsoft.SharePoint.SPException',
+          message: { value: 'something this script has never seen' },
+        } });
+      }
+      return notFound('field');
+    };
     const fieldById = (id) => state.fields.find((f) => f.Id === id);
     const fieldView = (f) => {
       const { deleted, lookupList, ...rest } = f;
@@ -116,7 +135,7 @@ _HARNESS = textwrap.dedent(r"""
       const fieldGuid = /fields\(guid'([^']+)'\)/.exec(u);
       if (fieldGuid) {
         const f = fieldById(fieldGuid[1]);
-        if (!f || f.deleted) return notFound('field');
+        if (!f || f.deleted) return absentField();
         if (method === 'POST' && headers['X-HTTP-Method'] === 'MERGE') {
           if (!FLAGS.discardFieldMerge) Object.assign(f, body || {}, { __metadata: undefined });
           return reply(204, {});
@@ -497,6 +516,67 @@ def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() ->
     )
     assert summary["deleted"] == ["ColumnOne"]
     assert summary["errors"] == []
+
+
+def test_a_delete_readback_that_answers_400_is_recorded_as_deleted() -> None:
+    """The success signal read as a failure.
+
+    Seen live 2026-09-03: the by-GUID read of a just-deleted field answered
+    HTTP 400, the strict `!== 404` check raised a readback mismatch, and the
+    run aborted after deleting the column it said it had not. An operator
+    removing five superseded columns ran the script five times and read five
+    false errors, indistinguishable from the genuine failed delete the
+    readback exists to catch.
+    """
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    summary, _calls, _prompts, _tables = _columns(
+        config, ["ColumnOne", "ColumnOne", ""], {"absentField": "absent400"},
+    )
+    assert summary["deleted"] == ["ColumnOne"]
+    assert summary["errors"] == []
+    assert "aborted" not in summary
+
+
+def test_a_delete_readback_answering_an_unknown_400_is_settled_by_enumeration(
+) -> None:
+    """A 400 whose shape means nothing here is not taken either way.
+
+    `isAbsent400` matches one shape, and its comment scopes that to the
+    BY-NAME getters. This readback is by GUID, and the live error body was
+    never captured, so an unrecognised 400 falls through to a read of the
+    fields collection: absence measured rather than an error body read as a
+    claim. The delete succeeded here, so the column is gone and the run says
+    which signal it trusted.
+    """
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    js = generate_columns_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, config, ["ColumnOne", "ColumnOne", ""], {"absentField": "other400"}))
+    assert "__RESULT__" in out
+    summary = _tag(
+        next(ln for ln in out.splitlines() if ln.startswith("__RESULT__")), "__RESULT__",
+    )
+    assert summary["deleted"] == ["ColumnOne"]
+    assert summary["errors"] == []
+    assert "absent from the fields collection" in out
+
+
+def test_a_delete_that_did_not_take_still_aborts_the_run() -> None:
+    """The case the readback exists for, unchanged.
+
+    The DELETE answers 200 and the field is still there, so every signal
+    agrees it is present: the by-GUID read succeeds and the enumeration still
+    names it. Accepting more absent-shapes must not cost this.
+    """
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    summary, _calls, _prompts, _tables = _columns(
+        config, ["ColumnOne", "ColumnOne", ""], {"discardDelete": True},
+    )
+    assert summary["aborted"] == "readback-mismatch"
+    assert summary["deleted"] == []
+    assert "still reads back after the delete" in summary["errors"][0]["error"]
 
 
 def test_an_unsealed_column_is_not_merged_before_the_delete() -> None:
