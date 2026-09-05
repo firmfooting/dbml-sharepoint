@@ -39,6 +39,16 @@ CHANGE_LOG_TITLE = "dbml_Logs"
 #: nothing is probed unless the operator names a list.
 EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
 
+#: The CENTRAL logging site the external deployment log lives on, and the
+#: default every build probes unless the operator names another. One site
+#: per org collects every firmfooting application's deployment rows, so
+#: cross-application reporting reads one list instead of visiting each
+#: site. Probed, never created by a DEPLOY: a run that finds the site
+#: absent notes that and carries on. Creating it is the sidecar's job,
+#: because creating a whole site is a consent-shaped act, not a side
+#: effect of provisioning a register.
+CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
+
 #: The title-only row the external log receives. The list belongs to its
 #: operator and its schema is unknown, so the ONLY column every generic
 #: list is guaranteed is Title. Anything richer would make this tool
@@ -74,6 +84,14 @@ def scratch_marker_for(title: str) -> str:
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=title, family=None,
     )
+
+
+#: The central deployment log's marker. Same grammar, own name: the sidecar
+#: owns the list by this Description compared whole, exactly like the
+#: on-site sidecars.
+def central_log_marker() -> str:
+    """The exact Description the sidecar owns ``dbml-deployment-log`` by."""
+    return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
 
 
 def run_log_title() -> str:

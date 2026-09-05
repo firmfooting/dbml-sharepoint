@@ -43,6 +43,9 @@ ENTERPRISE_READER_PARAMETER: Final = "enterprise_reader"
 DEPLOYMENT_LOG_LIST_KEY: Final = "DBMLSP_DEPLOY_LOG_LIST"
 DEPLOYMENT_LOG_LIST_PARAMETER: Final = "deployment_log_list"
 
+DEPLOYMENT_LOG_SITE_KEY: Final = "DBMLSP_DEPLOY_LOG_SITE"
+DEPLOYMENT_LOG_SITE_PARAMETER: Final = "deployment_log_site"
+
 CHANGE_LOG_LIST_KEY: Final = "DBMLSP_CHANGE_LOG_LIST"
 CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
 
@@ -58,9 +61,19 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         key=DEPLOYMENT_LOG_LIST_KEY,
         parameter=DEPLOYMENT_LOG_LIST_PARAMETER,
         help=(
-            "Title of an existing deployment log list to stamp start/stop/"
-            "provenance rows into. The list is probed, never created; the "
-            "default finds nothing and stamps nothing."
+            "Title of the central deployment log list to stamp start/stop/"
+            "provenance rows into. Probed on the central logging site, never "
+            "created; empty disables the stamps."
+        ),
+    ),
+    EnvSetting(
+        key=DEPLOYMENT_LOG_SITE_KEY,
+        parameter=DEPLOYMENT_LOG_SITE_PARAMETER,
+        help=(
+            "Title of the central logging site the deployment log list "
+            "lives on. Probed, never created by a deploy (the "
+            "deploy-central-log sidecar creates site and list); empty "
+            "disables the stamps."
         ),
     ),
     EnvSetting(

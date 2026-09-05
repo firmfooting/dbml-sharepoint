@@ -53,6 +53,7 @@
     const CHANGE_LOG_MARKER = {{ sidecar_change_log_marker | tojson }};
     // Empty string: no external log was named, so no probing either.
     const EXTERNAL_LOG_TITLE = {{ deployment_log_list | tojson }};
+    const EXTERNAL_LOG_SITE = {{ deployment_log_site | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
 
     // ---- Failure recording ---------------------------------------------
@@ -309,14 +310,81 @@
     log('INFO', `Change log '${CHANGE_LOG_TITLE}' holds no role assignments: no enterprise reader was configured.`);
 {% endif %}
 
-    // ---- The external deployment log -----------------------------------
-    // Probed, never created, written by Title only. Absent: one INFO line
-    // and the run carries on, because an operator who named a list that
-    // is not there yet must still be able to deploy.
-    const stampExternal = async (digest, kind, text) => {
+    // ---- The external deployment log (the CENTRAL logging site) --------
+    // One site per org collects every firmfooting application's deployment
+    // rows. Cross-site writes are same-origin REST: the tenant host is the
+    // one this page is already on, so the session cookies ride along and
+    // SharePoint answers a cross-web POST exactly like a local one.
+    //
+    // Three checks before the first stamp, in order, all degrade to INFO:
+    //  - the SITE exists (web GET; 403 also means "exists but not to you");
+    //  - the LIST exists on it (404-specific, getbytitle answers 404 for
+    //    an absent list);
+    //  - the operator holds AddListItems on that list -- Contribute or
+    //    better -- read from the list's own EffectiveBasePermissions so a
+    //    web-level Contribute cannot mask a list-scoped refusal. Bit
+    //    0x2 = AddListItems; the low mask checked here is the same low
+    //    half the operator-rights probe reads.
+    // Absent site, absent list or no write bit: one INFO line each, and
+    // the run carries on, because a deploy must not die because a shared
+    // logging site is missing. Creating the site is the sidecar's job.
+    const externalApi = (suffix) => crossWebApi(EXTERNAL_LOG_SITE, suffix);
+{% include "_cross_web.js.j2" %}
+    let externalReady = false;
+    if (EXTERNAL_LOG_SITE) {
+      let siteOk = false;
       try {
-        const resp = await fetchWithRetry(apiUrl(
-          `web/lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
+        const siteResp = await fetchWithRetry(externalApi('?$select=Url'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        siteOk = siteResp.status === 200 || siteResp.status === 403;
+      } catch (err) {
+        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' unreachable (${err.message}); external stamps skipped.`);
+      }
+      if (!siteOk) {
+        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' not found: create it with deploy-central-log.js.txt `
+          + `(or set DBMLSP_DEPLOY_LOG_SITE / DBMLSP_DEPLOY_LOG_LIST). The run log holds this run's record.`);
+      } else {
+        let listOk = false;
+        let canAdd = false;
+        try {
+          const listResp = await fetchWithRetry(
+            externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')?$select=Id`),
+            { headers: { 'Accept': 'application/json;odata=verbose' } },
+          );
+          if (listResp.status === 404) {
+            listOk = false;
+          } else if (listResp.ok) {
+            listOk = true;
+            const permResp = await fetchWithRetry(
+              externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/effectivebasepermissions`),
+              { headers: { 'Accept': 'application/json;odata=verbose' } },
+            );
+            if (permResp.ok) {
+              const low = Number((((await permResp.json()).d || {}).EffectiveBasePermissions || {}).Low || 0);
+              canAdd = (low & 0x2) === 0x2;  // AddListItems
+            }
+          }
+        } catch (err) {
+          log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' probe failed (${err.message}); external stamps skipped.`);
+        }
+        if (!listOk) {
+          log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' exists but has no list '${EXTERNAL_LOG_TITLE}': `
+            + `create it with deploy-central-log.js.txt. The run log holds this run's record.`);
+        } else if (!canAdd) {
+          log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' found but this account holds no AddListItems on it: `
+            + `ask its owner for Contribute. The run log holds this run's record.`);
+        } else {
+          externalReady = true;
+          log('INFO', `Central log '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' ready; stamping deployment start and provenance.`);
+        }
+      }
+    }
+    const stampExternal = async (digest, kind, text) => {
+      if (!externalReady) return;
+      try {
+        const resp = await fetchWithRetry(externalApi(
+          `lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
         ), {
           method: 'POST', headers: spHeaders(digest),
           body: JSON.stringify({ Title: `dbml-sharepoint ${kind}: ${text}`.slice(0, 255) }),
@@ -329,26 +397,13 @@
         recordFailure(`external log '${EXTERNAL_LOG_TITLE}' ${kind}`, err);
       }
     };
-    if (EXTERNAL_LOG_TITLE) {
-      let externalShape = null;
-      try {
-        externalShape = await readListShape(EXTERNAL_LOG_TITLE);
-      } catch (err) {
-        log('INFO', `External deployment log '${EXTERNAL_LOG_TITLE}' probe failed (${err.message}); stamps skipped.`);
-      }
-      if (externalShape) {
-        log('INFO', `External deployment log '${EXTERNAL_LOG_TITLE}' found; stamping deployment start and provenance.`);
-        await stampExternal(await getDigest(), 'deployment start',
-          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
-          + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')}`);
-        await stampExternal(await getDigest(), 'provenance',
-          `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-          + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`
-          + `; change log '${CHANGE_LOG_TITLE}'; run log '${RUN_LOG_TITLE}'`.slice(0, 255));
-      } else if (externalShape === null) {
-        log('INFO', `No list '${EXTERNAL_LOG_TITLE}' on this site; no external stamps. `
-          + `The run log '${RUN_LOG_TITLE}' holds this run's record.`);
-      }
+    if (externalReady) {
+      await stampExternal(await getDigest(), 'deployment start',
+        `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
+        + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')} on {{ site_url }}`);
+      await stampExternal(await getDigest(), 'provenance',
+        `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
+        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`.slice(0, 255));
     }
 
     // ---- Drain what the shim buffered ----------------------------------

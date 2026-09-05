@@ -79,7 +79,7 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: `bundle.py` stays importable for its packaging helpers, which its own
 #: comment states.
 DEFERRED_IMPORTS: dict[str, int] = {
-    "bundle.py": 7,
+    "bundle.py": 8,
     "wizard.py": 4,
     "extract/wizard.py": 2,
 }

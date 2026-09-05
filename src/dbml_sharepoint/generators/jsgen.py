@@ -101,6 +101,7 @@ def generate_deploy_js(
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
     deployment_log_list: str = "",
+    deployment_log_site: str = "",
     sidecar_run_log_title: str | None = None,
     sidecar_run_log_marker: str | None = None,
     sidecar_change_log_title: str | None = None,
@@ -158,6 +159,7 @@ def generate_deploy_js(
         sidecar_change_log_marker=sidecar_change_log_marker,
         sidecar_change_fields=sidecar_change_fields or [],
         deployment_log_list=deployment_log_list,
+        deployment_log_site=deployment_log_site,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

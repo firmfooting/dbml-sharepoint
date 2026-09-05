@@ -167,11 +167,16 @@ when the bundle was built with `--no-sidecars`, and neither is deleted by
 `rollback.js.txt`.
 {% if deployment_log_list %}
 
-This bundle also stamps a site-run **deployment log** named
-`{{ deployment_log_list }}`: the same start, provenance and stop rows, appended
-to a list that exists independently of this tool. It is probed, never created --
-if it is absent the run notes that and carries on -- and only the item Title is
-written, so any generic list works as the log.
+This bundle also stamps a **central deployment log**: the site
+`{{ deployment_log_site }}` and the list `{{ deployment_log_list }}` on it,
+shared by every firmfooting application. The script checks three things before
+its first stamp -- the site exists, the list exists on it, and this account
+holds AddListItems (Contribute or better) on the list -- reading the
+permission from the list itself, not the web. Any miss degrades to an INFO
+line and the run carries on; the run log on THIS site always holds the record
+regardless. The central site and list are never created by a deploy: create
+them once with the deploy-central-log sidecar, or override both with
+`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables).
 {% endif %}
 {% endif %}
 

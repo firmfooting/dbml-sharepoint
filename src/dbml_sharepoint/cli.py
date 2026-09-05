@@ -20,6 +20,7 @@ from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.sidecars import (
+    CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
     EXTERNAL_LOG_DEFAULT,
 )
@@ -81,6 +82,7 @@ from dbml_sharepoint.generators.reportgen import (
 from dbml_sharepoint.model.env_file import (
     CHANGE_LOG_LIST_PARAMETER,
     DEPLOYMENT_LOG_LIST_PARAMETER,
+    DEPLOYMENT_LOG_SITE_PARAMETER,
     ENTERPRISE_READER_PARAMETER,
     ENV_FILENAME,
     ENV_SETTINGS,
@@ -576,10 +578,18 @@ def build(
     deployment_log_list: str | None = typer.Option(
         None,
         "--deployment-log-list",
-        help="Title of an existing list to stamp deployment start, stop and "
-        "provenance rows into. Probed, never created. Default: probes "
-        f"'{EXTERNAL_LOG_DEFAULT}' unless {ENV_FILENAME} names another; "
+        help="Title of the central deployment log list to stamp start, stop "
+        "and provenance rows into. Probed on the central logging site, never "
+        f"created. Default: probes '{EXTERNAL_LOG_DEFAULT}' on site "
+        f"'{CENTRAL_LOG_SITE_DEFAULT}' unless {ENV_FILENAME} names another; "
         "pass '' to disable the external stamps.",
+    ),
+    deployment_log_site: str | None = typer.Option(
+        None,
+        "--deployment-log-site",
+        help="Title of the central logging SITE the deployment log list "
+        f"lives on. Default: '{CENTRAL_LOG_SITE_DEFAULT}' unless "
+        f"{ENV_FILENAME} names another; pass '' to disable the stamps.",
     ),
     change_log_list: str | None = typer.Option(
         None,
@@ -708,8 +718,13 @@ def _resolve_env_settings(
     env_file: Path | None,
     enterprise_reader: str | EnterpriseReaderDeclined | None,
     deployment_log_list: str | None,
+    deployment_log_site: str | None,
     change_log_list: str | None,
-) -> tuple[str | EnterpriseReaderDeclined | None, str | None, str | None, EnvProvenance]:
+) -> tuple[
+    str | EnterpriseReaderDeclined | None,
+    str | None, str | None, str | None,
+    EnvProvenance,
+]:
     """Apply a resolved dbml-sharepoint.env file, honouring anything already
     supplied explicitly. Builds the `EnvProvenance` in the same pass that
     decides what is used, so the record can never drift from the decision it
@@ -729,7 +744,10 @@ def _resolve_env_settings(
     names its defaults here.
     """
     if env_file is None:
-        return enterprise_reader, deployment_log_list, change_log_list, NO_ENV_FILE
+        return (
+            enterprise_reader, deployment_log_list, deployment_log_site,
+            change_log_list, NO_ENV_FILE,
+        )
 
     try:
         file_settings, digest = read_env_file(env_file)
@@ -739,67 +757,58 @@ def _resolve_env_settings(
         # passing it again here just printed it twice.
         _config_error("env file", None, exc)
 
+    # Declared as a STR-typed mapping for the three list-name settings and a
+    # separate variable for the reader, because the reader carries the
+    # declined sentinel and the names do not. One precedence loop, one
+    # shapes-problem avoided.
+    resolved: dict[str, str | None] = {
+        DEPLOYMENT_LOG_LIST_PARAMETER: deployment_log_list,
+        DEPLOYMENT_LOG_SITE_PARAMETER: deployment_log_site,
+        CHANGE_LOG_LIST_PARAMETER: change_log_list,
+    }
     resolved_reader = enterprise_reader
-    resolved_external = deployment_log_list
-    resolved_change = change_log_list
     values: list[EnvValue] = []
     for setting in ENV_SETTINGS:
         file_value = file_settings.get(setting.key)
         if file_value is None:
             continue
-        explicit = {
-            ENTERPRISE_READER_PARAMETER: enterprise_reader,
-            DEPLOYMENT_LOG_LIST_PARAMETER: deployment_log_list,
-            CHANGE_LOG_LIST_PARAMETER: change_log_list,
-        }
-        if setting.parameter not in explicit:
+        if setting.parameter != ENTERPRISE_READER_PARAMETER and setting.parameter not in resolved:
             raise UnwiredEnvSettingError(
                 f"{setting.key} sets execute_build's {setting.parameter!r} "
                 "parameter, which _resolve_env_settings does not know how "
                 "to apply. Wire it in here before adding it to ENV_SETTINGS.",
             )
-        # One value per setting carries the flag through to provenance; the
-        # second list setting rides the same EnvValue shape so the manifest
-        # reports it identically. `wins` is the flag's value when the flag
-        # was given, else None, else the file value.
-        if setting.parameter == ENTERPRISE_READER_PARAMETER:
-            if resolved_reader is None:
+        # ONE precedence rule for every setting: a flag given at all --
+        # including '' = off -- beats the file; the file beats nothing-said.
+        # `override` records the value that won so the transcript can name
+        # the losing candidate.
+        current = (
+            resolved_reader if setting.parameter == ENTERPRISE_READER_PARAMETER
+            else resolved[setting.parameter]
+        )
+        if current is None:
+            if setting.parameter == ENTERPRISE_READER_PARAMETER:
                 resolved_reader = file_value
-                values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
             else:
-                override = (
-                    resolved_reader
-                    if isinstance(resolved_reader, str)
-                    else repr(resolved_reader)
-                )
-                values.append(EnvValue(
-                    setting=setting, value=file_value,
-                    used=False, override=override,
-                ))
-        elif setting.parameter == DEPLOYMENT_LOG_LIST_PARAMETER:
-            # A flag given at all (including '' = off) beats the file.
-            if resolved_external is None:
-                resolved_external = file_value
-                values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
-            else:
-                values.append(EnvValue(
-                    setting=setting, value=file_value,
-                    used=False, override=resolved_external,
-                ))
-        elif setting.parameter == CHANGE_LOG_LIST_PARAMETER:
-            if resolved_change is None:
-                resolved_change = file_value
-                values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
-            else:
-                values.append(EnvValue(
-                    setting=setting, value=file_value,
-                    used=False, override=resolved_change,
-                ))
+                resolved[setting.parameter] = file_value
+            values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
+        else:
+            override = current if isinstance(current, str) else repr(current)
+            values.append(EnvValue(
+                setting=setting, value=file_value,
+                used=False, override=override,
+            ))
 
     provenance = EnvProvenance(
         path=_relative_env_path(env_file), digest=digest, values=tuple(values),
     )
-    return resolved_reader, resolved_external, resolved_change, provenance
+    return (
+        resolved_reader,
+        resolved[DEPLOYMENT_LOG_LIST_PARAMETER],
+        resolved[DEPLOYMENT_LOG_SITE_PARAMETER],
+        resolved[CHANGE_LOG_LIST_PARAMETER],
+        provenance,
+    )
 
 
 def _echo_env_provenance(provenance: EnvProvenance) -> None:
@@ -834,6 +843,7 @@ def execute_build(
     enterprise_reader: str | EnterpriseReaderDeclined | None = None,
     env_file: Path | None = None,
     deployment_log_list: str | None = None,
+    deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
 ) -> None:
@@ -883,8 +893,11 @@ def execute_build(
 
     _require_known_site_role(bundle, site_role)
 
-    enterprise_reader, resolved_external, resolved_change, env_provenance = _resolve_env_settings(
-        env_file, enterprise_reader, deployment_log_list, change_log_list,
+    enterprise_reader, resolved_external, resolved_site, resolved_change, env_provenance = (
+        _resolve_env_settings(
+            env_file, enterprise_reader, deployment_log_list,
+            deployment_log_site, change_log_list,
+        )
     )
     _echo_env_provenance(env_provenance)
     # Post-resolution defaults, and the three states the external log name
@@ -901,6 +914,8 @@ def execute_build(
     # validation, so nothing invisible can turn the feature off.
     if resolved_external is not None and resolved_external != "":
         _validate_list_title(resolved_external, "--deployment-log-list")
+    if resolved_site is not None and resolved_site != "":
+        _validate_list_title(resolved_site, "--deployment-log-site")
     if resolved_change is not None:
         _validate_list_title(resolved_change, "--change-log-list")
     external_log = (
@@ -908,7 +923,17 @@ def execute_build(
         if resolved_external is None
         else resolved_external  # '' stays '' (off); a title stays itself
     )
+    external_site = (
+        CENTRAL_LOG_SITE_DEFAULT
+        if resolved_site is None
+        else resolved_site
+    )
     change_log = resolved_change if resolved_change is not None else CHANGE_LOG_TITLE
+    # The site and the list are one feature: '' on either is the documented
+    # disable for the external stamps as a whole.
+    if external_site == "" or external_log == "":
+        external_site = ""
+        external_log = ""
 
     # `isinstance`, not `is not None`: the declined sentinel means nobody is
     # enrolled and must skip validation and the group check just as `None` does.
@@ -1005,6 +1030,7 @@ def execute_build(
         sidecar_run_log_title=None if no_sidecars else "dbml Local Log",
         sidecar_change_log_title=None if no_sidecars else change_log,
         deployment_log_list=external_log or "",
+        deployment_log_site=external_site or "",
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -1044,6 +1070,7 @@ def execute_build(
             enterprise_reader=resolved_enterprise_reader,
             env_provenance=env_provenance,
             deployment_log_list=external_log or "",
+            deployment_log_site=external_site or "",
             change_log_list=None if no_sidecars else change_log,
             no_sidecars=no_sidecars,
         )
