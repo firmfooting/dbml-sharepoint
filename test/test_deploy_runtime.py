@@ -3652,6 +3652,37 @@ def _reader_deploy_js(enterprise_reader: str | None = _READER_ADDRESS) -> str:
     ))
 
 
+# The built-in Read as a live site actually reports it: read by
+# `test/manual/reader-bindings-probe.js` on 2026-08-14 (#199, R2), which also
+# recorded RoleTypeKind=2, so this is SharePoint's own Reader and not a
+# same-named custom level. Every reader test starts from it, so the step-0
+# bitmap gate is silent unless a test deliberately takes a bit away. Decomposed
+# it carries ViewListItems, ViewFormPages, Open, BrowseUserInfo, UseRemoteAPIs,
+# ViewVersions, ViewPages, OpenItems, CreateAlerts, UseClientIntegration and
+# CreateSSCSite.
+_BUILT_IN_READ_BITMAP: dict[str, str] = {"High": "176", "Low": "138612833"}
+
+# Real built-in role definition Ids are 0x40000000-based; Read is 1073741826.
+# Used so the harness's by-Id lookup cannot collide with the custom levels it
+# auto-vivifies from 2 upwards.
+_READ_LEVEL_ID = 1073741826
+
+
+def _without_bits(*names: str) -> dict[str, str]:
+    """The built-in Read bitmap with named permissions cleared.
+
+    Derived from `analysis.permissions.BASE_PERMISSIONS` rather than written
+    as a literal: a test that hard-coded the arithmetic could agree with a
+    wrong bit table and still pass.
+    """
+    from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS
+
+    value = (int(_BUILT_IN_READ_BITMAP["High"]) << 32) | int(_BUILT_IN_READ_BITMAP["Low"])
+    for name in names:
+        value &= ~BASE_PERMISSIONS[name]
+    return {"High": str((value >> 32) & 0xFFFFFFFF), "Low": str(value & 0xFFFFFFFF)}
+
+
 def _reader_harness(
     ensure_user: dict[str, Any],
     *,
@@ -3659,6 +3690,7 @@ def _reader_harness(
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
     stray_on_write: dict[str, Any] | None = None,
+    read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -3683,6 +3715,11 @@ def _reader_harness(
     reads the first and stops, and the second is a gate that a large
     group defeats simply by being large. `members=[...]` is the one-page
     case, and is exactly `member_pages=[[...]]`.
+
+    `read_bitmap` is what the site's level named 'Read' grants, which the
+    reader fixture's group is assigned. It defaults to the measured built-in
+    so the step-0 gate stays quiet; `None` makes the level unreadable, which
+    is what a site with no such level answers.
     """
     pages = [list(members or [])] if member_pages is None else [
         list(page) for page in member_pages
@@ -3692,6 +3729,7 @@ def _reader_harness(
         const READER_MEMBER_PAGES = __MEMBER_PAGES__;
         const DROP_READBACK = __DROP_READBACK__;
         const STRAY_ON_WRITE = __STRAY_ON_WRITE__;
+        const READ_BITMAP = __READ_BITMAP__;
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
           const u = String(url);
@@ -3704,6 +3742,22 @@ def _reader_harness(
                      text: async () => JSON.stringify(payload) };
           };
           if (u.toLowerCase().includes('/ensureuser')) return respond({ d: ENSURED });
+          // The level the fixture's reader group is granted. The adopted
+          // harness underneath knows only the fixture's own custom level, so
+          // without this every reader run would fail step 0 on a level the
+          // site simply has not been told about, and the tests below would
+          // stop testing what they name.
+          if (method === 'GET' && /roledefinitions\/getbyname\('Read'\)/.test(u)) {
+            if (READ_BITMAP === null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: '-2147024809, System.ArgumentException' } };
+              return { ok: false, status: 400, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { Id: __READ_LEVEL_ID__, Name: 'Read',
+                                  BasePermissions: READ_BITMAP } });
+          }
           // Task 6 (security-phase-atomicity): removeReaderEnrollments's
           // drain POSTs here. Checked BEFORE the broader
           // sitegroups(N)/users test below, which this URL also matches --
@@ -3762,6 +3816,10 @@ def _reader_harness(
         "__DROP_READBACK__", "true" if drop_readback else "false",
     ).replace(
         "__STRAY_ON_WRITE__", json.dumps(stray_on_write),
+    ).replace(
+        "__READ_BITMAP__", json.dumps(read_bitmap),
+    ).replace(
+        "__READ_LEVEL_ID__", str(_READ_LEVEL_ID),
     )
 
 
@@ -3772,6 +3830,7 @@ def _run_reader_deploy(
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
     stray_on_write: dict[str, Any] | None = None,
+    read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -3782,6 +3841,7 @@ def _run_reader_deploy(
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
+        read_bitmap=read_bitmap,
     ) + "\n" + _reader_deploy_js().replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -3918,6 +3978,115 @@ def test_a_resolved_user_is_enrolled_and_the_membership_read_back() -> None:
         i > posted and calls[i]["method"] == "GET" for i in membership
     ), f"the membership was never re-read after the write: {[calls[i] for i in membership]}"
     assert _RESOLVED_USER["Title"] in output
+
+
+# === Step 0: the grant is judged by its bitmap, not by its name (#199) ===
+#
+# The level the reader group is assigned is called 'Read', and a level name
+# is site-scoped and writable. A site can carry one called Read that grants
+# nothing, and the deploy binds it, reads it back byte-identical and reports
+# success. So the phase reads the live BasePermissions before it enrols
+# anybody, and each test below removes exactly ONE bit from the measured
+# built-in Read so the rule under test is the only one that can fire.
+#
+# The refusals assert `not _membership_writes(calls)`, not just an abort: the
+# point of running the check before step 1 is that nothing is written at all.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("missing", ["ViewListItems", "ViewFormPages", "Open"])
+def test_a_read_level_missing_a_required_bit_enrols_nobody(missing: str) -> None:
+    """A level named Read that cannot read refuses the enrolment.
+
+    Parametrised over all three required bits because a check written against
+    one of them and silently ignoring the others would pass a single-bit test
+    and leave two holes.
+    """
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, read_bitmap=_without_bits(missing),
+    )
+    assert not _membership_writes(calls), (
+        f"an account was enrolled into a group whose level lacks {missing}"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    errors = _reader_errors(summary)
+    assert errors, summary
+    message = str(errors[0].get("error", ""))
+    assert missing in message, message
+    assert "Read" in message, message
+    assert missing in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_bitmap_gate_runs_before_the_address_is_resolved() -> None:
+    """No ensureuser call at all when the level fails.
+
+    EnsureUser is a WRITE: it materialises the principal in the site's user
+    information list. A run that is going to refuse the level must not leave
+    that behind on the way to refusing it, and an abort code cannot show the
+    difference.
+    """
+    _, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, read_bitmap=_without_bits("ViewListItems"),
+    )
+    ensured = [c for c in calls if "ensureuser" in c["url"].lower()]
+    assert not ensured, f"the address was resolved before the level was judged: {ensured}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("missing", ["BrowseUserInfo", "UseRemoteAPIs"])
+def test_a_narrower_read_level_warns_and_still_enrols(missing: str) -> None:
+    """The two advisory bits WARN; they do not refuse.
+
+    A browser-based reader works without either, so refusing here would fail
+    a posture that does read the data. The operator still has to be told,
+    because a reporting client enumerating lists over REST needs them, so the
+    warning naming the bit is the assertion rather than the enrolment alone.
+    """
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, read_bitmap=_without_bits(missing),
+    )
+    assert not _reader_errors(summary), summary
+    writes = _membership_writes(calls)
+    assert [w["LoginName"] for w in writes] == [_RESOLVED_USER["LoginName"]], writes
+    assert missing in output, output[-3000:]
+    assert "WARN" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_level_enrols_nobody() -> None:
+    """A site with no level of that name fails closed.
+
+    The alternative is treating an unreadable level as an absent bitmap,
+    which reads as every bit missing and would produce a refusal blaming the
+    wrong thing, or as no bitmap to check, which enrols against a grant this
+    run never saw.
+    """
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, read_bitmap=None)
+    assert not _membership_writes(calls), "an unreadable level still enrolled somebody"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert any(
+        "could not be read" in str(err.get("error", "")) for err in _reader_errors(summary)
+    ), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_measured_built_in_read_passes_the_gate_silently() -> None:
+    """The reference implementation satisfies the rule.
+
+    An enforced rule must never be stronger than what the real thing meets.
+    `_BUILT_IN_READ_BITMAP` is the live built-in Read as measured on
+    2026-08-14, so this pins that the gate neither refuses it nor warns about
+    it. Without this, tightening the required set would look correct here and
+    abort every real deploy.
+    """
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"]
+    ]
+    narrower = [ln for ln in output.splitlines() if "narrower than the built-in Read" in ln]
+    assert not narrower, narrower
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

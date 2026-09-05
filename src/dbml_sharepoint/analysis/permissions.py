@@ -130,6 +130,53 @@ DERIVED_BUILT_IN_LEVELS: frozenset[str] = frozenset({
 #: What a `list_permissions` assignment may name without declaring it.
 ASSIGNABLE_BUILT_IN_LEVELS: frozenset[str] = BUILT_IN_LEVELS - DERIVED_BUILT_IN_LEVELS
 
+#: Bits the level behind an enterprise-reader grant MUST carry (#199).
+#:
+#: The name is not the grant. `Read` is a built-in on a stock site, but a level
+#: name is site-scoped and writable, so a site can carry one called Read that
+#: grants something else entirely, and the deploy binds it, reads it back
+#: byte-identical, and reports success. Reserving the name at build time
+#: (BUILT_IN_LEVELS) stops THIS tool creating that level; it says nothing about
+#: what a site already has. So `_reader_enrolment.js.j2` reads the live
+#: BasePermissions before it enrols anybody and judges the bitmap.
+#:
+#: These three are the floor for reading a list at all: the rows
+#: (ViewListItems), the list's own forms and application pages
+#: (ViewFormPages), and the site (Open). Missing any one and the reporting
+#: account holds a grant that reaches nothing, which is the failure mode a
+#: name-based check cannot see.
+ENTERPRISE_READER_REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "ViewListItems",
+    "ViewFormPages",
+    "Open",
+)
+
+#: Bits whose absence NARROWS an enterprise-reader grant without emptying it.
+#:
+#: A reporting client that enumerates lists over REST or CSOM needs
+#: UseRemoteAPIs, and resolving the person columns it reads needs
+#: BrowseUserInfo. Both are in the built-in Read, so a level missing either is
+#: not that level, but a browser-based reader still works without them. Warn,
+#: because refusing here would fail a posture that does read the data.
+ENTERPRISE_READER_ADVISORY_PERMISSIONS: tuple[str, ...] = (
+    "BrowseUserInfo",
+    "UseRemoteAPIs",
+)
+
+
+def permission_bit_table(perm_names: Iterable[str]) -> list[dict[str, str]]:
+    """`{name, high, low}` per permission, for a runtime bitmap test.
+
+    Split the same way `base_permissions_to_high_low` splits a level, because
+    SP.BasePermissions is read back as two Int64 halves and the emitted script
+    compares against each half separately.
+    """
+    rows: list[dict[str, str]] = []
+    for name in perm_names:
+        bits = base_permissions_to_high_low([name])
+        rows.append({"name": name, "high": bits.high, "low": bits.low})
+    return rows
+
 # Built-in SP groups a group name may reference: an owner_group, or the
 # principal on a list_permissions assignment.
 BUILTIN_SP_GROUPS = frozenset({
