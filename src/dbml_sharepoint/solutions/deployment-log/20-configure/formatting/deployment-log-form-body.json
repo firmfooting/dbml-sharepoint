@@ -15,6 +15,13 @@
     {
       "displayname": "What the run did",
       "fields": ["Details"]
+    },
+    {
+      "displayname": "What changed",
+      "fields": [
+        "ChangeKey", "ChangeKind", "TargetName", "OldValue", "NewValue",
+        "EffectiveFrom", "EffectiveTo", "IsCurrent"
+      ]
     }
   ]
 }

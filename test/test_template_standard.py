@@ -619,6 +619,9 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Where it ran": "Identify",
         "What was deployed": "Act",
         "What the run did": "Govern",
+        # A change row is the same list's other shape, so its section sits
+        # last and reads as part of the same Govern beat.
+        "What changed": "Govern",
     },
 }
 
@@ -1848,11 +1851,22 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     `service-evidence-register` has a `ServiceIssue` override; a reader
     granted Read only on the default cannot read that list, and no gate
     below this one would notice.
+
+    Read, and nothing above it, on every family EXCEPT one that trims item
+    reads to the creator. `deployment-log` sets ReadSecurity 2 so a
+    contributor sees only their own rows, and a fleet reader that saw only
+    its own rows would read as an empty log rather than as a refusal. Which
+    levels clear that trim is NOT established here (no live probe has been
+    run; the family's 30-deploy/deploy.md carries the TODO), so the exception
+    is deliberately narrow: it is allowed only where the mapping declares the
+    trim, and the validator raises `enterprise_reader_on_trimmed_list` beside
+    it so the elevation is never silent.
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
     reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
+    trims = mapping.declares_item_read_trimming()
     policies = [perms.default_policy, *perms.overrides.values()]
     for policy in policies:
         assert policy is not None
@@ -1860,9 +1874,12 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
             a.level for a in policy.assignments
             if a.principal.kind == "group" and a.principal.name == reader.name
         }
-        assert granted == {"Read"}, (
-            f"{template}: policy block grants {reader.name} {granted or 'nothing'}"
-        )
+        assert granted, f"{template}: policy block grants {reader.name} nothing"
+        if not trims:
+            assert granted == {"Read"}, (
+                f"{template}: policy block grants {reader.name} {granted}, and "
+                "the mapping declares no item read trimming to justify it"
+            )
 
 
 @pytest.mark.parametrize("template", _all_templates())

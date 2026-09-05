@@ -1852,6 +1852,7 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
@@ -1925,6 +1926,7 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
@@ -1950,6 +1952,7 @@
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "fields_phase1": [],
+      "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
       "prevent_deletion": false,
@@ -2570,6 +2573,69 @@
     log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
   }
 
+  // Declared ITEM-level trimming: ReadSecurity / WriteSecurity, each 1 ("all
+  // items") or 2 ("items created by the user"). They narrow what a LIST-level
+  // grant reaches, which is how a drop box is built -- Contribute plus
+  // ReadSecurity=2 is "add rows, read back only your own".
+  //
+  // Its own probe/MERGE rather than a line in desiredListSettings, for the
+  // same reason reconcileListDeletionBlock has one: these two properties are
+  // not part of the shape probe every list pays for, they are declared by one
+  // family, and an unsupported tenant surface should fail this step alone
+  // rather than every list's settings reconcile. Null declaration means the
+  // properties are never read and never written.
+  //
+  // The read-back is the control, not ceremony. A MERGE that answers 200
+  // while the stored value stays 1 leaves a list that accepts every row and
+  // shows every row to everybody, while the deploy reports the drop box was
+  // built. This throws instead.
+  async function reconcileListItemSecurity(list, digest) {
+    if (!list.item_security) return;
+    const desired = {
+      ReadSecurity: list.item_security.read_security,
+      WriteSecurity: list.item_security.write_security,
+    };
+    const isUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=ReadSecurity,WriteSecurity`);
+    const isResp = await fetchWithRetry(isUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!isResp.ok) {
+      const text = await isResp.text();
+      throw new Error(`ReadSecurity/WriteSecurity probe failed: HTTP ${isResp.status} ${text}`);
+    }
+    const isJson = await isResp.json();
+    const actual = (isJson && isJson.d) || {};
+    if (!Number.isInteger(actual.ReadSecurity) || !Number.isInteger(actual.WriteSecurity)) {
+      throw new Error(
+        `List '${list.title}' item-security probe returned no ReadSecurity/WriteSecurity; `
+        + `this tenant does not expose the properties the declared item_security needs.`,
+      );
+    }
+    if (actual.ReadSecurity === desired.ReadSecurity
+        && actual.WriteSecurity === desired.WriteSecurity) {
+      return;
+    }
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, ...desired }, digest);
+    const verifyResp = await fetchWithRetry(isUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    const verify = verifyResp.ok ? ((await verifyResp.json()).d || {}) : {};
+    if (verify.ReadSecurity !== desired.ReadSecurity
+        || verify.WriteSecurity !== desired.WriteSecurity) {
+      throw new Error(
+        `List '${list.title}' did not retain declared item security `
+        + `(declared read ${desired.ReadSecurity} / write ${desired.WriteSecurity}; `
+        + `readback read ${verify.ReadSecurity} / write ${verify.WriteSecurity})`,
+      );
+    }
+    log('INFO', `List '${list.title}' item security reconciled: reads ${list.item_security.read}, `
+      + `writes ${list.item_security.write}.`);
+    logChange({ key: `item security: ${list.title}`, kind: 'permission', target: list.title,
+      oldValue: `read ${actual.ReadSecurity}, write ${actual.WriteSecurity}`,
+      newValue: `read ${desired.ReadSecurity}, write ${desired.WriteSecurity}` });
+  }
+
   // The declared list Description carries the provenance marker. Ownership is
   // established before this function runs. Reconciliation may repair human
   // prose around a retained marker, but must never add a missing marker to an
@@ -2645,6 +2711,7 @@
     // and on BOTH paths: a list created moments ago had its Description in
     // the creation POST, and nothing had ever read that write back.
     actual = await reconcileListDescription(list, actual, digest);
+    await reconcileListItemSecurity(list, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
   }
@@ -4386,9 +4453,10 @@
   }
   markPhase('Phase 1.6: enterprise reader enrolment');
   markPhase('Phase 1.7: deployment run and change logs');
-  // --no-sidecars: no run log, no change log, no external stamps. The
-  // shim logChange still buffers whatever renames raise, and nothing
-  // drains it: a build that declines its own logging records nothing.
+  // --no-sidecars with no central log named: no run log, no change log, no
+  // external stamps. The shim logChange still buffers whatever renames
+  // raise, and nothing drains it: a build that declines every sink records
+  // nothing.
   markPhase('Phase 1.8: maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY

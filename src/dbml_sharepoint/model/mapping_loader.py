@@ -28,6 +28,7 @@ from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_types import (
     _REMOVED_SECTIONS,
     ENTITY_KINDS,
+    ITEM_SECURITY_SCOPES,
     PRINCIPAL_KIND_LIST,
     PRINCIPAL_KINDS,
     ColumnValidation,
@@ -39,6 +40,7 @@ from dbml_sharepoint.model.mapping_types import (
     EntitySection,
     FormFormatting,
     FormVisibility,
+    ItemSecurity,
     ListPermissionPolicy,
     ListValidation,
     Mapping,
@@ -82,6 +84,7 @@ KNOWN_SECTIONS = frozenset({
     "lookup_projections",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
+    "item_security",
     # Permissions are declared as three top-level sections, not one nested
     # `permissions:` block (see _parse_permissions).
     "groups", "permission_levels", "list_permissions", "previous_prefixes",
@@ -96,6 +99,7 @@ _ENTITY_KEYS = frozenset({
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
 })
+_ITEM_SECURITY_KEYS = frozenset({"read", "write"})
 _VIEW_KEYS = frozenset({
     "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
     "row_limit", "formatting", "widths", "totals",
@@ -131,6 +135,26 @@ def _check_versioning_values(block: Any, context: str) -> None:
         raise ValueError(
             f"{context}.major_version_limit: expected an integer, got {limit!r}",
         )
+
+
+def _check_item_security_values(block: Any, context: str) -> None:
+    """Type-check one item_security block (default or override).
+
+    The values are refused rather than coerced: `read: created_by` is exactly
+    the spelling somebody reaches for, and silently reading it as `all` would
+    ship a list whose rows are visible to everyone while the mapping says
+    otherwise. That is the failure class this repository exists to close.
+    """
+    _reject_unknown_keys(block, _ITEM_SECURITY_KEYS, context)
+    for key in ("read", "write"):
+        if key not in block:
+            continue
+        value = block[key]
+        if value not in ITEM_SECURITY_SCOPES:
+            raise ValueError(
+                f"{context}.{key}: expected one of "
+                f"{', '.join(sorted(ITEM_SECURITY_SCOPES))}, got {value!r}",
+            )
 
 
 def load_mapping(mapping_path: Path) -> MappingBundle:
@@ -241,6 +265,26 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         _check_versioning_values(override or {}, context)
         versioning_overrides[override_entity] = dict(override or {})
 
+    # Item-level trimming, same default/overrides shape as versioning and the
+    # same reason for normalising a null override to `{}`.
+    item_security = _require_mapping(raw.get("item_security"), "item_security")
+    _reject_unknown_keys(item_security, {"default", "overrides"}, "item_security")
+    default_is = _require_mapping(
+        item_security.get("default"), "item_security.default",
+    )
+    _check_item_security_values(default_is, "item_security.default")
+    item_security_default = ItemSecurity(
+        read=str(default_is.get("read", ItemSecurity.read)),
+        write=str(default_is.get("write", ItemSecurity.write)),
+    )
+    item_security_overrides: dict[str, dict[str, Any]] = {}
+    for override_entity, override in _require_mapping(
+        item_security.get("overrides"), "item_security.overrides",
+    ).items():
+        context = f"item_security.overrides.{override_entity}"
+        _check_item_security_values(override or {}, context)
+        item_security_overrides[override_entity] = dict(override or {})
+
     watched = []
     for i, item in enumerate(raw.get("watched_lists") or []):
         _reject_unknown_keys(item, {"entity", "column"}, f"watched_lists[{i}]")
@@ -321,6 +365,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         cross_site_reference_columns=cross_site,
         versioning_default=versioning_default,
         versioning_overrides=versioning_overrides,
+        item_security_default=item_security_default,
+        item_security_overrides=item_security_overrides,
         enum_sources=enum_source_paths,
         watched_lists=watched,
         polymorphic_patterns=polymorphic,

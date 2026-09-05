@@ -31,9 +31,10 @@ watched_lists: []
 # deploy there. That is the one thing this family's permissions have to get
 # right, and the reason it is spelled out in 50-govern/governance.md: an
 # operator who cannot add items to this list gets a graceful skip, not an
-# error, so a permissions mistake here is silent. Members hold Contribute,
-# which is what the deploying operators need; Full Control stays with the
-# empty-by-default admin group.
+# error, so a permissions mistake here is silent. The list is a DROP BOX:
+# Members may add rows and read back only their own, and may not edit or
+# delete anything, including what they wrote themselves. Full Control stays
+# with the empty-by-default admin group and the site owners.
 groups:
   - name: "dbml List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
@@ -52,8 +53,53 @@ groups:
     only_allow_members_view_membership: false
     enroll_enterprise_reader: true
 
-permission_levels: []
+# The drop box, in eight permissions. Rows arrive from every site in the
+# fleet and nobody who writes one may edit it afterwards, including its own
+# author, so the level deliberately omits EditListItems and DeleteListItems.
+# Those two absences ARE the posture; adding either back turns the log into a
+# list its subjects can rewrite.
+#
+# AddListItems is what a cross-site stamp needs (the deploy probes bit 0x2 on
+# this list before it writes). UseRemoteAPIs is what makes the REST call
+# itself legal. ViewListItems, ViewVersions, ViewFormPages, Open, ViewPages
+# and BrowseUserInfo are the read side, and item_security below is what stops
+# them reaching anybody else's rows.
+permission_levels:
+  - name: "{prefix} dbml Log Submit Only"
+    description: "Add deployment rows to the central log and read back only your own; no editing or deleting, not even of rows you wrote."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
 
+# `reconcile: exact` is what makes the Members binding a REPLACEMENT rather
+# than an addition: the declared pairs are the allowlist and every other
+# direct binding on this list is removed, so the Edit that Members inherit
+# from the site never survives on this object. `break_inheritance: true`
+# with copyRoleAssignments=false means it is never copied down in the first
+# place; the reconcile is the second of the two.
+#
+# Owners keep Full Control because somebody has to be able to repair this
+# list, and because the account that deploys THIS family to the logging site
+# is an owner or admin of it. Operators deploying OTHER families are ordinary
+# Members here, and submit-only is exactly the right of theirs the deploy
+# uses.
+#
+# READER POSTURE, and it is a decision rather than a default: with
+# `item_security.read: own` an ordinary Read holder sees only the rows it
+# wrote, which is useless to a reporting account that exists to read the
+# whole fleet. Full Control is what is shipped, on the argument that a
+# deployment log's integrity matters and its confidentiality does not.
+# It is also more than reading needs -- it carries DeleteListItems and
+# ManagePermissions on the one list this posture exists to protect -- and
+# whether a narrower level clears the created-by trim has NOT been measured.
+# `30-deploy/deploy.md` carries the probe that has to run before this is
+# treated as settled.
 list_permissions:
   default:
     site_role: default
@@ -63,11 +109,23 @@ list_permissions:
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "Contribute"
+        level: "{prefix} dbml Log Submit Only"
       - principal: { kind: associated_owner_group }
-        level: "Contribute"
+        level: "Full Control"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
-        level: "Read"
+        level: "Full Control"
+
+# The other half of the drop box, and the half a role assignment cannot
+# express: ReadSecurity 2 ("read items that were created by the user") and
+# WriteSecurity 2 ("edit items created by the user"). The level above already
+# withholds EditListItems, so WriteSecurity is belt and braces: it is what
+# stops a future binding that does carry Edit from reaching other people's
+# rows by accident.
+item_security:
+  default:
+    read: own
+    write: own
+  overrides: {}
 
 # UI hardening, the same as every other family: sealed columns and
 # prevent_list_deletion are friction and tamper-evidence, not enforcement.
@@ -103,6 +161,7 @@ column_formatting:
         "deployment stop": good
         "abort": blocked
         "provenance": muted
+        "change": muted
 
 # Declared views. "Latest first" is the default because the question this
 # list is opened with is almost always "what happened most recently".
@@ -156,6 +215,25 @@ views:
         ReleaseTag: 140
         SchemaVersion: 140
         Operator: 180
+    # The change feed. Every row a deploy raised about a list, level or group
+    # it touched, newest first, with the old and new values side by side.
+    # Filtered on the indexed StampKind, so it scales on the one list in the
+    # catalogue that passes the list view threshold as a matter of course.
+    - title: "Changes"
+      fields: [SourceSite, ChangeKey, ChangeKind, TargetName, OldValue, NewValue, EffectiveFrom, IsCurrent]
+      where:
+        - { field: StampKind, op: eq, value: "change" }
+      sort:
+        - { field: EffectiveFrom, direction: desc }
+      widths:
+        SourceSite: 200
+        ChangeKey: 220
+        ChangeKind: 120
+        TargetName: 200
+        OldValue: 200
+        NewValue: 200
+        EffectiveFrom: 170
+        IsCurrent: 100
     # What built what. The provenance row is the one that names the deployer
     # version and the source schema, so it is the row an upgrade argument
     # is made from.
@@ -264,6 +342,21 @@ demo_items:
         DeployerVersion: "dbml-sharepoint/0.1.0"
         Operator: "demo.operator@example.com"
         Details: "Demo row. errors 1; a validation formula was refused on a Yes/No column. The run stopped and the list was left as it was."
+    - key: dl-change-risk
+      values:
+        Title: "[DEMO] dbml-sharepoint change: list: ACME_Risk"
+        StampKind: "change"
+        StampUtc: "today-2"
+        SourceSite: "https://example.sharepoint.com/sites/governance"
+        ReleaseTag: "1.0.0"
+        ChangeKey: "list: ACME_Risk"
+        ChangeKind: "create"
+        TargetName: "ACME_Risk"
+        OldValue: ""
+        NewValue: "created by 1.0.0"
+        EffectiveFrom: "today-2"
+        IsCurrent: true
+        Details: "Demo row. One type-2 change row: what the deploy did, to what, and when."
     - key: dl-start-visitor
       values:
         Title: "[DEMO] dbml-sharepoint deployment start: visitor-log 1.0.0 (schema v1.0.0)"

@@ -1,8 +1,10 @@
 # src/dbml_sharepoint/analysis/sidecars.py
 """The tool-owned sidecar lists a deploy keeps, and their markers.
 
-Two lists, one per site, created on every deploy, never deleted by this
-tool:
+Two lists, one per site, created only when the CENTRAL log is out of
+reach, never deleted by this tool. A run whose central log answers goes
+there and nowhere else: one sink per run, decided once, because a record
+split across two places is worse than either place alone.
 
 - ``dbml Local Log`` records THIS run: a deployment start stamp, a
   deployment stop stamp, and provenance documentation naming what built
@@ -138,6 +140,14 @@ def change_log_title() -> str:
 #: an AND must be indexed for the filter to survive the 5,000-item list view
 #: threshold. This list is deliberately unbounded: it gains a row per change
 #: forever.
+#:
+#: SourceSite is here because these same columns are now written into the
+#: CENTRAL log, which holds rows from every site in the fleet. ChangeKey is
+#: only unique WITHIN a site (``list: APP_Risk`` is the key two different
+#: sites both raise), so the central close filters SourceSite as well and
+#: the column has to travel with the row. It is not indexed here: on a
+#: per-site log every row carries the same value, and the central list
+#: declares its own index on it in the family's `schema.dbml`.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
         "__metadata": {"type": "SP.FieldText"},
@@ -146,6 +156,13 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "MaxLength": 255,
         "Indexed": True,
         "Description": "The reporting row key this row belongs to.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "SourceSite",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "The site the change was made on.",
     },
     {
         "__metadata": {"type": "SP.FieldText"},
@@ -205,6 +222,16 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     },
 )
 
+#: The internal names a CENTRAL log has to carry before this tool will write
+#: change rows into it, derived from `CHANGE_FIELDS` rather than restated, so
+#: the probe and the columns cannot drift apart. A central list carrying every
+#: one of them takes the same type-2 rows the on-site change log takes; a
+#: central list missing any of them takes stamps only, and the phase says so
+#: once.
+CENTRAL_CHANGE_COLUMNS: tuple[str, ...] = tuple(
+    str(field["Title"]) for field in CHANGE_FIELDS
+)
+
 #: The run log's stamp columns, in the same createField-body form as
 #: `CHANGE_FIELDS` and created by the same probe/create/read-back loop.
 #:
@@ -216,10 +243,13 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
 #: The create body never carried them either, so a FRESH run log was in the
 #: same state.
 #:
-#: The names are deliberately the central log's names minus the two that only
-#: make sense across sites (SourceSite, DeployerVersion): one row shape reads
-#: the same whether it was found on the site or in the central list. Nothing
-#: is indexed, because this list holds two rows per run and is read by eye.
+#: The names are deliberately the central log's names minus DeployerVersion:
+#: one row shape reads the same whether it was found on the site or in the
+#: central list. SourceSite is redundant on a per-site log and carried anyway,
+#: because these rows are the FALLBACK for the central ones and a fallback
+#: that drops a column cannot be lifted into the central list later without
+#: guessing which site it came from. Nothing is indexed, because this list
+#: holds two rows per run and is read by eye.
 #:
 #: Details is a Note to match `deployment-log`'s own `longtext` declaration,
 #: with the same create-body shape jsgen builds for a Note column.
@@ -237,6 +267,13 @@ RUN_LOG_STAMP_COLUMNS: tuple[dict[str, object], ...] = (
         "FieldTypeKind": 4,
         "DateFormat": "DateTime",
         "Description": "When the stamp was written, in UTC.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "SourceSite",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "The site the deploy ran against.",
     },
     {
         "__metadata": {"type": "SP.FieldText"},

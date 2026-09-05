@@ -11,6 +11,12 @@ writer published under a name every caller invokes with one argument.
 Each is a runtime fact, so each is pinned by running the script rather than
 by reading it. `node --check` would have caught none of them.
 
+Since the central-first change the phase picks ONE sink per run, so this
+module runs the script twice over: `central_absent=True` for the LOCAL mode
+the sidecar assertions are about, and a reachable central log for the CENTRAL
+mode, where the assertion that matters most is a NEGATIVE one -- that no
+request in the whole run creates a sidecar list.
+
 Node is required; the tests skip without it rather than failing.
 """
 
@@ -28,6 +34,7 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.sidecars import (
+    CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_FIELDS,
@@ -48,11 +55,26 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 #: spells the key it raises for a list it created.
 SEEDED_KEY = "list: APP_Risk"
 
+#: The site this run deploys to, and one it does not. The second exists so the
+#: central close can be shown to leave another site's row alone: ChangeKey is
+#: unique within a site, not across the fleet.
+SITE_URL = "https://example.sharepoint.com/sites/test"
+OTHER_SITE_URL = "https://example.sharepoint.com/sites/other"
+
 _HARNESS = textwrap.dedent(r"""
     const FAIL_CHANGE_ITEM_WRITES = false;
+    const FAIL_CENTRAL_ITEM_WRITES = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
     const SEED_ITEMS = {};
     const SEED_LISTS = [];
+    const SEED_CENTRAL = [];
+    // No central logging site at all: every cross-web read 404s, which is what
+    // sends the run into LOCAL mode and the sidecars into existence.
+    const CENTRAL_ABSENT = false;
+    // The central list's EffectiveBasePermissions.Low. 2 is AddListItems
+    // alone, which is the drop-box posture the deployment-log family ships;
+    // 6 adds EditListItems, which is what the type-2 close needs.
+    const CENTRAL_PERMS_LOW = 2;
     // The columns the central list carries. Empty models a list the operator
     // pointed DBMLSP_DEPLOY_LOG_LIST at that this tool never provisioned.
     const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;
@@ -75,11 +97,14 @@ _HARNESS = textwrap.dedent(r"""
       lists: {},                  // Title -> the stored list shape
       fields: {},                 // list Title -> [ { Id, InternalName, Indexed } ]
       items: { ...SEED_ITEMS },   // list Title -> [ row ]
-      central: [],                // rows POSTed to the cross-web deployment log
+      central: [...SEED_CENTRAL], // rows POSTed to the cross-web deployment log
       nextList: 1,
       nextField: 1,
       nextItem: 1,
     };
+    // Past the seeded central rows, so "written by this run" is readable off
+    // the Id alone rather than by diffing the seed back out.
+    for (const row of state.central) state.nextItem = Math.max(state.nextItem, row.Id + 1);
     const guid = (prefix, n) => `${prefix}-0000-0000-0000-${String(n).padStart(12, '0')}`;
     // Settings are STORED and echoed rather than answered with constants: the
     // deploy reads every list back and aborts wave 1 on a setting it declared
@@ -157,6 +182,14 @@ _HARNESS = textwrap.dedent(r"""
       const m = /ChangeKey eq '([^']*)'/.exec(rest);
       return m ? m[1] : null;
     };
+    // The central close filters on SourceSite too, because ChangeKey is only
+    // unique WITHIN a site: `list: APP_Risk` is a key every site raises. A
+    // mock that ignored this half would answer one site's close with another
+    // site's current row and the test would never see it.
+    const filteredSite = (rest) => {
+      const m = /SourceSite eq '([^']*)'/.exec(rest);
+      return m ? m[1] : null;
+    };
     // Lists that already exist when the paste starts, with the built-in
     // columns and NOTHING else. A run log created by the bare-Title version
     // of this phase is exactly this, and it is the state `ensureSidecar`
@@ -178,9 +211,13 @@ _HARNESS = textwrap.dedent(r"""
 
       // ---- the CENTRAL logging site, addressed cross-web ------------------
       if (u.includes('/sites/CENTRAL_SITE/')) {
+        // Not "the list is missing" but "the site is not there": the web read
+        // is what the phase probes first and 404 is what it answers.
+        if (CENTRAL_ABSENT) return notFound();
         if (u.includes('contextinfo')) return digestFor(u, method, 'central-digest');
         if (u.toLowerCase().includes('effectivebasepermissions')) {
-          return reply(200, { d: { EffectiveBasePermissions: { High: 0, Low: 2 } } });
+          return reply(200, { d: {
+            EffectiveBasePermissions: { High: 0, Low: CENTRAL_PERMS_LOW } } });
         }
         if (/_api\/web\/\?\$select=Url$/.test(u)) {
           return reply(200, { d: { Url: 'https://example.sharepoint.com/sites/CENTRAL_SITE' } });
@@ -194,14 +231,36 @@ _HARNESS = textwrap.dedent(r"""
           return reply(200, { d: { results:
             ['Title'].concat(CENTRAL_FIELDS).map((n) => ({ InternalName: n })) } });
         }
+        const centralItem = /lists\/getbytitle\('CENTRAL_LIST'\)\/items\((\d+)\)/.exec(u);
+        if (centralItem && verb === 'MERGE') {
+          if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
+          const row = state.central.find((r) => r.Id === Number(centralItem[1]));
+          if (row) Object.assign(row, body || {});
+          return reply(204, {});
+        }
         if (method === 'POST' && /\/items$/.test(u)) {
+          if (FAIL_CENTRAL_ITEM_WRITES) {
+            return reply(500, { error: { message: { value:
+              'central log is refusing writes' } } });
+          }
           // A digest is scoped to the web that ISSUED it, so the host web's
           // is refused here exactly as SharePoint refused it live.
           if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
           const bad = itemRefusal(body, ['Title'].concat(CENTRAL_FIELDS), CENTRAL_ITEM_TYPE);
           if (bad) return bad;
-          state.central.push(body);
-          return reply(201, { d: { Id: state.nextItem++ } });
+          const row = { Id: state.nextItem++, ...body };
+          state.central.push(row);
+          return reply(201, { d: { Id: row.Id } });
+        }
+        if (/\/items/.test(u)) {
+          const key = filteredKey(u);
+          const site = filteredSite(u);
+          const rows = state.central.filter(
+            (r) => (key === null || r.ChangeKey === key)
+              && (site === null || r.SourceSite === site)
+              && r.IsCurrent === true,
+          );
+          return reply(200, { d: { results: rows } });
         }
         return reply(200, { d: { results: [] } });
       }
@@ -321,7 +380,7 @@ def _deploy_js() -> str:
     bundle = make_bundle(entities=["Risk"])
     js = generate_deploy_js(
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        site_url=SITE_URL, site_role="default",
         source_dbml="x.dbml", source_mtime="2026-09-05T00:00:00Z",
         generated_at="2026-09-05T00:00:00Z",
         sidecar_run_log_title=RUN_LOG_TITLE,
@@ -363,15 +422,52 @@ def _run_deploy(
     bare_run_log: bool = False,
     fail_run_log_field_creates: bool = False,
     central_columns: bool = True,
+    central_change_columns: bool = True,
+    central_absent: bool = False,
+    central_can_close: bool = False,
+    fail_central_writes: bool = False,
+    seeded_central_rows: bool = False,
 ) -> dict[str, Any]:
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
     # spelled from the list title and would otherwise be rewritten twice.
-    central_names = json.dumps(list(CENTRAL_LOG_COLUMNS) if central_columns else [])
+    fields: list[str] = []
+    if central_columns:
+        fields += list(CENTRAL_LOG_COLUMNS)
+        if central_change_columns:
+            fields += [c for c in CENTRAL_CHANGE_COLUMNS if c not in fields]
+    central_names = json.dumps(fields)
     harness = _substitute(
         harness, "const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;",
         f"const CENTRAL_FIELDS = {central_names};",
     )
+    if central_absent:
+        harness = _substitute(
+            harness, "const CENTRAL_ABSENT = false;", "const CENTRAL_ABSENT = true;",
+        )
+    if central_can_close:
+        # 2 | 4: AddListItems plus EditListItems.
+        harness = _substitute(
+            harness, "const CENTRAL_PERMS_LOW = 2;", "const CENTRAL_PERMS_LOW = 6;",
+        )
+    if fail_central_writes:
+        harness = _substitute(
+            harness, "const FAIL_CENTRAL_ITEM_WRITES = false;",
+            "const FAIL_CENTRAL_ITEM_WRITES = true;",
+        )
+    if seeded_central_rows:
+        # A current central row for this site AND one for another site with
+        # the SAME key, which is the pair a close keyed on ChangeKey alone
+        # cannot tell apart.
+        seeded_central = json.dumps([
+            {"Id": 800, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
+             "SourceSite": SITE_URL, "StampKind": "change", "IsCurrent": True},
+            {"Id": 801, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
+             "SourceSite": OTHER_SITE_URL, "StampKind": "change", "IsCurrent": True},
+        ])
+        harness = _substitute(
+            harness, "const SEED_CENTRAL = [];", f"const SEED_CENTRAL = {seeded_central};",
+        )
     assert harness.count("CENTRAL_ITEM_TYPE") == 2
     harness = harness.replace(
         "CENTRAL_ITEM_TYPE",
@@ -448,14 +544,21 @@ def _posts_to(calls: list[dict[str, Any]], title: str) -> list[dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def accepting_run() -> dict[str, Any]:
-    """One run whose change log takes every write. The control."""
-    return _run_deploy(seeded_change_rows=True)
+    """One LOCAL-mode run whose change log takes every write. The control.
+
+    `central_absent` is what puts it in LOCAL mode: with a central log
+    reachable this run would create no sidecars at all and every assertion
+    below would be about lists that do not exist.
+    """
+    return _run_deploy(seeded_change_rows=True, central_absent=True)
 
 
 @pytest.fixture(scope="module")
 def refusing_run() -> dict[str, Any]:
     """The same run with the change log refusing every item POST."""
-    return _run_deploy(seeded_change_rows=True, fail_change_writes=True)
+    return _run_deploy(
+        seeded_change_rows=True, central_absent=True, fail_change_writes=True,
+    )
 
 
 def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
@@ -539,22 +642,13 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
         set(c["body"]) - {"__metadata"} <= run_log_fields for c in stamps
     ), [sorted(set(c["body"]) - {"__metadata"} - run_log_fields) for c in stamps]
 
-    # The central log's rows, in full: the family declares every stamp column
-    # so the field probe finds them all and the row is structured.
-    central = state["central"]
-    titles = [row["Title"] for row in central]
-    assert any(t.startswith("dbml-sharepoint deployment start:") for t in titles)
-    assert any(t.startswith("dbml-sharepoint provenance:") for t in titles)
-    assert any(t.startswith(f"dbml-sharepoint {kinds[1]}:") for t in titles)
-    assert all(len(t) <= 255 for t in titles)
-    assert all(row["__metadata"]["type"].startswith("SP.Data.") for row in central)
-    assert all(set(CENTRAL_LOG_COLUMNS) <= set(row) for row in central), (
-        f"a central row was written without its stamp columns: {central}"
+    # And nothing at all went to the central log, because there was none to
+    # go to. The mode is decided once and never revisited, so a run that fell
+    # back to the sidecars stays there for the whole run.
+    assert state["central"] == [], (
+        f"a LOCAL-mode run wrote to the central log anyway: {state['central']}"
     )
-    assert {row["StampKind"] for row in central} == {
-        "deployment start", "provenance", kinds[1],
-    }
-    assert all(row["SourceSite"] == "https://example.sharepoint.com/sites/test" for row in central)
+    assert "Logging mode LOCAL" in run["output"]
 
     assert summary["loggingFailures"] == []
     # Nothing phase 1.7 did reached the abort bus.
@@ -604,7 +698,7 @@ def test_a_change_log_that_refuses_every_write_changes_nothing_but_the_log(
 @pytest.fixture(scope="module")
 def reused_bare_run_log() -> dict[str, Any]:
     """A run log the OLD bare-Title code left behind: reused, no columns."""
-    return _run_deploy(bare_run_log=True)
+    return _run_deploy(bare_run_log=True, central_absent=True)
 
 
 def test_a_reused_run_log_is_given_the_stamp_columns_it_never_had(
@@ -657,7 +751,9 @@ def test_a_run_log_whose_columns_cannot_be_created_still_gets_its_stamps() -> No
     mean a run that happened is recorded nowhere, so the row is written
     without the structured half instead.
     """
-    run = _run_deploy(bare_run_log=True, fail_run_log_field_creates=True)
+    run = _run_deploy(
+        bare_run_log=True, fail_run_log_field_creates=True, central_absent=True,
+    )
     state, summary, calls = run["state"], run["summary"], run["calls"]
 
     assert run["unhandled"] == [], "\n".join(run["unhandled"])
@@ -680,8 +776,152 @@ def test_a_run_log_whose_columns_cannot_be_created_still_gets_its_stamps() -> No
     assert "carry Title only" in run["output"]
 
 
+@pytest.fixture(scope="module")
+def central_run() -> dict[str, Any]:
+    """The CENTRAL-mode control: the central log answers, and can be edited.
+
+    `central_can_close` is deliberately NOT the default. Under the drop-box
+    posture the deployment-log family ships, a fleet operator holds
+    AddListItems and no EditListItems, so the append-only run is the ordinary
+    one and it has its own test below.
+    """
+    return _run_deploy(central_can_close=True, seeded_central_rows=True)
+
+
+def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
+    central_run: dict[str, Any],
+) -> None:
+    """The alignment, stated as the negative it is.
+
+    One sink per run. With the central log reachable this run must leave the
+    deploy target with no logging lists on it whatsoever -- not created, not
+    stamped, not probed for columns -- and every stamp and every change row
+    must be on the central list instead.
+
+    The negative is the assertion that matters. A dual-write regression puts
+    the rows in both places, which every positive assertion here would still
+    pass.
+    """
+    run = central_run
+    calls, state, summary = run["calls"], run["state"], run["summary"]
+
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert "Logging mode CENTRAL" in run["output"]
+
+    # Neither sidecar exists, and no request tried to make one.
+    for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
+        assert title not in state["lists"], f"CENTRAL mode created '{title}'"
+        assert not [
+            c for c in calls
+            if c["method"] == "POST" and (c["body"] or {}).get("Title") == title
+        ], f"CENTRAL mode POSTed a create for '{title}'"
+        assert not [c for c in calls if f"getbytitle('{title}')" in c["url"]], (
+            f"CENTRAL mode addressed '{title}' at all"
+        )
+
+    # The stamps, on the central list, in full. Ids below 802 are the two
+    # rows this run found already there.
+    written = [r for r in state["central"] if r["Id"] >= 802]
+    stamps = [r for r in written if r["StampKind"] != "change"]
+    kinds = [r["StampKind"] for r in stamps]
+    assert kinds[0] == "deployment start"
+    assert kinds[1] == "provenance"
+    assert kinds[-1] == ("abort" if summary["errors"] else "deployment stop")
+    assert all(set(CENTRAL_LOG_COLUMNS) <= set(row) for row in stamps), (
+        f"a central stamp was written without its stamp columns: {stamps}"
+    )
+    assert all(len(row["Title"]) <= 255 for row in written)
+    assert all(row["__metadata"]["type"].startswith("SP.Data.") for row in written)
+    assert all(row["SourceSite"] == SITE_URL for row in stamps)
+
+    # The change rows, on the SAME list, told apart by StampKind and carrying
+    # every column CHANGE_FIELDS declares.
+    changes = [r for r in written if r["StampKind"] == "change"]
+    assert changes, "no change row reached the central log"
+    assert all(set(CENTRAL_CHANGE_COLUMNS) <= set(row) for row in changes), (
+        f"a central change row is missing declared columns: {changes}"
+    )
+    assert all(r["ChangeKey"] and r["SourceSite"] == SITE_URL for r in changes)
+    assert all(r["IsCurrent"] is True and r["EffectiveTo"] is None for r in changes)
+
+    # The type-2 close, keyed on the site as well as the key. The seeded row
+    # for THIS site is closed; the identical row for another site is not.
+    mine = next(r for r in state["central"] if r["Id"] == 800)
+    theirs = next(r for r in state["central"] if r["Id"] == 801)
+    assert mine["IsCurrent"] is False, "the seeded central row was never closed"
+    assert mine["EffectiveTo"], "the closed central row carries no EffectiveTo"
+    assert theirs["IsCurrent"] is True, (
+        "the close retired another site's row: ChangeKey is not fleet-unique"
+    )
+
+    assert summary["loggingFailures"] == []
+    assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
+
+
+def test_a_central_log_this_account_cannot_edit_appends_without_closing() -> None:
+    """The drop-box posture, from the writing end.
+
+    The `{prefix} dbml Log Submit Only` level the deployment-log family grants
+    site Members carries AddListItems and NOT EditListItems, so a fleet
+    operator cannot MERGE the previous current row closed. That is the design
+    working, not a failure: the row is appended anyway, no close is attempted,
+    and the consequence is stated once rather than recorded per row.
+    """
+    run = _run_deploy(seeded_central_rows=True)  # AddListItems only
+
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    central = run["state"]["central"]
+
+    appended = [
+        r for r in central if r["Id"] >= 802 and r["StampKind"] == "change"
+    ]
+    assert appended, "the append-only path wrote no change row"
+    assert all(r["IsCurrent"] is True for r in appended)
+
+    seeded = next(r for r in central if r["Id"] == 800)
+    assert seeded["IsCurrent"] is True, "a close was issued without EditListItems"
+    assert not [
+        c for c in run["calls"]
+        if c["headers"].get("X-HTTP-Method") == "MERGE"
+        and EXTERNAL_LOG_DEFAULT in c["url"]
+    ], "a MERGE was sent to a list this account cannot edit"
+
+    # Said once, naming the consequence, and not on either failure list.
+    assert "holds no EditListItems" in run["output"]
+    assert "latest EffectiveFrom" in run["output"]
+    assert run["summary"]["loggingFailures"] == []
+
+
+def test_a_central_write_that_fails_mid_run_never_falls_back_to_the_site() -> None:
+    """The rule the whole design exists for: no half-in-two-places log.
+
+    A CENTRAL-mode write that SharePoint refuses is recorded on
+    loggingFailures and the deploy carries on. It is not retried against the
+    sidecars, and the sidecars are not created in order to retry it, because
+    a run recorded half centrally and half locally is unreadable in both.
+    """
+    run = _run_deploy(fail_central_writes=True, central_can_close=True)
+
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    state, summary = run["state"], run["summary"]
+
+    assert state["central"] == [], "the mock accepted a write it was told to refuse"
+    for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
+        assert title not in state["lists"], (
+            f"a failed central write fell back to '{title}'"
+        )
+
+    assert summary["loggingFailures"], "the refusals were recorded nowhere"
+    assert all(
+        "refusing writes" in json.dumps(f) for f in summary["loggingFailures"]
+    ), summary["loggingFailures"]
+    # Never the abort bus, and the deploy still finished.
+    assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
+    assert "logging operation(s)" in run["output"]
+
+
 def test_the_central_digest_is_the_central_web_s_own(
-    accepting_run: dict[str, Any],
+    central_run: dict[str, Any],
 ) -> None:
     """Where the cross-web digest comes from, and where it goes.
 
@@ -695,7 +935,7 @@ def test_the_central_digest_is_the_central_web_s_own(
       what `externalApi('contextinfo')` addressed; the identical error text is
       why it read as the scope bug rather than as a wrong URL.
     """
-    calls = accepting_run["calls"]
+    calls = central_run["calls"]
     central_root = f"/sites/{CENTRAL_LOG_SITE_DEFAULT}"
 
     digest_calls = [c for c in calls if "contextinfo" in c["url"]]
@@ -741,11 +981,36 @@ def test_a_central_log_without_the_stamp_columns_takes_a_title_only_row() -> Non
 
     central = run["state"]["central"]
     assert central, "the degraded stamps never reached the central log"
-    assert all(set(row) == {"__metadata", "Title"} for row in central), (
+    assert all(set(row) == {"Id", "__metadata", "Title"} for row in central), (
         f"a stamp named a column the list does not carry: {central}"
     )
-    assert "Title only" in run["output"]
+    assert "as Title alone" in run["output"]
     assert not [
         f for f in run["summary"]["loggingFailures"]
         if EXTERNAL_LOG_DEFAULT in json.dumps(f)
     ], run["summary"]["loggingFailures"]
+
+
+def test_a_central_log_predating_the_change_columns_drops_the_change_feed() -> None:
+    """The one case where a run records its stamps and loses its changes.
+
+    A central list provisioned before the change columns existed takes the
+    stamps in full and cannot hold a change row. Writing those rows to the
+    sidecars instead would split the feed across two lists, so they are
+    counted and dropped, and both halves of that -- what happened and what to
+    do about it -- are said out loud.
+    """
+    run = _run_deploy(central_change_columns=False)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+
+    central = run["state"]["central"]
+    assert central, "the stamps never reached the central log"
+    assert all(row["StampKind"] != "change" for row in central), (
+        f"a change row was written to a list with no change columns: {central}"
+    )
+    assert all(set(CENTRAL_LOG_COLUMNS) <= set(row) for row in central)
+    assert CHANGE_LOG_TITLE not in run["state"]["lists"], (
+        "the dropped change feed was written to the site instead"
+    )
+    assert "predates the change columns" in run["output"]
+    assert "change event(s) were counted and dropped" in run["output"]

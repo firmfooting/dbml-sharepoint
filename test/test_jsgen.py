@@ -1202,7 +1202,11 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
     assert _call_count(js, "assertListAdoptable") == 11
-    assert _call_count(js, "assertDeclaredListOwnedNow") == 11
+    # One more than assertListAdoptable: reconcileListItemSecurity is a
+    # settings MERGE on an already-adopted list, so it re-proves ownership
+    # without a second adoptability pass, the same shape reconcileListDeletionBlock
+    # has.
+    assert _call_count(js, "assertDeclaredListOwnedNow") == 12
     assert _call_count(js, "assertDeclaredFieldOwnedNow") == 1
     assert _call_count(js, "assertDeclaredFieldTargetNow") == 3
     # One survey per post-schema write phase: unseal, indexes, defaults, views,

@@ -165,6 +165,55 @@ class Versioning:
 
 
 @dataclass(frozen=True)
+class ItemSecurity:
+    """SP list ITEM-level permissions: whose items a principal may see and edit.
+
+    Two settings on `SP.List`, `ReadSecurity` and `WriteSecurity`, each taking
+    1 ("all items") or 2 ("items created by the user"). They narrow what a
+    principal's LIST-level grant reaches, so a group holding Contribute on a
+    list with `read: own` can add rows and read back only its own.
+
+    `all` on both is SharePoint's own default and this tool's, so a mapping
+    that says nothing declares nothing and the deploy never touches the two
+    properties. Only a mapping that asks for trimming gets the reconcile.
+
+    NOT MODELLED: `WriteSecurity` = 4, which is documented as "no items". It
+    is left out because nothing here needs it and this repository does not
+    emit a SharePoint value it has not measured. Adding it means a probe
+    under `test/manual/` first.
+
+    THE ONE THING THIS CANNOT PROMISE is which levels bypass the trim.
+    Elevated principals (Full Control, and by report anything holding
+    ManageLists) are widely said to see every item regardless, and that has
+    NOT been measured here. `deployment-log`'s `30-deploy/deploy.md` carries
+    the probe that has to run before any reader posture leans on it.
+    """
+
+    #: `all` -> ReadSecurity 1, `own` -> ReadSecurity 2.
+    read: str = "all"
+    #: `all` -> WriteSecurity 1, `own` -> WriteSecurity 2.
+    write: str = "all"
+
+    @property
+    def read_security(self) -> int:
+        return 2 if self.read == "own" else 1
+
+    @property
+    def write_security(self) -> int:
+        return 2 if self.write == "own" else 1
+
+    @property
+    def declared(self) -> bool:
+        """True when this asks for anything SharePoint would not do anyway."""
+        return self.read != "all" or self.write != "all"
+
+
+#: The values `item_security.read` and `.write` accept. Named here so the
+#: loader's refusal and the validator's message quote the same set.
+ITEM_SECURITY_SCOPES: frozenset[str] = frozenset({"all", "own"})
+
+
+@dataclass(frozen=True)
 class WatchedList:
     """A (entity, column) pair watched by W10 status capture."""
 
@@ -558,6 +607,11 @@ class Mapping:
     # of the list objects.
     seal_columns: bool = False
     prevent_list_deletion: bool = False
+    # Item-level read/write trimming. Absent from a mapping means the
+    # dataclass default (`all`/`all`), which is SharePoint's own, and the
+    # deploy leaves both properties alone rather than writing them back.
+    item_security_default: ItemSecurity = field(default_factory=ItemSecurity)
+    item_security_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def display_name_for(self, entity_name: str, column_name: str) -> str:
         """Display title for a rendered column: override, else auto-split
@@ -635,6 +689,34 @@ class Mapping:
                 override.get("enable_minor_versions", default.enable_minor_versions),
             ),
         )
+
+    def item_security_for(self, entity_name: str) -> ItemSecurity:
+        """The item-level trimming this entity's list is provisioned with.
+
+        The per-entity override merged onto the default, key by key, the same
+        way `versioning_for` merges: an override naming only `read` keeps the
+        default's `write`.
+        """
+        override = self.item_security_overrides.get(entity_name, {})
+        default = self.item_security_default
+        return ItemSecurity(
+            read=str(override.get("read", default.read)),
+            write=str(override.get("write", default.write)),
+        )
+
+    def declares_item_read_trimming(self) -> bool:
+        """True when ANY list in this mapping trims reads to the caller's own
+        items.
+
+        Asked by the enterprise-reader rule in `checks/_permissions.py`, which
+        needs the mapping-wide answer rather than a per-entity one: it sees a
+        grant as a (level, origin) pair with no entity attached, because an
+        override's assignments are keyed by entity while the default's are not.
+        """
+        entities = set(self.entities) | set(self.item_security_overrides)
+        return any(
+            self.item_security_for(name).read == "own" for name in entities
+        ) or self.item_security_default.read == "own"
 
     def permissions_for_entity(self, entity_name: str) -> "ListPermissionPolicy | None":
         """Return the per-list permission policy for the given entity name.

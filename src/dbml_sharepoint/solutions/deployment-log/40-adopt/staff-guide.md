@@ -6,7 +6,7 @@ occasion you add a row by hand.
 
 ## What a row means
 
-Each row is one stamp written at one moment by one deploy run. Four kinds:
+Each row is written at one moment by one deploy run. Five kinds:
 
 - **deployment start**: a run began. It says what was about to be deployed,
   where, and by whom, before anything was changed.
@@ -16,6 +16,9 @@ Each row is one stamp written at one moment by one deploy run. Four kinds:
   lists created, columns added, how long it took.
 - **abort**: the run stopped early. Something was refused and the run did not
   complete. Read the Details.
+- **change**: one thing the run altered, in the *What changed* section: which
+  list or column, the old value, the new value, and the window the value held
+  for. A run leaves one of these per change and none if it changed nothing.
 
 A complete run leaves a start, a provenance and a stop. A start with no stop
 and no abort means the browser tab was closed, the network dropped, or the
@@ -27,6 +30,9 @@ person walked away; treat it as unfinished until somebody says otherwise.
 changed recently, anywhere. **Runs** drops the provenance rows so start and
 stop sit next to each other and you can read a run's duration off the list.
 **Provenance** is the reverse: what version of the tool built what, per site.
+**Changes** is the detail under a run: not that a deploy happened, but what
+it did. Read it grouped by site, because a change key identifies a thing
+within one site and two sites can raise the same key for different lists.
 
 **Aborted runs** should be short, and every row in it deserves an answer.
 An abort is not a failure of this list; it is the deploy refusing to leave a
@@ -48,12 +54,17 @@ person reading the log does not have to reconstruct it.
    A blank is honest; a guessed version number is not.
 4. **What the run did**: this is the part worth writing. What happened, and
    what you did about it.
+5. **What changed**: leave it empty. Those fields belong to the `change` rows
+   a deploy writes, and a hand-typed one will not line up with them.
 
 ## What NOT to do
 
 - Do not edit or delete a stamp a script wrote. It is the record of what
   happened, not a record of what should have happened. Correct it by adding a
-  row that says so; versioning keeps the original either way.
+  row that says so. This one is enforced rather than asked for: unless you
+  administer this list, SharePoint will refuse, and for the same reason you
+  see your own rows on the list and not anybody else's. If you need to read
+  the whole log, ask the log owner for access rather than for edit rights.
 - Do not use this list as a change register. It records what this tool did to
   SharePoint, not what your organisation decided. The two are different
   questions and the second one has its own family.

@@ -7,14 +7,16 @@ Project deployment_log { database_type: 'SharePoint Online Lists' }
 
 // What a row records. Every member is written by the deploy script, never
 // typed: `deployment start` opens a run, `deployment stop` closes a clean
-// one, `abort` closes one that recorded errors, and `provenance` names what
-// built the bundle. Adding a member here means teaching the deployer to
-// write it, because nothing else produces rows.
+// one, `abort` closes one that recorded errors, `provenance` names what
+// built the bundle, and `change` is one row of the deploy's type-2 change
+// feed. Adding a member here means teaching the deployer to write it,
+// because nothing else produces rows.
 Enum stamp_kind {
   "deployment start"
   "deployment stop"
   "abort"
   "provenance"
+  "change"
 }
 
 // The table name IS the SharePoint list title, and the mapping declares no
@@ -38,14 +40,37 @@ Table "dbml-deployment-log" {
   Operator nvarchar   [note: 'The account that pasted the script. Read from SharePoint at run time, not typed']
   Details  longtext   [note: 'What the run did: error count, lists created and renamed, columns created and skipped, elapsed time. Free text, because the shape of it changes with the deployer']
 
+  // The CHANGE half. A `change` row is one type-2 slowly-changing-dimension
+  // record from a deploy's change feed, and these are the columns the
+  // on-site change log holds (analysis/sidecars.py, CHANGE_FIELDS). They are
+  // empty on a stamp row and filled on a change row: one list, two row
+  // shapes, told apart by StampKind, because a deploy that has a central log
+  // writes everything there and creates no per-site sidecars at all.
+  ChangeKey nvarchar [note: 'The reporting row key this change belongs to. Unique within a site, not across the fleet, so a reader groups by SourceSite and ChangeKey together']
+  ChangeKind nvarchar [note: 'What changed: rename, create, permission']
+  TargetName nvarchar [note: 'The list, level or group the change lands on']
+  OldValue nvarchar [note: 'The value before the change; empty for a create']
+  NewValue nvarchar [note: 'The value after the change']
+  EffectiveFrom datetime [note: 'When the change took effect']
+  EffectiveTo datetime [note: 'When the next change for this key took effect. Empty on the current row']
+  IsCurrent boolean [note: 'Whether this row is the current one for its key and site. Exactly one row per (SourceSite, ChangeKey) carries true']
+
   // Supported indexes for the declared views and the filters a reader
   // reaches for. StampUtc is indexed because the default view sorts on it
   // and a fleet log is the one list here that grows without bound.
+  //
+  // SourceSite, ChangeKey and IsCurrent are the type-2 close filter, read as
+  // one three-way AND (`SourceSite eq X and ChangeKey eq Y and IsCurrent eq
+  // true`). EVERY side of an AND has to be indexed for the filter to survive
+  // the 5,000-item list view threshold, and this is the one list in the
+  // catalogue that passes it as a matter of course.
   indexes {
     StampKind
     SourceSite
     StampUtc
+    ChangeKey
+    IsCurrent
   }
 
-  Note: 'Deployment stamps from every site this tool provisions: what was deployed, where, by whom, from which release, and whether it finished.'
+  Note: 'Deployment stamps and change rows from every site this tool provisions: what was deployed, where, by whom, whether it finished, and what changed.'
 }

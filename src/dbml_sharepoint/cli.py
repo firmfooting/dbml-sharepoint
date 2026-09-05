@@ -642,7 +642,9 @@ def build(
         False,
         "--no-sidecars",
         help="Skip both built-in sidecar lists (the run log and the change "
-        "log) entirely: no lists created, no stamps, no change rows.",
+        "log) entirely: no lists created, no stamps, no change rows. Only "
+        "bites when the central deployment log is out of reach, since a run "
+        "that finds it writes there and makes no sidecars either way.",
     ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.
