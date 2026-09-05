@@ -14,7 +14,7 @@
     },
     {
       "displayname": "Review",
-      "fields": ["ReviewDate"]
+      "fields": ["LastReviewedDate", "NextReviewDue"]
     },
     {
       "displayname": "System",

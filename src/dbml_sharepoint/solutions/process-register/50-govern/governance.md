@@ -58,15 +58,24 @@ bypassed is **In progress** at best.
 | Rule | Where it lives |
 | --- | --- |
 | Planned, In progress or Digitised has a TargetState | `list_validation` |
-| ReviewDate is at most twelve months out | `column_validation` on `ReviewDate` |
+| LastReviewedDate cannot be in the future | `column_validation` on `LastReviewedDate` |
 | Owner, Function, Criticality, CurrentState, PainLevel and DigitisationStatus are present | the columns' own `not null`, always enforced |
 
 The review-date rule sits on its own column because SharePoint gives a
 *list* one validation formula and one message, and a rule that reads only
-its own column can therefore keep its own wording. It exists because a
-review date further out than a year is not a slower cadence: it is a row
-that has left the annual refresh, showing as neither due nor overdue while
-quietly going stale.
+its own column can therefore keep its own wording.
+
+**The annual refresh is calculated, not typed.** `NextReviewDue` is twelve
+months after `LastReviewedDate`, and nobody can edit it. Dating the review
+you just did is the only way to move the next one.
+
+That replaces a cap of "at most twelve months from today" on a hand-set
+`ReviewDate`, which anybody could satisfy forever by moving the date eleven
+months out again every month, without ever checking whether the row was
+still true. Counting from the last review rather than from today is what
+closes it. A blank `LastReviewedDate` means nobody has ever checked the row,
+which is a finding in the same way a blank Owner is, and is why it is not
+defaulted.
 
 **Still a governance check, and not by choice:**
 

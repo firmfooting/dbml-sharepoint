@@ -49,7 +49,9 @@ Table BusinessProcess {
   DigitisationStatus   digitisation_status  [not null, default: 'Not assessed']
   TargetState          nvarchar             [note: 'Where it should end up: which system, which template, which form']
   SystemUrl            hyperlink            [note: 'Link to the digitised process once it exists (the list, form or system)']
-  ReviewDate           date                 [note: 'Next inventory review of this row']
+  LastReviewedDate     date                 [note: 'When somebody last checked this row is still true. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
+  NextReviewDue        calculated_date      [note: 'Next inventory review of this row. Calculated twelve months after Last Reviewed Date, which is the annual refresh 50-govern sets. Nobody can type it, so nobody can push a refresh out. Blank until the row has been through its first review']
+  ReviewDate           date                 [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
 
   indexes {
     Function

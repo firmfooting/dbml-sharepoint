@@ -22,13 +22,17 @@ hand: *The worklist* (the default, ranked by score), *Programme dashboard*
 processes still on paper or in a spreadsheet, which is the slide leadership
 remembers. The score renders as a bar out of 9, coloured from the **Pain
 level** beside it, so a severely painful process reads red whatever its
-criticality drags the number down to. The review date turns red once
+criticality drags the number down to. The next review date turns red once
 overdue, and stops shouting once a process is digitised or ruled out.
+
+**The refresh cadence is calculated, not typed.** `Last reviewed date`
+records the check that happened; `Next review due` is twelve months after
+it, the annual inventory refresh, and nobody can edit it. A refresh cannot
+be pushed out without claiming a review that did not happen.
 
 **One save rule and one column rule.** A process that is Planned, In
 progress or Digitised needs a **Target state** (a plan with nowhere named
-is not a plan) and a review date cannot be set more than twelve months
-out, because the inventory refresh is annual.
+is not a plan), and a last reviewed date cannot be in the future.
 
 **Work the folders in order:**
 
