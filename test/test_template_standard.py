@@ -223,6 +223,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership": "Govern",
         "System": "System",
     },
+    # No Act beat, and there cannot be one: nobody acts on a row here. A
+    # flow writes the row and the response, where there is one, happens on
+    # the register the row describes. "Reporting key" is the System beat
+    # because ChangeKey is a machine join and not a fact about the change.
+    ("column-history", "ColumnHistory"): {
+        "Which item changed": "Identify",
+        "What changed": "Assess",
+        "When and who": "Govern",
+        "Reporting key": "System",
+    },
     ("tiered-huddle", "Escalation"): {
         "The issue": "Identify",
         "Where it goes": "Act",
@@ -596,6 +606,22 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Evidence and method": "Assess",
         "Verdict and follow-up": "Govern",
         "System": "System",
+    },
+    # Two consecutive Identify sections, which §1.2 permits: a stamp is
+    # identified by what happened AND by where it happened, and a fleet log
+    # read across sites needs the second half to be its own block rather than
+    # two more fields under the first. There is no Assess beat because a
+    # deployment record is not rated, and no System section because the whole
+    # row is auto-stamped: a System heading here would be a heading over the
+    # entire form.
+    ("deployment-log", "dbml-deployment-log"): {
+        "The stamp": "Identify",
+        "Where it ran": "Identify",
+        "What was deployed": "Act",
+        "What the run did": "Govern",
+        # A change row is the same list's other shape, so its section sits
+        # last and reads as part of the same Govern beat.
+        "What changed": "Govern",
     },
 }
 
@@ -1702,12 +1728,25 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
     Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
     alone. Still two clear of the eleven-column warning band, with Action and
-    Decision behind them at 8."""
+    Decision behind them at 8.
+
+    RE-MEASURED 2026-09-05 across 35 templates / 67 entities, when
+    deployment-log and column-history joined the roster together: 2 -> 9,
+    3 -> 30, 4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. The two new entities land at
+    the floor end by design: deployment-log's stamp carries no person
+    column and no Lookup at all (every column is text or a date written by
+    a script), and column-history lands at 3 (ChangedBy plus Author and
+    Editor), its site and list columns being text rather than lookups
+    because the list they name lives on another site entirely -- the one
+    family that references every other list in the estate carries no joins
+    for doing it. The worst is unchanged and is still shared by
+    programme-governance/Activity and /ServiceRequest at 9, re-derived
+    rather than assumed."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 33, (
-        f"{len(templates)} templates discovered, not the 33 this survey was "
+    assert len(templates) == 35, (
+        f"{len(templates)} templates discovered, not the 35 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1730,11 +1769,11 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
             counted += 1
             worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
     # The template count alone cannot see this. A family that gains or loses a
-    # LIST keeps the roster at 33 while the distribution above moves under it,
+    # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 65, (
-        f"{counted} entities were surveyed, not the 65 the distribution above "
+    assert counted == 67, (
+        f"{counted} entities were surveyed, not the 67 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."
@@ -1812,11 +1851,22 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     `service-evidence-register` has a `ServiceIssue` override; a reader
     granted Read only on the default cannot read that list, and no gate
     below this one would notice.
+
+    Read, and nothing above it, on every family EXCEPT one that trims item
+    reads to the creator. `deployment-log` sets ReadSecurity 2 so a
+    contributor sees only their own rows, and a fleet reader that saw only
+    its own rows would read as an empty log rather than as a refusal. Which
+    levels clear that trim is NOT established here (no live probe has been
+    run; the family's 30-deploy/deploy.md carries the TODO), so the exception
+    is deliberately narrow: it is allowed only where the mapping declares the
+    trim, and the validator raises `enterprise_reader_on_trimmed_list` beside
+    it so the elevation is never silent.
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
     reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
+    trims = mapping.declares_item_read_trimming()
     policies = [perms.default_policy, *perms.overrides.values()]
     for policy in policies:
         assert policy is not None
@@ -1824,9 +1874,12 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
             a.level for a in policy.assignments
             if a.principal.kind == "group" and a.principal.name == reader.name
         }
-        assert granted == {"Read"}, (
-            f"{template}: policy block grants {reader.name} {granted or 'nothing'}"
-        )
+        assert granted, f"{template}: policy block grants {reader.name} nothing"
+        if not trims:
+            assert granted == {"Read"}, (
+                f"{template}: policy block grants {reader.name} {granted}, and "
+                "the mapping declares no item read trimming to justify it"
+            )
 
 
 @pytest.mark.parametrize("template", _all_templates())

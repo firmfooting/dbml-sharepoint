@@ -35,6 +35,11 @@ from dbml_sharepoint.analysis.role_definition_description import (
     marker_for_level,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
+from dbml_sharepoint.analysis.sidecars import (
+    CENTRAL_CHANGE_COLUMNS,
+    CENTRAL_LOG_COLUMNS,
+    EXTERNAL_LOG_ROW_PREFIX,
+)
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     TOTAL_FUNCTIONS,
@@ -104,6 +109,7 @@ def generate_deploy_js(
     deployment_log_site: str = "",
     sidecar_run_log_title: str | None = None,
     sidecar_run_log_marker: str | None = None,
+    sidecar_run_log_fields: Sequence[dict[str, Any]] | None = None,
     sidecar_change_log_title: str | None = None,
     sidecar_change_log_marker: str | None = None,
     sidecar_change_fields: Sequence[dict[str, Any]] | None = None,
@@ -147,19 +153,33 @@ def generate_deploy_js(
         # file. It reads nothing from the tenant and must not imply it did.
         env_file_line=describe_env_provenance(env_provenance),
         # The sidecar lists the logging phase ensures on every deploy, and
-        # the external deployment log it probes but never creates. The
+        # the central deployment log it stamps but never creates. The
         # markers come from the same grammar as the verify scratch list;
-        # the change columns are emitted here so the runtime side cannot
-        # drift from the declared schema of its own log. All None when the
-        # operator passed --no-sidecars: the logging phase then emits
-        # nothing at all.
+        # the change columns and the run log's stamp columns are emitted
+        # here so the runtime side cannot drift from the declared schema of
+        # its own logs. All None when the operator passed --no-sidecars: the
+        # logging phase then emits nothing at all.
         sidecar_run_log_title=sidecar_run_log_title,
         sidecar_run_log_marker=sidecar_run_log_marker,
+        sidecar_run_log_fields=sidecar_run_log_fields or [],
         sidecar_change_log_title=sidecar_change_log_title,
         sidecar_change_log_marker=sidecar_change_log_marker,
         sidecar_change_fields=sidecar_change_fields or [],
         deployment_log_list=deployment_log_list,
         deployment_log_site=deployment_log_site,
+        # The stamp columns the `deployment-log` family declares, and the
+        # Title prefix every stamp carries. Rendered from the one authority
+        # rather than typed into the template, because a stamp that names a
+        # column the family does not declare is refused by SharePoint and a
+        # prefix that drifts stops the rows being recognisable as this
+        # tool's.
+        deployment_log_columns=list(CENTRAL_LOG_COLUMNS),
+        # The CHANGE columns the same family declares. A central log carrying
+        # every one of them takes the type-2 change feed as well as the
+        # stamps, which is what lets a run with a central log create no
+        # per-site sidecars at all.
+        deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
+        deployment_log_row_prefix=EXTERNAL_LOG_ROW_PREFIX,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.
@@ -427,6 +447,7 @@ def build_schema_json(
         entity = bundle.mapping.entities[table_name]
         list_title = bundle.mapping.prefix + table_name
         versioning = bundle.mapping.versioning_for(table_name)
+        item_security = bundle.mapping.item_security_for(table_name)
         table = by_name[table_name]
 
         fields_phase1: list[dict[str, Any]] = []
@@ -649,6 +670,20 @@ def build_schema_json(
                 if name in [c.name for c in table.columns] else len(table.columns),
             ),
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
+            # Null unless the mapping asks for trimming. `all`/`all` is
+            # SharePoint's own default, so a mapping that says nothing gets
+            # no probe and no MERGE on two properties this tool has not
+            # measured on a live tenant.
+            "item_security": (
+                {
+                    "read_security": item_security.read_security,
+                    "write_security": item_security.write_security,
+                    "read": item_security.read,
+                    "write": item_security.write,
+                }
+                if item_security.declared
+                else None
+            ),
         })
 
         indexed = deployable_index_columns(table)

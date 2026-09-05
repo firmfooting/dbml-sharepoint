@@ -1,13 +1,23 @@
 {# src/dbml_sharepoint/templates/_cross_web.js.j2
    The cross-web form of apiUrl(): same suffix discipline, pointed at
-   ANOTHER site under this tenant root. Included ONLY by the scripts that
-   reach the central deployment log (deploy.js's logging phase and the
-   deploy-central-log sidecar), so no other emitted script carries the
-   helper unused. Same origin, so the session cookies ride along.
+   ANOTHER site under this tenant root. Included ONLY by deploy.js's logging
+   phase, the one place a script reaches the central deployment log, so no
+   other emitted script carries the helper unused. Same origin, so the
+   session cookies ride along.
 
    TENANT_ROOT comes from SITE_URL's origin, deliberately NOT from
    `_spPageContextInfo`: the modern pages this is pasted on (CollabHome)
-   do not define that global (measured 2026-08-26). #}
+   do not define that global (measured 2026-08-26).
+
+   TWO builders, because a form digest is NOT web-agnostic. `crossWebApi`
+   is the `web/`-scoped one every read and write uses; `crossWebDigestUrl`
+   is the contextinfo endpoint, which sits at the API root rather than
+   under the web scope, and must be the TARGET web's own (live finding
+   2026-09-05: a digest issued by the pasted page's web answered 403
+   "security validation ... invalid" against another web; that web's own
+   digest answered 201). #}
   const TENANT_ROOT = SITE_URL.replace(/\/+$/, '').replace(/\/sites\/.*$/, '');
   const crossWebApi = (site, suffix) =>
     `${TENANT_ROOT}/sites/${odataName(site)}/_api/web/${suffix}`;
+  const crossWebDigestUrl = (site) =>
+    `${TENANT_ROOT}/sites/${odataName(site)}/_api/contextinfo`;

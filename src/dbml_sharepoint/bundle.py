@@ -43,10 +43,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
-from dbml_sharepoint.analysis.sidecars import (
-    CENTRAL_LOG_SITE_DEFAULT,
-    EXTERNAL_LOG_DEFAULT,
-)
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 
 if TYPE_CHECKING:
@@ -386,6 +382,9 @@ def emit_bundle(
             env_provenance=env_provenance,
             sidecar_run_log_title=None if no_sidecars else sidecars_mod.run_log_title(),
             sidecar_run_log_marker=None if no_sidecars else sidecars_mod.run_log_marker(),
+            sidecar_run_log_fields=(
+                [] if no_sidecars else sidecars_mod.RUN_LOG_STAMP_COLUMNS
+            ),
             sidecar_change_log_title=(
                 None if no_sidecars or change_log_list is None
                 else change_log_list
@@ -405,23 +404,6 @@ def emit_bundle(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
-        ),
-    )
-    # The central-log sidecar ships with every bundle: a deploy that cannot
-    # reach the central site tells the operator to run it, so the script
-    # must be right there in the same folder. Rendered from the same two
-    # names the deploy probes, so the sidecar a bundle ships can never
-    # create something the deploy will not look for.
-    from dbml_sharepoint.generators.centralloggen import (  # noqa: PLC0415
-        CENTRAL_LOG_SCRIPT,
-        generate_central_log_js,
-    )
-    write_artifact(
-        out / CENTRAL_LOG_SCRIPT,
-        generate_central_log_js(
-            central_log_site=deployment_log_site or CENTRAL_LOG_SITE_DEFAULT,
-            central_log_list=deployment_log_list or EXTERNAL_LOG_DEFAULT,
-            generated_at=generated_at,
         ),
     )
     write_artifact(
