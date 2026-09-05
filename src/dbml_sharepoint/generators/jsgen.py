@@ -105,6 +105,7 @@ def generate_deploy_js(
     deployment_log_site: str = "",
     sidecar_run_log_title: str | None = None,
     sidecar_run_log_marker: str | None = None,
+    sidecar_run_log_fields: Sequence[dict[str, Any]] | None = None,
     sidecar_change_log_title: str | None = None,
     sidecar_change_log_marker: str | None = None,
     sidecar_change_fields: Sequence[dict[str, Any]] | None = None,
@@ -150,12 +151,13 @@ def generate_deploy_js(
         # The sidecar lists the logging phase ensures on every deploy, and
         # the central deployment log it stamps but never creates. The
         # markers come from the same grammar as the verify scratch list;
-        # the change columns are emitted here so the runtime side cannot
-        # drift from the declared schema of its own log. All None when the
-        # operator passed --no-sidecars: the logging phase then emits
-        # nothing at all.
+        # the change columns and the run log's stamp columns are emitted
+        # here so the runtime side cannot drift from the declared schema of
+        # its own logs. All None when the operator passed --no-sidecars: the
+        # logging phase then emits nothing at all.
         sidecar_run_log_title=sidecar_run_log_title,
         sidecar_run_log_marker=sidecar_run_log_marker,
+        sidecar_run_log_fields=sidecar_run_log_fields or [],
         sidecar_change_log_title=sidecar_change_log_title,
         sidecar_change_log_marker=sidecar_change_log_marker,
         sidecar_change_fields=sidecar_change_fields or [],

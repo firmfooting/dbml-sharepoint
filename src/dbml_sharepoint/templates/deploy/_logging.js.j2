@@ -8,7 +8,12 @@
    - `dbml Local Log` is created on EVERY deploy, hidden, and left with no
      role assignments, so an ordinary member sees nothing and a paste
      returns to a site that shows no trace of it. It records this run:
-     start stamp, stop stamp, and what the run did.
+     start stamp, stop stamp, and what the run did. Title carries the
+     readable line and the stamp columns carry the same facts queryably.
+     A log the marker matches is REUSED, and the ones already on live
+     sites were created before those columns existed, so the phase
+     creates the ones it finds missing and falls back to a Title-only
+     stamp when it cannot.
    - The change log (default `dbml_Logs`) is created on every deploy,
      hidden, and holds one Read assignment for the site group flagged
      `enroll_enterprise_reader`, so a Power Automate reader can list and
@@ -23,10 +28,11 @@
    - The EXTERNAL deployment log (probe `dbml-deployment-log`) is NEVER
      created. An operator with a site-wide deployment log names it (flag
      or DBMLSP_DEPLOY_LOG_LIST) and this phase writes deployment
-     start, deployment stop and provenance rows into it. The rows set
-     Title ONLY: the list is the operator's, its schema is unknown, and
-     every generic list has a Title. Absent, this phase says so once and
-     moves on.
+     start, deployment stop and provenance rows into it. One field read
+     decides the row shape: a list carrying every column the
+     `deployment-log` family declares gets the full stamp, and anything
+     else gets Title alone, which is the one column every generic list
+     has. Absent, this phase says so once and moves on.
 
    The two created lists carry the tool's provenance marker in their
    Description. A list of the same title whose Description is not EXACTLY
@@ -57,7 +63,15 @@
     // Empty string: no external log was named, so no probing either.
     const EXTERNAL_LOG_TITLE = {{ deployment_log_list | tojson }};
     const EXTERNAL_LOG_SITE = {{ deployment_log_site | tojson }};
+    // The columns the `deployment-log` family declares on that list. All
+    // present: the stamp is written in full. Any missing: Title only.
+    const EXTERNAL_LOG_COLUMNS = {{ deployment_log_columns | tojson }};
+    const EXTERNAL_ROW_PREFIX = {{ deployment_log_row_prefix | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
+    const RUN_LOG_FIELDS = {{ sidecar_run_log_fields | tojson(indent=2) }};
+    // Resolved once. The site guard has already refused a page with no
+    // _spPageContextInfo, so this cannot be reached without one.
+    const OPERATOR_LOGIN = (_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)';
 
     // ---- Failure recording ---------------------------------------------
     // The registers this deploy maintains must never depend on the logs
@@ -141,62 +155,94 @@
       changeLogFatal = err;
     }
 
+    // ---- Column ensure, shared by both sidecars -------------------------
+    // Probe, create what is missing, read back, and return the read-back
+    // field map. BOTH logs go through it, because both are reused whenever
+    // their marker matches and neither can assume the columns of whichever
+    // version of this phase created it. A run log created by the bare-Title
+    // version carried none of the stamp columns, and the stamp that named
+    // one was refused with HTTP 400 "The property 'StampKind' does not
+    // exist on type 'SP.Data.Dbml_x0020_Local_x0020_LogListItem'" (live
+    // 2026-09-05).
+    //
+    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: a
+    // /fields read with no explicit page size is a read whose page size is
+    // the server's, and a truncated field map reads exactly like a list
+    // that is missing columns.
+    const ensureFields = async (title, fields) => {
+      const readPresent = async () => {
+        const resp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(title)}')/fields`
+          + `?$select=Id,InternalName,Indexed&$top=500`
+          + `&$filter=Hidden eq false and ReadOnlyField eq false`
+        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status} ${await resp.text()}`);
+        }
+        return new Map((((await resp.json()).d || {}).results || [])
+          .map((f) => [f.InternalName, f]));
+      };
+      const present = await readPresent();
+      for (const fieldBody of fields) {
+        if (present.has(fieldBody.Title)) continue;
+        const digestF = await getDigest();
+        // Field creates need BOTH the verbose transport (spHeaders) and the
+        // __metadata type: without the type the verbose parser refuses the
+        // entry ("An entry without a type name was found", live 2026-09-05
+        // on a dbml_Logs create), and the subtype name SP.FieldText /
+        // SP.FieldDateTime is exactly what it wants. An earlier comment
+        // here claimed the opposite from a misread probe; the live matrix
+        // (measured twice now) is unambiguous.
+        // `Indexed` comes out for a different reason: it is part of the
+        // DECLARATION, asserted by the MERGE _indexes.js.j2 uses, because
+        // whether a create body honours it has never been measured here and
+        // a reused log would never see it either way.
+        const createBody = { ...fieldBody };
+        delete createBody.Indexed;
+        const addResp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(title)}')/fields`
+        ), {
+          method: 'POST', headers: spHeaders(digestF),
+          body: JSON.stringify(createBody),
+        });
+        if (!addResp.ok) {
+          throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
+        }
+      }
+      const back = await readPresent();
+      for (const fieldBody of fields) {
+        if (!back.has(fieldBody.Title)) {
+          throw new Error(`field '${fieldBody.Title}' was accepted but is absent on read-back`);
+        }
+      }
+      return back;
+    };
+
+    // The list's own ListItemEntityTypeFullName. Read from the list rather
+    // than derived from its title: an item POST without a type name is
+    // refused ("An entry without a type name was found", live 2026-09-05),
+    // and the derived spelling is not always the real one.
+    const listEntityType = async (title) => {
+      const resp = await fetchWithRetry(apiUrl(
+        `web/lists/getbytitle('${odataName(title)}')?$select=ListItemEntityTypeFullName`
+      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        throw new Error(`entity-type probe: HTTP ${resp.status} ${await resp.text()}`);
+      }
+      const name = ((await resp.json()).d || {}).ListItemEntityTypeFullName;
+      if (typeof name !== 'string' || !name) {
+        throw new Error('ListItemEntityTypeFullName probe returned no value');
+      }
+      return name;
+    };
+
     // ---- Change log columns --------------------------------------------
-    // Added only when the list is; a reused list is trusted to carry them
-    // already. Every column write is read back before the first event.
+    // Every column write is read back before the first event.
     let changeLogReady = false;
     let entityTypeFullName = null;
     if (changeLogId) {
       try {
-        // `$top=500` for the same reason _verify_body.js.j2:141 carries it:
-        // a /fields read with no explicit page size is a read whose page
-        // size is the server's, and a truncated field map reads exactly
-        // like a list that is missing columns.
-        const readPresent = async () => {
-          const resp = await fetchWithRetry(apiUrl(
-            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
-            + `?$select=Id,InternalName,Indexed&$top=500`
-            + `&$filter=Hidden eq false and ReadOnlyField eq false`
-          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-          if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status} ${await resp.text()}`);
-          }
-          return new Map((((await resp.json()).d || {}).results || [])
-            .map((f) => [f.InternalName, f]));
-        };
-        const present = await readPresent();
-        for (const fieldBody of CHANGE_FIELDS) {
-          if (present.has(fieldBody.Title)) continue;
-          const digestF = await getDigest();
-          // Field creates need BOTH the verbose transport (spHeaders) and the
-          // __metadata type: without the type the verbose parser refuses the
-          // entry ("An entry without a type name was found", live 2026-09-05
-          // on dbml_Logs/TestSampleTeam), and the subtype name SP.FieldText /
-          // SP.FieldDateTime is exactly what it wants. An earlier comment
-          // here claimed the opposite from a misread probe; the live matrix
-          // (measured twice now) is unambiguous.
-          // `Indexed` comes out for a different reason: it is part of the
-          // DECLARATION, asserted below by the MERGE _indexes.js.j2 uses,
-          // because whether a create body honours it has never been
-          // measured here and a reused log would never see it either way.
-          const createBody = { ...fieldBody };
-          delete createBody.Indexed;
-          const addResp = await fetchWithRetry(apiUrl(
-            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
-          ), {
-            method: 'POST', headers: spHeaders(digestF),
-            body: JSON.stringify(createBody),
-          });
-          if (!addResp.ok) {
-            throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
-          }
-        }
-        const back = await readPresent();
-        for (const fieldBody of CHANGE_FIELDS) {
-          if (!back.has(fieldBody.Title)) {
-            throw new Error(`field '${fieldBody.Title}' was accepted but is absent on read-back`);
-          }
-        }
+        const back = await ensureFields(CHANGE_LOG_TITLE, CHANGE_FIELDS);
         // The declared indexes, asserted after the read-back. Recorded and
         // carried past rather than thrown: an unindexed key column costs
         // the type-2 close its 5,000-item headroom, which is a problem for
@@ -213,20 +259,32 @@
             recordFailure(`index on '${CHANGE_LOG_TITLE}'.${fieldBody.Title}`, err);
           }
         }
-        const typeResp = await fetchWithRetry(apiUrl(
-          `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
-          + `?$select=ListItemEntityTypeFullName`
-        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-        if (!typeResp.ok) {
-          throw new Error(`HTTP ${typeResp.status} ${await typeResp.text()}`);
-        }
-        entityTypeFullName = ((await typeResp.json()).d || {}).ListItemEntityTypeFullName;
-        if (typeof entityTypeFullName !== 'string' || !entityTypeFullName) {
-          throw new Error('ListItemEntityTypeFullName probe returned no value');
-        }
+        entityTypeFullName = await listEntityType(CHANGE_LOG_TITLE);
         changeLogReady = true;
       } catch (err) {
         recordFailure(`columns on '${CHANGE_LOG_TITLE}'`, err);
+      }
+    }
+
+    // ---- Run log stamp columns ------------------------------------------
+    // Decided ONCE, here, and read by every later stamp: a stamp that
+    // re-probed would pay a field read per row and could still disagree
+    // with itself between the start stamp and the stop stamp. False means
+    // the columns are neither present nor creatable, and stampRunLog
+    // degrades to Title alone rather than losing the stamp entirely, the
+    // same philosophy the central log's stamp already follows.
+    let runLogStructured = false;
+    if (runLogId) {
+      try {
+        await ensureFields(RUN_LOG_TITLE, RUN_LOG_FIELDS);
+        runLogStructured = true;
+      } catch (err) {
+        // On loggingFailures, not on the abort bus: a run log that can only
+        // hold a Title still records that the run happened, which is the
+        // whole reason the list exists.
+        recordFailure(`stamp columns on '${RUN_LOG_TITLE}'`, err);
+        log('WARN', `Run log '${RUN_LOG_TITLE}' has no stamp columns and they could not be `
+          + `created (${err.message}); this run's stamps carry Title only.`);
       }
     }
 
@@ -405,6 +463,13 @@
     const externalApi = (suffix) => crossWebApi(EXTERNAL_LOG_SITE, suffix);
 {% include "_cross_web.js.j2" %}
     let externalReady = false;
+    // Set once the field probe below finds every column the family
+    // declares, and left false for a list that carries only Title.
+    let externalStructured = false;
+    // The CENTRAL list's own ListItemEntityTypeFullName, read from the list
+    // rather than derived from its title, for the same reason the local
+    // stamps read theirs.
+    let externalEntityType = null;
     if (EXTERNAL_LOG_SITE) {
       let siteOk = false;
       try {
@@ -425,13 +490,15 @@
         let canAdd = false;
         try {
           const listResp = await fetchWithRetry(
-            externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')?$select=Id`),
+            externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')`
+              + `?$select=Id,ListItemEntityTypeFullName`),
             { headers: { 'Accept': 'application/json;odata=verbose' } },
           );
           if (listResp.status === 404) {
             listOk = false;
           } else if (listResp.ok) {
             listOk = true;
+            externalEntityType = ((await listResp.json()).d || {}).ListItemEntityTypeFullName || null;
             const permResp = await fetchWithRetry(
               externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/effectivebasepermissions`),
               { headers: { 'Accept': 'application/json;odata=verbose' } },
@@ -450,21 +517,56 @@
         } else if (!canAdd) {
           log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' found but this account holds no AddListItems on it: `
             + `ask its owner for Contribute. The run log holds this run's record.`);
+        } else if (!externalEntityType) {
+          log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' returned no ListItemEntityTypeFullName, so an `
+            + `item POST cannot name its type; external stamps skipped. The run log holds this run's record.`);
         } else {
           externalReady = true;
-          log('INFO', `Central log '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' ready; stamping deployment start and provenance.`);
+          // One field read decides the shape of every stamp this run
+          // writes. A list this tool provisioned carries them all; a list
+          // the operator pointed at may carry none, and Title alone is
+          // what a generic list can always accept.
+          try {
+            const fieldsResp = await fetchWithRetry(
+              externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/fields`
+                + `?$select=InternalName&$top=500`),
+              { headers: { 'Accept': 'application/json;odata=verbose' } },
+            );
+            if (fieldsResp.ok) {
+              const present = new Set(((((await fieldsResp.json()).d || {}).results) || [])
+                .map((f) => f.InternalName));
+              externalStructured = EXTERNAL_LOG_COLUMNS.every((name) => present.has(name));
+            }
+          } catch (err) {
+            recordFailure(`central log '${EXTERNAL_LOG_TITLE}' field probe`, err);
+          }
+          log('INFO', `Central log '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' ready; stamping `
+            + `deployment start and provenance `
+            + `${externalStructured ? 'in full' : 'as Title only (the list carries no stamp columns)'}.`);
         }
       }
     }
     // A cross-web write needs a digest issued by the CENTRAL web: SharePoint
     // scopes digest validation to the issuing web (live finding 2026-09-05:
-    // a TestSampleTeam digest POSTed to firmfooting-logging answered 403
-    // "security validation ... invalid"; the central web's own digest
-    // answered 201). Fetched per stamp, not cached: stamps are a handful of
-    // POSTs per run and the ~30-minute cache lifetime is not worth a second
-    // invalidation rule.
+    // a digest from the deploy target's web POSTed to the logging site
+    // answered 403 "security validation ... invalid"; the logging web's own
+    // digest answered 201).
+    //
+    // `crossWebDigestUrl`, NOT `externalApi`. contextinfo sits at the API
+    // ROOT, while `externalApi` builds every URL under the web scope, so
+    // `externalApi('contextinfo')` addresses a web-scoped member instead.
+    // Measured, both against the same site on 2026-09-05: the web-scoped
+    // URL answered 403 with the SAME "security validation ... invalid"
+    // sentence the wrong-web digest answers, and the API-root URL stamped
+    // its rows. Because the two failures read identically, a wrong URL here
+    // looks exactly like the digest-scope bug above, which is how it was
+    // reintroduced (8843796) after being fixed once (8246ec0).
+    //
+    // Fetched per stamp, not cached: stamps are a handful of POSTs per run
+    // and the ~30-minute cache lifetime is not worth a second invalidation
+    // rule.
     const externalDigest = async () => {
-      const r = await fetchWithRetry(externalApi('contextinfo'), {
+      const r = await fetchWithRetry(crossWebDigestUrl(EXTERNAL_LOG_SITE), {
         method: 'POST',
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
@@ -475,14 +577,34 @@
       if (!digest) throw new Error('central contextinfo carried no FormDigestValue');
       return digest;
     };
-    const stampExternal = async (kind, text) => {
+    const stampExternal = async (kind, text, details) => {
       if (!externalReady) return;
+      const body = {
+        // Typed, like every other item POST: a verbose-transport entry with
+        // no type name is refused ("An entry without a type name was
+        // found", live 2026-09-05).
+        __metadata: { type: externalEntityType },
+        // Composed FIRST, then sliced: `A + B.slice(0, 255)` caps only B and
+        // lets the row through at len(A) + 255, which SharePoint refuses for
+        // a 255-character Title.
+        Title: `${EXTERNAL_ROW_PREFIX} ${kind}: ${text}`.slice(0, 255),
+      };
+      if (externalStructured) {
+        body.StampKind = kind;
+        body.StampUtc = new Date().toISOString();
+        body.SourceSite = SITE_URL;
+        body.ReleaseTag = RELEASE_TAG;
+        body.SchemaVersion = SCHEMA_VERSION;
+        body.DeployerVersion = {{ ('dbml-sharepoint/' ~ release.deployer_version) | tojson }};
+        body.Operator = OPERATOR_LOGIN;
+        body.Details = details || '';
+      }
       try {
         const resp = await fetchWithRetry(externalApi(
           `lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
         ), {
           method: 'POST', headers: spHeaders(await externalDigest()),
-          body: JSON.stringify({ Title: `dbml-sharepoint ${kind}: ${text}`.slice(0, 255) }),
+          body: JSON.stringify(body),
         });
         if (!resp.ok) {
           recordFailure(`external log '${EXTERNAL_LOG_TITLE}' ${kind}`,
@@ -495,13 +617,12 @@
     if (externalReady) {
       await stampExternal('deployment start',
         `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
-        + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')} on {{ site_url }}`);
-      // Parenthesised, then sliced: `A + B.slice(0, 255)` caps only B and
-      // lets the row through at len(A) + 255, which SharePoint refuses for
-      // a 255-character Title.
+        + `${OPERATOR_LOGIN} on {{ site_url }}`,
+        `site {{ site_url }}; role {{ site_role }}`);
       await stampExternal('provenance',
-        (`generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`).slice(0, 255));
+        `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
+        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
+        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
     }
 
     // ---- Drain what the shim buffered ----------------------------------
@@ -518,42 +639,39 @@
     // a ReferenceError on every stop stamp.
     let runEntityType = null;
     const runLogEntityType = async () => {
-      if (runEntityType) return runEntityType;
-      const resp = await fetchWithRetry(apiUrl(
-        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')?$select=ListItemEntityTypeFullName`
-      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-      if (!resp.ok) {
-        throw new Error(`entity-type probe: HTTP ${resp.status} ${await resp.text()}`);
-      }
-      const name = ((await resp.json()).d || {}).ListItemEntityTypeFullName;
-      if (typeof name !== 'string' || !name) {
-        throw new Error('ListItemEntityTypeFullName probe returned no value');
-      }
-      runEntityType = name;
+      if (!runEntityType) runEntityType = await listEntityType(RUN_LOG_TITLE);
       return runEntityType;
     };
     const stampRunLog = async (kind, details) => {
       try {
         const type = await runLogEntityType();
         const digest = await getDigest();
+        const body = {
+          __metadata: { type },
+          // Parenthesised, then sliced: `A + B.slice(0, 255)` caps only B
+          // and lets the row through at len(A) + 255, which SharePoint
+          // refuses for a 255-character Title.
+          Title: (`${EXTERNAL_ROW_PREFIX} ${kind}: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
+            + `at ${new Date().toISOString()}`).slice(0, 255),
+        };
+        // The structured half, only when the columns are known present or
+        // were created above. Naming one the list does not have is refused
+        // outright, and the refusal costs the whole row rather than the
+        // extra columns. Details is not sliced: it is a Note, which carries
+        // no 255-character cap.
+        if (runLogStructured) {
+          body.StampKind = kind;
+          body.StampUtc = new Date().toISOString();
+          body.ReleaseTag = RELEASE_TAG;
+          body.SchemaVersion = SCHEMA_VERSION;
+          body.Operator = OPERATOR_LOGIN;
+          body.Details = details;
+        }
         const resp = await fetchWithRetry(apiUrl(
           `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
         ), {
           method: 'POST', headers: spHeaders(digest),
-          body: JSON.stringify({
-            __metadata: { type },
-            // Parenthesised, then sliced: `A + B.slice(0, 255)` caps only B
-            // and lets the row through at len(A) + 255, which SharePoint
-            // refuses for a 255-character Title.
-            Title: (`dbml-sharepoint ${kind}: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
-              + `at ${new Date().toISOString()}`).slice(0, 255),
-            StampKind: kind,
-            StampUtc: new Date().toISOString(),
-            ReleaseTag: RELEASE_TAG,
-            SchemaVersion: SCHEMA_VERSION,
-            Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
-            Details: details.slice(0, 255),
-          }),
+          body: JSON.stringify(body),
         });
         if (!resp.ok) {
           recordFailure(`run log ${kind}`, new Error(`HTTP ${resp.status} ${await resp.text()}`));
@@ -576,7 +694,8 @@
       await stampRunLog(kind, note);
       if (EXTERNAL_LOG_TITLE) {
         await stampExternal(kind,
-          (`${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`).slice(0, 255));
+          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`,
+          note);
       }
       // Counted again here, because most logging failures happen in the
       // phases AFTER this one and none of them are on summary.errors, so

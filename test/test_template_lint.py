@@ -77,11 +77,12 @@ KNOWN_CONTEXT = {
     "env_file_line",
     # The sidecar lists the logging phase ensures on every deploy (both
     # None under --no-sidecars, which emits no logging phase at all), the
-    # change-log column bodies shared by the ensure and the SCD-2 writer,
+    # run-log stamp columns and change-log column bodies, each shared by an
+    # ensure loop and the writer that fills them,
     # and the address plus column set of the CENTRAL deployment log, which
     # a deploy stamps but never creates. That list is what the
     # `deployment-log` family provisions.
-    "sidecar_run_log_title", "sidecar_run_log_marker",
+    "sidecar_run_log_title", "sidecar_run_log_marker", "sidecar_run_log_fields",
     "sidecar_change_log_title", "sidecar_change_log_marker",
     "sidecar_change_fields", "deployment_log_list", "deployment_log_site",
     "deployment_log_columns", "deployment_log_row_prefix",

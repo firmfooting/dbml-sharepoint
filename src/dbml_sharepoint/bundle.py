@@ -382,6 +382,9 @@ def emit_bundle(
             env_provenance=env_provenance,
             sidecar_run_log_title=None if no_sidecars else sidecars_mod.run_log_title(),
             sidecar_run_log_marker=None if no_sidecars else sidecars_mod.run_log_marker(),
+            sidecar_run_log_fields=(
+                [] if no_sidecars else sidecars_mod.RUN_LOG_STAMP_COLUMNS
+            ),
             sidecar_change_log_title=(
                 None if no_sidecars or change_log_list is None
                 else change_log_list

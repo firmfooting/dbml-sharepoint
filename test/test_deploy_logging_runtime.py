@@ -28,10 +28,12 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.sidecars import (
+    CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_FIELDS,
     CHANGE_LOG_TITLE,
     EXTERNAL_LOG_DEFAULT,
+    RUN_LOG_STAMP_COLUMNS,
     RUN_LOG_TITLE,
     change_log_marker,
     run_log_marker,
@@ -48,7 +50,12 @@ SEEDED_KEY = "list: APP_Risk"
 
 _HARNESS = textwrap.dedent(r"""
     const FAIL_CHANGE_ITEM_WRITES = false;
+    const FAIL_RUN_LOG_FIELD_CREATES = false;
     const SEED_ITEMS = {};
+    const SEED_LISTS = [];
+    // The columns the central list carries. Empty models a list the operator
+    // pointed DBMLSP_DEPLOY_LOG_LIST at that this tool never provisioned.
+    const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;
     const calls = [];
     const unhandled = [];
     // The one assertion this harness exists to make possible: _lists.js.j2
@@ -114,12 +121,53 @@ _HARNESS = textwrap.dedent(r"""
     const notFound = () => reply(404, { error: { message: { value: 'not found' } } });
     const digestReply = (value) => reply(200, { d: { GetContextWebInformation: {
       FormDigestValue: value, FormDigestTimeoutSeconds: 1800 } } });
+    const badDigest = () => reply(403, { error: { message: { value:
+      'The security validation for this page is invalid and might be corrupted. '
+      + 'Please use your web browser back button to try your operation again.' } } });
+    // contextinfo sits at the API ROOT. Measured live on 2026-09-05: the
+    // web-scoped `_api/web/contextinfo` answered 403 with the SAME "security
+    // validation ... invalid" sentence a wrong-web digest answers, which is
+    // why a wrong URL here reads exactly like the cross-web digest-scope bug.
+    // Modelled, because the mock that answered any URL containing the word
+    // let the regression through green.
+    const digestFor = (u, method, value) => (
+      /\/_api\/contextinfo$/.test(u) && method === 'POST'
+        ? digestReply(value) : badDigest()
+    );
+    // Two refusals a real item POST answers with, neither of which a mock
+    // that stores whatever body it is handed can ever show. Both measured
+    // live on 2026-09-05.
+    const itemRefusal = (body, known, type) => {
+      if (!body || !body.__metadata || !body.__metadata.type) {
+        return reply(400, { error: { message: { value:
+          'An entry without a type name was found, but no expected type was specified.' } } });
+      }
+      const unknown = Object.keys(body).find(
+        (k) => k !== '__metadata' && !known.includes(k));
+      if (unknown) {
+        return reply(400, { error: { message: { value:
+          `The property '${unknown}' does not exist on type '${type}'. Make sure to only `
+          + 'use property names that are defined by the type.' } } });
+      }
+      return null;
+    };
     // `ChangeKey eq 'X'` out of the close query, so the mock answers the same
     // question the script asked rather than a convenient approximation of it.
     const filteredKey = (rest) => {
       const m = /ChangeKey eq '([^']*)'/.exec(rest);
       return m ? m[1] : null;
     };
+    // Lists that already exist when the paste starts, with the built-in
+    // columns and NOTHING else. A run log created by the bare-Title version
+    // of this phase is exactly this, and it is the state `ensureSidecar`
+    // reuses rather than creates.
+    for (const seed of SEED_LISTS) {
+      const seeded = { ...SHAPE_DEFAULTS, ...seed, Id: guid('bbbbbbbb', state.nextList++) };
+      state.lists[seeded.Title] = seeded;
+      state.fields[seeded.Title] = BUILT_INS.map(
+        (name) => newField({ Title: name, ReadOnlyField: name !== 'Title' }));
+      state.items[seeded.Title] = state.items[seeded.Title] || [];
+    }
     globalThis.fetch = async (url, opts = {}) => {
       const u = decodeURIComponent(String(url));
       const method = opts.method || 'GET';
@@ -130,24 +178,35 @@ _HARNESS = textwrap.dedent(r"""
 
       // ---- the CENTRAL logging site, addressed cross-web ------------------
       if (u.includes('/sites/CENTRAL_SITE/')) {
-        if (u.includes('contextinfo')) return digestReply('central-digest');
+        if (u.includes('contextinfo')) return digestFor(u, method, 'central-digest');
         if (u.toLowerCase().includes('effectivebasepermissions')) {
           return reply(200, { d: { EffectiveBasePermissions: { High: 0, Low: 2 } } });
         }
         if (/_api\/web\/\?\$select=Url$/.test(u)) {
           return reply(200, { d: { Url: 'https://example.sharepoint.com/sites/CENTRAL_SITE' } });
         }
-        if (/lists\/getbytitle\('CENTRAL_LIST'\)\?\$select=Id$/.test(u)) {
-          return reply(200, { d: { Id: guid('dddddddd', 1) } });
+        const centralByTitle = /lists\/getbytitle\('CENTRAL_LIST'\)\?\$select=(.*)$/.exec(u);
+        if (centralByTitle && centralByTitle[1] === 'Id,ListItemEntityTypeFullName') {
+          return reply(200, { d: {
+            Id: guid('dddddddd', 1), ListItemEntityTypeFullName: CENTRAL_ITEM_TYPE } });
+        }
+        if (/lists\/getbytitle\('CENTRAL_LIST'\)\/fields/.test(u)) {
+          return reply(200, { d: { results:
+            ['Title'].concat(CENTRAL_FIELDS).map((n) => ({ InternalName: n })) } });
         }
         if (method === 'POST' && /\/items$/.test(u)) {
+          // A digest is scoped to the web that ISSUED it, so the host web's
+          // is refused here exactly as SharePoint refused it live.
+          if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
+          const bad = itemRefusal(body, ['Title'].concat(CENTRAL_FIELDS), CENTRAL_ITEM_TYPE);
+          if (bad) return bad;
           state.central.push(body);
           return reply(201, { d: { Id: state.nextItem++ } });
         }
         return reply(200, { d: { results: [] } });
       }
 
-      if (u.includes('contextinfo')) return digestReply('local-digest');
+      if (u.includes('contextinfo')) return digestFor(u, method, 'local-digest');
       if (u.toLowerCase().includes('effectivebasepermissions')) {
         const all = { High: 4294967295, Low: 4294967295 };
         return reply(200, { d: { EffectiveBasePermissions: all } });
@@ -204,6 +263,10 @@ _HARNESS = textwrap.dedent(r"""
             return reply(200, { d: field });
           }
           if (method === 'POST' && body && body.Title) {
+            if (FAIL_RUN_LOG_FIELD_CREATES && title === 'RUN_LOG_LIST') {
+              return reply(400, { error: { message: { value:
+                'the site column could not be added' } } });
+            }
             state.fields[title].push(newField(body));
             return reply(201, { d: {} });
           }
@@ -221,6 +284,14 @@ _HARNESS = textwrap.dedent(r"""
             if (FAIL_CHANGE_ITEM_WRITES && title === 'CHANGE_LIST') {
               return reply(500, { error: { message: { value: 'change log is refusing writes' } } });
             }
+            // The list's OWN columns decide what the row may name. A run log
+            // reused from the bare-Title version has only the built-ins, and
+            // a stamp naming StampKind against it is refused, which is the
+            // 400 the live run collected.
+            const bad = itemRefusal(
+              body, state.fields[title].map((f) => f.InternalName),
+              `SP.Data.${title.replace(/\W/g, '')}ListItem`);
+            if (bad) return bad;
             const row = { Id: state.nextItem++, ...(body || {}) };
             state.items[title].push(row);
             return reply(201, { d: row });
@@ -255,6 +326,7 @@ def _deploy_js() -> str:
         generated_at="2026-09-05T00:00:00Z",
         sidecar_run_log_title=RUN_LOG_TITLE,
         sidecar_run_log_marker=run_log_marker(),
+        sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS),
         sidecar_change_log_title=CHANGE_LOG_TITLE,
         sidecar_change_log_marker=change_log_marker(),
         sidecar_change_fields=list(CHANGE_FIELDS),
@@ -285,13 +357,31 @@ def _substitute(harness: str, old: str, new: str) -> str:
 
 
 def _run_deploy(
-    *, seeded_change_rows: bool = False, fail_change_writes: bool = False,
+    *,
+    seeded_change_rows: bool = False,
+    fail_change_writes: bool = False,
+    bare_run_log: bool = False,
+    fail_run_log_field_creates: bool = False,
+    central_columns: bool = True,
 ) -> dict[str, Any]:
     harness = _HARNESS
+    # Substituted BEFORE the placeholder titles, because the entity type is
+    # spelled from the list title and would otherwise be rewritten twice.
+    central_names = json.dumps(list(CENTRAL_LOG_COLUMNS) if central_columns else [])
+    harness = _substitute(
+        harness, "const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;",
+        f"const CENTRAL_FIELDS = {central_names};",
+    )
+    assert harness.count("CENTRAL_ITEM_TYPE") == 2
+    harness = harness.replace(
+        "CENTRAL_ITEM_TYPE",
+        json.dumps(f"SP.Data.{EXTERNAL_LOG_DEFAULT.replace('-', '')}ListItem"),
+    )
     for placeholder, actual in (
         ("CENTRAL_SITE", CENTRAL_LOG_SITE_DEFAULT),
         ("CENTRAL_LIST", EXTERNAL_LOG_DEFAULT),
         ("CHANGE_LIST", CHANGE_LOG_TITLE),
+        ("RUN_LOG_LIST", RUN_LOG_TITLE),
     ):
         assert placeholder in harness
         harness = harness.replace(placeholder, actual)
@@ -299,6 +389,20 @@ def _run_deploy(
         harness = _substitute(
             harness, "const FAIL_CHANGE_ITEM_WRITES = false;",
             "const FAIL_CHANGE_ITEM_WRITES = true;",
+        )
+    if fail_run_log_field_creates:
+        harness = _substitute(
+            harness, "const FAIL_RUN_LOG_FIELD_CREATES = false;",
+            "const FAIL_RUN_LOG_FIELD_CREATES = true;",
+        )
+    if bare_run_log:
+        # The run log as the OLD bare-Title code left it on a live site:
+        # marker-matched so it is reused, and carrying no stamp columns.
+        seeded_lists = json.dumps([
+            {"Title": RUN_LOG_TITLE, "Description": run_log_marker(), "Hidden": True},
+        ])
+        harness = _substitute(
+            harness, "const SEED_LISTS = [];", f"const SEED_LISTS = {seeded_lists};",
         )
     if seeded_change_rows:
         seeded = json.dumps({CHANGE_LOG_TITLE: [{
@@ -408,6 +512,13 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert any(r["ChangeKey"] == SEEDED_KEY for r in inserted)
     assert all(r["IsCurrent"] is True and r["EffectiveTo"] is None for r in inserted)
 
+    # The run log's own stamp columns, created on the list this run made.
+    # The create body is BaseTemplate 100 plus a Description, so a run log
+    # that is never given these has only Title, and every structured stamp
+    # against it is refused.
+    run_log_fields = {f["InternalName"] for f in state["fields"][RUN_LOG_TITLE]}
+    assert {f["Title"] for f in RUN_LOG_STAMP_COLUMNS} <= run_log_fields
+
     # Both run-log stamps, each carrying a real entity type: a typeless item
     # POST is refused outright, and the stop stamp is written from the exit
     # path in deploy.js.j2 long after this phase returned, which is where a
@@ -422,13 +533,28 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert kinds[1] == ("abort" if summary["errors"] else "deployment stop")
     assert all(c["body"]["__metadata"]["type"].startswith("SP.Data.") for c in stamps)
     assert all(len(c["body"]["Title"]) <= 255 for c in stamps)
+    # Every column the stamp names is one the list carries, which is the
+    # check the live 400 came from the absence of.
+    assert all(
+        set(c["body"]) - {"__metadata"} <= run_log_fields for c in stamps
+    ), [sorted(set(c["body"]) - {"__metadata"} - run_log_fields) for c in stamps]
 
-    # And the same on the central log, whose rows carry Title alone.
-    central = [row["Title"] for row in state["central"]]
-    assert any(t.startswith("dbml-sharepoint deployment start:") for t in central)
-    assert any(t.startswith("dbml-sharepoint provenance:") for t in central)
-    assert any(t.startswith(f"dbml-sharepoint {kinds[1]}:") for t in central)
-    assert all(len(t) <= 255 for t in central)
+    # The central log's rows, in full: the family declares every stamp column
+    # so the field probe finds them all and the row is structured.
+    central = state["central"]
+    titles = [row["Title"] for row in central]
+    assert any(t.startswith("dbml-sharepoint deployment start:") for t in titles)
+    assert any(t.startswith("dbml-sharepoint provenance:") for t in titles)
+    assert any(t.startswith(f"dbml-sharepoint {kinds[1]}:") for t in titles)
+    assert all(len(t) <= 255 for t in titles)
+    assert all(row["__metadata"]["type"].startswith("SP.Data.") for row in central)
+    assert all(set(CENTRAL_LOG_COLUMNS) <= set(row) for row in central), (
+        f"a central row was written without its stamp columns: {central}"
+    )
+    assert {row["StampKind"] for row in central} == {
+        "deployment start", "provenance", kinds[1],
+    }
+    assert all(row["SourceSite"] == "https://example.sharepoint.com/sites/test" for row in central)
 
     assert summary["loggingFailures"] == []
     # Nothing phase 1.7 did reached the abort bus.
@@ -473,3 +599,153 @@ def test_a_change_log_that_refuses_every_write_changes_nothing_but_the_log(
     ), summary["loggingFailures"]
     # Counted once, out loud, because nothing later in the run mentions them.
     assert "logging operation(s)" in refusing_run["output"]
+
+
+@pytest.fixture(scope="module")
+def reused_bare_run_log() -> dict[str, Any]:
+    """A run log the OLD bare-Title code left behind: reused, no columns."""
+    return _run_deploy(bare_run_log=True)
+
+
+def test_a_reused_run_log_is_given_the_stamp_columns_it_never_had(
+    reused_bare_run_log: dict[str, Any],
+) -> None:
+    """The live 400, and the fix for it.
+
+    `ensureSidecar` REUSES a marker-matched list, so a run log created by the
+    version of this phase that wrote nothing but Title survives every later
+    deploy with nothing but Title. The stamp then named StampKind and was
+    refused with HTTP 400 "The property 'StampKind' does not exist on type
+    'SP.Data.Dbml_x0020_Local_x0020_LogListItem'" (live 2026-09-05), losing
+    the row entirely.
+
+    A fresh create was in the same state: the create body is BaseTemplate 100
+    and a Description, so it never carried the columns either.
+    """
+    run = reused_bare_run_log
+    state, summary, calls = run["state"], run["summary"], run["calls"]
+
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert "exists (marker matched); reusing it" in run["output"], (
+        "the seeded run log was created rather than reused, so this run never "
+        "exercised the path the live failure came from"
+    )
+
+    present = {f["InternalName"] for f in state["fields"][RUN_LOG_TITLE]}
+    assert {f["Title"] for f in RUN_LOG_STAMP_COLUMNS} <= present, (
+        f"the reused run log was left without its stamp columns: {sorted(present)}"
+    )
+
+    stamps = _posts_to(calls, RUN_LOG_TITLE)
+    assert len(stamps) == 2, f"expected two stamps, got {len(stamps)}"
+    assert all(s["body"].get("StampKind") for s in stamps), (
+        "the stamps degraded to Title only against a log whose columns were created"
+    )
+    assert all(len(state["items"][RUN_LOG_TITLE]) == 2 for _ in [0]), (
+        f"a stamp was refused: {state['items'][RUN_LOG_TITLE]}"
+    )
+    assert not [
+        f for f in summary["loggingFailures"] if RUN_LOG_TITLE in json.dumps(f)
+    ], summary["loggingFailures"]
+
+
+def test_a_run_log_whose_columns_cannot_be_created_still_gets_its_stamps() -> None:
+    """The degrade path: Title alone, one recorded failure, no abort.
+
+    A column create can be refused for reasons this tool does not control (a
+    site column of that name, a locked list). Losing the stamp entirely would
+    mean a run that happened is recorded nowhere, so the row is written
+    without the structured half instead.
+    """
+    run = _run_deploy(bare_run_log=True, fail_run_log_field_creates=True)
+    state, summary, calls = run["state"], run["summary"], run["calls"]
+
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+
+    stamps = _posts_to(calls, RUN_LOG_TITLE)
+    assert len(stamps) == 2, f"expected two stamps, got {len(stamps)}"
+    assert all(set(s["body"]) == {"__metadata", "Title"} for s in stamps), (
+        f"a stamp named a column the list does not have: {[s['body'] for s in stamps]}"
+    )
+    rows = state["items"][RUN_LOG_TITLE]
+    assert len(rows) == 2, f"a Title-only stamp was still refused: {rows}"
+
+    # Recorded, once, and NOT on the abort bus.
+    failures = [
+        f for f in summary["loggingFailures"]
+        if f["where"] == f"stamp columns on '{RUN_LOG_TITLE}'"
+    ]
+    assert len(failures) == 1, summary["loggingFailures"]
+    assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
+    assert "carry Title only" in run["output"]
+
+
+def test_the_central_digest_is_the_central_web_s_own(
+    accepting_run: dict[str, Any],
+) -> None:
+    """Where the cross-web digest comes from, and where it goes.
+
+    Two separate facts, and confusing them is how this broke twice:
+
+    - the contextinfo POST goes to the CENTRAL site, because a digest is
+      scoped to the web that issued it and the host web's answered 403
+      against the logging site (live 2026-09-05);
+    - it goes to `_api/contextinfo`, the API ROOT. The web-scoped
+      `_api/web/contextinfo` answered 403 with the SAME sentence, and that is
+      what `externalApi('contextinfo')` addressed; the identical error text is
+      why it read as the scope bug rather than as a wrong URL.
+    """
+    calls = accepting_run["calls"]
+    central_root = f"/sites/{CENTRAL_LOG_SITE_DEFAULT}"
+
+    digest_calls = [c for c in calls if "contextinfo" in c["url"]]
+    assert digest_calls, "no digest was ever fetched"
+
+    central_digests = [c for c in digest_calls if central_root in c["url"]]
+    assert central_digests, "the central site's own digest was never fetched"
+    for call in central_digests:
+        assert call["method"] == "POST"
+        assert call["url"].endswith("/_api/contextinfo"), (
+            f"the central digest was fetched from {call['url']!r}; contextinfo "
+            "sits at the API root, not under web scope"
+        )
+
+    # And the host web's digest never leaves the host web.
+    host_digest_sent_central = [
+        c for c in calls
+        if central_root in c["url"] and c["headers"].get("X-RequestDigest") == "local-digest"
+    ]
+    assert not host_digest_sent_central, (
+        f"a host-web digest was sent to the central site: {host_digest_sent_central}"
+    )
+
+    central_writes = [
+        c for c in calls if central_root in c["url"] and c["method"] == "POST"
+        and c["url"].endswith("/items")
+    ]
+    assert central_writes, "nothing was ever written to the central log"
+    assert all(
+        c["headers"]["X-RequestDigest"] == "central-digest" for c in central_writes
+    )
+
+
+def test_a_central_log_without_the_stamp_columns_takes_a_title_only_row() -> None:
+    """`DBMLSP_DEPLOY_LOG_LIST` can name a list this tool never provisioned.
+
+    The field probe finds the columns missing and every stamp degrades to
+    Title, which is the one column a generic SharePoint list always has. The
+    rows still arrive; nothing is recorded as a failure.
+    """
+    run = _run_deploy(central_columns=False)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+
+    central = run["state"]["central"]
+    assert central, "the degraded stamps never reached the central log"
+    assert all(set(row) == {"__metadata", "Title"} for row in central), (
+        f"a stamp named a column the list does not carry: {central}"
+    )
+    assert "Title only" in run["output"]
+    assert not [
+        f for f in run["summary"]["loggingFailures"]
+        if EXTERNAL_LOG_DEFAULT in json.dumps(f)
+    ], run["summary"]["loggingFailures"]

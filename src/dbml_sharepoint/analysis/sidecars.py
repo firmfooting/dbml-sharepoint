@@ -6,9 +6,11 @@ tool:
 
 - ``dbml Local Log`` records THIS run: a deployment start stamp, a
   deployment stop stamp, and provenance documentation naming what built
-  the bundle, from which release, read at which time, by whom. Free text,
-  no schema beyond Title, so the stamps stay human-readable in list
-  settings and reporting.
+  the bundle, from which release, read at which time, by whom. Title
+  carries the human-readable line, and ``RUN_LOG_STAMP_COLUMNS`` carries
+  the same facts in columns a query can reach. A run log created before
+  those columns existed is REUSED, so the deploy creates the ones it
+  finds missing and degrades to a Title-only stamp if it cannot.
 
 - ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
   one row per change with the old value and the new value side by side,
@@ -200,5 +202,70 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The release that made the change.",
+    },
+)
+
+#: The run log's stamp columns, in the same createField-body form as
+#: `CHANGE_FIELDS` and created by the same probe/create/read-back loop.
+#:
+#: These exist because the run log is REUSED whenever its marker matches, and
+#: the run logs already on live sites were created by a version of this phase
+#: that gave the list nothing but Title. A stamp naming StampKind on one of
+#: those is refused with HTTP 400 "The property 'StampKind' does not exist on
+#: type 'SP.Data.Dbml_x0020_Local_x0020_LogListItem'" (live 2026-09-05).
+#: The create body never carried them either, so a FRESH run log was in the
+#: same state.
+#:
+#: The names are deliberately the central log's names minus the two that only
+#: make sense across sites (SourceSite, DeployerVersion): one row shape reads
+#: the same whether it was found on the site or in the central list. Nothing
+#: is indexed, because this list holds two rows per run and is read by eye.
+#:
+#: Details is a Note to match `deployment-log`'s own `longtext` declaration,
+#: with the same create-body shape jsgen builds for a Note column.
+RUN_LOG_STAMP_COLUMNS: tuple[dict[str, object], ...] = (
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "StampKind",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "What this row records: deployment start, deployment stop or abort.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldDateTime"},
+        "Title": "StampUtc",
+        "FieldTypeKind": 4,
+        "DateFormat": "DateTime",
+        "Description": "When the stamp was written, in UTC.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "ReleaseTag",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "The release this run deployed.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "SchemaVersion",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "The schema version this run deployed.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "Operator",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Description": "The account whose browser session ran the deploy.",
+    },
+    {
+        "__metadata": {"type": "SP.FieldMultiLineText"},
+        "Title": "Details",
+        "FieldTypeKind": 3,
+        "RichText": False,
+        "NumberOfLines": 6,
+        "AppendOnly": False,
+        "Description": "What the run did: counts, and the site and role it ran against.",
     },
 )
