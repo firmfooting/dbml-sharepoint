@@ -35,6 +35,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
     marker_for_level,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
+from dbml_sharepoint.analysis.sidecars import CENTRAL_LOG_COLUMNS, EXTERNAL_LOG_ROW_PREFIX
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     TOTAL_FUNCTIONS,
@@ -147,7 +148,7 @@ def generate_deploy_js(
         # file. It reads nothing from the tenant and must not imply it did.
         env_file_line=describe_env_provenance(env_provenance),
         # The sidecar lists the logging phase ensures on every deploy, and
-        # the external deployment log it probes but never creates. The
+        # the central deployment log it stamps but never creates. The
         # markers come from the same grammar as the verify scratch list;
         # the change columns are emitted here so the runtime side cannot
         # drift from the declared schema of its own log. All None when the
@@ -160,6 +161,14 @@ def generate_deploy_js(
         sidecar_change_fields=sidecar_change_fields or [],
         deployment_log_list=deployment_log_list,
         deployment_log_site=deployment_log_site,
+        # The stamp columns the `deployment-log` family declares, and the
+        # Title prefix every stamp carries. Rendered from the one authority
+        # rather than typed into the template, because a stamp that names a
+        # column the family does not declare is refused by SharePoint and a
+        # prefix that drifts stops the rows being recognisable as this
+        # tool's.
+        deployment_log_columns=list(CENTRAL_LOG_COLUMNS),
+        deployment_log_row_prefix=EXTERNAL_LOG_ROW_PREFIX,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

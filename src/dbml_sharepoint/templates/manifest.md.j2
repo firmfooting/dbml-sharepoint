@@ -169,14 +169,28 @@ when the bundle was built with `--no-sidecars`, and neither is deleted by
 
 This bundle also stamps a **central deployment log**: the site
 `{{ deployment_log_site }}` and the list `{{ deployment_log_list }}` on it,
-shared by every firmfooting application. The script checks three things before
-its first stamp -- the site exists, the list exists on it, and this account
-holds AddListItems (Contribute or better) on the list -- reading the
-permission from the list itself, not the web. Any miss degrades to an INFO
-line and the run carries on; the run log on THIS site always holds the record
-regardless. The central site and list are never created by a deploy: create
-them once with the deploy-central-log sidecar, or override both with
-`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables).
+shared by every firmfooting application. What is created locally is the two
+sidecar lists above; what is written centrally is a start row, a provenance
+row and a stop row, sent cross-site to that list.
+
+The script checks three things before its first stamp -- the site exists, the
+list exists on it, and this account holds AddListItems (Contribute or better)
+on the list -- reading the permission from the list itself, not the web. Any
+miss degrades to an INFO line and the run carries on; the run log on THIS site
+always holds the record regardless.
+
+Neither the central site nor the central list is created by this deploy. The
+site is created by hand from the SharePoint start page, because this tool
+provisions lists and never sites. The list exists because somebody deployed
+the `deployment-log` template family to that site, which is an ordinary
+deploy of an ordinary family: it declares `{{ deployment_log_list }}` and
+provisions it like any other list. That first run stamps nothing centrally,
+because this phase probes for the list before any list is created; every
+deploy after it does. Point this bundle somewhere else with
+`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables). A list
+this tool did not provision still receives stamps, with the Title column
+filled and nothing else, because Title is the one column every generic
+SharePoint list has.
 {% endif %}
 {% endif %}
 

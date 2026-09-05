@@ -8,7 +8,9 @@ tool:
   deployment stop stamp, and provenance documentation naming what built
   the bundle, from which release, read at which time, by whom. Free text,
   no schema beyond Title, so the stamps stay human-readable in list
-  settings and reporting.
+  settings and reporting. The STRUCTURED form of the same stamps is the
+  central deployment log, which is a shipped template family rather than
+  a hand-rolled sidecar.
 
 - ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
   one row per change with the old value and the new value side by side.
@@ -33,27 +35,39 @@ RUN_LOG_TITLE = "dbml Local Log"
 #: has a name that survives a copy between environments.
 CHANGE_LOG_TITLE = "dbml_Logs"
 
-#: The external deployment log this tool appends to only when it already
-#: exists. Probed, never created: its absence means the site does not run
-#: one, and inventing it here would fight whoever owns it. Empty default:
-#: nothing is probed unless the operator names a list.
+#: The CENTRAL deployment log every deploy stamps when it can reach one.
+#: Not created by a deploy: the list is what the `deployment-log` template
+#: family provisions, so it exists because somebody deployed that family
+#: to the central site. A deploy of any OTHER family probes this title and
+#: appends; it never creates it, and never creates the site it sits on.
 EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
 
-#: The CENTRAL logging site the external deployment log lives on, and the
-#: default every build probes unless the operator names another. One site
-#: per org collects every firmfooting application's deployment rows, so
+#: The CENTRAL logging site the deployment log lives on, and the default
+#: every build probes unless the operator names another. One site per org
+#: collects every firmfooting application's deployment rows, so
 #: cross-application reporting reads one list instead of visiting each
-#: site. Probed, never created by a DEPLOY: a run that finds the site
-#: absent notes that and carries on. Creating it is the sidecar's job,
-#: because creating a whole site is a consent-shaped act, not a side
-#: effect of provisioning a register.
+#: site. The SITE is created by hand (SharePoint start page, Create site):
+#: this tool provisions lists, never sites. A deploy that finds the site
+#: absent says so once and carries on.
 CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
 
-#: The title-only row the external log receives. The list belongs to its
-#: operator and its schema is unknown, so the ONLY column every generic
-#: list is guaranteed is Title. Anything richer would make this tool
-#: refuse on somebody else's schema.
+#: The prefix every stamp's Title carries, so a row is recognisable as this
+#: tool's in a list somebody is reading by eye.
 EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
+
+#: The stamp columns the `deployment-log` family declares on the central
+#: list, and the ones a cross-web stamp fills when its probe finds them
+#: all. Title alone is written when they are not: the operator may point
+#: DBMLSP_DEPLOY_LOG_LIST at a list this tool did not provision, and Title
+#: is the one column every generic SharePoint list has.
+#:
+#: Pinned against the family's own `schema.dbml` by
+#: `test/test_deployment_log_family.py`, so the emitted stamp cannot drift
+#: from the list it writes into.
+CENTRAL_LOG_COLUMNS: tuple[str, ...] = (
+    "StampKind", "StampUtc", "SourceSite", "ReleaseTag",
+    "SchemaVersion", "DeployerVersion", "Operator", "Details",
+)
 
 #: `Hidden` on both sidecars. The run log exists so the stamps survive the
 #: console closing; the change log exists for the reader. Neither belongs
@@ -84,14 +98,6 @@ def scratch_marker_for(title: str) -> str:
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=title, family=None,
     )
-
-
-#: The central deployment log's marker. Same grammar, own name: the sidecar
-#: owns the list by this Description compared whole, exactly like the
-#: on-site sidecars.
-def central_log_marker() -> str:
-    """The exact Description the sidecar owns ``dbml-deployment-log`` by."""
-    return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
 
 
 def run_log_title() -> str:

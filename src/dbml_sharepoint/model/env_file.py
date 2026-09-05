@@ -62,8 +62,9 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         parameter=DEPLOYMENT_LOG_LIST_PARAMETER,
         help=(
             "Title of the central deployment log list to stamp start/stop/"
-            "provenance rows into. Probed on the central logging site, never "
-            "created; empty disables the stamps."
+            "provenance rows into. Created by deploying the deployment-log "
+            "family; every other deploy stamps it if reachable. Empty "
+            "disables the stamps."
         ),
     ),
     EnvSetting(
@@ -71,9 +72,8 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         parameter=DEPLOYMENT_LOG_SITE_PARAMETER,
         help=(
             "Title of the central logging site the deployment log list "
-            "lives on. Probed, never created by a deploy (the "
-            "deploy-central-log sidecar creates site and list); empty "
-            "disables the stamps."
+            "lives on. Created by hand; this tool provisions lists, never "
+            "sites. Empty disables the stamps."
         ),
     ),
     EnvSetting(

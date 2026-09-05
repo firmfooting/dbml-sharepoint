@@ -17,13 +17,17 @@
      IsCurrent, and a change CLOSES the previous current row for its key
      in the same logical step, so a reader always sees exactly one
      current row per key.
-   - The EXTERNAL deployment log (probe `dbml-deployment-log`) is NEVER
-     created. An operator with a site-wide deployment log names it (flag
-     or DBMLSP_DEPLOYMENT_LOG_LIST) and this phase writes deployment
-     start, deployment stop and provenance rows into it. The rows set
-     Title ONLY: the list is the operator's, its schema is unknown, and
-     every generic list has a Title. Absent, this phase says so once and
-     moves on.
+   - The CENTRAL deployment log (probe `dbml-deployment-log` on the
+     logging site) is NEVER created here. It exists because somebody
+     deployed the `deployment-log` template family to that site, which is
+     an ordinary deploy of an ordinary family. This phase writes
+     deployment start, deployment stop and provenance rows into it when
+     site, list and AddListItems all check out, and says so once and
+     carries on when any of them does not. Two shapes of row: the full
+     stamp when the probe finds every column the family declares, and
+     Title alone when it does not, because the operator may point
+     DBMLSP_DEPLOY_LOG_LIST at a list this tool never provisioned and
+     Title is the one column a generic list is guaranteed to have.
 
    The two created lists carry the tool's provenance marker in their
    Description. A list of the same title whose Description is not EXACTLY
@@ -54,7 +58,14 @@
     // Empty string: no external log was named, so no probing either.
     const EXTERNAL_LOG_TITLE = {{ deployment_log_list | tojson }};
     const EXTERNAL_LOG_SITE = {{ deployment_log_site | tojson }};
+    // The columns the `deployment-log` family declares on that list. All
+    // present: the stamp is written in full. Any missing: Title only.
+    const EXTERNAL_LOG_COLUMNS = {{ deployment_log_columns | tojson }};
+    const EXTERNAL_ROW_PREFIX = {{ deployment_log_row_prefix | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
+    // Resolved once. The site guard has already refused a page with no
+    // _spPageContextInfo, so this cannot be reached without one.
+    const OPERATOR_LOGIN = (_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)';
 
     // ---- Failure recording ---------------------------------------------
     // The registers this deploy maintains must never depend on the logs
@@ -333,10 +344,21 @@
     //    half the operator-rights probe reads.
     // Absent site, absent list or no write bit: one INFO line each, and
     // the run carries on, because a deploy must not die because a shared
-    // logging site is missing. Creating the site is the sidecar's job.
+    // logging site is missing. This phase NEVER creates the site and never
+    // creates the list. The site is created by hand (SharePoint start
+    // page, Create site) because this tool provisions lists, never sites;
+    // the list is created by deploying the `deployment-log` family to it.
     const externalApi = (suffix) => crossWebApi(EXTERNAL_LOG_SITE, suffix);
 {% include "_cross_web.js.j2" %}
     let externalReady = false;
+    // Set once the field probe below finds every column the family
+    // declares, and left false for a list that carries only Title.
+    let externalStructured = false;
+    // The list's own ListItemEntityTypeFullName, resolved from the CENTRAL
+    // list rather than derived from its title: an item POST without a type
+    // name is refused ("An entry without a type name was found", live
+    // 2026-09-05), and the derived spelling is not always the real one.
+    let externalEntityType = null;
     if (EXTERNAL_LOG_SITE) {
       let siteOk = false;
       try {
@@ -348,20 +370,23 @@
         log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' unreachable (${err.message}); external stamps skipped.`);
       }
       if (!siteOk) {
-        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' not found: create it with deploy-central-log.js.txt `
-          + `(or set DBMLSP_DEPLOY_LOG_SITE / DBMLSP_DEPLOY_LOG_LIST). The run log holds this run's record.`);
+        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' not found. Create the site by hand from the `
+          + `SharePoint start page, then deploy the 'deployment-log' family to it (or set `
+          + `DBMLSP_DEPLOY_LOG_SITE / DBMLSP_DEPLOY_LOG_LIST). The run log holds this run's record.`);
       } else {
         let listOk = false;
         let canAdd = false;
         try {
           const listResp = await fetchWithRetry(
-            externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')?$select=Id`),
+            externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')`
+              + `?$select=Id,ListItemEntityTypeFullName`),
             { headers: { 'Accept': 'application/json;odata=verbose' } },
           );
           if (listResp.status === 404) {
             listOk = false;
           } else if (listResp.ok) {
             listOk = true;
+            externalEntityType = ((await listResp.json()).d || {}).ListItemEntityTypeFullName || null;
             const permResp = await fetchWithRetry(
               externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/effectivebasepermissions`),
               { headers: { 'Accept': 'application/json;odata=verbose' } },
@@ -376,25 +401,48 @@
         }
         if (!listOk) {
           log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' exists but has no list '${EXTERNAL_LOG_TITLE}': `
-            + `create it with deploy-central-log.js.txt. The run log holds this run's record.`);
+            + `deploy the 'deployment-log' family to that site. The run log holds this run's record.`);
         } else if (!canAdd) {
           log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' found but this account holds no AddListItems on it: `
             + `ask its owner for Contribute. The run log holds this run's record.`);
+        } else if (!externalEntityType) {
+          log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' returned no ListItemEntityTypeFullName, so an `
+            + `item POST cannot name its type; external stamps skipped. The run log holds this run's record.`);
         } else {
           externalReady = true;
-          log('INFO', `Central log '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' ready; stamping deployment start and provenance.`);
+          // One field read decides the shape of every stamp this run
+          // writes. A list this tool provisioned carries them all; a list
+          // the operator pointed at may carry none, and Title alone is
+          // what a generic list can always accept.
+          try {
+            const fieldsResp = await fetchWithRetry(
+              externalApi(`lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/fields`
+                + `?$select=InternalName`),
+              { headers: { 'Accept': 'application/json;odata=verbose' } },
+            );
+            if (fieldsResp.ok) {
+              const present = new Set(((((await fieldsResp.json()).d || {}).results) || [])
+                .map((f) => f.InternalName));
+              externalStructured = EXTERNAL_LOG_COLUMNS.every((name) => present.has(name));
+            }
+          } catch (err) {
+            recordFailure(`central log '${EXTERNAL_LOG_TITLE}' field probe`, err);
+          }
+          log('INFO', `Central log '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' ready; stamping `
+            + `deployment start and provenance ${externalStructured ? 'in full' : 'as Title only (the list carries no stamp columns)'}.`);
         }
       }
     }
     // A cross-web write needs a digest issued by the CENTRAL web: SharePoint
     // scopes digest validation to the issuing web (live finding 2026-09-05:
-    // a TestSampleTeam digest POSTed to firmfooting-logging answered 403
-    // "security validation ... invalid"; the central web's own digest
-    // answered 201). Fetched per stamp, not cached: stamps are a handful of
-    // POSTs per run and the ~30-minute cache lifetime is not worth a second
-    // invalidation rule.
+    // a digest from the deploy target's web POSTed to the logging site
+    // answered 403 "security validation ... invalid"; the logging web's own
+    // digest answered 201). contextinfo sits at the API root rather than
+    // under the web scope, which is why it has its own builder. Per stamp,
+    // not cached: stamps are a handful of POSTs per run and the ~30-minute
+    // cache lifetime is not worth a second invalidation rule.
     const externalDigest = async () => {
-      const r = await fetchWithRetry(externalApi('contextinfo'), {
+      const r = await fetchWithRetry(crossWebDigestUrl(EXTERNAL_LOG_SITE), {
         method: 'POST',
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
@@ -405,14 +453,28 @@
       if (!digest) throw new Error('central contextinfo carried no FormDigestValue');
       return digest;
     };
-    const stampExternal = async (kind, text) => {
+    const stampExternal = async (kind, text, details) => {
       if (!externalReady) return;
+      const body = {
+        __metadata: { type: externalEntityType },
+        Title: `${EXTERNAL_ROW_PREFIX} ${kind}: ${text}`.slice(0, 255),
+      };
+      if (externalStructured) {
+        body.StampKind = kind;
+        body.StampUtc = new Date().toISOString();
+        body.SourceSite = SITE_URL;
+        body.ReleaseTag = RELEASE_TAG;
+        body.SchemaVersion = SCHEMA_VERSION;
+        body.DeployerVersion = {{ ('dbml-sharepoint/' ~ release.deployer_version) | tojson }};
+        body.Operator = OPERATOR_LOGIN;
+        body.Details = details || '';
+      }
       try {
         const resp = await fetchWithRetry(externalApi(
           `lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
         ), {
           method: 'POST', headers: spHeaders(await externalDigest()),
-          body: JSON.stringify({ Title: `dbml-sharepoint ${kind}: ${text}`.slice(0, 255) }),
+          body: JSON.stringify(body),
         });
         if (!resp.ok) {
           recordFailure(`external log '${EXTERNAL_LOG_TITLE}' ${kind}`,
@@ -425,10 +487,12 @@
     if (externalReady) {
       await stampExternal('deployment start',
         `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()} by `
-        + `${((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)')} on {{ site_url }}`);
+        + `${OPERATOR_LOGIN} on {{ site_url }}`,
+        `site {{ site_url }}; role {{ site_role }}`);
       await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`.slice(0, 255));
+        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
+        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
     }
 
     // ---- Drain what the shim buffered ----------------------------------
@@ -440,6 +504,49 @@
       }
     }
 
+    // ---- The run log's one writer --------------------------------------
+    // Title ONLY. The run log has no schema beyond Title (nothing creates
+    // columns on it), so a POST naming StampKind or ReleaseTag would be
+    // refused for a field that does not exist. The STRUCTURED record of
+    // the same stamps is the central deployment log.
+    //
+    // The entity type is resolved once and memoised across the start stamp
+    // and the stop stamp: a typeless item POST is refused (live finding
+    // 2026-09-05, "An entry without a type name was found"), and the stop
+    // stamp is written from deploy.js.j2's finally, long after this block
+    // has returned.
+    let runEntityType = null;
+    const stampRunLog = async (kind, text) => {
+      try {
+        if (!runEntityType) {
+          const runTypeResp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')?$select=ListItemEntityTypeFullName`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          if (!runTypeResp.ok) {
+            throw new Error(`entity-type probe: HTTP ${runTypeResp.status}`);
+          }
+          runEntityType = ((await runTypeResp.json()).d || {}).ListItemEntityTypeFullName;
+          if (!runEntityType) {
+            throw new Error('entity-type probe returned no ListItemEntityTypeFullName');
+          }
+        }
+        const resp = await fetchWithRetry(apiUrl(
+          `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
+        ), {
+          method: 'POST', headers: spHeaders(await getDigest()),
+          body: JSON.stringify({
+            __metadata: { type: runEntityType },
+            Title: `${EXTERNAL_ROW_PREFIX} ${kind}: ${text}`.slice(0, 255),
+          }),
+        });
+        if (!resp.ok) {
+          recordFailure(`run log ${kind}`, new Error(`HTTP ${resp.status} ${await resp.text()}`));
+        }
+      } catch (err) {
+        recordFailure(`run log ${kind}`, err);
+      }
+    };
+
     // ---- Publish the writers to the rest of the run --------------------
     // From here every phase logs changes directly; the finally in
     // deploy.js.j2 calls these two on every exit path.
@@ -449,73 +556,21 @@
       const note = `errors ${summary.errors.length}; lists +${summary.listsCreated.length}, `
         + `renamed ${summary.listsRenamed.length}, columns +${summary.columnsCreated}, `
         + `skipped ${summary.columnsSkipped}; ${Math.round((Date.now() - RUN_STARTED_AT) / 1000)}s`;
-      try {
-        const digest = await getDigest();
-        const resp = await fetchWithRetry(apiUrl(
-          `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
-        ), {
-          method: 'POST', headers: spHeaders(digest),
-          body: JSON.stringify({
-            __metadata: { type: runEntityType },
-            Title: `dbml-sharepoint ${kind}: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
-              + `at ${new Date().toISOString()}`.slice(0, 255),
-            StampKind: kind,
-            StampUtc: new Date().toISOString(),
-            ReleaseTag: RELEASE_TAG,
-            SchemaVersion: SCHEMA_VERSION,
-            Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
-            Details: note.slice(0, 255),
-          }),
-        });
-        if (!resp.ok) {
-          recordFailure(`run log ${kind}`, new Error(`HTTP ${resp.status} ${await resp.text()}`));
-        }
-      } catch (err) {
-        recordFailure(`run log ${kind}`, err);
-      }
+      await stampRunLog(kind,
+        `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`);
       if (EXTERNAL_LOG_TITLE) {
         await stampExternal(kind,
-          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`.slice(0, 255));
+          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`,
+          note);
       }
     };
 
     // ---- The start stamp, last -----------------------------------------
     // Written once the phase's own setup has fully succeeded, so a start
     // stamp exists only for a run that got past creating its log lists.
-    // The item POST carries the run log's real entity type: a typeless
-    // entry is refused (live finding 2026-09-05, "An entry without a type
-    // name was found").
-    try {
-      const runTypeResp = await fetchWithRetry(apiUrl(
-        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')?$select=ListItemEntityTypeFullName`
-      ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-      if (!runTypeResp.ok) {
-        throw new Error(`entity-type probe: HTTP ${runTypeResp.status}`);
-      }
-      const runEntityType = (await runTypeResp.json()).d.ListItemEntityTypeFullName;
-      const digest = await getDigest();
-      const resp = await fetchWithRetry(apiUrl(
-        `web/lists/getbytitle('${odataName(RUN_LOG_TITLE)}')/items`
-      ), {
-        method: 'POST', headers: spHeaders(digest),
-        body: JSON.stringify({
-          __metadata: { type: runEntityType },
-          Title: `dbml-sharepoint deployment start: ${RELEASE_TAG} (schema v${SCHEMA_VERSION}) `
-            + `at ${new Date().toISOString()}`.slice(0, 255),
-          StampKind: 'deployment start',
-          StampUtc: new Date().toISOString(),
-          ReleaseTag: RELEASE_TAG,
-          SchemaVersion: SCHEMA_VERSION,
-          Operator: ((_spPageContextInfo && _spPageContextInfo.userLoginName) || '(unknown)'),
-          Details: `site {{ site_url }}; role {{ site_role }}`.slice(0, 255),
-        }),
-      });
-      if (!resp.ok) {
-        recordFailure('run log start', new Error(`HTTP ${resp.status} ${await resp.text()}`));
-      }
-    } catch (err) {
-      recordFailure('run log start', err);
-    }
+    await stampRunLog('deployment start',
+      `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; `
+      + `site {{ site_url }}; role {{ site_role }}`);
     log('INFO', `Run log '${RUN_LOG_TITLE}' stamped; `
       + (changeLogReady
         ? `change log '${CHANGE_LOG_TITLE}' ready.`

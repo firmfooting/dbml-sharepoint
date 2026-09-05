@@ -579,8 +579,9 @@ def build(
         None,
         "--deployment-log-list",
         help="Title of the central deployment log list to stamp start, stop "
-        "and provenance rows into. Probed on the central logging site, never "
-        f"created. Default: probes '{EXTERNAL_LOG_DEFAULT}' on site "
+        "and provenance rows into. Created by deploying the deployment-log "
+        "family to the logging site; every other deploy stamps it when it can "
+        f"reach it. Default: '{EXTERNAL_LOG_DEFAULT}' on site "
         f"'{CENTRAL_LOG_SITE_DEFAULT}' unless {ENV_FILENAME} names another; "
         "pass '' to disable the external stamps.",
     ),
@@ -588,8 +589,9 @@ def build(
         None,
         "--deployment-log-site",
         help="Title of the central logging SITE the deployment log list "
-        f"lives on. Default: '{CENTRAL_LOG_SITE_DEFAULT}' unless "
-        f"{ENV_FILENAME} names another; pass '' to disable the stamps.",
+        "lives on. Created by hand from the SharePoint start page: this tool "
+        f"provisions lists, never sites. Default: '{CENTRAL_LOG_SITE_DEFAULT}' "
+        f"unless {ENV_FILENAME} names another; pass '' to disable the stamps.",
     ),
     change_log_list: str | None = typer.Option(
         None,
