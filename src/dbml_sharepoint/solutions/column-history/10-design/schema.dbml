@@ -1,0 +1,47 @@
+// ============================================================================
+// Column history: ONE list, deployed ONCE to the central logging site. Power
+// Automate flows write one row per watched-column value change on any register
+// list in the estate; nothing in the deployer writes here.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project column_history { database_type: 'SharePoint Online Lists' }
+
+Table ColumnHistory {
+  Id             int      [pk, increment]
+  Title          nvarchar [not null, note: 'One readable line for the change, composed by the flow: "ProjectRisk 42 Status: Open -> Closed"']
+  // Design note: the trigger item Modified stamp, NOT the flow-run time. A
+  // flow queued behind a retry writes minutes late, and every duration
+  // measured from this column would carry that delay.
+  ChangedUtc     datetime [not null, note: 'When the change happened, in UTC. Use the trigger item Modified timestamp, never the time the flow happened to run']
+  // Design note: THE column this list gets filled wrong. See 30-deploy.
+  ChangedBy      person   [note: 'The person who made the change. A flow runs as a service account, so copy the TRIGGER ITEM Editor here; this row Author and Editor are the service account and answer nothing']
+  SiteUrl        nvarchar [not null, note: 'Absolute URL of the site the changed item lives on, with no trailing slash']
+  ListTitle      nvarchar [not null, note: 'The changed item deployed list title, carrying its family prefix: RR_Risk rather than Risk']
+  ItemId         int      [not null, note: 'The changed item Id. Every list numbers from 1, so this identifies a row only alongside Site Url and List Title']
+  ItemTitle      nvarchar [note: 'The changed item Title, denormalised so a report reads without joining back to the register it came from']
+  ColumnName     nvarchar [not null, note: 'The column display name as it stood at the time of the change. A rename moves it, so report on Column Internal instead']
+  ColumnInternal nvarchar [not null, note: 'The column internal name. Flows bind by it and a rename leaves it stable, so this is the durable join key for per-column history']
+  // Not required, deliberately: several triggers supply no before-value, and
+  // a required column would fail those flow runs rather than record them.
+  OldValue       longtext [note: 'The previous value, coerced to a string by the flow. Blank when the trigger supplies no before-value']
+  NewValue       longtext [not null, note: 'The value after the change, coerced to a string by the flow']
+  // Design note: the reporting integration. Byte-identical to the row key the
+  // reporting pack builds for the SOURCE list, which is what lets Power BI
+  // relate history to a register with no bridge table.
+  ChangeKey      nvarchar [not null, note: 'Site root, list title and item id joined by | exactly as the reporting pack builds its row keys. Composed by the flow; see 50-govern/governance.md']
+
+  // Every filtered and grouped view keys on one of these. This list grows
+  // without bound, so an unindexed filter here silently truncates sooner
+  // than anywhere else in the library.
+  indexes {
+    ChangeKey
+    ChangedUtc
+    ChangedBy
+    ColumnInternal
+    SiteUrl
+    ListTitle
+  }
+
+  Note: 'One row per column-value change anywhere in the estate, written by Power Automate. Every row is an event: durations are the gap to the next one.'
+}

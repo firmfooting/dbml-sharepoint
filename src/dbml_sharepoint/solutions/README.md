@@ -54,6 +54,7 @@ hand-off into that same improvement/investment chain.
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
 | [records-digitisation](records-digitisation/) | Can a digitised record be kept in this platform? | Platform-by-platform capability assessment: six answers that can each say *Unknown*, three multi-value evidence lists, and a verdict a person types |
 | [programme-governance](programme-governance/) | Programme delivery, accountability and provider requests | Nine lists on one site: RAID and RACI merged, plus the service requests only the provider can action |
+| [column-history](column-history/) | Change history for any register, across every site | One list on the central logging site that Power Automate writes into, so a register that only stores today's value can still be reported on over time |
 
 *Theme: Operations & service.*
 

@@ -8,6 +8,7 @@ solutions:
   - project-pipeline
   - change-register
   - opportunities-register
+  - column-history
 ---
 
 # Digitising how we work
@@ -22,3 +23,11 @@ ones go through `project-pipeline` for a gate decision and `change-register`
 for the approval trail. `opportunities-register` catches the problems a
 delivery team finds but cannot fix itself, so they reach this chain rather than
 being lost.
+
+Deploy `column-history` last, once at least one register is in use. A
+SharePoint list holds only today's value, so "how long did this sit in triage"
+and "is that register still being maintained" are unanswerable from the
+register itself. `column-history` is one list on your central logging site
+that Power Automate writes a row into whenever a watched column changes, which
+is what turns the measures you defined earlier into a trend rather than a
+snapshot.

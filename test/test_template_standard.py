@@ -223,6 +223,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership": "Govern",
         "System": "System",
     },
+    # No Act beat, and there cannot be one: nobody acts on a row here. A
+    # flow writes the row and the response, where there is one, happens on
+    # the register the row describes. "Reporting key" is the System beat
+    # because ChangeKey is a machine join and not a fact about the change.
+    ("column-history", "ColumnHistory"): {
+        "Which item changed": "Identify",
+        "What changed": "Assess",
+        "When and who": "Govern",
+        "Reporting key": "System",
+    },
     ("tiered-huddle", "Escalation"): {
         "The issue": "Identify",
         "Where it goes": "Act",
@@ -1702,12 +1712,21 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
     Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
     alone. Still two clear of the eleven-column warning band, with Action and
-    Decision behind them at 8."""
+    Decision behind them at 8.
+
+    RE-MEASURED 2026-09-05 across 34 templates / 66 entities, when
+    column-history joined the roster: 2 -> 8, 3 -> 30, 4 -> 21, 5 -> 3,
+    8 -> 2, 9 -> 2. ColumnHistory lands at 3 (ChangedBy plus Author and
+    Editor). Its site and list columns are text rather than lookups by
+    design, since the list they name lives on another site entirely, so the
+    one family that references every other list in the estate carries no
+    joins for doing it. The worst is unchanged and still shared by
+    programme-governance/Activity and ServiceRequest at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 33, (
-        f"{len(templates)} templates discovered, not the 33 this survey was "
+    assert len(templates) == 34, (
+        f"{len(templates)} templates discovered, not the 34 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
