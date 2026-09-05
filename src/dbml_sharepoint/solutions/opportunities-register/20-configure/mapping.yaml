@@ -115,7 +115,6 @@ display_names:
   mode: auto
   overrides:
     Opportunity:
-      Title: "Problem or opportunity"
       SafetyScreen: "Safety and privacy check"
       ServiceArea: "Service or facility area"
       EvidenceLink: "Evidence or source link"

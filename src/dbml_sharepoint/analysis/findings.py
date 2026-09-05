@@ -170,6 +170,7 @@ class FindingCode(StrEnum):
     PROJECTION_UNKNOWN_TARGET_COLUMN = "projection_unknown_target_column", "error"
     DISPLAY_COLUMN_NOT_RENDERED = "display_column_not_rendered", "error"
     DISPLAY_COLUMN_TYPE_UNINDEXABLE = "display_column_type_unindexable", "error"
+    DISPLAY_TITLE_ON_TITLE_COLUMN = "display_title_on_title_column", "error"
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"
     DOCUMENT_LIBRARY_UNSUPPORTED = "document_library_unsupported", "error"
     DUPLICATE_DISPLAY_TITLE = "duplicate_display_title", "error"

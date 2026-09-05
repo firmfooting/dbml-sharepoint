@@ -462,6 +462,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "index. The deploy sets `Indexed=true`, reads it back and "
         "aborts part-way through when it did not stick."
     ),
+    FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN: (
+        "A `display_names` override renames the built-in `Title` column. "
+        "The deploy provisions `Title` through its own patch object, which "
+        "carries no `Title` property, so the column keeps its name while the "
+        "view width map, the form body section field list and the Power Query "
+        "rename all move to the declared one. The first two address a field "
+        "by its DISPLAY name, so they would name a field the list does not "
+        "have, and no build or deploy phase can see it."
+    ),
     FindingCode.DISPLAY_TITLE_TOO_LONG: (
         f"A display title exceeds SharePoint's {MAX_DISPLAY_TITLE}-character "
         "bound."
