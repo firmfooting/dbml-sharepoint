@@ -170,6 +170,13 @@
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
+    // The logging phase's OWN failure list, deliberately not `errors`.
+    // `errors` is the abort bus every phase gate reads, and the registers
+    // this deploy maintains must never depend on the logs that document
+    // them: a change row that would not write must not stop a deploy that
+    // otherwise succeeded. Declared here, beside `errors`, so the summary
+    // has one shape whether or not the logging phase renders.
+    loggingFailures: [],
     releaseTag: RELEASE_TAG,
     schemaVersion: SCHEMA_VERSION,
   };
@@ -1376,7 +1383,13 @@
       fieldShapesByList[listName] = empty;
       return empty;
     }
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
+    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: with
+    // no explicit page size the page size is the server's, and this read is
+    // UNFILTERED, so an ordinary list's ~40 built-in fields plus its
+    // declared ones sit close to the default. A truncated map reads exactly
+    // like a list missing columns, and this map is what every phase's
+    // create-or-reconcile decision is made from.
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=500`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) {
@@ -5167,7 +5180,10 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      // `$top=500`: a read with no explicit page size takes the server's,
+      // and a truncated enumeration reads as "that view does not exist",
+      // which is the one answer this function must never get wrong.
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=500`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -5829,7 +5845,10 @@
       try {
         const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
         for (const form of SCHEMA.form_formatting) {
-          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`);
+          // `$top=500` for the same reason every other enumeration carries
+          // it: no explicit page size means the server's, and a truncated
+          // read here reads as "this list has no such content type".
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter&$top=500`);
         }
         contentTypes = await ctReader.done();
       } catch (err) {
