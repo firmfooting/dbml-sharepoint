@@ -169,7 +169,7 @@
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
           ), {
             method: 'POST', headers: spHeaders(digestF),
-            body: JSON.stringify(createBody),
+            body: JSON.stringify(fieldBody),
           });
           if (!addResp.ok) {
             throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
