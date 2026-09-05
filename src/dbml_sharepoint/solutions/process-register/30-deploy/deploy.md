@@ -90,11 +90,20 @@ site that already holds a real inventory.
       column beside it cannot disagree, because they read the same map.
       (The project pipeline's bar runs the opposite way, to green, because
       a tall bar there is an opportunity rather than a problem.)
-- [ ] The **Review date** turns red once past due on a live row, and stays
-      **plain** on the **Digitised** one even though it is 200 days past.
-      That is the guard: a digitised process and one ruled out are both
-      settled, and a date that keeps shouting after the decision trains
-      people to ignore the colour.
+- [ ] **`Next review due` is calculated and cannot be typed.** Open any
+      process for edit: the field is read-only and reads exactly twelve
+      months after `Last reviewed date`. Move the last reviewed date back a
+      month and the due date moves with it. That is the point of the split:
+      a refresh cannot be pushed out without claiming a review that did not
+      happen.
+- [ ] **The month end clamps.** Set `Last reviewed date` to 31 August and
+      `Next review due` reads 28 February (29 in a leap year), not 3 March.
+- [ ] The **Next review due** turns red once past due on a live row, and
+      stays **plain** on the **Digitised** one even though it is 200 days
+      past. That is the guard: a digitised process and one ruled out are
+      both settled, and a date that keeps shouting after the decision trains
+      people to ignore the colour. The date is still there, because a
+      digitised process can revert.
 - [ ] List Settings -> Indexed columns shows `Function`,
       `DigitisationStatus` and `CurrentState`. The build manifest lists
       the same three. SharePoint cannot index the calculated
@@ -102,10 +111,12 @@ site that already holds a real inventory.
       guaranteed to scale past the list-view threshold.
 - [ ] The New form shows **Name the process**, **Score it**, **Digitise
       it** and **Review**, each holding the fields named in
-      `20-configure/formatting/businessprocess-form-body.json`. **System**
-      is last and shows as a bare heading on the New form. It holds only
-      the calculated `Digitisation Priority`, and calculated columns never
-      render on entry forms. Cosmetic and expected.
+      `20-configure/formatting/businessprocess-form-body.json`. **Review**
+      holds `Last reviewed date` and the calculated `Next review due`, which
+      is blank on a new row because there is nothing to count from yet.
+      **System** is last and shows as a bare heading on the New form. It
+      holds only the calculated `Digitisation Priority`, and calculated
+      columns never render on entry forms. Cosmetic and expected.
 - [ ] **The workshop form is short by design.** `Target state` and
       `System URL` are absent from a new row: `DigitisationStatus` defaults
       to **Not assessed**, and the workshop's job is to see, not to solve.
@@ -115,10 +126,12 @@ site that already holds a real inventory.
       `Target state` empty: refused. "Planned" with nowhere named is a
       status with no content, and the programme dashboard would be counting
       intentions.
-- [ ] `Review date` refuses a date more than twelve months out, with its
-      own message, because the inventory refresh is annual. Leave it blank
-      and it saves. A row captured in a workshop and not yet given a
-      review date is a normal intermediate state.
+- [ ] `Last reviewed date` refuses a date in the **future**, with its own
+      message: a review dated ahead of today has not happened. Leave it
+      blank and it saves, and `Next review due` stays blank with it. A row
+      captured in a workshop and never checked since is a normal
+      intermediate state, and a blank there says so rather than being
+      filled with a guess.
 - [ ] Any Member can create and edit rows.
 - [ ] Delete the test row.
 - [ ] Even as an owner: changing a deployed column's type, choices or
@@ -132,6 +145,25 @@ Bump `schema_version`, rebuild, re-paste. Score-definition changes re-score
 every row. Recalibrate deliberately, not casually. The four declared views
 are reconciled every run; views you create yourself are user content and
 are never touched.
+
+### Coming from 1.0.x: transferring Review date
+
+1.1.0 splits `ReviewDate` into `Last reviewed date` and a calculated `Next
+review due`. The old column is **retired, not deleted**: it keeps its values,
+drops off every view and the New form, and reads `Review Date (retired)`.
+
+The two dates do not mean the same thing, so this is not a copy. `ReviewDate`
+held the *next* review; `Last reviewed date` holds the *last* one, and nobody
+recorded it. For each row, set `Last reviewed date` to the date somebody
+actually last checked the row was still true. Where nobody knows, leave it
+**blank**: a blank says nobody has ever checked, which is the honest answer
+and is what the register wants to surface. `ReviewDate` minus twelve months
+is available as a reconstruction where the row genuinely was on the annual
+cycle, and it lands the row in the same place in the queue.
+
+Once every row is transferred, run the columns sidecar on `PR_BusinessProcess`
+to delete `ReviewDate`, plus anything else its table shows that the schema no
+longer declares.
 
 ## Enterprise reporting access
 

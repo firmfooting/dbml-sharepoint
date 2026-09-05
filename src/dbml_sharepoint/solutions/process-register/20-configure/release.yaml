@@ -1,7 +1,41 @@
-release: "1.0.0"
-date: "2026-07-22"
+release: "1.1.0"
+date: "2026-09-06"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.0.1"
+schema_version: "1.1.0"
 notes: |
-  Process register template. Bump schema_version on any DBML/mapping change
-  before redeploying.
+  1.1.0 splits ReviewDate into LastReviewedDate and NextReviewDue. One
+  hand-set date stood for both halves of a review, so moving it forward
+  destroyed the evidence that a review had happened and nothing could tell an
+  on-time refresh from a push-out by somebody who had not looked (#413).
+
+  LastReviewedDate is the backward half: optional, with no default. Blank
+  means nobody has ever checked the row is still true, which is a finding in
+  the same way a blank Owner is, and defaulting it would claim a check that
+  never happened. It cannot be dated in the future.
+
+  NextReviewDue is CALCULATED from it, twelve months on, which is the annual
+  inventory refresh 50-govern already sets. Nobody can type it, so nobody can
+  push a refresh out. Blank until a first review is dated.
+
+  The settled states still carry a due date. A Digitised process can revert,
+  and "we decided not to digitise it" is exactly the decision worth
+  re-testing once a year. What Digitised and Not worth digitising suppress is
+  the escalation COLOUR, which is the formatting guard and is unchanged.
+
+  The old column rule capping ReviewDate at today+365 is GONE, and its
+  absence is the change. Anybody could satisfy it forever by moving the date
+  eleven months out again every month; counting from the last review rather
+  than from today is what closes that.
+
+  The cadence clamps at month end. A review dated 31 August falls due on
+  28 February, not 3 March: DATE(Y, M+12, D) alone overflows, so the formula
+  takes the MIN of it and the last day of the target month (#418).
+
+  "The worklist" and "By function" carry both dates in place of the one.
+
+  ReviewDate is RETIRED, not deleted. It keeps its values, drops off every
+  view and the New form, and reads "Review Date (retired)". Transfer the
+  values, then delete the column with the columns sidecar.
+
+  1.0.0 process register template. Bump schema_version on any DBML/mapping
+  change before redeploying.

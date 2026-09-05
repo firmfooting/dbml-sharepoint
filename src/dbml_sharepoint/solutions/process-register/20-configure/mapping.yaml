@@ -19,6 +19,24 @@ watched_lists: []
 calculated_formulas:
   BusinessProcess:
     DigitisationPriority: '=IF(OR(ISBLANK([Criticality]),ISBLANK([PainLevel])),"",IF([Criticality]="Low",1,IF([Criticality]="Medium",2,3))*IF([PainLevel]="Minor",1,IF([PainLevel]="Moderate",2,3)))'
+    # Twelve months after the last review, which is the annual inventory
+    # refresh 50-govern sets. Flat rather than banded: this register scores
+    # what to digitise, not how often to look, and a low-priority row goes
+    # stale exactly as fast as a high-priority one.
+    #
+    # Blank only until a first review is dated. The settled states
+    # (Digitised, Not worth digitising) still carry a due date, because a
+    # digitised process can revert and "we decided not to" is exactly the
+    # decision worth re-testing once a year; what those states suppress is
+    # the escalation colour, which is the formatting guard's job and stays
+    # there.
+    #
+    # The month-end clamp: DATE(Y, M+12, D) alone overflows rather than
+    # clamping, so a review recorded on 31 August would fall due on 3 March
+    # rather than 28 February (#418). MIN against DATE(Y, M+13, 0), the day
+    # before the first of the following month, holds it to the last real day
+    # of the target month.
+    NextReviewDue: '=IF(ISBLANK([LastReviewedDate]),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0)))'
 
 # Security: the inventory is built by everyone who runs a process. Members
 # and Owners hold Contribute; Full Control confined to the empty-by-default
@@ -129,11 +147,18 @@ column_formatting:
         field: PainLevel
         map: { Minor: good, Moderate: warning, Severe: severe }
     # The annual inventory refresh, escalating once it is past due. Guarded
-    # on the two states where a refresh no longer means anything: a
+    # on the two states where the escalation no longer means anything: a
     # digitised process and one ruled out are both settled, and a date that
     # keeps shouting after the decision trains people to ignore the colour.
-    ReviewDate:
+    # The date itself is still calculated for those rows, because a settled
+    # decision is still worth re-testing annually; it just does so quietly.
+    #
+    # LastReviewedDate is deliberately unformatted. It is a backward-looking
+    # stamp, not a deadline; there is no state in which it is "late", and an
+    # overdue treatment on it would colour every mature row red.
+    NextReviewDue:
       style: overdue-date
+      calculated: true
       guard:
         field: DigitisationStatus
         not: ["Digitised", "Not worth digitising"]
@@ -164,7 +189,8 @@ views:
     - title: "The worklist"
       default: true
       fields: ["@identity", Criticality, CurrentState, PainLevel,
-               DigitisationPriority, DigitisationStatus, ReviewDate]
+               DigitisationPriority, DigitisationStatus, LastReviewedDate,
+               NextReviewDue]
       where:
         - { field: DigitisationStatus, op: not_in,
             value: ["Digitised", "Not worth digitising"] }
@@ -179,7 +205,8 @@ views:
         PainLevel: 120
         DigitisationPriority: 150
         DigitisationStatus: 180
-        ReviewDate: 170
+        LastReviewedDate: 170
+        NextReviewDue: 160
     # SystemUrl is on this view for governance data-quality rule 3:
     # "Digitised rows carry a SystemUrl". That rule is NOT enforceable at
     # save (see list_validation below), so the compensating control is
@@ -203,7 +230,8 @@ views:
         SystemUrl: 180
     - title: "By function"
       fields: ["@identity", Criticality, CurrentState, PainLevel,
-               DigitisationPriority, DigitisationStatus, ReviewDate]
+               DigitisationPriority, DigitisationStatus, LastReviewedDate,
+               NextReviewDue]
       group_by: { field: Function, collapsed: true }
       sort:
         - { field: DigitisationPriority, direction: desc }
@@ -216,7 +244,8 @@ views:
         PainLevel: 120
         DigitisationPriority: 150
         DigitisationStatus: 180
-        ReviewDate: 170
+        LastReviewedDate: 170
+        NextReviewDue: 160
     # Two columns, one filter: a bare list is all_of, so this is
     # "high-criticality AND still on paper or in a spreadsheet". PainNotes
     # is on it because the quarterly slide needs the sentence, not just the
@@ -283,18 +312,20 @@ form_visibility:
 column_validation:
   BusinessProcess:
     columns:
-      # Governance sets a full inventory refresh annually. A review date
-      # further out than that is not a slower cadence, it is a row that has
-      # left the refresh: it never appears overdue and nobody is asked
-      # whether it is still true. The blank arm is deliberate: a row
-      # captured in a workshop and not yet given a review date is a normal
-      # intermediate state, not an error.
-      ReviewDate:
+      # The cadence rule that used to live here is GONE, and its absence is
+      # the point. It read "ReviewDate is at most today+365", which anybody
+      # could satisfy forever by moving the date eleven months out again
+      # every month without ever checking whether the row was still true.
+      # The cadence is now the calculated column, counted from the last
+      # review rather than from today, and there is nothing left to type.
+      #
+      # What is enforced instead is that the backward date is real. A review
+      # dated with next year's year is a review that has not happened, and
+      # nothing downstream can tell.
+      LastReviewedDate:
         when:
-          any_of:
-            - { field: ReviewDate, op: is_null }
-            - { field: ReviewDate, op: leq, value: today+365 }
-        message: "The inventory refresh is annual. Pick a review date within the next twelve months, or leave it blank until the row has been through a workshop."
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date somebody actually checked this row was still true."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
 list_validation:
@@ -311,6 +342,20 @@ list_validation:
         - { field: TargetState, op: is_not_null }
     message: "A process that is Planned, In progress or Digitised needs a Target State: which system, which template, which form. Say where it is going before you say it is on its way."
 
+# ReviewDate was one hand-set date standing for both halves of a review, so
+# moving it forward destroyed the evidence that a review had happened (#413).
+# Split into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+retired_columns:
+  BusinessProcess:
+    ReviewDate:
+      retired: "2026-09-06"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
+
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " so sample data stays visible in every view and form.
 # Rollback requires per-list confirmation before every delete. Dates are today+/-N so the
@@ -319,9 +364,10 @@ list_validation:
 # every formatted column renders at least once: all five current states,
 # all six digitisation statuses, all three criticality and pain bands, and
 # two rows land in "Key-person risk", which is the slide the whole
-# quarterly cadence is built around. The review date appears overdue (red)
-# on a live row and long past but PLAIN on a digitised one, so the guard
-# and its absence are both visible.
+# quarterly cadence is built around. The next review date appears overdue
+# (red) on a live row and long past but PLAIN on a digitised one, so the
+# guard and its absence are both visible. Rows carry LastReviewedDate only;
+# NextReviewDue is calculated, so SharePoint fills it in.
 demo_items:
   BusinessProcess:
     - key: process-roster
@@ -336,7 +382,7 @@ demo_items:
         PainNotes: "Demo row. One workbook, one person who understands the award formulas in it, and no version anyone else can safely open. Two days' work every fortnight, and a fortnight of exposure whenever she takes leave."
         DigitisationStatus: "Planned"
         TargetState: "Rostering module in the workforce system"
-        ReviewDate: "today-15"
+        LastReviewedDate: "today-380"
     - key: process-visitors
       values:
         Title: "[DEMO] Register visitors at reception"
@@ -350,7 +396,7 @@ demo_items:
         DigitisationStatus: "In progress"
         TargetState: "Visitor log template, one list per site"
         SystemUrl: "https://example.sharepoint.com/sites/demo/Lists/VL_Visit"
-        ReviewDate: "today+40"
+        LastReviewedDate: "today-325"
     - key: process-travel
       values:
         Title: "[DEMO] Approve staff travel"
@@ -362,7 +408,7 @@ demo_items:
         PainLevel: "Moderate"
         PainNotes: "Demo row. Approvals live in the approver's mailbox, so nobody can answer 'was this approved' without asking them."
         DigitisationStatus: "Assessed"
-        ReviewDate: "today+120"
+        LastReviewedDate: "today-245"
     - key: process-onboarding
       values:
         Title: "[DEMO] Onboard a new starter"
@@ -374,9 +420,10 @@ demo_items:
         PainLevel: "Moderate"
         PainNotes: "Demo row. A shared checklist that works, but the IT and facilities steps are chased by email and slip about a third of the time."
         DigitisationStatus: "Not assessed"
-        ReviewDate: "today+90"
-    # Digitised, and its review date is long past. It renders PLAIN, not
-    # red: the guard suppresses the escalation for settled rows.
+        LastReviewedDate: "today-275"
+    # Digitised, and its next review is long past. It renders PLAIN, not
+    # red: the guard suppresses the escalation for settled rows while the
+    # date itself still says the row has not been re-tested in two years.
     - key: process-incidents
       values:
         Title: "[DEMO] Record and investigate incidents"
@@ -390,7 +437,7 @@ demo_items:
         DigitisationStatus: "Digitised"
         TargetState: "Incident management template"
         SystemUrl: "https://example.sharepoint.com/sites/demo/Lists/IM_Incident"
-        ReviewDate: "today-200"
+        LastReviewedDate: "today-565"
     - key: process-stationery
       values:
         Title: "[DEMO] Order stationery"
@@ -402,4 +449,4 @@ demo_items:
         PainLevel: "Minor"
         PainNotes: "Demo row. An email to the supplier once a month. It works, it costs nobody anything, and digitising it would cost more than it saves, recorded as a decision rather than left on the list forever."
         DigitisationStatus: "Not worth digitising"
-        ReviewDate: "today+300"
+        LastReviewedDate: "today-65"
