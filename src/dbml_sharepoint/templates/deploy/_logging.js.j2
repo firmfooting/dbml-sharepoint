@@ -168,16 +168,18 @@
         for (const fieldBody of CHANGE_FIELDS) {
           if (present.has(fieldBody.Title)) continue;
           const digestF = await getDigest();
-          // The __metadata annotation is transport framing for ITEM posts;
-          // a field CREATE names its type through FieldTypeKind, and a
-          // metadata block here makes SharePoint try to resolve an SP.Field
-          // subtype name that does not exist (live: SP.FieldBoolean 400).
+          // Field creates need BOTH the verbose transport (spHeaders) and the
+          // __metadata type: without the type the verbose parser refuses the
+          // entry ("An entry without a type name was found", live 2026-09-05
+          // on dbml_Logs/TestSampleTeam), and the subtype name SP.FieldText /
+          // SP.FieldDateTime is exactly what it wants. An earlier comment
+          // here claimed the opposite from a misread probe; the live matrix
+          // (measured twice now) is unambiguous.
           // `Indexed` comes out for a different reason: it is part of the
           // DECLARATION, asserted below by the MERGE _indexes.js.j2 uses,
           // because whether a create body honours it has never been
           // measured here and a reused log would never see it either way.
           const createBody = { ...fieldBody };
-          delete createBody.__metadata;
           delete createBody.Indexed;
           const addResp = await fetchWithRetry(apiUrl(
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/fields`
