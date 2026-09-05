@@ -26,7 +26,10 @@ from dbml_sharepoint.analysis.lookups import (
 )
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import (
+    ENTERPRISE_READER_ADVISORY_PERMISSIONS,
+    ENTERPRISE_READER_REQUIRED_PERMISSIONS,
     base_permissions_to_high_low,
+    permission_bit_table,
     requires_manage_permissions,
 )
 from dbml_sharepoint.analysis.phases import phases_context
@@ -147,6 +150,17 @@ def generate_deploy_js(
         # Which declared group that is stays the template's job: it filters
         # SCHEMA.groups on the flag emitted in build_schema_json.
         enterprise_reader=enterprise_reader,
+        # #199: the bitmap the enrolment phase requires of the level behind
+        # the reader's grant, and the two bits it only warns about. Emitted
+        # from analysis.permissions rather than written into the template, so
+        # the bit values have one definition and the level this tool DECLARES
+        # and the level it VERIFIES are split the same way.
+        enterprise_reader_required_bits=permission_bit_table(
+            ENTERPRISE_READER_REQUIRED_PERMISSIONS,
+        ),
+        enterprise_reader_advisory_bits=permission_bit_table(
+            ENTERPRISE_READER_ADVISORY_PERMISSIONS,
+        ),
         # Static text baked in at build time -- deploy.js.j2 logs it as a
         # console line rather than a header comment, because the artefact
         # that matters is the transcript the operator pastes back, not the

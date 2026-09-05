@@ -1695,6 +1695,32 @@ the first build against a mapping that has not declared a reader group
 refuses every time, not just once. Declare the group, or remove the key
 from the file.
 
+**The level behind the grant is judged by its bitmap, not by its name.**
+Before anything else, the deploy reads the live `BasePermissions` of every
+permission level the flagged group is assigned on the lists this bundle
+deploys, and **aborts the run** if one of them is missing `ViewListItems`,
+`ViewFormPages` or `Open`. A permission level is site-scoped and its name is
+writable, so a level called `Read` is evidence that somebody named it that and
+nothing more. The validator reserves the built-in names against a mapping's own
+`permission_levels` declarations, which constrains what this tool creates and
+says nothing about what the target site already has. Bind a `Read` that grants
+nothing and the deploy reads back byte-identical and reports success, leaving
+the reporting account with a grant that reaches no rows.
+
+Two further bits, `BrowseUserInfo` and `UseRemoteAPIs`, produce a **warning**
+rather than an abort. Both are in the built-in `Read`, so a level missing
+either is not that level, but a person reading the lists in a browser is
+unaffected; a reporting client enumerating them over REST or CSOM is not.
+
+The check runs before the address is resolved, because `EnsureUser` is a write:
+a run that is going to refuse the level does not materialise a principal in the
+site's user information list on the way to refusing it. The built-in `Read` as
+measured on a live site on **2026-08-14** (`test/manual/reader-bindings-probe.js`,
+`High=176 Low=138612833`, `RoleTypeKind=2`) carries all three required bits and
+both advisory ones, so a genuine built-in passes silently. A group granted no
+level at all on this site role warns instead: nothing is granted there, so there
+is no bitmap that could be wrong.
+
 **The flagged group must hold nobody but the named account.** Before enrolling
 anything, the deploy enumerates the group's membership (every page) and
 **aborts the run** if it finds any principal other than the one

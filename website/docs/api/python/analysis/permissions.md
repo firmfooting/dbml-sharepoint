@@ -53,6 +53,30 @@ DERIVED_BUILT_IN_LEVELS = frozenset({'Limited Access', 'Web-Only Limited Access'
 ASSIGNABLE_BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Manage Hierarchy', 'Read', 'Restricted Read', 'View Only'})
 ```
 
+### `ENTERPRISE_READER_REQUIRED_PERMISSIONS`
+
+```python
+ENTERPRISE_READER_REQUIRED_PERMISSIONS = ('ViewListItems', 'ViewFormPages', 'Open')
+```
+
+### `ENTERPRISE_READER_ADVISORY_PERMISSIONS`
+
+```python
+ENTERPRISE_READER_ADVISORY_PERMISSIONS = ('BrowseUserInfo', 'UseRemoteAPIs')
+```
+
+### `permission_bit_table`
+
+```python
+def permission_bit_table(perm_names: collections.abc.Iterable[str]) -> list[dict[str, str]]
+```
+
+`{name, high, low}` per permission, for a runtime bitmap test.
+
+Split the same way `base_permissions_to_high_low` splits a level, because
+SP.BasePermissions is read back as two Int64 halves and the emitted script
+compares against each half separately.
+
 ### `BUILTIN_SP_GROUPS`
 
 ```python

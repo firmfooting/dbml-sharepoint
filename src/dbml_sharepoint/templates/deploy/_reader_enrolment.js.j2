@@ -7,11 +7,14 @@
    aborts, deploy.js.j2's finally removes the account this phase just
    enrolled -- a rollback of this run's own write, not a general reconciler
    for membership some earlier run may have left behind.
-   Every resolution is refused unless it is a single user (PrincipalType
-   strictly 1), does not match one of the three tenant-wide-claim needles
-   at step 3, and matches the address the build asked for; the group must
-   hold nobody but that account already (step 7); and the membership is
-   then read back before the run is allowed to call it done.
+   Step 0 checks what the group GRANTS, by reading the live BasePermissions
+   of every level it is assigned rather than trusting a level named Read to
+   be the built-in one. The rest guard WHO is enrolled: every resolution is
+   refused unless it is a single user (PrincipalType strictly 1), does not
+   match one of the three tenant-wide-claim needles at step 3, and matches
+   the address the build asked for; the group must hold nobody but that
+   account already (step 7); and the membership is then read back before the
+   run is allowed to call it done.
 
    Those needles are NOT full coverage of the tenant-wide claims: they
    cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3
@@ -24,7 +27,8 @@
   // this bundle provisions, by adding it to the group the mapping flagged
   // with `enroll_enterprise_reader`, a group the validator requires to
   // hold Read and nothing more. The group's grants are unchanged here;
-  // this phase only decides WHO is in it.
+  // this phase decides WHO is in it, and refuses to put anybody in it if
+  // the level behind the grant does not actually read (step 0).
   //
   // THIS MEMBERSHIP IS PERMANENT ONLY ONCE THE RUN REACHES THE END. Operator
   // self-enrolment (the phase before this one) always removes itself on the
@@ -62,8 +66,122 @@
     // as a loop anyway: a hand-edited bundle then reports per group instead
     // of silently enrolling into whichever one happened to come first.
     const readerGroups = SCHEMA.groups.filter(g => g.enroll_enterprise_reader);
+    // The bitmap a level must carry to be worth enrolling into, and the two
+    // bits whose absence only narrows it. Emitted from
+    // analysis/permissions.py so the values this checks against and the
+    // values a declared level is BUILT from have one definition.
+    const READER_REQUIRED_BITS = {{ enterprise_reader_required_bits | tojson }};
+    const READER_ADVISORY_BITS = {{ enterprise_reader_advisory_bits | tojson }};
+    // BigInt, not `&`. SP.BasePermissions.Low runs to 2^32-1 and JS bitwise
+    // operators truncate to a SIGNED 32-bit integer, so the top bit of a
+    // full mask reads negative. Every bit this file tests happens to sit low
+    // enough for that to come out right, which is exactly the kind of
+    // accident a later bit would break silently.
+    const bitmapHalf = (perms, half, levelName) => {
+      const raw = perms == null ? undefined : perms[half];
+      const text = String(raw == null ? '' : raw);
+      // Int64 under odata=verbose is a STRING; some responses give a number.
+      // Anything else means the read did not return a bitmap, and guessing
+      // zero would report every bit missing rather than an unreadable level.
+      if (!/^\d+$/.test(text)) {
+        throw new Error(
+          `permission level '${levelName}' returned BasePermissions.${half} as `
+          + `${JSON.stringify(raw)}, which is not a bitmap this script can read`,
+        );
+      }
+      return BigInt(text);
+    };
+    const carriesBit = (high, low, bit) => (
+      (high & BigInt(bit.high)) === BigInt(bit.high)
+      && (low & BigInt(bit.low)) === BigInt(bit.low)
+    );
     for (const grp of readerGroups) {
       try {
+        // 0. The GRANT, by its bitmap and not by its name. #199.
+        //
+        // Every step below guards WHO is enrolled. This one guards WHAT they
+        // are enrolled into. A permission level is site-scoped and its name
+        // is writable, so a level called 'Read' is evidence that somebody
+        // named it that and nothing more. The build reserves the built-in
+        // names against its OWN declarations (analysis/permissions.py,
+        // BUILT_IN_LEVELS) and refuses a mapping that redefines one, which
+        // says nothing about what the target site already has. Bind a level
+        // called Read that grants nothing and the deploy reads back
+        // byte-identical and reports success; the reporting account holds a
+        // grant that reaches no rows and nobody finds out until somebody
+        // opens the report.
+        //
+        // Runs BEFORE step 1, which is a write: a level this run is going to
+        // refuse must not materialise a principal in the site's user
+        // information list on the way to being refused.
+        //
+        // MEASURED against the real thing rather than assumed, per the
+        // reference-implementation rule: `reader-bindings-probe.js` read the
+        // built-in Read on a live site on 2026-08-14 (#199, R2) as
+        // High=176 Low=138612833, which carries all three required bits and
+        // both advisory ones. So a genuine built-in Read passes this check
+        // silently, which is the property that makes a firing check mean
+        // something.
+        const levelNames = [...new Set(SCHEMA.list_assignments
+          .flatMap(la => la.assignments)
+          .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
+          .map(a => a.level))];
+        // WARN rather than abort. The validator
+        // (ENTERPRISE_READER_GROUP_NOT_GRANTED) requires the flagged group to
+        // hold a grant SOMEWHERE in the mapping, and `list_assignments` holds
+        // only the lists in the site role THIS bundle deploys, so a mapping
+        // that grants the reader in another role reaches here legitimately
+        // with nothing to check. Nothing is granted either, so there is no
+        // bitmap that could be wrong and nothing to fail closed on.
+        if (levelNames.length === 0) {
+          log('WARN', `'${grp.name}' is granted no permission level on the lists this bundle `
+            + `deploys, so enrolling '${READER_ADDRESS}' into it grants nothing here. Its `
+            + `bitmap was not checked. If this family is meant to be readable, declare the `
+            + `grant in list_permissions for this site role.`);
+        }
+        for (const levelName of levelNames) {
+          const lvlResp = await fetchWithRetry(
+            apiUrl(`web/roledefinitions/getbyname('${odataName(levelName)}')?$select=Id,Name,BasePermissions`),
+            { headers: { 'Accept': 'application/json;odata=verbose' } },
+          );
+          if (!lvlResp.ok) {
+            const text = await lvlResp.text();
+            throw new Error(
+              `permission level '${levelName}', which '${grp.name}' is granted, could not be read: `
+              + `HTTP ${lvlResp.status} ${text}. Nothing was changed.`,
+            );
+          }
+          const lvl = (await lvlResp.json()).d || {};
+          const high = bitmapHalf(lvl.BasePermissions, 'High', levelName);
+          const low = bitmapHalf(lvl.BasePermissions, 'Low', levelName);
+          const missing = READER_REQUIRED_BITS.filter(b => !carriesBit(high, low, b));
+          if (missing.length > 0) {
+            throw new Error(
+              `permission level '${levelName}' on this site does not grant `
+              + `${missing.map(b => b.name).join(', ')}, so '${grp.name}' would not let `
+              + `'${READER_ADDRESS}' read the lists this bundle deploys. Its bitmap is `
+              + `High=${high} Low=${low}. A level's NAME is not its grant: this site's `
+              + `'${levelName}' is not the built-in one, whatever it is called. Nothing was `
+              + `granted and nobody was enrolled. Fix the level in Site settings > Site `
+              + `permissions > Permission Levels, or grant the reader group a level that `
+              + `does read, then run this script again.`,
+            );
+          }
+          const advisory = READER_ADVISORY_BITS.filter(b => !carriesBit(high, low, b));
+          if (advisory.length > 0) {
+            // Not fatal: a browser-based reader works without either. A
+            // reporting CLIENT does not, and this is the only place the
+            // operator is told before the account is enrolled.
+            log('WARN', `Permission level '${levelName}' grants `
+              + `${advisory.map(b => b.name).join(' and ')} to nobody, so it is narrower than the `
+              + `built-in Read. '${READER_ADDRESS}' will be able to read the lists in a browser. `
+              + `A reporting client enumerating them over REST or CSOM needs UseRemoteAPIs, and `
+              + `resolving person columns needs BrowseUserInfo. Enrolment continues.`);
+          }
+          log('INFO', `Permission level '${levelName}' carries the read bits `
+            + `'${grp.name}' needs (High=${high} Low=${low}).`);
+        }
+
         // 1. Resolve the address. EnsureUser is a write (it materialises
         // the principal in the site's user information list), hence the
         // digest, and it is the only documented way to turn a UPN into the
