@@ -310,9 +310,12 @@ def test_one_helper_builds_every_api_url() -> None:
         # The cross-web helper itself: it IS the sanctioned builder for the
         # one cross-site surface (the central deployment log).
         "_cross_web.js.j2": {"`${TENANT_ROOT}/sites/${odataName(site)}/_api/web/${suffix}`;"},
-        # The tenant-root site create in central-log.js.j2 (one call), plus
-        # the comment naming the discipline.
+        # central-log.js.j2: the site guard is deliberately absent there
+        # (cross-site by design), so it carries a reduced apiUrl() for the
+        # digest POST plus the tenant-root Webs/Add that cannot target a
+        # web that does not exist yet. Both are pinned exactly.
         "central-log.js.j2": {
+            "const apiUrl = (suffix) => `${SITE_PATH}/_api/${suffix}`;",
             "const create = await fetchWithRetry(`${TENANT_ROOT}/_api/web/Webs/Add`, {",
         },
     }

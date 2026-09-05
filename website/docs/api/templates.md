@@ -101,7 +101,7 @@ The host names the pack data differently: assess.js.j2 passes `targets`, deploy.
 
 Included by: `central-log.js.j2`, `deploy/_logging.js.j2`
 
-The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site under this tenant root. Included ONLY by the scripts that reach the central deployment log (deploy.js's logging phase and the deploy-central-log sidecar), so no other emitted script carries the helper unused. Same origin, so the session cookies ride along.
+The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site under this tenant root. Included ONLY by the scripts that reach the central deployment log (deploy.js's logging phase and the deploy-central-log sidecar), so no other emitted script carries the helper unused. Same origin, so the session cookies ride along. TENANT_ROOT comes from SITE_URL's origin, deliberately NOT from `_spPageContextInfo`: the modern pages this is pasted on (CollabHome) do not define that global (measured 2026-08-26).
 
 ### `_digest_cached.js.j2`
 

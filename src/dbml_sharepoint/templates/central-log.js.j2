@@ -45,9 +45,19 @@
   // pasted on any site the operator owns and writes to a DIFFERENT one,
   // so there is nothing to pin the page against. Everything it does is
   // bounded by the two names below and by the marker comparison.
+  //
+  // Identity comes from REST (`web/currentuser`), NOT `_spPageContextInfo`:
+  // the modern pages this is most likely to be pasted on (CollabHome) do
+  // not define that global at all (measured 2026-08-26, see the test
+  // agent's SharePoint-REST notes). The origin alone answers TENANT_ROOT.
   const SITE_URL = window.location.origin;
-  const WEB = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  // apiUrl() local form: the digest partial POSTs contextinfo to the page's
+  // OWN web. On a modern page (CollabHome) there is no web path to reuse,
+  // so the digest targets the tenant root's contextinfo -- a digest is
+  // tenant-wide, not web-scoped, so any web's contextinfo serves.
+  const SITE_PATH = (/^\/sites\/[^/]+/.exec(window.location.pathname) || [''])[0];
+  const apiUrl = (suffix) => `${SITE_PATH}/_api/${suffix}`;
   // The central web's API: the cross-web form of apiUrl() -- same suffix
   // discipline, pointed at the central logging site. Same origin, so the
   // session cookies ride along. WEB and odataName come from the context
@@ -193,21 +203,39 @@
     return;
   }
 
-  const stamp = await fetchWithRetry(centralApi(`lists/getbytitle('${odataName(CENTRAL_LIST)}')/items`), {
-    method: 'POST',
-    headers: spHeaders(await getDigest()),
-    body: JSON.stringify({
-      Title: `dbml-sharepoint provenance: central log provisioned by deployer v${DEPLOYER_VERSION} `
-        + `at ${GENERATED_AT} by ${WEB}`.slice(0, 255),
-    }),
-  });
-  if (!stamp.ok && stamp.status !== 409) {
-    const text = await stamp.text();
-    log('WARN', `Central log is ready, but the provenance row was refused: HTTP ${stamp.status} `
-      + `${spError(text) || text.slice(0, 160)}. This account holds no AddListItems on the list; `
-      + `delegating rows will be refused until it is granted Contribute.`);
+  // The stamp needs the list's real entity type: SharePoint mangles
+  // non-alphanumeric characters in 'SP.Data.<Title>ListItem' (the live
+  // list's type is SP.Data.DbmldeploymentlogListItem, no underscores), so
+  // a derived literal is wrong exactly when the title is interesting.
+  // Same lesson the seeds phase learnt; same resolution one GET earlier.
+  const typeResp = await fetchWithRetry(
+    centralApi(`lists/getbytitle('${odataName(CENTRAL_LIST)}')?$select=ListItemEntityTypeFullName`),
+    { headers: { 'Accept': 'application/json;odata=verbose' } },
+  );
+  if (!typeResp.ok) {
+    log('WARN', `Could not resolve the list's entity type (HTTP ${typeResp.status}); the provenance row needs it, so it was skipped. The list itself is ready.`);
   } else {
-    log('INFO', `Provenance row stamped into '${CENTRAL_LIST}'.`);
+    const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
+    const stamp = await fetchWithRetry(centralApi(`lists/getbytitle('${odataName(CENTRAL_LIST)}')/items`), {
+      method: 'POST',
+      headers: spHeaders(await getDigest()),
+      body: JSON.stringify({
+        // WEB is the strict guard's variable; this script is cross-web and
+        // deliberately does not define it. The pasted page's own path names
+        // where the provisioning happened, which is the audit fact wanted.
+        __metadata: { type: entityType },
+        Title: `dbml-sharepoint provenance: central log provisioned by deployer v${DEPLOYER_VERSION} `
+          + `at ${GENERATED_AT} from ${window.location.pathname}`.slice(0, 255),
+      }),
+    });
+    if (!stamp.ok && stamp.status !== 409) {
+      const text = await stamp.text();
+      log('WARN', `Central log is ready, but the provenance row was refused: HTTP ${stamp.status} `
+        + `${spError(text) || text.slice(0, 160)}. This account holds no AddListItems on the list; `
+        + `delegating rows will be refused until it is granted Contribute.`);
+    } else {
+      log('INFO', `Provenance row stamped into '${CENTRAL_LIST}'.`);
+    }
   }
 
   log('DONE', `Central log ready: site '${CENTRAL_SITE}', list '${CENTRAL_LIST}'. Every firmfooting `
