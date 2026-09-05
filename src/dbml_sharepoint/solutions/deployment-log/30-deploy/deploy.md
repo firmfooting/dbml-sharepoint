@@ -180,13 +180,17 @@ integrity matters and its confidentiality does not, and because a reporting
 account that exists to read the whole fleet is useless if ReadSecurity 2
 trims it to its own rows.
 
-What has **not** been measured: whether any level short of Full Control
-clears the created-by trim, and which one. Before narrowing this grant,
-probe it on a live site with a second account that is not the deployer and
-holds only the candidate level: write rows as account A, read as account B,
-and record what B sees. Until that transcript exists, treat the elevation as
-deliberate rather than settled. The build already warns about it, with the
-finding code `enterprise_reader_on_trimmed_list`.
+Measured on 2026-09-05 against this posture as shipped: the created-by trim
+does **not** spare a narrower level that merely looks read-shaped. An account
+holding site membership (no special level at all) saw none of another
+account's rows, could add a row, and was refused editing it (403), deleting
+it (403) and editing any row it could not see (404 — the trim hides the row,
+the write path refuses it). A read-shaped grant below Full Control would
+still be trimmed unless it carries more bits than a "reader" name implies,
+which is exactly the trap. Until a candidate level is probed the same way —
+write rows as account A, read as account B, record what B sees — treat the
+Full Control elevation as deliberate. The build already warns about it, with
+the finding code `enterprise_reader_on_trimmed_list`.
 
 ## Then point the fleet at it
 
