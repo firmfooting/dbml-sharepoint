@@ -55,7 +55,10 @@
       try {
         const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
         for (const form of SCHEMA.form_formatting) {
-          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`);
+          // `$top=500` for the same reason every other enumeration carries
+          // it: no explicit page size means the server's, and a truncated
+          // read here reads as "this list has no such content type".
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter&$top=500`);
         }
         contentTypes = await ctReader.done();
       } catch (err) {

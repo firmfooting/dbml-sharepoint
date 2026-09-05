@@ -11,10 +11,10 @@ tool:
   settings and reporting.
 
 - ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
-  one row per change with the old value and the new value side by side.
-  Hidden and insert-only from the deploy's point of view. The enterprise
-  reader group holds Read on it so a Power Automate enterprise reader can
-  pick rows up without touching the registers.
+  one row per change with the old value and the new value side by side,
+  keyed by ``ChangeKey``. Hidden and insert-only from the deploy's point of
+  view. The enterprise reader group holds Read on it so a Power Automate
+  enterprise reader can pick rows up without touching the registers.
 
 Both follow the verify scratch list's ownership pattern: the marker in the
 Description compared WHOLE, tool-owned (no family), fail closed on a list
@@ -108,10 +108,29 @@ def change_log_title() -> str:
 #: when the list is first created. Single source of truth: the template
 #: renders these, so the runtime column set cannot drift from this
 #: declaration. Internal names follow from the titles SharePoint assigns
-#: (no spaces in any title). Title carries the change key; EffectiveTo and
-#: IsCurrent are the type-2 close; OldValue/NewValue are the payload the
+#: (no spaces in any title). ChangeKey carries the change key; EffectiveTo
+#: and IsCurrent are the type-2 close; OldValue/NewValue are the payload the
 #: Power Automate reader diffs.
+#:
+#: ``Indexed`` is part of the DECLARATION, not of the create body: the
+#: template strips it before the POST and asserts it with the same field
+#: MERGE `deploy/_indexes.js.j2` uses. A log created before a column was
+#: declared indexed carries it unindexed, and only a MERGE reaches those.
+#:
+#: ChangeKey and IsCurrent are indexed because the type-2 close reads
+#: ``$filter=ChangeKey eq '...' and IsCurrent eq true``, and BOTH sides of
+#: an AND must be indexed for the filter to survive the 5,000-item list view
+#: threshold. This list is deliberately unbounded: it gains a row per change
+#: forever.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
+    {
+        "__metadata": {"type": "SP.FieldText"},
+        "Title": "ChangeKey",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Indexed": True,
+        "Description": "The reporting row key this row belongs to.",
+    },
     {
         "__metadata": {"type": "SP.FieldText"},
         "Title": "ChangeKind",
@@ -158,6 +177,7 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "__metadata": {"type": "SP.FieldBoolean"},
         "Title": "IsCurrent",
         "FieldTypeKind": 8,
+        "Indexed": True,
         "Description": "Whether this row is the current one for its key.",
     },
     {

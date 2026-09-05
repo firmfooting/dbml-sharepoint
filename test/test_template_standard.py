@@ -1732,6 +1732,7 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
         f"before trusting either."
     )
     worst = 0
+    counted = 0
     for template in templates:
         root = SOLUTION_TEMPLATES / template
         schema = parse_dbml(root / "10-design" / "schema.dbml")
@@ -1745,7 +1746,18 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
             if table is None or entity.kind == "DocumentLibrary":
                 continue
             xcols = by_entity.get(name, set())
+            counted += 1
             worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
+    # The template count alone cannot see this. A family that gains or loses a
+    # LIST keeps the roster at 33 while the distribution above moves under it,
+    # and the docstring's entity total was wrong for exactly that reason
+    # before this pin existed.
+    assert counted == 65, (
+        f"{counted} entities were surveyed, not the 65 the distribution above "
+        f"was measured over. An entity appeared or disappeared inside a "
+        f"template that is still on the roster. Re-measure the distribution "
+        f"and the worst count before trusting either."
+    )
     assert worst == 9, (
         f"worst generated 'All Items' is now {worst} of 12, not the pinned 9. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
