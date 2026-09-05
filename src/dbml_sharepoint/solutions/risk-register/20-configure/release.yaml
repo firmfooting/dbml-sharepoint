@@ -1,7 +1,28 @@
-release: "1.0.0"
-date: "2026-07-22"
+release: "1.1.0"
+date: "2026-09-05"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.0.1"
+schema_version: "1.1.0"
 notes: |
+  1.1.0 clamps NextReviewDue at month end. Adding months with
+  DATE(Y, M+N, D) alone overflowed rather than clamping, so a review
+  completed 31 January fell due 1 May rather than 30 April and 31 August
+  plus six months landed 3 March: one to three days late, never early, and
+  only when the baseline day is a 29th, 30th or 31st landing on a shorter
+  month. The formula now takes MIN of that date and DATE(Y, M+N+1, 0), the
+  last day of the target month. programme-governance carries the same idiom
+  on its own two cadence formulas, changed in the same release.
+
+  The cadence itself is unchanged. The clamp needs a second copy of the
+  cadence expression, and the levels-above-target arm came out to pay for
+  it: a difference of two or more needs a residual of High or Extreme, both
+  already separate arms of the same OR, so that arm could never decide the
+  cadence on its own. Quarterly still applies to every case the column
+  description lists.
+
+  EVERY EXISTING ROW RECALCULATES on redeploy. Only rows whose
+  LastReviewedDate falls on a day the target month does not have will move,
+  and each moves one to three days earlier. Export the list before
+  redeploying if the previous due dates need to be kept.
+
   Risk register template. Bump schema_version on any DBML/mapping change,
   especially matrix changes, which re-rate existing rows (see governance).

@@ -33,15 +33,27 @@ watched_lists: []
 # and jsgen provisions them in dependency order, so declaration order
 # here does not matter (see _order_calculated_after_references in jsgen).
 #
-# KNOWN, ACCEPTED: NextReviewDue adds months with
-# DATE(YEAR(d), MONTH(d)+N, DAY(d)), which OVERFLOWS at month end rather
-# than clamping: a review completed 31 January falls due 1 May rather
-# than 30 April, and 31 August + 6 months lands 3 March. The slip is one
-# to three days on a cadence of three months or more, against a column
-# whose own description says to review sooner on contextual change, so it
-# is not worth the formula budget an end-of-month-safe construction costs.
-# Tracked as issue #5; revisit if the cadence ever drives an obligation
-# that is counted in days.
+# MONTH-END CLAMP (issue #418, fixed 2026-09-05). NextReviewDue adds months,
+# and DATE(Y, M+N, D) alone overflowed at month end rather than clamping: a
+# review completed 31 January fell due 1 May rather than 30 April, and 31
+# August plus six months landed 3 March. It now takes MIN of that date and
+# DATE(Y, M+N+1, 0), the last day of the target month, so a day the target
+# month does not have lands on its last day instead of spilling into the
+# next one. programme-governance carries the same idiom on its own two
+# cadence formulas, changed together.
+#
+# The clamp reads DATE with a month past 12 and a day of 0. The month arm is
+# what the overflow itself demonstrated (month 14 rolled into February of the
+# next year), and the day arm is the same normalisation counted the other
+# way. Neither has been measured on a live list; if a probe ever contradicts
+# this, it contradicts the arithmetic the previous formula already relied on.
+#
+# The clamp costs a second copy of the cadence expression, which is why the
+# levels-above-target arm came out of it. That arm was dead: a difference of
+# two or more needs a residual of High or Extreme, and both are already
+# separate arms of the same OR, so it could never decide the cadence on its
+# own. Removing it is what brings the clamped formula to 754 characters
+# against the 1024 ceiling; keeping it would have needed 1218.
 #
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
 # changes; read 50-govern/governance.md before editing these cells.
@@ -60,7 +72,7 @@ calculated_formulas:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
     RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
     LevelsAboveTarget: '=IF(OR([ResidualRiskRating]="",ISBLANK([TargetRiskRating])),"",IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4))))'
-    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme",[OverallControlEffectiveness]="Inadequate",[OverallControlEffectiveness]="Uncontrolled",AND(NOT(ISBLANK([TargetRiskRating])),IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4)))>=2)),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate",[OverallControlEffectiveness]="Partially effective"),6,12)),DAY([LastReviewedDate])))'
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme",[OverallControlEffectiveness]="Inadequate",[OverallControlEffectiveness]="Uncontrolled"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate",[OverallControlEffectiveness]="Partially effective"),6,12)),DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme",[OverallControlEffectiveness]="Inadequate",[OverallControlEffectiveness]="Uncontrolled"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate",[OverallControlEffectiveness]="Partially effective"),6,12))+1,0)))'
 
 # Security: risks are maintained by a managers group; everyone reads.
 groups:

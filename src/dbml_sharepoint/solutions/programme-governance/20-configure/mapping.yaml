@@ -137,13 +137,20 @@ watched_lists:
 # the worst case rather than failing. The matrix is 5x5, so changing the enums
 # means rewriting the 25 cells anyway.
 #
-# KNOWN, AND NOW OWNED HERE. ConfirmationDue and NextReviewDue both add months
-# with DATE(YEAR(d), MONTH(d)+N, DAY(d)), which overflows rather than clamping,
-# so a confirmation recorded on 31 August falls due on 3 March rather than 28
-# February. This was carried unfixed while raci-matrix held the same formula
-# and the fix belonged upstream; that family is retired, so the only other
-# copy is risk-register's NextReviewDue. Tracked rather than fixed in passing,
-# because the two copies should be fixed together.
+# MONTH-END CLAMP (issue #418, fixed 2026-09-05). ConfirmationDue and
+# NextReviewDue both add months, and DATE(Y, M+N, D) alone overflows rather
+# than clamping: a confirmation recorded 31 August fell due 3 March rather
+# than 28 February, one to three days late and never early. Both now take
+# MIN of that date and DATE(Y, M+N+1, 0), the last day of the target month,
+# so a day the target month does not have lands on its last day instead of
+# spilling into the next one. risk-register's NextReviewDue takes the same
+# shape in the same change, so the three copies stay one idiom.
+#
+# The clamp reads DATE with a month past 12 and a day of 0. The month arm is
+# what the overflow itself demonstrated (month 14 rolled into February of the
+# next year), and the day arm is the same normalisation counted the other
+# way. Neither has been measured on a live list; if a probe ever contradicts
+# this, it contradicts the arithmetic the previous formula already relied on.
 calculated_formulas:
   # Criticality x frequency, on process-register's 1-to-9 shape but NOT its
   # factors. That register scores what to digitise, where pain is the driver;
@@ -160,10 +167,8 @@ calculated_formulas:
     # is Manage or Tolerate, otherwise annual, counted from Last Reviewed
     # Date. risk-register's rule with its control-effectiveness and
     # levels-above-target arms dropped, because this family carries neither
-    # column. Same month-end overflow as ConfirmationDue: DATE(Y, M+N, D)
-    # overflows rather than clamping, so a review recorded on 31 August
-    # falls due on 3 March rather than 28 February.
-    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])))'
+    # column. Month-end clamped like ConfirmationDue; see the note above.
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12))+1,0)))'
     LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
   Decision:
     # Every picker onto this list shows this column. Approved and Ratified are
@@ -171,7 +176,7 @@ calculated_formulas:
     # Noted row is blank here and so is not offered.
     LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Ratified"),[Title],"")'
   Activity:
-    ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])))'
+    ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",MIN(DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])),DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24))+1,0)))'
 
 # Projections cost no join. Each RelatedRisk lookup projects the target's real
 # Title onto the source list as a read-only dependent field
