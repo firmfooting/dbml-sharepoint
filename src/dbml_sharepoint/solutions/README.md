@@ -28,6 +28,7 @@ ones, measure what matters, and close the loop.
 | [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture -> existing-system routing -> selective assessment and hand-off |
 | [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit x feasibility priority score; gate + graveyard discipline |
 | [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
+| [deployment-log](deployment-log/) | What this tool deployed, where, by whom | The fleet's own record of itself: one list every other family's deploy stamps from wherever it runs, so an aborted run or a site left on an old schema version is visible in one place |
 
 **The digitisation journey, using this theme:** inventory processes and
 score the pain (*process-register*) -> deploy quick-win templates or build

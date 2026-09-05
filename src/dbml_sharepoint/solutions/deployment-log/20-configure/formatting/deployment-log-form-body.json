@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The stamp",
+      "fields": ["Title", "StampKind", "StampUtc"]
+    },
+    {
+      "displayname": "Where it ran",
+      "fields": ["SourceSite", "Operator"]
+    },
+    {
+      "displayname": "What was deployed",
+      "fields": ["ReleaseTag", "SchemaVersion", "DeployerVersion"]
+    },
+    {
+      "displayname": "What the run did",
+      "fields": ["Details"]
+    }
+  ]
+}

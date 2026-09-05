@@ -597,6 +597,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Verdict and follow-up": "Govern",
         "System": "System",
     },
+    # Two consecutive Identify sections, which §1.2 permits: a stamp is
+    # identified by what happened AND by where it happened, and a fleet log
+    # read across sites needs the second half to be its own block rather than
+    # two more fields under the first. There is no Assess beat because a
+    # deployment record is not rated, and no System section because the whole
+    # row is auto-stamped: a System heading here would be a heading over the
+    # entire form.
+    ("deployment-log", "dbml-deployment-log"): {
+        "The stamp": "Identify",
+        "Where it ran": "Identify",
+        "What was deployed": "Act",
+        "What the run did": "Govern",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -1702,12 +1715,21 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
     Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
     alone. Still two clear of the eleven-column warning band, with Action and
-    Decision behind them at 8."""
+    Decision behind them at 8.
+
+    RE-MEASURED 2026-09-05 across 34 templates / 66 entities, when
+    deployment-log joined the roster: 2 -> 9, 3 -> 29, 4 -> 21, 5 -> 3,
+    8 -> 2, 9 -> 2. The whole delta is the one new entity, which lands at the
+    floor of 2 (Author and Editor, and nothing else): every column on a
+    deployment stamp is text or a date written by a script, so a fleet-wide
+    log carries no person column and no Lookup at all. The worst is unchanged
+    and is still shared by programme-governance/Activity and
+    /ServiceRequest at 9, re-derived rather than assumed."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 33, (
-        f"{len(templates)} templates discovered, not the 33 this survey was "
+    assert len(templates) == 34, (
+        f"{len(templates)} templates discovered, not the 34 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."

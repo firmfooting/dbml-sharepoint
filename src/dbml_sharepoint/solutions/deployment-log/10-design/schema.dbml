@@ -1,0 +1,51 @@
+// ============================================================================
+// Central deployment log: one list, on one site, written by every deploy in
+// the fleet. Render the ERD by pasting this file into dbdiagram.io
+// ============================================================================
+
+Project deployment_log { database_type: 'SharePoint Online Lists' }
+
+// What a row records. Every member is written by the deploy script, never
+// typed: `deployment start` opens a run, `deployment stop` closes a clean
+// one, `abort` closes one that recorded errors, and `provenance` names what
+// built the bundle. Adding a member here means teaching the deployer to
+// write it, because nothing else produces rows.
+Enum stamp_kind {
+  "deployment start"
+  "deployment stop"
+  "abort"
+  "provenance"
+}
+
+// The table name IS the SharePoint list title, and the mapping declares no
+// prefix, so this list is `dbml-deployment-log` on every site it reaches.
+// That exact spelling is what every other family's deploy probes
+// (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT) and what
+// DBMLSP_DEPLOY_LOG_LIST defaults to. Renaming the table renames the
+// address; change both or neither.
+Table "dbml-deployment-log" {
+  Id       int        [pk, increment]
+  // The human-readable stamp, the one column a generic list is guaranteed
+  // to have. A deploy that finds the structured columns absent writes this
+  // alone, so the sentence has to stand by itself.
+  Title    nvarchar   [not null, note: 'The stamp as one sentence: what happened, to which release, when. Written by the deploy script']
+  StampKind stamp_kind [not null, note: 'What this row records. Written by the deploy script; a row you type by hand is not a deployment record']
+  StampUtc datetime   [not null, note: 'When the stamp was written, in UTC. The deploy sends UTC so rows from sites in different regions sort against each other']
+  SourceSite nvarchar [note: 'The site the deploy ran against. This is the column that makes the log fleet-wide rather than per-site']
+  ReleaseTag nvarchar [note: 'The release the bundle was built from, as release.yaml declared it']
+  SchemaVersion nvarchar [note: 'The schema version the bundle was built from']
+  DeployerVersion nvarchar [note: 'The dbml-sharepoint version that generated the bundle']
+  Operator nvarchar   [note: 'The account that pasted the script. Read from SharePoint at run time, not typed']
+  Details  longtext   [note: 'What the run did: error count, lists created and renamed, columns created and skipped, elapsed time. Free text, because the shape of it changes with the deployer']
+
+  // Supported indexes for the declared views and the filters a reader
+  // reaches for. StampUtc is indexed because the default view sorts on it
+  // and a fleet log is the one list here that grows without bound.
+  indexes {
+    StampKind
+    SourceSite
+    StampUtc
+  }
+
+  Note: 'Deployment stamps from every site this tool provisions: what was deployed, where, by whom, from which release, and whether it finished.'
+}

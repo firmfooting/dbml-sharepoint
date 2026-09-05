@@ -8,6 +8,7 @@ solutions:
   - project-pipeline
   - change-register
   - opportunities-register
+  - deployment-log
 ---
 
 # Digitising how we work
@@ -22,3 +23,10 @@ ones go through `project-pipeline` for a gate decision and `change-register`
 for the approval trail. `opportunities-register` catches the problems a
 delivery team finds but cannot fix itself, so they reach this chain rather than
 being lost.
+
+`deployment-log` is last and is different in kind: it records what this tool
+itself did, rather than what the organisation decided. Deploy it once, to a
+site you keep, and every other deploy in the estate stamps it with what was
+provisioned, where, by whom and whether the run finished. It is worth having
+by the time you are deploying to several sites and can no longer remember
+which of them is current.
