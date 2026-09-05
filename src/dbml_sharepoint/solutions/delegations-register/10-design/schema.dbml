@@ -30,7 +30,9 @@ Table Delegation {
   Conditions       nvarchar          [note: 'Conditions attached: "two signatories above $20,000", "excludes own directorate"']
   SourceInstrument nvarchar          [not null, note: 'The instrument and clause this entry comes from: "Instrument of Delegation v4.2, s3.1(b)". Copy the wording exactly from the instrument']
   ApprovedDate     date              [note: 'When the current instrument (or this delegation) was approved by the delegating authority']
-  ReviewDate       date              [not null, note: 'Next scheduled review; delegations drift when nobody looks']
+  LastReviewedDate date              [note: 'When somebody last checked this row still matches the instrument, clause and wording. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
+  NextReviewDue    calculated_date   [note: 'Next scheduled review; delegations drift when nobody looks. Calculated twelve months after Last Reviewed Date, which is the annual instrument review 50-govern sets. Nobody can type it, so nobody can push a review out']
+  ReviewDate       date              [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   Status           delegation_status [not null, default: 'Current']
   Notes            nvarchar          [note: 'Supersession trail, interpretation rulings']
 

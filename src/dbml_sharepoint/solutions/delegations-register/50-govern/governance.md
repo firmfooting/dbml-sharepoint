@@ -45,7 +45,10 @@ acting rules are.
 
 - **Annually** (or per your governance calendar): the delegating
   authority reviews the instrument; the register review rides along:
-  every Current row's clause still exists, every ReviewDate resets.
+  every Current row's clause still exists, and every row checked gets its
+  `LastReviewedDate` set to the day it was checked. `NextReviewDue` is
+  twelve months after that and is calculated, so dating the review you
+  just did is the only way to move the next one.
 - **Quarterly** (register owner): the *Reviews due* view, which deploys with
   the list, filtered to Current rows due inside a **rolling** ninety days
   (CAML has no calendar-quarter predicate, so it is ninety days from
@@ -69,12 +72,26 @@ three data-quality rules above are not, and cannot be.
 | Rule | Where it lives | Message shown |
 | --- | --- | --- |
 | A **Superseded** row must record its supersession in `Notes` | list validation | Names what the note has to say: which instrument version replaced it, and where the authority went |
+| A **Current** row must have a `LastReviewedDate` | list validation | Names what the date is for: it is what the next review is counted from |
 | `ApprovedDate` cannot be in the future | list validation, hoisted from the column rule | Its sentence joins the list message |
+| `LastReviewedDate` cannot be in the future | list validation, hoisted from the column rule | Its sentence joins the list message |
 
-The supersession rule is a cross-column rule, so it takes the list's single
-`ValidationFormula`. The future-date rule reads only its own column, so it
-lives there and keeps a message of its own, which is why it can say
-something specific rather than sharing a sentence with an unrelated check.
+The first two are cross-column rules, so they take the list's single
+`ValidationFormula` between them and share its one message, which is why
+that message names both checks rather than describing one. The two
+future-date rules are authored on their columns, where they read only the
+column being validated, and are hoisted onto the list because a rule
+comparing a date with `today` cannot be enforced on a column: the formula
+clock behind `TODAY()` runs hours behind the site.
+
+**The annual review is calculated, not typed.** `NextReviewDue` is twelve
+months after `LastReviewedDate`, and nobody can edit it. That is what stops
+a review being pushed out by somebody who has not opened the instrument:
+the only way to move the next review is to date the one you just did.
+`ReviewDate` was hand-set and `not null`, so the register could show every
+row inside its cadence while nothing had been checked in years. A blank
+`LastReviewedDate` now means nobody has ever checked the row, which is why
+it is not defaulted and why a Current row cannot be saved without one.
 
 **Still a governance check, nothing stops a wrong entry:**
 
@@ -95,10 +112,12 @@ something specific rather than sharing a sentence with an unrelated check.
   above is written down and followed.
 
 **What the colours do, which is not enforcement but is useful.**
-`ReviewDate` escalates to red once past, and the escalation is suppressed
-on Superseded rows. A review date on an authority nobody holds is not a
-deadline, and a date that keeps shouting after the row is finished trains
-people to ignore the colour everywhere else.
+`NextReviewDue` escalates to red once past, and the escalation is
+suppressed on Superseded rows. A review date on an authority nobody holds
+is not a deadline, and a date that keeps shouting after the row is finished
+trains people to ignore the colour everywhere else. The date itself stays
+on a superseded row, because when the authority was last verified is a fact
+about the history the register is kept for.
 
 ## Lifecycle
 
