@@ -2498,6 +2498,60 @@ def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
     assert only(findings, FindingCode.DISPLAY_TITLE_TOO_LONG).severity == "error"
 
 
+def test_a_display_name_override_on_title_is_refused() -> None:
+    """Title is rendered, so the not-rendered rule cannot catch this one.
+
+    jsgen builds Title's patch object and `continue`s before any display-name
+    handling, so the patch carries no `Title` property and the column keeps
+    its name. The override still reaches the view width map, the form body
+    section field list and the Power Query rename. The first two resolve a
+    field by its DISPLAY name (Learn's own list-form sample says so: "reference
+    your fields here using their display name"), so they would address a field
+    the list does not have, and every deploy phase would still pass.
+
+    https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-configuration#configure-custom-body-with-one-or-more-sections
+    """
+    findings = validate_against_mapping(
+        make_schema(make_table("Invoice", make_column("Title"))),
+        make_bundle(
+            entities=["Invoice"],
+            display_name_mode="title-case",
+            display_name_overrides={"Invoice": {"Title": "Invoice Number"}},
+        ),
+    )
+
+    finding = only(findings, FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN)
+    assert finding.severity == "error"
+    assert "Invoice Number" in finding.message
+    # Not also reported as an unrendered column: Title IS rendered, and two
+    # findings for one line would send the reader to the wrong rule.
+    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+
+
+def test_a_display_name_override_on_a_column_named_title_elsewhere_is_kept(
+) -> None:
+    """The refusal is about the built-in Title, not the substring.
+
+    A projected `<Lookup>Title` column is a real deployed field and renaming
+    it is exactly what lookup projections are for, so the rule must key on the
+    whole name.
+    """
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("Title")),
+            make_table("Risk", make_ref("Owner", "Person.Id")),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            display_name_mode="title-case",
+            display_name_overrides={"Risk": {"OwnerTitle": "Risk Owner"}},
+            lookup_projections={"Risk": {"Owner": ["Title"]}},
+        ),
+    )
+
+    none_of(findings, FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN)
+
+
 def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
     findings = validate_against_mapping(
         make_schema(

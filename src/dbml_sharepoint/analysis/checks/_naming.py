@@ -49,6 +49,29 @@ def check(vc: ValidationContext) -> list[Finding]:
                 override_table, xcols, vc.projected_columns(entity_name),
             )
             for col_name, display_title in cols.items():
+                # Title is a rendered column, so the not-rendered rule below
+                # lets an override on it through. jsgen then routes Title to
+                # its own patch object (no Title property) and continues, so
+                # the column keeps its name while the view width map, the form
+                # body section field list and the Power Query rename all take
+                # the override. The first two address a field by its DISPLAY
+                # name, so they name a field the list does not have. Refuse
+                # the declaration rather than ship the halves disagreeing.
+                if col_name == "Title":
+                    findings.append(Finding(
+                        FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN,
+                        f"display_names.overrides[{entity_name}]: "
+                        f"{display_title!r} cannot rename the built-in Title "
+                        f"column, which is provisioned through its own patch "
+                        f"and never receives a display title. The column "
+                        f"would stay 'Title' while the views and forms that "
+                        f"resolve a field by display name reference "
+                        f"{display_title!r}, which the list does not have. "
+                        f"Drop the override, or carry the label on a separate "
+                        f"column.",
+                        location=at_overrides,
+                    ))
+                    continue
                 if col_name not in rendered:
                     findings.append(Finding(
                         FindingCode.COLUMN_NOT_RENDERED,

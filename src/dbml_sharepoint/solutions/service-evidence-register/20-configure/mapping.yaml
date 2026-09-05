@@ -124,7 +124,6 @@ display_names:
   mode: auto
   overrides:
     ServiceEvent:
-      Title: "What happened"
       WhatHappened: "The account"
       BasisOfKnowledge: "How you know"
       ProviderReference: "Provider reference"
@@ -139,7 +138,6 @@ display_names:
       DaysToLog: "Days to log"
       DaysOutstanding: "Days outstanding (once resolved)"
     FollowUp:
-      Title: "What you asked for"
       RelatedEvent: "Event or request"
       ContactedRole: "Contacted (role or team)"
       WhatWeAsked: "What we asked"
@@ -147,7 +145,6 @@ display_names:
       CommitmentGiven: "Commitment given"
       EvidenceLink: "Evidence link"
     ServiceIssue:
-      Title: "The theme"
       IssueSummary: "The pattern"
       EventCount: "Supporting events"
       CommitmentEngaged: "Commitment engaged"
