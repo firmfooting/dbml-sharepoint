@@ -1,8 +1,22 @@
-release: "2.2.1"
+release: "2.3.0"
 date: "2026-09-05"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.2.1"
+schema_version: "2.3.0"
 notes: |
+  2.3.0 clamps Activity.ConfirmationDue and Risk.NextReviewDue at month end.
+  Adding months with DATE(Y, M+N, D) alone overflowed rather than clamping,
+  so a confirmation recorded 31 August fell due 3 March rather than 28
+  February: one to three days late, never early, and only when the baseline
+  day is a 29th, 30th or 31st landing on a shorter month. Both formulas now
+  take MIN of that date and DATE(Y, M+N+1, 0), the last day of the target
+  month. risk-register's NextReviewDue takes the same shape in the same
+  release, so the three copies stay one idiom.
+
+  EVERY EXISTING ROW RECALCULATES on redeploy. Only rows whose baseline
+  falls on a day the target month does not have will move, and each moves
+  one to three days earlier. Export GOV_Activity and GOV_Risk before
+  redeploying if the previous due dates need to be kept.
+
   2.2.1 says on BusinessProcess.NextReviewDue that you set the date yourself.
   The column is typed here and calculated on Risk, in one family, and the two
   were indistinguishable by name (#412). Description text only; no column,

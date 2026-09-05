@@ -531,15 +531,14 @@ moment the formula text changes, and a redeploy is exactly that change.
 Export `GOV_Activity` to Excel before any cadence change. That
 snapshot is the only record of the due dates as they stood before it.
 
-**The month-end overflow is inherited on purpose and is not fixed here.**
-Adding months with `DATE(YEAR(d), MONTH(d)+N, DAY(d))` overflows rather
-than clamping, so a confirmation recorded on 31 August falls due on 3 March
-rather than 28 February. It is one to three days on a cadence of six months
-or more, against a column whose own guidance is to re-confirm sooner on any
-material change. The same formula is in `risk-register`, and the two copies
-should be fixed together rather than one at a time, and the
-arithmetic that clamps correctly is substantially longer and recalculates
-every row to install. Read that issue before touching it here.
+**The cadence clamps at month end.** Adding months with
+`DATE(YEAR(d), MONTH(d)+N, DAY(d))` alone overflowed rather than clamping,
+so a confirmation recorded on 31 August fell due on 3 March rather than
+28 February. Both cadence formulas now take `MIN` of that date and
+`DATE(YEAR(d), MONTH(d)+N+1, 0)`, the last day of the target month, so a day
+the target month does not have lands on its last day. `risk-register` was
+changed in the same release, so the three copies are one idiom; keep them
+that way.
 
 ### The risk matrix
 
