@@ -14,6 +14,18 @@ entities:
 
 cross_site_reference_columns: []
 
+# The reporting pack carries Created By, Created, Modified By and Modified on
+# every list. Created By is what the monthly Changed By check compares against:
+# every row here is written by the flow's service account, so a Changed By
+# equal to the row's own Created By is a row the flow attributed to itself.
+# Without this switch that comparison cannot be made in Power BI at all.
+#
+# users_table is deliberately off. It exists to join person columns to a user
+# dimension for department and job-title reporting, and the one person column
+# here names somebody out in the estate rather than anybody this site knows.
+reporting:
+  system_columns: true
+
 # Versioning is ON, at a low ceiling. Rows are append-only in normal use, so
 # versions accrue only when somebody corrects one by hand, and that is exactly
 # the edit worth being able to see.
@@ -132,10 +144,22 @@ display_names:
 # is read by report tools far more often than by people, and a filtered
 # default hides rows from anyone who opens it expecting the whole feed.
 #
-# Every filtered view keys on an INDEXED column (see the schema's indexes
-# block). That matters more here than anywhere else in the library: this
-# list has no natural ceiling, and an unindexed filter past the list view
-# threshold returns HTTP 200 holding fewer rows than the data.
+# Every view except "All changes" carries a selective filter on an INDEXED
+# column (see the schema's indexes block), and it takes both. The index is
+# what lets SharePoint narrow the query; the filter is what makes the result
+# small enough to come back whole. Measured at 6,000 items and written up in
+# analysis/checks/_views.py: an unindexed filter returned HTTP 200 holding 50
+# of the 60 rows that matched, with no error, and an unfiltered view doing
+# real work across every row was refused whatever was indexed. That matters
+# more here than anywhere else in the library, because this list has no
+# natural ceiling.
+#
+# GROUPING IS NOT A FILTER. "By site" and "By column" group on an indexed
+# column, which is necessary; whether an index alone serves a grouped view
+# past the threshold is unmeasured here and nothing in the build can see it.
+# So both carry a 90-day bound as well, which puts them on the shape that IS
+# measured to be served. "All changes" is exposed by design and
+# 50-govern/governance.md says what to do about that.
 #
 # Widths are pixel ColumnWidth per view, keyed on INTERNAL names. The build
 # rewrites them to display titles, and ColumnWidth binds by display name.
@@ -158,13 +182,18 @@ views:
         ColumnName: 150
         OldValue: 180
         NewValue: 180
-    # Grouped, not filtered: one site per group, which is how an operator
-    # answers "is that register even wired up yet" without knowing its URL.
+    # One site per group, which is how an operator answers "is that register
+    # even wired up yet" without knowing its URL. Bounded to 90 days as well
+    # as grouped: a grouping is not a filter, so without the where this view
+    # asks the whole list a question no index is measured to answer. Ninety
+    # days is long enough that a quarterly review sees a quiet register.
     - title: "By site"
       fields: [Title, SiteUrl, ListTitle, ColumnName, ChangedUtc, ChangedBy]
       group_by:
         field: SiteUrl
         collapsed: true
+      where:
+        - { field: ChangedUtc, op: geq, value: today-90 }
       sort:
         - { field: ChangedUtc, direction: desc }
       widths:
@@ -178,12 +207,15 @@ views:
     # renamed in SharePoint keeps its internal name, so this grouping holds
     # history together across the rename; grouping on Column Name would
     # split one column's history into two groups on the day it was retitled.
+    # Bounded to 90 days for the same reason as "By site".
     - title: "By column"
       fields: [Title, ColumnInternal, ColumnName, ListTitle, OldValue,
                NewValue, ChangedUtc]
       group_by:
         field: ColumnInternal
         collapsed: true
+      where:
+        - { field: ChangedUtc, op: geq, value: today-90 }
       sort:
         - { field: ChangedUtc, direction: desc }
       widths:
@@ -215,8 +247,15 @@ views:
         NewValue: 180
     # Reads the person the FLOW copied off the trigger item, not the row's
     # own Editor. If this view is empty for everybody while rows keep
-    # arriving, the flow is not mapping Changed By and every row is
-    # attributed to the service account; 30-deploy/deploy.md leads with it.
+    # arriving, the flow is not mapping Changed By; 30-deploy/deploy.md
+    # leads with it.
+    #
+    # It only catches the BLANK version of that mistake. A flow that writes
+    # its own identity rather than the trigger item's Editor fills this view
+    # for the service account and empties it for everybody else, which looks
+    # the same from any one person's seat. The check that separates the two
+    # is Changed By against the row's own Created By, and it is monthly in
+    # 50-govern/governance.md rather than visible here.
     - title: "My changes"
       fields: [Title, ChangedUtc, SiteUrl, ListTitle, ItemTitle, ColumnName,
                OldValue, NewValue]
@@ -282,9 +321,18 @@ column_validation:
 # Deliberately NOT declared: list_validation.
 #
 # The rule this list wants is "Change Key equals Site Url, List Title and
-# Item Id joined by |", and it is not expressible: the condition grammar
-# compares a column against a LITERAL, never against another column, so
-# there is no way to say that three columns must concatenate into a fourth.
+# Item Id joined by |", and this deployer cannot declare it. Its condition
+# grammar is field / operator / value (model/conditions.py), and `value` is
+# a literal or a dated sentinel; there is no way to write another column
+# there, so no declaration can say three columns concatenate into a fourth.
+#
+# That is a limit of the DECLARATION, not a statement about SharePoint. The
+# rule above this one renders as `[Changed (UTC)]<=[Modified]`, because the
+# `now` sentinel resolves to [Modified] (analysis/clock_cells.py), so the
+# emitted formulas already compare one column against another. Whether
+# SharePoint would accept the CONCATENATE form has not been probed here, and
+# nothing in this file should be read as saying it would not.
+#
 # It stays a governance check, and 50-govern/governance.md carries the exact
 # expression a reviewer compares against.
 
@@ -301,6 +349,16 @@ column_validation:
 # first-observation case a change-column trigger produces, and the blank
 # Changed By row is what a flow that has NOT been wired to the trigger
 # item's Editor looks like: both are shapes the real feed contains.
+#
+# The OTHER Changed By failure, every row naming the flow's service account,
+# is named here rather than seeded. A demo row is written by the operator
+# pasting it, so the writer and the named person are the same account either
+# way and the seeded list cannot tell the two shapes apart. 50-govern/
+# governance.md carries the check that can.
+#
+# The list titles are the DEPLOYED titles of other families in this library
+# (RR_Risk, AU_Recommendation, IN_Incident), because a key built from a title
+# no register actually carries demonstrates a join that could never happen.
 #
 # Every Change Key below is Site Url, List Title and Item Id joined by "|",
 # which is the expression 50-govern/governance.md pins.
@@ -338,44 +396,44 @@ demo_items:
     # value it finds and has nothing to report as a before-value.
     - key: ch-first-observation
       values:
-        Title: "[DEMO] AA_Action 7 Status: (first seen) -> In progress"
+        Title: "[DEMO] AU_Recommendation 7 Status: (first seen) -> In progress"
         ChangedUtc: "today-2"
         ChangedBy: "@me"
         SiteUrl: "https://example.sharepoint.com/sites/quality"
-        ListTitle: "AA_Action"
+        ListTitle: "AU_Recommendation"
         ItemId: 7
         ItemTitle: "[DEMO] Close out the medication-chart audit finding"
         ColumnName: "Status"
         ColumnInternal: "Status"
         NewValue: "In progress"
-        ChangeKey: "https://example.sharepoint.com/sites/quality|AA_Action|7"
+        ChangeKey: "https://example.sharepoint.com/sites/quality|AU_Recommendation|7"
     - key: ch-other-site
       values:
-        Title: "[DEMO] IM_Incident 118 Severity: Moderate -> Major"
+        Title: "[DEMO] IN_Incident 118 Severity: Moderate -> Major"
         ChangedUtc: "today-3"
         ChangedBy: "@me"
         SiteUrl: "https://example.sharepoint.com/sites/operations"
-        ListTitle: "IM_Incident"
+        ListTitle: "IN_Incident"
         ItemId: 118
         ItemTitle: "[DEMO] Cold-chain excursion in the vaccine fridge"
         ColumnName: "Severity"
         ColumnInternal: "Severity"
         OldValue: "Moderate"
         NewValue: "Major"
-        ChangeKey: "https://example.sharepoint.com/sites/operations|IM_Incident|118"
+        ChangeKey: "https://example.sharepoint.com/sites/operations|IN_Incident|118"
     # No Changed By: what every row looks like when the flow was never
     # wired to the trigger item's Editor. It falls out of "My changes" for
     # everybody, which is the symptom 30-deploy/deploy.md tells you to check.
     - key: ch-unattributed
       values:
-        Title: "[DEMO] IM_Incident 118 Status: Under review -> Closed"
+        Title: "[DEMO] IN_Incident 118 Status: Under review -> Closed"
         ChangedUtc: "today-20"
         SiteUrl: "https://example.sharepoint.com/sites/operations"
-        ListTitle: "IM_Incident"
+        ListTitle: "IN_Incident"
         ItemId: 118
         ItemTitle: "[DEMO] Cold-chain excursion in the vaccine fridge"
         ColumnName: "Status"
         ColumnInternal: "Status"
         OldValue: "Under review"
         NewValue: "Closed"
-        ChangeKey: "https://example.sharepoint.com/sites/operations|IM_Incident|118"
+        ChangeKey: "https://example.sharepoint.com/sites/operations|IN_Incident|118"

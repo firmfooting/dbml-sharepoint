@@ -22,10 +22,11 @@ that register.
 
 The authority is `_row_key_m` in
 `src/dbml_sharepoint/generators/reportgen.py`, which the source comment calls
-"THE ONE definition of the key format". It emits this M expression:
+"THE ONE definition of the key format". For the risk register it emits this M
+expression, and every other list differs from it only in the quoted title:
 
 ```text
-SiteRoot & "|" & "<ListTitle>" & "|" & Number.ToText([Id])
+SiteRoot & "|" & "RR_Risk" & "|" & Number.ToText([Id])
 ```
 
 So a flow must compose, as plain text:
@@ -43,9 +44,10 @@ https://contoso.sharepoint.com/sites/quality|RR_Risk|42
 
 ### The three parts, exactly
 
-**`SiteRoot`** is not the raw site URL. The reporting query normalises it, and
-a flow must produce the same normalised string or the relationship matches
-nothing:
+**`SiteRoot`** is not the raw site URL. The reporting query normalises it from
+the `SiteUrl = "..."` literal at the top of that register's
+`reporting/powerquery/<ListTitle>.pq`, and a flow must produce the same
+normalised string or the relationship matches nothing:
 
 - Trailing slashes removed.
 - Cut at the first `/_api/`, `/_layouts/`, `/lists/` or `/sitepages/` segment,
@@ -92,12 +94,22 @@ one side.
 ### Nothing enforces this at save time
 
 The rule "Change Key equals Source Site Url, Source List Title and Item Id
-joined by pipes" cannot be expressed as a SharePoint validation formula: the
-condition grammar compares a column against a literal, never against another
-column, so there is no way to say three columns must concatenate into a
-fourth. It is therefore a **governance check**, listed below, and the reason
-the three components are stored as their own columns as well as inside the
-key. A reviewer can recompute the key from the row and compare.
+joined by pipes" is not something this deployer can declare. Its condition
+grammar is a field, an operator and a value (`src/dbml_sharepoint/model/
+conditions.py`), and the value is a literal or a dated sentinel. There is no
+way to write another column there, so no declaration can say that three
+columns concatenate into a fourth.
+
+That is a limit of the declaration, not of SharePoint. The save rule this
+list does declare renders as `=OR(ISBLANK([Changed (UTC)]),[Changed
+(UTC)]<=[Modified])`, because the `now` sentinel resolves to `[Modified]`, so
+the formulas this tool emits already compare one column against another.
+Whether SharePoint would accept the `CONCATENATE` form has not been probed,
+and nothing here should be read as saying it would not.
+
+It is therefore a **governance check**, listed below, and the reason the three
+components are stored as their own columns as well as inside the key. A
+reviewer can recompute the key from the row and compare.
 
 ## Durations are computed, not stored
 
@@ -144,7 +156,9 @@ The full specification is in `30-deploy/deploy.md`. The governance summary:
   interest changed.
 - **`ChangedBy` must be the trigger item's `Editor`**, not the flow identity.
   The flow runs as a service account, so the row's own Created By and
-  Modified By name that account and answer nothing.
+  Modified By name that account and answer nothing. A row whose Changed By
+  equals its Created By is that account naming itself, unless the service
+  account genuinely made the edit out on the register.
 - **`ChangedUtc` must be the trigger item's `Modified` stamp**, not the flow
   run time.
 - **`OldValue`** is the trigger's before-value where the trigger supplies one,
@@ -178,7 +192,7 @@ These are the things the platform cannot enforce, so somebody has to.
 
 | Check | Cadence | What to look at |
 | --- | --- | --- |
-| `ChangedBy` is populated | Monthly | Rows with a blank Changed By mean a flow is not mapping the trigger item's Editor. Group *All changes* by Source List Title to find which one |
+| `ChangedBy` is a person, and not the flow | Monthly | Two failures, one cause. A **blank** Changed By is a flow that never mapped the trigger item's Editor. A Changed By **equal to the row's own Created By** is a flow that mapped its own identity instead, which fills *My changes* for the service account and empties it for everybody else. Created By reaches Power BI because `reporting.system_columns` is on, so the comparison is one step there. Group *All changes* by Source List Title to find which flow |
 | `ChangeKey` is well formed | Quarterly | Recompute `<SiteRoot>\|<ListTitle>\|<ItemId>` from the row's own three columns and compare. A mismatch silently drops the row out of every report that joins |
 | `ListTitle` carries its prefix | Quarterly | A key built from the unprefixed table name joins to nothing |
 | Site URL spelling is consistent | Quarterly | Group *By site*. Two groups differing only in case or a trailing slash means two flows disagree, and one of them is producing unjoinable keys |
