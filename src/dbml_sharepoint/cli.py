@@ -297,13 +297,19 @@ def _project_input(
 
 
 def _env_file_help() -> str:
-    """The `--env-file` option's help text, with every registry key spelled
-    out so the file's vocabulary is discoverable from `build --help` alone.
+    """The `--env-file` option's help text, with the key names discoverable
+    from `build --help` alone.
 
-    Built from `ENV_SETTINGS` rather than hand-listing today's one entry, so
-    a second key added to the registry is picked up here for free.
+    The key NAMES only, not each key's full help: the prose column of the
+    options table shrinks as option names grow, and a 25-char unbreakable
+    key inside prose ellipsises once three new `--deployment-log-*` options
+    land (live CI finding 2026-09-05, windows runner at effective width 78:
+    `DBMLSP_ENTERPRISE_READER` rendered as `DBMLSP_ENTERPRISE_REA...`). The
+    full key/help pairs live in the epilog panel, which spans the whole
+    console width and cannot be squeezed by the name column; the test that
+    pins every key and help line against `build --help` reads both.
     """
-    keys = "; ".join(f"{setting.key} ({setting.help})" for setting in ENV_SETTINGS)
+    keys = ", ".join(setting.key for setting in ENV_SETTINGS)
     return (
         f"Path to a {ENV_FILENAME} defaults file. Default: {ENV_FILENAME} "
         "in the current directory, when present. A flag given on the command "
@@ -536,7 +542,23 @@ def validate_enterprise_reader(address: str) -> None:
         )
 
 
-@app.command()
+def _env_keys_epilog() -> str:
+    """The `build` epilog: every env key with its full help, one per line.
+
+    Typer renders the epilog below the options table at FULL console width,
+    so the prose column's width games don't apply and a long key can never
+    be ellipsised by an option name growing elsewhere. One key per line
+    keeps each name an unbreakable token even on a narrow console. The
+    `--env-file` option help carries the bare key names; this panel is the
+    authoritative key/help listing (live CI finding 2026-09-05: keys inside
+    the options-table prose ellipsised at the windows runner's width once
+    the deployment-log options widened the name column).
+    """
+    lines = [f"{setting.key}: {setting.help}" for setting in ENV_SETTINGS]
+    return "Environment file keys (dbml-sharepoint.env):\n" + "\n".join(lines)
+
+
+@app.command(epilog=_env_keys_epilog())
 def build(
     schema: Path | None = typer.Option(
         None, help=f"Path to the DBML schema file. Default: {SCHEMA_RELPATH}",
