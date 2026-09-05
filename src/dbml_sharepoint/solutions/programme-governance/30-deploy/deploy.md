@@ -19,6 +19,7 @@ manual go-live steps** before you schedule the paste rather than after it.
 | --- | --- | --- |
 | `GOV_Workstream` | The programme's decomposition: phase, order, dates, closure | Governance and site owners. Everybody else reads it |
 | `GOV_Stakeholder` | The vocabulary: individuals, roles, forums and external bodies | Governance and `GOV Accountability Maintainers`, and it is filled **first** |
+| `GOV_BusinessProcess` | Project-adjacent processes worth mapping, and the order to take them in. The maps are drawn elsewhere; this records which ones we know about | Every Site Member, Contribute |
 | `GOV_Activity` | One row per thing done, approved or decided, with its single Responsible and single Accountable | Governance and maintainers, through `GOV Contribute No Delete` |
 | `GOV_Involvement` | One row per Consulted or Informed stakeholder on an activity | Governance and maintainers, same level |
 | `GOV_ServiceRequest` | Every change asked of the provider, worked from draft to closure with its authorisation and the minutes spent | Any Site Member may add one through `GOV Submit Only`; governance authorises, and `GOV Request Handlers` work and close it through `GOV Contribute No Delete` |
