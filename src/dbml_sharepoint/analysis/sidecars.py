@@ -117,6 +117,14 @@ def change_log_title() -> str:
 #: (no spaces in any title). Title carries the change key; EffectiveTo and
 #: IsCurrent are the type-2 close; OldValue/NewValue are the payload the
 #: Power Automate reader diffs.
+#:
+#: The __metadata type names are load-bearing, measured live 2026-09-05
+#: against dbml_Logs on firmfooting-logging: the verbose OData parser
+#: refuses a metadata-less entry ("An entry without a type name was
+#: found") and resolves only the type names its model knows. SP.FieldText
+#: and SP.FieldDateTime resolve; SP.FieldBoolean does NOT (FieldTypeKind 8
+#: must be announced as the base SP.Field); SP.Field resolves for anything
+#: else. Change the type name and the field create 400s.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
         "__metadata": {"type": "SP.FieldText"},
@@ -161,7 +169,7 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "Description": "When the next change for this key took effect.",
     },
     {
-        "__metadata": {"type": "SP.FieldBoolean"},
+        "__metadata": {"type": "SP.Field"},
         "Title": "IsCurrent",
         "FieldTypeKind": 8,
         "Description": "Whether this row is the current one for its key.",
