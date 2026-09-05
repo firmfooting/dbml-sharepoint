@@ -414,8 +414,10 @@
         log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' unreachable (${err.message}); external stamps skipped.`);
       }
       if (!siteOk) {
-        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' not found: create it with deploy-central-log.js.txt `
-          + `(or set DBMLSP_DEPLOY_LOG_SITE / DBMLSP_DEPLOY_LOG_LIST). The run log holds this run's record.`);
+        log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' not found: create the site by hand `
+          + `(SharePoint start page, Create site; this tool provisions lists, never sites) `
+          + `and deploy the deployment-log family to it. Or set DBMLSP_DEPLOY_LOG_SITE / `
+          + `DBMLSP_DEPLOY_LOG_LIST. The run log holds this run's record.`);
       } else {
         let listOk = false;
         let canAdd = false;
@@ -442,7 +444,7 @@
         }
         if (!listOk) {
           log('INFO', `Central log site '${EXTERNAL_LOG_SITE}' exists but has no list '${EXTERNAL_LOG_TITLE}': `
-            + `create it with deploy-central-log.js.txt. The run log holds this run's record.`);
+            + `deploy the deployment-log family to that site to create it. The run log holds this run's record.`);
         } else if (!canAdd) {
           log('INFO', `Central log list '${EXTERNAL_LOG_TITLE}' found but this account holds no AddListItems on it: `
             + `ask its owner for Contribute. The run log holds this run's record.`);
