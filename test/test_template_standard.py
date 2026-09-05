@@ -223,6 +223,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership": "Govern",
         "System": "System",
     },
+    # No Act beat, and there cannot be one: nobody acts on a row here. A
+    # flow writes the row and the response, where there is one, happens on
+    # the register the row describes. "Reporting key" is the System beat
+    # because ChangeKey is a machine join and not a fact about the change.
+    ("column-history", "ColumnHistory"): {
+        "Which item changed": "Identify",
+        "What changed": "Assess",
+        "When and who": "Govern",
+        "Reporting key": "System",
+    },
     ("tiered-huddle", "Escalation"): {
         "The issue": "Identify",
         "Where it goes": "Act",
@@ -1717,19 +1727,23 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     alone. Still two clear of the eleven-column warning band, with Action and
     Decision behind them at 8.
 
-    RE-MEASURED 2026-09-05 across 34 templates / 66 entities, when
-    deployment-log joined the roster: 2 -> 9, 3 -> 29, 4 -> 21, 5 -> 3,
-    8 -> 2, 9 -> 2. The whole delta is the one new entity, which lands at the
-    floor of 2 (Author and Editor, and nothing else): every column on a
-    deployment stamp is text or a date written by a script, so a fleet-wide
-    log carries no person column and no Lookup at all. The worst is unchanged
-    and is still shared by programme-governance/Activity and
-    /ServiceRequest at 9, re-derived rather than assumed."""
+    RE-MEASURED 2026-09-05 across 35 templates / 68 entities, when
+    deployment-log and column-history joined the roster together: 2 -> 9,
+    3 -> 30, 4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. The two new entities land at
+    the floor end by design: deployment-log's stamp carries no person
+    column and no Lookup at all (every column is text or a date written by
+    a script), and column-history lands at 3 (ChangedBy plus Author and
+    Editor), its site and list columns being text rather than lookups
+    because the list they name lives on another site entirely -- the one
+    family that references every other list in the estate carries no joins
+    for doing it. The worst is unchanged and is still shared by
+    programme-governance/Activity and /ServiceRequest at 9, re-derived
+    rather than assumed."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 34, (
-        f"{len(templates)} templates discovered, not the 34 this survey was "
+    assert len(templates) == 35, (
+        f"{len(templates)} templates discovered, not the 35 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
