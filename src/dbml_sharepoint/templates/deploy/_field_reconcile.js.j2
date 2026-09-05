@@ -82,6 +82,15 @@
     for (const [listTitle, columns] of byList.entries()) {
       invalidateFieldShapes(listTitle);  // never trust phase-start state
       for (const [columnTitle, listId, fieldId] of columns) {
+        // Whether this run ever OBSERVED the column open on the way out.
+        // Everything above the Sealed read can fail without telling us
+        // anything about the seal state, and a failed read is what a
+        // throttled exit produces: 56 re-seals failed on one live run
+        // (2026-09-03, #384) and every message said "the column is left
+        // UNSEALED" when all 93 columns were in fact sealed by PROTECTION
+        // earlier in the same run. That guidance sends an operator to
+        // unseal and re-seal a production site for no reason.
+        let seenOpen = false;
         try {
           const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
           if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
@@ -103,6 +112,7 @@
             throw new Error(`Field '${listTitle}.${columnTitle}' changed identity before exit cleanup`);
           }
           if (shape.Sealed === true) continue;
+          seenOpen = true;
           const digest = await getDigest();
           await patchFieldById(
             listId, fieldId, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
@@ -114,10 +124,16 @@
           }
           log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
         } catch (err) {
-          // Loud, and recorded: the operator has to know the site was left
-          // open, because nothing else in the run will say so.
-          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED; re-seal it before handing the site back.`);
-          summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
+          // Loud, and recorded: nothing else in the run will say so. The
+          // instruction is what the run actually observed, never more.
+          const advice = seenOpen
+            ? 'The column was open when this run last read it and the re-seal was not confirmed; check it and re-seal before handing the site back.'
+            : 'The seal state could not be read, so the column may already be sealed; check it before changing anything.';
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. ${advice}`);
+          summary.errors.push({
+            phase: 'exit', list: listTitle, column: columnTitle, error: err.message,
+            sealState: seenOpen ? 'observed-open' : 'unverified',
+          });
         }
       }
     }
