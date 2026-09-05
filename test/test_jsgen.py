@@ -2999,6 +2999,31 @@ def test_exit_restores_every_field_the_run_unsealed(tmp_path: Path) -> None:
     assert "await removeSelfEnrollments();" in finally_block
 
 
+def test_a_cleanup_failure_is_corrected_after_the_summary_line() -> None:
+    """#384. The [DONE] line is printed by the last phase, inside the try, so
+    every exit cleanup runs after the operator's last authoritative sentence:
+    one live run logged `errors 0` and then failed 56 re-seals. The re-seal
+    cannot move ahead of that line, because it also has to run on the abort
+    paths that never print it, so the correction goes last instead and every
+    cleanup feeds the count it reports.
+    """
+    js = _generate_simple_js()
+    finally_block = js.rsplit("} finally {", 1)[1]
+
+    assert js.index("Deployment complete.") < js.index("Exit cleanup failed")
+    baseline = finally_block.index("const errorsBeforeCleanup = summary.errors.length;")
+    correction = finally_block.index("const cleanupErrors = summary.errors.length")
+    assert baseline < finally_block.index("await restoreUnsealedFields();") < correction
+    # Every cleanup, not only the re-seal: a wrapper that logs an error and
+    # does not record it is invisible to the count all over again.
+    for cleanup in (
+        "restore field protection", "write the run's stop record",
+        "remove the enterprise reader", "remove the operator's run-scoped enrolment",
+    ):
+        assert f"summary.errors.push({{ phase: 'exit', error: `{cleanup}" in finally_block, cleanup
+    assert correction < finally_block.index("Exit cleanup failed")
+
+
 def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
     """AllowDeletion=false makes the LIST object undeletable through the UI
     even for admins (friction, not enforcement, honestly labeled). Isolated

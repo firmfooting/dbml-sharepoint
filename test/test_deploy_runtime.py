@@ -6372,3 +6372,98 @@ def test_a_same_titled_replacement_stops_the_guard_confirmation(
     assert _REPLACEMENT_LIST_ID in errors[0]["error"]
     assert summary.get("aborted"), summary
     assert "refuses 2 of 2 declared filter(s)" not in output
+
+
+# Every field-shape read made after the phases are over is refused, which is
+# the shape of the live incident in #384: 3,156 requests in 145 seconds
+# tripped the tenant limit and the exit re-seal met a redirect to Throttle.htm
+# answering 406. `_ADOPTED_HARNESS` is the base because it gets far enough to
+# unseal fields, so the exit cleanup has work to do; it then aborts in Phase
+# 2.1, which is the marker the flag keys on.
+_FAILS_DURING_EXIT_CLEANUP_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    globalThis.__phases_over = false;
+    const _log = console.log;
+    console.log = (...args) => {
+      if (String(args[0] || '').includes('aborting before')) globalThis.__phases_over = true;
+      _log(...args);
+    };
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      // Only the exit re-seal's own field read, so the list enumeration ahead
+      // of it still succeeds and the failure lands where #384 saw it: on the
+      // read that would have told the run whether the column was open.
+      if (!globalThis.__phases_over || !u.includes('getbyinternalnameortitle')) {
+        return _passThrough(url, opts);
+      }
+      const detail = { code: '-1, System.Net.WebException', message: { value: 'throttled' } };
+      const payload = { error: detail };
+      return {
+        ok: false, status: 406, url: u,
+        headers: { get: () => null },
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
+def _exit_cleanup_output() -> tuple[dict[str, Any], str]:
+    output = _run_deploy(
+        _FAILS_DURING_EXIT_CLEANUP_HARNESS,
+        "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    )
+    return _summary_of(output), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_cleanup_failure_corrects_the_count_it_arrived_after() -> None:
+    """#384: the run printed `errors 0`, then failed 56 times.
+
+    `restoreUnsealedFields` runs in the `finally`, the only path every abort
+    shares, so it cannot move ahead of the summary the last phase prints:
+    the abort paths never reach that line at all. The count is therefore
+    always taken too early, and the correction has to be the LAST thing
+    printed, because that is the line still on screen.
+
+    This run aborts in Phase 2.1 rather than reaching [DONE], which is what
+    lets the exit cleanup be reached with fields still open. That the
+    correction sits after the [DONE] line on the success path is a source
+    ordering, pinned in test_jsgen.py.
+    """
+    summary, output = _exit_cleanup_output()
+
+    # The abort paths return `{ ...summary, aborted }`, a shallow copy, and
+    # `errors` survives it because the copy shares the array. That is what
+    # makes the cleanup's failures machine-readable on every path.
+    exit_errors = [e for e in summary["errors"] if e.get("phase") == "exit"]
+    assert exit_errors, summary["errors"]
+    correction = [ln for ln in output.splitlines() if "Exit cleanup failed" in ln]
+    assert len(correction) == 1, output[-3000:]
+    assert f"failed {len(exit_errors)} time(s)" in correction[0]
+    assert f"finished with {len(summary['errors'])} error(s)" in correction[0]
+    # More than the cleanup's own: the phase errors are still counted.
+    assert len(summary["errors"]) > len(exit_errors), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_column_is_not_reported_as_left_unsealed() -> None:
+    """#384's other half, and the more expensive one to get wrong.
+
+    Every one of the 56 live messages said "The column is left UNSEALED;
+    re-seal it before handing the site back", and the site afterwards showed
+    all 93 columns sealed: PROTECTION had sealed them earlier in the same run
+    and it was the exit READ that failed. That advice sends an operator to
+    unseal and re-seal a production site to fix nothing. A failure above the
+    `Sealed` read has observed no seal state and must not claim one.
+    """
+    summary, output = _exit_cleanup_output()
+
+    reseal = [
+        e for e in summary["errors"]
+        if e.get("phase") == "exit" and e.get("column")
+    ]
+    assert reseal, summary["errors"]
+    assert {e["sealState"] for e in reseal} == {"unverified"}, reseal
+    assert "left UNSEALED" not in output, output[-3000:]
+    assert "may already be sealed" in output
