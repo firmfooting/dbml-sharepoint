@@ -184,11 +184,11 @@ Measured on 2026-09-05 against this posture as shipped: the created-by trim
 does **not** spare a narrower level that merely looks read-shaped. An account
 holding site membership (no special level at all) saw none of another
 account's rows, could add a row, and was refused editing it (403), deleting
-it (403) and editing any row it could not see (404 — the trim hides the row,
+it (403) and editing any row it could not see (404: the trim hides the row,
 the write path refuses it). A read-shaped grant below Full Control would
 still be trimmed unless it carries more bits than a "reader" name implies,
-which is exactly the trap. Until a candidate level is probed the same way —
-write rows as account A, read as account B, record what B sees — treat the
+which is exactly the trap. Until a candidate level is probed the same way
+(write rows as account A, read as account B, record what B sees), treat the
 Full Control elevation as deliberate. The build already warns about it, with
 the finding code `enterprise_reader_on_trimmed_list`.
 
