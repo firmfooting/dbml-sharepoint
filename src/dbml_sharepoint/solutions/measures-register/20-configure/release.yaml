@@ -1,7 +1,42 @@
-release: "1.0.0"
-date: "2026-07-22"
+release: "1.1.0"
+date: "2026-09-06"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.0.1"
+schema_version: "1.1.0"
 notes: |
-  Measures register template. Bump schema_version on any DBML/mapping
+  1.1.0 splits ReviewDate into LastReviewedDate and NextReviewDue. One
+  hand-set date stood for both halves of a review, so moving it forward
+  destroyed the evidence that a review had happened and nothing could tell an
+  on-time review from a push-out by somebody who had not looked (#413).
+
+  LastReviewedDate is the backward half: optional, no default, and required
+  once the measure is Active by the list rule that used to require ReviewDate.
+  Blank means the definition has never been re-tested, which is what an
+  Under development row should say rather than carrying a date it has not
+  earned. It cannot be dated in the future.
+
+  NextReviewDue is CALCULATED from it, twelve months on, which is the cadence
+  50-govern already sets. Nobody can type it, so nobody can push a review out.
+  Blank on a retired measure, whose definition is history kept so old reports
+  can be read, and blank until a first review is dated.
+
+  The old column rule capping ReviewDate at today+365 is GONE, and its
+  absence is the change. A custodian could satisfy it forever by moving the
+  date eleven months out again every month, without ever re-testing a
+  definition; counting from the last review rather than from today is what
+  closes that.
+
+  The cadence clamps at month end. A review dated 31 August falls due on
+  28 February, not 3 March: DATE(Y, M+12, D) alone overflows, so the formula
+  takes the MIN of it and the last day of the target month (#418).
+
+  "Definition reviews due" now carries both dates and filters and sorts on
+  the calculated one. "Retired" carries LastReviewedDate, because a retired
+  measure's NextReviewDue is blank by construction and what a custodian wants
+  there is when the definition was last known to be right.
+
+  ReviewDate is RETIRED, not deleted. It keeps its values, drops off every
+  view and the New form, and reads "Review Date (retired)". Transfer the
+  values, then delete the column with the columns sidecar.
+
+  1.0.0 measures register template. Bump schema_version on any DBML/mapping
   change before redeploying.

@@ -12,8 +12,9 @@
 
 1. Proposed change goes to the custodians with the reason.
 2. If approved: Notes gets a dated entry (old wording -> new wording -> why),
-   `ReviewDate` resets, and **every forum in ReportedTo is notified that
-   the series breaks** at the change date.
+   `LastReviewedDate` moves to the day the change was agreed (which resets
+   `NextReviewDue` twelve months out), and **every forum in ReportedTo is
+   notified that the series breaks** at the change date.
 3. Material changes (different denominator, different anchor) are a new
    measure row; the old one retires with a pointer. Continuity of *name*
    across a discontinuity of *meaning* is how organisations lie to
@@ -48,20 +49,33 @@ not deleted: retired definitions are needed to read old reports.
 1. Active measures have an Owner who still exists, a Definition that passes
    the two-strangers test, and at least one real forum in ReportedTo.
 2. Every definition change is dated in Notes.
-3. ReviewDate is never blank on an Active measure.
+3. LastReviewedDate is never blank on an Active measure.
+
+### The review cadence is calculated, not typed
+
+`NextReviewDue` is a calculated column: twelve months after
+`LastReviewedDate`, blank on a retired measure and blank until a first review
+is dated. Nobody can type it, so nobody can push a review out without
+claiming a review that did not happen. Dating a review is the only way to
+move the next one.
+
+That replaces a cap of "at most twelve months from today" on the old
+hand-set `ReviewDate`, which a custodian could satisfy forever by moving the
+date eleven months out again every month. Counting from the last review
+rather than from today is what closes it.
 
 ### What is enforced at save, and what stays a governance check
 
-Rule 3 is now **enforced at save**, along with the cadence it implies. Two
-separate rules, because SharePoint treats them differently:
+Rule 3 is **enforced at save**. Two separate rules, because SharePoint
+treats them differently:
 
 | Rule | Where it lives | What happens |
 | --- | --- | --- |
-| An Active measure needs a ReviewDate | `list_validation` (cross-column) | The save is refused |
-| A ReviewDate is at most twelve months out | `column_validation` on `ReviewDate` | The save is refused, with its own message |
+| An Active measure needs a LastReviewedDate | `list_validation` (cross-column) | The save is refused |
+| A LastReviewedDate cannot be in the future | `column_validation` on `LastReviewedDate` | The save is refused, with its own message |
 
-The cadence rule sits on its own column because SharePoint gives a *list*
-one validation formula and one message, and a rule that reads only its own
+The second sits on its own column because SharePoint gives a *list* one
+validation formula and one message, and a rule that reads only its own
 column can therefore keep its own wording. Anything cross-column has to
 share the list's single slot.
 

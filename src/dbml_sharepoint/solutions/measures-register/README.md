@@ -18,14 +18,17 @@ measure registered?", which is how measure sprawl dies.
 
 **Five declared views**, deployed with the paste, nothing to build by
 hand: *The catalogue* (the default, grouped by area), *By forum*,
-*Definition reviews due*, *In development*, *Retired*. The review date
-turns red once it is past due, and stops shouting once the measure is
-retired.
+*Definition reviews due*, *In development*, *Retired*. The next review date
+turns red once it is past due, and goes blank once the measure is retired.
 
-**Two save rules.** An Active measure cannot be saved without a review
-date, and a review date cannot be set more than twelve months out. The
-"at least annual" cadence in `50-govern/governance.md` was a rule nothing
-enforced until now.
+**The cadence is calculated, not typed.** `Last Reviewed Date` records the
+review that happened; `Next Review Due` is twelve months after it, the
+"at least annual" cadence in `50-govern/governance.md`, and nobody can edit
+it. A review cannot be pushed out without claiming a review that did not
+happen.
+
+**Two save rules.** An Active measure cannot be saved without a last
+reviewed date, and a last reviewed date cannot be in the future.
 
 **Work the folders in order:**
 
@@ -39,11 +42,12 @@ enforced until now.
 
 **Customisation points:** none structural. The discipline is the product.
 The definition-writing guide in `40-adopt` is the part to socialise. The
-review cadence in `column_validation` is the one number worth agreeing
+review cadence in `calculated_formulas` is the one number worth agreeing
 before first deploy.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO]`-titled rows: four Active measures across four
-areas and four forums, one Under development with no review date, and one
-Retired, so every view and every status colour renders on a first look.
+areas and four forums, one Under development with no review dates at all,
+and one Retired, so every view and every status colour renders on a first
+look.
 See `30-deploy/deploy.md`.

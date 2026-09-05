@@ -35,17 +35,22 @@ The form asks in four sections, in this order.
    target is honest; an invented target is theatre.
 4. **Report it**: **Frequency**, and **Reported To** naming the forum(s).
    A measure nobody receives is Under development or nothing.
-5. **Govern it**: **Status**, **Review Date**, and **Notes** for the dated
-   definition-change history.
+5. **Govern it**: **Status**, **Last Reviewed Date**, and **Notes** for the
+   dated definition-change history. **Next Review Due** sits beside them and
+   is filled in for you: twelve months after the last review. You cannot type
+   it, which is the point. The only way to move the next review is to date
+   the one you just did.
 
 Two things the form will refuse to save, so you find out now rather than at
 the next committee:
 
-- An **Active** measure with no **Review Date**. Without one it never
-  reaches "Definition reviews due" and its definition is never re-tested.
-- A **Review Date** more than twelve months away. The cadence is at least
-  annual; a date further out is a measure leaving the cull rather than a
-  slower cadence. Leave it blank while the measure is Under development.
+- An **Active** measure with no **Last Reviewed Date**. Without one there is
+  nothing to count twelve months from, so the measure never reaches
+  "Definition reviews due" and its definition is never re-tested. Leave it
+  blank while the measure is Under development: nobody has re-tested a
+  definition that is not settled yet.
+- A **Last Reviewed Date** in the **future**. A review dated ahead of today
+  is a review that has not happened.
 
 ## The five views, and what each is for
 
