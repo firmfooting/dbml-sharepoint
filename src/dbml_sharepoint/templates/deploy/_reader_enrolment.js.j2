@@ -328,6 +328,9 @@
           );
         }
         log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT once this run reaches its end; if a later phase aborts it is removed automatically. Once permanent, remove it in Site permissions > Groups when the account no longer needs access.`);
+        logChange({ key: `reader: ${READER_ADDRESS}`, kind: 'reader-enrolled',
+          target: READER_ADDRESS, oldValue: '',
+          newValue: `enrolled in '${grp.name}' by deploy ${RELEASE_TAG}` });
       } catch (err) {
         log('ERROR', `Enterprise reader enrolment for '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });

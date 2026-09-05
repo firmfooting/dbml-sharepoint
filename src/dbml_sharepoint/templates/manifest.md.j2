@@ -142,6 +142,63 @@ than refused{% else %}every list this bundle provisions{% endif %}.
 Check **Site permissions -> Groups** if you need to know.
 {% endif %}
 
+{% if sidecar_run_log_title %}
+## Run and change logs
+
+Phase {{ phase_num['logging'] }} keeps two hidden, tool-owned lists on the site
+before any register is written:
+
+- **{{ sidecar_run_log_title }}** records this run: a start stamp, provenance
+  naming the release and schema version the bundle was built from (and what the
+  env file supplied, if one was read), and a stop stamp with the outcome and
+  elapsed time. The stop stamp is written from the script's exit path, so every
+  way out of a run that REACHED this phase gets one -- success, abort, or
+  uncaught error. A run that dies before this phase has no log lists to stamp
+  and leaves no record, which is the state every deploy before this phase
+  existed in. Nothing is granted on the list beyond what the running operator
+  already holds.
+- **{{ sidecar_change_log_title }}** records CHANGES as type-2 rows: list
+  creates, renames (old value and new value side by side), and enterprise-reader
+  enrolments, each carrying its key in `ChangeKey`, an effective-from time, and
+  the previous row for that key closed out with an effective-to time and
+  `IsCurrent` cleared. `ChangeKey` and `IsCurrent` are indexed: the close reads
+  them together in one filter, and this list is deliberately unbounded.
+  Rows are insert-only from the deploy's side; the
+  enterprise-reader group is granted Read on this list so an external reader can
+  collect them without touching the registers.
+
+Both are owned the same way every list here is: by the tool's provenance marker
+in the Description, compared whole. A list of the same title that is NOT this
+tool's stops the run rather than being written into. Neither list is created
+when the bundle was built with `--no-sidecars`, and neither is deleted by
+`rollback.js.txt`.
+
+Those two ownership refusals are the ONLY logging problems that stop a run.
+Every other one -- a column that would not create, a change row that would not
+write, a stamp SharePoint refused -- is recorded and carried past, because the
+registers this deploy maintains must not depend on the logs that document them.
+A `[WARN]` line counts them, once at the end of the phase for what its own
+setup could not do and once at the end of the run for everything after, and the
+returned summary lists each under `loggingFailures`, kept apart from `errors` so
+that a logging failure cannot trip a later phase's abort gate.
+{% if deployment_log_list %}
+
+This bundle also stamps a **central deployment log**: the site
+`{{ deployment_log_site }}` and the list `{{ deployment_log_list }}` on it,
+shared by every firmfooting application. The script checks three things before
+its first stamp -- the site exists, the list exists on it, and this account
+holds AddListItems (Contribute or better) on the list -- reading the
+permission from the list itself, not the web. A miss on any of the three
+degrades to an INFO line and the run carries on. A stamp that gets past all
+three and is still refused is a logging failure like any other: a `[WARN]`
+count and an entry under `loggingFailures`, never an abort. The run log on
+THIS site holds the record either way. The central site and list are never
+created by a deploy: create
+them once with the deploy-central-log sidecar, or override both with
+`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables).
+{% endif %}
+{% endif %}
+
 ## Summary
 
 - Lists to provision: {{ counts.lists }}

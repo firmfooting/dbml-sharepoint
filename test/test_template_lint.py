@@ -75,6 +75,16 @@ KNOWN_CONTEXT = {
     # that nothing was), same wording in the manifest, index.md and the
     # deploy transcript's log() line.
     "env_file_line",
+    # The sidecar lists the logging phase ensures on every deploy (both
+    # None under --no-sidecars, which emits no logging phase at all), the
+    # change-log column bodies shared by the ensure and the SCD-2 writer,
+    # and the external deployment log probed but never created.
+    "sidecar_run_log_title", "sidecar_run_log_marker",
+    "sidecar_change_log_title", "sidecar_change_log_marker",
+    "sidecar_change_fields", "deployment_log_list", "deployment_log_site",
+    # centralloggen (deploy-central-log.js.txt): the central logging site
+    # and list it creates, owned by this tool's marker.
+    "central_log_site", "central_log_list", "central_log_marker",
     # extractgen (extract.js). `deployer_version` is bare here rather than
     # `release.deployer_version`: extract.js runs before a release.yaml
     # exists, so there is no release object to hang it off.
@@ -288,16 +298,46 @@ def _used_families() -> dict[str, set[str]]:
 def test_one_helper_builds_every_api_url() -> None:
     """The security model tells a reviewer that every request goes through one
     site-guarded helper. If a template ever writes `_api/` itself, that claim
-    is false and the endpoint inventory below stops seeing everything."""
-    offenders = {
-        rel for rel in ALL_TEMPLATES
-        if "_api/" in (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
-        and rel != "_site_guard.js.j2"
+    is false and the endpoint inventory below stops seeing everything.
+
+    central-log.js.j2 is the one exception, pinned line by line: SITE
+    CREATION cannot target a web that does not exist yet, so its Webs/Add
+    call is a tenant-root URL by necessity. Everything else in that script
+    goes through crossWebApi(). The allowlist is exact strings, so adding a
+    second offender means editing this list on purpose.
+    """
+    allowed = {
+        # The cross-web helper itself: it IS the sanctioned builder for the
+        # one cross-site surface (the central deployment log).
+        "_cross_web.js.j2": {"`${TENANT_ROOT}/sites/${odataName(site)}/_api/web/${suffix}`;"},
+        # central-log.js.j2: the site guard is deliberately absent there
+        # (cross-site by design), so it carries a reduced apiUrl() for the
+        # digest POST plus the tenant-root Webs/Add that cannot target a
+        # web that does not exist yet. Both are pinned exactly.
+        "central-log.js.j2": {
+            "const apiUrl = (suffix) => `${SITE_PATH}/_api/${suffix}`;",
+            "const create = await fetchWithRetry(`${TENANT_ROOT}/_api/web/Webs/Add`, {",
+            "const digestUrl = `${TENANT_ROOT}/sites/${odataName(site)}/_api/contextinfo`;",
+        },
     }
+    offenders = {}
+    for rel in ALL_TEMPLATES:
+        if rel == "_site_guard.js.j2":
+            continue
+        text = (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
+        hits = {
+            line.strip()[:120]
+            for line in text.splitlines()
+            if "_api/" in line
+        }
+        excess = hits - allowed.get(rel, set())
+        if excess:
+            offenders[rel] = sorted(excess)
     assert not offenders, (
-        f"{sorted(offenders)} build an '_api/' URL without apiUrl(). Route it "
-        f"through the helper in _site_guard.js.j2, so the site guard applies "
-        f"and website/docs/concepts/security-model.md stays true."
+        f"{sorted(offenders)} build an '_api/' URL without apiUrl()/"
+        f"crossWebApi(). Route it through the helpers in _site_guard.js.j2, "
+        f"so the site guard applies and "
+        f"website/docs/concepts/security-model.md stays true."
     )
 
 

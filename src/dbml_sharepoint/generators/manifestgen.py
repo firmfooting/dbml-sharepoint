@@ -31,6 +31,10 @@ def generate_manifest(
     manifest_extras: ManifestExtras | None = None,
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
+    sidecar_run_log_title: str | None = None,
+    sidecar_change_log_title: str | None = None,
+    deployment_log_list: str = "",
+    deployment_log_site: str = "",
 ) -> str:
     """Render the deploy manifest for ONE build.
 
@@ -45,6 +49,13 @@ def generate_manifest(
     ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
     required: this function has 19 call sites, and a required parameter
     would break every one of them.
+
+    The two ``sidecar_*_title`` parameters default to None, the SAME default
+    ``jsgen.generate_deploy_js`` carries. They used to default to the sidecar
+    titles, so a caller that passed neither to either function got a manifest
+    promising two log lists the deploy script it documents never emits. The
+    manifest describes what was built, so the default has to be the built
+    default and not the module's idea of a title.
     """
     template = script_env().get_template("manifest.md.j2")
 
@@ -311,4 +322,15 @@ def generate_manifest(
         enterprise_reader=enterprise_reader,
         reader_excluded_lists=reader_excluded_lists,
         env_file_line=describe_env_provenance(env_provenance),
+        # The sidecar lists the logging phase keeps, named here so the
+        # operator reads their titles BEFORE pasting. The defaults ARE the
+        # built-in names, so extension CLIs rendering manifests without
+        # logging context get what they deploy; an explicit None means
+        # --no-sidecars and hides the section entirely, which is why the
+        # parameter is not coerced with `or` here -- that would swallow
+        # the deliberate None and the section could never disappear.
+        sidecar_run_log_title=sidecar_run_log_title,
+        sidecar_change_log_title=sidecar_change_log_title,
+        deployment_log_list=deployment_log_list or "",
+        deployment_log_site=deployment_log_site or "",
     )

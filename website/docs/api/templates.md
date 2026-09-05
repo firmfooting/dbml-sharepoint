@@ -19,6 +19,10 @@ dbml-sharepoint SITE ASSESSMENT script (READ-ONLY).
 
 Probes the site's capabilities against this pack's requirements and prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes: every call is a GET except the contextinfo digest fetch and one read-only CSOM ProcessQuery.
 
+### `central-log.js.j2`
+
+The deploy-central-log sidecar: create the central logging SITE (if absent) and the deployment log LIST on it, then stamp one provenance row. Consent-shaped: a DEPLOY never creates a site, an operator who pastes THIS script has. Pasted anywhere on the tenant (the digest and cookies are site-bound but SharePoint answers cross-web REST the same as local, same origin). The transport and the site guard are the shared partials, exactly as rollback.js includes them; cross-web requests go through centralApi(), which keeps the apiUrl() suffix discipline (no template writes an API itself) while pointing at the central web. Every write reads back. An existing site or list is adopted only when its Description matches this tool's marker compared WHOLE (the same fail-closed ownership test every sidecar uses); a foreign object of the same name stops the script with an ERROR and changes nothing.
+
 ### `columns.js.j2`
 
 dbml-sharepoint COLUMNS script for one list.
@@ -93,9 +97,15 @@ Included by: `assess.js.j2`, `deploy.js.j2`
 
 The host names the pack data differently: assess.js.j2 passes `targets`, deploy.js.j2 `assess_targets_data`. One name here, so a probe that branches on the pack cannot render in one host and fail in the other.
 
+### `_cross_web.js.j2`
+
+Included by: `central-log.js.j2`, `deploy/_logging.js.j2`
+
+The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site under this tenant root. Included ONLY by the scripts that reach the central deployment log (deploy.js's logging phase and the deploy-central-log sidecar), so no other emitted script carries the helper unused. Same origin, so the session cookies ride along. TENANT_ROOT comes from SITE_URL's origin, deliberately NOT from `_spPageContextInfo`: the modern pages this is pasted on (CollabHome) do not define that global (measured 2026-08-26).
+
 ### `_digest_cached.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `central-log.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
@@ -119,7 +129,7 @@ A GUID SharePoint returned, checked before it is spliced into a URL. Every id he
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `central-log.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
@@ -131,7 +141,7 @@ Shared OData $batch transport: BatchWriter for ChangeSet writes and BatchReader 
 
 ### `_http_write.js.j2`
 
-Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `central-log.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
 
@@ -209,6 +219,12 @@ Phase body: assert Indexed=true on every declared indexed column, verified by re
 
 Phase body: create or reconcile owned lists in dependency order with their non-lookup columns and every same-site lookup whose target already exists. Wave 1 runs sequentially to capture lookup-target GUIDs; wave 2 runs in per-list lanes. Existing lists are reconciled only when exact provenance and immutable shape both match (fail closed).
 
+### `deploy/_logging.js.j2`
+
+*Phase 1.7 (PREPARE): deployment run and change logs*
+
+Phase body: ensure the tool's sidecar lists, stamp the run log, probe the external deployment log, and declare the change-log writer every later phase calls. THREE lists, three different contracts: - `dbml Local Log` is created on EVERY deploy, hidden, and left with no role assignments, so an ordinary member sees nothing and a paste returns to a site that shows no trace of it. It records this run: start stamp, stop stamp, and what the run did. - The change log (default `dbml_Logs`) is created on every deploy, hidden, and holds one Read assignment for the site group flagged `enroll_enterprise_reader`, so a Power Automate reader can list and read rows without seeing the registers themselves. It receives type-2 rows: every change carries its key in ChangeKey, plus EffectiveFrom/EffectiveTo and IsCurrent, and a change CLOSES the previous current row for its key in the same logical step, so a reader always sees exactly one current row per key. ChangeKey and IsCurrent are indexed because the close reads them both in one $filter, and both sides of an AND have to be indexed to survive the 5,000-item threshold on a log that grows forever. - The EXTERNAL deployment log (probe `dbml-deployment-log`) is NEVER created. An operator with a site-wide deployment log names it (flag or DBMLSP_DEPLOY_LOG_LIST) and this phase writes deployment start, deployment stop and provenance rows into it. The rows set Title ONLY: the list is the operator's, its schema is unknown, and every generic list has a Title. Absent, this phase says so once and moves on. The two created lists carry the tool's provenance marker in their Description. A list of the same title whose Description is not EXACTLY the marker is somebody else's and this phase ABORTS the run, the same fail-closed contract as verify.js's scratch list. Creation is idempotent; a rollback never deletes these lists because rollback only deletes declared TARGET_LISTS. Change events raised BEFORE this phase (renames, phase 1.3) were buffered by deploy.js.j2's shim. If the run aborts before reaching this phase they are lost, and so is everything else about that run: with no sidecar lists there is no record at all, which is the state every deploy before this phase existed in. From this phase onward the writer is live and events are written as they happen.
+
 ### `deploy/_lookups.js.j2`
 
 *Phase 2.2 (STRUCTURE): deferred lookups*
@@ -217,7 +233,7 @@ Phase body: add the deferred lookup columns (self-references and members of refe
 
 ### `deploy/_maintenance_unseal.js.j2`
 
-*Phase 1.7 (PREPARE): maintenance unseal*
+*Phase 1.8 (PREPARE): maintenance unseal*
 
 Sealed columns reject UI schema edits even for site admins; the ONLY legitimate maintenance path is this script. Unseal declared fields so the run's write phases work unchanged; Phase 4.1 re-seals and verifies after every field write is done.
 

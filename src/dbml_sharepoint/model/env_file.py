@@ -40,6 +40,15 @@ class EnvSetting:
 ENTERPRISE_READER_KEY: Final = "DBMLSP_ENTERPRISE_READER"
 ENTERPRISE_READER_PARAMETER: Final = "enterprise_reader"
 
+DEPLOYMENT_LOG_LIST_KEY: Final = "DBMLSP_DEPLOY_LOG_LIST"
+DEPLOYMENT_LOG_LIST_PARAMETER: Final = "deployment_log_list"
+
+DEPLOYMENT_LOG_SITE_KEY: Final = "DBMLSP_DEPLOY_LOG_SITE"
+DEPLOYMENT_LOG_SITE_PARAMETER: Final = "deployment_log_site"
+
+CHANGE_LOG_LIST_KEY: Final = "DBMLSP_CHANGE_LOG_LIST"
+CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
+
 # No `validate` field: `execute_build` already validates what it consumes, and
 # importing `cli.py`'s validators here would cycle and drag typer into `model/`.
 ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
@@ -47,6 +56,33 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         key=ENTERPRISE_READER_KEY,
         parameter=ENTERPRISE_READER_PARAMETER,
         help="UPN of the enterprise-reader service account to enrol.",
+    ),
+    EnvSetting(
+        key=DEPLOYMENT_LOG_LIST_KEY,
+        parameter=DEPLOYMENT_LOG_LIST_PARAMETER,
+        help=(
+            "Title of the central deployment log list to stamp start/stop/"
+            "provenance rows into. Probed on the central logging site, never "
+            "created; empty disables the stamps."
+        ),
+    ),
+    EnvSetting(
+        key=DEPLOYMENT_LOG_SITE_KEY,
+        parameter=DEPLOYMENT_LOG_SITE_PARAMETER,
+        help=(
+            "Title of the central logging site the deployment log list "
+            "lives on. Probed, never created by a deploy (the "
+            "deploy-central-log sidecar creates site and list); empty "
+            "disables the stamps."
+        ),
+    ),
+    EnvSetting(
+        key=CHANGE_LOG_LIST_KEY,
+        parameter=CHANGE_LOG_LIST_PARAMETER,
+        help=(
+            "Title of the hidden change log the deploy writes type-2 rows "
+            "into. Default: the tool's own dbml_Logs sidecar."
+        ),
     ),
 )
 

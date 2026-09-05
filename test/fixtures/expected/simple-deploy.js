@@ -170,6 +170,13 @@
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
+    // The logging phase's OWN failure list, deliberately not `errors`.
+    // `errors` is the abort bus every phase gate reads, and the registers
+    // this deploy maintains must never depend on the logs that document
+    // them: a change row that would not write must not stop a deploy that
+    // otherwise succeeded. Declared here, beside `errors`, so the summary
+    // has one shape whether or not the logging phase renders.
+    loggingFailures: [],
     releaseTag: RELEASE_TAG,
     schemaVersion: SCHEMA_VERSION,
   };
@@ -1376,7 +1383,13 @@
       fieldShapesByList[listName] = empty;
       return empty;
     }
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
+    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: with
+    // no explicit page size the page size is the server's, and this read is
+    // UNFILTERED, so an ordinary list's ~40 built-in fields plus its
+    // declared ones sit close to the default. A truncated map reads exactly
+    // like a list missing columns, and this map is what every phase's
+    // create-or-reconcile decision is made from.
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=500`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) {
@@ -3121,6 +3134,20 @@
       }
     }
   }
+  // Deployment run/change logging. The shim pair is declared here,
+  // unconditionally, for the same reason the reader-enrolment drain is:
+  // renames (phase 1.3) run BEFORE the logging phase (1.5), so changes
+  // raised there must not be lost, and the finally below must be able to
+  // call finishRunLog on every build even when the logging phase never
+  // emitted (abort before phase 1.5 leaves nothing to stamp into).
+  // logChange buffers until _logging.js.j2 replaces it with the real
+  // writer; finishRunLog stays a no-op unless that phase completed its
+  // setup, because a run that died before it cannot stamp a list that
+  // was never ensured.
+  const DEPLOY_CHANGES = [];
+  let logChange = (change) => { DEPLOY_CHANGES.push(change); };
+  let finishRunLog = async () => {};
+
   // Every phase runs inside this try so that the finally below is reached
   // by EVERY exit: the normal `return summary` at the end of the last
   // phase, the early returns that abort a broken run, and a throw
@@ -3379,6 +3406,8 @@
         invalidateListShapes();
         summary.listsRenamed.push({ from: plan.from, to: newTitle });
         log('INFO', `Renamed '${plan.from}' to '${newTitle}' in place (read back by list id).`);
+        logChange({ key: `list: ${plan.from}`, kind: 'rename', target: plan.from,
+          oldValue: plan.from, newValue: newTitle });
       } catch (err) {
         summary.errors.push({ phase: '1.3', list: newTitle, error: err.message });
         log('ERROR', `Rename '${plan.from}' -> '${newTitle}': ${err.message}`);
@@ -3750,6 +3779,8 @@
               throw new Error(`${label} '${plan.from}' read back as '${back[nameKeyOf]}' with Description ${JSON.stringify(back.Description)} after writing '${plan.to}'; the rename did not take.`);
             }
             (plan.object === 'level' ? summary.levelsRenamed : summary.groupsRenamed).push({ from: plan.from, to: plan.to });
+            logChange({ key: `${plan.object}: ${plan.from}`, kind: 'rename',
+              target: plan.from, oldValue: plan.from, newValue: plan.to });
             log('INFO', `Renamed ${label} '${plan.from}' to '${plan.to}' in place (read back by id).`);
           } catch (err) {
             log('ERROR', `Phase 1.4 rename '${plan.from}' -> '${plan.to}': ${err.message}`);
@@ -4354,13 +4385,17 @@
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
   markPhase('Phase 1.6: enterprise reader enrolment');
-  markPhase('Phase 1.7: maintenance unseal');
+  markPhase('Phase 1.7: deployment run and change logs');
+  // --no-sidecars: no run log, no change log, no external stamps. The
+  // shim logChange still buffers whatever renames raise, and nothing
+  // drains it: a build that declines its own logging records nothing.
+  markPhase('Phase 1.8: maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
   // legitimate maintenance path is this script. Unseal declared fields so
   // the run's write phases work unchanged; Phase 4.1 re-seals and
   // verifies after every field write is done.
-  log('INFO', 'Starting Phase 1.7: maintenance unseal.');
+  log('INFO', 'Starting Phase 1.8: maintenance unseal.');
   invalidateFieldShapes();  // probes reflect phase-start state
   {
     const sealDeclared = [];
@@ -4391,7 +4426,7 @@
       // become a different object since.
       const unsealOwned = await surveyOwnedListsForWrites(
         sealDeclared.map(([listTitle]) => listTitle),
-        '1.7', 'Maintenance ownership recheck', true,
+        '1.8', 'Maintenance ownership recheck', true,
       );
       if (!unsealOwned) {
         log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
@@ -4449,7 +4484,7 @@
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
-          summary.errors.push({ phase: '1.7', list: listTitle, column: field.title, error: err.message });
+          summary.errors.push({ phase: '1.8', list: listTitle, column: field.title, error: err.message });
         }
       }, 4);
       if (summary.errors.length > errorsBeforeUnseal) {
@@ -4513,6 +4548,8 @@
         createdThisRun = true;
         invalidateListShapes();  // the enumeration no longer knows every list
         summary.listsCreated.push(list.title);
+        logChange({ key: `list: ${list.title}`, kind: 'create', target: list.title,
+          oldValue: '', newValue: `created by ${RELEASE_TAG}` });
       }
       listShape = await reconcileListShape(list, digest);
       listGuids[list.title] = listShape.Id;
@@ -5143,7 +5180,10 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      // `$top=500`: a read with no explicit page size takes the server's,
+      // and a truncated enumeration reads as "that view does not exist",
+      // which is the one answer this function must never get wrong.
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=500`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -5805,7 +5845,10 @@
       try {
         const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
         for (const form of SCHEMA.form_formatting) {
-          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`);
+          // `$top=500` for the same reason every other enumeration carries
+          // it: no explicit page size means the server's, and a truncated
+          // read here reads as "this list has no such content type".
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter&$top=500`);
         }
         contentTypes = await ctReader.done();
       } catch (err) {
@@ -6664,13 +6707,19 @@
     // Each exit cleanup is guarded on its own: one throwing must not skip a
     // later one, because the operator's run-scoped membership is the LAST
     // drain and the exact thing a failed run must not leave behind. Order
-    // still matters -- restore field protection while the temporary
-    // membership still authorises the write, then drain the reader before
-    // the operator.
+    // still matters -- the stop stamp rides the run's own operator
+    // enrolment (removeSelfEnrollments drains LAST), restore field
+    // protection while the temporary membership still authorises the
+    // write, then drain the reader before the operator.
     try {
       await restoreUnsealedFields();
     } catch (err) {
       log('ERROR', `Could not restore field protection on exit: ${err.message}`);
+    }
+    try {
+      await finishRunLog();
+    } catch (err) {
+      log('ERROR', `Could not write the run's stop record: ${err.message}`);
     }
     try {
       await removeReaderEnrollments();

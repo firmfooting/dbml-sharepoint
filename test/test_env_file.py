@@ -36,9 +36,15 @@ def test_env_settings_has_exactly_the_registered_fields() -> None:
         "parameter",
         "help",
     }
-    assert len(ENV_SETTINGS) == 1
+    assert len(ENV_SETTINGS) == 4
     assert ENV_SETTINGS[0].key == "DBMLSP_ENTERPRISE_READER"
     assert ENV_SETTINGS[0].parameter == "enterprise_reader"
+    assert ENV_SETTINGS[1].key == "DBMLSP_DEPLOY_LOG_LIST"
+    assert ENV_SETTINGS[1].parameter == "deployment_log_list"
+    assert ENV_SETTINGS[2].key == "DBMLSP_DEPLOY_LOG_SITE"
+    assert ENV_SETTINGS[2].parameter == "deployment_log_site"
+    assert ENV_SETTINGS[3].key == "DBMLSP_CHANGE_LOG_LIST"
+    assert ENV_SETTINGS[3].parameter == "change_log_list"
 
 
 def test_parses_key_value_pairs(tmp_path: Path) -> None:
