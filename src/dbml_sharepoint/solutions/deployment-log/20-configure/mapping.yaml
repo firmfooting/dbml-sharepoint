@@ -1,22 +1,27 @@
 # Central deployment log: physical mapping.
 #
-# NO PREFIX, deliberately, and this is the one family where that is a
-# contract rather than a preference. The list title is `prefix + entity
-# name`, every other family's deploy probes the literal title
-# `dbml-deployment-log` (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT), and
-# DBMLSP_DEPLOY_LOG_LIST defaults to the same string. A prefix here renames
-# the list the whole fleet is pointed at. If you must rename it, set
-# DBMLSP_DEPLOY_LOG_LIST to the new title in every project that stamps it.
-prefix: ""
+# The org token is the family's PREFIX, so an org taking this family edits
+# one line. `firmfooting` rather than `dbml` because these lists hold rows
+# from every firmfooting application, of which dbml-sharepoint is one. The
+# list titles are `prefix + entity`, giving `firmfooting_Deployments` and
+# `firmfooting_Changes`, and every other family's deploy probes those exact
+# literals (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT and
+# EXTERNAL_CHANGE_LOG_DEFAULT). DBMLSP_DEPLOY_LOG_LIST and
+# DBMLSP_CHANGE_LOG_LIST default to the same strings. Renaming an entity here
+# renames the address the whole fleet is pointed at; change both sides or
+# neither.
+prefix: "firmfooting_"
 
 entities:
-  dbml-deployment-log: { kind: List, base_template: 100, site_role: default }
+  Deployments: { kind: List, base_template: 100, site_role: default }
+  Changes: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
 
-# Versioning on, and a deeper history than the registers keep. A stamp is
-# written once and never edited, so versions accumulate only when somebody
-# corrects a row by hand, which is exactly the event worth keeping.
+# Versioning on, and a deeper history than the registers keep. A stamp or a
+# change row is written once and never edited, so versions accumulate only
+# when somebody corrects a row by hand, which is exactly the event worth
+# keeping.
 versioning:
   default:
     enable_versioning: true
@@ -30,8 +35,8 @@ watched_lists: []
 # Security: rows arrive from OTHER sites, written by whoever pasted the
 # deploy there. That is the one thing this family's permissions have to get
 # right, and the reason it is spelled out in 50-govern/governance.md: an
-# operator who cannot add items to this list gets a graceful skip, not an
-# error, so a permissions mistake here is silent. The list is a DROP BOX:
+# operator who cannot add items to a list gets a graceful skip, not an
+# error, so a permissions mistake here is silent. Both lists are DROP BOXES:
 # Members may add rows and read back only their own, and may not edit or
 # delete anything, including what they wrote themselves. Full Control stays
 # with the empty-by-default admin group and the site owners.
@@ -53,20 +58,20 @@ groups:
     only_allow_members_view_membership: false
     enroll_enterprise_reader: true
 
-# The drop box, in eight permissions. Rows arrive from every site in the
-# fleet and nobody who writes one may edit it afterwards, including its own
-# author, so the level deliberately omits EditListItems and DeleteListItems.
-# Those two absences ARE the posture; adding either back turns the log into a
-# list its subjects can rewrite.
+# The drop box, in eight permissions, shared by both lists. Rows arrive from
+# every site in the fleet and nobody who writes one may edit it afterwards,
+# including its own author, so the level deliberately omits EditListItems and
+# DeleteListItems. Those two absences ARE the posture; adding either back
+# turns a log into a list its subjects can rewrite.
 #
-# AddListItems is what a cross-site stamp needs (the deploy probes bit 0x2 on
-# this list before it writes). UseRemoteAPIs is what makes the REST call
-# itself legal. ViewListItems, ViewVersions, ViewFormPages, Open, ViewPages
-# and BrowseUserInfo are the read side, and item_security below is what stops
-# them reaching anybody else's rows.
+# AddListItems is what a cross-site stamp or change row needs (the deploy
+# probes bit 0x2 on the target list before it writes). UseRemoteAPIs is what
+# makes the REST call itself legal. ViewListItems, ViewVersions,
+# ViewFormPages, Open, ViewPages and BrowseUserInfo are the read side, and
+# item_security below is what stops them reaching anybody else's rows.
 permission_levels:
-  - name: "{prefix} dbml Log Submit Only"
-    description: "Add deployment rows to the central log and read back only your own; no editing or deleting, not even of rows you wrote."
+  - name: "{prefix} firmfooting Deployments Submit Only"
+    description: "Add rows to a central log list and read back only your own; no editing or deleting, not even of rows you wrote."
     base_permissions:
       - AddListItems
       - ViewListItems
@@ -79,13 +84,13 @@ permission_levels:
 
 # `reconcile: exact` is what makes the Members binding a REPLACEMENT rather
 # than an addition: the declared pairs are the allowlist and every other
-# direct binding on this list is removed, so the Edit that Members inherit
-# from the site never survives on this object. `break_inheritance: true`
+# direct binding on a list is removed, so the Edit that Members inherit
+# from the site never survives on either object. `break_inheritance: true`
 # with copyRoleAssignments=false means it is never copied down in the first
 # place; the reconcile is the second of the two.
 #
-# Owners keep Full Control because somebody has to be able to repair this
-# list, and because the account that deploys THIS family to the logging site
+# Owners keep Full Control because somebody has to be able to repair these
+# lists, and because the account that deploys THIS family to the logging site
 # is an owner or admin of it. Operators deploying OTHER families are ordinary
 # Members here, and submit-only is exactly the right of theirs the deploy
 # uses.
@@ -96,10 +101,14 @@ permission_levels:
 # whole fleet. Full Control is what is shipped, on the argument that a
 # deployment log's integrity matters and its confidentiality does not.
 # It is also more than reading needs -- it carries DeleteListItems and
-# ManagePermissions on the one list this posture exists to protect -- and
+# ManagePermissions on the two lists this posture exists to protect -- and
 # whether a narrower level clears the created-by trim has NOT been measured.
 # `30-deploy/deploy.md` carries the probe that has to run before this is
 # treated as settled.
+#
+# One `default` policy, scoped to `site_role: default`, which both
+# `Deployments` and `Changes` declare, so both lists get the same four
+# bindings without a per-entity override.
 list_permissions:
   default:
     site_role: default
@@ -109,7 +118,7 @@ list_permissions:
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "{prefix} dbml Log Submit Only"
+        level: "{prefix} firmfooting Deployments Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
@@ -120,7 +129,8 @@ list_permissions:
 # WriteSecurity 2 ("edit items created by the user"). The level above already
 # withholds EditListItems, so WriteSecurity is belt and braces: it is what
 # stops a future binding that does carry Edit from reaching other people's
-# rows by accident.
+# rows by accident. One `default`, applied to both entities exactly like
+# `list_permissions.default` above.
 #
 # MEASURED 2026-09-06, `access.item-acl.read-security-on-list` and
 # `access.item-acl.read-security-on-library` in list-settings-probe.js: both
@@ -142,31 +152,36 @@ item_security:
 
 # UI hardening, the same as every other family: sealed columns and
 # prevent_list_deletion are friction and tamper-evidence, not enforcement.
-# They matter more here than usual, because this list is the record of what
-# the tool did and it is the one list an operator has a motive to edit.
+# They matter more here than usual, because these lists are the record of
+# what the tool did and are the one place an operator has a motive to edit.
 seal_columns: true
 prevent_list_deletion: true
 
 # Internal names stay authoritative: the deploy scripts POST these exact
-# names cross-web (analysis/sidecars.py, CENTRAL_LOG_COLUMNS), so a rename
-# of an internal name breaks every stamp in the fleet. Only display titles
-# change. Auto PascalCase splitting is right everywhere except the acronym.
+# names cross-web (analysis/sidecars.py, CENTRAL_LOG_COLUMNS and
+# CENTRAL_CHANGE_COLUMNS), so a rename of an internal name breaks every
+# stamp or change row in the fleet. Only display titles change. Auto
+# PascalCase splitting is right everywhere except the acronym, which both
+# lists carry.
 display_names:
   mode: auto
   overrides:
-    dbml-deployment-log:
+    Deployments:
+      StampUtc: "Stamp UTC"
+    Changes:
       StampUtc: "Stamp UTC"
 
 # Column formatting: the fleet style standard (website/docs/reference/
 # style-guide.md). One pill, on the one column a reader scans down.
-# `abort` is the only member that means "look at this"; the other three are
-# routine, so only `abort` takes a warning treatment.
+# `abort` is the only member that means "look at this"; the other three
+# routine kinds and the transitional `change` kind (see schema.dbml) all
+# take a quieter treatment.
 #
 # Deliberately NOT declared: a row-level wash. An aborted run is already one
 # filtered view of its own, and section 1.6 exists to stop a second signal
 # for a condition a filter has already isolated.
 column_formatting:
-  dbml-deployment-log:
+  Deployments:
     StampKind:
       style: pill
       map:
@@ -176,15 +191,19 @@ column_formatting:
         "provenance": muted
         "change": muted
 
-# Declared views. "Latest first" is the default because the question this
-# list is opened with is almost always "what happened most recently".
-# Widths are pixel ColumnWidth per view, keyed on INTERNAL names; the build
-# rewrites them to display titles, and ColumnWidth binds by display name.
+# Declared views. "Latest first" is the default on each list because the
+# question either list is opened with is almost always "what happened most
+# recently". Application sits beside SourceSite in every view: the whole
+# reason these lists are split from `dbml`-prefixed ones is that more than
+# one firmfooting application writes here, and a reader needs to tell them
+# apart at a glance. Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names; the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
 views:
-  dbml-deployment-log:
+  Deployments:
     - title: "Latest first"
       default: true
-      fields: [Title, StampKind, StampUtc, SourceSite, ReleaseTag, Operator]
+      fields: [Title, StampKind, StampUtc, SourceSite, Application, ReleaseTag, Operator]
       sort:
         - { field: StampUtc, direction: desc }
       widths:
@@ -192,14 +211,15 @@ views:
         StampKind: 150
         StampUtc: 170
         SourceSite: 220
+        Application: 140
         ReleaseTag: 140
         Operator: 200
     # The one view that is a question rather than a listing: which runs
     # recorded errors. StampKind is indexed, so this filter scales past the
-    # list view threshold, which matters on the one list in the catalogue
-    # that grows with every deploy in the fleet.
+    # list view threshold, which matters on a list that grows with every
+    # deploy in the fleet.
     - title: "Aborted runs"
-      fields: [Title, StampKind, StampUtc, SourceSite, ReleaseTag, Operator, Details]
+      fields: [Title, StampKind, StampUtc, SourceSite, Application, ReleaseTag, Operator, Details]
       where:
         - { field: StampKind, op: eq, value: "abort" }
       sort:
@@ -209,13 +229,14 @@ views:
         StampKind: 150
         StampUtc: 170
         SourceSite: 200
+        Application: 140
         ReleaseTag: 140
         Operator: 180
         Details: 320
     # Start and stop without the provenance rows in between, which is how
     # you read run duration off the list.
     - title: "Runs"
-      fields: [Title, StampKind, StampUtc, SourceSite, ReleaseTag, SchemaVersion, Operator]
+      fields: [Title, StampKind, StampUtc, SourceSite, Application, ReleaseTag, SchemaVersion, Operator]
       where:
         - { field: StampKind, op: in, value: ["deployment start", "deployment stop", "abort"] }
       sort:
@@ -225,33 +246,15 @@ views:
         StampKind: 150
         StampUtc: 170
         SourceSite: 200
+        Application: 140
         ReleaseTag: 140
         SchemaVersion: 140
         Operator: 180
-    # The change feed. Every row a deploy raised about a list, level or group
-    # it touched, newest first, with the old and new values side by side.
-    # Filtered on the indexed StampKind, so it scales on the one list in the
-    # catalogue that passes the list view threshold as a matter of course.
-    - title: "Changes"
-      fields: [SourceSite, ChangeKey, ChangeKind, TargetName, OldValue, NewValue, EffectiveFrom, IsCurrent]
-      where:
-        - { field: StampKind, op: eq, value: "change" }
-      sort:
-        - { field: EffectiveFrom, direction: desc }
-      widths:
-        SourceSite: 200
-        ChangeKey: 220
-        ChangeKind: 120
-        TargetName: 200
-        OldValue: 200
-        NewValue: 200
-        EffectiveFrom: 170
-        IsCurrent: 100
     # What built what. The provenance row is the one that names the deployer
     # version and the source schema, so it is the row an upgrade argument
     # is made from.
     - title: "Provenance"
-      fields: [Title, StampUtc, SourceSite, ReleaseTag, SchemaVersion, DeployerVersion, Details]
+      fields: [Title, StampUtc, SourceSite, Application, ReleaseTag, SchemaVersion, DeployerVersion, Details]
       where:
         - { field: StampKind, op: eq, value: "provenance" }
       sort:
@@ -260,63 +263,99 @@ views:
         Title: 300
         StampUtc: 170
         SourceSite: 200
+        Application: 140
         ReleaseTag: 140
         SchemaVersion: 140
         DeployerVersion: 160
         Details: 300
+  # The change feed. Every row a deploy raised about a list, level or group
+  # it touched, newest first, with the old and new values side by side. No
+  # `where` clause: unlike the combined list this list replaces, every row
+  # here already is a change, so there is nothing left to filter out.
+  Changes:
+    - title: "Latest first"
+      default: true
+      fields: [SourceSite, Application, ChangeKey, ChangeKind, TargetName, OldValue, NewValue, EffectiveFrom, IsCurrent]
+      sort:
+        - { field: EffectiveFrom, direction: desc }
+      widths:
+        SourceSite: 200
+        Application: 140
+        ChangeKey: 220
+        ChangeKind: 120
+        TargetName: 200
+        OldValue: 200
+        NewValue: 200
+        EffectiveFrom: 170
+        IsCurrent: 100
 
 # Every column here is written by a script, so the New form exists for the
-# one case a person uses it: annotating the log by hand after an incident.
+# one case a person uses it: annotating a log by hand after an incident.
 # Nothing is hidden, because a person typing a row should see every field a
 # script would have filled.
 form_visibility:
-  dbml-deployment-log:
+  Deployments:
+    reconcile: exact
+    columns: {}
+  Changes:
     reconcile: exact
     columns: {}
 
-# Form layout: a strapline header and four sections. Per-field description
+# Form layout: a strapline header and sections. Per-field description
 # hints render on the NEW form only; SharePoint suppresses column
-# descriptions on the Edit form.
+# descriptions on the Edit form. `Changes` gets its own header and body:
+# it is a different list now, not a section of this one.
 form_formatting:
-  dbml-deployment-log:
+  Deployments:
     header: formatting/deployment-log-form-header.json
     body: formatting/deployment-log-form-body.json
+  Changes:
+    header: formatting/changes-form-header.json
+    body: formatting/changes-form-body.json
 
-# One save rule, on the one column where a wrong value is undetectable
-# later. `now` renders as NOW() in a validation formula, which Lists DO
-# support (verified against a live tenant 2026-07-29,
+# One save rule per list, on the one column each carries where a wrong value
+# is undetectable later. `now` renders as NOW() in a validation formula,
+# which Lists DO support (verified against a live tenant 2026-07-29,
 # test/manual/datetime-sentinel-probe.js; Microsoft's formula reference
 # says otherwise, and is describing calculated columns).
 #
 # `now` rather than `today`: TODAY() in a validation formula is midnight, so
-# `leq today` on a datetime rejects every stamp written after 00:00.
+# `leq today` on a datetime rejects every row written after 00:00.
 column_validation:
-  dbml-deployment-log:
+  Deployments:
     columns:
       StampUtc:
         when:
           - { field: StampUtc, op: leq, value: now }
         message: "A deployment stamp cannot be in the future. Deploy scripts send UTC; if you are adding a row by hand, use the time it actually happened."
+  Changes:
+    columns:
+      StampUtc:
+        when:
+          - { field: StampUtc, op: leq, value: now }
+        message: "A change row cannot be stamped in the future. Deploy scripts send UTC; if you are adding a row by hand, use the time it actually happened."
 
-# Deliberately NOT declared: list_validation. The cross-column rule this
-# list wants ("a stop stamp needs a start stamp for the same site") is not
-# a row-level rule at all, so no SharePoint validation formula can express
-# it. It stays a reporting query; 50-govern/governance.md says so.
+# Deliberately NOT declared: list_validation. The cross-column rule either
+# list wants ("a stop stamp needs a start stamp for the same site", "exactly
+# one current row per key, site and application") is not a row-level rule at
+# all, so no SharePoint validation formula can express it. It stays a
+# reporting query; 50-govern/governance.md says so.
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " so sample data stays visible in every view and
 # form. Rollback requires per-list confirmation before every delete.
-# Coverage: every StampKind member, every declared view, and two different
-# source sites so the fleet-wide reading of SourceSite is visible on a
-# first look.
+# Coverage: every StampKind member `Deployments` still sends, every declared
+# view on both lists, and two different source sites so the fleet-wide
+# reading of SourceSite is visible on a first look.
 demo_items:
-  dbml-deployment-log:
+  Deployments:
     - key: dl-start-risk
       values:
         Title: "[DEMO] dbml-sharepoint deployment start: risk-register 1.0.0 (schema v1.0.1)"
         StampKind: "deployment start"
         StampUtc: "today-2"
         SourceSite: "https://example.sharepoint.com/sites/governance"
+        Application: "dbml-sharepoint"
         ReleaseTag: "1.0.0"
         SchemaVersion: "1.0.1"
         DeployerVersion: "dbml-sharepoint/0.1.0"
@@ -328,6 +367,7 @@ demo_items:
         StampKind: "provenance"
         StampUtc: "today-2"
         SourceSite: "https://example.sharepoint.com/sites/governance"
+        Application: "dbml-sharepoint"
         ReleaseTag: "1.0.0"
         SchemaVersion: "1.0.1"
         DeployerVersion: "dbml-sharepoint/0.1.0"
@@ -339,6 +379,7 @@ demo_items:
         StampKind: "deployment stop"
         StampUtc: "today-2"
         SourceSite: "https://example.sharepoint.com/sites/governance"
+        Application: "dbml-sharepoint"
         ReleaseTag: "1.0.0"
         SchemaVersion: "1.0.1"
         DeployerVersion: "dbml-sharepoint/0.1.0"
@@ -350,18 +391,31 @@ demo_items:
         StampKind: "abort"
         StampUtc: "today-1"
         SourceSite: "https://example.sharepoint.com/sites/reception"
+        Application: "dbml-sharepoint"
         ReleaseTag: "1.0.0"
         SchemaVersion: "1.0.0"
         DeployerVersion: "dbml-sharepoint/0.1.0"
         Operator: "demo.operator@example.com"
         Details: "Demo row. errors 1; a validation formula was refused on a Yes/No column. The run stopped and the list was left as it was."
+    - key: dl-start-visitor
+      values:
+        Title: "[DEMO] dbml-sharepoint deployment start: visitor-log 1.0.0 (schema v1.0.0)"
+        StampKind: "deployment start"
+        StampUtc: "today-1"
+        SourceSite: "https://example.sharepoint.com/sites/reception"
+        Application: "dbml-sharepoint"
+        ReleaseTag: "1.0.0"
+        SchemaVersion: "1.0.0"
+        DeployerVersion: "dbml-sharepoint/0.1.0"
+        Operator: "demo.operator@example.com"
+        Details: "Demo row. The run this log's abort row closes out."
+  Changes:
     - key: dl-change-risk
       values:
         Title: "[DEMO] dbml-sharepoint change: list: ACME_Risk"
-        StampKind: "change"
-        StampUtc: "today-2"
         SourceSite: "https://example.sharepoint.com/sites/governance"
-        ReleaseTag: "1.0.0"
+        StampUtc: "today-2"
+        Application: "dbml-sharepoint"
         ChangeKey: "list: ACME_Risk"
         ChangeKind: "create"
         TargetName: "ACME_Risk"
@@ -369,15 +423,3 @@ demo_items:
         NewValue: "created by 1.0.0"
         EffectiveFrom: "today-2"
         IsCurrent: true
-        Details: "Demo row. One type-2 change row: what the deploy did, to what, and when."
-    - key: dl-start-visitor
-      values:
-        Title: "[DEMO] dbml-sharepoint deployment start: visitor-log 1.0.0 (schema v1.0.0)"
-        StampKind: "deployment start"
-        StampUtc: "today-1"
-        SourceSite: "https://example.sharepoint.com/sites/reception"
-        ReleaseTag: "1.0.0"
-        SchemaVersion: "1.0.0"
-        DeployerVersion: "dbml-sharepoint/0.1.0"
-        Operator: "demo.operator@example.com"
-        Details: "Demo row. The run this log's abort row closes out."

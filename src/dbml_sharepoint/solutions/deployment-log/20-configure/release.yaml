@@ -1,15 +1,42 @@
-release: "1.0.0"
-date: "2026-09-05"
+release: "2.0.0"
+date: "2026-09-07"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.1.0"
+schema_version: "2.0.0"
 notes: |
-  Central deployment log template. Deploy this to the logging site once;
-  every other family's deploy then stamps the list it creates. Bump
-  schema_version on any DBML/mapping change before redeploying, and check
-  CENTRAL_LOG_COLUMNS in analysis/sidecars.py still names every column a
-  cross-web stamp writes.
+  2.0.0 is a breaking rename: the single `dbml-deployment-log` list splits
+  into `firmfooting_Deployments` and `firmfooting_Changes`, one per row
+  shape, under the family's own prefix rather than a bare title. Every other
+  firmfooting application, dbml-sharepoint included, can now write to this
+  log without one closing another's rows; both new lists gain a required
+  Application column, indexed, that says which application wrote each row.
 
-  1.1.0 carries the change feed as well as the stamps. A deploy that reaches
-  this list writes its type-2 change rows here and creates no per-site
-  sidecars, so the list gained the eight CHANGE_FIELDS columns and the
-  drop-box posture that keeps a contributor from editing what it wrote.
+  READ THIS IF A SITE ALREADY RUNS THIS FAMILY. This tool never renames or
+  deletes a list. Redeploying creates `firmfooting_Deployments` and
+  `firmfooting_Changes` beside the existing `dbml-deployment-log`, which is
+  left exactly as it was: still there, still holding its history, still
+  readable. Nothing reads or writes it after the redeploy. Move its rows
+  into the two new lists by hand if the history is worth keeping, or leave
+  it and delete it once you no longer need it. There is no automatic
+  migration path, because a marker migration only works for a list that
+  keeps its title, and this one does not.
+
+  Every other deploy in the fleet already probes the new titles by default
+  (DBMLSP_DEPLOY_LOG_LIST and DBMLSP_CHANGE_LOG_LIST derive from the same
+  constants this family's entities are named for), so a fleet operator needs
+  no configuration change once this family is redeployed to the logging
+  site. A deploy pointed at the OLD title with an explicit
+  `--deployment-log-list dbml-deployment-log` keeps working against it until
+  that override is removed.
+
+  The permission level is renamed to `{prefix} firmfooting Deployments
+  Submit Only` and both new lists take the same drop-box posture the single
+  list had. Groups are unchanged: `dbml List Administrators` and `dbml
+  Enterprise Readers` already conform to the fleet's naming convention and
+  membership is never reconciled, so renaming a group would recreate it
+  empty and orphan whoever already held access through the old one.
+
+  1.1.0 carried the change feed as well as the stamps, on the single list
+  2.0.0 now splits. A deploy that reaches this list writes its type-2
+  change rows here and creates no per-site sidecars, so the list gained the
+  eight CHANGE_FIELDS columns and the drop-box posture that keeps a
+  contributor from editing what it wrote.

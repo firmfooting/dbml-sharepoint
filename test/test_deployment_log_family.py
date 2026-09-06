@@ -4,7 +4,8 @@
 Every family's deploy stamps a central log it never creates. The address it
 writes to is a list TITLE and a set of column INTERNAL NAMES, both literal
 strings held in `analysis/sidecars.py` and rendered into the logging phase.
-The `deployment-log` family is what provisions that list.
+The `deployment-log` family is what provisions those two lists: `Deployments`
+for stamps, `Changes` for the type-2 change feed.
 
 Nothing in a build can see the two sides disagree. A renamed column here
 still deploys, the stamp still POSTs, and SharePoint answers 400 for a field
@@ -13,19 +14,19 @@ The result is a central log that quietly stops recording, on a surface whose
 whole purpose is to notice things quietly stopping.
 
 So the join is pinned here rather than trusted: the family declares the
-columns the fleet writes, under the title the fleet writes to, with the
+columns the fleet writes, under the titles the fleet writes to, with the
 StampKind members the fleet sends.
 """
 
 import re
 
-import pytest
 from _paths import JINJA_TEMPLATES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.permissions import BUILT_IN_LEVELS
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
+    EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
 )
 from dbml_sharepoint.model.mapping_loader import expand_prefix, load_mapping
@@ -49,77 +50,74 @@ _KIND_AT_CALL = re.compile(r"stamp(?:External|RunLog)\(\s*'([^']+)'")
 #: literals are only visible here.
 _KIND_IN_TERNARY = re.compile(r"const kind = [^;]*\? '([^']+)' : '([^']+)'")
 
-#: `const CHANGE_STAMP_KIND = 'change';` A central change row is a row on the
-#: same list, told apart by StampKind, so the kind is a named constant the
-#: writer reads rather than a literal at a call site.
+#: `const CHANGE_STAMP_KIND = 'change';` A central change row is a row the
+#: current writer still POSTs to `Deployments` (the write path has not yet
+#: moved it to `Changes`; see schema.dbml), told apart by StampKind, so the
+#: kind is a named constant the writer reads rather than a literal at a call
+#: site.
 _KIND_AS_CONSTANT = re.compile(r"const CHANGE_STAMP_KIND = '([^']+)'")
 
 #: What a stamp row fills and a change row does not, and the reverse. The two
-#: shapes share the stamp half; neither fills all eighteen columns, so the
-#: contract is the UNION.
+#: shapes share the stamp half; neither fills every column across both lists,
+#: so the contract is the UNION.
 _ALL_CENTRAL_COLUMNS = frozenset(CENTRAL_LOG_COLUMNS) | frozenset(CENTRAL_CHANGE_COLUMNS)
 
 
-def _table() -> Table:
+def _tables() -> dict[str, Table]:
     schema = parse_dbml(FAMILY / "10-design" / "schema.dbml")
-    (table,) = schema.tables
-    return table
+    return {table.name: table for table in schema.tables}
 
 
-@pytest.mark.xfail(
-    reason=(
-        "central-log-naming Task 1 renamed EXTERNAL_LOG_DEFAULT to "
-        "'firmfooting_Deployments'; the family's table is still "
-        "'dbml-deployment-log' until Task 4 renames it to match."
-    ),
-    strict=True,
-)
-def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
-    """The list title is `prefix + entity name`, and the fleet probes the
-    literal. An empty prefix is a contract here, not a preference: a prefix
-    renames the one list every other deploy is pointed at."""
+def _family_list_titles() -> list[str]:
+    """Every list title this family declares, `prefix + entity`."""
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
-    (entity,) = mapping.entities
-    assert mapping.prefix == "", (
-        "deployment-log declares a prefix, so its list would deploy as "
-        f"{mapping.prefix + entity!r} while every other family's deploy "
-        f"probes {EXTERNAL_LOG_DEFAULT!r}."
+    return [mapping.prefix + entity for entity in mapping.entities]
+
+
+def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
+    """Each list title IS an address the fleet stamps. The defaults derive
+    from the same constants declared here, so the two cannot drift apart.
+    """
+    titles = _family_list_titles()
+    assert EXTERNAL_LOG_DEFAULT in titles, (
+        f"deployment-log declares {titles}, not including {EXTERNAL_LOG_DEFAULT!r}, "
+        "which is what every other family's deploy probes for stamps."
     )
-    assert mapping.prefix + entity == EXTERNAL_LOG_DEFAULT
+    assert EXTERNAL_CHANGE_LOG_DEFAULT in titles, (
+        f"deployment-log declares {titles}, not including {EXTERNAL_CHANGE_LOG_DEFAULT!r}, "
+        "which is what a deploy with a reachable central log probes for change rows."
+    )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "central-log-naming Task 2 added Application to CENTRAL_LOG_COLUMNS "
-        "and CENTRAL_CHANGE_COLUMNS; the family's table does not declare it "
-        "until Task 4 adds it to both split tables."
-    ),
-    strict=True,
-)
 def test_the_family_declares_every_column_the_fleet_writes() -> None:
     """`CENTRAL_LOG_COLUMNS` is what a full stamp POSTs and
-    `CENTRAL_CHANGE_COLUMNS` is what a central change row POSTs. A column the
-    family does not declare is a field SharePoint rejects, which degrades to an
+    `CENTRAL_CHANGE_COLUMNS` is what a central change row POSTs. A column
+    neither list declares is a field SharePoint rejects, which degrades to an
     INFO line rather than failing anything -- and for the change columns it
     costs the whole feed, since the run refuses to write it to the site
-    instead."""
-    declared = {column.name for column in _table().columns}
+    instead.
+
+    Checked across BOTH declared tables rather than one: the two column sets
+    are split between `Deployments` and `Changes` by design, not by mistake,
+    so nothing here requires either list to carry the whole union alone.
+    """
+    declared = {column.name for table in _tables().values() for column in table.columns}
     missing = sorted(_ALL_CENTRAL_COLUMNS - declared)
     assert not missing, (
-        f"the fleet stamps {missing}, which deployment-log does not declare. "
-        "Every stamp carrying one of those fields is refused by SharePoint "
-        "and skipped with an INFO line."
+        f"the fleet stamps {missing}, which deployment-log does not declare on "
+        "either list. Every stamp or change row carrying one of those fields is "
+        "refused by SharePoint and skipped with an INFO line."
     )
 
 
 def test_the_family_declares_nothing_the_fleet_does_not_write() -> None:
     """The other direction, and it is not symmetry for its own sake.
 
-    A column here that no stamp fills is a column that is always empty in the
-    one list somebody reads to find out what happened. It would read as
-    missing data rather than as a column nothing writes.
+    A column here that no stamp or change row fills is a column that is
+    always empty in the one place somebody reads to find out what happened.
+    It would read as missing data rather than as a column nothing writes.
     """
-    declared = {column.name for column in _table().columns}
+    declared = {column.name for table in _tables().values() for column in table.columns}
     extra = sorted(declared - _ALL_CENTRAL_COLUMNS - _PROVIDED)
     assert not extra, (
         f"deployment-log declares {extra}, which no row fills. Either add "
@@ -129,8 +127,9 @@ def test_the_family_declares_nothing_the_fleet_does_not_write() -> None:
 
 
 def test_the_stamp_kinds_are_the_ones_the_deploy_sends() -> None:
-    """`StampKind` is a CHOICE column, so a member the deploy does not send is
-    dead, and a kind the deploy sends that is not a member is refused at save.
+    """`StampKind` is a CHOICE column on `Deployments`, so a member the
+    deploy does not send is dead, and a kind the deploy sends that is not a
+    member is refused at save.
 
     Read out of the logging template rather than restated, because restating
     them here would pin this file against itself. If the extraction stops
@@ -186,7 +185,8 @@ def test_the_submit_only_level_grants_adding_and_no_changing() -> None:
 
     Asserted as an EQUALITY over the whole set rather than as two absences: a
     permission added here is one every site in the fleet gains over every
-    other site's rows, and `not in` assertions would not see it.
+    other site's rows, and `not in` assertions would not see it. One level,
+    shared by both `Deployments` and `Changes`.
     """
     (level,) = _permissions().levels
     assert set(level.base_permissions) == _SUBMIT_ONLY, (
@@ -197,24 +197,25 @@ def test_the_submit_only_level_grants_adding_and_no_changing() -> None:
 
 
 def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
-    """`{prefix}` is mandatory on a declared level and this family has none.
+    """`{prefix}` is mandatory on a declared level, and this family's prefix
+    is `firmfooting_`, the org token every other firmfooting application
+    shares.
 
-    So the placeholder expands away and the level ships as a bare name, which
-    has to be one no built-in level already uses -- a custom level colliding
-    with a built-in cannot be created, and the deploy would fail on a site
-    that is otherwise correct.
+    So the placeholder expands to that stem, and the level ships as a name no
+    built-in level already uses -- a custom level colliding with a built-in
+    cannot be created, and the deploy would fail on a site that is otherwise
+    correct.
 
     The declaration is read from the file because the loader has already
-    expanded it by the time it reaches the model, and `expand_prefix` strips
-    the leading space rather than leaving one.
+    expanded it by the time it reaches the model.
     """
     raw = (FAMILY / "20-configure" / "mapping.yaml").read_text(encoding="utf-8")
-    assert '- name: "{prefix} dbml Log Submit Only"' in raw
+    assert '- name: "{prefix} firmfooting Deployments Submit Only"' in raw
 
     (level,) = _permissions().levels
     assert level.name == expand_prefix(
-        "{prefix} dbml Log Submit Only", "", "permission_levels")
-    assert level.name == "dbml Log Submit Only"
+        "{prefix} firmfooting Deployments Submit Only", "firmfooting_", "permission_levels")
+    assert level.name == "firmfooting firmfooting Deployments Submit Only"
     assert level.name not in BUILT_IN_LEVELS
 
 
@@ -222,11 +223,14 @@ def test_the_member_binding_is_the_submit_only_level_and_a_replacement() -> None
     """Members hold submit-only HERE and Edit everywhere else on the site.
 
     `reconcile: exact` is what makes that a replacement: the declared pairs
-    are the allowlist and every other direct binding on the list is removed,
+    are the allowlist and every other direct binding on a list is removed,
     so an Edit inherited from the site cannot survive alongside the grant that
     is supposed to narrow it. Without the exact mode the deploy would add
     submit-only and leave Edit in place, and the more permissive of two
     bindings is what SharePoint applies.
+
+    One default policy, scoped to `site_role: default`, which both entities
+    declare, so this binding reaches `Deployments` and `Changes` alike.
     """
     policy = _permissions().default_policy
     assert policy is not None
@@ -239,15 +243,19 @@ def test_the_member_binding_is_the_submit_only_level_and_a_replacement() -> None
     assert [a.level for a in members] == [level.name]
 
 
-def test_the_list_trims_reads_and_writes_to_the_caller_s_own_items() -> None:
+def test_the_lists_trim_reads_and_writes_to_the_caller_s_own_items() -> None:
     """The half a role assignment cannot express.
 
     ViewListItems is list-wide: without ReadSecurity 2 the submit-only level
     lets every contributor read the whole fleet's deployment history. The
     level and the setting are one posture and neither is meaningful alone.
+    Checked on both entities: `item_security.default` applies to any entity
+    without its own override, and neither `Deployments` nor `Changes`
+    declares one.
     """
     mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
-    security = mapping.item_security_for("dbml-deployment-log")
-    assert (security.read, security.write) == ("own", "own")
-    assert (security.read_security, security.write_security) == (2, 2)
+    for entity in ("Deployments", "Changes"):
+        security = mapping.item_security_for(entity)
+        assert (security.read, security.write) == ("own", "own"), entity
+        assert (security.read_security, security.write_security) == (2, 2), entity
     assert mapping.declares_item_read_trimming()

@@ -6,7 +6,7 @@
     },
     {
       "displayname": "Where it ran",
-      "fields": ["SourceSite", "Operator"]
+      "fields": ["SourceSite", "Application", "Operator"]
     },
     {
       "displayname": "What was deployed",
@@ -15,13 +15,6 @@
     {
       "displayname": "What the run did",
       "fields": ["Details"]
-    },
-    {
-      "displayname": "What changed",
-      "fields": [
-        "ChangeKey", "ChangeKind", "TargetName", "OldValue", "NewValue",
-        "EffectiveFrom", "EffectiveTo", "IsCurrent"
-      ]
     }
   ]
 }

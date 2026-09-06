@@ -1,16 +1,18 @@
 // ============================================================================
-// Central deployment log: one list, on one site, written by every deploy in
+// Central deployment log: two lists, on one site, written by every deploy in
 // the fleet. Render the ERD by pasting this file into dbdiagram.io
 // ============================================================================
 
 Project deployment_log { database_type: 'SharePoint Online Lists' }
 
-// What a row records. Every member is written by the deploy script, never
-// typed: `deployment start` opens a run, `deployment stop` closes a clean
-// one, `abort` closes one that recorded errors, `provenance` names what
-// built the bundle, and `change` is one row of the deploy's type-2 change
-// feed. Adding a member here means teaching the deployer to write it,
-// because nothing else produces rows.
+// What a Deployments row records. Every member is written by the deploy
+// script, never typed: `deployment start` opens a run, `deployment stop`
+// closes a clean one, `abort` closes one that recorded errors, `provenance`
+// names what built the bundle, and `change` is a type-2 change row the
+// deploy has not yet moved to its own list (`Changes`, below) -- today's
+// writer still posts it here, with `StampKind: 'change'`, because it has one
+// central write target rather than two. Adding a member here means teaching
+// the deployer to write it, because nothing else produces rows.
 Enum stamp_kind {
   "deployment start"
   "deployment stop"
@@ -19,13 +21,15 @@ Enum stamp_kind {
   "change"
 }
 
-// The table name IS the SharePoint list title, and the mapping declares no
-// prefix, so this list is `dbml-deployment-log` on every site it reaches.
-// That exact spelling is what every other family's deploy probes
-// (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT) and what
-// DBMLSP_DEPLOY_LOG_LIST defaults to. Renaming the table renames the
-// address; change both or neither.
-Table "dbml-deployment-log" {
+// The table name IS the SharePoint list title, and `firmfooting_` is the
+// mapping's prefix: this list is `firmfooting_Deployments` on every site it
+// reaches, because it holds rows from every firmfooting application, of
+// which dbml-sharepoint is one. That exact spelling is what every other
+// family's deploy probes (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT) and
+// what DBMLSP_DEPLOY_LOG_LIST defaults to. Renaming the table renames the
+// address; change both or neither. The org token is the mapping's `prefix`,
+// so an org taking this family edits that one line rather than this file.
+Table Deployments {
   Id       int        [pk, increment]
   // The human-readable stamp, the one column a generic list is guaranteed
   // to have. A deploy that finds the structured columns absent writes this
@@ -39,38 +43,62 @@ Table "dbml-deployment-log" {
   DeployerVersion nvarchar [note: 'The dbml-sharepoint version that generated the bundle']
   Operator nvarchar   [note: 'The account that pasted the script. Read from SharePoint at run time, not typed']
   Details  longtext   [note: 'What the run did: error count, lists created and renamed, columns created and skipped, elapsed time. Free text, because the shape of it changes with the deployer']
+  Application nvarchar [not null, note: 'The firmfooting application that wrote this row. Written from a constant the writing tool owns, so a reader never has to parse it out of DeployerVersion']
 
-  // The CHANGE half. A `change` row is one type-2 slowly-changing-dimension
-  // record from a deploy's change feed, and these are the columns the
-  // on-site change log holds (analysis/sidecars.py, CHANGE_FIELDS). They are
-  // empty on a stamp row and filled on a change row: one list, two row
-  // shapes, told apart by StampKind, because a deploy that has a central log
-  // writes everything there and creates no per-site sidecars at all.
-  ChangeKey nvarchar [note: 'The reporting row key this change belongs to. Unique within a site, not across the fleet, so a reader groups by SourceSite and ChangeKey together']
+  // Supported indexes for the declared views and the filters a reader
+  // reaches for. StampKind is indexed because three of the four declared
+  // views filter on it; StampUtc because the default view sorts on it and
+  // this list grows with every deploy in the fleet. Application is indexed
+  // for the same reason as on `Changes`: cross-application reporting
+  // filters on it, and this list is deliberately unbounded.
+  indexes {
+    StampKind
+    SourceSite
+    StampUtc
+    Application
+  }
+
+  Note: 'Deployment stamps from every firmfooting application and every site this tool provisions: what was deployed, where, by whom, and whether it finished.'
+}
+
+// The central change log's type-2 half, split from `Deployments` so that
+// each list's name is true of every row in it (the split mirrors the
+// per-site pair this tool already keeps: `dbml_Deployments` never carries a
+// change row and `dbml_Changes` never carries a stamp). `firmfooting_Changes`
+// is what a deploy with a reachable central log probes for change rows
+// (analysis/sidecars.py, EXTERNAL_CHANGE_LOG_DEFAULT).
+Table Changes {
+  Id       int        [pk, increment]
+  // A change row still needs a human-readable line: this is what the
+  // SharePoint UI shows in every default view, and a log whose rows all
+  // read "Item" is unreadable in the browser.
+  Title    nvarchar   [not null, note: 'The change as one sentence: the key this row belongs to. Written by the deploy script']
+  // Kept from the stamp half: a change row still says which site raised it
+  // and still needs a timestamp to sort on, independent of EffectiveFrom.
+  SourceSite nvarchar [note: 'The site the change was made on. ChangeKey is unique only within a site, so a reader groups by SourceSite and ChangeKey together']
+  StampUtc datetime   [not null, note: 'When this row was written, in UTC. The deploy sends UTC so rows from sites in different regions sort against each other']
+  ChangeKey nvarchar [note: 'The reporting row key this change belongs to. Unique within a site, not across the fleet']
   ChangeKind nvarchar [note: 'What changed: rename, create, permission']
   TargetName nvarchar [note: 'The list, level or group the change lands on']
   OldValue nvarchar [note: 'The value before the change; empty for a create']
   NewValue nvarchar [note: 'The value after the change']
   EffectiveFrom datetime [note: 'When the change took effect']
   EffectiveTo datetime [note: 'When the next change for this key took effect. Empty on the current row']
-  IsCurrent boolean [note: 'Whether this row is the current one for its key and site. Exactly one row per (SourceSite, ChangeKey) carries true']
+  IsCurrent boolean [note: 'Whether this row is the current one for its key, site and application. Exactly one row per (SourceSite, ChangeKey, Application) carries true']
+  Application nvarchar [not null, note: 'The firmfooting application that wrote this row. ChangeKey is unique only within a site, so two applications provisioning lists on one site can raise the same key; the type-2 close filters on this column as well, so it never closes a row that belongs to a different application']
 
-  // Supported indexes for the declared views and the filters a reader
-  // reaches for. StampUtc is indexed because the default view sorts on it
-  // and a fleet log is the one list here that grows without bound.
-  //
-  // SourceSite, ChangeKey and IsCurrent are the type-2 close filter, read as
-  // one three-way AND (`SourceSite eq X and ChangeKey eq Y and IsCurrent eq
-  // true`). EVERY side of an AND has to be indexed for the filter to survive
-  // the 5,000-item list view threshold, and this is the one list in the
-  // catalogue that passes it as a matter of course.
+  // SourceSite, ChangeKey, Application and IsCurrent are the type-2 close
+  // filter, read as one four-way AND (`SourceSite eq X and ChangeKey eq Y
+  // and Application eq Z and IsCurrent eq true`). EVERY side of an AND has
+  // to be indexed for the filter to survive the 5,000-item list view
+  // threshold, and this is a list that grows with every change any
+  // firmfooting application makes, on any site.
   indexes {
-    StampKind
     SourceSite
-    StampUtc
     ChangeKey
     IsCurrent
+    Application
   }
 
-  Note: 'Deployment stamps and change rows from every site this tool provisions: what was deployed, where, by whom, whether it finished, and what changed.'
+  Note: 'Type-2 change rows from every firmfooting application and site this tool provisions: what changed, when, and whether the row is still current.'
 }
