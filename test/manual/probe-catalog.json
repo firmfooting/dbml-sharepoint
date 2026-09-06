@@ -902,7 +902,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -5861,6 +5861,90 @@
             "library.doc-lib.fixture-library-created",
             "library.doc-lib.control-description-sticks",
             "library.doc-lib.control-unknown-property-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "boolean-field-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, a text control column and up to four Yes/No columns on it"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.boolean.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.boolean.control-text-create",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "field.boolean.control-text-indexed",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create"
+              ]
+            },
+            {
+              "id": "field.boolean.fieldboolean-entity-type",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create"
+              ]
+            },
+            {
+              "id": "field.boolean.spfield-entity-type",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create"
+              ]
+            },
+            {
+              "id": "field.boolean.addfieldasxml-type-boolean",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create"
+              ]
+            },
+            {
+              "id": "field.boolean.indexed-property",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create",
+                "field.boolean.control-text-indexed"
+              ]
+            },
+            {
+              "id": "field.boolean.default-value-spelling",
+              "depends_on": [
+                "field.boolean.fixture-scratch-list",
+                "field.boolean.control-text-create"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.boolean.fixture-scratch-list",
+            "field.boolean.control-text-create",
+            "field.boolean.control-text-indexed"
           ],
           "depends_on": []
         }
