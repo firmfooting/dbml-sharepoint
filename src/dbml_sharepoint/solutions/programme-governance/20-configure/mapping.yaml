@@ -156,6 +156,11 @@ calculated_formulas:
   # factors. That register scores what to digitise, where pain is the driver;
   # this one scores what to map, where the return is per run.
   BusinessProcess:
+    # Flat twelve months, because a backlog row carries no rating to read. The
+    # blank arm is the point: blank LastReviewedDate means nobody has ever
+    # swept the row, and deriving a due date from a sweep that never happened
+    # would bury the finding. Same month-end clamp as the other three.
+    NextReviewDue: '=IF(ISBLANK([LastReviewedDate]),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0)))'
     PriorityScore: '=IF(OR(ISBLANK([Criticality]),ISBLANK([Frequency])),"",IF([Criticality]="Low",1,IF([Criticality]="Medium",2,3))*IF([Frequency]="A few times a year",1,IF([Frequency]="Monthly",2,3)))'
   Risk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
@@ -523,6 +528,7 @@ column_formatting:
     # shouting after the decision trains people to ignore the colour.
     NextReviewDue:
       style: overdue-date
+      calculated: true
       guard:
         field: MappingStatus
         not: ["Mapped", "Out of scope"]
@@ -1605,12 +1611,6 @@ column_validation:
         when:
           - { field: LastReviewedDate, op: leq, value: today }
         message: "A sweep cannot have happened in the future. Use the date somebody actually checked this row, or leave it blank until one has."
-      NextReviewDue:
-        when:
-          any_of:
-            - { field: NextReviewDue, op: is_null }
-            - { field: NextReviewDue, op: leq, value: today+365 }
-        message: "The register is swept annually. Pick a review date within the next twelve months, or leave it blank until somebody has actually looked at this process."
   Activity:
     columns:
       LastConfirmed:
@@ -1807,8 +1807,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Mapping"
         Notes: "Demo row. Four teams act and none of them can name the order. A leaver kept mailbox access for three weeks in March because nobody owned the step after HR closed the record."
+        Stakeholders: [{ demo_ref: stakeholder-digital-director }, { demo_ref: stakeholder-privacy }]
         LastReviewedDate: "today-40"
-        NextReviewDue: "today-10"
     - key: process-onboard
       values:
         Title: "[DEMO] Onboard a new starter"
@@ -1820,8 +1820,8 @@ demo_items:
         MappingPriority: "Now"
         MappingStatus: "Ready to map"
         Notes: "Demo row. Owner deliberately blank: HR, IT and facilities each own a part and nobody owns the whole, which is the finding rather than a gap to fill in."
+        Stakeholders: [{ demo_ref: stakeholder-champions }]
         LastReviewedDate: "today-30"
-        NextReviewDue: "today+60"
     - key: process-guest
       values:
         Title: "[DEMO] Grant a guest access to a Team"
@@ -1836,7 +1836,6 @@ demo_items:
         MappingStatus: "Ready to map"
         Notes: "Demo row. Currently a request by email to whoever is around. No expiry, so guests accumulate."
         LastReviewedDate: "today-60"
-        NextReviewDue: "today+30"
     - key: process-create-team
       values:
         Title: "[DEMO] Create a Team"
@@ -1849,7 +1848,6 @@ demo_items:
         MappingPriority: "Next"
         MappingStatus: "Identified"
         Notes: "Demo row. Runs often enough that a map pays back quickly, but it mostly works today, so it waits behind the two that do not."
-        NextReviewDue: "today+90"
     - key: process-shared-mailbox
       values:
         Title: "[DEMO] Request a shared mailbox"
@@ -1864,7 +1862,6 @@ demo_items:
         MapUrl: "https://example.com/process-maps/demo-shared-mailbox"
         Notes: "Demo row. Mapped in March. The review date is long past and reads plain rather than red, because a mapped process is settled."
         LastReviewedDate: "today-200"
-        NextReviewDue: "today-200"
     - key: process-mobile
       values:
         Title: "[DEMO] Order a mobile phone"
@@ -1877,7 +1874,6 @@ demo_items:
         MappingStatus: "Out of scope"
         Notes: "Demo row. Considered and ruled out: it touches no M365 surface the project is changing. Kept so the same question is not asked again in six months. No workstream, so it lands in the blank group under By workstream."
         LastReviewedDate: "today-15"
-        NextReviewDue: "today+300"
 
   Workstream:
     - key: ws-migration

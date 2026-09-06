@@ -28,6 +28,7 @@
       "displayname": "Map it",
       "fields": [
         "MappingStatus",
+        "Stakeholders",
         "MapUrl",
         "Notes"
       ]

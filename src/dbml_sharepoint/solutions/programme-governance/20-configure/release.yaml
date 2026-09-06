@@ -1,8 +1,38 @@
-release: "2.3.0"
-date: "2026-09-05"
+release: "2.4.0"
+date: "2026-09-06"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.3.0"
+schema_version: "2.4.0"
 notes: |
+  2.4.0 makes BusinessProcess.NextReviewDue CALCULATED, twelve months after
+  LastReviewedDate, and gives BusinessProcess a multi-value Stakeholders
+  lookup.
+
+  2.2.1 said on that column that you set the date yourself, because a backlog
+  row carries no rating to derive a cadence from the way a risk does. It
+  carries none and needs none: twelve months from the last sweep is a cadence
+  a formula can hold, and the whole point of splitting the review date in
+  2.2.0 was that a date somebody can type is a date somebody can push out.
+  Blank LastReviewedDate still yields a blank due date, because inventing one
+  from a sweep that never happened would bury the finding that nobody has
+  looked. The month-end clamp is the same one 2.3.0 gave the other three.
+
+  READ THIS IF YOU ARE ALREADY ON 2.2.x OR 2.3.0. SharePoint cannot turn a
+  typed date into a calculated one in place. Delete the NextReviewDue column
+  with the columns sidecar before redeploying, and the deploy will create the
+  calculated one. A site on 2.1.0 or earlier has no NextReviewDue at all and
+  needs nothing: the column is created calculated and no data moves. The save
+  rule that capped the typed date at twelve months is gone, since nobody can
+  type the column now.
+
+  Stakeholders is the first multi-value lookup in any shipped family. It
+  names everyone worth interviewing about how a process actually runs, which
+  is what a mapping session needs and what the single Owner column could not
+  hold. It is NOT indexed and cannot be: measured 2026-09-02, Indexed=true on
+  a LookupMulti was refused HTTP 500 "This column type is not supported for
+  indexing" and read back false, while a single-value control in the same run
+  took the index. It costs one join like any other lookup, taking the list to
+  3 of the ceiling of 12, so no view is at risk.
+
   2.3.0 clamps Activity.ConfirmationDue and Risk.NextReviewDue at month end.
   Adding months with DATE(Y, M+N, D) alone overflowed rather than clamping,
   so a confirmation recorded 31 August fell due 3 March rather than 28

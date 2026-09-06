@@ -135,10 +135,14 @@ six where the response is Manage or Tolerate, twelve otherwise. Completing a
 review means moving `LastReviewedDate`, and the next date follows on its own.
 The one save rule left is that a review cannot be dated in the future.
 
-That is a deliberate difference from `GOV_BusinessProcess`, where
-`NextReviewDue` is typed by hand and capped at twelve months. A backlog sweep
-has no rating to derive a cadence from, so there the pairing of the two dates
-is a human read rather than arithmetic.
+`GOV_BusinessProcess` works the same way since 2.4.0, on a flat twelve
+months. It was typed by hand and capped at twelve months until then, on the
+reasoning that a backlog sweep has no rating to derive a cadence from. It has
+none, and does not need one: twelve months from the last sweep is a cadence a
+formula can carry, and a date nobody can type is a date nobody can push out.
+Its one difference from `GOV_Risk` remains that `LastReviewedDate` is optional
+there, so a row nobody has ever swept shows no due date at all rather than a
+guess.
 
 **2. Every authorised service request names the person who authorised
 it, and every request being worked names its handler.**
