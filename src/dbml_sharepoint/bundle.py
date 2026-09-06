@@ -326,6 +326,7 @@ def emit_bundle(
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
     deployment_log_list: str | None = None,
+    deployment_log_change_list: str | None = None,
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
@@ -395,6 +396,7 @@ def emit_bundle(
             ),
             sidecar_change_fields=[] if no_sidecars else sidecars_mod.CHANGE_FIELDS,
             deployment_log_list=deployment_log_list or "",
+            deployment_log_change_list=deployment_log_change_list or "",
             deployment_log_site=deployment_log_site or "",
         ),
     )

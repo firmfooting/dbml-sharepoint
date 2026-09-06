@@ -28,16 +28,13 @@ them creates the site either.
       giving list titles `firmfooting_Deployments` and `firmfooting_Changes`,
       which is what other families' deploys probe for by default. Changing
       it moves the target; if you do, set `DBMLSP_DEPLOY_LOG_LIST` and
-      `DBMLSP_CHANGE_LOG_LIST` to the new titles in every project that stamps
+      `DBMLSP_DEPLOY_CHANGES` to the new titles in every project that stamps
       this log, and `DBMLSP_DEPLOY_LOG_SITE` to the site title.
 - [ ] The `StampKind` members are a contract, not a preference: the deploy
       scripts write the literal strings `deployment start`, `deployment stop`,
       `abort` and `provenance` to `Deployments`. Renaming one makes every
       stamp of that kind fail its choice-field validation. Decide **before
-      first deploy** whether you are keeping them, and keep them. (A fifth
-      member, `change`, is kept for the current writer, which still posts a
-      central change row to `Deployments` rather than to `Changes`; that is
-      a known transitional state to expect, not something to rename around.)
+      first deploy** whether you are keeping them, and keep them.
 - [ ] Members of this site will hold **submit-only** on both lists: add a
       row, read back only the rows they wrote, edit and delete nothing. That
       is what an operator deploying another family somewhere else needs in
@@ -175,13 +172,12 @@ deploying account is neither, add it to `dbml List Administrators` before
 you rely on the log.
 
 **One consequence, and it is visible in the data.** A central change row is a
-type-2 record: writing a new one normally closes the previous current row
-for the same site, key and application by setting `EffectiveTo` and
-`IsCurrent: false` (today, on `Deployments`; see "Then point the fleet at
-it" below for why). Closing a row is an edit, and submit-only holds no
-EditListItems, so an operator writing from another site appends the new row
-and leaves the old one open. The deploy probes for the edit bit and says so
-in one INFO line when it cannot close. Read currency as **the latest
+type-2 record: writing a new one normally closes the previous current row for
+the same site, key and application by setting `EffectiveTo` and
+`IsCurrent: false`, on `Changes`. Closing a row is an edit, and submit-only
+holds no EditListItems, so an operator writing from another site appends the
+new row and leaves the old one open. The deploy probes for the edit bit and
+says so in one INFO line when it cannot close. Read currency as **the latest
 `EffectiveFrom` per `SourceSite`, `ChangeKey` and `Application`** rather than
 trusting `IsCurrent`, unless the writing account holds Full Control here.
 
@@ -219,36 +215,40 @@ project's `dbml-sharepoint.env`:
 ```text
 DBMLSP_DEPLOY_LOG_SITE=your-logging-site
 DBMLSP_DEPLOY_LOG_LIST=firmfooting_Deployments
-DBMLSP_CHANGE_LOG_LIST=firmfooting_Changes
+DBMLSP_DEPLOY_CHANGES=firmfooting_Changes
 ```
 
 Setting any of them to empty disables the corresponding writes for that
-project.
+project: the site or the deployments list disables the whole pair, and the
+change list alone disables only the change feed, leaving the stamps
+untouched.
 
-**Today's writer still sends every change row to `Deployments`, StampKind
-`change`, rather than to `Changes`.** Splitting that write path is a later
-piece of work, and until it lands `Changes` stays declared, indexed and
-permissioned, but unwritten by this tool's own deploys. Expect nothing to
-land there yet: do not read an empty `Changes` list as a permissions or
-site problem.
+**The two lists are probed and written independently, straight after each
+other.** Only the Deployments probe decides whether a project's run is
+CENTRAL at all; the Changes probe never promotes or demotes it. A `Changes`
+list that is absent, unreachable, redeployed with a different title, or
+missing a declared column costs that project's change feed alone -- its
+stamps still land on `Deployments` in full.
 
 Prove it end to end before you rely on it: deploy any other family to any
 other site, and watch `Deployments`' **Latest first** view gain a
-`deployment start` row, a `provenance` row, a `deployment stop` row and, for
-anything that deploy altered, a `change` row -- all on `Deployments`, per
-the caveat above. If nothing arrives, read that deploy's transcript. Three
-INFO lines say which of the three probes failed: the site was not found, the
-list was not found, or the operator cannot add items to it. A failed probe
-**skips** the stamp; it never fails the deploy, which is why a silent
-absence has to be checked for rather than waited for.
+`deployment start` row, a `provenance` row and a `deployment stop` row, and
+`Changes`' **Latest first** view gain a row for anything that deploy
+altered. If nothing arrives on one list but the other fills as expected,
+read that deploy's transcript: each list is probed and named separately,
+and three INFO lines per list say which of the three probes failed -- the
+site was not found, the list was not found, or the operator cannot add
+items to it. A failed probe **skips** that list's writes; it never fails the
+deploy, which is why a silent absence has to be checked for rather than
+waited for.
 
-A deploy that reaches these lists writes everything here and creates no
+A deploy that reaches `Deployments` writes its stamps here and creates no
 per-site sidecar lists at all: no `dbml_Deployments`, no `dbml_Changes`. The
-mode is chosen once, before any list is provisioned, from whether these
-lists answer the probes, and it never changes mid-run. A deploy that cannot
-reach the central lists falls back to the two site-local lists, which is the
-old behaviour and the reason they still exist. So the sidecars appearing on
-a source site is the signal that its stamps are not arriving here, and their
+mode is chosen once, before any list is provisioned, from whether
+`Deployments` answers its probe, and it never changes mid-run. A deploy that
+cannot reach it falls back to the two site-local lists, which is the old
+behaviour and the reason they still exist. So the sidecars appearing on a
+source site is the signal that its stamps are not arriving here, and their
 absence is the signal that they are.
 
 ## Redeploying

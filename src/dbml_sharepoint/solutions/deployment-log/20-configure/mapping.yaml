@@ -172,8 +172,7 @@ display_names:
 # Column formatting: the fleet style standard (website/docs/reference/
 # style-guide.md). One pill, on the one column a reader scans down.
 # `abort` is the only member that means "look at this"; the other three
-# routine kinds and the transitional `change` kind (see schema.dbml) all
-# take a quieter treatment.
+# routine kinds take a quieter treatment.
 #
 # Deliberately NOT declared: a row-level wash. An aborted run is already one
 # filtered view of its own, and section 1.6 exists to stop a second signal
@@ -187,7 +186,6 @@ column_formatting:
         "deployment stop": good
         "abort": blocked
         "provenance": muted
-        "change": muted
 
 # Declared views. "Latest first" is the default on each list because the
 # question either list is opened with is almost always "what happened most

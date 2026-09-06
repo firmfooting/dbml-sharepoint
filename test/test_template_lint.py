@@ -87,7 +87,8 @@ KNOWN_CONTEXT = {
     # `deployment-log` family provisions.
     "sidecar_run_log_title", "sidecar_run_log_marker", "sidecar_run_log_fields",
     "sidecar_change_log_title", "sidecar_change_log_marker",
-    "sidecar_change_fields", "deployment_log_list", "deployment_log_site",
+    "sidecar_change_fields", "deployment_log_list", "deployment_log_change_list",
+    "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
     "deployment_log_row_prefix", "application_name",
     # extractgen (extract.js). `deployer_version` is bare here rather than

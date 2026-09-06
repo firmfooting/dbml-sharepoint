@@ -8,17 +8,19 @@ Project deployment_log { database_type: 'SharePoint Online Lists' }
 // What a Deployments row records. Every member is written by the deploy
 // script, never typed: `deployment start` opens a run, `deployment stop`
 // closes a clean one, `abort` closes one that recorded errors, `provenance`
-// names what built the bundle, and `change` is a type-2 change row the
-// deploy has not yet moved to its own list (`Changes`, below) -- today's
-// writer still posts it here, with `StampKind: 'change'`, because it has one
-// central write target rather than two. Adding a member here means teaching
-// the deployer to write it, because nothing else produces rows.
+// names what built the bundle. Adding a member here means teaching the
+// deployer to write it, because nothing else produces rows.
+//
+// `change` retired: it named a type-2 change row posted here, with
+// `StampKind: 'change'`, back when the writer had one central target rather
+// than two. A change row now goes to its own list (`Changes`, below), which
+// carries no StampKind column at all, so `change` stopped being a value any
+// writer could send here.
 Enum stamp_kind {
   "deployment start"
   "deployment stop"
   "abort"
   "provenance"
-  "change"
 }
 
 // The table name IS the SharePoint list title, and `firmfooting_` is the

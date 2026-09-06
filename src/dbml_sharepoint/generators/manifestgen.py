@@ -34,6 +34,7 @@ def generate_manifest(
     sidecar_run_log_title: str | None = None,
     sidecar_change_log_title: str | None = None,
     deployment_log_list: str = "",
+    deployment_log_change_list: str = "",
     deployment_log_site: str = "",
 ) -> str:
     """Render the deploy manifest for ONE build.
@@ -332,5 +333,6 @@ def generate_manifest(
         sidecar_run_log_title=sidecar_run_log_title,
         sidecar_change_log_title=sidecar_change_log_title,
         deployment_log_list=deployment_log_list or "",
+        deployment_log_change_list=deployment_log_change_list or "",
         deployment_log_site=deployment_log_site or "",
     )

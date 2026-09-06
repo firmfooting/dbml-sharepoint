@@ -121,13 +121,9 @@ which version of the tool built what. Chosen period: ______.
 ## Lifecycle
 
 Both lists are expected to **grow forever** and this is the one family in the
-collection where that is the design rather than a smell. Once the central
-write path sends change rows to `Changes` instead of `Deployments` (a later
-change; see "Then point the fleet at it" in `30-deploy/deploy.md` for
-today's actual behaviour), `Changes` will grow faster than `Deployments`,
-because a deploy writes one change row per change and only a handful of
-stamp rows per run. Until then, `Deployments` alone carries the whole load
-and makes no per-site sidecars at all. The indexes on `Deployments`
+collection where that is the design rather than a smell. `Changes` grows
+faster than `Deployments`, because a deploy writes one change row per change
+and only a handful of stamp rows per run. The indexes on `Deployments`
 (`StampKind`, `SourceSite`, `StampUtc`,
 `Application`) and on `Changes` (`SourceSite`, `ChangeKey`, `IsCurrent`,
 `Application`) are what keep the filtered views and the change-row close

@@ -43,6 +43,13 @@ ENTERPRISE_READER_PARAMETER: Final = "enterprise_reader"
 DEPLOYMENT_LOG_LIST_KEY: Final = "DBMLSP_DEPLOY_LOG_LIST"
 DEPLOYMENT_LOG_LIST_PARAMETER: Final = "deployment_log_list"
 
+# The Changes list's partner to DEPLOYMENT_LOG_LIST_KEY above: the two
+# central lists are provisioned together by the deployment-log family, so an
+# org that renames the family's prefix needs to redirect both, not just the
+# one every deploy already had a flag for.
+DEPLOYMENT_CHANGE_LOG_LIST_KEY: Final = "DBMLSP_DEPLOY_CHANGES"
+DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER: Final = "deployment_log_change_list"
+
 DEPLOYMENT_LOG_SITE_KEY: Final = "DBMLSP_DEPLOY_LOG_SITE"
 DEPLOYMENT_LOG_SITE_PARAMETER: Final = "deployment_log_site"
 
@@ -68,6 +75,16 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         ),
     ),
     EnvSetting(
+        key=DEPLOYMENT_CHANGE_LOG_LIST_KEY,
+        parameter=DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
+        help=(
+            "Title of the central change log to write type-2 change rows "
+            "into, beside the deployment log above. Created by deploying "
+            "the deployment-log family; every other deploy writes to it if "
+            "reachable. Empty disables the central change rows."
+        ),
+    ),
+    EnvSetting(
         key=DEPLOYMENT_LOG_SITE_KEY,
         parameter=DEPLOYMENT_LOG_SITE_PARAMETER,
         help=(
@@ -81,7 +98,7 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         parameter=CHANGE_LOG_LIST_PARAMETER,
         help=(
             "Title of the hidden change log the deploy writes type-2 rows "
-            "into. Default: the tool's own dbml_Logs sidecar."
+            "into. Default: the tool's own dbml_Changes sidecar."
         ),
     ),
 )

@@ -184,18 +184,26 @@ that a logging failure cannot trip a later phase's abort gate.
 {% if deployment_log_list %}
 
 This bundle also stamps a **central deployment log**: the site
-`{{ deployment_log_site }}` and the list `{{ deployment_log_list }}` on it,
-shared by every firmfooting application. The script checks three things before
-its first stamp -- the site exists, the list exists on it, and this account
-holds AddListItems (Contribute or better) on the list -- reading the
-permission from the list itself, not the web. A miss on any of the three
-degrades to an INFO line and the run carries on. A stamp that gets past all
-three and is still refused is a logging failure like any other: a `[WARN]`
-count and an entry under `loggingFailures`, never an abort. The run log on
-THIS site holds the record either way. The central site and list are never
-created by a deploy: create
-them once with the deploy-central-log sidecar, or override both with
-`DBMLSP_DEPLOY_LOG_SITE` / `DBMLSP_DEPLOY_LOG_LIST` (empty disables).
+`{{ deployment_log_site }}` and the Deployments list `{{ deployment_log_list }}`
+on it, shared by every firmfooting application.
+{% if deployment_log_change_list %}
+Change rows go to the Changes list `{{ deployment_log_change_list }}` beside
+it on the same site, probed and written independently: a Changes list that
+is absent, unreachable or short a declared column costs only the change
+feed, and the run's stamps are unaffected either way.
+{% endif %}
+The script checks three things before its first stamp -- the site
+exists, the list exists on it, and this account holds AddListItems (Contribute
+or better) on the list -- reading the permission from the list itself, not the
+web. A miss on any of the three degrades to an INFO line and the run carries
+on. A stamp that gets past all three and is still refused is a logging failure
+like any other: a `[WARN]` count and an entry under `loggingFailures`, never an
+abort. The run log on THIS site holds the record either way. The central site
+and lists are never created by a deploy: create the site once and deploy the
+deployment-log family to it, or override the pair with `DBMLSP_DEPLOY_LOG_SITE`
+/ `DBMLSP_DEPLOY_LOG_LIST` / `DBMLSP_DEPLOY_CHANGES` (empty on the site or the
+deployments list disables the whole pair; empty on the change list alone drops
+only the change feed).
 {% endif %}
 {% endif %}
 

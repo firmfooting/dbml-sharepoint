@@ -50,13 +50,6 @@ _KIND_AT_CALL = re.compile(r"stamp(?:External|RunLog)\(\s*'([^']+)'")
 #: literals are only visible here.
 _KIND_IN_TERNARY = re.compile(r"const kind = [^;]*\? '([^']+)' : '([^']+)'")
 
-#: `const CHANGE_STAMP_KIND = 'change';` A central change row is a row the
-#: current writer still POSTs to `Deployments` (the write path has not yet
-#: moved it to `Changes`; see schema.dbml), told apart by StampKind, so the
-#: kind is a named constant the writer reads rather than a literal at a call
-#: site.
-_KIND_AS_CONSTANT = re.compile(r"const CHANGE_STAMP_KIND = '([^']+)'")
-
 #: What a stamp row fills and a change row does not, and the reverse. The two
 #: shapes share the stamp half; neither fills every column across both lists,
 #: so the contract is the UNION.
@@ -158,20 +151,22 @@ def test_the_stamp_kinds_are_the_ones_the_deploy_sends() -> None:
 
     Read out of the logging template rather than restated, because restating
     them here would pin this file against itself. If the extraction stops
-    finding five kinds the template has been restructured, and that is a
+    finding four kinds the template has been restructured, and that is a
     failure worth looking at rather than a pass worth having.
 
-    Three extraction shapes, because the template spells its kinds three ways:
-    at the call site, in the finish path's ternary, and as the named constant
-    a central change row carries.
+    Two extraction shapes, because the template spells its kinds two ways: at
+    the call site and in the finish path's ternary. `change` used to be a
+    third, named as a constant a central change row carried when it still
+    shared this list under `StampKind: 'change'`; a change row has its own
+    list now, carrying no StampKind column, so nothing left in the template
+    spells that kind at all.
     """
     text = LOGGING_TEMPLATE.read_text(encoding="utf-8")
     sent = set(_KIND_AT_CALL.findall(text))
     for pair in _KIND_IN_TERNARY.findall(text):
         sent.update(pair)
-    sent.update(_KIND_AS_CONSTANT.findall(text))
-    assert len(sent) == 5, (
-        f"found {sorted(sent)} in {LOGGING_TEMPLATE.name}, not the five stamp "
+    assert len(sent) == 4, (
+        f"found {sorted(sent)} in {LOGGING_TEMPLATE.name}, not the four stamp "
         "kinds. The template has been restructured; re-read it and fix the "
         "patterns above rather than the count."
     )

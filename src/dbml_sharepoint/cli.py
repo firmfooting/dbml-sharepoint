@@ -24,6 +24,7 @@ from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
+    EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
     run_log_title,
 )
@@ -89,6 +90,7 @@ from dbml_sharepoint.generators.reportgen import (
 )
 from dbml_sharepoint.model.env_file import (
     CHANGE_LOG_LIST_PARAMETER,
+    DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
     DEPLOYMENT_LOG_LIST_PARAMETER,
     DEPLOYMENT_LOG_SITE_PARAMETER,
     ENTERPRISE_READER_PARAMETER,
@@ -629,6 +631,16 @@ def build(
         f"'{CENTRAL_LOG_SITE_DEFAULT}' unless {ENV_FILENAME} names another; "
         "pass '' to disable the external stamps.",
     ),
+    deployment_log_change_list: str | None = typer.Option(
+        None,
+        "--deployment-changes",
+        help="Title of the central change log to write type-2 change rows "
+        "into, on the same site as --deployment-log-list, beside it. Created "
+        "by deploying the deployment-log family; every other deploy writes "
+        f"to it when it can reach it. Default: '{EXTERNAL_CHANGE_LOG_DEFAULT}' "
+        f"unless {ENV_FILENAME} names another; pass '' to disable the "
+        "central change rows.",
+    ),
     deployment_log_site: str | None = typer.Option(
         None,
         "--deployment-log-site",
@@ -703,6 +715,7 @@ def build(
         enterprise_reader=enterprise_reader,
         env_file=_resolve_env_file(env_file),
         deployment_log_list=deployment_log_list,
+        deployment_log_change_list=deployment_log_change_list,
         deployment_log_site=deployment_log_site,
         change_log_list=change_log_list,
         no_sidecars=no_sidecars,
@@ -797,11 +810,12 @@ def _resolve_env_settings(
     env_file: Path | None,
     enterprise_reader: str | EnterpriseReaderDeclined | None,
     deployment_log_list: str | None,
+    deployment_log_change_list: str | None,
     deployment_log_site: str | None,
     change_log_list: str | None,
 ) -> tuple[
     str | EnterpriseReaderDeclined | None,
-    str | None, str | None, str | None,
+    str | None, str | None, str | None, str | None,
     EnvProvenance,
 ]:
     """Apply a resolved dbml-sharepoint.env file, honouring anything already
@@ -816,7 +830,7 @@ def _resolve_env_settings(
     `env_file` is a path already resolved by the caller (`_resolve_env_file`
     for `build`); this function does no discovery of its own, only parsing.
 
-    The two list-name settings resolve to ``None`` ONLY when neither a flag
+    The four list-name settings resolve to ``None`` ONLY when neither a flag
     nor the file supplied anything (so the template can distinguish "the
     operator turned the external log off" from "nothing was said"): the
     build's own flags carry defaults, so in practice a plain build always
@@ -824,8 +838,8 @@ def _resolve_env_settings(
     """
     if env_file is None:
         return (
-            enterprise_reader, deployment_log_list, deployment_log_site,
-            change_log_list, NO_ENV_FILE,
+            enterprise_reader, deployment_log_list, deployment_log_change_list,
+            deployment_log_site, change_log_list, NO_ENV_FILE,
         )
 
     try:
@@ -836,12 +850,13 @@ def _resolve_env_settings(
         # passing it again here just printed it twice.
         _config_error("env file", None, exc)
 
-    # Declared as a STR-typed mapping for the three list-name settings and a
+    # Declared as a STR-typed mapping for the four list-name settings and a
     # separate variable for the reader, because the reader carries the
     # declined sentinel and the names do not. One precedence loop, one
     # shapes-problem avoided.
     resolved: dict[str, str | None] = {
         DEPLOYMENT_LOG_LIST_PARAMETER: deployment_log_list,
+        DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER: deployment_log_change_list,
         DEPLOYMENT_LOG_SITE_PARAMETER: deployment_log_site,
         CHANGE_LOG_LIST_PARAMETER: change_log_list,
     }
@@ -884,6 +899,7 @@ def _resolve_env_settings(
     return (
         resolved_reader,
         resolved[DEPLOYMENT_LOG_LIST_PARAMETER],
+        resolved[DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER],
         resolved[DEPLOYMENT_LOG_SITE_PARAMETER],
         resolved[CHANGE_LOG_LIST_PARAMETER],
         provenance,
@@ -922,6 +938,7 @@ def execute_build(
     enterprise_reader: str | EnterpriseReaderDeclined | None = None,
     env_file: Path | None = None,
     deployment_log_list: str | None = None,
+    deployment_log_change_list: str | None = None,
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
@@ -972,11 +989,12 @@ def execute_build(
 
     _require_known_site_role(bundle, site_role)
 
-    enterprise_reader, resolved_external, resolved_site, resolved_change, env_provenance = (
-        _resolve_env_settings(
-            env_file, enterprise_reader, deployment_log_list,
-            deployment_log_site, change_log_list,
-        )
+    (
+        enterprise_reader, resolved_external, resolved_external_change,
+        resolved_site, resolved_change, env_provenance,
+    ) = _resolve_env_settings(
+        env_file, enterprise_reader, deployment_log_list,
+        deployment_log_change_list, deployment_log_site, change_log_list,
     )
     _echo_env_provenance(env_provenance)
     # Post-resolution defaults, and the three states the external log name
@@ -993,6 +1011,8 @@ def execute_build(
     # validation, so nothing invisible can turn the feature off.
     if resolved_external is not None and resolved_external != "":
         _validate_list_title(resolved_external, "--deployment-log-list")
+    if resolved_external_change is not None and resolved_external_change != "":
+        _validate_list_title(resolved_external_change, "--deployment-changes")
     if resolved_site is not None and resolved_site != "":
         _validate_site_name(resolved_site, "--deployment-log-site")
     if resolved_change is not None:
@@ -1002,17 +1022,27 @@ def execute_build(
         if resolved_external is None
         else resolved_external  # '' stays '' (off); a title stays itself
     )
+    external_change_log = (
+        EXTERNAL_CHANGE_LOG_DEFAULT
+        if resolved_external_change is None
+        else resolved_external_change  # '' stays '' (off); a title stays itself
+    )
     external_site = (
         CENTRAL_LOG_SITE_DEFAULT
         if resolved_site is None
         else resolved_site
     )
     change_log = resolved_change if resolved_change is not None else CHANGE_LOG_TITLE
-    # The site and the list are one feature: '' on either is the documented
-    # disable for the external stamps as a whole.
+    # The site and the deployments list are one feature: '' on either is the
+    # documented disable for the external stamps AND for the change list
+    # beside them, since a change list with no deployments list to decide
+    # LOG_MODE has nowhere to be central about. '' on the change list alone
+    # does NOT disable the pair the other way: an org that wants stamps
+    # without the central change feed sets only this one to ''.
     if external_site == "" or external_log == "":
         external_site = ""
         external_log = ""
+        external_change_log = ""
 
     # `isinstance`, not `is not None`: the declined sentinel means nobody is
     # enrolled and must skip validation and the group check just as `None` does.
@@ -1146,6 +1176,7 @@ def execute_build(
         sidecar_run_log_title=None if no_sidecars else run_log_title(),
         sidecar_change_log_title=None if no_sidecars else change_log,
         deployment_log_list=external_log or "",
+        deployment_log_change_list=external_change_log or "",
         deployment_log_site=external_site or "",
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
@@ -1186,6 +1217,7 @@ def execute_build(
             enterprise_reader=resolved_enterprise_reader,
             env_provenance=env_provenance,
             deployment_log_list=external_log or "",
+            deployment_log_change_list=external_change_log or "",
             deployment_log_site=external_site or "",
             change_log_list=None if no_sidecars else change_log,
             no_sidecars=no_sidecars,

@@ -22,11 +22,6 @@ A complete run leaves a start, a provenance and a stop. A start with no stop
 and no abort means the browser tab was closed, the network dropped, or the
 person walked away; treat it as unfinished until somebody says otherwise.
 
-You may also see a fifth kind, **change**, on `Deployments`: today's writer
-still posts a central change row there rather than to `Changes`, so a row
-carrying it is the same change-feed content described below, in the wrong
-list for now. Read it the same way you would a `Changes` row.
-
 `Changes` holds one row per change a run made: which list, level or group,
 the old value, the new value, and the window the value held for. A run
 leaves one of these per change and none if it changed nothing. Read it

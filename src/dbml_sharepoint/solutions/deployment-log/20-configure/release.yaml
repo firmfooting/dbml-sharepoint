@@ -1,8 +1,31 @@
-release: "2.0.0"
+release: "2.1.0"
 date: "2026-09-07"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.0.0"
+schema_version: "2.1.0"
 notes: |
+  2.1.0 finishes what 2.0.0 started. The deploy writer previously declared
+  two lists but still posted every change row to `firmfooting_Deployments`
+  with `StampKind: 'change'`, which made the split cosmetic: `Changes`
+  existed and was reachable, and nothing ever wrote to it. The writer now
+  posts change rows to `firmfooting_Changes` instead, probed and written
+  independently of the stamps, so a Changes list that is absent,
+  unreachable or short a column costs only the change feed and a fleet's
+  stamps are unaffected either way.
+
+  `change` is retired from the `stamp_kind` enum on `Deployments`: a change
+  row never reaches that list now, so `change` was never a value any writer
+  could send there. A row already stamped `change` by a build older than
+  2.0.0 keeps that value on read; SharePoint does not require a stored
+  Choice value to remain in the field's current Choices list, so narrowing
+  the set does not touch existing rows.
+
+  Every other deploy in the fleet already probes both new titles by default:
+  `DBMLSP_DEPLOY_LOG_LIST` for `firmfooting_Deployments` and the new
+  `DBMLSP_DEPLOY_CHANGES` for `firmfooting_Changes`, both deriving from the
+  same constants this family's entities are named for. A fleet operator
+  needs no configuration change once this family is redeployed to the
+  logging site.
+
   2.0.0 is a breaking rename: the single `dbml-deployment-log` list splits
   into `firmfooting_Deployments` and `firmfooting_Changes`, one per row
   shape, under the family's own prefix rather than a bare title. Every other
@@ -18,15 +41,9 @@ notes: |
   into the two new lists by hand if the history is worth keeping, or leave
   it and delete it once you no longer need it. There is no automatic
   migration path, because a marker migration only works for a list that
-  keeps its title, and this one does not.
-
-  Every other deploy in the fleet already probes the new titles by default
-  (DBMLSP_DEPLOY_LOG_LIST and DBMLSP_CHANGE_LOG_LIST derive from the same
-  constants this family's entities are named for), so a fleet operator needs
-  no configuration change once this family is redeployed to the logging
-  site. A deploy pointed at the OLD title with an explicit
-  `--deployment-log-list dbml-deployment-log` keeps working against it until
-  that override is removed.
+  keeps its title, and this one does not. A deploy pointed at the OLD title
+  with an explicit `--deployment-log-list dbml-deployment-log` keeps
+  working against it until that override is removed.
 
   The permission level is renamed to `{prefix} Deployments Submit Only`
   and both new lists take the same drop-box posture the single list had.
@@ -36,7 +53,6 @@ notes: |
   empty and orphan whoever already held access through the old one.
 
   1.1.0 carried the change feed as well as the stamps, on the single list
-  2.0.0 now splits. A deploy that reaches this list writes its type-2
-  change rows here and creates no per-site sidecars, so the list gained the
-  eight CHANGE_FIELDS columns and the drop-box posture that keeps a
+  2.0.0 split. `Changes` carries the eleven CENTRAL_CHANGE_COLUMNS columns
+  (analysis/sidecars.py) plus Title, and the drop-box posture that keeps a
   contributor from editing what it wrote.
