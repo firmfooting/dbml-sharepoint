@@ -68,6 +68,266 @@
       ]
     },
     {
+      "file": "built-in-levels-probe.js",
+      "surface": "access",
+      "harness": "shared-v2",
+      "authority": "allow-writes",
+      "writes": [
+        "one bit cleared from and restored on each built-in permission level",
+        "two run-unique custom role definitions"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "a disposable site the operator owns, because every write lands on site-collection-wide permission levels",
+        "the site's built-in Read still at High=176 Low=138612833; the probe refuses to write otherwise"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.built-in-level.control-roledefinitions-readable",
+              "depends_on": []
+            },
+            {
+              "id": "access.built-in-level.control-roster-complete",
+              "depends_on": [
+                "access.built-in-level.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.control-read-mask-matches-reference",
+              "depends_on": [
+                "access.built-in-level.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.level-census",
+              "depends_on": [
+                "access.built-in-level.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.documented-editability-agrees",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.guest-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.guest-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.guest-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.guest-restore-verified",
+              "depends_on": [
+                "access.built-in-level.guest-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.guest-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.reader-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.reader-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.reader-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.reader-restore-verified",
+              "depends_on": [
+                "access.built-in-level.reader-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.reader-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.contributor-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.contributor-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.contributor-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.contributor-restore-verified",
+              "depends_on": [
+                "access.built-in-level.contributor-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.contributor-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.editor-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.editor-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.editor-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.editor-restore-verified",
+              "depends_on": [
+                "access.built-in-level.editor-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.editor-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.webdesigner-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.webdesigner-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.webdesigner-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.webdesigner-restore-verified",
+              "depends_on": [
+                "access.built-in-level.webdesigner-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.webdesigner-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.administrator-basepermissions-editable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.control-read-mask-matches-reference"
+              ]
+            },
+            {
+              "id": "access.built-in-level.administrator-no-silent-cascade",
+              "depends_on": [
+                "access.built-in-level.administrator-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.administrator-restore-verified",
+              "depends_on": [
+                "access.built-in-level.administrator-basepermissions-editable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.administrator-deletable",
+              "depends_on": [
+                "access.built-in-level.control-roster-complete",
+                "access.built-in-level.masquerade-roletypekind-readback"
+              ]
+            },
+            {
+              "id": "access.built-in-level.masquerade-create-accepted",
+              "depends_on": [
+                "access.built-in-level.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.masquerade-roletypekind-readback",
+              "depends_on": [
+                "access.built-in-level.masquerade-create-accepted"
+              ]
+            },
+            {
+              "id": "access.built-in-level.masquerade-delete-guarded",
+              "depends_on": [
+                "access.built-in-level.masquerade-create-accepted"
+              ]
+            },
+            {
+              "id": "access.built-in-level.masquerade-level-removed",
+              "depends_on": [
+                "access.built-in-level.masquerade-create-accepted"
+              ]
+            },
+            {
+              "id": "access.built-in-level.rename-to-builtin-accepted",
+              "depends_on": [
+                "access.built-in-level.control-roledefinitions-readable"
+              ]
+            },
+            {
+              "id": "access.built-in-level.duplicate-name-resolution",
+              "depends_on": [
+                "access.built-in-level.rename-to-builtin-accepted"
+              ]
+            },
+            {
+              "id": "access.built-in-level.rename-level-removed",
+              "depends_on": [
+                "access.built-in-level.rename-to-builtin-accepted"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.built-in-level.control-roledefinitions-readable",
+            "access.built-in-level.control-roster-complete",
+            "access.built-in-level.control-read-mask-matches-reference"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "calculated-choice-operand.js",
       "surface": "formula",
       "harness": "shared-v1",

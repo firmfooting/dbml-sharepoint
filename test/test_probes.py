@@ -205,11 +205,21 @@ def test_no_tracked_file_under_manual_names_a_tenant() -> None:
 WRITE_CALL = re.compile(r"""method:\s*['"](POST|MERGE|DELETE|PUT)['"]""")
 
 # Flags that must ship off. CLEANUP is here because it is the most
-# destructive of the three (it recycles the probe's list and its items
+# destructive of the list flags (it recycles the probe's list and its items
 # before the run), and a probe committed with it on would do that to
 # whoever pasted the file. CLEANUP_AT_END is the legacy probe's separate,
 # opposite-timing flag; it is guarded for the same reason.
-GUARD_FLAGS = ("CONFIRMED", "ALLOW_WRITES", "CLEANUP", "CLEANUP_AT_END")
+# ALLOW_DESTRUCTIVE_DELETE guards a delete of an object the probe did not
+# create and cannot fully rebuild, which is a wider blast radius than any
+# of the others: built-in-levels-probe.js deletes site-collection-wide
+# permission levels, losing their Id and every role assignment naming them.
+GUARD_FLAGS = (
+    "CONFIRMED",
+    "ALLOW_WRITES",
+    "CLEANUP",
+    "CLEANUP_AT_END",
+    "ALLOW_DESTRUCTIVE_DELETE",
+)
 
 
 def test_a_probe_that_writes_defaults_to_read_only() -> None:
