@@ -19,6 +19,8 @@ from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
+from dbml_sharepoint.analysis.ordering import site_tables_in_order
+from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
@@ -1025,6 +1027,43 @@ def execute_build(
             raise typer.BadParameter(
                 "--enterprise-reader was given but the mapping declares no "
                 "group with enroll_enterprise_reader: true.",
+            )
+
+        # Declaring the group is not the same as granting it anything HERE.
+        # `ENTERPRISE_READER_GROUP_NOT_GRANTED` unions every policy block and
+        # so is satisfied by a grant in any site role, while a default policy
+        # scoped to another role is excluded per list by
+        # `permissions_for_entity`. `--site-role branch --enterprise-reader`
+        # against a default scoped to `hq` therefore emitted a bundle whose
+        # `list_assignments` was empty: the account is enrolled permanently,
+        # the run reports success, and it can read none of this site's lists.
+        #
+        # Refused here rather than in the validator, which has no site role
+        # and could only refuse the mapping outright -- the same mapping is
+        # correct for the role that does grant the group. Resolved through
+        # `lists_granting_group`, which asks `permissions_for_entity` per list
+        # exactly as jsgen does when it binds the live role assignments, so
+        # this refuses on what the deploy would do rather than on the
+        # mapping's shape.
+        deployed_here = site_tables_in_order(
+            parsed_schema, bundle.mapping.entities, site_role,
+        )
+        granted_anywhere_here = any(
+            lists_granting_group(bundle.mapping, g.name, deployed_here)[0]
+            for g in targets
+        )
+        if not granted_anywhere_here:
+            names = ", ".join(repr(g.name) for g in targets)
+            raise typer.BadParameter(
+                f"--enterprise-reader names an account to enrol into "
+                f"{names}, which is granted no permission level on any list "
+                f"site role {site_role!r} deploys. The enrolment is permanent "
+                f"once the deploy reaches its end and the run would report "
+                f"success, so the account would hold access to nothing here "
+                f"and nothing on the site would say so. Grant the group in "
+                f"this role's list_permissions, build the site role whose "
+                f"policy does grant it, or build without "
+                f"--enterprise-reader.",
             )
 
     # Everything above this line is a pure read that can refuse: a malformed

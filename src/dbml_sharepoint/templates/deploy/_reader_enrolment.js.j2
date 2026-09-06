@@ -126,13 +126,16 @@
           .flatMap(la => la.assignments)
           .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
           .map(a => a.level))];
-        // WARN rather than abort. The validator
+        // WARN rather than abort, and on a bundle this tool produced this is
+        // now unreachable. The validator
         // (ENTERPRISE_READER_GROUP_NOT_GRANTED) requires the flagged group to
         // hold a grant SOMEWHERE in the mapping, and `list_assignments` holds
         // only the lists in the site role THIS bundle deploys, so a mapping
-        // that grants the reader in another role reaches here legitimately
-        // with nothing to check. Nothing is granted either, so there is no
-        // bitmap that could be wrong and nothing to fail closed on.
+        // granting the reader in another role used to reach here with nothing
+        // to check; `build` now refuses that combination outright (#200 gap
+        // 3). It stays for a HAND-EDITED bundle, the same reason the loop
+        // above is a loop, and stays a WARN because nothing is granted: there
+        // is no bitmap that could be wrong and nothing to fail closed on.
         if (levelNames.length === 0) {
           log('WARN', `'${grp.name}' is granted no permission level on the lists this bundle `
             + `deploys, so enrolling '${READER_ADDRESS}' into it grants nothing here. Its `
@@ -366,6 +369,34 @@
         const listMembers = members => members
           .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
           .join('; ');
+        // The same invariant applied to the state this run LEAVES, which is
+        // asked on BOTH ways out of this block: the enrolment below, and the
+        // already-a-member path that adds nothing. `before` is a snapshot,
+        // and the run does not end at it -- lists are created for as long as
+        // the rest of the deploy takes. Checking only the writing path left
+        // the other one reporting success against a snapshot taken before
+        // the work started, on a group whose entire purpose is that it holds
+        // one account.
+        //
+        // Nothing removes a STRANGER here, for the reason the before-read
+        // gives: membership is an operator-owned concern and this is a gate,
+        // not a reconciler for accounts this run did not add. It fails closed
+        // AFTER the read, which is deliberate -- the operator is told exactly
+        // what the group now holds rather than left to find out. What happens
+        // to THIS run's own write differs between the two callers, so `undo`
+        // is the caller's sentence to supply.
+        const refuseLateArrivals = (after, undo) => {
+          const strays = foreign(after);
+          if (strays.length === 0) return;
+          throw new Error(
+            `group '${grp.name}' now also holds ${strays.length} principal(s) that were not `
+            + `there when this run checked: ${listMembers(strays)}. Somebody added them while `
+            + `this script was running. That group grants Read on EVERY list this bundle `
+            + `provisions, so each of them can read all of it. ${undo} Review the membership `
+            + `in Site permissions > Groups for the others and remove whoever should not be `
+            + `there, then run this script again.`,
+          );
+        };
         const others = foreign(before);
         if (others.length > 0) {
           const listed = listMembers(others);
@@ -382,6 +413,18 @@
           );
         }
         if (before.some(isReader)) {
+          // A redeploy writes nothing here, and used to `continue` on the
+          // strength of `before` alone. That made the whole gate a check on
+          // one snapshot: a principal added between this read and the end of
+          // the run passed unnoticed, and the run reported success on a group
+          // holding a second reader. The window is the length of the deploy,
+          // not the length of this phase, and a deploy is pasted into a site
+          // while people are working in it.
+          refuseLateArrivals(
+            await readMembers(),
+            `This run enrolled nobody -- '${READER_ADDRESS}' was already a member -- so it `
+            + `has no write of its own to undo.`,
+          );
           log('INFO', `'${resolved.Title || READER_ADDRESS}' is already a member of '${grp.name}'; membership left untouched.`);
           continue;
         }
@@ -415,36 +458,15 @@
         if (!after.some(isReader)) {
           throw new Error(`'${READER_ADDRESS}' was accepted into '${grp.name}' but is absent when the membership is read back; the grant did not take effect`);
         }
-        // The SAME exclusivity invariant the before-read enforced, applied to
-        // the state this run LEFT. Checking only presence made the gate above
-        // a check on a stale snapshot: another administrator adding a
-        // principal between the two reads passed unnoticed, and the run
-        // reported success on a group whose entire purpose is that it holds
-        // one account. The window is small and a live site is exactly where
-        // small windows get hit -- a deploy is pasted while people are
-        // working in the site.
-        //
-        // Nothing removes a STRANGER here, for the reason the before-read
-        // gives: membership is an operator-owned concern and this is a
-        // gate, not a reconciler for accounts this run did not add. It
-        // fails closed AFTER the write, which is deliberate -- the operator
-        // is told exactly what the group now holds rather than left to find
-        // out. This run's OWN account is a different matter: it was
+        // The same invariant the before-read enforced, applied to the state
+        // this run LEFT. This run's OWN account is not a stray: it was
         // recorded above and deploy.js.j2's finally removes it, because the
         // abort below means the run never reached the end.
-        const strays = foreign(after);
-        if (strays.length > 0) {
-          throw new Error(
-            `'${READER_ADDRESS}' was enrolled into '${grp.name}', but that group now also holds `
-            + `${strays.length} other principal(s) that were not there when this run checked: `
-            + `${listMembers(strays)}. Somebody added them while this script was running. That `
-            + `group grants Read on EVERY list this bundle provisions, so each of them can read `
-            + `all of it. This run's own enrolment of '${READER_ADDRESS}' will be removed `
-            + `automatically as this script exits, since the run does not reach its end. Review `
-            + `the membership in Site permissions > Groups for the others and remove whoever `
-            + `should not be there, then run this script again.`,
-          );
-        }
+        refuseLateArrivals(
+          after,
+          `This run's own enrolment of '${READER_ADDRESS}' will be removed automatically as `
+          + `this script exits, since the run does not reach its end.`,
+        );
         log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT once this run reaches its end; if a later phase aborts it is removed automatically. Once permanent, remove it in Site permissions > Groups when the account no longer needs access.`);
         logChange({ key: `reader: ${READER_ADDRESS}`, kind: 'reader-enrolled',
           target: READER_ADDRESS, oldValue: '',

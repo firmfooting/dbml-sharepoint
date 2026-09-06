@@ -118,6 +118,11 @@ Behaviour worth knowing:
 - `--site-role` is checked against the roles the mapping actually
   declares; a misspelled role is an error, never a silently empty
   deploy plan.
+- `--enterprise-reader` needs the flagged group to be granted something
+  on a list the role being built actually deploys, not merely somewhere
+  in the mapping. A default policy scoped to another site role grants
+  nothing here, and the enrolment is permanent, so the build refuses
+  rather than enrol an account that can read none of this site's lists.
 - `--dry-run` still writes `deploy-manifest.md`, so you can read the
   findings and the deployment plan. It is the JS that is withheld.
 - An extension that requires its own project CLI causes `build` to exit

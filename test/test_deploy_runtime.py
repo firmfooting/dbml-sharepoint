@@ -3704,6 +3704,7 @@ def _reader_harness(
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
     stray_on_write: dict[str, Any] | None = None,
+    stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
@@ -3722,6 +3723,12 @@ def _reader_harness(
     `members`, because a principal present before the run is caught by the
     gate that runs first -- the whole point is that this one arrives after
     that gate has already passed.
+
+    `stray_after_read` is the same arrival on a run that WRITES NOTHING: it
+    appends the principal as the first full membership read finishes, so a
+    redeploy naming an account that is already a member sees it too.
+    `stray_on_write` cannot model that case, because that path issues no
+    POST for it to hang off.
 
     `member_pages` serves the membership across SEVERAL OData pages, each
     but the last carrying a `__next`. A group whose membership arrives in
@@ -3743,6 +3750,8 @@ def _reader_harness(
         const READER_MEMBER_PAGES = __MEMBER_PAGES__;
         const DROP_READBACK = __DROP_READBACK__;
         const STRAY_ON_WRITE = __STRAY_ON_WRITE__;
+        const STRAY_AFTER_READ = __STRAY_AFTER_READ__;
+        let strayAfterReadApplied = false;
         const READ_BITMAP = __READ_BITMAP__;
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
@@ -3812,13 +3821,27 @@ def _reader_harness(
             // mock, which would answer an unrelated empty membership.
             const marked = /[?&]page=(\d+)/.exec(u);
             const page = marked ? Number(marked[1]) : 0;
-            const payload = { d: { results: READER_MEMBER_PAGES[page] || [] } };
-            if (page + 1 < READER_MEMBER_PAGES.length) {
+            // Copied, not aliased: STRAY_AFTER_READ mutates the page array
+            // below and `respond` resolves the payload lazily, so a live
+            // reference would put the stray into the very response that is
+            // meant to predate it.
+            const payload = { d: { results: [...(READER_MEMBER_PAGES[page] || [])] } };
+            const lastPage = page + 1 >= READER_MEMBER_PAGES.length;
+            if (!lastPage) {
               payload.d.__next =
                 'https://example.sharepoint.com/_api/web/sitegroups(9)/users?page='
                 + (page + 1);
             }
-            return respond(payload);
+            const answer = respond(payload);
+            // Somebody else's write landing between two reads. Applied as the
+            // FIRST full traversal finishes (the last page, with no __next),
+            // and once only, so the second read is the one that sees it.
+            if (lastPage && STRAY_AFTER_READ && !strayAfterReadApplied) {
+              strayAfterReadApplied = true;
+              READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
+                STRAY_AFTER_READ);
+            }
+            return answer;
           }
           return _beforeReader(url, opts);
         };
@@ -3830,6 +3853,8 @@ def _reader_harness(
         "__DROP_READBACK__", "true" if drop_readback else "false",
     ).replace(
         "__STRAY_ON_WRITE__", json.dumps(stray_on_write),
+    ).replace(
+        "__STRAY_AFTER_READ__", json.dumps(stray_after_read),
     ).replace(
         "__READ_BITMAP__", json.dumps(read_bitmap),
     ).replace(
@@ -3844,6 +3869,7 @@ def _run_reader_deploy(
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
     stray_on_write: dict[str, Any] | None = None,
+    stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
@@ -3855,7 +3881,7 @@ def _run_reader_deploy(
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
-        read_bitmap=read_bitmap,
+        stray_after_read=stray_after_read, read_bitmap=read_bitmap,
     ) + "\n" + _reader_deploy_js().replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -4297,6 +4323,45 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     # that the reader phase is not what stopped it.
     assert summary.get("aborted") != "reader-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_principal_added_during_a_redeploy_that_writes_nothing_aborts() -> None:
+    """The exclusivity re-read must also run on the path that adds nobody.
+
+    The idempotent redeploy above used to `continue` on the strength of the
+    before-read alone, so the gate was a check on one snapshot rather than on
+    the state the run leaves. The run then goes on creating lists for as long
+    as the deploy takes and reports success at the end, so a principal added
+    in that window held Read on every list in the bundle with nothing in the
+    run to say so.
+
+    The stray arrives AFTER the first read finishes, which is what makes this
+    the already-enrolled path and not a rerun of the before-read gate: seeding
+    it into `members` would be caught by the gate that runs first.
+    """
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER,
+        members=[{
+            "Id": _RESOLVED_USER["Id"], "Title": _RESOLVED_USER["Title"],
+            "LoginName": _RESOLVED_USER["LoginName"],
+        }],
+        stray_after_read=_OTHER_MEMBER,
+    )
+    # The message first: without the re-read the run carries on and aborts
+    # later for an unrelated reason, so asserting the abort code first would
+    # report that reason and bury this one.
+    errors = _reader_errors(summary)
+    assert errors, summary
+    assert "while this script was running" in str(errors), errors
+    assert _OTHER_MEMBER["LoginName"] in str(errors), errors
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    # This path writes nothing, so there is nothing for the abort to undo and
+    # the stray, which this run did not add, is still not removed.
+    assert not _membership_writes(calls), "the idempotent path enrolled somebody"
+    assert not _removals(calls), (
+        f"a run that added nobody removed somebody: {_removals(calls)}"
+    )
 
 
 # Task 6 (security-phase atomicity, #213 form 1): the reader enrolment must
