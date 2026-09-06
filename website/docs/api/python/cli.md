@@ -291,6 +291,26 @@ table is printed again after each delete; a blank answer finishes.
 Deleting a column removes its values from every item, and nothing goes
 to the recycle bin.
 
+### `identify_script`
+
+```python
+def identify_script(site_url: str | None = ..., out: pathlib.Path | None = ...) -> None
+```
+
+Generate the read-only browser-paste script that reports what is on a site.
+
+The script reads the web's own facts, every list, group and permission
+level, and which of them this tool provisioned and for which family. It
+reads the columns of the lists it owns, and reports the last deployment
+the site recorded. It prints the result as tables and offers it as a JSON
+download.
+
+NO SITE URL IS NEEDED. The script runs against whichever web it is
+pasted on, so one file walks every site in a fleet. Pass --site-url to pin
+it to one, which is worth doing when handing the file to somebody else.
+
+Every request the script makes is a GET. It carries no write helpers.
+
 ### `extract`
 
 ```python

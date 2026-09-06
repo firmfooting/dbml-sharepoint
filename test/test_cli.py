@@ -118,6 +118,15 @@ def test_a_bare_invocation_prints_help_when_not_a_terminal() -> None:
     assert "report" in result.stdout
 
 
+#: Every command the help screen documents. Named once because two tests walk
+#: it, and a command added to one copy and not the other was checked by
+#: whichever test happened to have it.
+DOCUMENTED_COMMANDS = (
+    "build", "validate", "report", "extract", "extract-script",
+    "protection-script", "columns-script", "identify-script", "version",
+)
+
+
 def test_the_wizard_is_reachable_by_name() -> None:
     """`new` exists so the wizard can be asked for explicitly, and so it
     appears in --help rather than being an undocumented default."""
@@ -130,14 +139,41 @@ def test_every_documented_command_survived_the_wizard_default() -> None:
     change that can turn a subcommand into a no-op: the callback runs for
     every invocation, and an early `raise typer.Exit` in it would swallow
     them all while `--help` kept listing them."""
-    for command in (
-        "build", "validate", "report", "extract", "extract-script",
-        "protection-script", "columns-script", "version",
-    ):
+    for command in DOCUMENTED_COMMANDS:
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, f"{command} --help failed"
         assert command in result.stdout
 
+
+def test_identify_script_is_portable_across_a_fleet_by_default(tmp_path: Path) -> None:
+    """No site URL is the default, because one file has to walk a fleet."""
+    out = tmp_path / "identify.js.txt"
+    result = runner.invoke(app, ["identify-script", "--out", str(out)])
+    assert result.exit_code == 0, result.stdout
+    written = out.read_text(encoding="utf-8")
+    assert "site-mismatch" not in written
+    assert "SITE IDENTIFICATION" in written
+
+
+def test_identify_script_pins_to_a_site_when_one_is_named(tmp_path: Path) -> None:
+    out = tmp_path / "identify.js.txt"
+    result = runner.invoke(app, [
+        "identify-script", "--site-url", "https://contoso.sharepoint.com/sites/risk",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.stdout
+    written = out.read_text(encoding="utf-8")
+    assert "site-mismatch" in written
+    assert "https://contoso.sharepoint.com/sites/risk" in written
+
+
+def test_identify_script_refuses_a_site_url_that_is_not_one(tmp_path: Path) -> None:
+    """`--site-url` meets the same rule every other operator-typed one does."""
+    result = runner.invoke(app, [
+        "identify-script", "--site-url", "not-a-url",
+        "--out", str(tmp_path / "identify.js.txt"),
+    ])
+    assert result.exit_code != 0
 
 def test_help_still_renders_as_rich_panels() -> None:
     """The CLI's help screen is its user surface, and nothing else asserts it.
@@ -183,10 +219,7 @@ def test_help_still_renders_as_rich_panels() -> None:
 
     # Every registered command is listed. A command silently dropped from the
     # help screen is invisible to anyone who has not read the source.
-    for command in (
-        "build", "validate", "report", "extract", "extract-script",
-        "protection-script", "columns-script", "version",
-    ):
+    for command in DOCUMENTED_COMMANDS:
         assert command in out, f"{command!r} is missing from the help screen"
 
 
