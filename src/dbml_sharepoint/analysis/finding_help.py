@@ -173,6 +173,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the New form, so the rule cannot be satisfied there and would "
         "reject every new item."
     ),
+    FindingCode.COLUMN_VALIDATION_MISSING_A_BLANK_ARM: (
+        "A column validation on a NULLABLE column compares the value against "
+        "something without saying what a blank does. Whether SharePoint refuses "
+        "a blank operand or ignores the rule is unmeasured, so the guarded "
+        "spelling is the only one that behaves the same either way: wrap the "
+        "comparison in `any_of` with an `is_null` test on the same column, or "
+        "make the column `not null` if a value was always meant to be required. "
+        "A rule that compares a date with `today` or a datetime with `now` does "
+        "not need this -- the build hoists it onto the list rule and guards it "
+        "there (see `analysis/save_rules.py`)."
+    ),
     FindingCode.COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS: (
         "A column validation formula references a column other than its "
         "own; SharePoint permits only the column being validated."

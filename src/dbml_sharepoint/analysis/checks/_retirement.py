@@ -20,6 +20,73 @@ from dbml_sharepoint.analysis.rendered_columns import (
     rendered_columns,
     undeployable,
 )
+from dbml_sharepoint.analysis.save_rules import (
+    accepts_a_blank,
+    compares_with_the_clock,
+    refuses_a_blank,
+)
+from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition
+
+#: Shipped families that carry an unguarded comparison on a nullable column,
+#: measured 2026-09-06 over every family in `solutions/`. Grandfathered so the
+#: rule can refuse NEW instances without the library-wide sweep that issue #156
+#: reserves for one change with one argument. A ratchet: entries only come out,
+#: and `test_validator_retirement.py` pins this set to exactly the shipped
+#: violations, so a new one in a shipped family fails the suite even though the
+#: validator would let it build.
+#:
+#: Keyed on entity and column rather than on the family, because the validator
+#: never sees which family it is building. An author's own mapping that reuses
+#: one of these pairs for the same shape of rule is silenced with it, which is
+#: the price of not editing thirteen shipped mappings from inside this change.
+GRANDFATHERED_BLANK_ARMS: frozenset[tuple[str, str]] = frozenset({
+    ("Asset", "PurchaseCost"),
+    ("Contract", "AnnualValue"),
+    ("Contract", "NoticePeriodDays"),
+    ("GiftBenefit", "EstimatedValue"),
+    ("ServiceRequest", "MinutesSpent"),
+    ("Submission", "AmountAwarded"),
+    ("Submission", "AmountSought"),
+    ("Trip", "OdoEnd"),
+})
+
+
+def _blank_arm(
+    ctx: str,
+    entity: str,
+    column: str,
+    condition: Condition,
+    types: dict[str, str],
+    nullable: set[str],
+    at: Location,
+) -> list[Finding]:
+    """Whether a nullable column's rule says what a blank does.
+
+    The build already treats an unguarded comparison as the unsafe spelling:
+    every column rule it hoists onto the list rule is wrapped in an `is_null`
+    arm first, and `reference/mapping.md` describes that as a guard "so a blank
+    never fails it". A rule that stays on the column escapes the guard because
+    of its operand type rather than because anybody decided a blank is fine
+    there. Whether SharePoint refuses a blank operand is unmeasured (issue
+    #156), and the guarded form is the one that behaves identically under both
+    answers, so this fails closed.
+    """
+    if column not in nullable or (entity, column) in GRANDFATHERED_BLANK_ARMS:
+        return []
+    # A hoisted rule is guarded by `joined_list_validation`, not here.
+    if compares_with_the_clock(condition, types):
+        return []
+    if accepts_a_blank(column, condition) or refuses_a_blank(column, condition):
+        return []
+    if all(leaf.op in VALUELESS_OPS for leaf in leaves(condition)):
+        return []
+    return [Finding(
+        FindingCode.COLUMN_VALIDATION_MISSING_A_BLANK_ARM,
+        f"{ctx}.{column}: {column!r} is nullable and the rule compares it without "
+        f"saying what a blank does. Wrap it in `any_of` with an `is_null` test on "
+        f"{column!r}, or declare the column `not null`.",
+        location=at,
+    )]
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -295,6 +362,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             {c.name: c.type for c in section_table.columns}, xcols,
         )
         lookups = {c.name for c in section_table.columns if c.ref is not None}
+        nullable = {c.name for c in section_table.columns if not c.required}
         ctx = f"column_validation[{cv_entity}]"
         for column, cv_rule in cv_section.columns.items():
             col_at = replace(cv_at, column=column)
@@ -341,6 +409,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             findings.extend(problems)
             if not problems:
+                findings.extend(_blank_arm(
+                    ctx, cv_entity, column, cv_rule.when, types, nullable, col_at,
+                ))
                 # Measured as SharePoint receives it: display names, and a
                 # `[Name]` inside a string literal left alone.
                 formula = rewrite_formula_refs(

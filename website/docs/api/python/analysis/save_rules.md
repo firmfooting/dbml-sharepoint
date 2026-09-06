@@ -75,6 +75,25 @@ def hoisted_columns(section: dbml_sharepoint.model.mapping_types.EntitySection[d
 
 The column rules that move to the list, in declaration order.
 
+### `accepts_a_blank`
+
+```python
+def accepts_a_blank(column: str, condition: Condition) -> bool
+```
+
+Whether a rule already passes a blank: a top-level OR with an
+`is_null` test on its own column.
+
+### `refuses_a_blank`
+
+```python
+def refuses_a_blank(column: str, condition: Condition) -> bool
+```
+
+Whether a rule settles the blank case the other way: a top-level
+`is_not_null` on its own column makes the value mandatory, so adding an
+`is_null` arm beside it would contradict what the author wrote.
+
 ### `effective_list_validation`
 
 ```python

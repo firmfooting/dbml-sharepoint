@@ -1150,6 +1150,28 @@ reference only the column being validated. A condition naming any other
 column is a build error pointing at `list_validation:`, which is the
 cross-column surface and takes the identical `when` + `message` shape.
 
+**A nullable column's rule must say what a blank does.** Whether SharePoint
+refuses a blank operand or treats the rule as not applicable has not been
+measured here, and the two answers differ by whether a row in its normal
+starting state saves at all, so the build refuses the spelling that depends
+on the answer. Wrap the comparison in `any_of` with an `is_null` test on the
+same column, or declare the column `not null` if a value was always meant to
+be required:
+
+```yaml
+      AmountAwarded:
+        when:
+          any_of:
+            - { field: AmountAwarded, op: is_null }
+            - { field: AmountAwarded, op: geq, value: 0 }
+        message: "An awarded amount cannot be negative."
+```
+
+A rule comparing a date with `today` or a datetime with `now` needs no arm of
+its own: it is hoisted onto the list rule and guarded there, as the section
+above describes. An `is_not_null` beside the comparison settles the blank
+case the other way and is accepted as it stands.
+
 This lands on `Field.ValidationFormula`, a different property from the
 visibility formula, in a different expression language, so the two never
 interfere and a column may carry both. Person, lookup, rich-text and

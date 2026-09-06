@@ -95,7 +95,7 @@ def _conjuncts(condition: Condition) -> list[Condition]:
     return [condition]
 
 
-def _accepts_a_blank(column: str, condition: Condition) -> bool:
+def accepts_a_blank(column: str, condition: Condition) -> bool:
     """Whether a rule already passes a blank: a top-level OR with an
     `is_null` test on its own column."""
     return (
@@ -105,6 +105,16 @@ def _accepts_a_blank(column: str, condition: Condition) -> bool:
             isinstance(child, Leaf) and child.field == column and child.op == "is_null"
             for child in condition.children
         )
+    )
+
+
+def refuses_a_blank(column: str, condition: Condition) -> bool:
+    """Whether a rule settles the blank case the other way: a top-level
+    `is_not_null` on its own column makes the value mandatory, so adding an
+    `is_null` arm beside it would contradict what the author wrote."""
+    return any(
+        isinstance(part, Leaf) and part.field == column and part.op == "is_not_null"
+        for part in _conjuncts(condition)
     )
 
 
@@ -137,7 +147,7 @@ def joined_list_validation(
     if declared is not None:
         parts += _conjuncts(declared.when)
     for column, rule in hoisted:
-        if _accepts_a_blank(column, rule.when):
+        if accepts_a_blank(column, rule.when):
             parts.append(rule.when)
         else:
             parts.append(Group("any_of", (Leaf(field=column, op="is_null"), rule.when)))
