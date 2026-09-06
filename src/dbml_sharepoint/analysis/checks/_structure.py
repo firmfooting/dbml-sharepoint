@@ -373,15 +373,26 @@ def _attachments_are_measurable(
     list it provisions, so a library in the mapping is a library the deploy
     would write `EnableAttachments = false` on.
 
-    PROVISIONAL. Nothing here has measured what a library does with that
-    write. It may refuse it, which fails the deploy part-way through a paste,
-    or accept it with HTTP 200 and read back unchanged, which is the silent
-    class this repository exists to catch: a deploy reporting that attachments
-    were blocked on a container that still takes them. Either way, guessing is
-    what the evidence rule in AGENTS.md forbids, so the combination is refused
-    until `list-settings-probe.js` reports on
-    `library.doc-lib.attachments-sticks`. Narrow or lift this rule from what
-    that probe measures, not from what seems likely.
+    PROVISIONAL, AND STILL PROVISIONAL AFTER THE PROBE RAN. It may refuse the
+    write, which fails the deploy part-way through a paste, or accept it with
+    HTTP 200 and read back unchanged, which is the silent class this
+    repository exists to catch: a deploy reporting that attachments were
+    blocked on a container that still takes them.
+
+    `list-settings-probe.js` ran on 2026-09-06 and returned
+    `library.doc-lib.attachments-sticks: NOT ESTABLISHED`. EnableAttachments
+    already read false on the scratch document library, which is the value
+    the row would have written, so a readback equal to it would have proved
+    nothing and nothing was written. The row is `state: open`. The same run
+    settled the list side (`field.list.attachments-sticks: STICKS`, wrote
+    false over true, HTTP 204, read back false), so what is missing is the
+    library measurement specifically.
+
+    This refusal therefore STAYS until a run writes EnableAttachments=true to
+    a document library and reads it back true, which is the only observation
+    that distinguishes a library that takes the write from one that ignores
+    it. Narrow or lift this rule from that, not from the list result and not
+    from what seems likely.
 
     Reported beside DOCUMENT_LIBRARY_UNSUPPORTED rather than instead of it, on
     the DEMO_ROWS_ON_DOCUMENT_LIBRARY precedent: the kind refusal is about the
@@ -1354,7 +1365,34 @@ def _formula_cycle(
 
 
 def _calculated_column_indexes(vc: ValidationContext) -> list[Finding]:
-    """SharePoint cannot index a calculated column, however it was declared."""
+    """SharePoint cannot index a calculated column, however it was declared.
+
+    MEASURED 2026-07-31, `scale.index.calculated-indexable` (CALCIDX) in
+    test/manual/templates/threshold-index-probe.js.j2: a MERGE setting
+    Indexed=true on a calculated column was ACCEPTED with HTTP 204 and the
+    flag read back false. `_display_column` above cites the same run for the
+    lookup-picker half of the same fact.
+
+    WHY THIS HAS TO BE A BUILD-TIME ERROR. Accepted-and-ignored is invisible
+    to the deploy: the MERGE succeeds, the readback matches nothing that was
+    asserted, and the list ships without the index. The 2026-09-06
+    list-settings run (`list-settings-probe.js`, 34 rows) is the second
+    measurement of that class on the same surface and it separates the two
+    outcomes cleanly: a property SP.List does not have is REFUSED with HTTP
+    400 on both a generic list and a document library, while a property it
+    does have either sticks or is refused loudly, so a silent accept is a
+    real distinct behaviour rather than the tenant rejecting anything
+    unusual. That run measures SP.List settings and did not re-measure
+    CALCIDX; it is cited here because the citation trail for the silent
+    class belongs in one place.
+
+    THE SINGLE-COLUMN GUARD IS NOT AN ESCAPE. A composite index naming a
+    calculated column skips this rule and is refused by
+    COMPOSITE_INDEX_UNSUPPORTED instead, and `[unique]` on a calculated
+    column is refused by UNIQUE_UNSUPPORTED_FOR_TYPE, which is the other
+    route to an `Indexed=true` write. Both are pinned in
+    test/test_validator_calculated.py.
+    """
     findings: list[Finding] = []
     for table in vc.schema.tables:
         calc_names = vc.calculated_by_entity.get(table.name, set())

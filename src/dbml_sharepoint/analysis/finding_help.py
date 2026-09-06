@@ -86,9 +86,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`kind: DocumentLibrary`. The deploy would write "
         "`EnableAttachments = false` on every list it provisions, and nothing "
         "here has measured what a library does with that write. PROVISIONAL: "
-        "this refusal stands until the list-settings probe reports whether a "
-        "library refuses the write or accepts it and reads back unchanged. "
-        "Until then the setting is refused rather than guessed at."
+        "the list-settings probe ran on 2026-09-06 and left "
+        "`library.doc-lib.attachments-sticks` NOT ESTABLISHED, because "
+        "`EnableAttachments` already read false on the scratch library and "
+        "writing the value it already held would have proved nothing. The "
+        "list side of the same run settled (wrote false over true, read back "
+        "false). This refusal stands until a run writes "
+        "`EnableAttachments = true` to a library and reads it back true."
     ),
     FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
         "`list_permissions` grants `dbml Enterprise Automation` the built-in "

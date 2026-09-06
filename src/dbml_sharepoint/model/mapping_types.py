@@ -161,6 +161,19 @@ class Versioning:
     # a behaviour change to every mapping that omits the key, not a tidy-up.
     enable_versioning: bool = True
     major_version_limit: int = 500
+    # MEASURED 2026-09-06, `field.list.minor-versions-sticks` in
+    # list-settings-probe.js: writing EnableMinorVersions=true to a GENERIC
+    # LIST while EnableVersioning was false was REFUSED, HTTP 500,
+    # "The list does not support minor versioning", and the flag still read
+    # back false. The same run's `library.doc-lib.minor-versions-sticks` wrote
+    # the same value to a DOCUMENT LIBRARY with EnableVersioning also false
+    # and it stuck (HTTP 204, read back true), so this is a generic-list
+    # constraint rather than an ordering rule for both containers.
+    #
+    # A refusal, not a silent accept, so the deploy fails loudly if a mapping
+    # ever declares the combination. Nothing refuses it at build time today:
+    # both flags are written in one body (`templates/deploy/_lists.js.j2`
+    # create, `desiredListSettings` reconcile) and no rule pairs them.
     enable_minor_versions: bool = False
 
 

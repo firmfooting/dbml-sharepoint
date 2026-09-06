@@ -368,6 +368,43 @@ def test_indexed_calculated_column_is_error() -> None:
     assert f.severity == "error"
     assert "'RiskScore'" in f.message
 
+def test_a_composite_index_over_a_calculated_column_is_still_refused() -> None:
+    """The single-column guard in the rule is not an escape from the ban.
+
+    `_calculated_column_indexes` skips any index that names more than one
+    column, so a calculated column smuggled into a composite index never
+    reaches it. That is deliberate rather than a hole: the composite shape is
+    refused outright one rule earlier, so the build still fails. Pinned
+    because the two rules are in different functions and nothing else makes
+    them answer for each other.
+    """
+    schema, bundle = _calc_inputs()
+    next(table for table in schema.tables if table.name == "Risk").indexes.append(
+        TableIndex(("RiskScore", "Title")),
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.INDEX_ON_CALCULATED_COLUMN)
+    assert only(findings, FindingCode.COMPOSITE_INDEX_UNSUPPORTED).severity == "error"
+
+@pytest.mark.parametrize("calculated_type", sorted(CALCULATED_TYPES))
+def test_unique_on_a_calculated_column_is_refused(calculated_type: str) -> None:
+    """The other route to `Indexed=true`, closed for the same reason.
+
+    `[unique]` sets EnforceUniqueValues, and SharePoint backs that with an
+    index, so a unique calculated column would ask for the index the
+    `indexes { }` ban exists to refuse. `supports_unique` excludes the
+    calculated vocabulary, which turns it into a build error here rather than
+    a flag that reads back false on the list.
+    """
+    schema = make_schema(make_table(
+        "Risk",
+        make_column("Title", required=True),
+        make_column("Score", calculated_type, unique=True),
+    ))
+    findings = validate(schema)
+    assert only(findings, FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE).severity == "error"
+    none_of(findings, FindingCode.INDEX_ON_CALCULATED_COLUMN)
+
 # --- Lookup target's display column must be indexable -----------------------
 
 
