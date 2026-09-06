@@ -1,0 +1,76 @@
+# test/fixtures/sharepoint-mapping-reader-two-roles.yaml
+# `sharepoint-mapping-with-reader.yaml` split across two site roles, with the
+# default policy scoped to `hq`. `AppSettings` is the only entity in `branch`,
+# it carries no lookup (so nothing crosses a site_role), and no override
+# grants it a policy -- so `permissions_for_entity` returns None for it and a
+# `branch` build binds no role assignments at all.
+#
+# That is the shape gap 3 of #200 needs: the mapping is valid, the flagged
+# group IS granted Read somewhere, and building `hq` is correct, while
+# building `branch` with --enterprise-reader would permanently enrol an
+# account that can read none of that site's lists.
+prefix: "APP_"
+prefix_owner: "Test"
+prefix_registry: "test/registry.md"
+
+entities:
+  Project:           { kind: List, base_template: 100, site_role: hq }
+  Task:              { kind: List, base_template: 100, site_role: hq }
+  AppSettings: { kind: List, base_template: 100, site_role: branch }
+
+cross_site_reference_columns: []
+
+display_names:
+  mode: auto
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 500
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+retention_policies_source: retention-policies.yaml
+
+watched_lists: []
+
+permission_levels:
+  - name: "Schema Manager"
+    description: "Test permission level."
+    base_permissions:
+      - ViewListItems
+      - ManageLists
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "Enterprise Reader"
+    description: "Read-only enrolment target for --enterprise-reader."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+list_permissions:
+  default:
+    site_role: hq
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Schema Manager"
+      - principal: { kind: group, name: "Enterprise Reader" }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: associated_visitor_group }
+        level: "Read"
+  overrides: {}

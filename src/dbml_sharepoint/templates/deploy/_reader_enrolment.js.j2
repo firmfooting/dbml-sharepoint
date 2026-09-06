@@ -126,13 +126,16 @@
           .flatMap(la => la.assignments)
           .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
           .map(a => a.level))];
-        // WARN rather than abort. The validator
+        // WARN rather than abort, and on a bundle this tool produced this is
+        // now unreachable. The validator
         // (ENTERPRISE_READER_GROUP_NOT_GRANTED) requires the flagged group to
         // hold a grant SOMEWHERE in the mapping, and `list_assignments` holds
         // only the lists in the site role THIS bundle deploys, so a mapping
-        // that grants the reader in another role reaches here legitimately
-        // with nothing to check. Nothing is granted either, so there is no
-        // bitmap that could be wrong and nothing to fail closed on.
+        // granting the reader in another role used to reach here with nothing
+        // to check; `build` now refuses that combination outright (#200 gap
+        // 3). It stays for a HAND-EDITED bundle, the same reason the loop
+        // above is a loop, and stays a WARN because nothing is granted: there
+        // is no bitmap that could be wrong and nothing to fail closed on.
         if (levelNames.length === 0) {
           log('WARN', `'${grp.name}' is granted no permission level on the lists this bundle `
             + `deploys, so enrolling '${READER_ADDRESS}' into it grants nothing here. Its `

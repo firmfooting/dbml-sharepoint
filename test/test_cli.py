@@ -546,6 +546,68 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
     assert not (out / "deploy.js.txt").exists()
 
 
+def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
+    tmp_path: Path,
+) -> None:
+    """Gap 3 of #200: a grant somewhere is not a grant HERE.
+
+    `sharepoint-mapping-reader-two-roles.yaml` scopes its default policy to
+    `hq`, so `permissions_for_entity` excludes it for the one entity in
+    `branch`. The validator is satisfied -- it unions every policy block and
+    has no site role to narrow by -- and the mapping is genuinely correct for
+    the `hq` build. What it cannot be is this build: `list_assignments` comes
+    out empty, the account is enrolled permanently, the run reports success,
+    and it can read none of this site's lists.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-reader-two-roles.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "branch",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+    assert result.exit_code != 0, result.output
+    # Refused via THIS guard, not the "no such group" one next to it: that
+    # mapping does declare the group, and a message naming the wrong guard
+    # would send the author to delete a flag that is not the problem.
+    assert "enroll_enterprise_reader" not in result.output, result.output
+    assert "Enterprise Reader" in result.output, result.output
+    assert "branch" in result.output, result.output
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_the_reader_flag_is_accepted_for_the_role_that_does_grant_it(
+    tmp_path: Path,
+) -> None:
+    """The other half of the guard above, and the reason it has to be a build
+    refusal rather than a validator rule.
+
+    Same mapping, same flag, the site role the default policy IS scoped to.
+    A rule that refused this would refuse the only build the mapping was
+    written for, and the enrolment phase would stop being reachable at all.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-reader-two-roles.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "hq",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+    assert result.exit_code == 0, result.output
+    # The bundle really carries the enrolment, so this pins a build that
+    # WORKS rather than one that merely exits zero.
+    deploy = (out / "deploy.js.txt").read_text(encoding="utf-8")
+    assert "svc-reporting@example.org" in deploy
+
+
 @pytest.mark.parametrize(("bad", "guard_fragment"), [
     # No '@' at all: the one-'@' guard.
     ("not-an-address", "one '@'"),
