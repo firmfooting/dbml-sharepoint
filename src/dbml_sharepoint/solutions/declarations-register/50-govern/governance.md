@@ -41,11 +41,32 @@ to influence) a duty? Outcomes:
 
 - **Assessed - no action**: no realistic intersection; note why.
 - **Assessed - managed**: a written `ManagementPlan` (recusal from named
-  decisions, reallocation, information barriers) with an annual
-  `ReviewDate`.
+  decisions, reallocation, information barriers).
 
 The declarer never assesses their own declaration; managers never assess
 their own reports' declarations alone.
+
+## The review cadence, and why nobody can type the due date
+
+Every live interest is reviewed at least annually. `NextReviewDue` is
+**calculated** and read-only: twelve months after `LastReviewedDate`, or
+after `DeclaredDate` while no review has been recorded, clamped to the last
+day of the target month. It is blank once the interest is *Ceased*.
+
+Completing a review means setting `LastReviewedDate` and nothing else. That
+is the whole point of the split. A single hand-set date recorded neither
+half: moving it forward destroyed the evidence that a review had happened,
+and nothing could tell an on-time review from a push-out by somebody who had
+not looked. A date nobody can type is a date nobody can push out.
+
+A blank `LastReviewedDate` is not an omission to tidy away. It means nobody
+has reviewed the interest since it was declared, which is a finding in the
+same way a missing management plan is, and the derived date counts from the
+declaration so the row still falls due.
+
+Changing the cadence recalculates every existing row. Treat the formula in
+`20-configure/mapping.yaml` as under change control, and export
+`DR_Interest` before redeploying if the current due dates need to be kept.
 
 ## Cadences
 
@@ -54,7 +75,11 @@ their own reports' declarations alone.
   oldest first, so the top row is the one closest to breaching it.
 - **Monthly**: coordinators clear *Pending decisions* and chase *Reviews
   due*. Both deploy with the lists. *Reviews due* is a **rolling** thirty
-  days, not "this month" (CAML has no calendar-period predicate).
+  days, not "this month" (CAML has no calendar-period predicate), and it
+  covers **every** live interest rather than only the managed ones: the
+  annual cadence applies to all of them, so the queue and the formula agree.
+  A managed interest still carries its plan in that view, because reviewing
+  one means reading it.
 - **Annually**: whole-staff attestation drive. Each person opens *My
   interests*, which shows their own rows and nobody else's. The integrity
   owner reports to the executive/audit committee from *Annual disclosure*
@@ -65,7 +90,8 @@ their own reports' declarations alone.
 
 1. Declarations are never edited or deleted. Evolution is a new
    declaration; cessation is a status with a date.
-2. Every "Assessed - managed" has a plan and a future ReviewDate.
+2. Every "Assessed - managed" has a plan, and every live interest has been
+   reviewed inside the last twelve months.
 3. Declined gifts are as much a record as accepted ones.
 
 ## What the lists enforce, and what this document does
@@ -82,15 +108,21 @@ becomes structure.
 
 | Rule | List | Where it lives |
 | --- | --- | --- |
-| Rule 2, the date half: *Assessed - managed* needs a `ReviewDate` | Interest | list validation |
 | Rule 1, the date half: *Ceased* needs a `CeasedDate` | Interest | list validation |
-| `DeclaredDate` and `CeasedDate` cannot be in the future | Interest | list validation, hoisted from the column rule |
+| `DeclaredDate`, `LastReviewedDate` and `CeasedDate` cannot be in the future | Interest | list validation, hoisted from the column rules |
 | `OfferedDate` cannot be in the future | GiftBenefit | list validation, hoisted from the column rule |
 | `EstimatedValue` cannot be negative | GiftBenefit | column validation |
 
-The two Interest rules share one message, because a SharePoint list has
-exactly one `ValidationFormula` and cannot say which branch failed. The
-column rules keep messages of their own.
+Every Interest rule shares one message, because a SharePoint list has exactly
+one `ValidationFormula` and cannot say which branch failed.
+
+**Rule 2's date half is no longer a save rule, because it can no longer be
+broken.** It used to refuse an *Assessed - managed* row with an empty
+`ReviewDate`, guarding the case where a managed conflict dropped out of the
+cadence silently. `NextReviewDue` is derived from `DeclaredDate` when no
+review has been recorded, and `DeclaredDate` is required, so every live row
+carries a due date by construction. A validation formula cannot reference a
+calculated column in any case.
 
 **Still a governance check (nothing stops a wrong entry):**
 
@@ -101,8 +133,13 @@ column rules keep messages of their own.
   save. *Annual disclosure* shows **Decided by**, which puts a blank one in
   front of the executive in the report that matters most.
 - **Rule 2's management plan.** `ManagementPlan` is rich text, which a
-  validation formula cannot reference either. The date half is enforced;
-  the plan half is why *Reviews due* carries the column.
+  validation formula cannot reference either. That is why *Reviews due*
+  carries the column: a managed interest reaching the queue with a blank
+  plan is visible to the person reviewing it.
+- **Rule 2's review actually happening.** The register can insist the due
+  date exists and can escalate it once past, and it cannot make anybody
+  look. What it does refuse is a review claimed for a future date, and what
+  it removes is the ability to push the due date out at all.
 - **Rule 1's never-edited, never-deleted.** That is a permission control,
   not a validation one: the **DR Declare Only** level grants
   `AddListItems` and `ViewListItems` and nothing else, so an ordinary
@@ -116,8 +153,9 @@ column rules keep messages of their own.
 gifts register and the only row anyone has to act on. *Assessed - managed*
 is amber on the interests register for the same reason: it is the only
 state on that list carrying an ongoing obligation, so it must not share a
-colour with *Assessed - no action*. `ReviewDate` turns
-red once past, and stops once the interest is *Ceased*.
+colour with *Assessed - no action*. `NextReviewDue` turns
+red once past, and stops once the interest is *Ceased*, where the formula
+returns blank as well.
 
 ## Lifecycle
 

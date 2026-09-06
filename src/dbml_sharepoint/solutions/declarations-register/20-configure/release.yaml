@@ -1,7 +1,63 @@
-release: "1.0.0"
-date: "2026-07-22"
+release: "1.1.0"
+date: "2026-09-06"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.0.1"
+schema_version: "1.1.0"
 notes: |
-  Declarations register template (conflicts of interest + gifts/benefits).
-  Bump schema_version on any DBML/mapping change before redeploying.
+  1.1.0 splits Interest.ReviewDate into LastReviewedDate and NextReviewDue.
+  One hand-set date stood for both halves of a review, so moving it forward
+  destroyed the evidence that a review had happened and nothing could tell an
+  on-time review from a push-out by somebody who had not looked. The register
+  is evidential, which is the argument for the split rather than against it.
+
+  NextReviewDue is CALCULATED and nobody can type it: twelve months from Last
+  Reviewed Date, or from Declared Date while no review has been recorded,
+  clamped to the last day of the target month. Completing a review means
+  moving Last Reviewed Date and nothing else. risk-register and
+  programme-governance carry the same pair under the same names, and the
+  three cadence formulas are one idiom.
+
+  LastReviewedDate is optional with no default, deliberately. Recording a
+  declaration is not reviewing it, and a default would claim an assessment
+  that never happened; blank there means nobody has ever reviewed the row,
+  which is a finding in the same way a blank management plan is. It carries
+  the index the retired ReviewDate had, because the calculated half cannot be
+  indexed at all.
+
+  The cadence now covers EVERY live interest, not only the managed ones. The
+  register's own standard is a review at least annually while the interest is
+  live, and Declared Date is required, so every non-ceased row has a
+  baseline and a due date. A ceased interest has neither: the formula returns
+  blank on Ceased and the overdue formatting is guarded on the same member.
+
+  "Reviews due" widens to match, from managed-only to every live interest due
+  inside the rolling thirty days, and gains Last Reviewed Date beside the
+  derived one. A queue narrower than the formula would leave rows escalating
+  in the default view with nothing asking anybody to look at them. Coordinators
+  running the monthly chase will see interests they did not see before,
+  including ones assessed as needing no action years ago.
+
+  The save rule requiring a Review Date on an "Assessed - managed" row is
+  REMOVED, and that is the split working rather than a relaxation. It guarded
+  a state where a managed conflict dropped out of the cadence silently; that
+  state can no longer be reached, because the due date is derived rather than
+  entered. A validation formula cannot reference a calculated column in any
+  case. DR_Interest now carries one list rule (a ceased interest needs its
+  Ceased Date) with a message that names one check instead of two.
+
+  EVERY EXISTING ROW GAINS A DERIVED DUE DATE on redeploy, computed from
+  Declared Date until somebody records a review. On a register that has been
+  running, that means live interests declared more than a year ago read as
+  overdue on the first refresh. That is the true statement of what the
+  register knows, and it is what the retired column's values are for: export
+  DR_Interest before redeploying, then set Last Reviewed Date from the old
+  Review Date where the old value recorded a review that actually happened.
+
+  ReviewDate is RETIRED, not deleted. It keeps its values, drops off every
+  view and the New form, and reads "Review Date (retired)". Transfer the
+  values, then delete the column with the columns sidecar. Deleting the
+  declaration instead would leave a live column the schema no longer knows
+  about, reported as user-added drift on every report refresh.
+
+  1.0.0 declarations register template (conflicts of interest +
+  gifts/benefits). Bump schema_version on any DBML/mapping change before
+  redeploying.

@@ -45,13 +45,27 @@ Table Interest {
   Detail         richtext        [note: 'The nature of the interest and where it could intersect with duties. Facts, not self-judgement']
   Status         interest_status [not null, default: 'Declared']
   ManagementPlan richtext        [note: 'Set at assessment: how the conflict is managed (recusal, reallocation, information barriers)']
-  ReviewDate     date            [note: 'Next review, at least annual while the interest is live']
+  // Two halves of a review, kept apart. One hand-set date recorded neither:
+  // moving it forward destroyed the evidence that a review had happened, so
+  // nothing could tell an on-time review from a push-out by somebody who had
+  // not looked. risk-register and programme-governance carry the same pair
+  // under the same names.
+  LastReviewedDate date          [note: 'When this interest was last actually reviewed. Blank means nobody has reviewed it since it was declared, which is a finding in its own right. Move it every time you complete a review']
+  // Calculated, like risk-register's: a date a person could type is a date a
+  // person could push out, which is the defect the split was opened for. The
+  // cadence formula lives in mapping.yaml, so completing a review means
+  // moving Last Reviewed Date and nothing else.
+  NextReviewDue  calculated_date [note: 'When this interest is next reviewed. Calculated as twelve months after Last Reviewed Date, or after Declared Date while no review has been recorded. Blank once the interest is Ceased']
+  ReviewDate     date            [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   CeasedDate     date
 
+  // NextReviewDue is deliberately absent: SharePoint cannot index a
+  // calculated column and the build validator rejects one. LastReviewedDate
+  // is the filterable half, and carries the index the retired ReviewDate had.
   indexes {
     Status
     DeclaredBy
-    ReviewDate
+    LastReviewedDate
   }
 
   Note: 'Conflicts of interest staff declare: outside roles, financial holdings, relationships and supplier ties, with how each is managed and its next review date.'

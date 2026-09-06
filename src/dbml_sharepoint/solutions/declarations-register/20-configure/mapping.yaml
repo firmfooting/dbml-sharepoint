@@ -17,6 +17,37 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
+# The review cadence, encoded once. The register's own standard is a review
+# at least annually while the interest is live, so there is one arm rather
+# than risk-register's three: twelve months from the last review.
+#
+# The baseline is Last Reviewed Date when there is one and Declared Date
+# otherwise. SharePoint formulas have no COALESCE, so that is spelled
+# IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate]) and
+# repeated at each of the five places the arithmetic reads it. Declared Date
+# is `not null`, so the baseline is never blank and a live row always carries
+# a due date, which is what retires the "managed needs a review date" save
+# rule: the state that rule refused can no longer be reached.
+#
+# Blank once Ceased, on programme-governance's terminal-state precedent
+# (Activity.ConfirmationDue blanks on Retired): a ceased interest has no next
+# review, and a date that keeps counting on a closed row is a date somebody
+# has to learn to ignore. The overdue formatting is guarded on the same
+# member, so the two cannot disagree.
+#
+# MONTH-END CLAMP (issue #418). Adding months with DATE(Y, M+N, D) alone
+# overflows rather than clamping: a review completed 31 January would fall
+# due 1 February a year later rather than 31 January. It takes MIN of that
+# date and DATE(Y, M+13, 0), the last day of the target month, so a day the
+# target month does not have lands on its last day. risk-register and
+# programme-governance carry the same idiom; the three copies are one shape.
+#
+# CHANGE CONTROL: SharePoint recalculates every existing row when a formula
+# changes; read 50-govern/governance.md before editing the cadence.
+calculated_formulas:
+  Interest:
+    NextReviewDue: '=IF([Status]="Ceased","",MIN(DATE(YEAR(IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate])),MONTH(IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate]))+12,DAY(IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate]))),DATE(YEAR(IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate])),MONTH(IF(ISBLANK([LastReviewedDate]),[DeclaredDate],[LastReviewedDate]))+13,0)))'
+
 # Security: declarations are evidential. Staff submit and read but never
 # edit after submission; the compliance coordinators assess and maintain;
 # Full Control confined to the empty-by-default admin group.
@@ -122,13 +153,16 @@ column_formatting:
         "Assessed - no action": good
         "Assessed - managed": warning
         "Ceased": muted
-    # Guarded on Ceased, the terminal status. Rows at "Declared" and
-    # "Assessed - no action" carry no review date at all, so the guard
-    # only has to name the one state where a date exists and has stopped
-    # meaning anything.
-    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Ceased] } }
-    # DeclaredDate and CeasedDate are deliberately unformatted: both are
-    # historical stamps with no late state.
+    # Guarded on Ceased, the terminal status. The formula already blanks
+    # there, so the guard is the second half of one decision rather than a
+    # separate rule: whichever SharePoint evaluates first, a ceased row shows
+    # nothing to escalate. `calculated: true` decodes the typed formatter
+    # value SharePoint hands a calculated column.
+    NextReviewDue: { style: overdue-date, calculated: true,
+                     guard: { field: Status, not: [Ceased] } }
+    # DeclaredDate, LastReviewedDate and CeasedDate are deliberately
+    # unformatted: all three are historical stamps with no late state. The
+    # thing with a clock on it is the derived due date above.
   GiftBenefit:
     # "Pending decision" is the style guide's own example of the
     # needs-attention band, and it is the only row on this list anybody
@@ -175,7 +209,7 @@ views:
   Interest:
     - title: "Live interests"
       default: true
-      fields: ["@identity", ReviewDate, Detail]
+      fields: ["@identity", NextReviewDue, Detail]
       where:
         - { field: Status, op: neq, value: "Ceased" }
       group_by: { field: DeclaredBy, collapsed: true }
@@ -187,14 +221,14 @@ views:
         DeclaredBy: 160
         Status: 160
         DeclaredDate: 170
-        ReviewDate: 160
+        NextReviewDue: 160
         Detail: 200
     # The annual attestation, made a filter rather than a project. The
     # `me` sentinel is the only way a person column can be compared in a
     # view at all: CAML's <UserID/> supplies the accessor that the operand
     # rules otherwise demand and CAML otherwise refuses.
     - title: "My interests"
-      fields: ["@identity", ReviewDate, CeasedDate, Detail]
+      fields: ["@identity", LastReviewedDate, NextReviewDue, CeasedDate, Detail]
       where:
         - { field: DeclaredBy, op: eq, value: me }
       sort:
@@ -205,7 +239,8 @@ views:
         DeclaredBy: 160
         Status: 160
         DeclaredDate: 170
-        ReviewDate: 160
+        LastReviewedDate: 170
+        NextReviewDue: 160
         CeasedDate: 160
         Detail: 200
     # Not in the old "Recommended views" table, and the gap it fills is
@@ -229,21 +264,30 @@ views:
     # calendar-period predicate, and the cadence that reads this is
     # monthly, so rolling is also the honest reading. ManagementPlan is in
     # this view rather than the others because reviewing a managed
-    # interest means reading the plan.
+    # interest means reading the plan; it is blank on the rest, which is
+    # correct rather than missing.
+    #
+    # EVERY live interest, not only the managed ones. The register's cadence
+    # is annual while the interest is live, and the derived due date is now
+    # computed for every non-ceased row, so a queue narrower than the
+    # formula would leave rows escalating in the default view with nothing
+    # asking anybody to look at them. Both reference families filter their
+    # equivalent view the same way: not-terminal status, plus the date.
     - title: "Reviews due"
-      fields: ["@identity", ReviewDate, ManagementPlan]
+      fields: ["@identity", LastReviewedDate, NextReviewDue, ManagementPlan]
       where:
-        - { field: Status, op: eq, value: "Assessed - managed" }
-        - { field: ReviewDate, op: leq, value: today+30 }
+        - { field: Status, op: neq, value: "Ceased" }
+        - { field: NextReviewDue, op: leq, value: today+30 }
       sort:
-        - { field: ReviewDate, direction: asc }
+        - { field: NextReviewDue, direction: asc }
       widths:
         Title: 280
         InterestType: 220
         DeclaredBy: 160
         Status: 160
         DeclaredDate: 170
-        ReviewDate: 160
+        LastReviewedDate: 170
+        NextReviewDue: 160
         ManagementPlan: 200
     - title: "Ceased"
       fields: ["@identity", CeasedDate, Detail]
@@ -376,10 +420,15 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: eq, value: "Assessed - managed" }
-      ReviewDate:
-        new: false
-        when:
-          - { field: Status, op: eq, value: "Assessed - managed" }
+      # Off the New form with the rest of the assessment half, and NOT
+      # conditioned on a status: the cadence now covers every live interest,
+      # so a coordinator has to be able to record a review on any of them.
+      # ReviewDate's own entry is gone because retirement synthesises one.
+      #
+      # Deliberately NOT declared: anything on NextReviewDue. Conditional
+      # show/hide cannot read a calculated column, and SharePoint does not
+      # render one on an entry form at all; the build refuses both.
+      LastReviewedDate: { new: false }
       CeasedDate:
         new: false
         when:
@@ -404,6 +453,15 @@ column_validation:
         when:
           - { field: DeclaredDate, op: leq, value: today }
         message: "A declaration cannot have been made in the future. Use today's date, or the date you actually declared it."
+      # LastReviewedDate is the baseline the whole cadence counts from, and
+      # the only half a person can type. A date carrying next year's year
+      # pushes the next review out by a year and drops the interest off the
+      # review queue silently: no error, no empty cell, just a declaration
+      # nobody is asked to look at again.
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this interest, or today's date."
       CeasedDate:
         when:
           - { field: CeasedDate, op: leq, value: today }
@@ -420,9 +478,17 @@ column_validation:
         message: "Estimated value cannot be negative. It is a best estimate of what the gift or benefit is worth, not what it cost us."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# TWO rules on Interest, chained: a list has ONE ValidationFormula, the
-# top-level list is an AND, and each is an implication: `if A then B` is
-# `any_of[not A, B]`.
+# ONE rule on Interest now, still written as an implication: `if A then B`
+# is `any_of[not A, B]`.
+#
+# The second rule is GONE, and its removal is the point of the split rather
+# than a relaxation. It required a Review Date on an "Assessed - managed"
+# row, guarding a state where a managed conflict dropped out of the cadence
+# silently. NextReviewDue is calculated from Declared Date when no review has
+# been recorded, and Declared Date is `not null`, so every live row now
+# carries a due date by construction and the state the rule refused cannot be
+# reached. A validation formula cannot reference a calculated column in any
+# case, so keeping the check here was not an option.
 #
 # GiftBenefit gets NO list rule, and the reason is worth recording. The one
 # cross-column rule it wants (a decided gift needs a DecisionBy) cannot
@@ -433,19 +499,27 @@ column_validation:
 list_validation:
   Interest:
     when:
-      # 50-govern's second data-quality rule, the half a formula can
-      # reach. A managed conflict with no review date drops out of the
-      # cadence silently and stays managed on paper only.
-      - any_of:
-          - { field: Status, op: neq, value: "Assessed - managed" }
-          - { field: ReviewDate, op: is_not_null }
       # Rule 1: cessation is a status WITH A DATE. Without the date the
       # register cannot say when the conflict stopped applying, which is
       # the only question anyone asks of a ceased interest.
       - any_of:
           - { field: Status, op: neq, value: "Ceased" }
           - { field: CeasedDate, op: is_not_null }
-    message: "This declaration cannot be saved yet. Check both: an interest assessed as managed needs a Review Date, and a ceased interest needs the Ceased Date. The management plan itself cannot be checked here - see the governance rules."
+    message: "A ceased interest needs the Ceased Date: the register has to be able to say when the conflict stopped applying. The management plan on a managed interest cannot be checked here - see the governance rules."
+
+# ReviewDate was one hand-set date standing for both halves of a review, so
+# moving it forward destroyed the evidence that a review had happened. Split
+# into LastReviewedDate and NextReviewDue. The column stays declared and
+# deployer-managed until its values have been transferred and it is deleted
+# with the columns sidecar; deleting the declaration instead would leave a
+# live column the schema no longer knows about, reported as user-added drift
+# on every report refresh.
+retired_columns:
+  Interest:
+    ReviewDate:
+      retired: "2026-09-06"
+      superseded_by: NextReviewDue
+      reason: "Split into LastReviewedDate and NextReviewDue"
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " so sample data stays visible in every view and form.
@@ -456,6 +530,14 @@ list_validation:
 # Coverage: one interest per Status member and one offer per Decision
 # member, with the same offeror appearing twice so "By offeror" shows the
 # repeat pattern 50-govern's annual report is looking for.
+#
+# NextReviewDue carries no demo value and cannot: it is calculated, and the
+# build refuses a seeded value on a calculated column. The dates below are
+# chosen so the derived column lands on a spread instead: one interest
+# overdue, one due inside the thirty-day window, two not yet due, and one
+# blank because the interest has ceased. Two rows deliberately have no
+# LastReviewedDate, which is the never-reviewed state the split exists to
+# make visible.
 demo_items:
   Interest:
     - key: dr-board
@@ -463,21 +545,25 @@ demo_items:
         Title: "[DEMO] Director of a community housing board that leases from us"
         InterestType: "Board / committee role"
         DeclaredBy: "@me"
-        DeclaredDate: "today-200"
-        Detail: "Demo row. Appointed to the board in March. The organisation leases two properties from us under an agreement renewed every three years."
+        DeclaredDate: "today-400"
+        Detail: "Demo row. Appointed to the board over a year ago. The organisation leases two properties from us under an agreement renewed every three years."
         Status: "Assessed - managed"
         ManagementPlan: "Demo row. Recusal from any decision touching the lease or its renewal; the property portfolio report goes to the deputy instead. Reviewed annually."
-        ReviewDate: "today+20"
+        # Reviewed once, and due again inside the thirty-day window: the row
+        # "Reviews due" exists to surface.
+        LastReviewedDate: "today-345"
     - key: dr-supplier
       values:
         Title: "[DEMO] Family member owns the stationery supplier on the panel"
         InterestType: "Supplier relationship"
         DeclaredBy: "@me"
-        DeclaredDate: "today-45"
+        DeclaredDate: "today-500"
         Detail: "Demo row. Sibling is a co-owner. The supplier sits on the office consumables panel and is not one I approve purchases from."
         Status: "Assessed - managed"
         ManagementPlan: "Demo row. Purchasing from that panel reassigned; declared to the panel review each cycle."
-        ReviewDate: "today+320"
+        # A managed conflict whose annual review has lapsed: this is the row
+        # that drives the overdue treatment on the derived date.
+        LastReviewedDate: "today-400"
     - key: dr-secondary
       values:
         Title: "[DEMO] Weekend consulting work in an unrelated sector"

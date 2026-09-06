@@ -10,7 +10,7 @@
     },
     {
       "displayname": "Review and cessation",
-      "fields": ["ReviewDate", "CeasedDate"]
+      "fields": ["LastReviewedDate", "NextReviewDue", "CeasedDate"]
     }
   ]
 }
