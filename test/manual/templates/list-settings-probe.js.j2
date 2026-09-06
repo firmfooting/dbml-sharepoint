@@ -63,6 +63,10 @@
  *       repository's deployer writes against live tenants every run, change
  *       the container and read back? If it does not, the METHOD is broken
  *       and every settings row on that container is void rather than open.
+ *       The readback is retried ONCE, 1500 ms later, because one live run
+ *       failed it on a readback that had raced the write. A second failure
+ *       is still CONTROL FAILED, METHOD VOID. See the comment at the control
+ *       itself for the two runs that bound this.
  *   <container>.control-unknown-property-refused
  *       NEGATIVE CONTROL: is a MERGE naming a property that does not exist
  *       on SP.List refused? Establishes that a 2xx means something.
@@ -75,8 +79,9 @@
  * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
  *   Depends on (asserted, read back): the scratch list and the scratch
  *   library exist (fixtures); a MERGE of `Description` changes each one and
- *   reads back (positive control, one per container, because the method
- *   could work on a list and not on a library).
+ *   reads back, on the first read or on one re-read (positive control, one
+ *   per container, because the method could work on a list and not on a
+ *   library).
  *   Observes (recorded, never asserted): whether an unknown property is
  *   refused; which candidate properties the container exposes; and for each
  *   setting, the value written, the value read back, the value it held
@@ -326,6 +331,10 @@
 
   const show = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // How long the positive control waits before its ONE re-read, below.
+  const CONTROL_REREAD_MS = 1500;
+
   for (const container of CONTAINERS) {
     const where = container.kind;
     await resetList(container.title);
@@ -385,15 +394,46 @@
     // take says the METHOD failed here, not that this container is unusual.
     const marker = `${container.description} probe-control-${Date.now()}`;
     const setDesc = await merge(container.path, { Description: marker });
-    const readDesc = await readProperty(container, 'Description');
-    const controlOk = setDesc.ok && readDesc.ok && readDesc.value === marker;
+    let readDesc = await readProperty(container, 'Description');
+    const matchesMarker = (read) => read.ok && read.value === marker;
+
+    // ONE re-read before the method is declared broken. Run 20260906T061520
+    // failed this control on both containers off a MERGE that returned 204 and
+    // a readback that looked identical to the marker, and the same code passed
+    // it three hours earlier (20260906T015302) and forty minutes later
+    // (20260906T062002). A readback racing the MERGE's visibility, returning
+    // the PREVIOUS description, fits that; a broken method does not, because a
+    // broken method does not repair itself between two runs of the same file.
+    // Voiding 26 settings rows on a transient read is a false negative, so the
+    // read gets one more chance.
+    //
+    // BOUNDED AT ONE, and the outcome still turns on the readback rather than
+    // on the 204: a control needing two re-reads is not a lag, and a retry loop
+    // would eventually pass anything, which is how a positive control stops
+    // being able to fail. A second failure is still CONTROL FAILED, METHOD
+    // VOID, and both strings are then printed quoted so a difference in length
+    // or trailing whitespace is visible rather than invisible.
+    let reRead = false;
+    if (setDesc.ok && !matchesMarker(readDesc)) {
+      await sleep(CONTROL_REREAD_MS);
+      readDesc = await readProperty(container, 'Description');
+      reRead = true;
+    }
+
+    const controlOk = setDesc.ok && matchesMarker(readDesc);
     record(container.controlId,
            `control: does a MERGE of Description change the ${where} and read back`,
            controlOk ? 'PASS' : 'CONTROL FAILED, METHOD VOID',
            controlOk
              ? `Description MERGE returned HTTP ${setDesc.status} and read back byte-identical`
+               + (reRead
+                 ? ` after one re-read ${CONTROL_REREAD_MS} ms later `
+                   + `(${setDesc.status}-to-read lag: the first read did not show the marker)`
+                 : '')
              : `MERGE HTTP ${setDesc.status}${setDesc.ok ? '' : `: ${setDesc.text.slice(0, 200)}`}; `
-               + `readback ${readDesc.ok ? show(readDesc.value) : `failed HTTP ${readDesc.status}`}`);
+               + `readback ${readDesc.ok ? show(readDesc.value) : `failed HTTP ${readDesc.status}`}`
+               + (reRead ? `, still differing ${CONTROL_REREAD_MS} ms later on a second read` : '')
+               + `; the marker written was ${show(marker)}`);
 
     // ---- negative control: a property SP.List does not have -------------
     const unknown = await merge(container.path, { [UNKNOWN_PROPERTY]: 'x' });

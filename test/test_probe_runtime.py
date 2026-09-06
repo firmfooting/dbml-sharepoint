@@ -343,3 +343,243 @@ def test_an_unreadable_negative_control_is_not_reported_as_needing_no_clear() ->
         f"the Shadow read failed and the clear check recorded {clear!r}. A "
         f"failed read is not a reading of Indexed=false."
     )
+
+
+# --------------------------------------------------------------------------
+# list-settings-probe.js: the Description control, and the one re-read it is
+# allowed before it voids the twenty-six settings rows behind it.
+# --------------------------------------------------------------------------
+SETTINGS_PROBE = MANUAL / "list-settings-probe.js"
+
+#: The delay these tests substitute for the shipped 1500 ms. The re-read
+#: DECISION is what they are about, not how long it waits, and three runs of
+#: real sleeping buys nothing.
+_TEST_REREAD_MS = 5
+
+#: Thirteen settings on each of the two containers. Named as a number because
+#: what a failed control has to do is void ALL of them.
+_SETTINGS_ROW_COUNT = 26
+
+_SETTINGS_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // What a container reads before the probe writes to it. Values chosen so
+    // every candidate has a differing target: a row already at its target
+    // records NOT ESTABLISHED and measures nothing.
+    const DEFAULTS = {
+      EnableAttachments: true, EnableVersioning: false, EnableMinorVersions: false,
+      EnableModeration: false, EnableFolderCreation: false, NoCrawl: false,
+      Direction: 'none', ContentTypesEnabled: false, ReadSecurity: 1,
+      WriteSecurity: 1, IrmEnabled: false, IrmExpire: false, IrmReject: false,
+    };
+
+    // The scratch containers, keyed by title. `lag` is how many further reads
+    // of Description still answer with the value the container held BEFORE the
+    // MERGE, which is the shape run 20260906T061520 recorded: a 204 whose
+    // readback had not caught up with it.
+    const lists = new Map();
+
+    const TITLE = /getbytitle\\('([^']+)'\\)/;
+    const SELECT = /[?&]\\$select=([A-Za-z]+)/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const sent = opts.body === undefined ? {} : JSON.parse(String(opts.body));
+
+      if (u.includes('/contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.endsWith('/web/lists') && method === 'POST') {
+        lists.set(sent.Title, {
+          props: {
+            ...DEFAULTS,
+            Title: sent.Title,
+            Description: sent.Description,
+            BaseTemplate: sent.BaseTemplate,
+          },
+          pending: null,
+          lag: 0,
+        });
+        return jsonResponse(201, { Title: sent.Title });
+      }
+
+      const named = TITLE.exec(u);
+      if (!named) return jsonResponse(404, { error: 'no such endpoint' });
+      const held = lists.get(named[1]);
+      if (!held) return jsonResponse(404, { error: 'list not found' });
+
+      if (verb === 'MERGE') {
+        for (const [name, value] of Object.entries(sent)) {
+          if (name === '__metadata') continue;
+          // A property SP.List does not have, refused 500, which is the
+          // status every refusal this project has recorded came back as.
+          if (!(name in held.props)) {
+            return jsonResponse(500, { error: `no property named ${name}` });
+          }
+          if (name === 'Description') {
+            held.pending = value;
+            held.lag = CONFIG.descriptionLagReads;
+            if (held.lag === 0) held.props.Description = value;
+          } else if (CONFIG.settingsStick) {
+            held.props[name] = value;
+          }
+        }
+        return jsonResponse(204, {});
+      }
+
+      const selected = SELECT.exec(u);
+      if (!selected) return jsonResponse(200, { ...held.props });
+      const name = selected[1];
+      if (!(name in held.props)) {
+        return jsonResponse(400, { error: `no property named ${name}` });
+      }
+      if (name === 'Description' && held.lag > 0) {
+        const stale = held.props.Description;
+        held.lag -= 1;
+        if (held.lag === 0) held.props.Description = held.pending;
+        return jsonResponse(200, { Description: stale });
+      }
+      return jsonResponse(200, { [name]: held.props[name] });
+    };
+""")
+
+
+def _settings_probe_js() -> str:
+    """The rendered settings probe with its gates open and its table exposed.
+
+    Edited by replacement rather than re-rendered, for the reason `_probe_js`
+    gives. The re-read delay is replaced too, and that replacement doubles as
+    the pin on the shipped value: change 1500 in the probe and this fails.
+    """
+    js = SETTINGS_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    shortened = js.replace(
+        "  const CONTROL_REREAD_MS = 1500;",
+        f"  const CONTROL_REREAD_MS = {_TEST_REREAD_MS};",
+        1,
+    )
+    assert shortened != js, "the control re-read delay is not spelled as this test expects"
+    exposed = shortened.replace(
+        "\n  report();\n",
+        "\n  console.log('__ROWS__' + JSON.stringify(RESULTS));\n  report();\n",
+        1,
+    )
+    assert exposed != shortened, "the result table dump did not splice in before report()"
+    return exposed
+
+
+def _run_settings_probe(
+    description_lag_reads: int = 0, settings_stick: bool = True,
+) -> dict[str, dict[str, str]]:
+    """Run the settings probe and return id -> the whole recorded row.
+
+    The whole row, not the outcome alone: what a re-read has to leave behind
+    is EVIDENCE naming it, and an outcome of PASS says nothing about that.
+    """
+    config = {
+        "descriptionLagReads": description_lag_reads,
+        "settingsStick": settings_stick,
+    }
+    script = (
+        _SETTINGS_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _settings_probe_js()
+    )
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
+    )
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_settings_run_whose_readback_keeps_up_needs_no_re_read() -> None:
+    """The control for the two tests below, and the shape of a healthy run.
+
+    Without it, a re-read that fired on every run would pass both of them
+    while quietly halving the probe's ability to fail.
+    """
+    rows = _run_settings_probe()
+
+    for control in ("field.list.control-description-sticks",
+                    "library.doc-lib.control-description-sticks"):
+        assert rows[control]["outcome"] == "PASS"
+        assert "re-read" not in rows[control]["evidence"], (
+            f"{control} re-read a Description that had already read back. The "
+            f"re-read exists for a readback that lagged, and firing it here "
+            f"would hide a method that answers late every time."
+        )
+    assert rows["field.list.attachments-sticks"]["outcome"] == "STICKS"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_readback_that_lags_the_merge_is_re_read_once() -> None:
+    """Run 20260906T061520: both controls failed on a 204 whose readback was
+    not yet showing the marker, and 26 settings rows were voided with them.
+
+    The same file passed the same control three hours earlier
+    (20260906T015302) and forty minutes later (20260906T062002), so the
+    method was not broken and the rows should never have been voided. One
+    re-read is what tells those two cases apart.
+    """
+    rows = _run_settings_probe(description_lag_reads=1)
+
+    for control in ("field.list.control-description-sticks",
+                    "library.doc-lib.control-description-sticks"):
+        assert rows[control]["outcome"] == "PASS", (
+            f"{control} recorded {rows[control]['outcome']!r} for a readback "
+            f"that was one read behind the MERGE, which voids 26 measured rows."
+        )
+        assert f"after one re-read {_TEST_REREAD_MS} ms later" in rows[control]["evidence"]
+        assert "204-to-read lag" in rows[control]["evidence"]
+    assert rows["field.list.attachments-sticks"]["outcome"] == "STICKS"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_that_never_reads_back_still_voids_every_settings_row() -> None:
+    """The re-read is bounded at one, so a method that is actually broken
+    still voids what it always voided.
+
+    A retry loop passes anything eventually, and a positive control that
+    cannot fail is worse than none: every row below it would then be reported
+    as measured on a container nothing had been written to.
+    """
+    rows = _run_settings_probe(description_lag_reads=99)
+
+    control = rows["field.list.control-description-sticks"]
+    assert control["outcome"] == "CONTROL FAILED, METHOD VOID"
+    # Both strings, quoted, so a difference of length or trailing whitespace
+    # is visible. The failed live run's evidence showed only one of them and
+    # the two looked identical.
+    assert '"dbml-sharepoint list-settings probe list. Safe to delete."' in control["evidence"]
+    assert (
+        'the marker written was "dbml-sharepoint list-settings probe list. '
+        'Safe to delete. probe-control-'
+    ) in control["evidence"]
+    assert "still differing" in control["evidence"]
+
+    voided = [row for row in rows.values() if row["state"] == "void"]
+    assert len(voided) == _SETTINGS_ROW_COUNT
