@@ -6353,6 +6353,20 @@
     }
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+      // Projections too. `_lookups.js.j2` creates each one read-only and then
+      // checks it for existence only, because a read-only field cannot drift.
+      // That is an argument about RECONCILIATION and was read as one about
+      // sealing, which answers a different question: whether a site owner can
+      // DELETE the column through the UI. Measured on a live site 2026-09-06,
+      // all seven projections read back Sealed:false CanBeDeleted:true while
+      // every declared and calculated column beside them read the opposite,
+      // and deleting one takes the view that shows it with no warning.
+      //
+      // Gated on the PRIMARY's seal flag: a projection exists only for its
+      // primary, so it is protected exactly when its primary is.
+      for (const proj of (lookup.projections || [])) {
+        if (lookup.field.seal) sealDeclared.push([lookup.list, proj.name]);
+      }
     }
     // Declared fields are already present above. Add the built-in Titles
     // PREPARE opened; the tool does not otherwise own their seal state.
