@@ -194,7 +194,7 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `list` (the list object the columns belong to)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
-`date-storage-probe.js`, `multilookup-probe.js`
+`date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -303,6 +303,8 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `today-source-probe.js` | `formula` | `today-element-*`, `today-offset-element-*`, `today-include-time-*` | `query.caml-adhoc.*` |
 | `today-source-probe.js` | `formula` | `dynamic-default-rest-fill` | `field.date.*` |
 | `save-instant-paths-probe.js` | `formula` | `hidden-list-readback` | `field.list.*` |
+| `list-settings-probe.js` | `field` | the thirteen `*-sticks` rows measured on the document library, with that container's fixture, its two controls and its property enumeration | `library.doc-lib.*` |
+| `list-settings-probe.js` | `field` | `read-security-on-list`, `write-security-on-list`, `read-security-on-library`, `write-security-on-library`, because item-level permission trimming is an access question wherever it is set | `access.item-acl.*` |
 
 Some probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
