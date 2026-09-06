@@ -1813,6 +1813,7 @@
       "base_template": 100,
       "content_types_enabled": false,
       "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test for list Project.",
+      "disable_attachments": false,
       "enable_minor_versions": false,
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list Project.",
@@ -1883,6 +1884,7 @@
       "base_template": 100,
       "content_types_enabled": false,
       "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test for list Task.",
+      "disable_attachments": false,
       "enable_minor_versions": false,
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list Task.",
@@ -1957,6 +1959,7 @@
       "base_template": 100,
       "content_types_enabled": false,
       "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
+      "disable_attachments": false,
       "enable_minor_versions": false,
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
@@ -2598,6 +2601,59 @@
     log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
   }
 
+  // Declared attachment block: EnableAttachments=false removes the Attach
+  // File command from the item form and refuses attachments through the API.
+  // SP.List.EnableAttachments is a plain read-write property updated by the
+  // same MERGE as any other list setting (Learn, checked 2026-09-06:
+  // learn.microsoft.com/dotnet/api/microsoft.sharepoint.client.list.enableattachments).
+  //
+  // Its own probe/MERGE rather than a line in desiredListSettings, for the
+  // reason reconcileListDeletionBlock has one: the property is not part of the
+  // shape probe every list pays for, and an unsupported tenant surface should
+  // fail this step alone. `attachments: true` (and an absent key) is
+  // SharePoint's own default, so it reads nothing and writes nothing.
+  //
+  // The read-back is the control. A MERGE that answers 200 while the stored
+  // value stays true leaves a list that still accepts attachments while the
+  // deploy reports the block was applied, which is the failure class this
+  // repository exists to catch. This throws instead. Libraries never reach
+  // here: the validator refuses `attachments: false` beside a DocumentLibrary.
+  async function reconcileListAttachments(list, digest) {
+    if (!list.disable_attachments) return;
+    const eaUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=EnableAttachments`);
+    const eaResp = await fetchWithRetry(eaUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!eaResp.ok) {
+      const text = await eaResp.text();
+      throw new Error(`EnableAttachments probe failed: HTTP ${eaResp.status} ${text}`);
+    }
+    const eaJson = await eaResp.json();
+    const actual = (eaJson && eaJson.d) || {};
+    if (typeof actual.EnableAttachments !== 'boolean') {
+      throw new Error(
+        `List '${list.title}' attachments probe returned no EnableAttachments; `
+        + `this tenant does not expose the property the declared attachments setting needs.`,
+      );
+    }
+    if (actual.EnableAttachments === false) return;
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, EnableAttachments: false }, digest);
+    const verifyResp = await fetchWithRetry(eaUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    const verify = verifyResp.ok ? ((await verifyResp.json()).d || {}) : {};
+    if (verify.EnableAttachments !== false) {
+      throw new Error(
+        `List '${list.title}' did not retain EnableAttachments = false `
+        + `(readback ${JSON.stringify(verify.EnableAttachments)})`,
+      );
+    }
+    log('INFO', `List '${list.title}' attachments disabled (EnableAttachments = false).`);
+    logChange({ key: `attachments: ${list.title}`, kind: 'setting', target: list.title,
+      oldValue: 'enabled', newValue: 'disabled' });
+  }
+
   // Declared ITEM-level trimming: ReadSecurity / WriteSecurity, each 1 ("all
   // items") or 2 ("items created by the user"). They narrow what a LIST-level
   // grant reaches, which is how a drop box is built -- Contribute plus
@@ -2737,6 +2793,7 @@
     // the creation POST, and nothing had ever read that write back.
     actual = await reconcileListDescription(list, actual, digest);
     await reconcileListItemSecurity(list, digest);
+    await reconcileListAttachments(list, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
   }

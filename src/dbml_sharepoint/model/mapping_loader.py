@@ -83,7 +83,8 @@ KNOWN_SECTIONS = frozenset({
     "retired_columns", "field_sets",
     "lookup_projections",
     "style_theme",
-    "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
+    "column_validation", "seal_columns", "prevent_list_deletion", "attachments",
+    "demo_items",
     "item_security",
     # Permissions are declared as three top-level sections, not one nested
     # `permissions:` block (see _parse_permissions).
@@ -448,6 +449,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         },
         seal_columns=_optional_bool(raw, "seal_columns", "mapping"),
         prevent_list_deletion=_optional_bool(raw, "prevent_list_deletion", "mapping"),
+        # True is SharePoint's default, so the absent key and `attachments:
+        # true` both mean "write nothing".
+        attachments=_optional_bool(raw, "attachments", "mapping", default=True),
     )
 
     # Retirement resolves ONCE, here, into the structures the generators

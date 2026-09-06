@@ -664,6 +664,49 @@ def test_a_document_library_reports_the_kind_not_the_base_template() -> None:
     none_of(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
 
 
+def test_attachments_off_beside_a_document_library_is_refused() -> None:
+    """`attachments:` is one top-level switch applied to every provisioned
+    list, so a library in the mapping is a library the deploy would write
+    `EnableAttachments = false` on.
+
+    PROVISIONAL, and the test is here to keep the refusal honest rather than
+    to pin a measured fact. Nothing has measured what a library does with
+    that write: it may refuse it part-way through a paste, or answer 200 and
+    read back unchanged, which is the silent class this repository exists to
+    catch. Narrow this from what `list-settings-probe.js` reports on
+    `library.doc-lib.attachments-sticks`, not from what seems likely.
+
+    Reported beside the kind refusal rather than instead of it, on the
+    `demo_items` precedent above: an author who lifts the kind refusal still
+    needs to see this one.
+    """
+    errors = _docs_errors(_library(), attachments=False)
+    f = only(errors, FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY)
+    assert f.location == Location(Section.ENTITIES, entity="Docs")
+    assert "Docs" in f.message, "the message must name the offending entity"
+    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
+
+
+def test_attachments_off_on_a_generic_list_is_accepted() -> None:
+    """The refusal is about the container kind, not about the setting. A
+    generic list is what the deploy's `EnableAttachments` MERGE was written
+    for, so declaring it there passes."""
+    none_of(
+        _docs_errors(_library(kind="List", base_template=100), attachments=False),
+        FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
+    )
+
+
+def test_a_document_library_alone_says_nothing_about_attachments() -> None:
+    """`attachments:` absent (and `attachments: true`) is SharePoint's own
+    default, which the deploy never writes, so there is nothing to refuse."""
+    none_of(_docs_errors(_library()), FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY)
+    none_of(
+        _docs_errors(_library(), attachments=True),
+        FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
+    )
+
+
 # The measured number, spelled as a LITERAL here on purpose. Deriving the
 # fixture sizes from `MAX_FILTER_EDITOR_CONDITIONS` made both sides of the
 # comparison move together, so setting the constant to 9 or to 11 left every

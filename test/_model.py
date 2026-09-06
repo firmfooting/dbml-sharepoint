@@ -231,6 +231,7 @@ class MappingSections(TypedDict, total=False):
     retirement_strips: list[RetirementStrip]
     seal_columns: bool
     prevent_list_deletion: bool
+    attachments: bool
 
 
 def _loader_defaults() -> MappingSections:

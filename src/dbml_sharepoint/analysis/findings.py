@@ -146,6 +146,7 @@ class FindingCode(StrEnum):
     # reference to it.
     # --- checks/_structure.py: entities, cross-site refs, indexes, calculated
     ALL_ITEMS_VIEW_DECLARED = "all_items_view_declared", "error"
+    ATTACHMENTS_ON_DOCUMENT_LIBRARY = "attachments_on_document_library", "error"
     CALCULATED_COLUMN_HAS_NO_FORMULA = "calculated_column_has_no_formula", "error"
     CALCULATED_DISPLAY_COLUMN_UNINDEXABLE = "calculated_display_column_unindexable", "warning"
     CALCULATED_FORMULA_CYCLE = "calculated_formula_cycle", "error"

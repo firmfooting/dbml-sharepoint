@@ -22,7 +22,7 @@ the mapping's own `extension:` key).
 ### `KNOWN_SECTIONS`
 
 ```python
-KNOWN_SECTIONS = frozenset({'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'extensions', 'field…
+KNOWN_SECTIONS = frozenset({'attachments', 'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'exte…
 ```
 
 ### `load_mapping`

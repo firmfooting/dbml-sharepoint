@@ -81,6 +81,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "with every rendered column and no filter, and cannot be "
         "overridden."
     ),
+    FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY: (
+        "`attachments: false` is declared beside an entity of "
+        "`kind: DocumentLibrary`. The deploy would write "
+        "`EnableAttachments = false` on every list it provisions, and nothing "
+        "here has measured what a library does with that write. PROVISIONAL: "
+        "this refusal stands until the list-settings probe reports whether a "
+        "library refuses the write or accepts it and reads back unchanged. "
+        "Until then the setting is refused rather than guessed at."
+    ),
     FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
         "`list_permissions` grants `dbml Enterprise Automation` the built-in "
         "`Full Control`, on the default policy or on an override. That group "

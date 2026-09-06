@@ -514,6 +514,7 @@ class Mapping:
     retirement_strips: list[dbml_sharepoint.model.mapping_types.RetirementStrip] = field(default_factory=list)
     seal_columns: bool = False
     prevent_list_deletion: bool = False
+    attachments: bool = True
     item_security_default: ItemSecurity = field(default_factory=ItemSecurity)
     item_security_overrides: dict[str, dict[str, typing.Any]] = field(default_factory=dict)
 ```

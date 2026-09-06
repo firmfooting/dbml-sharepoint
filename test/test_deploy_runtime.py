@@ -204,6 +204,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       ['APP_Escalation', 'Provisioned by dbml-sharepoint from t for list Escalation.'],
     ]);
     const IGNORE_DESCRIPTION_WRITES = false;
+    // EnableAttachments, one flag for the whole site rather than one per
+    // list: the mock answers every list with the same Id, so a by-Id MERGE
+    // cannot be attributed to a title the way a Description write can (the
+    // marker in the body is what makes that one work). The tests that read
+    // it deploy a single list. IGNORE_ATTACHMENT_WRITES answers the MERGE
+    // 200 and keeps serving true, which is the silently discarded write the
+    // read-back exists to catch.
+    const IGNORE_ATTACHMENT_WRITES = false;
+    let attachmentsEnabled = true;
     const DROP_LIST_MARKER_AFTER_READS = null;
     const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
     // Drop every list's marker the moment a named phase announces itself. A
@@ -676,6 +685,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // fallback in ensureKnownListTitles: enumeration unavailable, probe
       // per list. The fast path itself is NOT covered here.
       if (url.includes('web/lists?')) return { error: { code: 'enumeration-not-mocked' } };
+      // The attachments probe reads one property and nothing else, so it
+      // must answer before the shape branch rather than through it.
+      if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
+        return { d: { EnableAttachments: attachmentsEnabled } };
+      }
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
         const probeTitle = listOf(url);
