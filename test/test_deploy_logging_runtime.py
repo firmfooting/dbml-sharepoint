@@ -65,6 +65,7 @@ _HARNESS = textwrap.dedent(r"""
     const FAIL_CHANGE_ITEM_WRITES = false;
     const FAIL_CENTRAL_ITEM_WRITES = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
+    const REFUSE_CHANGE_FIELD = '';
     const SEED_ITEMS = {};
     const SEED_LISTS = [];
     const SEED_CENTRAL = [];
@@ -322,6 +323,13 @@ _HARNESS = textwrap.dedent(r"""
             return reply(200, { d: field });
           }
           if (method === 'POST' && body && body.Title) {
+            // One named column refused, the rest fine: what a live site did
+            // on 2026-09-06, where the message named the type it would not
+            // take. The reason text matters -- the operator needs it.
+            if (REFUSE_CHANGE_FIELD && body.Title === REFUSE_CHANGE_FIELD) {
+              return reply(400, { error: { message: { value:
+                `A duplicate or invalid field type for '${body.Title}'.` } } });
+            }
             if (FAIL_RUN_LOG_FIELD_CREATES && title === 'RUN_LOG_LIST') {
               return reply(400, { error: { message: { value:
                 'the site column could not be added' } } });
@@ -421,6 +429,7 @@ def _run_deploy(
     fail_change_writes: bool = False,
     bare_run_log: bool = False,
     fail_run_log_field_creates: bool = False,
+    refuse_change_field: str = "",
     central_columns: bool = True,
     central_change_columns: bool = True,
     central_absent: bool = False,
@@ -485,6 +494,11 @@ def _run_deploy(
         harness = _substitute(
             harness, "const FAIL_CHANGE_ITEM_WRITES = false;",
             "const FAIL_CHANGE_ITEM_WRITES = true;",
+        )
+    if refuse_change_field:
+        harness = _substitute(
+            harness, "const REFUSE_CHANGE_FIELD = '';",
+            f"const REFUSE_CHANGE_FIELD = '{refuse_change_field}';",
         )
     if fail_run_log_field_creates:
         harness = _substitute(
@@ -775,6 +789,51 @@ def test_a_run_log_whose_columns_cannot_be_created_still_gets_its_stamps() -> No
     assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
     assert "carry Title only" in run["output"]
 
+
+def test_one_refused_column_does_not_abandon_the_columns_after_it() -> None:
+    """Live on 2026-09-06: `IsCurrent` was refused and `ReleaseTag`, declared
+    behind it, was never attempted at all.
+
+    The create loop threw on the first refusal, so a list that could have
+    carried nine of its ten columns carried eight. Every column is
+    independent, and the ones that can be created should be.
+    """
+    run = _run_deploy(refuse_change_field="IsCurrent", central_absent=True)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+
+    attempted = [
+        c["body"]["Title"]
+        for c in run["calls"]
+        if c["method"] == "POST" and isinstance(c.get("body"), dict)
+        and "Title" in c["body"]
+        and f"getbytitle('{CHANGE_LOG_TITLE}')/fields" in c["url"]
+    ]
+    assert "IsCurrent" in attempted, attempted
+    assert "ReleaseTag" in attempted, (
+        f"the column behind the refused one was never attempted: {attempted}"
+    )
+
+
+def test_a_refused_column_is_named_in_the_log_with_the_reason() -> None:
+    """The count alone sends the operator digging through a collapsed object.
+
+    The run printed `1 logging operation(s) failed` and nothing else, and
+    which column and why were only in the returned summary. Naming the site
+    that had to be read back to find out is the whole cost this avoids.
+    """
+    run = _run_deploy(refuse_change_field="IsCurrent", central_absent=True)
+    # The LOG LINES only. The harness dumps its whole state at the end, and
+    # that dump contains every column name, so searching the raw output would
+    # pass whether the log said anything or not.
+    logged = "\n".join(
+        line for line in run["output"].splitlines() if "[SP-DEPLOY]" in line
+    )
+    assert "IsCurrent" in logged, (
+        "the log never named the column that failed:\n" + logged[-2500:]
+    )
+    assert "duplicate or invalid field type" in logged, (
+        "the log never carried SharePoint's own reason:\n" + logged[-2500:]
+    )
 
 @pytest.fixture(scope="module")
 def central_run() -> dict[str, Any]:

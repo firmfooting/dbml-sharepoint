@@ -356,6 +356,12 @@
           .map((f) => [f.InternalName, f]));
       };
       const present = await readPresent();
+      // Every column is attempted, and the refusals are collected rather than
+      // thrown on the first. Live 2026-09-06: 'IsCurrent' was refused and
+      // 'ReleaseTag', declared behind it, was never attempted, so a list that
+      // could have carried nine of ten columns carried eight. The columns are
+      // independent; the ones that can be created should be.
+      const refused = [];
       for (const fieldBody of fields) {
         if (present.has(fieldBody.Title)) continue;
         const digestF = await getDigest();
@@ -379,8 +385,11 @@
           body: JSON.stringify(createBody),
         });
         if (!addResp.ok) {
-          throw new Error(`field '${fieldBody.Title}': HTTP ${addResp.status} ${await addResp.text()}`);
+          refused.push(`'${fieldBody.Title}': HTTP ${addResp.status} ${spError(await addResp.text())}`);
         }
+      }
+      if (refused.length > 0) {
+        throw new Error(`${refused.length} column(s) refused: ${refused.join('; ')}`);
       }
       const back = await readPresent();
       for (const fieldBody of fields) {
@@ -910,7 +919,10 @@
       // nothing else in the run says a word about them.
       if (summary.loggingFailures.length > 0) {
         log('WARN', `${summary.loggingFailures.length} logging operation(s) failed during this run; `
-          + `the deploy was not stopped by them. The returned summary lists them under loggingFailures.`);
+          + `the deploy was not stopped by them.`);
+        for (const failure of summary.loggingFailures) {
+          log('WARN', `  ${failure.where}: ${failure.error}`);
+        }
       }
     };
 
