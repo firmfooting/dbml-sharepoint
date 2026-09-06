@@ -189,6 +189,22 @@
       };
       await assertLaneOwnership();
       let laneDigest = await getDigest();
+      // NOT BATCHED, deliberately, as of 2026-09-06. #332 area 3.2 schedules
+      // this loop as the next port to BatchWriter, calling it the same shape
+      // as the seal phase. It is not the same shape: seal MERGEs fields that
+      // already exist, and this creates them. Three things block the port and
+      // test/manual/batch-field-create-probe.js asks all three:
+      //   - reconcileDeclaredField below builds its MERGE body from the
+      //     post-create readback, so that write cannot ride the create's own
+      //     ChangeSet until a part is proved to see the part before it;
+      //   - that MERGE is the display-title rename, which #332 already
+      //     reserves as a single write;
+      //   - assertLaneOwnership() runs before EVERY write here, and batching
+      //     moves the latch to a per-batch boundary on the one phase that
+      //     creates columns.
+      // Nothing measured here yet says whether N creates against ONE list
+      // survive a single ChangeSet or race into the save conflicts the lane
+      // concurrency exists to prevent.
       for (const col of list.fields_phase1) {
         // Guard each field independently: one field's failure (a transient
         // 429/403, or a missing lookup target) must not abandon the list's

@@ -4586,6 +4586,14 @@
       if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
     if (sealDeclared.length > 0) {
+      // One lane per list: same-list field MERGEs race into save conflicts;
+      // different lists unseal concurrently. The lane boundary is also the
+      // batch boundary, so one list's unseals are one ChangeSet.
+      const unsealByList = new Map();
+      for (const [listTitle, field] of sealDeclared) {
+        if (!unsealByList.has(listTitle)) unsealByList.set(listTitle, []);
+        unsealByList.get(listTitle).push(field);
+      }
       // Preflight ownership can change before this first list mutation. Re-read
       // every list this phase may touch and gate the whole unseal batch before
       // opening one field. An absent list is a clean first-provision target,
@@ -4593,7 +4601,7 @@
       // are carried into the write lane below, which refuses a list that has
       // become a different object since.
       const unsealOwned = await surveyOwnedListsForWrites(
-        sealDeclared.map(([listTitle]) => listTitle),
+        [...unsealByList.keys()],
         '1.8', 'Maintenance ownership recheck', true,
       );
       if (!unsealOwned) {
@@ -4602,10 +4610,9 @@
       }
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
-      // One lane per list: same-list field MERGEs race into save conflicts;
-      // different lists unseal concurrently.
       const errorsBeforeUnseal = summary.errors.length;
-      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, field]) => {
+      await mapLanes([...unsealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, fields]) => {
+        let currentList;
         try {
           const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
           if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
@@ -4613,7 +4620,6 @@
           // one it did not find may still be absent, since this phase runs
           // before the structural phases create it.
           const surveyedId = unsealOwned.get(listTitle);
-          let currentList;
           if (surveyedId == null) {
             currentList = await readListShape(listTitle, true);
             if (!currentList) return;
@@ -4623,36 +4629,85 @@
               listTitle, surveyedId, 'before maintenance unseal',
             );
           }
-          const shape = await readFieldShape(listTitle, field.title, field, true);
-          // A partial first provision may not have created this deferred
-          // lookup yet. With no live field there is nothing to unseal, and its
-          // target is allowed to remain absent until the structural phases.
-          if (!shape) return;
-          let targetGuid = null;
-          if (field.target_list) {
-            const target = SCHEMA.lists.find(candidate => candidate.title === field.target_list);
-            if (!target) throw new Error(`No declaration found for lookup target '${field.target_list}'`);
-            const targetShape = await readListShape(target.title, true);
-            if (!targetShape) throw new Error(`Lookup target '${target.title}' disappeared before maintenance unseal`);
-            assertListAdoptable(target, targetShape);
-            targetGuid = targetShape.Id;
-          }
-          await assertFieldImmutableShape(listTitle, field, shape, targetGuid);
-          if (shape.Sealed) {
-            const unsealDigest = await getDigest();
-            // Record before the request. If SharePoint commits the MERGE but
-            // the response is lost, exit cleanup must still re-seal it. A
-            // redundant Sealed=true write is safe when the MERGE never landed.
-            fieldsUnsealedForRun.set(
-              `${listTitle}\u0000${field.title}`,
-              [listTitle, field.title, currentList.Id, shape.Id],
-            );
-            await patchFieldById(currentList.Id, shape.Id, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
-            unsealedCount += 1;
-          }
         } catch (err) {
-          log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
-          summary.errors.push({ phase: '1.8', list: listTitle, column: field.title, error: err.message });
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
+          return;
+        }
+        // The lane's unseals go out as ONE $batch rather than one MERGE per
+        // column: the inverse of the seal phase that re-closes them, and the
+        // same shape, independent MERGEs of one property with nothing read
+        // between them. This phase runs before every structural phase, so on a
+        // maintained site its per-column burst was the first thing a redeploy
+        // paid for. fieldMergePath and FIELD_MERGE_HEADERS are the same address
+        // and headers patchFieldById sends, so only the transport changes; the
+        // ChangeSet still addresses /lists(guid)/fields(guid), which no title
+        // rebind can redirect.
+        const unsealBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const field of fields) {
+          try {
+            const shape = await readFieldShape(listTitle, field.title, field, true);
+            // A partial first provision may not have created this deferred
+            // lookup yet. With no live field there is nothing to unseal, and its
+            // target is allowed to remain absent until the structural phases.
+            if (!shape) continue;
+            let targetGuid = null;
+            if (field.target_list) {
+              const target = SCHEMA.lists.find(candidate => candidate.title === field.target_list);
+              if (!target) throw new Error(`No declaration found for lookup target '${field.target_list}'`);
+              const targetShape = await readListShape(target.title, true);
+              if (!targetShape) throw new Error(`Lookup target '${target.title}' disappeared before maintenance unseal`);
+              assertListAdoptable(target, targetShape);
+              targetGuid = targetShape.Id;
+            }
+            await assertFieldImmutableShape(listTitle, field, shape, targetGuid);
+            if (shape.Sealed) {
+              // Record before the part is queued, for the reason the single
+              // write recorded before sending: if SharePoint commits the MERGE
+              // but the response is lost, exit cleanup must still re-seal it. A
+              // redundant Sealed=true write is safe when the MERGE never landed.
+              fieldsUnsealedForRun.set(
+                `${listTitle}\u0000${field.title}`,
+                [listTitle, field.title, currentList.Id, shape.Id],
+              );
+              await unsealBatch.add(
+                'POST',
+                fieldMergePath(currentList.Id, shape.Id),
+                { __metadata: { type: 'SP.Field' }, Sealed: false },
+                FIELD_MERGE_HEADERS,
+              );
+            }
+          } catch (err) {
+            log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
+            summary.errors.push({ phase: '1.8', list: listTitle, column: field.title, error: err.message });
+          }
+        }
+        try {
+          await unsealBatch.done();
+        } catch (err) {
+          // Recorded at lane level and not attributed to a column: SharePoint
+          // does not roll a ChangeSet back (Learn, "Make batch requests with
+          // the REST APIs"), so some of these parts may have landed. Every
+          // field queued is already in fieldsUnsealedForRun, so exit cleanup
+          // re-seals whichever ones did.
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
+        }
+        // What the batch reports landed, not what the loop queued: a refused
+        // part must not be counted as a column this run opened.
+        unsealedCount += unsealBatch.opsSent;
+        try {
+          // The single-write shape re-proved this list immediately before EVERY
+          // field MERGE, so a marker lost part-way through a list's columns
+          // aborted at the next one. One ChangeSet has no next one, so the
+          // re-prove moves to the batch boundary: a marker lost while the
+          // envelope was in flight still aborts the phase, before any
+          // structural phase begins and while every column this lane opened is
+          // still recorded for exit cleanup to re-seal.
+          await ownedListIdentity(listTitle, currentList.Id, 'across the maintenance unseal');
+        } catch (err) {
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
         }
       }, 4);
       if (summary.errors.length > errorsBeforeUnseal) {
@@ -4847,6 +4902,22 @@
       };
       await assertLaneOwnership();
       let laneDigest = await getDigest();
+      // NOT BATCHED, deliberately, as of 2026-09-06. #332 area 3.2 schedules
+      // this loop as the next port to BatchWriter, calling it the same shape
+      // as the seal phase. It is not the same shape: seal MERGEs fields that
+      // already exist, and this creates them. Three things block the port and
+      // test/manual/batch-field-create-probe.js asks all three:
+      //   - reconcileDeclaredField below builds its MERGE body from the
+      //     post-create readback, so that write cannot ride the create's own
+      //     ChangeSet until a part is proved to see the part before it;
+      //   - that MERGE is the display-title rename, which #332 already
+      //     reserves as a single write;
+      //   - assertLaneOwnership() runs before EVERY write here, and batching
+      //     moves the latch to a per-batch boundary on the one phase that
+      //     creates columns.
+      // Nothing measured here yet says whether N creates against ONE list
+      // survive a single ChangeSet or race into the save conflicts the lane
+      // concurrency exists to prevent.
       for (const col of list.fields_phase1) {
         // Guard each field independently: one field's failure (a transient
         // 429/403, or a missing lookup target) must not abandon the list's
@@ -5001,6 +5072,14 @@
     return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
   }
 
+  // NOT BATCHED, deliberately, as of 2026-09-06. Two reasons, and the volume
+  // one is the decisive one: across the 35 shipped solutions that build, this
+  // phase writes 6 deferred lookups and 6 projections in total, and no column
+  // carries more than one projection. A ChangeSet of one saves no request.
+  // The create-then-reconcile pair below also has the read-after-write shape
+  // that blocks the phase-1 field wave (see _lists.js.j2), so if the volume
+  // ever justifies a port, test/manual/batch-field-create-probe.js is the
+  // measurement it needs first.
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
       digest = await getDigest();  // refresh per item (digest lifetime)
