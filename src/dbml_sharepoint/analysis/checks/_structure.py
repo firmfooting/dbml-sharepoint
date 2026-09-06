@@ -296,6 +296,7 @@ def _entities(
         table = vc.tables_by_name.get(entity_name)
         findings += _entity_kind(entity_name, entity)
         findings += _attachments_are_measurable(vc, entity_name, entity)
+        findings += _minor_versions_need_versioning(vc, entity_name, entity)
         findings += _note_is_present(table, entity_name, family)
         findings += _note_whitespace_is_measured(table, entity_name)
         findings += _note_fits_beside_marker(table, entity_name, family)
@@ -410,6 +411,70 @@ def _attachments_are_measurable(
         f"it part-way through the paste, or accept it and read back unchanged. "
         f"Drop attachments: false, or model {entity_name} as a 'List'.",
         location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
+def _minor_versions_need_versioning(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+) -> list[Finding]:
+    """Refuse minor versions without versioning, on a generic list.
+
+    MEASURED 2026-09-06, `field.list.minor-versions-sticks` in
+    `list-settings-probe.js`: writing `EnableMinorVersions = true` to a GENERIC
+    LIST while `EnableVersioning` was false came back HTTP 500, "-2146232832,
+    Microsoft.SharePoint.SPException", "The list does not support minor
+    versioning", and the flag still read back false.
+
+    A refusal rather than a silent accept, so the cost is a paste that stops
+    part-way rather than a list that quietly lacks drafts. `_lists.js.j2` sends
+    both flags in the create body and `desiredListSettings` sends both again on
+    reconcile, so there is no write order the deploy could adopt to slip the
+    pair past: the build is the only place this can be caught, and until now
+    nothing here paired the two flags.
+
+    Keyed on the RESOLVED settings rather than on either declaration, because
+    `versioning_for` merges an override onto the default key by key. A sound
+    default with an override that turns versioning off is the same broken list
+    as a broken default, and a broken default that an override repairs is not
+    a broken list at all. Reporting per entity follows from that: the pair is
+    only decidable once merged, and each finding names a list the paste would
+    actually die on.
+
+    A DOCUMENT LIBRARY is skipped, and the skip is the measurement rather than
+    an oversight. `library.doc-lib.minor-versions-sticks` in the same run wrote
+    the same pair to a library and it STUCK (HTTP 204, read back true), so this
+    is a generic-list constraint and not an ordering rule for both containers.
+    Nothing is let through by skipping: `kind: DocumentLibrary` is refused
+    outright one rule earlier. What the skip avoids is telling an author that a
+    write observed to succeed will fail.
+    """
+    if entity.kind == "DocumentLibrary":
+        return []
+    versioning = vc.bundle.mapping.versioning_for(entity_name)
+    if not versioning.enable_minor_versions or versioning.enable_versioning:
+        return []
+
+    # Which side of the merge asked for minor versions. With one default over
+    # many entities, "it is in the default" and "it is in this entity's
+    # override" send the author to different lines.
+    override = vc.bundle.mapping.versioning_overrides.get(entity_name, {})
+    declared_in = (
+        f"versioning.overrides[{entity_name}]"
+        if "enable_minor_versions" in override
+        else "versioning.default"
+    )
+    return [Finding(
+        FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING,
+        f"versioning[{entity_name}]: enable_minor_versions is true (from "
+        f"{declared_in}) while enable_versioning resolves false. A generic "
+        f"list refuses that pair: measured on a live site 2026-09-06, the "
+        f"write came back HTTP 500, '-2146232832, "
+        f"Microsoft.SharePoint.SPException', 'The list does not support minor "
+        f"versioning'. The deploy sends both flags in one body, so the paste "
+        f"would stop at {entity_name}. Set enable_versioning: true, or drop "
+        f"enable_minor_versions. A document library took the same pair in that "
+        f"run, but this tool does not provision libraries.",
+        location=Location(Section.VERSIONING, entity=entity_name),
     )]
 
 

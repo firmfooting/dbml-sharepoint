@@ -27,6 +27,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormFormatting,
     FormVisibility,
     MappingBundle,
+    Versioning,
     ViewDef,
     ViewGroupBy,
 )
@@ -705,6 +706,145 @@ def test_a_document_library_alone_says_nothing_about_attachments() -> None:
         _docs_errors(_library(), attachments=True),
         FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
     )
+
+
+# --- Minor versions without versioning --------------------------------------
+#
+# MEASURED 2026-09-06, `field.list.minor-versions-sticks` in
+# list-settings-probe.js: a generic list refused EnableMinorVersions=true while
+# EnableVersioning was false, HTTP 500, and the flag read back false. The
+# library row of the same run wrote the same pair and it stuck. Every
+# expectation below is one of those two observations, not a plausibility.
+_LIST = EntityMapping(
+    name="Docs", kind="List", base_template=100, site_role="default",
+)
+
+
+def test_minor_versions_without_versioning_is_refused_on_a_list() -> None:
+    """The pair the live run watched SharePoint refuse.
+
+    Built GREEN before this rule: both flags go out in one create body, so a
+    mapping declaring the combination passed every build check and died
+    mid-paste with an HTTP 500 the operator had no way to have anticipated.
+    """
+    errors = _docs_errors(
+        _LIST,
+        versioning_default=Versioning(
+            enable_versioning=False, enable_minor_versions=True,
+        ),
+    )
+    f = only(errors, FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING)
+    assert f.severity == "error"
+    assert f.location == Location(Section.VERSIONING, entity="Docs")
+    assert "Docs" in f.message, "the message must name the offending list"
+    # SharePoint's own words and status, quoted so an operator who has already
+    # hit this in a paste can search for either and land here.
+    assert "500" in f.message
+    assert "Microsoft.SharePoint.SPException" in f.message
+    assert "does not support minor versioning" in f.message
+
+
+def test_minor_versions_refusal_points_at_the_override_that_declared_them() -> None:
+    """One default over many entities, so which line to edit is not obvious.
+
+    The default here is sound and the override is what breaks the list, which
+    is only visible because `versioning_for` merges before the rule reads.
+    """
+    errors = _docs_errors(
+        _LIST,
+        versioning_default=Versioning(
+            enable_versioning=False, enable_minor_versions=False,
+        ),
+        versioning_overrides={"Docs": {"enable_minor_versions": True}},
+    )
+    f = only(errors, FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING)
+    assert "versioning.overrides[Docs]" in f.message
+    assert "versioning.default" not in f.message
+
+
+def test_minor_versions_refusal_names_the_default_when_the_default_declared_them() -> None:
+    """The other side of the merge, so the attribution above cannot be a
+    constant that happens to read correctly in one test."""
+    f = only(
+        _docs_errors(
+            _LIST,
+            versioning_default=Versioning(
+                enable_versioning=True, enable_minor_versions=True,
+            ),
+            versioning_overrides={"Docs": {"enable_versioning": False}},
+        ),
+        FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING,
+    )
+    assert "versioning.default" in f.message
+    assert "versioning.overrides[Docs]" not in f.message
+
+
+def test_an_override_repairing_a_broken_default_is_not_refused() -> None:
+    """The rule reads RESOLVED settings, so a default nobody deploys under is
+    not a finding. Reading `versioning_default` alone would fail this."""
+    none_of(
+        _docs_errors(
+            _LIST,
+            versioning_default=Versioning(
+                enable_versioning=False, enable_minor_versions=True,
+            ),
+            versioning_overrides={"Docs": {"enable_versioning": True}},
+        ),
+        FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING,
+    )
+
+
+def test_minor_versions_with_versioning_on_is_accepted() -> None:
+    """The supported combination, and the shipped mappings' own settings.
+
+    Both halves matter: minor versions ON beside versioning ON is what the
+    refusal is not about, and the loader's defaults must not trip it either.
+    """
+    none_of(
+        _docs_errors(
+            _LIST,
+            versioning_default=Versioning(
+                enable_versioning=True, enable_minor_versions=True,
+            ),
+        ),
+        FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING,
+    )
+    none_of(_docs_errors(_LIST), FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING)
+
+
+def test_versioning_off_alone_is_not_refused() -> None:
+    """Versioning off with minor versions off is a legitimate list. The rule
+    is about the PAIR, and a rule keyed on `enable_versioning` alone would
+    refuse every list an author deliberately turned history off on."""
+    none_of(
+        _docs_errors(
+            _LIST,
+            versioning_default=Versioning(
+                enable_versioning=False, enable_minor_versions=False,
+            ),
+        ),
+        FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING,
+    )
+
+
+def test_a_document_library_is_not_told_the_pair_will_fail() -> None:
+    """The skip is the measurement, not an oversight.
+
+    `library.doc-lib.minor-versions-sticks` in the 2026-09-06 run wrote the
+    same pair to a document library and it STUCK (HTTP 204, read back true).
+    Firing here would tell an author that a write observed to succeed will
+    fail, which is the opposite of the evidence rule. Nothing is let through:
+    the kind is refused outright, and that refusal is asserted here so the
+    skip can never become a hole.
+    """
+    errors = _docs_errors(
+        _library(),
+        versioning_default=Versioning(
+            enable_versioning=False, enable_minor_versions=True,
+        ),
+    )
+    none_of(errors, FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING)
+    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
 
 
 # The measured number, spelled as a LITERAL here on purpose. Deriving the
