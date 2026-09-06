@@ -5184,6 +5184,264 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "list-settings-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list, one scratch document library, and one MERGE per SP.List setting on each"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.list.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.list.control-description-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "field.list.control-unknown-property-refused",
+              "depends_on": [
+                "field.list.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "field.list.property-enumeration",
+              "depends_on": [
+                "field.list.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "field.list.attachments-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.versioning-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.minor-versions-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.moderation-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.folder-creation-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.nocrawl-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.direction-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.content-types-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "access.item-acl.read-security-on-list",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "access.item-acl.write-security-on-list",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.irm-enabled-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.irm-expire-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "field.list.irm-reject-sticks",
+              "depends_on": [
+                "field.list.fixture-scratch-list",
+                "field.list.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.doc-lib.control-description-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.doc-lib.control-unknown-property-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.doc-lib.property-enumeration",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.doc-lib.attachments-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.versioning-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.minor-versions-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.moderation-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.folder-creation-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.nocrawl-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.direction-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.content-types-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "access.item-acl.read-security-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "access.item-acl.write-security-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.irm-enabled-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.irm-expire-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            },
+            {
+              "id": "library.doc-lib.irm-reject-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.doc-lib.control-description-sticks"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.list.fixture-scratch-list",
+            "field.list.control-description-sticks",
+            "field.list.control-unknown-property-refused",
+            "library.doc-lib.fixture-library-created",
+            "library.doc-lib.control-description-sticks",
+            "library.doc-lib.control-unknown-property-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
