@@ -121,6 +121,19 @@ list_permissions:
 # withholds EditListItems, so WriteSecurity is belt and braces: it is what
 # stops a future binding that does carry Edit from reaching other people's
 # rows by accident.
+#
+# MEASURED 2026-09-06, `access.item-acl.read-security-on-list` and
+# `access.item-acl.read-security-on-library` in list-settings-probe.js: both
+# wrote ReadSecurity 2 over the default 1, HTTP 204, and read back 2. The two
+# write-security rows did the same. So the posture rests on a measured write
+# over REST rather than on the settings page, which matters because these two
+# properties are outside SP.List's default projection (the same run's
+# enumeration returned 55 properties and neither was among them) and are
+# reachable only through an explicit $select.
+#
+# STILL NOT MEASURED: which levels bypass the trim. See the ItemSecurity
+# docstring in model/mapping_types.py and the probe named in 30-deploy/
+# deploy.md; a reader posture must not lean on ReadSecurity 2 until it runs.
 item_security:
   default:
     read: own

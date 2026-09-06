@@ -2618,6 +2618,13 @@
   // deploy reports the block was applied, which is the failure class this
   // repository exists to catch. This throws instead. Libraries never reach
   // here: the validator refuses `attachments: false` beside a DocumentLibrary.
+  //
+  // MEASURED 2026-09-06, `field.list.attachments-sticks` in
+  // list-settings-probe.js: on a generic list, EnableAttachments was written
+  // false (it was true), HTTP 204, and it read back false. That is this exact
+  // write on this exact property, so the setting is built on a measured
+  // stick rather than on the Learn page alone. The read-back stays anyway:
+  // it is what turns a tenant where it stops sticking into a failed deploy.
   async function reconcileListAttachments(list, digest) {
     if (!list.disable_attachments) return;
     const eaUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=EnableAttachments`);
@@ -2670,6 +2677,17 @@
   // while the stored value stays 1 leaves a list that accepts every row and
   // shows every row to everybody, while the deploy reports the drop box was
   // built. This throws instead.
+  //
+  // MEASURED 2026-09-06, list-settings-probe.js. Both properties stick:
+  // ReadSecurity and WriteSecurity were each written 2 over the default 1 on
+  // a generic list and on a document library, HTTP 204, read back 2. The
+  // $select below is REQUIRED rather than tidy: the same run's
+  // `property-enumeration` rows found a bare GET projects 55 properties on
+  // either container and neither of these two is among them. The enumeration
+  // is closed, so a name SP.List does not carry is refused with HTTP 400
+  // (`control-unknown-property-refused`, "The property ... does not exist on
+  // type 'SP.List'"), which is why a misspelling here fails loudly instead
+  // of reconciling nothing.
   async function reconcileListItemSecurity(list, digest) {
     if (!list.item_security) return;
     const desired = {
