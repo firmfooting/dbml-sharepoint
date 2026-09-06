@@ -40,6 +40,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.sidecars import (
+    APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     EXTERNAL_LOG_ROW_PREFIX,
@@ -202,6 +203,10 @@ def generate_deploy_js(
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
         deployment_log_row_prefix=EXTERNAL_LOG_ROW_PREFIX,
+        # Which firmfooting application this build is. Written into every
+        # central row and every change-log row so a reader recovers it from a
+        # declared column rather than by parsing DeployerVersion.
+        application_name=APPLICATION_NAME,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

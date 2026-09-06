@@ -77,7 +77,7 @@ EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
 #: from the list it writes into.
 CENTRAL_LOG_COLUMNS: tuple[str, ...] = (
     "StampKind", "StampUtc", "SourceSite", "ReleaseTag",
-    "SchemaVersion", "DeployerVersion", "Operator", "Details",
+    "SchemaVersion", "DeployerVersion", "Operator", "Details", "Application",
 )
 
 #: `Hidden` on both sidecars. The run log exists so the stamps survive the
@@ -155,6 +155,13 @@ def change_log_title() -> str:
 #: the column has to travel with the row. It is not indexed here: on a
 #: per-site log every row carries the same value, and the central list
 #: declares its own index on it in the family's `schema.dbml`.
+#:
+#: Application names the firmfooting application that wrote the row, so a
+#: reader (and, once the close filters on it, the type-2 close itself) can
+#: tell two applications' rows apart even when they share a ChangeKey and a
+#: SourceSite. Indexed here, unlike SourceSite, because that close filter
+#: will add it as a third clause of the same AND, and every clause of an AND
+#: needs its own index to survive the 5,000-item list view threshold.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
         "__metadata": {"type": entity_type_for_type_kind(2)},
@@ -226,6 +233,14 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The release that made the change.",
+    },
+    {
+        "__metadata": {"type": entity_type_for_type_kind(2)},
+        "Title": "Application",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Indexed": True,
+        "Description": "The firmfooting application that wrote this row.",
     },
 )
 

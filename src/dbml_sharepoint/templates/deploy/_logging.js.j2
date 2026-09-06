@@ -89,6 +89,11 @@
     const EXTERNAL_ROW_PREFIX = {{ deployment_log_row_prefix | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
     const RUN_LOG_FIELDS = {{ sidecar_run_log_fields | tojson(indent=2) }};
+    // Which firmfooting application this run is. Written into every central
+    // row and every change-log row so a reader does not have to recover it
+    // by parsing DeployerVersion, and so the central close can tell two
+    // applications' rows apart.
+    const APPLICATION = {{ application_name | tojson }};
     // The StampKind a change row carries. The central log is one list holding
     // two row shapes and StampKind is what tells them apart; it is also a
     // required column there, so a change row without it is refused outright.
@@ -539,6 +544,7 @@
           EffectiveTo: null,
           IsCurrent: true,
           ReleaseTag: RELEASE_TAG,
+          Application: APPLICATION,
         }),
       });
       if (!insertResp.ok) {
@@ -599,6 +605,7 @@
         body.DeployerVersion = {{ ('dbml-sharepoint/' ~ release.deployer_version) | tojson }};
         body.Operator = OPERATOR_LOGIN;
         body.Details = details || '';
+        body.Application = APPLICATION;
       }
       try {
         const resp = await fetchWithRetry(externalApi(
@@ -687,6 +694,7 @@
           EffectiveFrom: effectiveFrom,
           EffectiveTo: null,
           IsCurrent: true,
+          Application: APPLICATION,
         }),
       });
       if (!insertResp.ok) {

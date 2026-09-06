@@ -34,6 +34,7 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.sidecars import (
+    APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
@@ -467,12 +468,16 @@ def _run_deploy(
     if seeded_central_rows:
         # A current central row for this site AND one for another site with
         # the SAME key, which is the pair a close keyed on ChangeKey alone
-        # cannot tell apart.
+        # cannot tell apart. Both carry Application: rows already on a
+        # central log this application provisioned were written by it, same
+        # as any row this run writes.
         seeded_central = json.dumps([
             {"Id": 800, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
-             "SourceSite": SITE_URL, "StampKind": "change", "IsCurrent": True},
+             "SourceSite": SITE_URL, "StampKind": "change", "IsCurrent": True,
+             "Application": APPLICATION_NAME},
             {"Id": 801, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
-             "SourceSite": OTHER_SITE_URL, "StampKind": "change", "IsCurrent": True},
+             "SourceSite": OTHER_SITE_URL, "StampKind": "change", "IsCurrent": True,
+             "Application": APPLICATION_NAME},
         ])
         harness = _substitute(
             harness, "const SEED_CENTRAL = [];", f"const SEED_CENTRAL = {seeded_central};",
@@ -599,11 +604,15 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert {field["Title"] for field in CHANGE_FIELDS} <= created
     assert "ChangeKey" in created
 
-    # Both sides of the close query's AND are asserted indexed, by MERGE,
-    # because a create body's handling of `Indexed` has never been measured
-    # here and a REUSED log would never see one either way.
+    # Both sides of the LOCAL close query's AND are asserted indexed, by
+    # MERGE, because a create body's handling of `Indexed` has never been
+    # measured here and a REUSED log would never see one either way.
+    # Application is indexed too, for the CENTRAL close's AND (this list
+    # never filters on it itself: a per-site log belongs to one application
+    # by construction), but the declaration is shared with CHANGE_FIELDS so
+    # this on-site log carries the same index unused.
     indexed = {f["InternalName"] for f in state["fields"][CHANGE_LOG_TITLE] if f["Indexed"]}
-    assert indexed == {"ChangeKey", "IsCurrent"}
+    assert indexed == {"ChangeKey", "IsCurrent", "Application"}
 
     # The field probe is paged. Unfiltered `/fields` reads take the server's
     # page size, and a truncated field map reads as a list missing columns.
@@ -1073,3 +1082,18 @@ def test_a_central_log_predating_the_change_columns_drops_the_change_feed() -> N
     )
     assert "predates the change columns" in run["output"]
     assert "change event(s) were counted and dropped" in run["output"]
+
+
+def test_every_central_row_names_the_application_that_wrote_it() -> None:
+    """A central list holds rows from every firmfooting application.
+
+    `DeployerVersion` carries `dbml-sharepoint/0.1.0`, so the application is
+    recoverable only by parsing a version string, which would oblige a second
+    application to adopt this one's format by convention. A column states it.
+    """
+    run = _run_deploy(central_can_close=True, seeded_central_rows=True)
+    central = run["state"]["central"]
+    assert central, "the run wrote no central rows"
+    assert all(row.get("Application") == "dbml-sharepoint" for row in central), (
+        f"a central row did not name its application: {central}"
+    )

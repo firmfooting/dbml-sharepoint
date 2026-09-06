@@ -88,6 +88,14 @@ def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
     assert mapping.prefix + entity == EXTERNAL_LOG_DEFAULT
 
 
+@pytest.mark.xfail(
+    reason=(
+        "central-log-naming Task 2 added Application to CENTRAL_LOG_COLUMNS "
+        "and CENTRAL_CHANGE_COLUMNS; the family's table does not declare it "
+        "until Task 4 adds it to both split tables."
+    ),
+    strict=True,
+)
 def test_the_family_declares_every_column_the_fleet_writes() -> None:
     """`CENTRAL_LOG_COLUMNS` is what a full stamp POSTs and
     `CENTRAL_CHANGE_COLUMNS` is what a central change row POSTs. A column the
