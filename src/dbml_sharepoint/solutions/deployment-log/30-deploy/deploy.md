@@ -118,7 +118,7 @@ requires per-list confirmation before every delete.
       `deployment stop` green, `deployment start` grey, `provenance` muted.
 - [ ] Inheritance is broken on both lists, and List Settings -> Permissions
       for each shows exactly four entries: Site Members on
-      **firmfooting firmfooting Deployments Submit Only**, `dbml List
+      **firmfooting Deployments Submit Only**, `dbml List
       Administrators` on Full Control, Site Owners on Full Control, and
       `dbml Enterprise Readers` on Full Control. The Edit that Members
       inherit from the site must **not** be among them on either list; if it
@@ -143,7 +143,7 @@ sites that are not this one, and the record of what a deploy did is only
 worth keeping if the person it describes cannot rewrite it. So both lists are
 a drop box, in three parts that only work together.
 
-**The level.** `firmfooting firmfooting Deployments Submit Only` carries
+**The level.** `firmfooting Deployments Submit Only` carries
 eight permissions: AddListItems, ViewListItems, ViewVersions, ViewFormPages,
 Open, ViewPages, BrowseUserInfo, UseRemoteAPIs. It does **not** carry
 EditListItems or DeleteListItems, and those two absences are the posture. A
@@ -225,27 +225,31 @@ DBMLSP_CHANGE_LOG_LIST=firmfooting_Changes
 Setting any of them to empty disables the corresponding writes for that
 project.
 
+**Today's writer still sends every change row to `Deployments`, StampKind
+`change`, rather than to `Changes`.** Splitting that write path is a later
+piece of work, and until it lands `Changes` stays declared, indexed and
+permissioned, but unwritten by this tool's own deploys. Expect nothing to
+land there yet: do not read an empty `Changes` list as a permissions or
+site problem.
+
 Prove it end to end before you rely on it: deploy any other family to any
 other site, and watch `Deployments`' **Latest first** view gain a
-`deployment start` row, a `provenance` row and a `deployment stop` row for
-that site, and `Changes` gain a row for anything that deploy altered. If
-nothing arrives, read that deploy's transcript. Three INFO lines say which
-of the three probes failed: the site was not found, the list was not found,
-or the operator cannot add items to it. A failed probe **skips** the stamp;
-it never fails the deploy, which is why a silent absence has to be checked
-for rather than waited for.
+`deployment start` row, a `provenance` row, a `deployment stop` row and, for
+anything that deploy altered, a `change` row -- all on `Deployments`, per
+the caveat above. If nothing arrives, read that deploy's transcript. Three
+INFO lines say which of the three probes failed: the site was not found, the
+list was not found, or the operator cannot add items to it. A failed probe
+**skips** the stamp; it never fails the deploy, which is why a silent
+absence has to be checked for rather than waited for.
 
 A deploy that reaches these lists writes everything here and creates no
 per-site sidecar lists at all: no `dbml_Deployments`, no `dbml_Changes`. The
 mode is chosen once, before any list is provisioned, from whether these
-lists answer the probes, and it never changes mid-run. (Today's writer still
-sends every change row to `Deployments`, StampKind `change`, rather than to
-`Changes`; splitting that write path is a later piece of work, and until it
-lands `Changes` stays declared but unwritten by this tool's own deploys.) A
-deploy that cannot reach the central lists falls back to the two site-local
-lists, which is the old behaviour and the reason they still exist. So the
-sidecars appearing on a source site is the signal that its stamps are not
-arriving here, and their absence is the signal that they are.
+lists answer the probes, and it never changes mid-run. A deploy that cannot
+reach the central lists falls back to the two site-local lists, which is the
+old behaviour and the reason they still exist. So the sidecars appearing on
+a source site is the signal that its stamps are not arriving here, and their
+absence is the signal that they are.
 
 ## Redeploying
 

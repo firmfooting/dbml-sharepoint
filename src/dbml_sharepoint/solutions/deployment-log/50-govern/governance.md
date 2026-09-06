@@ -15,7 +15,7 @@ Each list enforces one thing itself, with its own message on the form:
 | Enforced at save | Rule |
 | --- | --- |
 | `Deployments.StampUtc` | Cannot be in the future |
-| `Changes.StampUtc` | Cannot be in the future |
+| `Changes.EffectiveFrom` | Cannot be in the future |
 
 Everything else here is a **governance check**: a sweep, a review or a
 permissions decision, not something SharePoint refuses. Three of them look
@@ -58,7 +58,7 @@ So the absence has to be swept for rather than waited for:
 
 Both lists are a **drop box**, and this is the one family in the collection
 whose permissions are a control rather than a convenience. Site Members hold
-`firmfooting firmfooting Deployments Submit Only` on each: they may add a
+`firmfooting Deployments Submit Only` on each: they may add a
 row, read back only the rows they created, and edit or delete nothing,
 including what they wrote themselves. That is exactly what an operator
 deploying any family anywhere needs and no more. The mechanism is in
@@ -121,10 +121,14 @@ which version of the tool built what. Chosen period: ______.
 ## Lifecycle
 
 Both lists are expected to **grow forever** and this is the one family in the
-collection where that is the design rather than a smell. `Changes` grows
-faster than `Deployments`, because a deploy that reaches the central lists
-writes its whole change feed there and makes no per-site sidecars at all.
-The indexes on `Deployments` (`StampKind`, `SourceSite`, `StampUtc`,
+collection where that is the design rather than a smell. Once the central
+write path sends change rows to `Changes` instead of `Deployments` (a later
+change; see "Then point the fleet at it" in `30-deploy/deploy.md` for
+today's actual behaviour), `Changes` will grow faster than `Deployments`,
+because a deploy writes one change row per change and only a handful of
+stamp rows per run. Until then, `Deployments` alone carries the whole load
+and makes no per-site sidecars at all. The indexes on `Deployments`
+(`StampKind`, `SourceSite`, `StampUtc`,
 `Application`) and on `Changes` (`SourceSite`, `ChangeKey`, `IsCurrent`,
 `Application`) are what keep the filtered views and the change-row close
 working past the list view threshold; do not remove them.

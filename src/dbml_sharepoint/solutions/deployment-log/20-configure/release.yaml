@@ -28,9 +28,9 @@ notes: |
   `--deployment-log-list dbml-deployment-log` keeps working against it until
   that override is removed.
 
-  The permission level is renamed to `{prefix} firmfooting Deployments
-  Submit Only` and both new lists take the same drop-box posture the single
-  list had. Groups are unchanged: `dbml List Administrators` and `dbml
+  The permission level is renamed to `{prefix} Deployments Submit Only`
+  and both new lists take the same drop-box posture the single list had.
+  Groups are unchanged: `dbml List Administrators` and `dbml
   Enterprise Readers` already conform to the fleet's naming convention and
   membership is never reconciled, so renaming a group would recreate it
   empty and orphan whoever already held access through the old one.

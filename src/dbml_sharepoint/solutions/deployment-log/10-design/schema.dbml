@@ -29,6 +29,9 @@ Enum stamp_kind {
 // what DBMLSP_DEPLOY_LOG_LIST defaults to. Renaming the table renames the
 // address; change both or neither. The org token is the mapping's `prefix`,
 // so an org taking this family edits that one line rather than this file.
+// Every column below but `Title` and `Id` comes straight from
+// `CENTRAL_LOG_COLUMNS` (analysis/sidecars.py), the same anti-drift
+// principle `Changes` uses below.
 Table Deployments {
   Id       int        [pk, increment]
   // The human-readable stamp, the one column a generic list is guaranteed
@@ -66,25 +69,30 @@ Table Deployments {
 // per-site pair this tool already keeps: `dbml_Deployments` never carries a
 // change row and `dbml_Changes` never carries a stamp). `firmfooting_Changes`
 // is what a deploy with a reachable central log probes for change rows
-// (analysis/sidecars.py, EXTERNAL_CHANGE_LOG_DEFAULT).
+// (analysis/sidecars.py, EXTERNAL_CHANGE_LOG_DEFAULT). Every column below
+// but `Title` and `Id` comes straight from `CENTRAL_CHANGE_COLUMNS`
+// (analysis/sidecars.py, derived from `CHANGE_FIELDS`), which is what a
+// central change row actually POSTs; the set is not hand-picked here, so it
+// cannot drift from what the fleet writes.
 Table Changes {
   Id       int        [pk, increment]
   // A change row still needs a human-readable line: this is what the
   // SharePoint UI shows in every default view, and a log whose rows all
   // read "Item" is unreadable in the browser.
   Title    nvarchar   [not null, note: 'The change as one sentence: the key this row belongs to. Written by the deploy script']
-  // Kept from the stamp half: a change row still says which site raised it
-  // and still needs a timestamp to sort on, independent of EffectiveFrom.
   SourceSite nvarchar [note: 'The site the change was made on. ChangeKey is unique only within a site, so a reader groups by SourceSite and ChangeKey together']
-  StampUtc datetime   [not null, note: 'When this row was written, in UTC. The deploy sends UTC so rows from sites in different regions sort against each other']
   ChangeKey nvarchar [note: 'The reporting row key this change belongs to. Unique within a site, not across the fleet']
   ChangeKind nvarchar [note: 'What changed: rename, create, permission']
   TargetName nvarchar [note: 'The list, level or group the change lands on']
   OldValue nvarchar [note: 'The value before the change; empty for a create']
   NewValue nvarchar [note: 'The value after the change']
+  // The change's own timestamp, and the one this list sorts and closes on.
+  // No separate StampUtc: CENTRAL_CHANGE_COLUMNS carries no such column, so
+  // this list declares none, rather than a column the fleet never fills.
   EffectiveFrom datetime [note: 'When the change took effect']
   EffectiveTo datetime [note: 'When the next change for this key took effect. Empty on the current row']
   IsCurrent boolean [note: 'Whether this row is the current one for its key, site and application. Exactly one row per (SourceSite, ChangeKey, Application) carries true']
+  ReleaseTag nvarchar [note: 'The release that made the change, as release.yaml declared it']
   Application nvarchar [not null, note: 'The firmfooting application that wrote this row. ChangeKey is unique only within a site, so two applications provisioning lists on one site can raise the same key; the type-2 close filters on this column as well, so it never closes a row that belongs to a different application']
 
   // SourceSite, ChangeKey, Application and IsCurrent are the type-2 close

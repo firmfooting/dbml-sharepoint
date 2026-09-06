@@ -70,7 +70,7 @@ groups:
 # ViewFormPages, Open, ViewPages and BrowseUserInfo are the read side, and
 # item_security below is what stops them reaching anybody else's rows.
 permission_levels:
-  - name: "{prefix} firmfooting Deployments Submit Only"
+  - name: "{prefix} Deployments Submit Only"
     description: "Add rows to a central log list and read back only your own; no editing or deleting, not even of rows you wrote."
     base_permissions:
       - AddListItems
@@ -118,7 +118,7 @@ list_permissions:
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
-        level: "{prefix} firmfooting Deployments Submit Only"
+        level: "{prefix} Deployments Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
@@ -161,14 +161,12 @@ prevent_list_deletion: true
 # names cross-web (analysis/sidecars.py, CENTRAL_LOG_COLUMNS and
 # CENTRAL_CHANGE_COLUMNS), so a rename of an internal name breaks every
 # stamp or change row in the fleet. Only display titles change. Auto
-# PascalCase splitting is right everywhere except the acronym, which both
-# lists carry.
+# PascalCase splitting is right everywhere except the acronym, which only
+# `Deployments` carries.
 display_names:
   mode: auto
   overrides:
     Deployments:
-      StampUtc: "Stamp UTC"
-    Changes:
       StampUtc: "Stamp UTC"
 
 # Column formatting: the fleet style standard (website/docs/reference/
@@ -321,6 +319,11 @@ form_formatting:
 #
 # `now` rather than `today`: TODAY() in a validation formula is midnight, so
 # `leq today` on a datetime rejects every row written after 00:00.
+#
+# `Changes` carries no `StampUtc` (CENTRAL_CHANGE_COLUMNS declares none), so
+# its guard sits on `EffectiveFrom`, the column that plays the same role
+# there: the change's own timestamp, and the one a wrong value would be
+# undetectable on later.
 column_validation:
   Deployments:
     columns:
@@ -330,10 +333,10 @@ column_validation:
         message: "A deployment stamp cannot be in the future. Deploy scripts send UTC; if you are adding a row by hand, use the time it actually happened."
   Changes:
     columns:
-      StampUtc:
+      EffectiveFrom:
         when:
-          - { field: StampUtc, op: leq, value: now }
-        message: "A change row cannot be stamped in the future. Deploy scripts send UTC; if you are adding a row by hand, use the time it actually happened."
+          - { field: EffectiveFrom, op: leq, value: now }
+        message: "A change cannot take effect in the future. Deploy scripts send UTC; if you are adding a row by hand, use the time it actually happened."
 
 # Deliberately NOT declared: list_validation. The cross-column rule either
 # list wants ("a stop stamp needs a start stamp for the same site", "exactly
@@ -414,7 +417,6 @@ demo_items:
       values:
         Title: "[DEMO] dbml-sharepoint change: list: ACME_Risk"
         SourceSite: "https://example.sharepoint.com/sites/governance"
-        StampUtc: "today-2"
         Application: "dbml-sharepoint"
         ChangeKey: "list: ACME_Risk"
         ChangeKind: "create"
@@ -423,3 +425,4 @@ demo_items:
         NewValue: "created by 1.0.0"
         EffectiveFrom: "today-2"
         IsCurrent: true
+        ReleaseTag: "1.0.0"

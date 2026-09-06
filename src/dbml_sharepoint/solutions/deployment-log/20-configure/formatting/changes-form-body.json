@@ -2,7 +2,7 @@
   "sections": [
     {
       "displayname": "The change",
-      "fields": ["Title", "ChangeKey", "ChangeKind", "TargetName"]
+      "fields": ["Title", "ChangeKey", "ChangeKind", "TargetName", "ReleaseTag"]
     },
     {
       "displayname": "Where it happened",
@@ -14,7 +14,7 @@
     },
     {
       "displayname": "When",
-      "fields": ["EffectiveFrom", "EffectiveTo", "IsCurrent", "StampUtc"]
+      "fields": ["EffectiveFrom", "EffectiveTo", "IsCurrent"]
     }
   ]
 }

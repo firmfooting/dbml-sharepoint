@@ -126,6 +126,31 @@ def test_the_family_declares_nothing_the_fleet_does_not_write() -> None:
     )
 
 
+def test_each_list_carries_exactly_its_own_row_shape() -> None:
+    """The union test above cannot see a SCRAMBLED split: it would still pass
+    if every change column landed on `Deployments` and `Changes` carried none
+    of them, because it only asks whether a column exists somewhere across
+    the family.
+
+    This pins WHICH list carries WHICH columns, derived from
+    `CENTRAL_LOG_COLUMNS` and `CENTRAL_CHANGE_COLUMNS` rather than from a
+    second hand-typed list here, so the division cannot drift from what the
+    fleet actually POSTs to each list. `Id` and `Title` are the only members
+    of each table not named in either constant.
+    """
+    tables = _tables()
+    deployments = {column.name for column in tables["Deployments"].columns} - {"Id"}
+    changes = {column.name for column in tables["Changes"].columns} - {"Id"}
+    assert deployments == frozenset(CENTRAL_LOG_COLUMNS) | {"Title"}, (
+        f"Deployments declares {sorted(deployments)}, not the stamp shape "
+        f"CENTRAL_LOG_COLUMNS plus Title."
+    )
+    assert changes == frozenset(CENTRAL_CHANGE_COLUMNS) | {"Title"}, (
+        f"Changes declares {sorted(changes)}, not the change shape "
+        f"CENTRAL_CHANGE_COLUMNS plus Title."
+    )
+
+
 def test_the_stamp_kinds_are_the_ones_the_deploy_sends() -> None:
     """`StampKind` is a CHOICE column on `Deployments`, so a member the
     deploy does not send is dead, and a kind the deploy sends that is not a
@@ -210,12 +235,12 @@ def test_the_submit_only_level_expands_to_a_name_of_its_own() -> None:
     expanded it by the time it reaches the model.
     """
     raw = (FAMILY / "20-configure" / "mapping.yaml").read_text(encoding="utf-8")
-    assert '- name: "{prefix} firmfooting Deployments Submit Only"' in raw
+    assert '- name: "{prefix} Deployments Submit Only"' in raw
 
     (level,) = _permissions().levels
     assert level.name == expand_prefix(
-        "{prefix} firmfooting Deployments Submit Only", "firmfooting_", "permission_levels")
-    assert level.name == "firmfooting firmfooting Deployments Submit Only"
+        "{prefix} Deployments Submit Only", "firmfooting_", "permission_levels")
+    assert level.name == "firmfooting Deployments Submit Only"
     assert level.name not in BUILT_IN_LEVELS
 
 
