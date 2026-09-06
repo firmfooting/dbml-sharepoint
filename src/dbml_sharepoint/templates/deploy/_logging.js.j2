@@ -638,7 +638,11 @@
         const currentResp = await fetchWithRetry(externalApi(
           `lists/getbytitle('${odataName(EXTERNAL_LOG_TITLE)}')/items`
           + `?$select=Id&$filter=SourceSite eq '${odataName(SITE_URL)}'`
-          + ` and ChangeKey eq '${odataName(change.key)}' and IsCurrent eq true`
+          + ` and ChangeKey eq '${odataName(change.key)}'`
+          // Application too: ChangeKey is unique within a SITE, and two
+          // firmfooting applications provisioning lists on one site can
+          // raise the same key.
+          + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
         ), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!currentResp.ok) {
           recordFailure(`central current-row read for '${change.key}'`,

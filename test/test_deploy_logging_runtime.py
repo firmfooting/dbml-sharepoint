@@ -192,6 +192,15 @@ _HARNESS = textwrap.dedent(r"""
       const m = /SourceSite eq '([^']*)'/.exec(rest);
       return m ? m[1] : null;
     };
+    // The central close filters on Application too, because ChangeKey is
+    // unique only within a site and two firmfooting applications on one
+    // site can raise the same key. A mock that ignored this clause would
+    // answer one application's close with another application's current
+    // row and the test would never see it.
+    const filteredApplication = (rest) => {
+      const m = /Application eq '([^']*)'/.exec(rest);
+      return m ? m[1] : null;
+    };
     // Lists that already exist when the paste starts, with the built-in
     // columns and NOTHING else. A run log created by the bare-Title version
     // of this phase is exactly this, and it is the state `ensureSidecar`
@@ -257,9 +266,11 @@ _HARNESS = textwrap.dedent(r"""
         if (/\/items/.test(u)) {
           const key = filteredKey(u);
           const site = filteredSite(u);
+          const app = filteredApplication(u);
           const rows = state.central.filter(
             (r) => (key === null || r.ChangeKey === key)
               && (site === null || r.SourceSite === site)
+              && (app === null || r.Application === app)
               && r.IsCurrent === true,
           );
           return reply(200, { d: { results: rows } });
@@ -437,6 +448,7 @@ def _run_deploy(
     central_can_close: bool = False,
     fail_central_writes: bool = False,
     seeded_central_rows: bool = False,
+    seeded_foreign_application: bool = False,
 ) -> dict[str, Any]:
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
@@ -465,22 +477,35 @@ def _run_deploy(
             harness, "const FAIL_CENTRAL_ITEM_WRITES = false;",
             "const FAIL_CENTRAL_ITEM_WRITES = true;",
         )
+    seeded_central: list[dict[str, Any]] = []
     if seeded_central_rows:
         # A current central row for this site AND one for another site with
         # the SAME key, which is the pair a close keyed on ChangeKey alone
         # cannot tell apart. Both carry Application: rows already on a
         # central log this application provisioned were written by it, same
         # as any row this run writes.
-        seeded_central = json.dumps([
+        seeded_central += [
             {"Id": 800, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
              "SourceSite": SITE_URL, "StampKind": "change", "IsCurrent": True,
              "Application": APPLICATION_NAME},
             {"Id": 801, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
              "SourceSite": OTHER_SITE_URL, "StampKind": "change", "IsCurrent": True,
              "Application": APPLICATION_NAME},
-        ])
+        ]
+    if seeded_foreign_application:
+        # A second application's current row for the SAME site and the SAME
+        # key: ChangeKey is unique only within a site, so this is the pair a
+        # close keyed on ChangeKey, SourceSite and nothing else cannot tell
+        # apart from this run's own current row.
+        seeded_central.append(
+            {"Id": 802, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
+             "SourceSite": SITE_URL, "StampKind": "change", "IsCurrent": True,
+             "Application": "formworks"},
+        )
+    if seeded_central:
         harness = _substitute(
-            harness, "const SEED_CENTRAL = [];", f"const SEED_CENTRAL = {seeded_central};",
+            harness, "const SEED_CENTRAL = [];",
+            f"const SEED_CENTRAL = {json.dumps(seeded_central)};",
         )
     assert harness.count("CENTRAL_ITEM_TYPE") == 2
     harness = harness.replace(
@@ -1096,4 +1121,32 @@ def test_every_central_row_names_the_application_that_wrote_it() -> None:
     assert central, "the run wrote no central rows"
     assert all(row.get("Application") == "dbml-sharepoint" for row in central), (
         f"a central row did not name its application: {central}"
+    )
+
+
+def test_the_close_leaves_another_application_row_alone() -> None:
+    """ChangeKey is unique within a SITE, not within the fleet, so two
+    applications provisioning lists on one site can raise the same key.
+    Without Application in the close filter, this tool closes formworks'
+    current row and the other application's history silently loses its head.
+
+    Seeded WITHOUT `seeded_central_rows`: this run has never logged this key
+    for this site before, so a close correctly scoped to Application would
+    find no current row of its own to close. Combining it with
+    `seeded_central_rows` instead seeds a competing current row under this
+    tool's OWN application for the same key and site, which trips the
+    separate "more than one current row" guard and masks this bug, closing
+    nothing at all rather than closing the wrong thing.
+    """
+    run = _run_deploy(
+        central_can_close=True,
+        seeded_foreign_application=True,
+    )
+    foreign = [
+        row for row in run["state"]["central"]
+        if row.get("Application") == "formworks"
+    ]
+    assert foreign, "the fixture seeded no foreign row"
+    assert all(row.get("IsCurrent") is True for row in foreign), (
+        f"this tool closed another application's row: {foreign}"
     )
