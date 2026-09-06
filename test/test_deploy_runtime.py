@@ -1814,13 +1814,61 @@ def test_marker_disappearing_during_unseal_aborts_before_structure(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_marker_disappearing_inside_the_unseal_batch_still_aborts(
+    tmp_path: Path,
+) -> None:
+    """The ownership latch survives the ChangeSet that replaced N writes.
+
+    The unbatched phase re-proved the list immediately before every field
+    MERGE, so a marker removed part-way through a list's columns aborted at
+    the next one. One ChangeSet has no next one, and without the check that
+    moved to the batch boundary this run would have gone on to the structural
+    phases having lost ownership mid-write.
+
+    Named by a read count because the boundary is inside the phase: reads two
+    and three are the unseal's survey and its pre-batch check, both of which
+    pass here, so nothing but the post-batch check can produce this abort.
+    The two tests above hold those earlier boundaries, and each of the three
+    aborts under a different read count, so a count that drifts changes the
+    abort code rather than quietly measuring a neighbour.
+    """
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path,
+        _declared_list_descriptions(tmp_path),
+        drop_marker_after_reads=3,
+        expect_list_phase=False,
+    )
+
+    assert summary.get("aborted") == "maintenance-unseal-errors", summary
+    # The MERGE landing is the premise, not a failure: a sent ChangeSet cannot
+    # be recalled, so this guard's job is to stop the run before a structural
+    # phase and leave the opened column recorded, not to prevent the write.
+    assert _deployment_writes(calls), (
+        "the unseal batch never went out, so this run proves nothing about the "
+        f"check that runs after it\n{output[-2000:]}"
+    )
+    assert f"Starting Phase {pn('lists')}" not in output, (
+        f"a structural phase ran after ownership was lost mid-unseal\n{output[-2000:]}"
+    )
+    # Recorded before the part was queued, so exit cleanup knows to re-seal it
+    # even though the run never proved the write landed.
+    assert "Could not re-seal 'APP_Escalation.Title'" in output, (
+        "exit cleanup did not reach the column the batch opened, so the "
+        f"record-before-queue ordering is not doing its job\n{output[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_marker_disappearing_after_wave_one_aborts_before_fields(
     tmp_path: Path,
 ) -> None:
+    # Was six. The unseal costs a third read of this list since its lane's
+    # writes became one ChangeSet: survey, pre-batch, and the re-prove that
+    # moved to the batch boundary. Six now lands inside wave 1.
     summary, _calls, _output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path),
-        drop_marker_after_reads=6,
+        drop_marker_after_reads=7,
     )
 
     assert summary.get("aborted") == "field-wave-ownership-errors", summary
@@ -1831,10 +1879,11 @@ def test_marker_disappearing_after_wave_one_aborts_before_fields(
 def test_marker_disappearing_at_field_lane_stops_the_wave(
     tmp_path: Path,
 ) -> None:
+    # Was seven, moved by the unseal's third read for the reason above.
     summary, _calls, _output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path),
-        drop_marker_after_reads=7,
+        drop_marker_after_reads=8,
     )
 
     assert summary.get("aborted") == "field-wave-ownership-loss", summary
@@ -1845,10 +1894,11 @@ def test_marker_disappearing_at_field_lane_stops_the_wave(
 def test_marker_disappearing_after_field_lane_entry_blocks_field_writes(
     tmp_path: Path,
 ) -> None:
+    # Was eight, moved by the unseal's third read for the reason above.
     summary, _calls, _output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path),
-        drop_marker_after_reads=8,
+        drop_marker_after_reads=9,
     )
 
     assert summary.get("aborted") == "field-wave-ownership-loss", summary
@@ -1869,18 +1919,22 @@ def test_ownership_loss_in_one_field_lane_stops_every_other_lane(
     to stop.
 
     The boundary is inside a phase rather than at its start, so it is named
-    by a read count: read eight of `APP_Escalation`'s Description is its
-    wave-2 lane entry, seven having gone to the preflight, the unseal, wave 1
-    and the pre-wave re-survey. A count that drifts lands on a different
-    boundary and changes the abort code, so it fails rather than passing on
-    the wrong thing.
+    by a read count: read nine of `APP_Escalation`'s Description is its
+    wave-2 lane entry, eight having gone to the preflight, the unseal's
+    three, wave 1 and the pre-wave re-survey. A count that drifts lands on a
+    different boundary and changes the abort code, so it fails rather than
+    passing on the wrong thing.
+
+    Was eight. The unseal took two of those reads while it wrote a field at a
+    time; batching a lane into one ChangeSet added the re-prove that runs
+    after the envelope goes out, since there is no next write to abort at.
     """
     table_names = ("Escalation", "Second")
     summary, calls, output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path, table_names=table_names),
         table_names=table_names,
-        drop_marker_after_reads_by_title={"APP_Escalation": 7},
+        drop_marker_after_reads_by_title={"APP_Escalation": 8},
     )
 
     assert summary.get("aborted") == "field-wave-ownership-loss", summary
@@ -2084,7 +2138,12 @@ _ABORTING_SEALED_FIELD_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
     const _passThrough = globalThis.fetch;
     globalThis.fetch = async (url, opts = {}) => {
       const u = String(url);
-      const parsed = opts.body ? JSON.parse(opts.body) : {};
+      // This wrapper sits above BATCH_MOCK, so it sees a batched phase's
+      // multipart envelope on the way down and each unpacked part on the way
+      // back through. Only the parts are JSON, and only a part can be the
+      // reconcile this refuses.
+      const parsed = /\/_api\/\$batch$/.test(u) || !opts.body
+        ? {} : JSON.parse(opts.body);
       const refusingReconcile = (opts.method || 'GET') === 'POST'
         && u.includes("getbyinternalnameortitle('Note')")
         && parsed.Description !== undefined && parsed.Sealed === undefined;
@@ -2747,6 +2806,147 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
     )
     assert parts == reported, (
         f"{parts} seal part(s) went out but the phase reported {reported} sealed"
+    )
+
+
+# The state a REDEPLOY meets: the tool's own previous run left every declared
+# column sealed. The default adopted harness seals only the built-in Title, so
+# a lane there holds one write and cannot show writes coalescing at all.
+_SEALED_ADOPTION_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    ['APP_Escalation', 'APP_Second'].forEach((listTitle, at) => {
+      const note = fieldShape(listTitle, 'Note', {
+        FieldTypeKind: 2, Required: false, Description: '', MaxLength: 255,
+      });
+      note.Sealed = true;
+      // fieldShape hands out one Id for every field, and the mock resolves a
+      // by-GUID write by scanning `created` for the first shape carrying it,
+      // so two lists sharing an Id would send both unseals to one object.
+      note.Id = `3333333${at}-3333-3333-3333-333333333333`;
+      created[`${listTitle} Note`] = note;
+    });
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_maintenance_unseal_writes_one_batch_per_list(tmp_path: Path) -> None:
+    """The unseals travel as ChangeSet parts, one $batch per list.
+
+    The inverse of the seal phase and the same shape: independent MERGEs of
+    one property on fields of one list, nothing read between them. It runs
+    before every structural phase, so on a maintained site its per-column
+    burst was the first thing a redeploy paid for. Asserting the transport
+    rather than the outcome, because the outcome is identical either way.
+    """
+    table_names = ("Escalation", "Second")
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    harness = _SEALED_ADOPTION_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
+    )
+    body = _declared_deploy_js(
+        tmp_path, "seal_columns: true\n", table_names=table_names,
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    unsealing = [
+        b for b in batches
+        if any('"Sealed":false' in (op["body"] or "") for op in b["ops"])
+    ]
+    assert len(unsealing) == 2, (
+        f"two lists opened their columns in {len(unsealing)} $batch request(s); "
+        "the lane boundary is the batch boundary because same-list field "
+        "writes race into save conflicts"
+    )
+    for batch in unsealing:
+        assert len(batch["ops"]) == 2, (
+            "a list's Title and its declared sealed column did not coalesce "
+            f"into one ChangeSet: {batch['ops']}"
+        )
+        for op in batch["ops"]:
+            assert op["method"] == "MERGE", (
+                "an unseal part would POST rather than MERGE the field"
+            )
+            assert "/fields(guid'" in op["url"], (
+                "an unseal part addresses the field by name, which a rebind "
+                "can redirect; the single write addressed it by Id"
+            )
+            assert '"Sealed":false' in (op["body"] or ""), (
+                f"an unopened part rode the unseal ChangeSet: {op}"
+            )
+
+    # The phase reports what LANDED, and every landed write was a part.
+    reported = sum(
+        int(match.group(1)) for match in (
+            re.search(r"\((\d+) column\(s\) unsealed for this run\)", ln)
+            for ln in output.splitlines()
+        ) if match
+    )
+    parts = sum(len(b["ops"]) for b in unsealing)
+    assert parts == reported, (
+        f"{parts} unseal part(s) went out but the phase reported {reported}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_absent_declared_column_does_not_abandon_the_rest_of_its_lane(
+    tmp_path: Path,
+) -> None:
+    """A miss must skip a FIELD now that a lane holds a whole list.
+
+    Partial provision is ordinary here: this phase runs before the structural
+    phases, so a declared column may legitimately not exist yet. While each
+    column had its own lane, returning on the miss cost that column alone.
+    A lane per list makes the same `return` abandon every column behind the
+    absent one, and the built-in Title is appended LAST, so what a `return`
+    drops is exactly the write that makes a Title-sealed site completable at
+    all (the case Phase 1.8 was extended to cover).
+
+    The harness seeds no declared columns, so `Note` is absent and Title is
+    sealed: one part means the loop stepped over the miss, none means it
+    walked out of the lane.
+    """
+    table_names = ("Escalation",)
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
+    )
+    body = _declared_deploy_js(
+        tmp_path, "seal_columns: true\n", table_names=table_names,
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    opened = [
+        op for batch in batches for op in batch["ops"]
+        if '"Sealed":false' in (op["body"] or "")
+    ]
+    assert len(opened) == 1, (
+        "the sealed Title was not opened after an absent declared column, so "
+        f"the miss left its lane rather than the field: {opened}"
+    )
+    assert "/fields(guid'11111111-1111-1111-1111-111111111111')" in opened[0]["url"], (
+        f"the part that went out was not the built-in Title: {opened[0]}"
     )
 
 

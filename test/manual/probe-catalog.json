@@ -2,6 +2,72 @@
   "schema_version": "1.2",
   "probes": [
     {
+      "file": "batch-field-create-probe.js",
+      "surface": "transport",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, many columns on it"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "transport",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "transport.batch.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "transport.batch.control-single-create",
+              "depends_on": [
+                "transport.batch.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-creates-land",
+              "depends_on": [
+                "transport.batch.fixture-scratch-list",
+                "transport.batch.control-single-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-create-refusals",
+              "depends_on": [
+                "transport.batch.fixture-scratch-list",
+                "transport.batch.control-single-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-function-post",
+              "depends_on": [
+                "transport.batch.fixture-scratch-list",
+                "transport.batch.control-single-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-create-then-merge",
+              "depends_on": [
+                "transport.batch.fixture-scratch-list",
+                "transport.batch.control-single-create"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "transport.batch.fixture-scratch-list",
+            "transport.batch.control-single-create"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "calculated-choice-operand.js",
       "surface": "formula",
       "harness": "shared-v1",

@@ -33,6 +33,14 @@
     return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
   }
 
+  // NOT BATCHED, deliberately, as of 2026-09-06. Two reasons, and the volume
+  // one is the decisive one: across the 35 shipped solutions that build, this
+  // phase writes 6 deferred lookups and 6 projections in total, and no column
+  // carries more than one projection. A ChangeSet of one saves no request.
+  // The create-then-reconcile pair below also has the read-after-write shape
+  // that blocks the phase-1 field wave (see _lists.js.j2), so if the volume
+  // ever justifies a port, test/manual/batch-field-create-probe.js is the
+  // measurement it needs first.
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
       digest = await getDigest();  // refresh per item (digest lifetime)

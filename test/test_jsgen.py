@@ -91,8 +91,11 @@ def test_maintenance_records_reseal_cleanup_before_unseal_request() -> None:
         "// === Group", 1,
     )[0]
 
+    # The unseal batches, so the ordering is against the QUEUING of the part
+    # rather than against a request. It is the same requirement: a ChangeSet
+    # SharePoint commits without answering has to be re-sealable on exit.
     assert maintenance.index("fieldsUnsealedForRun.set") < maintenance.index(
-        "await patchField",
+        "await unsealBatch.add",
     )
 
 
@@ -106,7 +109,9 @@ def test_exit_reseal_requires_original_owned_list_and_field_ids() -> None:
     )[0]
 
     assert "[listTitle, field.title, currentList.Id, shape.Id]" in maintenance
-    assert "await patchFieldById(currentList.Id, shape.Id" in maintenance
+    # By-Id in the batched spelling too: fieldMergePath builds the same
+    # /lists(guid)/fields(guid) address patchFieldById sends to.
+    assert "fieldMergePath(currentList.Id, shape.Id)" in maintenance
     ownership = restore.index("assertListAdoptable(list, currentList)")
     list_id = restore.index("currentList.Id !== listId", ownership)
     field_id = restore.index("shape.Id !== fieldId", list_id)
@@ -123,9 +128,11 @@ def test_maintenance_checks_field_existence_before_lookup_target() -> None:
     )[0]
 
     field_read = maintenance.index("const shape = await readFieldShape")
-    missing_return = maintenance.index("if (!shape) return", field_read)
+    # `continue`, not `return`: a lane now holds every column of one list, so
+    # skipping an absent field must not abandon the list's other columns.
+    missing_skip = maintenance.index("if (!shape) continue", field_read)
     target_check = maintenance.index("if (field.target_list)", field_read)
-    assert field_read < missing_return < target_check
+    assert field_read < missing_skip < target_check
 
 
 def test_list_validation_rechecks_ownership_before_merge() -> None:
@@ -1216,7 +1223,12 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     # survey proved is no longer current by then and is re-proved for the whole
     # batch rather than per object.
     assert _call_count(js, "surveyOwnedListsForWrites") == 10
-    assert _call_count(js, "ownedListIdentity") == 16
+    # 16 counted the unbatched unseal, which re-proved the list before every
+    # single field MERGE and so needed only the one call site. Batching a
+    # lane's unseals into one ChangeSet removes those intermediate re-proves,
+    # so the phase gained a second site after the flush: a marker lost between
+    # two parts of one envelope has no next write to abort at.
+    assert _call_count(js, "ownedListIdentity") == 17
     assert _call_count(js, "ownedFieldIdentity") == 2
     code = _without_line_comments(js)
     # The index read-back, and the form phase's two: its content-type
@@ -3093,8 +3105,9 @@ def test_seal_phases_run_lanes_and_verify_via_enumeration(tmp_path: Path) -> Non
     assert "invalidateFieldShapes(listTitle);  // verify from post-write state" in js
     # Per-list (argument) invalidation must exist alongside the full reset.
     assert "delete fieldShapesByList[listName];" in js
-    # Unseal lanes per list too.
-    assert "mapLanes(sealDeclared, ([listTitle]) => listTitle" in js
+    # Unseal lanes per list too, and by the same grouping now that its lane
+    # boundary is also a batch boundary.
+    assert "mapLanes([...unsealByList.entries()], ([listTitle]) => listTitle" in js
     # Preflight (read-only) lanes both waves; field wave waits on shapes.
     assert "mapLanes(SCHEMA.lists, (list) => list.title" in js
     assert "SCHEMA.lists.filter((list) => preflightListShapes[list.title])" in js
