@@ -1,0 +1,314 @@
+{# src/dbml_sharepoint/templates/identify.js.j2 #}
+/**
+ * dbml-sharepoint SITE IDENTIFICATION script (READ-ONLY).
+ *
+{% if require_site_match %}
+ * Target site:  {{ site_url | comment_safe }}
+{% else %}
+ * Target site:  whichever web this is pasted on (portable, for fleet walks)
+{% endif %}
+ * Deployer:     v{{ deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}
+ *
+ * Reports what is on this site: the web's own facts, every list, group and
+ * permission level, which of them this tool provisioned and for which
+ * family, the columns of the ones it owns, and the last deployment the site
+ * recorded. Prints the result as tables and offers it as a JSON download.
+ *
+ * Makes NO changes: every request is a GET, and this script carries no
+ * write helpers at all.
+ *
+ * Request budget: five fixed reads plus one per list this tool owns. A live
+ * run on 2026-09-03 tripped a tenant throttle at 3,156 requests in 145
+ * seconds, so columns are read for owned lists only.
+ */
+(async () => {
+{% if require_site_match %}
+  const SITE_URL = {{ site_url | tojson }};
+{% endif %}
+  const GENERATED_AT = {{ generated_at | tojson }};
+  const DEPLOYER_VERSION = {{ deployer_version | tojson }};
+  const PAYLOAD_FORMAT = {{ payload_format | tojson }};
+  const PAYLOAD_VERSION = {{ payload_version | tojson }};
+  const DOWNLOAD_NAME = {{ download_name | tojson }};
+  const MARKER_PREFIX = {{ marker_prefix | tojson }};
+  const MARKER_TERMINATOR = {{ marker_terminator | tojson }};
+  const MARKER_KINDS = {{ marker_kinds | tojson }};
+  const LIST_KIND = {{ list_kind | tojson }};
+  const GROUP_KIND = {{ group_kind | tojson }};
+  const LEVEL_KIND = {{ level_kind | tojson }};
+  const SCRATCH_KIND = {{ scratch_kind | tojson }};
+  const RUN_LOG_TITLE = {{ run_log_title | tojson }};
+  const CHANGE_LOG_TITLE = {{ change_log_title | tojson }};
+  const STAMP_FIELDS = {{ stamp_fields | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-IDENTIFY] [${level}] ${msg}`);
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_guid.js.j2" %}
+
+{% include "_odata_read.js.j2" %}
+  log('INFO', 'Read-only inventory. No changes are made.');
+
+  // === The provenance grammar ===============================================
+  // Rendered from `analysis/provenance.py`, never typed here: the deploy
+  // writes these markers and this script reads them, and a pattern spelled
+  // out in a template would be free to drift from the authority that writes
+  // them with nothing in the build able to see it.
+  //
+  // Grammar: "<prefix>[ from <family>] for <kind> <name><terminator>".
+  // The terminator is refused inside family, kind and name by
+  // `checks/_provenance.py`, which is what makes a negated character class
+  // the exact field boundary and the match unambiguous.
+  //
+  // SEARCHED, NOT ANCHORED. The deploy tests ownership with
+  // `description.indexOf(marker) !== -1` (`deploy/_security_principals.js.j2`),
+  // so a description may carry prose either side of its marker, and an
+  // anchored read here would call an owned object unmanaged.
+  const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const notTerminator = `[^${escapeRe(MARKER_TERMINATOR)}]+`;
+  const MARKER_RE = new RegExp(
+    `${escapeRe(MARKER_PREFIX)}(?: from (${notTerminator}))? for (${MARKER_KINDS.map(escapeRe).join('|')}) (${notTerminator})${escapeRe(MARKER_TERMINATOR)}`,
+  );
+
+  // A family of null is deliberate rather than missing: the grammar's ` for`
+  // form (against ` from ... for`) is what this tool owns on its own account
+  // rather than for a family, which is what the log sidecars and the
+  // enterprise reader group are.
+  const classify = (description) => {
+    const found = MARKER_RE.exec(String(description || ''));
+    if (!found) return { owned: false, family: null, kind: null, declaredName: null };
+    return { owned: true, family: found[1] || null, kind: found[2], declaredName: found[3] };
+  };
+
+  // === The walk =============================================================
+  // Each section is caught on its own. A site that refuses one collection
+  // still yields every other, because a partial inventory an operator can
+  // read beats an abort that tells them nothing about the site.
+  const problems = [];
+  async function section(what, read, fallback) {
+    try {
+      return await read();
+    } catch (err) {
+      log('WARN', `${what} could not be read (${err.message}).`);
+      problems.push({ section: what, reason: err.message });
+      return fallback;
+    }
+  }
+
+  const web = await section('Site facts', async () => await getOne(
+    'web?$select=Title,Id,Created,Language,WebTemplate,ServerRelativeUrl',
+    'site facts',
+  ), {});
+
+  const rawLists = await section('Lists', async () => await getAll(
+    'web/lists?$select=Title,Id,Description,ItemCount,Hidden,BaseTemplate,Created,'
+    + 'LastItemUserModifiedDate,RootFolder/ServerRelativeUrl&$expand=RootFolder&$top=5000',
+    'list enumeration',
+  ), []);
+
+  const lists = rawLists.map((l) => ({
+    title: l.Title || '',
+    id: l.Id || '',
+    url: (l.RootFolder && l.RootFolder.ServerRelativeUrl) || '',
+    description: l.Description || '',
+    itemCount: typeof l.ItemCount === 'number' ? l.ItemCount : null,
+    hidden: !!l.Hidden,
+    baseTemplate: l.BaseTemplate,
+    created: l.Created || null,
+    lastItemModified: l.LastItemUserModifiedDate || null,
+    ...classify(l.Description),
+    columns: null,
+  }));
+
+  // Columns for owned lists only, which is the request budget: one call per
+  // owned list rather than one per list on the web.
+  //
+  // Lookup TARGETS are deliberately not read. LookupList lives on the
+  // derived field type, so it cannot come back in the collection read, and
+  // one call per lookup column is what a fleet walk cannot afford. The type
+  // and the column names identify a family without it.
+  for (const list of lists.filter((l) => l.owned)) {
+    if (!list.id) continue;
+    const fields = await section(`Columns of '${list.title}'`, async () => await getAll(
+      `web/lists(guid'${sharePointGuid(list.id, 'list')}')/fields`
+      + '?$select=InternalName,Title,TypeAsString,Required,Indexed,Hidden,ReadOnlyField,FromBaseType,Sealed',
+      `fields of '${list.title}'`,
+    ), null);
+    if (fields === null) continue;
+    // Built-ins and hidden fields are dropped here rather than in a $filter:
+    // every list carries the same built-ins, so they identify nothing, and
+    // what remains is exactly what a schema declared.
+    list.columns = fields
+      .filter((f) => !f.Hidden && !f.FromBaseType)
+      .map((f) => ({
+        internalName: f.InternalName,
+        title: f.Title,
+        type: f.TypeAsString,
+        required: !!f.Required,
+        indexed: !!f.Indexed,
+        sealed: !!f.Sealed,
+        readOnly: !!f.ReadOnlyField,
+      }));
+  }
+
+  const rawGroups = await section('Groups', async () => await getAll(
+    'web/sitegroups?$select=Id,Title,Description&$top=5000', 'group enumeration',
+  ), []);
+  const groups = rawGroups.map((g) => ({
+    id: g.Id, title: g.Title || '', description: g.Description || '', ...classify(g.Description),
+  }));
+
+  const rawLevels = await section('Permission levels', async () => await getAll(
+    'web/roledefinitions?$select=Id,Name,Description&$top=5000', 'permission level enumeration',
+  ), []);
+  const levels = rawLevels.map((r) => ({
+    id: r.Id, name: r.Name || '', description: r.Description || '', ...classify(r.Description),
+  }));
+
+  // === Deployment history ===================================================
+  // The run log is found by its MARKER, not by its title: `--change-log-list`
+  // renames a sidecar and its marker follows, so a by-title search would miss
+  // a renamed log and report a site as never deployed.
+  //
+  // Rows are read whole rather than through a `$select`. A run log created
+  // before a stamp column existed is reused, and selecting a column that is
+  // not there answers HTTP 400, which would turn a partial record into no
+  // record at all.
+  const sidecarFor = (name) => lists.find(
+    (l) => l.owned && l.kind === SCRATCH_KIND && l.declaredName === name,
+  ) || null;
+  const runLogList = sidecarFor(RUN_LOG_TITLE);
+  const changeLogList = sidecarFor(CHANGE_LOG_TITLE);
+
+  let lastDeployment = null;
+  if (runLogList && runLogList.id && runLogList.itemCount) {
+    const rows = await section('Deployment history', async () => await getAll(
+      `web/lists(guid'${sharePointGuid(runLogList.id, 'list')}')/items?$top=20&$orderby=Id desc`,
+      'run log rows',
+    ), []);
+    if (rows.length) {
+      const newest = rows[0];
+      lastDeployment = { title: newest.Title || '' };
+      for (const field of STAMP_FIELDS) {
+        lastDeployment[field] = newest[field] === undefined ? null : newest[field];
+      }
+    }
+  }
+
+  // === What was found =======================================================
+  const families = [];
+  const bump = (family, bucket) => {
+    let row = families.find((f) => f.family === family);
+    if (!row) {
+      row = { family, lists: 0, groups: 0, levels: 0 };
+      families.push(row);
+    }
+    row[bucket] += 1;
+  };
+  for (const l of lists) if (l.owned) bump(l.family, 'lists');
+  for (const g of groups) if (g.owned) bump(g.family, 'groups');
+  for (const r of levels) if (r.owned) bump(r.family, 'levels');
+  families.sort((a, b) => String(a.family).localeCompare(String(b.family)));
+
+  const ownedLists = lists.filter((l) => l.owned);
+  const payload = {
+    format: PAYLOAD_FORMAT,
+    payload_version: PAYLOAD_VERSION,
+    generatedAt: GENERATED_AT,
+    readAt: new Date().toISOString(),
+    deployerVersion: DEPLOYER_VERSION,
+    site: {
+      url: `${window.location.origin}${WEB}`,
+      serverRelativeUrl: WEB,
+      title: web.Title || '',
+      id: web.Id || '',
+      template: web.WebTemplate || '',
+      language: web.Language === undefined ? null : web.Language,
+      created: web.Created || null,
+    },
+    operator: (typeof _spPageContextInfo !== 'undefined' && _spPageContextInfo.userLoginName) || '',
+    families,
+    lists,
+    groups,
+    levels,
+    lastDeployment,
+    changeLog: changeLogList
+      ? { title: changeLogList.title, rows: changeLogList.itemCount }
+      : null,
+    problems,
+    requestCount,
+  };
+
+  log('INFO', `Site: ${payload.site.serverRelativeUrl || '(root)'} '${payload.site.title}'`);
+  log('INFO', `${families.length} family/families, ${ownedLists.length} owned list(s) of ${lists.length}, ${groups.filter((g) => g.owned).length} owned group(s), ${levels.filter((r) => r.owned).length} owned level(s).`);
+
+  if (families.length) {
+    console.table(families.map((f) => ({
+      family: f.family === null ? '(tool-owned)' : f.family,
+      lists: f.lists, groups: f.groups, levels: f.levels,
+    })));
+  } else {
+    log('INFO', 'No dbml-sharepoint provenance markers on this site.');
+  }
+
+  console.table(lists.map((l) => ({
+    title: l.title,
+    owned: l.owned,
+    family: l.family === null ? (l.owned ? '(tool-owned)' : '') : l.family,
+    kind: l.kind || '',
+    items: l.itemCount,
+    columns: l.columns === null ? '' : l.columns.length,
+    hidden: l.hidden,
+    url: l.url,
+  })));
+
+  const principals = [
+    ...groups.map((g) => ({ kind: 'group', name: g.title, owned: g.owned, family: g.family === null ? (g.owned ? '(tool-owned)' : '') : g.family })),
+    ...levels.map((r) => ({ kind: 'level', name: r.name, owned: r.owned, family: r.family === null ? (r.owned ? '(tool-owned)' : '') : r.family })),
+  ];
+  console.table(principals);
+
+  if (lastDeployment) {
+    log('INFO', `Last recorded deployment: ${lastDeployment.StampUtc || '(no timestamp)'} release ${lastDeployment.ReleaseTag || '(unknown)'} by ${lastDeployment.Operator || '(unknown)'}.`);
+  } else {
+    // The run log arrived after some sites had already been built, so its
+    // absence means the site has no record rather than that it was never
+    // deployed.
+    log('INFO', `No deployment record on this site: '${RUN_LOG_TITLE}' is absent or empty. Sites deployed before the run log existed carry none.`);
+  }
+
+  const text = JSON.stringify(payload, null, 2);
+
+  // The download is the convenience; the console is the guarantee. A site
+  // whose policy blocks a blob download must still hand the operator their
+  // inventory, so the payload is parked on `window` either way.
+  window.__dbmlSharepointIdentify = payload;
+  let downloaded = false;
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = DOWNLOAD_NAME;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    downloaded = true;
+  } catch (err) {
+    log('WARN', `The download could not start (${err.message}).`);
+  }
+
+  if (problems.length) {
+    log('WARN', `${problems.length} section(s) could not be read; the payload lists them under "problems".`);
+  }
+  if (downloaded) {
+    log('DONE', `Saved ${DOWNLOAD_NAME} (${text.length} bytes, ${requestCount} requests).`);
+  } else {
+    log('DONE', `Read this site in ${requestCount} requests. Run copy(JSON.stringify(window.__dbmlSharepointIdentify, null, 2)) to put the payload on your clipboard.`);
+  }
+  return payload;
+})();

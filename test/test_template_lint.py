@@ -101,6 +101,19 @@ KNOWN_CONTEXT = {
     # the slug, which names the output folder and stops being the list's
     # title the moment the list is renamed in place.
     "list_title", "list_path", "marker_prefix",
+    # identifygen (identify.js): the provenance grammar's own parts, so the
+    # script parses markers by the same rules `analysis/provenance.py` writes
+    # them with, plus the sidecar titles it finds a deployment record by and
+    # the stamp fields it reads off a run-log row.
+    "marker_terminator", "marker_kinds",
+    "list_kind", "group_kind", "level_kind", "scratch_kind",
+    "run_log_title", "change_log_title", "stamp_fields",
+    "payload_format", "payload_version",
+    # Off only for identify.js. The site-match guard is there because a write
+    # on the wrong site cannot be taken back, and a read-only inventory has
+    # nothing to guard; pinning it would stop one file walking a fleet.
+    # Defaulted ON in `_site_guard.js.j2`, so every other caller keeps it.
+    "require_site_match",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }

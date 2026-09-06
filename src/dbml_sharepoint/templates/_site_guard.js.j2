@@ -1,24 +1,34 @@
 {# Shared web-context resolution for every pasteable script. Expects a
-   `log` function and SITE_URL const to be defined already; emits the
-   site-match guard, WEB, apiUrl, odataName, and the operator-identity
-   line. #}
+   `log` function to be defined already, and a SITE_URL const whenever
+   `require_site_match` is on; emits the site-match guard, WEB, apiUrl,
+   odataName, and the operator-identity line.
+
+   `require_site_match` defaults ON, so a caller that omits it keeps the
+   guard. identify.js.j2 is the one caller that turns it off: the guard is
+   here because a write on the wrong site cannot be taken back, and a
+   read-only inventory has nothing to guard. Pinning it would only stop one
+   file walking a whole fleet. #}
   // === Preflight: site match ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
   // '/_api/web/...' targets the tenant root web, NOT the sub-site or site
   // collection you're viewing. Every API call is prefixed with the current
   // web's server-relative URL so calls hit the web the operator is on.
+{% if require_site_match | default(true) %}
   const expectedOrigin = new URL(SITE_URL).origin;
   const expectedPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
   const actualOrigin = window.location.origin;
+{% endif %}
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the SharePoint web context. Aborting.');
     return { aborted: 'no-sp-page-context' };
   }
   const actualPath = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
+{% if require_site_match | default(true) %}
   if (actualOrigin !== expectedOrigin || actualPath !== expectedPath) {
     log('ERROR', `Site mismatch. Expected ${expectedOrigin}${expectedPath}, found ${actualOrigin}${actualPath}.`);
     return { aborted: 'site-mismatch', expected: SITE_URL, actual: `${actualOrigin}${actualPath}` };
   }
+{% endif %}
   const WEB = actualPath;  // '' for the tenant root, '/sites/foo' for a site collection, etc.
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // OData string-literal encoder: SharePoint getbytitle/getbyname take a

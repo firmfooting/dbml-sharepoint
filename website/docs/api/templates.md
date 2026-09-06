@@ -57,6 +57,22 @@ dbml-sharepoint extract
 
 That creates a folder named after the download and writes a DRAFT schema.dbml, mapping.yaml and release.yaml into it, plus an EXTRACTION-NOTES.md listing everything the read could not recover. Pass --out to write somewhere else.
 
+### `identify.js.j2`
+
+dbml-sharepoint SITE IDENTIFICATION script (READ-ONLY).
+
+Target site:
+
+Target site:  whichever web this is pasted on (portable, for fleet walks)
+
+Deployer:     v Generated at:
+
+Reports what is on this site: the web's own facts, every list, group and permission level, which of them this tool provisioned and for which family, the columns of the ones it owns, and the last deployment the site recorded. Prints the result as tables and offers it as a JSON download.
+
+Makes NO changes: every request is a GET, and this script carries no write helpers at all.
+
+Request budget: five fixed reads plus one per list this tool owns. A live run on 2026-09-03 tripped a tenant throttle at 3,156 requests in 145 seconds, so columns are read for owned lists only.
+
 ### `manifest.md.j2`
 
 The operator-facing deploy manifest: supported mode, step-by-step run instructions, validation findings (must be zero errors), and the full deployment inventory - list creation order, deferred lookups, indexes, views, formatting, permissions - with phase numbers taken from the phases manifest.
@@ -119,13 +135,13 @@ Resolve one list by its server-relative URL rather than by its title. Expects `a
 
 ### `_guid.js.j2`
 
-Included by: `_maintain_list.js.j2`, `extract.js.j2`
+Included by: `_maintain_list.js.j2`, `extract.js.j2`, `identify.js.j2`
 
 A GUID SharePoint returned, checked before it is spliced into a URL. Every id here comes back from the API and is then interpolated into a path like `web/lists(guid'<id>')`, so the shape is asserted rather than trusted: an id that is not a GUID means the read did not return what was asked for, and the failure should say so at the read rather than as a malformed URL two calls later. `deploy/_helpers.js.j2` carries the same function for the deploy bundle. The two are deliberately not shared yet: folding them together edits the emitted deploy and moves `test/fixtures/expected/simple-deploy.js`, which is a golden review of its own and does not belong in a maintenance fix.
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
@@ -147,6 +163,12 @@ Included by: `columns.js.j2`, `protection.js.j2`
 
 Shared list resolution for the two maintenance scripts (protection.js, columns.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-URL list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, and the MERGE helpers every write goes through. RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the reason. LIST_TITLE is read back from the list here, so every message below names what the list is called now rather than what its folder is called.
 
+### `_odata_read.js.j2`
+
+Included by: `extract.js.j2`, `identify.js.j2`
+
+Shared read-side OData helpers: one entity, or a whole paged collection. Expects `log`, `apiUrl` (from _site_guard.js.j2) and `fetchWithRetry` + `spError` (from _http.js.j2) to be defined already. Here rather than in each script because extract.js and identify.js both walk a site read-only and both need the same two shapes. AGENTS.md: where both sides need the same fact, it lives in a shared module.
+
 ### `_provenance.js.j2`
 
 Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`, `verify.js.j2`
@@ -155,9 +177,9 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
-Shared web-context resolution for every pasteable script. Expects a `log` function and SITE_URL const to be defined already; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line.
+Shared web-context resolution for every pasteable script. Expects a `log` function to be defined already, and a SITE_URL const whenever `require_site_match` is on; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line. `require_site_match` defaults ON, so a caller that omits it keeps the guard. identify.js.j2 is the one caller that turns it off: the guard is here because a write on the wrong site cannot be taken back, and a read-only inventory has nothing to guard. Pinning it would only stop one file walking a whole fleet.
 
 ### `_verify_body.js.j2`
 

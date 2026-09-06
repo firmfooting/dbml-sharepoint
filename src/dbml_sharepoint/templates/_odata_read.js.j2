@@ -1,0 +1,37 @@
+{# Shared read-side OData helpers: one entity, or a whole paged collection.
+   Expects `log`, `apiUrl` (from _site_guard.js.j2) and `fetchWithRetry` +
+   `spError` (from _http.js.j2) to be defined already.
+
+   Here rather than in each script because extract.js and identify.js both
+   walk a site read-only and both need the same two shapes. AGENTS.md: where
+   both sides need the same fact, it lives in a shared module. #}
+  const verbose = () => ({ headers: { 'Accept': 'application/json;odata=verbose' } });
+
+  // One entity read. Returns the `d` object, or throws with the reason
+  // SharePoint gave rather than a bare status.
+  async function getOne(suffix, what) {
+    const r = await fetchWithRetry(apiUrl(suffix), verbose());
+    if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    return (j && j.d) || {};
+  }
+
+  // A whole collection, following OData's __next. Paged rather than capped
+  // with $top: a list wider than one page would otherwise lose columns from
+  // the tail, and a schema that is silently four columns short is the exact
+  // failure this tool exists to make visible. Same shape rollback.js.txt
+  // enumerates the web's lists with.
+  async function getAll(suffix, what) {
+    const rows = [];
+    let nextUrl = apiUrl(suffix);
+    let pages = 0;
+    while (nextUrl) {
+      if (++pages > 100) throw new Error(`${what}: exceeded 100 pages; aborting`);
+      const r = await fetchWithRetry(nextUrl, verbose());
+      if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
+      const j = await r.json();
+      for (const row of ((j && j.d && j.d.results) || [])) rows.push(row);
+      nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+    }
+    return rows;
+  }

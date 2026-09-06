@@ -66,6 +66,11 @@ from dbml_sharepoint.extract.run import write as write_extraction
 from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.extract.wizard import run_extract_wizard
 from dbml_sharepoint.generators.extractgen import EXTRACT_SCRIPT, download_name
+from dbml_sharepoint.generators.identifygen import (
+    DEFAULT_DOWNLOAD_NAME,
+    IDENTIFY_SCRIPT,
+    generate_identify_js,
+)
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.maintaingen import (
     COLUMNS_SCRIPT,
@@ -1594,6 +1599,51 @@ def columns_script(
     _maintenance_script(
         url, out, script_name=COLUMNS_SCRIPT, render=generate_columns_js,
         does="asks for a typed confirmation before every delete.",
+    )
+
+
+@app.command("identify-script")
+def identify_script(
+    site_url: str | None = typer.Option(
+        None,
+        help="Pin the script to one site, e.g. "
+        "https://contoso.sharepoint.com/sites/Risk. Omit it for a portable "
+        "script that inventories whichever site it is pasted on.",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        help=f"Where to write the script. Default: {IDENTIFY_SCRIPT} in the "
+        "current directory.",
+    ),
+) -> None:
+    """Generate the read-only browser-paste script that reports what is on a site.
+
+    The script reads the web's own facts, every list, group and permission
+    level, and which of them this tool provisioned and for which family. It
+    reads the columns of the lists it owns, and reports the last deployment
+    the site recorded. It prints the result as tables and offers it as a JSON
+    download.
+
+    NO SITE URL IS NEEDED. The script runs against whichever web it is
+    pasted on, so one file walks every site in a fleet. Pass --site-url to pin
+    it to one, which is worth doing when handing the file to somebody else.
+
+    Every request the script makes is a GET. It carries no write helpers.
+    """
+    used = validate_site_url(site_url) if site_url is not None else None
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    path = out if out is not None else Path(IDENTIFY_SCRIPT)
+    write_artifact(path, generate_identify_js(site_url=used, generated_at=generated_at))
+
+    where = f"on {used}" if used is not None else "on any site in the fleet"
+    typer.echo(f"Wrote {path}, for pasting {where}.")
+    typer.echo(
+        "Open it, copy all of it, and paste it into the browser console on a "
+        "classic page such as _layouts/15/settings.aspx. It makes no changes.",
+    )
+    typer.echo(
+        f"It prints what it found and downloads {DEFAULT_DOWNLOAD_NAME}. Keep "
+        "one download per site to build a fleet view.",
     )
 
 
