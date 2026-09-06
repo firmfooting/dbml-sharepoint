@@ -36,6 +36,10 @@ def run_node(script: str) -> str:
         path = Path(tmp) / "run.js"
         path.write_text(script, encoding="utf-8", newline="\n")
         proc = subprocess.run(  # noqa: S603
-            [NODE, str(path)], capture_output=True, text=True, timeout=180, check=False,
+            [NODE, str(path)], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=180, check=False,
         )
-    return proc.stdout + proc.stderr
+    # stdout/stderr are None only if capture failed, which cannot happen here;
+    # the guard keeps a decode collapse from surfacing as a TypeError that
+    # hides the finding the test is asserting on.
+    return (proc.stdout or "") + (proc.stderr or "")
