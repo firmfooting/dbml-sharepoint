@@ -6,7 +6,7 @@ reach, never deleted by this tool. A run whose central log answers goes
 there and nowhere else: one sink per run, decided once, because a record
 split across two places is worse than either place alone.
 
-- ``dbml Local Log`` records THIS run: a deployment start stamp, a
+- ``dbml_Deployments`` records THIS run: a deployment start stamp, a
   deployment stop stamp, and provenance documentation naming what built
   the bundle, from which release, read at which time, by whom. Title
   carries the human-readable line, and ``RUN_LOG_STAMP_COLUMNS`` carries
@@ -14,7 +14,7 @@ split across two places is worse than either place alone.
   those columns existed is REUSED, so the deploy creates the ones it
   finds missing and degrades to a Title-only stamp if it cannot.
 
-- ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
+- ``dbml_Changes`` records CHANGES as type-2 slowly-changing-dimension rows:
   one row per change with the old value and the new value side by side,
   keyed by ``ChangeKey``. Hidden and insert-only from the deploy's point of
   view. The enterprise reader group holds Read on it so a Power Automate
@@ -28,21 +28,27 @@ of the same title that is not this tool's.
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 
-#: The run log. Unprefixed so it is greppable in the SharePoint UI exactly
-#: as spelled, with the space: operators see "dbml Local Log" in list
-#: settings next to every other list.
-RUN_LOG_TITLE = "dbml Local Log"
+#: The per-site deployment log. `prefix_Entity` like every family list, so the
+#: URL carries no escape: MEASURED 2026-09-06, a space in a title reaches the
+#: slug and is frozen there at creation.
+RUN_LOG_TITLE = "dbml_Deployments"
 
-#: The change log. Dotted so its REST identity is distinct from the run
-#: log's, and so the Power Automate reader convention (one list per feed)
-#: has a name that survives a copy between environments.
-CHANGE_LOG_TITLE = "dbml_Logs"
+#: The per-site change log. Named for what a row is, not for what it is not.
+CHANGE_LOG_TITLE = "dbml_Changes"
 
-#: The external deployment log this tool appends to only when it already
-#: exists. Probed, never created: its absence means the site does not run
-#: one, and inventing it here would fight whoever owns it. Empty default:
-#: nothing is probed unless the operator names a list.
-EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
+#: The CENTRAL deployment log, on the org's logging site. `firmfooting` rather
+#: than `dbml` because it holds rows from every firmfooting application, of
+#: which this tool is one. Probed, never created by a deploy.
+EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
+
+#: The CENTRAL change log, its type-2 half. Split from the deployments list so
+#: that each name is true of every row in it.
+EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
+
+#: Which application wrote a central row. Written into the `Application`
+#: column so a reader does not have to parse it out of a version string, and
+#: so the type-2 close can tell two applications' rows apart.
+APPLICATION_NAME = "dbml-sharepoint"
 
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
@@ -81,14 +87,14 @@ SIDECAR_HIDDEN = True
 
 
 def run_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml Local Log`` by."""
+    """The exact Description the deploy owns ``dbml_Deployments`` by."""
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=RUN_LOG_TITLE, family=None,
     )
 
 
 def change_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml_Logs`` by."""
+    """The exact Description the deploy owns ``dbml_Changes`` by."""
     return scratch_marker_for(CHANGE_LOG_TITLE)
 
 
@@ -109,7 +115,7 @@ def scratch_marker_for(title: str) -> str:
 #: owns the list by this Description compared whole, exactly like the
 #: on-site sidecars.
 def central_log_marker() -> str:
-    """The exact Description the sidecar owns ``dbml-deployment-log`` by."""
+    """The exact Description the sidecar owns ``firmfooting_Deployments`` by."""
     return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
 
 

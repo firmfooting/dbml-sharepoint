@@ -25,6 +25,7 @@ from _paths import FIXTURES, PACKAGE, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
+from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
@@ -2229,9 +2230,9 @@ def test_sidecar_lists_are_ensured_by_default_and_the_external_log_is_probed(
     assert result.exit_code == 0, result.output
 
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
-    assert '"dbml Local Log"' in js
-    assert '"dbml_Logs"' in js
-    assert '"dbml-deployment-log"' in js
+    assert f'"{sidecars.RUN_LOG_TITLE}"' in js
+    assert f'"{sidecars.CHANGE_LOG_TITLE}"' in js
+    assert f'"{sidecars.EXTERNAL_LOG_DEFAULT}"' in js
     assert "finishRunLog" in js
 
 
@@ -2259,16 +2260,16 @@ def test_no_sidecars_suppresses_the_site_lists_and_nothing_else(
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
     # The QUOTED forms: the phase body still renders, and its prose names both
     # lists while declaring neither.
-    assert '"dbml Local Log"' not in js
-    assert '"dbml_Logs"' not in js
-    assert '"dbml-deployment-log"' in js
+    assert f'"{sidecars.RUN_LOG_TITLE}"' not in js
+    assert f'"{sidecars.CHANGE_LOG_TITLE}"' not in js
+    assert f'"{sidecars.EXTERNAL_LOG_DEFAULT}"' in js
     assert "const RUN_LOG_TITLE = null;" in js
 
     # The manifest is the pre-paste contract: it must not advertise lists
     # the bundle will not create.
     manifest = (Path("build") / "deploy-manifest.md").read_text(encoding="utf-8")
     assert "Run and change logs" not in manifest
-    assert "dbml Local Log" not in manifest
+    assert sidecars.RUN_LOG_TITLE not in manifest
 
 
 def test_no_sidecars_with_no_central_log_emits_no_logging_phase_at_all(
@@ -2290,9 +2291,9 @@ def test_no_sidecars_with_no_central_log_emits_no_logging_phase_at_all(
     assert result.exit_code == 0, result.output
 
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
-    assert "dbml Local Log" not in js
-    assert "dbml_Logs" not in js
-    assert "dbml-deployment-log" not in js
+    assert sidecars.RUN_LOG_TITLE not in js
+    assert sidecars.CHANGE_LOG_TITLE not in js
+    assert sidecars.EXTERNAL_LOG_DEFAULT not in js
     assert "const RUN_LOG_TITLE" not in js
 
 
@@ -2318,7 +2319,7 @@ def test_an_empty_deployment_log_list_disables_the_external_probe(
 
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
     assert 'EXTERNAL_LOG_TITLE = ""' in js
-    assert '"dbml Local Log"' in js  # the built-in sidecars stay
+    assert f'"{sidecars.RUN_LOG_TITLE}"' in js  # the built-in sidecars stay
 
     padded = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
@@ -2531,7 +2532,7 @@ def test_an_empty_deployment_log_site_disables_the_external_stamps(
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
     assert 'EXTERNAL_LOG_SITE = ""' in js
     assert 'EXTERNAL_LOG_TITLE = ""' in js
-    assert '"dbml Local Log"' in js  # the built-in sidecars stay
+    assert f'"{sidecars.RUN_LOG_TITLE}"' in js  # the built-in sidecars stay
 
     padded = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",

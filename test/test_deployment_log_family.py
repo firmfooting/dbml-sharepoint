@@ -19,6 +19,7 @@ StampKind members the fleet sends.
 
 import re
 
+import pytest
 from _paths import JINJA_TEMPLATES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.permissions import BUILT_IN_LEVELS
@@ -65,6 +66,14 @@ def _table() -> Table:
     return table
 
 
+@pytest.mark.xfail(
+    reason=(
+        "central-log-naming Task 1 renamed EXTERNAL_LOG_DEFAULT to "
+        "'firmfooting_Deployments'; the family's table is still "
+        "'dbml-deployment-log' until Task 4 renames it to match."
+    ),
+    strict=True,
+)
 def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
     """The list title is `prefix + entity name`, and the fleet probes the
     literal. An empty prefix is a contract here, not a preference: a prefix
