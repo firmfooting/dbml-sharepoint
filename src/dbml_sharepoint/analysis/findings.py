@@ -217,6 +217,15 @@ class FindingCode(StrEnum):
     LOOKUP_CROSSES_SITE_ROLE = "lookup_crosses_site_role", "error"
     LOOKUP_DISPLAY_COLUMN_UNKNOWN = "lookup_display_column_unknown", "error"
     LOOKUP_WOULD_RENDER_BLANK = "lookup_would_render_blank", "error"
+    # MEASURED 2026-09-06, `field.list.minor-versions-sticks` in
+    # list-settings-probe.js: a generic list REFUSES EnableMinorVersions=true
+    # while EnableVersioning is false, HTTP 500, "-2146232832,
+    # Microsoft.SharePoint.SPException". An error rather than a warning because
+    # the deploy sends both flags in one body, so the paste stops at the first
+    # list carrying the pair and leaves the rest unprovisioned.
+    MINOR_VERSIONS_WITHOUT_VERSIONING = (
+        "minor_versions_without_versioning", "error",
+    )
     MULTIPLE_DEFAULT_VIEWS = "multiple_default_views", "error"
     # Both specialise a rule that already fires, and both exist because the
     # generic REMEDY is wrong here rather than because the generic diagnosis

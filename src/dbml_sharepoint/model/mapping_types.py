@@ -171,9 +171,12 @@ class Versioning:
     # constraint rather than an ordering rule for both containers.
     #
     # A refusal, not a silent accept, so the deploy fails loudly if a mapping
-    # ever declares the combination. Nothing refuses it at build time today:
-    # both flags are written in one body (`templates/deploy/_lists.js.j2`
-    # create, `desiredListSettings` reconcile) and no rule pairs them.
+    # ever declares the combination. Both flags are written in one body
+    # (`templates/deploy/_lists.js.j2` create, `desiredListSettings`
+    # reconcile), so no write order avoids it and the build has to. It does:
+    # `checks/_structure._minor_versions_need_versioning` pairs them over the
+    # settings `versioning_for` resolves, and refuses the pair on any entity
+    # whose `kind` is not a document library.
     enable_minor_versions: bool = False
 
 

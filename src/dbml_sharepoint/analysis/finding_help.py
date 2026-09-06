@@ -881,6 +881,22 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A lookup target has no `Title` column and declares no "
         "`display_column`, so every lookup into it renders blank."
     ),
+    FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING: (
+        "An entity's versioning settings resolve to "
+        "`enable_minor_versions: true` with `enable_versioning: false`. "
+        "Measured on a live site 2026-09-06 "
+        "(`field.list.minor-versions-sticks`): a generic list refuses that "
+        "write with HTTP 500, `-2146232832, "
+        "Microsoft.SharePoint.SPException`, \"The list does not support minor "
+        "versioning\", and the flag reads back false. The deploy sends both "
+        "flags in one body, so the paste stops at that list. Set "
+        "`enable_versioning: true`, or drop `enable_minor_versions`. The "
+        "settings are read as the per-entity `versioning.overrides` block "
+        "merged onto `versioning.default`, so either can be the one to fix. A "
+        "document library accepted the same pair in that run (HTTP 204, read "
+        "back true), which is why the rule reads the entity's `kind`; "
+        "libraries are refused for unrelated reasons."
+    ),
     FindingCode.MULTIPLE_DEFAULT_VIEWS: (
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
