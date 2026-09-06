@@ -9,9 +9,10 @@ same under both, so the rule requires it.
 
 The exemption worth reading twice is the clock one. A rule comparing a date
 with `today` is NOT reported, because `analysis/save_rules.py` hoists it
-onto the list rule and wraps it in an `is_null` arm on the way. That is 46
-of the 71 clock comparisons in the shipped library, so a rule without the
-exemption would refuse 25 families that already build correctly.
+onto the list rule and wraps it in an `is_null` arm on the way, so the
+emitted formula already admits the blank. MEASURED 2026-09-06 across the
+shipped library: 46 of the 71 clock comparisons sit on optional columns, in
+25 families that a rule without this exemption would refuse.
 """
 from pathlib import Path
 
