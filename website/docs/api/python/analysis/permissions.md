@@ -65,6 +65,12 @@ ENTERPRISE_READER_REQUIRED_PERMISSIONS = ('ViewListItems', 'ViewFormPages', 'Ope
 ENTERPRISE_READER_ADVISORY_PERMISSIONS = ('BrowseUserInfo', 'UseRemoteAPIs')
 ```
 
+### `ENTERPRISE_READER_ELEVATED_PERMISSIONS`
+
+```python
+ENTERPRISE_READER_ELEVATED_PERMISSIONS = ('AddListItems', 'EditListItems', 'DeleteListItems', 'ApproveItems', 'DeleteVersions', 'CancelCheckout', 'ManageLists', 'AddAndCustomizePages', 'ApplyThemeAndBorder', 'ApplyStyleSheets', 'AddDelPrivat…
+```
+
 ### `permission_bit_table`
 
 ```python

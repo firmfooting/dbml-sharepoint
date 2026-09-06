@@ -27,6 +27,7 @@ from dbml_sharepoint.analysis.lookups import (
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import (
     ENTERPRISE_READER_ADVISORY_PERMISSIONS,
+    ENTERPRISE_READER_ELEVATED_PERMISSIONS,
     ENTERPRISE_READER_REQUIRED_PERMISSIONS,
     base_permissions_to_high_low,
     permission_bit_table,
@@ -160,6 +161,12 @@ def generate_deploy_js(
         ),
         enterprise_reader_advisory_bits=permission_bit_table(
             ENTERPRISE_READER_ADVISORY_PERMISSIONS,
+        ),
+        # #198: the bits that make a binding the group ALREADY holds too
+        # strong to hand on to the enrolled account. Split the same way and
+        # for the same reason as the two above.
+        enterprise_reader_elevated_bits=permission_bit_table(
+            ENTERPRISE_READER_ELEVATED_PERMISSIONS,
         ),
         # Static text baked in at build time -- deploy.js.j2 logs it as a
         # console line rather than a header comment, because the artefact

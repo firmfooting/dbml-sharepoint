@@ -55,6 +55,7 @@ KNOWN_CONTEXT = {
     # or None to emit no enrolment code at all.
     "enterprise_reader",
     "enterprise_reader_advisory_bits",
+    "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",
     "reader_excluded_lists",
     # The marker distinguishing "clear this value" from "not managed here".

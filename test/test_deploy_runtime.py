@@ -4274,6 +4274,36 @@ _LIMITED_ACCESS_BINDING: dict[str, Any] = {
 }
 
 
+def test_no_elevated_bit_is_one_the_built_in_read_carries() -> None:
+    """The elevated set cannot refuse the reference implementation.
+
+    `ENTERPRISE_READER_ELEVATED_PERMISSIONS` is a NAMED list of write,
+    structure and access bits rather than "anything outside the reader
+    triad", and this is the reason. The measured built-in Read carries eight
+    bits beyond the triad (CreateSSCSite, BrowseUserInfo, UseRemoteAPIs and
+    the rest), so the wider reading would refuse every real reader group on
+    the site the probe measured, and refuse the derived Limited Access every
+    tool-created group holds. Adding a bit here that Read already grants
+    turns the gate from a guard into an outage, and does it on a path no
+    unit test walks unless this one does.
+    """
+    from dbml_sharepoint.analysis.permissions import (
+        BASE_PERMISSIONS,
+        ENTERPRISE_READER_ELEVATED_PERMISSIONS,
+    )
+
+    read = (int(_BUILT_IN_READ_BITMAP["High"]) << 32) | int(_BUILT_IN_READ_BITMAP["Low"])
+    overlap = [
+        name
+        for name in ENTERPRISE_READER_ELEVATED_PERMISSIONS
+        if read & BASE_PERMISSIONS[name] == BASE_PERMISSIONS[name]
+    ]
+    assert not overlap, (
+        f"{overlap} are treated as elevated but the measured built-in Read grants them, "
+        f"so the step-1 gate would refuse a correct reader group"
+    )
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_group_already_holding_an_elevated_binding_enrols_nobody() -> None:
     """#198: the reader inherits whatever its group already holds.
@@ -4457,8 +4487,12 @@ def test_a_bare_array_of_bindings_is_still_judged() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_clean_group_is_enrolled_and_the_scan_is_reported() -> None:
-    """The silent path still has to be visible. A gate nobody can see run is
-    one nobody notices has stopped running."""
+    """The passing path still has to be visible.
+
+    A gate that reports nothing when it passes is one nobody notices has
+    stopped running, so the count it reached is logged and asserted on here
+    as well as the request that produced it.
+    """
     summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
     assert not _reader_errors(summary), summary
     assert [w["LoginName"] for w in _membership_writes(calls)] == [
@@ -4466,6 +4500,8 @@ def test_a_clean_group_is_enrolled_and_the_scan_is_reported() -> None:
     ]
     scanned = [c for c in calls if "web/roleassignments" in c["url"]]
     assert scanned, f"the group's existing bindings were never enumerated: {calls}"
+    reported = [ln for ln in output.splitlines() if "web-scope binding(s)" in ln]
+    assert reported, f"the scan ran but reported nothing: {output}"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

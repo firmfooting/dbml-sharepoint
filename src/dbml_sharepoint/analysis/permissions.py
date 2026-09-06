@@ -163,6 +163,60 @@ ENTERPRISE_READER_ADVISORY_PERMISSIONS: tuple[str, ...] = (
     "UseRemoteAPIs",
 )
 
+#: Bits that make a binding too strong for the reader group to be holding (#198).
+#:
+#: The two sets above judge the level this bundle GRANTS. They cannot see a
+#: role assignment the group already carries for some other reason: an earlier
+#: deploy, a hand edit, another tool. The reader group is resolved by name and
+#: enrolled into, so the account inherits every one of those bindings
+#: permanently, and no phase removes them -- `_acls.js.j2` reconciles the lists
+#: `SCHEMA.list_assignments` names and nothing else. So
+#: `_reader_enrolment.js.j2` enumerates what the group holds at web scope and
+#: judges each binding's live bitmap against this set.
+#:
+#: THIS IS NOT "anything outside the reader triad", and the difference is the
+#: whole design. A level narrower than Read, or Read itself under another name,
+#: grants the account nothing it does not already have through the declared
+#: grant; refusing those would refuse an untidy site rather than a dangerous
+#: one. What cannot be inherited is the authority to change content, structure
+#: or access, which is what every name below carries.
+#:
+#: EVERY ONE OF THEM IS ABSENT FROM THE MEASURED BUILT-IN READ
+#: (`reader-bindings-probe.js`, 2026-08-14, High=176 Low=138612833), and
+#: `test_no_elevated_bit_is_one_the_built_in_read_carries` pins that. Without
+#: it the rule could grow a bit the reference implementation satisfies and
+#: refuse every real deploy, which is the failure the AGENTS.md rule about
+#: reference implementations names.
+#:
+#: Deliberately NOT here, and each stays a warning rather than a refusal:
+#: ManagePersonalViews, UpdatePersonalWebParts and EditMyUserInfo are scoped to
+#: the holder's own view of the site; BrowseDirectories and ViewUsageData are
+#: reads; AnonymousSearchAccessList changes what ANONYMOUS callers reach rather
+#: than what this account does, so it is a site posture question and not an
+#: inherited privilege one.
+ENTERPRISE_READER_ELEVATED_PERMISSIONS: tuple[str, ...] = (
+    # Content.
+    "AddListItems",
+    "EditListItems",
+    "DeleteListItems",
+    "ApproveItems",
+    "DeleteVersions",
+    "CancelCheckout",
+    # Structure.
+    "ManageLists",
+    "AddAndCustomizePages",
+    "ApplyThemeAndBorder",
+    "ApplyStyleSheets",
+    "AddDelPrivateWebParts",
+    "ManageSubwebs",
+    "ManageWeb",
+    # Access, and the site-wide administration of other people's alerts.
+    "CreateGroups",
+    "ManagePermissions",
+    "EnumeratePermissions",
+    "ManageAlerts",
+)
+
 
 def permission_bit_table(perm_names: Iterable[str]) -> list[dict[str, str]]:
     """`{name, high, low}` per permission, for a runtime bitmap test.
