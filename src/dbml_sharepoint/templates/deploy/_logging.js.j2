@@ -739,6 +739,26 @@
       if (!readerGroup || !levelName) {
         log('INFO', 'Change log: no reader group grant found to mirror; leaving it with no role assignments.');
       } else {
+        // A role definition Id and a site group Id are INTEGERS, not GUIDs.
+        // MEASURED 2026-09-06 on every deploy of that day: this block passed
+        // both through `sharePointGuid` and threw "Invalid role definition
+        // 'Read' GUID returned by SharePoint" on a site where
+        // `roledefinitions/getbyname('Read')` had just answered HTTP 200 with
+        // Id 1073741826, the built-in Read the enterprise-reader enrolment
+        // phase had already read and accepted. The failure is non-fatal, so
+        // every run of that day reported success and left the change log with
+        // inheritance broken and the reader holding nothing on it. Checked
+        // with `Number.isInteger`, the same way `_reader_enrolment.js.j2` and
+        // `_security_principals.js.j2` check the Ids they read off these two
+        // endpoints.
+        const numericId = (value, label) => {
+          if (!Number.isInteger(value)) {
+            throw new Error(
+              `${label}: SharePoint returned Id ${JSON.stringify(value)}, which is not a numeric id`,
+            );
+          }
+          return value;
+        };
         try {
           const breakResp = await fetchWithRetry(apiUrl(
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
@@ -753,14 +773,14 @@
           if (!roleResp.ok) {
             throw new Error(`role definition '${levelName}': HTTP ${roleResp.status} ${await roleResp.text()}`);
           }
-          const roleId = sharePointGuid(((await roleResp.json()).d || {}).Id, `role definition '${levelName}'`);
+          const roleId = numericId(((await roleResp.json()).d || {}).Id, `role definition '${levelName}'`);
           const grpResp = await fetchWithRetry(apiUrl(
             `web/sitegroups/getbyname('${odataName(readerGroup.name)}')?$select=Id`
           ), { headers: { 'Accept': 'application/json;odata=verbose' } });
           if (!grpResp.ok) {
             throw new Error(`group '${readerGroup.name}': HTTP ${grpResp.status} ${await grpResp.text()}`);
           }
-          const groupId = sharePointGuid(((await grpResp.json()).d || {}).Id, `group '${readerGroup.name}'`);
+          const groupId = numericId(((await grpResp.json()).d || {}).Id, `group '${readerGroup.name}'`);
           const grantResp = await fetchWithRetry(apiUrl(
             `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
             + `/roleassignments/addroleassignment(principalid=${groupId},roleDefId=${roleId})`

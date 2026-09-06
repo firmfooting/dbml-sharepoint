@@ -4077,13 +4077,39 @@ _RESOLVED_USER: dict[str, Any] = {
 _MEMBERSHIP_URL = re.compile(r"sitegroups\(\d+\)/users")
 
 
-def _reader_deploy_js(enterprise_reader: str | None = _READER_ADDRESS) -> str:
-    """deploy.js for the mapping that declares an enterprise-reader group."""
+def _reader_deploy_js(
+    enterprise_reader: str | None = _READER_ADDRESS,
+    *,
+    sidecars: bool = False,
+) -> str:
+    """deploy.js for the mapping that declares an enterprise-reader group.
+
+    `sidecars` also emits the run and change logs, which is what puts the
+    change log's own reader grant into the emitted script. Off by default
+    because every other reader test is about the enrolment phase, and the
+    sidecars only add unrelated surfaces to it.
+    """
+    from dbml_sharepoint.analysis.sidecars import (
+        CHANGE_FIELDS,
+        CHANGE_LOG_TITLE,
+        RUN_LOG_STAMP_COLUMNS,
+        RUN_LOG_TITLE,
+        change_log_marker,
+        run_log_marker,
+    )
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.mapping_loader import load_mapping
     from dbml_sharepoint.model.parser import parse_dbml
     from dbml_sharepoint.model.release import load_release
 
+    sidecar_args: dict[str, Any] = {} if not sidecars else {
+        "sidecar_run_log_title": RUN_LOG_TITLE,
+        "sidecar_run_log_marker": run_log_marker(),
+        "sidecar_run_log_fields": list(RUN_LOG_STAMP_COLUMNS),
+        "sidecar_change_log_title": CHANGE_LOG_TITLE,
+        "sidecar_change_log_marker": change_log_marker(),
+        "sidecar_change_fields": list(CHANGE_FIELDS),
+    }
     return _without_assessment(generate_deploy_js(
         schema=parse_dbml(FIXTURES / "simple.dbml"),
         bundle=load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
@@ -4094,6 +4120,7 @@ def _reader_deploy_js(enterprise_reader: str | None = _READER_ADDRESS) -> str:
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
         enterprise_reader=enterprise_reader,
+        **sidecar_args,
     ))
 
 
@@ -4390,6 +4417,29 @@ def _reader_harness(
     )
 
 
+def _with_sidecar_descriptions(harness: str) -> str:
+    """Seed the run and change logs' markers into the harness's descriptions.
+
+    A sidecar list is adopted by the marker in its Description, so without
+    this the logging phase treats both as somebody else's lists and never
+    reaches the grant the caller wants to watch.
+    """
+    from dbml_sharepoint.analysis.sidecars import (
+        CHANGE_LOG_TITLE,
+        RUN_LOG_TITLE,
+        change_log_marker,
+        run_log_marker,
+    )
+
+    empty = "const LIST_DESCRIPTIONS = new Map([]);"
+    assert harness.count(empty) == 1, "the adopted harness no longer seeds descriptions"
+    seeded = json.dumps([
+        [RUN_LOG_TITLE, run_log_marker()],
+        [CHANGE_LOG_TITLE, change_log_marker()],
+    ])
+    return harness.replace(empty, f"const LIST_DESCRIPTIONS = new Map({seeded});")
+
+
 def _run_reader_deploy(
     ensure_user: dict[str, Any],
     *,
@@ -4403,12 +4453,17 @@ def _run_reader_deploy(
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
+    sidecars: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
     Returns (summary, calls, output). The phase must actually have STARTED:
     a refusal test would otherwise pass against a run that aborted in 1.3
     and never reached the code under test at all.
+
+    `sidecars` emits the run and change logs and seeds their markers into the
+    harness's descriptions, so both are adopted and the logging phase reaches
+    the change log's reader grant.
     """
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
@@ -4417,7 +4472,10 @@ def _run_reader_deploy(
         web_bindings=web_bindings, web_binding_status=web_binding_status,
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
-    ) + "\n" + _reader_deploy_js().replace(
+    )
+    if sidecars:
+        script = _with_sidecar_descriptions(script)
+    script = script + "\n" + _reader_deploy_js(sidecars=sidecars).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -4553,6 +4611,45 @@ def test_a_resolved_user_is_enrolled_and_the_membership_read_back() -> None:
         i > posted and calls[i]["method"] == "GET" for i in membership
     ), f"the membership was never re-read after the write: {[calls[i] for i in membership]}"
     assert _RESOLVED_USER["Title"] in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_change_logs_reader_grant_resolves_the_level_the_enrolment_phase_did() -> None:
+    """A role definition Id and a site group Id are INTEGERS, not GUIDs.
+
+    MEASURED 2026-09-06: every deploy of that day logged a non-fatal
+    `{"where": "reader grant on 'dbml_Logs'", "error": "Invalid role
+    definition 'Read' GUID returned by SharePoint"}` on a site where
+    `roledefinitions/getbyname('Read')` had just answered HTTP 200 with Id
+    1073741826, which the enrolment phase had already read and accepted.
+    The grant block passed both Ids through the GUID assertion. Because the
+    failure is non-fatal, the run reported success while leaving the change
+    log with inheritance broken and the reader holding nothing on it, which
+    is the silent class this repository exists to catch.
+
+    Asserted on the emitted run rather than on the template text, and on the
+    grant CALL rather than only on the absence of a failure: a block that
+    resolved both Ids and then skipped the assignment would satisfy an
+    empty-failures check on its own. The run itself aborts later, in list
+    creation, because the adopted harness does not store list-level
+    validation; the logging phase has already finished by then.
+    """
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, sidecars=True)
+    assert not summary.get("loggingFailures"), summary.get("loggingFailures")
+    granted = [
+        c for c in calls
+        if c["method"] == "POST"
+        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and "roleassignments/addroleassignment" in c["url"]
+    ]
+    assert granted, (
+        f"the reader was never granted on {CHANGE_LOG_TITLE}: "
+        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}"
+    )
+    # Group Id 9 is what the adopted harness resolves every group name to.
+    assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], granted[0]
 
 
 # === Step 0: the grant is judged by its bitmap, not by its name (#199) ===

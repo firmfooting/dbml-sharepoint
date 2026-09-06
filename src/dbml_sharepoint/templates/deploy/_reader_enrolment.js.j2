@@ -154,6 +154,21 @@
         // both advisory ones. So a genuine built-in Read passes this check
         // silently, which is the property that makes a firing check mean
         // something.
+        //
+        // And the threat it guards against is measured too, not supposed.
+        // `read-level-tamper-probe.js` ran on a live site on 2026-09-06 and
+        // SharePoint Online ACCEPTED a MERGE of BasePermissions on the
+        // BUILT-IN Read (RoleTypeKind 2, Id 1073741826): HTTP 204, reading
+        // back High=176 Low=138612832 with ViewListItems gone. A tenant admin
+        // or a rogue script can hollow out a built-in level in one call, and
+        // the level goes on being called Read.
+        //
+        // The same day, a deploy against that tampered site refused here with
+        // "permission level 'Read' on this site does not grant ViewListItems"
+        // and aborted before list creation, issuing no POST, MERGE or DELETE
+        // after this phase began. Restoring the bitmap by exact read-back and
+        // rerunning enrolled the account. So this check is the only thing
+        // between a hollowed-out level and a site that reports success.
         const levelNames = [...new Set(SCHEMA.list_assignments
           .flatMap(la => la.assignments)
           .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)

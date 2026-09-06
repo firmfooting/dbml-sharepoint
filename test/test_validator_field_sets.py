@@ -670,12 +670,11 @@ def test_attachments_off_beside_a_document_library_is_refused() -> None:
     list, so a library in the mapping is a library the deploy would write
     `EnableAttachments = false` on.
 
-    PROVISIONAL, and the test is here to keep the refusal honest rather than
-    to pin a measured fact. Nothing has measured what a library does with
-    that write: it may refuse it part-way through a paste, or answer 200 and
-    read back unchanged, which is the silent class this repository exists to
-    catch. Narrow this from what `list-settings-probe.js` reports on
-    `library.doc-lib.attachments-sticks`, not from what seems likely.
+    MEASURED 2026-09-06 by `library.doc-lib.attachments-sticks` in
+    `list-settings-probe.js`: a library answers a write to that property HTTP
+    500, "Attachments are not allowed for Document libraries and Surveys". So
+    the refusal keeps a paste from stopping half-way through, and the message
+    is pinned to that answer rather than to what seems likely.
 
     Reported beside the kind refusal rather than instead of it, on the
     `demo_items` precedent above: an author who lifts the kind refusal still
