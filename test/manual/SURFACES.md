@@ -273,7 +273,7 @@ throttling is signalled (429/503 status versus a redirect to
 
 Scopes: `batch`, `throttle`, `retry`
 
-Probes: `throttle-batch-probe.js`
+Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`
 
 ## Checks that file under a different surface than their probe
 
