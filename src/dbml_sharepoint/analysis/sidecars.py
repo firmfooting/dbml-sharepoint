@@ -26,6 +26,7 @@ of the same title that is not this tool's.
 """
 
 from dbml_sharepoint.analysis import provenance
+from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 
 #: The run log. Unprefixed so it is greppable in the SharePoint UI exactly
 #: as spelled, with the space: operators see "dbml Local Log" in list
@@ -150,7 +151,7 @@ def change_log_title() -> str:
 #: declares its own index on it in the family's `schema.dbml`.
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "ChangeKey",
         "FieldTypeKind": 2,
         "MaxLength": 255,
@@ -158,63 +159,63 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "Description": "The reporting row key this row belongs to.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "SourceSite",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The site the change was made on.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "ChangeKind",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "What changed: rename, create, permission.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "TargetName",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The list, level or group the change lands on.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "OldValue",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The value before the change; empty for a create.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "NewValue",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The value after the change.",
     },
     {
-        "__metadata": {"type": "SP.FieldDateTime"},
+        "__metadata": {"type": entity_type_for_type_kind(4)},
         "Title": "EffectiveFrom",
         "FieldTypeKind": 4,
         "DateFormat": "DateTime",
         "Description": "When the change took effect.",
     },
     {
-        "__metadata": {"type": "SP.FieldDateTime"},
+        "__metadata": {"type": entity_type_for_type_kind(4)},
         "Title": "EffectiveTo",
         "FieldTypeKind": 4,
         "DateFormat": "DateTime",
         "Description": "When the next change for this key took effect.",
     },
     {
-        "__metadata": {"type": "SP.FieldBoolean"},
+        "__metadata": {"type": entity_type_for_type_kind(8)},
         "Title": "IsCurrent",
         "FieldTypeKind": 8,
         "Indexed": True,
         "Description": "Whether this row is the current one for its key.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "ReleaseTag",
         "FieldTypeKind": 2,
         "MaxLength": 255,
@@ -255,49 +256,49 @@ CENTRAL_CHANGE_COLUMNS: tuple[str, ...] = tuple(
 #: with the same create-body shape jsgen builds for a Note column.
 RUN_LOG_STAMP_COLUMNS: tuple[dict[str, object], ...] = (
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "StampKind",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "What this row records: deployment start, deployment stop or abort.",
     },
     {
-        "__metadata": {"type": "SP.FieldDateTime"},
+        "__metadata": {"type": entity_type_for_type_kind(4)},
         "Title": "StampUtc",
         "FieldTypeKind": 4,
         "DateFormat": "DateTime",
         "Description": "When the stamp was written, in UTC.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "SourceSite",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The site the deploy ran against.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "ReleaseTag",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The release this run deployed.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "SchemaVersion",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The schema version this run deployed.",
     },
     {
-        "__metadata": {"type": "SP.FieldText"},
+        "__metadata": {"type": entity_type_for_type_kind(2)},
         "Title": "Operator",
         "FieldTypeKind": 2,
         "MaxLength": 255,
         "Description": "The account whose browser session ran the deploy.",
     },
     {
-        "__metadata": {"type": "SP.FieldMultiLineText"},
+        "__metadata": {"type": entity_type_for_type_kind(3)},
         "Title": "Details",
         "FieldTypeKind": 3,
         "RichText": False,

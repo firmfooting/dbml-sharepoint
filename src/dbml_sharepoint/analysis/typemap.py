@@ -119,6 +119,47 @@ MULTI_TYPE_AS_STRING_PAIRS: list[tuple[int, str]] = sorted(
 #: property.
 BASE_TYPE_AS_STRING_PAIRS: list[tuple[str, str]] = sorted(SINGLE_ARITY_KIND.items())
 
+
+#: The OData entity type each field kind is CREATED as. One authority, because
+#: two of them is what shipped a change log with eight of its ten columns: the
+#: generator derived Boolean from here as `SP.Field` and `analysis/sidecars.py`
+#: named `SP.FieldBoolean` by hand, which AddField refused HTTP 400 on a live
+#: site on 2026-09-06. Anything writing a create body reads this rather than
+#: spelling its own.
+ENTITY_TYPE_BY_KIND: dict[str, str] = {
+    "Text": "SP.FieldText",
+    "Note": "SP.FieldMultiLineText",
+    "DateTime": "SP.FieldDateTime",
+    "Choice": "SP.FieldChoice",
+    # SP.FieldChoice DERIVES from SP.FieldMultiChoice, so this is the base
+    # of the type already here rather than a sibling of it. Accepted by
+    # the /fields collection on 2026-08-10, HTTP 201.
+    "MultiChoice": "SP.FieldMultiChoice",
+    "Lookup": "SP.FieldLookup",
+    # Not SP.FieldLookupMulti, which does not exist. A LookupMulti field
+    # reads back with entity type SP.FieldLookup, and the MERGE that
+    # flips AllowMultipleValues was accepted under that type in both
+    # directions (measured 2026-09-02).
+    "LookupMulti": "SP.FieldLookup",
+    # NOT SP.FieldBoolean, which AddField does not take. Every Boolean column
+    # this tool has provisioned was created as SP.Field with FieldTypeKind 8;
+    # one live site carries twelve of them, three indexed.
+    "Boolean": "SP.Field",
+    "Number": "SP.FieldNumber",
+    "URL": "SP.FieldUrl",
+    "User": "SP.FieldUser",
+    "Calculated": "SP.FieldCalculated",
+}
+
+
+def entity_type_for_type_kind(type_kind: int) -> str:
+    """The entity type to create a field of this ``FieldTypeKind`` as.
+
+    For callers holding the number rather than the kind name, which is the
+    form a hand-written create body carries.
+    """
+    return ENTITY_TYPE_BY_KIND[FIELD_KIND_BY_TYPE_KIND[type_kind]]
+
 #: The SP.Field properties a declaration owns that are not on every subtype.
 #: The deployer reads them back with `$select`, compares them and MERGEs the
 #: drifted ones; a property missing from this list is written on create and

@@ -46,6 +46,7 @@ from dbml_sharepoint.analysis.sidecars import (
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
+    ENTITY_TYPE_BY_KIND,
     TOTAL_FUNCTIONS,
     format_description,
     map_column,
@@ -1173,24 +1174,4 @@ def _bool_default_to_sp(value: str | int | bool) -> str:
 
 
 def _meta_type(kind: str) -> str:
-    return {
-        "Text": "SP.FieldText",
-        "Note": "SP.FieldMultiLineText",
-        "DateTime": "SP.FieldDateTime",
-        "Choice": "SP.FieldChoice",
-        # SP.FieldChoice DERIVES from SP.FieldMultiChoice, so this is the base
-        # of the type already here rather than a sibling of it. Accepted by
-        # the /fields collection on 2026-08-10, HTTP 201.
-        "MultiChoice": "SP.FieldMultiChoice",
-        "Lookup": "SP.FieldLookup",
-        # Not SP.FieldLookupMulti, which does not exist. A LookupMulti field
-        # reads back with entity type SP.FieldLookup, and the MERGE that
-        # flips AllowMultipleValues was accepted under that type in both
-        # directions (measured 2026-09-02).
-        "LookupMulti": "SP.FieldLookup",
-        "Boolean": "SP.Field",
-        "Number": "SP.FieldNumber",
-        "URL": "SP.FieldUrl",
-        "User": "SP.FieldUser",
-        "Calculated": "SP.FieldCalculated",
-    }[kind]
+    return ENTITY_TYPE_BY_KIND[kind]

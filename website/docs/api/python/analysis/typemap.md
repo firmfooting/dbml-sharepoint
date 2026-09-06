@@ -56,6 +56,23 @@ MULTI_TYPE_AS_STRING_PAIRS = [(7, 'LookupMulti')]
 BASE_TYPE_AS_STRING_PAIRS = [('LookupMulti', 'Lookup')]
 ```
 
+### `ENTITY_TYPE_BY_KIND`
+
+```python
+ENTITY_TYPE_BY_KIND = {'Text': 'SP.FieldText', 'Note': 'SP.FieldMultiLineText', 'DateTime': 'SP.FieldDateTime', 'Choice': 'SP.FieldChoice', 'MultiChoice': 'SP.FieldMultiChoice', 'Lookup': 'SP.FieldLookup', 'LookupMulti': '…
+```
+
+### `entity_type_for_type_kind`
+
+```python
+def entity_type_for_type_kind(type_kind: int) -> str
+```
+
+The entity type to create a field of this ``FieldTypeKind`` as.
+
+For callers holding the number rather than the kind name, which is the
+form a hand-written create body carries.
+
 ### `DERIVED_FIELD_PROPERTIES`
 
 ```python
