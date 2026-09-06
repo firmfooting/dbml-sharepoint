@@ -160,9 +160,10 @@
  *    permits, will refuse here too, and that is the correct trade for an
  *    object class where the wrong guess is a security change.
  *
- *    Read is the only level with a reference mask, because it is the only one
- *    this project has measured. `level-census` prints the other five so that
- *    the next run has something to compare against.
+ *    Read is the only level with a reference mask IN THE CODE. RUN 1 below
+ *    records what `level-census` read for all six, so a later run has
+ *    something to compare against by eye. They are one site's masks, and the
+ *    guard is not widened to them until a second site agrees.
  *
  * 4. WHICH BIT IS CLEARED is a rule, not a judgement call, so a transcript can
  *    be re-derived from this file: the highest-value NAMED bit that is SET in
@@ -208,6 +209,57 @@
  * partial capture of those is attempted, because a partial capture would be
  * read as a backup. Run this arm on a disposable site only.
  *
+ * RUN 1, 2026-09-06, revision bcb75da9, one disposable Microsoft 365
+ * group-connected Team Site, all three gates set including
+ * ALLOW_DESTRUCTIVE_DELETE. 36 rows: 29 settled, 7 void, none failed.
+ *
+ *   ALL SIX BUILT-INS TOOK THE MERGE. Read, Contribute, Edit, Design, Full
+ *   Control and Limited Access each answered HTTP 204 and read the requested
+ *   mask back. Editing a built-in level over REST is not a Read quirk and was
+ *   refused nowhere on the roster.
+ *
+ *   THE DOCUMENTATION DISAGREES ON EXACTLY TWO. `documented-editability-agrees`
+ *   reports DISAGREES on Limited Access and Full Control: both documented
+ *   unchangeable ("You can't change the Full Control and Limited Access
+ *   default permission levels", and "Limited Access can't be edited or
+ *   deleted"), both observed EDITABLE. The other four are documented editable
+ *   and were. So those Learn sentences describe the settings UI, and the REST
+ *   surface enforces none of them.
+ *
+ *   NOTHING CASCADED, on any of the six. Every read-back equalled the
+ *   requested mask exactly, so clearing one bit moved no other. The dependency
+ *   cascade Learn describes for the UI did not apply to a MERGE, which is what
+ *   question 3 asked and generalises from the 2026-09-06 tamper.
+ *
+ *   RoleTypeKind IS SERVER-ASSIGNED. The masquerade level was created with
+ *   RoleTypeKind 2 requested (HTTP 201) and read back 0, so a deleted built-in
+ *   could not be rebuilt with its kind. The delete arm's precondition then
+ *   voided the arm on all six levels and voided `masquerade-delete-guarded`
+ *   with them: those are the 7 void rows, and the flag WAS set. The
+ *   precondition did its job on its first live run.
+ *
+ *   A DUPLICATE NAME IS ACCEPTED, AND getbyname PICKS THE BUILT-IN. A custom
+ *   level renamed to 'Read' was accepted (HTTP 204); `$filter` then returned
+ *   two rows and `getbyname('Read')` resolved to the built-in Id 1073741826,
+ *   not the impostor Id 1073741934. The built-in is also the LOWER Id, and one
+ *   observation cannot say which of the two rules decided it.
+ *
+ * The write arm's guard passed on the way in: this site's Read was at
+ * High=176 Low=138612833, the mask `reader-bindings-probe.js` measured on
+ * 2026-08-14. Every restore was verified by exact read-back against that
+ * level's own pre-write fingerprint, and both levels the probe created were
+ * removed and their absence re-enumerated.
+ *
+ * THE SIX BUILT-IN MASKS as `level-census` read them, before any write. One
+ * site on one tenant: a reference point, not a constant to compare against.
+ *
+ *     1073741825 kind 1  Limited Access  High=48          Low=134287360
+ *     1073741826 kind 2  Read            High=176         Low=138612833
+ *     1073741827 kind 3  Contribute      High=432         Low=1011028719
+ *     1073741828 kind 4  Design          High=432         Low=1012866047
+ *     1073741829 kind 5  Full Control    High=2147483647  Low=4294967295
+ *     1073741830 kind 6  Edit            High=432         Low=1011030767
+ *
  * HOW TO RUN
  *   1. Open a disposable SharePoint Online site you own.
  *   2. F12 -> Console -> paste -> Enter. The committed defaults only print.
@@ -215,7 +267,7 @@
  *      false unless the site is genuinely disposable.
  *   4. Paste again and copy the complete results table back verbatim.
  *
- * STATUS: NOT YET RUN. Every row is open until a live transcript fills it.
+ * STATUS: RUN 1, 2026-09-06. 29 rows settled, 7 void, none open.
  */
 (async () => {
   const CONFIRMED = false;

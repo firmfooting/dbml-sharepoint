@@ -147,15 +147,27 @@ def check(vc: ValidationContext) -> list[Finding]:
             # than the reference implementation satisfies -- is about the
             # shipped families, and none of them declares a level named after
             # any built-in. The conformance sweep would fail if one did.
+            #
+            # MEASURED 2026-09-06, `built-in-levels-probe.js` RUN 1: SharePoint
+            # does NOT reserve these names itself. A custom level renamed to
+            # 'Read' was accepted (HTTP 204), two levels then answered to that
+            # name, and `getbyname` resolved to the built-in (Id 1073741826).
+            # So this refusal is defence for THIS tool's output rather than an
+            # invariant the platform enforces: the deploy resolves a level by
+            # name, so a mapping declaring a built-in name either rewrites the
+            # site's own level or leaves two levels for one name to resolve
+            # between, and neither is a grant a reader of the mapping can
+            # predict.
             if key in _RESERVED_LEVEL_KEYS:
                 findings.append(Finding(
                     FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
                     f"permission_levels: {lvl.name!r} is a built-in SharePoint "
-                    f"permission level. Declaring it does not create a second "
-                    f"level -- the deploy reconciles the one already on the "
-                    f"site, rewriting its description and base permissions "
-                    f"for every principal that holds it. Give the custom "
-                    f"level a name of its own.",
+                    f"permission level. SharePoint would let a second level "
+                    f"take the name, but the deploy does not create one: it "
+                    f"resolves the name and rewrites the site's own level, "
+                    f"its description and base permissions, for every "
+                    f"principal that holds it. Give the custom level a name "
+                    f"of its own.",
                     location=_LEVELS,
                 ))
             if key in seen_level_names:

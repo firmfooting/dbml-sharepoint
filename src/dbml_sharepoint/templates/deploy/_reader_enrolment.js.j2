@@ -169,6 +169,18 @@
         // after this phase began. Restoring the bitmap by exact read-back and
         // rerunning enrolled the account. So this check is the only thing
         // between a hollowed-out level and a site that reports success.
+        //
+        // Nor is it a Read quirk. `built-in-levels-probe.js` ran the same
+        // one-bit MERGE against all six built-in levels on 2026-09-06: Read,
+        // Contribute, Edit, Design, Full Control and Limited Access each
+        // answered HTTP 204 and read back EXACTLY the requested mask, so
+        // clearing one bit moved no other, and the two Learn documents as
+        // unchangeable were editable like the rest. That run also renamed a
+        // custom level to 'Read', which SharePoint accepted; the getbyname
+        // below still resolved to the built-in (Id 1073741826, which is also
+        // the lower Id, and one run cannot say which rule decided it). So an
+        // impostor beside the built-in did not capture this call, and the
+        // bitmap check is what makes that safe rather than the name.
         const levelNames = [...new Set(SCHEMA.list_assignments
           .flatMap(la => la.assignments)
           .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
