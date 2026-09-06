@@ -223,24 +223,48 @@
   // Required either. Both are applied by the reconcileDeclaredField MERGE the
   // callers issue straight after, which is already how a [unique] single-value
   // lookup gets EnforceUniqueValues and Indexed.
-  async function createDeclaredLookupField(listName, field, targetGuid, digest) {
+  // The ONE spelling of a declared field's CREATE: path and body, for all
+  // three routes. A phase that batches its creates hands this to
+  // BatchWriter.add() and a phase that does not hands it to postJson, so the
+  // ChangeSet part and the single write cannot drift into different routes.
+  function declaredFieldCreateOp(listName, field, targetGuid) {
     const listPath = `web/lists/getbytitle('${odataName(listName)}')`;
+    if (!field.target_list) {
+      return { path: `${listPath}/fields`, body: field.body };
+    }
     if (field.lookup_creation_xml) {
       const spec = field.lookup_creation_xml;
       const xml = `<Field Type="${spec.type}" Mult="TRUE" DisplayName="${spec.name}" `
         + `Name="${spec.name}" List="{${targetGuid}}" ShowField="${spec.show_field}"/>`;
-      await postJson(
-        apiUrl(`${listPath}/fields/createfieldasxml`),
-        { parameters: { SchemaXml: xml, Options: 8 } },
-        digest,
-      );
-      return;
+      return {
+        path: `${listPath}/fields/createfieldasxml`,
+        body: { parameters: { SchemaXml: xml, Options: 8 } },
+      };
     }
-    await postJson(
-      apiUrl(`${listPath}/fields/addfield`),
-      { parameters: { ...field.lookup_creation_parameters, LookupListId: targetGuid } },
-      digest,
-    );
+    return {
+      path: `${listPath}/fields/addfield`,
+      body: { parameters: { ...field.lookup_creation_parameters, LookupListId: targetGuid } },
+    };
+  }
+
+  // The display-title rename that follows a create, as an op rather than a
+  // request, so it can ride its create's ChangeSet or go out on its own.
+  // Addressed by internal name because the field has no GUID until the part
+  // before it lands; same address and headers patchField sends. Null when the
+  // declared display title is already the internal name, which is every column
+  // whose mapping asks for no rename.
+  function declaredFieldRenameOp(listName, field) {
+    const desiredTitle = field.display_title != null ? field.display_title : field.title;
+    if (desiredTitle === field.title) return null;
+    return {
+      path: `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`,
+      body: { __metadata: field.body.__metadata, Title: desiredTitle },
+    };
+  }
+
+  async function createDeclaredLookupField(listName, field, targetGuid, digest) {
+    const op = declaredFieldCreateOp(listName, field, targetGuid);
+    await postJson(apiUrl(op.path), op.body, digest);
   }
 
   function declaredFieldsForList(list) {

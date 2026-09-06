@@ -202,16 +202,24 @@ def test_phase_one_lookup_refreshes_owned_target_before_reconcile() -> None:
         "await assertDeclaredListOwnedNow(col.target_list)",
     )
     target_guid = wave_two.index("return targetOwned.Id", target_read)
-    reconcile = wave_two.index("await reconcileDeclaredField", target_guid)
-    assert target_read < target_guid < reconcile
-    refreshed = wave_two.index("targetGuid = await resolveTargetGuid()", reconcile)
-    # The create takes the re-resolved GUID as an argument. Before the
-    # multi-value route existed it was patched into a create body built
-    # earlier, which is the same ordering constraint under another spelling.
-    create = wave_two.index(
-        "await createDeclaredLookupField(list.title, col, targetGuid,", refreshed,
+    # The decide pass resolves the target before it reads the column back and
+    # before it queues the create, so the LookupListId a ChangeSet part carries
+    # is one this run has just proved it still owns.
+    resolved = wave_two.index(
+        "const targetGuid = await resolveTargetGuid(col)", target_guid,
     )
-    assert refreshed < create
+    reconcile = wave_two.index("await reconcileDeclaredField", resolved)
+    create = wave_two.index(
+        "declaredFieldCreateOp(list.title, col, targetGuid)", reconcile,
+    )
+    assert target_read < target_guid < resolved < reconcile < create
+    # The verify pass resolves again rather than reusing what the decide pass
+    # held. The batch is in flight in between, and the immutable-shape check
+    # compares the readback's LookupList against this GUID: reusing the stale
+    # one would compare a swapped target against itself and pass.
+    verify_resolved = wave_two.index("await resolveTargetGuid(col) : null", create)
+    verify_reconcile = wave_two.index("await reconcileDeclaredField", verify_resolved)
+    assert verify_resolved < verify_reconcile
 
 
 def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
@@ -692,8 +700,12 @@ def test_lookup_defaults_to_title_without_display_column() -> None:
 
 
 def _lookup_create_helper(js: str) -> str:
-    """The body of `createDeclaredLookupField`, which both lookup phases call."""
-    return js.split("async function createDeclaredLookupField", 1)[1].split("\n  }", 1)[0]
+    """The body of `declaredFieldCreateOp`, the one route choice every create reads.
+
+    Phase 1 hands it to BatchWriter and the deferred phase hands it to
+    postJson, so the ChangeSet part and the single write share it.
+    """
+    return js.split("function declaredFieldCreateOp", 1)[1].split("\n  }", 1)[0]
 
 
 def test_immediate_lookup_uses_addfield_creation_information() -> None:
@@ -718,10 +730,10 @@ def test_immediate_lookup_uses_addfield_creation_information() -> None:
     phase1 = js.split(f"Starting Phase {pn('lists')}")[1].split(
         f"Starting Phase {pn('lookups')}")[0]
 
-    # Both lookup phases create through one shared helper, because a
-    # multi-value lookup needs a second route (createfieldasxml) that AddField
-    # cannot express. AddField is still what a single-value lookup takes.
-    assert "await createDeclaredLookupField(list.title, col," in phase1
+    # Every create reads one shared route choice, because a multi-value lookup
+    # needs a second route (createfieldasxml) that AddField cannot express.
+    # AddField is still what a single-value lookup takes.
+    assert "declaredFieldCreateOp(list.title, col, targetGuid)" in phase1
     assert "{ ...col.body, LookupList:" not in phase1
     assert "reconcileDeclaredField" in phase1
 
@@ -1468,9 +1480,12 @@ def test_exact_lists_break_inheritance_immediately_in_phase_1() -> None:
     assert break_call in phase1
     assert js.count(break_call) == 2  # early isolation plus full Phase 4.2 guard
     assert "clearSubscopes=true" not in phase1
+    # The batched field wave opens with the decide pass, so that loop is still
+    # the first thing in the phase that touches a declared column: nothing is
+    # queued, sent or read back before it, and the calculated tail is behind it.
     assert phase1.index("listGuids[list.title] = listShape.Id") < phase1.index(
         "if (earlyIsolationLists.has(list.title))",
-    ) < phase1.index("for (const col of list.fields_phase1)")
+    ) < phase1.index("for (const col of batchedFields)")
 
 
 def test_new_exact_list_must_remain_empty_after_early_isolation() -> None:
@@ -1489,7 +1504,7 @@ def test_new_exact_list_must_remain_empty_after_early_isolation() -> None:
     assert "summary.errors.push({ phase: '2.1'" in phase1
     assert phase1.index("early breakroleinheritance failed") < phase1.index(
         "$select=ItemCount",
-    ) < phase1.index("for (const col of list.fields_phase1)")
+    ) < phase1.index("for (const col of batchedFields)")
     assert js.index("contains ${itemCount} item(s) after early isolation") < js.index(
         "pre-seed-errors",
     )
@@ -2899,9 +2914,14 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     assert "desired.ValidationFormula" not in js
     phase1 = js.split(f"Starting Phase {pn('lists')}")[1].split(
         f"Starting Phase {pn('lookups')}")[0]
-    assert phase1.index("for (const col of list.fields_phase1)") < phase1.index(
-        "await reconcileListValidation(list",
-    )
+    # The wave creates columns in four steps now, and the merge follows all of
+    # them: the decide pass queues, the ChangeSet goes out, the verify pass
+    # reads each column back, and the calculated tail is written singly.
+    assert phase1.index("for (const col of batchedFields)") < phase1.index(
+        "await createBatch.done()",
+    ) < phase1.index("for (const { col, created } of verifyWork)") < phase1.index(
+        "for (const col of calculatedFields)",
+    ) < phase1.index("await reconcileListValidation(list")
 
 
 

@@ -753,8 +753,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             // reconcile MERGEs whichever of these has drifted and then
             // verifies by read-back, so a mock that accepts the write and
             // keeps the old value fails the phase that made it.
-            for (const k of ['Description', 'Required', 'DefaultValue', 'CustomFormatter',
-                             'Indexed', 'EnforceUniqueValues']) {
+            // Title is the display-title rename, and InternalName deliberately
+            // does NOT move with it: a column is created titled with its
+            // internal name and renamed afterwards, so a mock that renamed
+            // both would hide a lookup by internal name that a live site
+            // still answers.
+            for (const k of ['Title', 'Description', 'Required', 'DefaultValue',
+                             'CustomFormatter', 'Indexed', 'EnforceUniqueValues']) {
               if (parsed[k] !== undefined) f[k] = parsed[k];
             }
             // Derived properties are read back off __body, not off the shape,
@@ -1880,7 +1885,7 @@ def test_marker_disappearing_at_field_lane_stops_the_wave(
     tmp_path: Path,
 ) -> None:
     # Was seven, moved by the unseal's third read for the reason above.
-    summary, _calls, _output = _run_adopted_deploy(
+    summary, calls, output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path),
         drop_marker_after_reads=8,
@@ -1888,21 +1893,52 @@ def test_marker_disappearing_at_field_lane_stops_the_wave(
 
     assert summary.get("aborted") == "field-wave-ownership-loss", summary
     assert summary["columnsCreated"] == 0, summary
+    # The lane entry check is what refused, so nothing was queued and no
+    # ChangeSet went out. This is what separates this test from the one below,
+    # which holds the other side of the same batch.
+    assert not _field_writes(calls, "APP_Escalation"), (
+        f"a field write followed the lane-entry ownership loss\n{output[-2000:]}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_marker_disappearing_after_field_lane_entry_blocks_field_writes(
+def test_marker_disappearing_inside_the_field_wave_batch_still_aborts(
     tmp_path: Path,
 ) -> None:
-    # Was eight, moved by the unseal's third read for the reason above.
-    summary, _calls, _output = _run_adopted_deploy(
+    """The ownership latch survives the ChangeSet that replaced N creates.
+
+    The unbatched wave re-proved the list immediately before every field
+    create, so a marker removed part-way through a list's columns aborted at
+    the next one. One ChangeSet has no next one, and without the check that
+    moved to the batch boundary this run would have reported the columns
+    created and gone on to the deferred lookups and the ACL work having lost
+    ownership mid-write.
+
+    Named by a read count because the boundary is inside the phase: read nine
+    is the lane entry, which passes here, so nothing but the check that runs
+    after the envelope goes out can produce this abort. Was eight, moved by
+    the unseal's third read for the reason above.
+    """
+    summary, calls, output = _run_adopted_deploy(
         tmp_path,
         _declared_list_descriptions(tmp_path),
         drop_marker_after_reads=9,
     )
 
     assert summary.get("aborted") == "field-wave-ownership-loss", summary
+    # The creates landing is the premise, not a failure: a sent ChangeSet
+    # cannot be recalled, so this guard's job is to stop the run before the
+    # phases that follow, not to prevent the write.
+    assert _field_writes(calls, "APP_Escalation"), (
+        "the create batch never went out, so this run proves nothing about "
+        f"the check that runs after it\n{output[-2000:]}"
+    )
+    # Nothing is REPORTED created: the latch runs before the verify pass that
+    # counts, so a rerun is not told these columns are already done.
     assert summary["columnsCreated"] == 0, summary
+    assert f"Starting Phase {pn('lookups')}" not in output, (
+        f"a later phase ran after ownership was lost mid-wave\n{output[-2000:]}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2899,6 +2935,195 @@ def test_the_maintenance_unseal_writes_one_batch_per_list(tmp_path: Path) -> Non
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) -> None:
+    """Phase 1's creates travel as ChangeSet parts, one $batch per list.
+
+    MEASURED on a live tenant 2026-09-06, run 20260906T061322,
+    test/manual/batch-field-create-probe.js: 40 creates against one list as
+    one ChangeSet landed all 40 with every column present after, and a create
+    followed by its display-title MERGE in the same envelope answered 201 then
+    204 with the rename applied.
+
+    Asserting the transport rather than the outcome, because the outcome is
+    identical either way: the columns end created and renamed whether the
+    writes went singly or batched, so nothing else in the suite can see this
+    stop working. The part ORDER is asserted too. A rename addresses a column
+    that does not exist until the part before it lands, and on a list with no
+    declared form layout the creation order is the default form's field order.
+    """
+    table_names = ("Escalation", "Second")
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
+    )
+    # Two columns whose display title differs from the internal name, so a
+    # rename that did NOT ride its create is visible as a missing part rather
+    # than only as a different request count.
+    body = _declared_deploy_js(
+        tmp_path, "display_names:\n  mode: auto\n",
+        table_names=table_names,
+        extra_lines=("EscalationReason nvarchar", "ResolvedOnSite nvarchar"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "});\n",
+    )
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
+    )
+    assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
+    batches = json.loads(line.removeprefix("__BATCHES__"))
+
+    creating = [
+        b for b in batches
+        if any(op["method"] == "POST" and op["url"].endswith("/fields") for op in b["ops"])
+    ]
+    assert len(creating) == 2, (
+        f"two lists created their columns in {len(creating)} $batch request(s); "
+        "the lane boundary is the batch boundary because same-list field "
+        "writes race into save conflicts"
+    )
+    for batch in creating:
+        titles = {
+            match.group(1) for match in (
+                re.search(r"getbytitle\('([^']+)'\)", op["url"]) for op in batch["ops"]
+            ) if match
+        }
+        assert len(titles) == 1, (
+            f"one ChangeSet spans {len(titles)} lists: {[op['url'] for op in batch['ops']]}"
+        )
+        # Three creates, and each rename directly behind the create it renames.
+        assert [op["method"] for op in batch["ops"]] == [
+            "POST", "POST", "MERGE", "POST", "MERGE",
+        ], f"the create parts and their renames did not interleave: {batch['ops']}"
+        assert [json.loads(op["body"])["Title"] for op in batch["ops"]] == [
+            "Note",
+            "EscalationReason", "Escalation Reason",
+            "ResolvedOnSite", "Resolved On Site",
+        ], (
+            "a create did not carry its internal name, or a rename its "
+            f"display title: {batch['ops']}"
+        )
+        for at, op in enumerate(batch["ops"]):
+            if op["method"] != "MERGE":
+                continue
+            addressed = re.search(
+                r"getbyinternalnameortitle\('([^']+)'\)", op["url"],
+            )
+            assert addressed, (
+                "a rename part addresses the field by GUID, which it cannot "
+                f"know until the create before it lands: {op['url']}"
+            )
+            assert addressed.group(1) == json.loads(batch["ops"][at - 1]["body"])["Title"], (
+                f"a rename part does not follow the create it renames: {batch['ops']}"
+            )
+
+    result = json.loads(
+        next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
+        .removeprefix("__RESULT__"),
+    )
+    assert result.get("aborted") is None, result
+    # Six columns over two lists, and the count is reported by the verify pass
+    # that reads each one back, not by the queue that sent them.
+    assert result["columnsCreated"] == 6, result
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
+    tmp_path: Path,
+) -> None:
+    """The one column the envelope must not carry.
+
+    SharePoint resolves a formula's [Column] references when the field is
+    CREATED and answers HTTP 500 on a miss, and the formula is rewritten to
+    DISPLAY names, so a calculated create is only valid once the columns it
+    names have been created AND renamed. Both of those are parts of this
+    list's ChangeSet, and the 2026-09-06 measurement covers a create and the
+    rename directly behind it, not a create reading a name two parts back.
+
+    Nothing else can see this: batched or not, the column ends up created with
+    the right formula, because the mock answers a part exactly as it answers
+    the single write it stands for.
+    """
+    table_names = ("Escalation",)
+    held = _declared_list_descriptions(tmp_path, table_names=table_names)
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
+    )
+    body = _declared_deploy_js(
+        tmp_path,
+        "display_names:\n"
+        "  mode: auto\n"
+        "calculated_formulas:\n"
+        "  Escalation:\n"
+        "    ReasonEcho: '=[EscalationReason]&\"\"'\n",
+        table_names=table_names,
+        extra_lines=("EscalationReason nvarchar", "ReasonEcho calculated_text"),
+    ).rstrip()
+    assert body.endswith("})();")
+    output = _run(
+        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__BATCHES__' + JSON.stringify(globalThis.__batches));\n"
+        "  console.log('__CALLS__' + JSON.stringify(globalThis.__calls));\n"
+        "});\n",
+    )
+    batches = json.loads(
+        next(ln for ln in output.splitlines() if ln.startswith("__BATCHES__"))
+        .removeprefix("__BATCHES__"),
+    )
+    calls = json.loads(
+        next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
+        .removeprefix("__CALLS__"),
+    )
+
+    queued = [
+        op for b in batches for op in b["ops"]
+        if op["method"] == "POST" and op["url"].endswith("/fields")
+    ]
+    assert [json.loads(op["body"])["Title"] for op in queued] == [
+        "Note", "EscalationReason",
+    ], f"the calculated column was queued as a ChangeSet part: {queued}"
+
+    def _at(predicate: Any) -> int:
+        found = [i for i, c in enumerate(calls) if predicate(c)]
+        assert found, f"no such request in the transcript of {len(calls)} calls"
+        return found[-1]
+
+    created = _at(
+        lambda c: c["method"] == "POST"
+        and c["url"].endswith("/fields")
+        and c["body"] is not None
+        and json.loads(c["body"]).get("Title") == "ReasonEcho",
+    )
+    renamed = _at(
+        lambda c: c["method"] == "POST"
+        and "getbyinternalnameortitle('EscalationReason')" in c["url"]
+        and c["body"] is not None
+        and json.loads(c["body"]).get("Title") == "Escalation Reason",
+    )
+    assert renamed < created, (
+        "the calculated column was created before the column its formula "
+        "names had been renamed to the display title the formula uses"
+    )
+    # The reference is by DISPLAY name, which is what makes the rename above a
+    # precondition rather than a tidy-up.
+    assert json.loads(calls[created]["body"])["Formula"] == '=[Escalation Reason]&""'
+
+    result = json.loads(
+        next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
+        .removeprefix("__RESULT__"),
+    )
+    assert result.get("aborted") is None, result
+    assert result["columnsCreated"] == 3, result
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_absent_declared_column_does_not_abandon_the_rest_of_its_lane(
     tmp_path: Path,
 ) -> None:
@@ -3442,9 +3667,15 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
     batches = json.loads(line.removeprefix("__BATCHES__"))
 
+    # MERGE, not merely a body naming DefaultValue: the Phase 1 create parts
+    # carry the declared default in the create body, so a body-only filter
+    # matches that batch too and counts this phase's writes twice.
     writing = [
         b for b in batches
-        if any('"DefaultValue"' in (op["body"] or "") for op in b["ops"])
+        if any(
+            op["method"] == "MERGE" and '"DefaultValue"' in (op["body"] or "")
+            for op in b["ops"]
+        )
     ]
     assert writing, f"no default write travelled as a ChangeSet part: {batches}"
     assert len(writing) == 1, (
