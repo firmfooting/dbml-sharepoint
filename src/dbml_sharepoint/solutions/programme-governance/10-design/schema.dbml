@@ -563,10 +563,17 @@ Table BusinessProcess {
   // it, but capturing a backlog row is not sweeping it, so a default would
   // claim a check that never happened.
   LastReviewedDate date                   [note: 'When somebody last checked this row is still true. Blank means nobody ever has, which is a finding rather than a gap to fill with a guess']
-  // Typed here and calculated on Risk above, in one family, and the note has
-  // to say which (#412): a backlog row has no rating to derive a cadence from.
-  NextReviewDue   date                    [note: 'Next sweep of this row. You set this date yourself: a backlog row carries no rating to calculate a cadence from. The register is only useful while it is current']
+  // Calculated, like Risk's, since 2.4.0. #412 kept this one typed because a
+  // backlog row has no rating to read; a flat twelve months needs none, and a
+  // date a person can type is a date a person can push out, which is the
+  // defect the split was opened for. The formula lives in mapping.yaml.
+  NextReviewDue   calculated_date         [note: 'Twelve months after Last Reviewed Date, calculated. Blank until somebody has swept the row, because a due date derived from a sweep that never happened would hide that nobody has looked']
   ReviewDate      date                    [note: 'Retired, superseded by Next Review Due. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
+  // The first multi-value lookup in a shipped family. Not indexed, and it
+  // cannot be: MEASURED 2026-09-02, Indexed=true on a LookupMulti was refused
+  // HTTP 500 while a single-value control in the same run took the index. It
+  // costs one join like any other lookup, taking this list to 3 of 12.
+  Stakeholders    int[]                   [ref: > Stakeholder.Id, note: 'Who can tell you how this process actually runs today. Everyone worth interviewing before the map is drawn, not just the owner']
 
   indexes {
     Function
