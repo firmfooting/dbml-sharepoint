@@ -23,6 +23,7 @@ import functools
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -190,17 +191,43 @@ def _live_payload() -> dict[str, Any]:
 # --- The fixture, read as it arrived ---------------------------------------
 
 
+#: The only hosts and site segments a scrubbed fixture may name. Everything
+#: else under a Microsoft tenant domain is somebody's real tenant.
+_PLACEHOLDER_HOSTS = frozenset({"example.sharepoint.com", "contoso.sharepoint.com"})
+_PLACEHOLDER_SITES = frozenset({"research", "risk", "example", "team-a"})
+
+#: A tenant host, a site segment, and the federated user key SharePoint mints
+#: for a guest. The last one embeds the account it was minted for, so it is a
+#: tenant identifier even though its prefix is a Microsoft product name.
+_TENANT_HOST = re.compile(r"\b([A-Za-z0-9-]+\.(?:sharepoint\.com|onmicrosoft\.com))")
+_SITE_SEGMENT = re.compile(r"/sites/([A-Za-z0-9._-]+)")
+_FEDERATED_USER_KEY = re.compile(r"\bmsteams_[A-Za-z0-9]+")
+
+
 def test_the_fixture_carries_no_tenant_data() -> None:
     """The fixture is a real read. It ships only because it was scrubbed.
 
     `test/test_probes.py` scans `test/manual/` for tenant identifiers and
     not `test/fixtures/`, so nothing else would catch a re-copied download
     that still had the site it came from in it.
+
+    MATCHED BY SHAPE, NOT BY NAME. A guard for tenant data cannot be a list
+    of tenants: this repository is public, so anything the check spells out
+    is published by the check. Patterns also catch any tenant rather than the
+    ones somebody thought to enumerate, which is the stronger guarantee and
+    the one that survives a fixture being re-cut from a different site.
     """
     text = SAMPLE.read_text(encoding="utf-8")
-    lowered = text.lower()
-    for identifier in ("gippslandhealth", "wghg", "ecclessmith", "msteams_"):
-        assert identifier not in lowered, identifier
+
+    hosts = {h.lower() for h in _TENANT_HOST.findall(text)}
+    assert hosts <= _PLACEHOLDER_HOSTS, (
+        f"real tenant host(s) in the fixture: {sorted(hosts - _PLACEHOLDER_HOSTS)}"
+    )
+    sites = {s.lower() for s in _SITE_SEGMENT.findall(text)}
+    assert sites <= _PLACEHOLDER_SITES, (
+        f"real site name(s) in the fixture: {sorted(sites - _PLACEHOLDER_SITES)}"
+    )
+    assert not _FEDERATED_USER_KEY.search(text), "a federated user key names an account"
     assert not re.findall(r"[\w.%+-]+@[\w.-]+\.\w{2,}", text)
     assert _source().site_url == "https://example.sharepoint.com/sites/Research"
     assert "\r" not in text, "the fixture must be LF; see AGENTS.md on generated files"
@@ -1746,3 +1773,29 @@ def test_the_download_name_comes_from_the_paths_last_segment(
     handed over out of step."""
     assert slug_from_path(path) == expected
     assert download_name([slug_from_path(path)]) == download_name([expected])
+
+
+_HOST = "example.sharepoint.com"
+
+
+@pytest.mark.parametrize(("what", "dirty"), [
+    ("a real tenant host", lambda s: s.replace(_HOST, "acme.sharepoint.com", 1)),
+    ("an onmicrosoft host", lambda s: s.replace(_HOST, "acme.onmicrosoft.com", 1)),
+    ("a real site name", lambda s: s.replace("/sites/Research", "/sites/AcmeProject", 1)),
+    ("a federated user key", lambda s: s.replace('"Title"', '"msteams_ABC123"', 1)),
+    ("an email address", lambda s: s.replace('"Title"', '"someone@acme.org"', 1)),
+])
+def test_the_tenant_guard_catches_each_shape_of_leak(
+    what: str, dirty: Callable[[str], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard must FIRE, not merely pass on a clean fixture.
+
+    A scrubbing check nobody has seen fail is a check nobody knows works.
+    Each case is a shape an unscrubbed download carries: the host, the site
+    segment, the federated user key and the address.
+    """
+    planted = tmp_path / "dirty.json"
+    planted.write_text(dirty(SAMPLE.read_text(encoding="utf-8")), encoding="utf-8")
+    monkeypatch.setattr("test_extract.SAMPLE", planted)
+    with pytest.raises(AssertionError):
+        test_the_fixture_carries_no_tenant_data()
