@@ -1150,3 +1150,18 @@ def test_the_close_leaves_another_application_row_alone() -> None:
     assert all(row.get("IsCurrent") is True for row in foreign), (
         f"this tool closed another application's row: {foreign}"
     )
+
+
+def test_the_stamped_deployer_version_is_not_doubled() -> None:
+    """`release.yaml`'s `deployer_version` already carries the product name
+    (`dbml-sharepoint/0.1.0`), so prepending it a second time stamped every
+    central row with `dbml-sharepoint/dbml-sharepoint/0.1.0`.
+    """
+    release = load_release(FIXTURES / "release.yaml")
+    run = _run_deploy(central_can_close=True, seeded_central_rows=True)
+    central = run["state"]["central"]
+    stamps = [r for r in central if "DeployerVersion" in r]
+    assert stamps, "no central stamp carried DeployerVersion"
+    assert all(r["DeployerVersion"] == release.deployer_version for r in stamps), (
+        f"DeployerVersion is doubled: {[r['DeployerVersion'] for r in stamps]}"
+    )

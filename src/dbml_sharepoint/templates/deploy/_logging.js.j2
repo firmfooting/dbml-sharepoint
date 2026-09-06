@@ -602,7 +602,7 @@
         body.SourceSite = SITE_URL;
         body.ReleaseTag = RELEASE_TAG;
         body.SchemaVersion = SCHEMA_VERSION;
-        body.DeployerVersion = {{ ('dbml-sharepoint/' ~ release.deployer_version) | tojson }};
+        body.DeployerVersion = {{ release.deployer_version | tojson }};
         body.Operator = OPERATOR_LOGIN;
         body.Details = details || '';
         body.Application = APPLICATION;
