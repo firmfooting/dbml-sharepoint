@@ -2334,7 +2334,7 @@ def _level_findings(name: str, *, description: str = "test") -> list[Finding]:
     "Restricted Read", "View Only",
 ])
 def test_a_permission_level_named_after_a_builtin_is_refused(name: str) -> None:
-    """Declaring one does not create a second level -- it rewrites the site's.
+    """Declaring one does not get a second level -- it rewrites the site's.
 
     `_security_principals.js.j2` reconciles a same-name role definition
     rather than skipping it, MERGEing `Description` and `BasePermissions`
@@ -2342,6 +2342,12 @@ def test_a_permission_level_named_after_a_builtin_is_refused(name: str) -> None:
     level cannot silently keep edit rights. Pointed at a built-in it means
     the deploy redefines `Read` for EVERY principal on the site that holds
     it, not only the account this mapping cares about.
+
+    The refusal is this tool's, not the platform's. `built-in-levels-probe.js`
+    RUN 1 renamed a custom level to `Read` on a live site on 2026-09-06 and
+    SharePoint accepted the duplicate, with `getbyname` still resolving to
+    the built-in. So the hazard is what the deploy's own name resolution
+    does with the collision, which is why the rule fires at build time.
 
     Parametrised over all eleven Learn documents, including
     `Web-Only Limited Access`, which the commonly-quoted list of ten omits.
