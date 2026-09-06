@@ -4,12 +4,14 @@
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
+from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.report_columns import (
     report_columns_for,
+    report_output_names,
     system_person_columns,
 )
-from dbml_sharepoint.analysis.typemap import is_person
+from dbml_sharepoint.analysis.typemap import is_person, map_column
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -135,17 +137,57 @@ def check(vc: ValidationContext) -> list[Finding]:
                 system_columns=reporting.system_columns,
                 person_columns=person_columns,
             ))
-            for display_title, sources in sorted(resolved.items()):
-                if display_title in reserved:
+            # `resolved` above is the SharePoint FIELD titles, which is what
+            # the duplicate rule needs and not what this one does. The query
+            # renames the columns it produced, and for a URL, a person or a
+            # lookup those are not the declared name: a `hyperlink` column
+            # `Site` reaches the report as `SiteUrl` and renames to `Site
+            # Url`, which this rule read as `Site` and let through, while the
+            # same column named `SiteUrl` reaches it as `SiteUrlUrl` and was
+            # refused for a collision the report does not have (#202).
+            #
+            # `report_output_names` is the derivation `reportgen` renames off,
+            # so the set compared here cannot drift from the set renamed there.
+            enum_names = set(vc.enum_by_name)
+            for col in table.columns:
+                # A cross-site ref is expanded to a Choice + URL pair, so the
+                # declared column never reaches the query. `_build_plans`
+                # skips the same pairs.
+                if col.name in xcols:
+                    continue
+                try:
+                    sp = map_column(col, enum_names)
+                except ValueError:
+                    # An unresolvable type. `validate_column` reports each of
+                    # these as its own finding, and `report` never builds a
+                    # schema carrying one, so there is nothing to say here.
+                    continue
+                lookup_display = display_column_for(
+                    bundle.mapping.entities.get(sp.target_list or ""),
+                )
+                for out_name in report_output_names(
+                    sp, lookup_display=lookup_display,
+                ):
+                    display_title = bundle.mapping.display_name_for(
+                        table.name, out_name,
+                    )
+                    if display_title not in reserved:
+                        continue
+                    # Naming the declared column only when it differs, so the
+                    # common case does not read 'Status, the report column
+                    # for Status'.
+                    via = (
+                        "" if out_name == col.name
+                        else f", the report column for {col.name!r},"
+                    )
                     findings.append(Finding(
                         FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
-                        f"display_names[{table.name}]: display title "
-                        f"{display_title!r} for column {', '.join(sources)} is "
-                        f"a column the reporting pack adds to this list. The "
-                        f"generated Power Query adds it and then renames the "
-                        f"schema column onto the same name, which fails the "
-                        f"refresh rather than the build. Choose another "
-                        f"display title.",
+                        f"display_names[{table.name}]: {out_name!r}{via} takes "
+                        f"display title {display_title!r}, which is a column "
+                        f"the reporting pack adds to this list. The generated "
+                        f"Power Query adds it and then renames onto the same "
+                        f"name, which fails the refresh rather than the build. "
+                        f"Choose another display title.",
                         location=Location(Section.DISPLAY_NAMES, entity=table.name),
                     ))
 

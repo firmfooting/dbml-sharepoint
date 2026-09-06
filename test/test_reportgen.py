@@ -2,7 +2,7 @@
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import cast, get_args
 
 import pytest
 from _model import bundle as make_bundle
@@ -11,7 +11,8 @@ from _model import enum as make_enum
 from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
-from _paths import FIXTURES
+from _packs import pack
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
 from dbml_sharepoint.generators import reportgen
@@ -30,9 +31,17 @@ from dbml_sharepoint.model.mapping_types import (
     EntitySection,
     FormVisibility,
     MappingBundle,
+    ReportingOptions,
 )
 from dbml_sharepoint.model.parser import Column, Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
+
+#: Globbed rather than listed, so a new family joins the sweeps below without
+#: anybody remembering to add it.
+FAMILIES = sorted(
+    path.parent.parent.name
+    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
+)
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
@@ -1147,6 +1156,134 @@ def test_powerquery_still_selects_retired_columns() -> None:
     schema, bundle = _retired()
     q = generate_powerquery(schema, bundle, "default")["APP_Board.pq"]
     assert "OperationsStatus" in q
+
+
+# One column per `typemap.FieldKind`, so the drift check below covers the
+# whole vocabulary rather than the kinds a shipped family happens to use.
+_EVERY_KIND_DBML = """
+Enum severity {
+  Low
+  High
+}
+
+Table Party {
+  Id    int      [pk, increment]
+  Title nvarchar [not null]
+  Ref   nvarchar [not null]
+
+  Note: 'Lookup target, showing Ref rather than Title so a hardcoded Title is caught.'
+}
+
+Table Everything {
+  Id            int             [pk, increment]
+  Title         nvarchar        [not null]
+  Body          longtext
+  Rich          richtext
+  Count         int
+  Amount        number
+  Flag          boolean
+  Due           date
+  Stamp         datetime
+  Link          hyperlink
+  Owner         person
+  Level         severity
+  Levels        severity[]
+  PartyRef      int             [ref: > Party.Id]
+  PartyRefs     int[]           [ref: > Party.Id]
+  DerivedText   calculated_text
+  DerivedNumber calculated_number
+  DerivedDate   calculated_date
+
+  Note: 'One column per field kind, with the multi-value ones mid-table.'
+}
+"""
+
+_EVERY_KIND_MAPPING = """
+entities:
+  Party: { kind: List, base_template: 100, site_role: default, display_column: Ref }
+  Everything: { kind: List, base_template: 100, site_role: default }
+"""
+
+
+def _plan_typed_columns(plan: reportgen._ListPlan) -> set[str]:
+    """Every column the emitted query carries, however it got its type.
+
+    `Table.TransformColumnTypes` types the `m_types` ones and the join step
+    types the multi-value ones, which is why the generator holds two lists;
+    the query selects the union of both.
+    """
+    return (
+        {name for name, _ in plan.m_types}
+        | {name for name, _ in plan.multi_value_joins}
+    )
+
+
+def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> None:
+    """`output_columns` must be the columns the declared fields produce.
+
+    The two are derived independently and must not drift: the match arms in
+    `_build_plans` build `m_types` and `multi_value_joins` per kind, while
+    `report_columns.report_output_names` answers the same question for
+    `checks/_naming`, which refuses a display title that would collide with a
+    reporting column. A rule comparing a different set from the one the query
+    renames is the defect this pair exists to prevent (#202).
+
+    Compared with `reporting.system_columns` off, so the subject is the
+    declared fields alone. `test_system_columns_contribute_no_declared_output`
+    covers the switch being on.
+    """
+    plain = replace(
+        bundle,
+        mapping=replace(bundle.mapping, reporting=ReportingOptions()),
+    )
+    for site_role in sorted({e.site_role for e in plain.mapping.entities.values()}):
+        for plan in reportgen._build_plans(schema, plain, site_role):
+            assert set(plan.output_columns) == _plan_typed_columns(plan), plan.entity
+            # A duplicate would rename one column twice, so the list and the
+            # set have to be the same size.
+            assert len(plan.output_columns) == len(set(plan.output_columns))
+
+
+def test_every_field_kind_contributes_the_columns_the_query_types(
+    tmp_path: Path,
+) -> None:
+    schema, bundle = pack(
+        tmp_path, dbml=_EVERY_KIND_DBML, mapping=_EVERY_KIND_MAPPING, notes=False,
+    )
+    enum_names = {e.name for e in schema.enums}
+    everything = next(t for t in schema.tables if t.name == "Everything")
+    covered = {map_column(col, enum_names).kind for col in everything.columns}
+    # Not vacuous: a kind absent from the fixture is a kind this drift check
+    # never compares, and the point is to compare all of them.
+    assert covered == set(get_args(FieldKind.__value__))
+    _assert_declared_outputs_match(schema, bundle)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_shipped_families_agree_about_their_report_columns(family: str) -> None:
+    root = SOLUTION_TEMPLATES / family
+    _assert_declared_outputs_match(
+        parse_dbml(root / "10-design" / "schema.dbml"),
+        load_mapping(root / "20-configure" / "mapping.yaml"),
+    )
+
+
+def test_system_columns_contribute_no_declared_output(tmp_path: Path) -> None:
+    """`reporting.system_columns` adds Author, Created, Editor and Modified to
+    `m_types`, and they are not declared fields: the rename loop gives them
+    SharePoint's own titles rather than the mapping's, so they must stay out
+    of `output_columns` whether the switch is on or off."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_EVERY_KIND_DBML,
+        mapping=_EVERY_KIND_MAPPING + "reporting:\n  system_columns: true\n",
+        notes=False,
+    )
+    plans = {p.entity: p for p in reportgen._build_plans(schema, bundle, "default")}
+    outputs = plans["Everything"].output_columns
+    assert "AuthorId" in _plan_typed_columns(plans["Everything"])  # not vacuous
+    assert not {"AuthorId", "AuthorTitle", "Created", "EditorId", "EditorTitle",
+                "Modified"} & set(outputs)
 
 
 def _kind_swapped(
