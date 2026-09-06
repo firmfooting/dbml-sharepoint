@@ -328,6 +328,9 @@ class FindingCode(StrEnum):
     CALCULATED_FORMULA_REFERENCES_A_RETIRED_COLUMN = (
         "calculated_formula_references_a_retired_column", "error"
     )
+    COLUMN_VALIDATION_MISSING_A_BLANK_ARM = (
+        "column_validation_missing_a_blank_arm", "error"
+    )
     COLUMN_VALIDATION_ON_A_RETIRED_COLUMN = "column_validation_on_a_retired_column", "error"
     COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS = (
         "column_validation_references_other_columns", "error"
