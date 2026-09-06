@@ -159,11 +159,15 @@
       // extraction produces a schema that parses, builds and is missing a
       // list, and nothing downstream can tell that from a site that has one
       // list fewer.
-      log('ERROR', `Could not read '${title}': ${err.message}`);
+      // THE PATH, not a title. The list's title is read back inside
+      // `readList` and does not exist out here, and a read that failed may
+      // never have learned one. The path is what the operator pasted and
+      // what they can check against the address bar.
+      log('ERROR', `Could not read the list at '${path}': ${err.message}`);
       const known = await knownTitles().catch(() => null);
       if (known) log('INFO', `Lists on this web: ${known.join(', ')}`);
-      log('ERROR', 'Nothing was downloaded. Fix the list name or your permissions and re-run.');
-      return { aborted: 'list-read-failed', list: title };
+      log('ERROR', 'Nothing was downloaded. Fix the list URL or your permissions and re-run.');
+      return { aborted: 'list-read-failed', list: path };
     }
   }
 
