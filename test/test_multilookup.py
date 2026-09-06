@@ -120,7 +120,7 @@ def test_the_emitted_schema_xml_carries_mult_true(
         source_mtime="2026-09-02T00:00:00Z",
         generated_at="2026-09-02T00:00:00Z",
     )
-    helper = js.split("async function createDeclaredLookupField", 1)[1]
+    helper = js.split("function declaredFieldCreateOp", 1)[1]
     helper = helper.split("\n  }", 1)[0]
 
     assert '<Field Type="${spec.type}" Mult="TRUE"' in helper
