@@ -295,6 +295,7 @@ def _entities(
     for entity_name, entity in vc.bundle.mapping.entities.items():
         table = vc.tables_by_name.get(entity_name)
         findings += _entity_kind(entity_name, entity)
+        findings += _attachments_are_measurable(vc, entity_name, entity)
         findings += _note_is_present(table, entity_name, family)
         findings += _note_whitespace_is_measured(table, entity_name)
         findings += _note_fits_beside_marker(table, entity_name, family)
@@ -361,6 +362,44 @@ def _entity_kind(entity_name: str, entity: EntityMapping) -> list[Finding]:
             location=Location(Section.ENTITIES, entity=entity_name),
         )]
     return []
+
+
+def _attachments_are_measurable(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+) -> list[Finding]:
+    """Refuse `attachments: false` while a DocumentLibrary is declared.
+
+    `attachments:` is one top-level switch and the deploy applies it to every
+    list it provisions, so a library in the mapping is a library the deploy
+    would write `EnableAttachments = false` on.
+
+    PROVISIONAL. Nothing here has measured what a library does with that
+    write. It may refuse it, which fails the deploy part-way through a paste,
+    or accept it with HTTP 200 and read back unchanged, which is the silent
+    class this repository exists to catch: a deploy reporting that attachments
+    were blocked on a container that still takes them. Either way, guessing is
+    what the evidence rule in AGENTS.md forbids, so the combination is refused
+    until `list-settings-probe.js` reports on
+    `library.doc-lib.attachments-sticks`. Narrow or lift this rule from what
+    that probe measures, not from what seems likely.
+
+    Reported beside DOCUMENT_LIBRARY_UNSUPPORTED rather than instead of it, on
+    the DEMO_ROWS_ON_DOCUMENT_LIBRARY precedent: the kind refusal is about the
+    entity, this is about the setting, and an author who lifts the first still
+    needs to see the second.
+    """
+    if entity.kind != "DocumentLibrary" or vc.bundle.mapping.attachments:
+        return []
+    return [Finding(
+        FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
+        f"entities[{entity_name}]: attachments: false is declared and "
+        f"{entity_name} is a DocumentLibrary. The deploy writes "
+        f"EnableAttachments = false on every list it provisions, and what a "
+        f"library does with that write has not been measured -- it may refuse "
+        f"it part-way through the paste, or accept it and read back unchanged. "
+        f"Drop attachments: false, or model {entity_name} as a 'List'.",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
 
 
 def _display_column(

@@ -1437,6 +1437,22 @@ def test_hardening_flags_parsed(tmp_path: Path) -> None:
     assert off.prevent_list_deletion is False
 
 
+def test_attachments_defaults_on(tmp_path: Path) -> None:
+    """The one hardening flag whose default is True, because True is
+    SharePoint's own and the deploy writes nothing that agrees with it.
+
+    The absent key and `attachments: true` have to load the same way, or a
+    mapping that says nothing would start paying a read-back on every list.
+    """
+    write_mapping(tmp_path, _views_yaml("attachments: false"))
+    assert load_mapping(tmp_path / "m.yaml").mapping.attachments is False
+
+    write_mapping(tmp_path, _views_yaml("attachments: true"), name="m2.yaml")
+    assert load_mapping(tmp_path / "m2.yaml").mapping.attachments is True
+
+    assert load_mapping(FIXTURES / "calculated-mapping.yaml").mapping.attachments is True
+
+
 
 
 # --- Quoted booleans --------------------------------------------------------
@@ -1508,6 +1524,15 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
     """), name="m3.yaml")
     with pytest.raises(ValueError, match="major_version_limit"):
         load_mapping(tmp_path / "m3.yaml")
+
+
+def test_quoted_attachments_is_rejected(tmp_path: Path) -> None:
+    """This one fails OPEN. `attachments: "false"` coerces to True, so the
+    deploy writes nothing and every list keeps taking attachments, while the
+    author reads the mapping as having blocked them."""
+    write_mapping(tmp_path, _views_yaml('attachments: "false"'))
+    with pytest.raises(ValueError, match="attachments"):
+        load_mapping(tmp_path / "m.yaml")
 
 
 def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:

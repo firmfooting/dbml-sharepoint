@@ -607,6 +607,10 @@ class Mapping:
     # of the list objects.
     seal_columns: bool = False
     prevent_list_deletion: bool = False
+    # Per-item attachments. True is SharePoint's own default for a generic
+    # list, so a mapping that says nothing gets no read-back and no MERGE;
+    # only `attachments: false` makes the deploy write the property.
+    attachments: bool = True
     # Item-level read/write trimming. Absent from a mapping means the
     # dataclass default (`all`/`all`), which is SharePoint's own, and the
     # deploy leaves both properties alone rather than writing them back.

@@ -684,6 +684,10 @@ def build_schema_json(
                 if name in [c.name for c in table.columns] else len(table.columns),
             ),
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
+            # False unless the mapping said `attachments: false`. True is
+            # SharePoint's own default, so a mapping that says nothing gets
+            # no read-back and no MERGE.
+            "disable_attachments": not bundle.mapping.attachments,
             # Null unless the mapping asks for trimming. `all`/`all` is
             # SharePoint's own default, so a mapping that says nothing gets
             # no probe and no MERGE on two properties this tool has not
