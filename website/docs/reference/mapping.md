@@ -1743,6 +1743,13 @@ both advisory ones, so a genuine built-in passes silently. A group granted no
 level at all on this site role warns instead: nothing is granted there, so there
 is no bitmap that could be wrong.
 
+The tampering this guards against is measured, not supposed: on **2026-09-06**
+(`test/manual/read-level-tamper-probe.js`) SharePoint Online accepted a MERGE of
+`BasePermissions` on the built-in `Read` itself, returning HTTP 204 and reading
+back with `ViewListItems` cleared, and a deploy against that site then aborted
+here before creating anything. The comment at step 0 of
+`templates/deploy/_reader_enrolment.js.j2` records the run.
+
 **The flagged group must hold nobody but the named account.** Before enrolling
 anything, the deploy enumerates the group's membership (every page) and
 **aborts the run** if it finds any principal other than the one

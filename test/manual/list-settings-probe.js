@@ -6,7 +6,7 @@
  *   through the ordinary MERGE path actually change the container, on a
  *   GENERIC LIST and on a DOCUMENT LIBRARY, which may not answer the same?
  *
- * REVISION: 09f85a82
+ * REVISION: 5cd92932
  *
  * WHY: attachments are disabled on every list before go-live as a MANUAL
  * step, on ten lists in programme-governance alone, because there is no
@@ -352,7 +352,7 @@
   // up. Destructive, so it ships false like every other guard.
   const CLEANUP_AT_END = false;
 
-  log('INFO', 'probe revision 09f85a82. Quote this when reporting results.');
+  log('INFO', 'probe revision 5cd92932. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe ListSettings';
   const LIB = 'dbmlsp Probe ListSettings Lib';
@@ -375,7 +375,11 @@
   //   'security'  write 2 when it reads 1, else 1
   //   'direction' write 'RTL' unless it already reads RTL, then 'LTR'
   const CANDIDATES = [
-    ['EnableAttachments', 'off',
+    // 'flip' rather than 'off' since 2026-09-06: a library already reads
+    // EnableAttachments false, so 'off' wrote the value it held and the run
+    // could only report NOT ESTABLISHED. Flipped, the same row answered HTTP
+    // 500, "Attachments are not allowed for Document libraries and Surveys".
+    ['EnableAttachments', 'flip',
      'field.list.attachments-sticks', 'library.doc-lib.attachments-sticks',
      'list item attachments', null],
     ['EnableVersioning', 'flip',

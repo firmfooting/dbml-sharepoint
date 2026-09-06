@@ -374,26 +374,27 @@ def _attachments_are_measurable(
     list it provisions, so a library in the mapping is a library the deploy
     would write `EnableAttachments = false` on.
 
-    PROVISIONAL, AND STILL PROVISIONAL AFTER THE PROBE RAN. It may refuse the
-    write, which fails the deploy part-way through a paste, or accept it with
-    HTTP 200 and read back unchanged, which is the silent class this
-    repository exists to catch: a deploy reporting that attachments were
-    blocked on a container that still takes them.
+    MEASURED 2026-09-06, `library.doc-lib.attachments-sticks` in
+    `list-settings-probe.js`: writing `EnableAttachments = true` to a scratch
+    document library came back HTTP 500, "-2146232832,
+    Microsoft.SharePoint.SPException", "Attachments are not allowed for
+    Document libraries and Surveys", and the flag still read back false. The
+    same run settled the list side (`field.list.attachments-sticks: STICKS`,
+    wrote false over true, HTTP 204, read back false), so the two containers
+    answer this property differently and the library answers it loudly.
 
-    `list-settings-probe.js` ran on 2026-09-06 and returned
-    `library.doc-lib.attachments-sticks: NOT ESTABLISHED`. EnableAttachments
-    already read false on the scratch document library, which is the value
-    the row would have written, so a readback equal to it would have proved
-    nothing and nothing was written. The row is `state: open`. The same run
-    settled the list side (`field.list.attachments-sticks: STICKS`, wrote
-    false over true, HTTP 204, read back false), so what is missing is the
-    library measurement specifically.
+    That measurement narrows the refusal to one outcome. This is NOT the
+    silent accept-and-read-back-unchanged class: a library that reached the
+    deploy would take SharePoint's own 500 mid-paste, stopping the run at that
+    list and leaving the site part-provisioned. Refusing at build turns that
+    into a message before anything is written.
 
-    This refusal therefore STAYS until a run writes EnableAttachments=true to
-    a document library and reads it back true, which is the only observation
-    that distinguishes a library that takes the write from one that ignores
-    it. Narrow or lift this rule from that, not from the list result and not
-    from what seems likely.
+    The probe wrote true because writing false to a library already reading
+    false would have proved nothing, so whether SharePoint short-circuits a
+    write matching the current value is still unmeasured and the deploy's
+    false might land as a no-op rather than a 500. The refusal does not rest
+    on which happens: either way the mapping declares a setting the container
+    does not have.
 
     Reported beside DOCUMENT_LIBRARY_UNSUPPORTED rather than instead of it, on
     the DEMO_ROWS_ON_DOCUMENT_LIBRARY precedent: the kind refusal is about the
@@ -406,10 +407,12 @@ def _attachments_are_measurable(
         FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
         f"entities[{entity_name}]: attachments: false is declared and "
         f"{entity_name} is a DocumentLibrary. The deploy writes "
-        f"EnableAttachments = false on every list it provisions, and what a "
-        f"library does with that write has not been measured -- it may refuse "
-        f"it part-way through the paste, or accept it and read back unchanged. "
-        f"Drop attachments: false, or model {entity_name} as a 'List'.",
+        f"EnableAttachments = false on every list it provisions, and a library "
+        f"refuses a write to that property: measured 2026-09-06, SharePoint "
+        f"answered HTTP 500, 'Attachments are not allowed for Document "
+        f"libraries and Surveys'. The paste would stop at {entity_name} with "
+        f"the site part-provisioned. Drop attachments: false, or model "
+        f"{entity_name} as a 'List'.",
         location=Location(Section.ENTITIES, entity=entity_name),
     )]
 
