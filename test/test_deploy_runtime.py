@@ -3697,6 +3697,24 @@ def _without_bits(*names: str) -> dict[str, str]:
     return {"High": str((value >> 32) & 0xFFFFFFFF), "Low": str(value & 0xFFFFFFFF)}
 
 
+def _with_bits(*names: str) -> dict[str, str]:
+    """The built-in Read bitmap with named permissions ADDED.
+
+    How a level that is Read plus something is built here, rather than as a
+    remembered Contribute or Full Control bitmap. This project has measured
+    exactly one level on a live site (`_BUILT_IN_READ_BITMAP`), and writing
+    another from memory is the failure AGENTS.md opens with. Read plus
+    EditListItems is enough to be a level a reader must not inherit, and it
+    differs from the passing case in exactly the bits named here.
+    """
+    from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS
+
+    value = (int(_BUILT_IN_READ_BITMAP["High"]) << 32) | int(_BUILT_IN_READ_BITMAP["Low"])
+    for name in names:
+        value |= BASE_PERMISSIONS[name]
+    return {"High": str((value >> 32) & 0xFFFFFFFF), "Low": str(value & 0xFFFFFFFF)}
+
+
 def _reader_harness(
     ensure_user: dict[str, Any],
     *,
@@ -3706,6 +3724,10 @@ def _reader_harness(
     stray_on_write: dict[str, Any] | None = None,
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
+    web_bindings: list[dict[str, Any]] | None = None,
+    web_binding_status: int | None = None,
+    web_binding_shape: str = "verbose",
+    unreadable_binding_levels: list[int] | None = None,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -3741,6 +3763,19 @@ def _reader_harness(
     reader fixture's group is assigned. It defaults to the measured built-in
     so the step-0 gate stays quiet; `None` makes the level unreadable, which
     is what a site with no such level answers.
+
+    `web_bindings` is what the flagged group ALREADY holds at web scope
+    before this run touches anything: a list of
+    `{Id, Name, High, Low}` role definitions, each becoming one entry in the
+    group's `web/roleassignments` row AND one by-Id `web/roledefinitions`
+    answer carrying that bitmap. Empty by default, matching the fresh-site
+    fiction every other reader test runs under. `web_binding_status` refuses
+    the enumeration with that HTTP status instead, which is what a caller
+    without ManagePermissions sees. `web_binding_shape` serves the expanded
+    bindings as a bare array ('array') or not at all ('broken') rather than
+    the `{results: [...]}` odata=verbose renders. `unreadable_binding_levels`
+    answers the by-Id read for those level Ids HTTP 500, which is a binding
+    whose bitmap this run cannot judge.
     """
     pages = [list(members or [])] if member_pages is None else [
         list(page) for page in member_pages
@@ -3753,6 +3788,11 @@ def _reader_harness(
         const STRAY_AFTER_READ = __STRAY_AFTER_READ__;
         let strayAfterReadApplied = false;
         const READ_BITMAP = __READ_BITMAP__;
+        const WEB_BINDINGS = __WEB_BINDINGS__;
+        const WEB_BINDING_STATUS = __WEB_BINDING_STATUS__;
+        const WEB_BINDING_SHAPE = __WEB_BINDING_SHAPE__;
+        const UNREADABLE_BINDING_LEVELS = __UNREADABLE_BINDING_LEVELS__;
+        const READER_PHASE = __READER_PHASE__;
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
           const u = String(url);
@@ -3780,6 +3820,53 @@ def _reader_harness(
             }
             return respond({ d: { Id: __READ_LEVEL_ID__, Name: 'Read',
                                   BasePermissions: READ_BITMAP } });
+          }
+          // What the flagged group ALREADY holds at web scope, and the
+          // bitmap behind each binding. Scoped to the reader phase by the
+          // run's own phase banner, because `_security_principals.js.j2`
+          // reads this SAME url in the level-adoption survey earlier in the
+          // run: answering it there too would make a refusal test abort in
+          // 1.2 and never reach the code it names. Group Id 9 is what the
+          // adopted harness resolves every group name to.
+          if (method === 'GET' && mockPhase === READER_PHASE
+              && /web\/roleassignments\?/.test(u)) {
+            if (WEB_BINDING_STATUS !== null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: 'refused' } };
+              return { ok: false, status: WEB_BINDING_STATUS,
+                       headers: { get: () => null }, json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            const bound = WEB_BINDINGS.map((b) => ({ Id: b.Id, Name: b.Name }));
+            // 'array' is the bare-array rendering the template tolerates;
+            // 'broken' is neither shape, which it must fail closed on.
+            const rendered = WEB_BINDING_SHAPE === 'array' ? bound
+              : (WEB_BINDING_SHAPE === 'broken' ? 'not-an-array' : { results: bound });
+            const held = WEB_BINDINGS.length === 0 && WEB_BINDING_SHAPE === 'verbose'
+              ? [] : [{ PrincipalId: 9, RoleDefinitionBindings: rendered }];
+            // A second principal that is NOT the group, always present, so a
+            // scan that forgot to filter by PrincipalId judges a binding it
+            // was never asked about and the tests notice.
+            return respond({ d: { results: [
+              { PrincipalId: 3, RoleDefinitionBindings: { results: [
+                { Id: 1073741829, Name: 'Full Control' }] } },
+              ...held,
+            ] } });
+          }
+          const boundLevel = /roledefinitions\((\d+)\)/.exec(u);
+          if (method === 'GET' && mockPhase === READER_PHASE && boundLevel) {
+            const wanted = WEB_BINDINGS.find((b) => String(b.Id) === boundLevel[1]);
+            if (wanted) {
+              if (UNREADABLE_BINDING_LEVELS.includes(Number(boundLevel[1]))) {
+                calls.push({ url: u, method, body: null });
+                const payload = { error: { code: 'unreadable' } };
+                return { ok: false, status: 500, headers: { get: () => null },
+                         json: async () => payload,
+                         text: async () => JSON.stringify(payload) };
+              }
+              return respond({ d: { Id: wanted.Id, Name: wanted.Name,
+                                    BasePermissions: { High: wanted.High, Low: wanted.Low } } });
+            }
           }
           // Task 6 (security-phase-atomicity): removeReaderEnrollments's
           // drain POSTs here. Checked BEFORE the broader
@@ -3859,6 +3946,16 @@ def _reader_harness(
         "__READ_BITMAP__", json.dumps(read_bitmap),
     ).replace(
         "__READ_LEVEL_ID__", str(_READ_LEVEL_ID),
+    ).replace(
+        "__WEB_BINDINGS__", json.dumps(web_bindings or []),
+    ).replace(
+        "__WEB_BINDING_STATUS__", json.dumps(web_binding_status),
+    ).replace(
+        "__WEB_BINDING_SHAPE__", json.dumps(web_binding_shape),
+    ).replace(
+        "__UNREADABLE_BINDING_LEVELS__", json.dumps(unreadable_binding_levels or []),
+    ).replace(
+        "__READER_PHASE__", json.dumps(pn("reader_enrolment")),
     )
 
 
@@ -3871,6 +3968,10 @@ def _run_reader_deploy(
     stray_on_write: dict[str, Any] | None = None,
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
+    web_bindings: list[dict[str, Any]] | None = None,
+    web_binding_status: int | None = None,
+    web_binding_shape: str = "verbose",
+    unreadable_binding_levels: list[int] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -3882,6 +3983,9 @@ def _run_reader_deploy(
         ensure_user, members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
         stray_after_read=stray_after_read, read_bitmap=read_bitmap,
+        web_bindings=web_bindings, web_binding_status=web_binding_status,
+        web_binding_shape=web_binding_shape,
+        unreadable_binding_levels=unreadable_binding_levels,
     ) + "\n" + _reader_deploy_js().replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -4127,6 +4231,277 @@ def test_the_measured_built_in_read_passes_the_gate_silently() -> None:
     ]
     narrower = [ln for ln in output.splitlines() if "narrower than the built-in Read" in ln]
     assert not narrower, narrower
+
+
+# === Step 1: what the group ALREADY holds at web scope (#198) ===
+#
+# Step 0 judges the level this bundle grants. It cannot see a binding the
+# group carries for some other reason -- an earlier deploy, a hand edit,
+# another tool -- and the account this phase enrols inherits every one of
+# them permanently, because the ACL phase reconciles only the lists
+# SCHEMA.list_assignments names.
+#
+# `_BOUND_*` below are role definitions the group is made to hold at web
+# scope. Their bitmaps are built from the measured built-in Read
+# (`_with_bits`) rather than from a remembered Contribute or Full Control,
+# so an elevated binding differs from a harmless one in exactly the bits the
+# test names and nothing else.
+
+# Real built-in role definition Ids again, distinct from _READ_LEVEL_ID so a
+# by-Id lookup cannot collide with the level step 0 verifies.
+_BOUND_CONTRIBUTE_ID = 1073741827
+_BOUND_LIMITED_ACCESS_ID = 1073741825
+_BOUND_VIEW_ONLY_ID = 1073741924
+
+
+def _contribute_binding(*added: str) -> dict[str, Any]:
+    """A web-scope binding of a level that is Read plus `added`."""
+    return {
+        "Id": _BOUND_CONTRIBUTE_ID, "Name": "Contribute",
+        **_with_bits(*(added or ("EditListItems",))),
+    }
+
+
+# Derived, and every real group the reference site carries holds it: run 2 of
+# `test/manual/reader-bindings-probe.js` (2026-08-14, R4) found every
+# tool-created group holding exactly this at web scope and nothing else. It is
+# Read's own read bits with the rest taken away, so it carries no elevated bit
+# and the gate must stay silent on it.
+_LIMITED_ACCESS_BINDING: dict[str, Any] = {
+    "Id": _BOUND_LIMITED_ACCESS_ID, "Name": "Limited Access",
+    **_without_bits("ViewListItems", "ViewVersions", "OpenItems", "ViewPages",
+                    "CreateAlerts", "CreateSSCSite"),
+}
+
+
+def test_no_elevated_bit_is_one_the_built_in_read_carries() -> None:
+    """The elevated set cannot refuse the reference implementation.
+
+    `ENTERPRISE_READER_ELEVATED_PERMISSIONS` is a NAMED list of write,
+    structure and access bits rather than "anything outside the reader
+    triad", and this is the reason. The measured built-in Read carries eight
+    bits beyond the triad (CreateSSCSite, BrowseUserInfo, UseRemoteAPIs and
+    the rest), so the wider reading would refuse every real reader group on
+    the site the probe measured, and refuse the derived Limited Access every
+    tool-created group holds. Adding a bit here that Read already grants
+    turns the gate from a guard into an outage, and does it on a path no
+    unit test walks unless this one does.
+    """
+    from dbml_sharepoint.analysis.permissions import (
+        BASE_PERMISSIONS,
+        ENTERPRISE_READER_ELEVATED_PERMISSIONS,
+    )
+
+    read = (int(_BUILT_IN_READ_BITMAP["High"]) << 32) | int(_BUILT_IN_READ_BITMAP["Low"])
+    overlap = [
+        name
+        for name in ENTERPRISE_READER_ELEVATED_PERMISSIONS
+        if read & BASE_PERMISSIONS[name] == BASE_PERMISSIONS[name]
+    ]
+    assert not overlap, (
+        f"{overlap} are treated as elevated but the measured built-in Read grants them, "
+        f"so the step-1 gate would refuse a correct reader group"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_already_holding_an_elevated_binding_enrols_nobody() -> None:
+    """#198: the reader inherits whatever its group already holds.
+
+    The level this bundle grants is the measured built-in Read and passes
+    step 0 untouched, so nothing in the existing gate can fire. The group
+    separately holds a level carrying EditListItems at web scope, which the
+    enrolled account would hold permanently and which no phase of this deploy
+    removes. `not _membership_writes(calls)` is the assertion that matters:
+    an abort code alone would not show that the account stayed out.
+    """
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_contribute_binding()],
+    )
+    assert not _membership_writes(calls), (
+        "an account was enrolled into a group that already holds EditListItems"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    errors = _reader_errors(summary)
+    assert errors, summary
+    message = str(errors[0].get("error", ""))
+    # The group, the role and the offending bit: an operator cannot act on a
+    # refusal that names none of them.
+    assert "Enterprise Reader" in message, message
+    assert "Contribute" in message, message
+    assert "EditListItems" in message, message
+    assert "EditListItems" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_binding_scan_runs_before_the_address_is_resolved() -> None:
+    """EnsureUser is a write, and a run that is going to refuse must not
+    materialise the principal in the site's user information list on the way
+    to refusing it. Same argument step 0 already makes for the level."""
+    _, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_contribute_binding()],
+    )
+    ensured = [c for c in calls if "ensureuser" in c["url"].lower()]
+    assert not ensured, f"the address was resolved before the bindings were judged: {ensured}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "elevated",
+    ["DeleteListItems", "ManagePermissions", "ManageWeb", "ApproveItems",
+     "ManageLists", "AddListItems", "EnumeratePermissions", "ManageAlerts"],
+)
+def test_every_elevated_bit_refuses_on_its_own(elevated: str) -> None:
+    """One bit at a time, including two that live in the HIGH half.
+
+    A comparison written against the Low half alone passes for
+    DeleteListItems and lets EnumeratePermissions (bit 62) and ManageAlerts
+    (bit 38) through, and a single-bit test would never show it.
+    """
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_contribute_binding(elevated)],
+    )
+    assert not _membership_writes(calls), f"{elevated} did not stop the enrolment"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert any(
+        elevated in str(err.get("error", "")) for err in _reader_errors(summary)
+    ), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_derived_limited_access_binding_passes_silently() -> None:
+    """The reference posture. Every tool-created group on the measured site
+    holds exactly this at web scope, so a rule that refused or warned about it
+    would abort or shout on every redeploy this project has ever produced."""
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_LIMITED_ACCESS_BINDING],
+    )
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"]
+    ]
+    assert not [ln for ln in output.splitlines()
+                if "WARN" in ln and "Limited Access" in ln], output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_lower_or_equal_binding_warns_and_still_enrols() -> None:
+    """A second read-only role is visible, not blocking. It grants the account
+    nothing it does not already have through the declared Read, so refusing
+    would fail a posture that is merely untidy."""
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER,
+        web_bindings=[{
+            "Id": _BOUND_VIEW_ONLY_ID, "Name": "View Only",
+            **_without_bits("OpenItems"),
+        }],
+    )
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"]
+    ]
+    warned = [ln for ln in output.splitlines()
+              if "WARN" in ln and "View Only" in ln]
+    assert warned, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_level_this_bundle_grants_is_not_reported_as_an_extra_binding()  -> None:
+    """A redeploy holds its own declared grant, and step 0 has already judged
+    it by bitmap. Reporting it again would warn on every rerun, which trains
+    an operator to ignore the line that matters."""
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER,
+        web_bindings=[{"Id": _READ_LEVEL_ID, "Name": "Read", **_BUILT_IN_READ_BITMAP}],
+    )
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"]
+    ]
+    assert not [ln for ln in output.splitlines()
+                if "WARN" in ln and "already holds" in ln], output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_binding_enumeration_fails_closed() -> None:
+    """403 is what a caller that cannot read web role assignments gets, and
+    run 3 of the probe (2026-09-02) measured exactly that on a Visitor. An
+    empty result and a refused read are indistinguishable to a scan that
+    tolerates the refusal, and the empty one is the reassuring answer."""
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, web_binding_status=403,
+    )
+    assert not _membership_writes(calls), "a refused scan still enrolled somebody"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert any(
+        "403" in str(err.get("error", "")) for err in _reader_errors(summary)
+    ), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_binding_whose_bitmap_cannot_be_read_fails_closed() -> None:
+    """The enumeration succeeded and named a level; the level itself would
+    not read back. Treating that as "no bits carried" is the fail-open a
+    scan of this kind exists to prevent."""
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER,
+        web_bindings=[_contribute_binding()],
+        unreadable_binding_levels=[_BOUND_CONTRIBUTE_ID],
+    )
+    assert not _membership_writes(calls), "an unjudgeable binding still enrolled somebody"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert any(
+        "could not be read" in str(err.get("error", ""))
+        for err in _reader_errors(summary)
+    ), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_bindings_that_arrive_in_neither_expanded_shape_fail_closed() -> None:
+    """`_security_principals.js.j2` records that the odata=verbose rendering
+    of an expanded navigation property is INFERRED rather than measured, so
+    the bare array is tolerated too. What must never be tolerated is neither
+    shape: that is a row whose bindings this run cannot see, and counting it
+    as clean is the same false reassurance as a refused enumeration."""
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_contribute_binding()],
+        web_binding_shape="broken",
+    )
+    assert not _membership_writes(calls), "an unreadable binding row still enrolled somebody"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_bare_array_of_bindings_is_still_judged() -> None:
+    """The other half of the tolerance: an elevated binding served as a bare
+    array must refuse exactly as it does under `{results: [...]}`. Tolerating
+    a shape and then not reading it would be a gate that a rendering change
+    silently switches off."""
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, web_bindings=[_contribute_binding()],
+        web_binding_shape="array",
+    )
+    assert not _membership_writes(calls), "a bare-array binding was never judged"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_group_is_enrolled_and_the_scan_is_reported() -> None:
+    """The passing path still has to be visible.
+
+    A gate that reports nothing when it passes is one nobody notices has
+    stopped running, so the count it reached is logged and asserted on here
+    as well as the request that produced it.
+    """
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"]
+    ]
+    scanned = [c for c in calls if "web/roleassignments" in c["url"]]
+    assert scanned, f"the group's existing bindings were never enumerated: {calls}"
+    reported = [ln for ln in output.splitlines() if "web-scope binding(s)" in ln]
+    assert reported, f"the scan ran but reported nothing: {output}"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
