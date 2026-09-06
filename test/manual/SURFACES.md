@@ -216,11 +216,15 @@ Role definitions and their base permissions, group membership, resolving a name
 to a principal, effective permissions, per-item and per-list ACLs, what a
 permission level can actually do.
 
-Scopes: `role-def`, `role-binding`, `group`, `principal`, `item-acl`,
-`list-acl`, `lookup-acl`, `effective-perms`
+Scopes: `role-def`, `role-binding`, `built-in-level`, `group`, `principal`,
+`item-acl`, `list-acl`, `lookup-acl`, `effective-perms`
+
+`built-in-level` is separate from `role-def` because the question is not what a
+role definition can hold but whether the platform defends the six it ships.
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
-`lookup-acl-probe.js`, `siteuserinfolist-probe.js`
+`built-in-levels-probe.js`, `lookup-acl-probe.js`,
+`siteuserinfolist-probe.js`
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 

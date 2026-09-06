@@ -1,0 +1,947 @@
+/**
+ * dbml-sharepoint PROBE: BUILT-IN PERMISSION LEVELS, EDITABILITY CENSUS
+ *
+ * QUESTION: which of SharePoint Online's BUILT-IN permission levels can a
+ * site owner edit, delete, impersonate or shadow through the REST API, and
+ * does the platform tell you when it refuses?
+ *
+ * WHY. On 2026-09-06 `read-level-tamper-probe.js` MERGEd BasePermissions on
+ * the BUILT-IN Read level (RoleTypeKind 2, Id 1073741826) of a live site and
+ * SharePoint Online accepted it: HTTP 204, reading back High=176
+ * Low=138612832 with ViewListItems gone. The level went on being called Read.
+ * The deploy's phase 1.6 bitmap verifier refused that site, which is recorded
+ * for Read alone in `src/dbml_sharepoint/templates/deploy/_reader_enrolment.js.j2`.
+ * One level was measured; the guard is written as though the answer holds for
+ * all of them. This probe asks the same question of every built-in level, and
+ * asks the four adjacent questions a reader of that finding immediately has:
+ * can they be deleted, can a custom level wear a built-in RoleTypeKind, can a
+ * custom level wear a built-in NAME, and does clearing one bit move others.
+ *
+ * WHAT MICROSOFT DOCUMENTS (the research arm, question 1)
+ *
+ * Create and edit permission levels
+ *   https://learn.microsoft.com/en-us/sharepoint/how-to-create-and-edit-permission-levels
+ *   (ms.date 2026-05-07, page updated 2026-07-01)
+ *
+ *   "Don't change the default permission levels that come with SharePoint.
+ *    You can't change the Full Control and Limited Access default permission
+ *    levels."
+ *
+ *   "You can delete any permission level, except for Full Control and Limited
+ *    Access. Don't delete a default permission level."
+ *
+ *   "Don't edit default permission levels If you change a default permission
+ *    level, your changes affect all the built-in SharePoint groups within the
+ *    site collection."
+ *
+ * Understanding permission levels in SharePoint
+ *   https://learn.microsoft.com/en-us/sharepoint/understanding-permission-levels
+ *   (ms.date 2025-04-30)
+ *
+ *   "You can change any of the default permission levels, except Full Control
+ *    and Limited Access."
+ *
+ *   Of Full Control: "Contains all available SharePoint permissions... You
+ *   can't customize or delete it."
+ *
+ *   And the dependency cascade this probe's question 3 is about: "When you
+ *   select a SharePoint permission that depends on another, SharePoint
+ *   automatically selects the associated permission. Similarly, when you clear
+ *   SharePoint permission, SharePoint automatically clears any SharePoint
+ *   permission that depends on it. For example, when you clear View Items,
+ *   SharePoint automatically clears Manage Lists"; and "The only SharePoint
+ *   permission without a dependency is Open."
+ *
+ * User permissions and permission levels in SharePoint Server
+ *   https://learn.microsoft.com/en-us/sharepoint/sites/user-permissions-and-permission-levels
+ *   (APPLIES TO includes SharePoint in Microsoft 365)
+ *
+ *   "You can customize the permissions contained within five of these
+ *    permission levels. You can't customize the permissions within the Limited
+ *    Access and Full Control permission levels."
+ *
+ *   "Limited Access can't be edited or deleted."
+ *
+ * RoleType Enum (Microsoft.SharePoint.Client)
+ *   https://learn.microsoft.com/en-us/dotnet/api/microsoft.sharepoint.client.roletype
+ *
+ *   None 0, Guest 1, Reader 2, Contributor 3, WebDesigner 4, Administrator 5,
+ *   Editor 6, Reviewer 7, RestrictedReader 8, System 255. This probe keys its
+ *   roster on RoleTypeKind rather than on Name, because the built-in names are
+ *   English and a level's Name is writable, which is what question 6 is about.
+ *
+ * So the documentation sorts into three piles, and the piles are what the run
+ * is compared against:
+ *
+ *   documented-as-impossible   editing or deleting Full Control, and editing
+ *                              or deleting Limited Access.
+ *   documented-as-discouraged  editing or deleting every other built-in. Both
+ *                              are explicitly permitted and advised against,
+ *                              because the change reaches the whole site
+ *                              collection.
+ *   undocumented               whether the REST surface enforces any of it;
+ *                              whether the UI's dependency cascade also
+ *                              applies to a REST MERGE (the 2026-09-06 tamper
+ *                              moved exactly one bit and nothing cascaded,
+ *                              which is what question 3 generalises); whether
+ *                              RoleTypeKind is server-assigned on create; and
+ *                              whether two levels on one site may share a name.
+ *
+ * Nothing below is asserted from that documentation. It is recorded as a
+ * PREDICTION and `documented-editability-agrees` reports where the run and the
+ * documentation disagree, which is the only form in which a Learn sentence is
+ * evidence about a tenant.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. All of them file under `access` on the
+ * `built-in-level` scope, which this probe adds.
+ *
+ *   CONTROLS
+ *   control-roledefinitions-readable    can this caller enumerate
+ *                                       web/roledefinitions with their
+ *                                       BasePermissions at all?
+ *   control-roster-complete             is every level this probe targets
+ *                                       present exactly once, keyed by
+ *                                       RoleTypeKind?
+ *   control-read-mask-matches-reference does this site's built-in Read still
+ *                                       carry the mask measured on
+ *                                       2026-08-14? A site that arrives
+ *                                       tampered stops the write arm here.
+ *
+ *   CENSUS AND DOCUMENTATION
+ *   level-census                        Id, Name, RoleTypeKind and both
+ *                                       bitmap halves for every level on the
+ *                                       site, read BEFORE any write.
+ *   documented-editability-agrees       does the run agree with what Learn
+ *                                       documents, level by level?
+ *
+ *   PER LEVEL, safest first. <slug> is guest, reader, contributor, editor,
+ *   webdesigner, administrator, from RoleTypeKind 1, 2, 3, 6, 4, 5.
+ *   <slug>-basepermissions-editable     does a one-bit MERGE stick?
+ *   <slug>-no-silent-cascade            while that bit was cleared, did any
+ *                                       OTHER bit change?
+ *   <slug>-restore-verified             did the pre-write mask read back
+ *                                       exactly?
+ *   <slug>-deletable                    is DELETE refused, and with what?
+ *
+ *   MASQUERADE (question 5)
+ *   masquerade-create-accepted          is a POST carrying RoleTypeKind 2
+ *                                       accepted for a custom level?
+ *   masquerade-roletypekind-readback    does the read-back keep 2, or is it
+ *                                       forced to 0?
+ *   masquerade-delete-guarded           is DELETE refused for a custom level
+ *                                       wearing a built-in RoleTypeKind? The
+ *                                       non-destructive proxy for question 4.
+ *   masquerade-level-removed            was the probe's own level removed?
+ *
+ *   RENAME (question 6)
+ *   rename-to-builtin-accepted          may a custom level take the built-in
+ *                                       Read level's exact Name?
+ *   duplicate-name-resolution           with a duplicate present, which Id
+ *                                       does getbyname() return?
+ *   rename-level-removed                was the probe's own level removed?
+ *
+ * THE SAFETY CONTRACT, and why each clause is in the code rather than here.
+ *
+ * 1. CONFIRMED and ALLOW_WRITES are both required, as for every write probe.
+ *    ALLOW_DESTRUCTIVE_DELETE is a third gate; see THE DELETE ARM below.
+ *
+ * 2. Every level is fingerprinted (Id, Name, RoleTypeKind, both halves) in one
+ *    read BEFORE any write, and the restore target for each level is that
+ *    level's own PRE-WRITE mask. No constant in this file is ever written to a
+ *    live site. A remembered mask is a guess about somebody else's tenant.
+ *
+ * 3. The write arm refuses outright if this site's built-in Read is not at the
+ *    mask `reader-bindings-probe.js` measured on 2026-08-14. A site that
+ *    arrives tampered must not be written to and "restored", because the
+ *    restore would read back clean and the transcript would look like a clean
+ *    run. Deviation is REPORTED and never repaired. The residual is stated
+ *    plainly: a site whose Read was legitimately customised, which Learn
+ *    permits, will refuse here too, and that is the correct trade for an
+ *    object class where the wrong guess is a security change.
+ *
+ *    Read is the only level with a reference mask, because it is the only one
+ *    this project has measured. `level-census` prints the other five so that
+ *    the next run has something to compare against.
+ *
+ * 4. WHICH BIT IS CLEARED is a rule, not a judgement call, so a transcript can
+ *    be re-derived from this file: the highest-value NAMED bit that is SET in
+ *    that level's own pre-write mask, lives in the LOW half, and is not on the
+ *    protected list. Unnamed bits are excluded because clearing a bit whose
+ *    meaning this project cannot state is exactly what it forbids elsewhere.
+ *    The LOW-half restriction is universal rather than special-cased for Full
+ *    Control: two of the five protected bits live in the high half, and one
+ *    rule is easier to check than two. For Full Control, whose low half is all
+ *    ones, the rule selects ManageWeb, whose absence is visible in the
+ *    read-back and harmless on a disposable site for the seconds it is gone,
+ *    because a site collection administrator's authority is not a role
+ *    definition. The protected list and its reasons are beside the code, and
+ *    the rule is checked against a full mask BEFORE the first network call.
+ *
+ * 5. Restore is by exact read-back equality, never by the write's status code.
+ *    A failed restore stops every remaining arm, prints a FAIL banner naming
+ *    the Id and the exact halves to write back by hand, and is returned as a
+ *    non-empty `restoreFailures` with `restored: false`. That is this file's
+ *    reading of "a non-zero exit": a console probe has no process to exit.
+ *
+ * 6. All transport is `fetchWithRetry` and `apiUrl` from the shared core. The
+ *    probe writes to the site it was pasted into and carries no SITE_URL.
+ *
+ * 7. Cleanup deletes the two levels this probe created and nothing else, by
+ *    Id, in a `finally`, and verifies removal by re-enumeration.
+ *
+ * THE DELETE ARM (question 4) is behind its own flag, and both halves of the
+ * roster are behind the same one. Learn documents four of the six as deletable
+ * and two as not, so for four levels this is not an experiment in capturing a
+ * refusal, it is a request to delete a built-in permission level from a live
+ * site collection. The two documented as refused are behind the same flag
+ * anyway: a probe that trusts a Learn sentence for its safety guard is the
+ * exact failure mode this file exists to measure.
+ *
+ * The arm is VOID, flag or no flag, unless `masquerade-roletypekind-readback`
+ * has already shown that a level can be created carrying a built-in
+ * RoleTypeKind. If it cannot, a successful delete is unrecoverable, and this
+ * probe does not ask a question whose "yes" it cannot undo. When it does run,
+ * a successful delete is followed immediately by a rebuild from the
+ * fingerprint. Note what a rebuild does NOT restore: the original Id, and
+ * every role assignment naming that level at web, list and item scope. No
+ * partial capture of those is attempted, because a partial capture would be
+ * read as a backup. Run this arm on a disposable site only.
+ *
+ * HOW TO RUN
+ *   1. Open a disposable SharePoint Online site you own.
+ *   2. F12 -> Console -> paste -> Enter. The committed defaults only print.
+ *   3. Set CONFIRMED and ALLOW_WRITES to true. Leave ALLOW_DESTRUCTIVE_DELETE
+ *      false unless the site is genuinely disposable.
+ *   4. Paste again and copy the complete results table back verbatim.
+ *
+ * STATUS: NOT YET RUN. Every row is open until a live transcript fills it.
+ */
+(async () => {
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+  // The third gate. Read THE DELETE ARM above before setting this: for four of
+  // the six levels Microsoft documents the delete as PERMITTED, so this is not
+  // a refusal-capture experiment.
+  const ALLOW_DESTRUCTIVE_DELETE = false;
+  const PROBE_RETRY_TRANSIENT = true;
+  const PROBE_RETRY_ATTEMPTS = 5;
+
+  // Run-unique, so an orphan from an aborted run cannot be mistaken for this
+  // run's object and cannot be deleted by it either.
+  const RUN = `${Date.now().toString(36)}`.slice(-6);
+  const MASQUERADE_LEVEL = `dbmlsp Probe Masquerade ${RUN}`;
+  const RENAME_LEVEL = `dbmlsp Probe Rename ${RUN}`;
+  const PROBE_DESCRIPTION = 'dbml-sharepoint built-in-levels probe. Safe to delete.';
+
+  // ---- SP.BasePermissions ----------------------------------------------
+  // MIRRORED, NOT INVENTED. Every value below is copied character for
+  // character from src/dbml_sharepoint/analysis/permissions.py's
+  // BASE_PERMISSIONS, in the same order, so the two can be diffed by eye and
+  // a divergence is a bug in one file rather than two independent guesses.
+  //
+  // BigInt, because these are 64-bit and JavaScript's bitwise operators are
+  // 32-bit: `0x4000000000000000 & x` with plain numbers is silently wrong.
+  const BASE_PERMISSIONS = [
+    ['ViewListItems',             0x0000000000000001n],
+    ['AddListItems',              0x0000000000000002n],
+    ['EditListItems',             0x0000000000000004n],
+    ['DeleteListItems',           0x0000000000000008n],
+    ['ApproveItems',              0x0000000000000010n],
+    ['OpenItems',                 0x0000000000000020n],
+    ['ViewVersions',              0x0000000000000040n],
+    ['DeleteVersions',            0x0000000000000080n],
+    ['CancelCheckout',            0x0000000000000100n],
+    ['ManagePersonalViews',       0x0000000000000200n],
+    ['ManageLists',               0x0000000000000800n],
+    ['ViewFormPages',             0x0000000000001000n],
+    ['AnonymousSearchAccessList', 0x0000000000002000n],
+    ['Open',                      0x0000000000010000n],
+    ['ViewPages',                 0x0000000000020000n],
+    ['AddAndCustomizePages',      0x0000000000040000n],
+    ['ApplyThemeAndBorder',       0x0000000000080000n],
+    ['ApplyStyleSheets',          0x0000000000100000n],
+    ['ViewUsageData',             0x0000000000200000n],
+    ['CreateSSCSite',             0x0000000000400000n],
+    ['ManageSubwebs',             0x0000000000800000n],
+    ['CreateGroups',              0x0000000001000000n],
+    ['ManagePermissions',         0x0000000002000000n],
+    ['BrowseDirectories',         0x0000000004000000n],
+    ['BrowseUserInfo',            0x0000000008000000n],
+    ['AddDelPrivateWebParts',     0x0000000010000000n],
+    ['UpdatePersonalWebParts',    0x0000000020000000n],
+    ['ManageWeb',                 0x0000000040000000n],
+    ['UseClientIntegration',      0x0000001000000000n],
+    ['UseRemoteAPIs',             0x0000002000000000n],
+    ['ManageAlerts',              0x0000004000000000n],
+    ['CreateAlerts',              0x0000008000000000n],
+    ['EditMyUserInfo',            0x0000010000000000n],
+    ['EnumeratePermissions',      0x4000000000000000n],
+  ];
+  const FULL_MASK = 0x7FFFFFFFFFFFFFFFn;
+  const LOW_HALF = 0xFFFFFFFFn;
+  const OPEN_BIT = 0x0000000000010000n;
+
+  // NEVER cleared and never set, each for a stated reason. Four of the five
+  // would break the probe's own ability to finish safely; the fifth is the
+  // bit the 2026-09-06 tamper already answered for.
+  const PROTECTED_BITS = [
+    ['Open', OPEN_BIT,
+      'Learn: every other permission depends on Open, so clearing it can shut the site to its own users while it is gone.'],
+    ['ManagePermissions', 0x0000000002000000n,
+      'the right the RESTORE needs; clearing it can make the restore unperformable by the caller that cleared it.'],
+    ['EnumeratePermissions', 0x4000000000000000n,
+      'the right the READ-BACK needs, and every restore here is verified by read-back.'],
+    ['UseRemoteAPIs', 0x0000002000000000n,
+      'Learn: modern pages and the REST calls this probe rides on need Use Remote Interfaces.'],
+    ['ViewListItems', 0x0000000000000001n,
+      'already answered for Read on 2026-09-06, and the deploy refuses any site whose Read lacks it.'],
+  ];
+  const isProtected = (bit) => PROTECTED_BITS.some(([, value]) => value === bit);
+
+  // The selection rule, in one place: the highest-value NAMED bit that is SET
+  // in this level's own mask, sits in the LOW half, and is not protected.
+  const clearableBit = (mask) => BASE_PERMISSIONS
+    .filter(([, bit]) => bit <= LOW_HALF && (mask & bit) === bit && !isProtected(bit))
+    .sort((left, right) => (left[1] < right[1] ? 1 : -1))[0] || null;
+
+  // REFUSED BEFORE ANY NETWORK CALL. FULL_MASK is the worst case, every bit
+  // set, so it exercises every branch of the filter above. A rule that can
+  // return a protected or high-half bit is a defect in this file and must not
+  // reach a live site to be discovered there.
+  const guardChoice = clearableBit(FULL_MASK);
+  if (!guardChoice || isProtected(guardChoice[1]) || guardChoice[1] > LOW_HALF) {
+    console.log('[SP-PROBE] [FATAL] the bit-selection rule can return a protected or high-half bit. Refusing to run.');
+    return { aborted: 'bit-selection-unsafe' };
+  }
+
+  // The roster, keyed on RoleTypeKind because Name is English and writable.
+  // Ordered safest first: Limited Access grants almost nothing, Full Control
+  // grants everything, so a rule that misfires misfires cheapest at the top.
+  // `documented` is Microsoft's PREDICTION, never this probe's assumption.
+  const LEVELS = [
+    {
+      kind: 1, slug: 'guest', english: 'Limited Access', documented: 'refused',
+      cite: 'user-permissions-and-permission-levels: "Limited Access can\'t be edited or deleted."',
+      ids: {
+        editable: 'access.built-in-level.guest-basepermissions-editable',
+        cascade: 'access.built-in-level.guest-no-silent-cascade',
+        restore: 'access.built-in-level.guest-restore-verified',
+        deletable: 'access.built-in-level.guest-deletable',
+      },
+    },
+    {
+      kind: 2, slug: 'reader', english: 'Read', documented: 'permitted',
+      cite: 'understanding-permission-levels: "You can change any of the default permission levels, except Full Control and Limited Access."',
+      ids: {
+        editable: 'access.built-in-level.reader-basepermissions-editable',
+        cascade: 'access.built-in-level.reader-no-silent-cascade',
+        restore: 'access.built-in-level.reader-restore-verified',
+        deletable: 'access.built-in-level.reader-deletable',
+      },
+    },
+    {
+      kind: 3, slug: 'contributor', english: 'Contribute', documented: 'permitted',
+      cite: 'understanding-permission-levels: "You can change any of the default permission levels, except Full Control and Limited Access."',
+      ids: {
+        editable: 'access.built-in-level.contributor-basepermissions-editable',
+        cascade: 'access.built-in-level.contributor-no-silent-cascade',
+        restore: 'access.built-in-level.contributor-restore-verified',
+        deletable: 'access.built-in-level.contributor-deletable',
+      },
+    },
+    {
+      kind: 6, slug: 'editor', english: 'Edit', documented: 'permitted',
+      cite: 'understanding-permission-levels: "You can change any of the default permission levels, except Full Control and Limited Access."',
+      ids: {
+        editable: 'access.built-in-level.editor-basepermissions-editable',
+        cascade: 'access.built-in-level.editor-no-silent-cascade',
+        restore: 'access.built-in-level.editor-restore-verified',
+        deletable: 'access.built-in-level.editor-deletable',
+      },
+    },
+    {
+      kind: 4, slug: 'webdesigner', english: 'Design', documented: 'permitted',
+      cite: 'understanding-permission-levels: "You can change any of the default permission levels, except Full Control and Limited Access."',
+      ids: {
+        editable: 'access.built-in-level.webdesigner-basepermissions-editable',
+        cascade: 'access.built-in-level.webdesigner-no-silent-cascade',
+        restore: 'access.built-in-level.webdesigner-restore-verified',
+        deletable: 'access.built-in-level.webdesigner-deletable',
+      },
+    },
+    {
+      kind: 5, slug: 'administrator', english: 'Full Control', documented: 'refused',
+      cite: 'how-to-create-and-edit-permission-levels: "You can\'t change the Full Control and Limited Access default permission levels."',
+      ids: {
+        editable: 'access.built-in-level.administrator-basepermissions-editable',
+        cascade: 'access.built-in-level.administrator-no-silent-cascade',
+        restore: 'access.built-in-level.administrator-restore-verified',
+        deletable: 'access.built-in-level.administrator-deletable',
+      },
+    },
+  ];
+
+  // The one mask this project has measured on a live site: reader-bindings-probe.js
+  // read the built-in Read as High=176 Low=138612833 on 2026-08-14 (#199, R2).
+  // A REFERENCE to compare against and report on, never a value to write.
+  const REFERENCE_READ_HIGH = '176';
+  const REFERENCE_READ_LOW = '138612833';
+  const REFERENCE_READ_SOURCE = 'reader-bindings-probe.js R2, 2026-08-14';
+
+{% include "_probe_results_v1.js.j2" %}
+  // Literal registrations, one per question, because test_probes statically
+  // proves that every declared question is registered up front. A run that
+  // aborts then reports only what it reached is the failure this prevents.
+  expect('access.built-in-level.control-roledefinitions-readable', 'CONTROL: can this caller enumerate web/roledefinitions with BasePermissions?');
+  expect('access.built-in-level.control-roster-complete', 'CONTROL: is every targeted RoleTypeKind present exactly once on this site?');
+  expect('access.built-in-level.control-read-mask-matches-reference', 'CONTROL: is this site\'s built-in Read still at the mask measured on 2026-08-14?');
+  expect('access.built-in-level.level-census', 'What Id, Name, RoleTypeKind and bitmap does every level on this site carry BEFORE any write?');
+  expect('access.built-in-level.documented-editability-agrees', 'Does the run agree with what Microsoft documents, level by level?');
+
+  expect('access.built-in-level.guest-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Limited Access (RoleTypeKind 1)?');
+  expect('access.built-in-level.guest-no-silent-cascade', 'While that bit was cleared on Limited Access, did any OTHER bit change?');
+  expect('access.built-in-level.guest-restore-verified', 'Did Limited Access read back at exactly its pre-write mask?');
+  expect('access.built-in-level.guest-deletable', 'Is DELETE refused on the built-in Limited Access, and with what error?');
+
+  expect('access.built-in-level.reader-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Read (RoleTypeKind 2)?');
+  expect('access.built-in-level.reader-no-silent-cascade', 'While that bit was cleared on Read, did any OTHER bit change?');
+  expect('access.built-in-level.reader-restore-verified', 'Did Read read back at exactly its pre-write mask?');
+  expect('access.built-in-level.reader-deletable', 'Is DELETE refused on the built-in Read, and with what error?');
+
+  expect('access.built-in-level.contributor-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Contribute (RoleTypeKind 3)?');
+  expect('access.built-in-level.contributor-no-silent-cascade', 'While that bit was cleared on Contribute, did any OTHER bit change?');
+  expect('access.built-in-level.contributor-restore-verified', 'Did Contribute read back at exactly its pre-write mask?');
+  expect('access.built-in-level.contributor-deletable', 'Is DELETE refused on the built-in Contribute, and with what error?');
+
+  expect('access.built-in-level.editor-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Edit (RoleTypeKind 6)?');
+  expect('access.built-in-level.editor-no-silent-cascade', 'While that bit was cleared on Edit, did any OTHER bit change?');
+  expect('access.built-in-level.editor-restore-verified', 'Did Edit read back at exactly its pre-write mask?');
+  expect('access.built-in-level.editor-deletable', 'Is DELETE refused on the built-in Edit, and with what error?');
+
+  expect('access.built-in-level.webdesigner-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Design (RoleTypeKind 4)?');
+  expect('access.built-in-level.webdesigner-no-silent-cascade', 'While that bit was cleared on Design, did any OTHER bit change?');
+  expect('access.built-in-level.webdesigner-restore-verified', 'Did Design read back at exactly its pre-write mask?');
+  expect('access.built-in-level.webdesigner-deletable', 'Is DELETE refused on the built-in Design, and with what error?');
+
+  expect('access.built-in-level.administrator-basepermissions-editable', 'Does a one-bit MERGE stick on the built-in Full Control (RoleTypeKind 5)?');
+  expect('access.built-in-level.administrator-no-silent-cascade', 'While that bit was cleared on Full Control, did any OTHER bit change?');
+  expect('access.built-in-level.administrator-restore-verified', 'Did Full Control read back at exactly its pre-write mask?');
+  expect('access.built-in-level.administrator-deletable', 'Is DELETE refused on the built-in Full Control, and with what error?');
+
+  expect('access.built-in-level.masquerade-create-accepted', 'Is a POST carrying a built-in RoleTypeKind accepted for a CUSTOM level?');
+  expect('access.built-in-level.masquerade-roletypekind-readback', 'Does the read-back keep RoleTypeKind 2, or is it forced to 0?');
+  expect('access.built-in-level.masquerade-delete-guarded', 'Is DELETE refused for a custom level wearing a built-in RoleTypeKind?');
+  expect('access.built-in-level.masquerade-level-removed', 'Was the masquerade level this probe created removed again?');
+
+  expect('access.built-in-level.rename-to-builtin-accepted', 'May a custom level take the built-in Read level\'s exact Name?');
+  expect('access.built-in-level.duplicate-name-resolution', 'With a duplicate name present, which Id does getbyname() resolve to?');
+  expect('access.built-in-level.rename-level-removed', 'Was the rename level this probe created removed again?');
+
+  if (!CONFIRMED) {
+    console.log('[SP-PROBE] [PLAN] Would read every permission level on this site, then, level by level');
+    console.log('[SP-PROBE] [PLAN] from Limited Access up to Full Control, CLEAR ONE BIT from the');
+    console.log('[SP-PROBE] [PLAN] level\'s BasePermissions, read it back, and write the pre-write mask');
+    console.log('[SP-PROBE] [PLAN] back. It would also create and delete two custom levels of its own.');
+    console.log('[SP-PROBE] [PLAN] It refuses to write at all unless this site\'s built-in Read matches');
+    console.log(`[SP-PROBE] [PLAN] High=${REFERENCE_READ_HIGH} Low=${REFERENCE_READ_LOW} (${REFERENCE_READ_SOURCE}).`);
+    console.log('[SP-PROBE] [PLAN] Use a disposable site. Nothing has been read or written yet.');
+  }
+
+{% include "_probe_core_v2.js.j2" %}
+
+  const toMask = (high, low) => (BigInt(String(high)) << 32n) | BigInt(String(low));
+  const halves = (mask) => ({
+    High: String((mask >> 32n) & LOW_HALF),
+    Low: String(mask & LOW_HALF),
+  });
+  const describeMask = (mask) => `High=${halves(mask).High} Low=${halves(mask).Low}`;
+  const decodeMask = (mask) => BASE_PERMISSIONS
+    .filter(([, bit]) => (mask & bit) === bit)
+    .map(([name]) => name);
+  // Null rather than a throw when the shape is not there: whether a $select of
+  // a complex type returns it inline is an observation, not something known.
+  const maskOf = (definition) => {
+    const permissions = definition && definition.BasePermissions;
+    if (!permissions || permissions.High == null || permissions.Low == null) return null;
+    return toMask(permissions.High, permissions.Low);
+  };
+
+  const readLevel = (id) => get(
+    `web/roledefinitions(${id})?$select=Id,Name,RoleTypeKind,Description,BasePermissions`,
+  );
+  const writeMask = (id, mask) => merge(`web/roledefinitions(${id})`, {
+    __metadata: { type: 'SP.RoleDefinition' },
+    BasePermissions: { __metadata: { type: 'SP.BasePermissions' }, ...halves(mask) },
+  });
+  const deleteLevel = (id) => post(
+    `web/roledefinitions(${id})`,
+    undefined,
+    { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
+  );
+  const renameLevel = (id, name) => merge(`web/roledefinitions(${id})`, {
+    __metadata: { type: 'SP.RoleDefinition' },
+    Name: name,
+  });
+  const enumerateLevels = () => get(
+    'web/roledefinitions?$select=Id,Name,RoleTypeKind,Description,BasePermissions&$top=200',
+  );
+  // A create that answers 2xx without a body this can parse would leave an
+  // orphan behind, so the Id is resolved by name rather than assumed absent.
+  const idOfCreated = async (created, name) => {
+    if (!created.ok) return null;
+    if (created.d && created.d.Id != null) return created.d.Id;
+    const found = await get(`web/roledefinitions/getbyname('${odataName(name)}')?$select=Id`);
+    return found.ok && found.d && found.d.Id != null ? found.d.Id : null;
+  };
+
+  // Every level this probe created, recorded the moment it exists so that a
+  // crash anywhere below still leaves the `finally` something to clean up.
+  const ownedLevels = [];
+  // A failed restore stops every remaining arm. Populated only by a read-back
+  // that did not match, never by a status code.
+  const restoreFailures = [];
+
+  const voidRow = (id, question, reason) => record(id, question, 'VOID', reason, 'void');
+  const isVoid = (id) => (results.find((candidate) => candidate.id === id) || {}).state === 'void';
+
+  try {
+    // ---- CONTROL: is the surface readable at all? ------------------------
+    const census = await enumerateLevels();
+    if (!census.ok) {
+      record('access.built-in-level.control-roledefinitions-readable',
+        'CONTROL: can this caller enumerate web/roledefinitions with BasePermissions?',
+        'NOT ESTABLISHED', `HTTP ${census.status}: ${census.error}`);
+      log('FAIL', 'web/roledefinitions could not be read, so nothing below can be asked. Stopping.');
+      return { results, restoreFailures, restored: true };
+    }
+    const definitions = (census.d && census.d.results) || [];
+    const withBitmaps = definitions.filter((definition) => maskOf(definition) !== null);
+    record('access.built-in-level.control-roledefinitions-readable',
+      'CONTROL: can this caller enumerate web/roledefinitions with BasePermissions?',
+      'PASS',
+      `read ${definitions.length} level(s), ${withBitmaps.length} of them carrying a BasePermissions bitmap inline`);
+
+    // ---- The pre-write fingerprint ---------------------------------------
+    // One read, before anything is written, printed in full. This is the row
+    // an operator restores from by hand if everything else goes wrong.
+    const fingerprint = definitions.map((definition) => {
+      const mask = maskOf(definition);
+      return `Id=${definition.Id} kind=${definition.RoleTypeKind} `
+        + `${mask === null ? 'bitmap=unread' : describeMask(mask)} '${definition.Name}'`;
+    });
+    record('access.built-in-level.level-census',
+      'What Id, Name, RoleTypeKind and bitmap does every level on this site carry BEFORE any write?',
+      `${definitions.length} LEVEL(S)`, fingerprint.join(' | '));
+
+    // ---- CONTROL: is the roster present, and unambiguous? ----------------
+    const missing = LEVELS.filter(
+      (entry) => !definitions.some((definition) => definition.RoleTypeKind === entry.kind));
+    const ambiguous = LEVELS.filter(
+      (entry) => definitions.filter(
+        (definition) => definition.RoleTypeKind === entry.kind).length > 1);
+    const rosterOk = missing.length === 0 && ambiguous.length === 0;
+    const byKind = new Map();
+    for (const definition of definitions) {
+      if (!byKind.has(definition.RoleTypeKind)) byKind.set(definition.RoleTypeKind, definition);
+    }
+    record('access.built-in-level.control-roster-complete',
+      'CONTROL: is every targeted RoleTypeKind present exactly once on this site?',
+      rosterOk ? 'PASS' : 'NOT ESTABLISHED',
+      rosterOk
+        ? `all ${LEVELS.length} targeted kinds present once: `
+          + LEVELS.map((entry) => `${entry.kind}='${byKind.get(entry.kind).Name}'`).join(', ')
+        : `missing kind(s) [${missing.map((entry) => entry.kind).join(', ')}], `
+          + `duplicated kind(s) [${ambiguous.map((entry) => entry.kind).join(', ')}]. `
+          + 'The probe targets a fixed roster and refuses rather than widening to whatever is here.');
+
+    // ---- CONTROL: did this site arrive tampered? -------------------------
+    // The fail-closed gate. Reported, never repaired: nothing below writes a
+    // reference mask to anything.
+    const readerDefinition = byKind.get(2);
+    const readerMask = readerDefinition ? maskOf(readerDefinition) : null;
+    const readerHalves = readerMask === null ? null : halves(readerMask);
+    const readerMatches = readerHalves !== null
+      && readerHalves.High === REFERENCE_READ_HIGH
+      && readerHalves.Low === REFERENCE_READ_LOW;
+    record('access.built-in-level.control-read-mask-matches-reference',
+      'CONTROL: is this site\'s built-in Read still at the mask measured on 2026-08-14?',
+      readerMatches ? 'PASS' : 'NOT ESTABLISHED',
+      readerHalves === null
+        ? 'no level with RoleTypeKind 2 carried a readable bitmap on this site'
+        : `this site: High=${readerHalves.High} Low=${readerHalves.Low}; `
+          + `reference: High=${REFERENCE_READ_HIGH} Low=${REFERENCE_READ_LOW} (${REFERENCE_READ_SOURCE}). `
+          + (readerMatches
+            ? 'No deviation.'
+            : 'DEVIATION. Either this Read was legitimately customised, which Learn permits, or it '
+              + 'was tampered with. Both must be explained before a probe that writes to permission '
+              + 'levels is pasted into this site. Nothing has been repaired and nothing will be.'));
+
+    const writeArmAllowed = rosterOk && readerMatches;
+    if (!writeArmAllowed) {
+      const reason = !rosterOk
+        ? 'access.built-in-level.control-roster-complete failed'
+        : 'access.built-in-level.control-read-mask-matches-reference failed';
+      log('FAIL', `${reason}, so no write is attempted. Every write-arm row is void.`);
+      for (const entry of LEVELS) {
+        voidRow(entry.ids.editable, `Does a one-bit MERGE stick on the built-in ${entry.english}?`, reason);
+        voidRow(entry.ids.cascade, `While that bit was cleared on ${entry.english}, did any OTHER bit change?`, reason);
+        voidRow(entry.ids.restore, `Did ${entry.english} read back at exactly its pre-write mask?`, reason);
+        voidRow(entry.ids.deletable, `Is DELETE refused on the built-in ${entry.english}?`, reason);
+      }
+      voidRow('access.built-in-level.masquerade-create-accepted', 'Is a POST carrying a built-in RoleTypeKind accepted for a CUSTOM level?', reason);
+      voidRow('access.built-in-level.masquerade-roletypekind-readback', 'Does the read-back keep RoleTypeKind 2, or is it forced to 0?', reason);
+      voidRow('access.built-in-level.masquerade-delete-guarded', 'Is DELETE refused for a custom level wearing a built-in RoleTypeKind?', reason);
+      voidRow('access.built-in-level.masquerade-level-removed', 'Was the masquerade level this probe created removed again?', reason);
+      voidRow('access.built-in-level.rename-to-builtin-accepted', 'May a custom level take the built-in Read level\'s exact Name?', reason);
+      voidRow('access.built-in-level.duplicate-name-resolution', 'With a duplicate name present, which Id does getbyname() resolve to?', reason);
+      voidRow('access.built-in-level.rename-level-removed', 'Was the rename level this probe created removed again?', reason);
+      voidRow('access.built-in-level.documented-editability-agrees', 'Does the run agree with what Microsoft documents, level by level?', reason);
+      return { results, restoreFailures, restored: true };
+    }
+
+    // ---- MASQUERADE (question 5) -----------------------------------------
+    // Runs before anything touches a built-in, because its answer decides
+    // whether the delete arm below is allowed to ask its question at all.
+    const masquerade = await post('web/roledefinitions', {
+      __metadata: { type: 'SP.RoleDefinition' },
+      Name: MASQUERADE_LEVEL,
+      Description: PROBE_DESCRIPTION,
+      RoleTypeKind: 2,
+      BasePermissions: { __metadata: { type: 'SP.BasePermissions' }, High: '0', Low: String(OPEN_BIT) },
+    });
+    const masqueradeId = await idOfCreated(masquerade, MASQUERADE_LEVEL);
+    if (masqueradeId != null) {
+      ownedLevels.push({ id: masqueradeId, name: MASQUERADE_LEVEL, row: 'access.built-in-level.masquerade-level-removed' });
+    }
+    record('access.built-in-level.masquerade-create-accepted',
+      'Is a POST carrying a built-in RoleTypeKind accepted for a CUSTOM level?',
+      masquerade.ok ? 'ACCEPTED' : 'REFUSED',
+      masquerade.ok
+        ? `HTTP ${masquerade.status}, created Id=${masqueradeId} named '${MASQUERADE_LEVEL}' with RoleTypeKind 2 requested`
+        : `HTTP ${masquerade.status}: ${masquerade.error}`);
+
+    let masqueradeKind = null;
+    if (masqueradeId != null) {
+      const readback = await readLevel(masqueradeId);
+      masqueradeKind = readback.ok && readback.d ? readback.d.RoleTypeKind : null;
+      record('access.built-in-level.masquerade-roletypekind-readback',
+        'Does the read-back keep RoleTypeKind 2, or is it forced to 0?',
+        !readback.ok ? 'NOT ESTABLISHED' : masqueradeKind === 2 ? 'PRESERVED' : 'SERVER-ASSIGNED',
+        !readback.ok
+          ? `HTTP ${readback.status}: ${readback.error}`
+          : `requested RoleTypeKind 2, read back ${masqueradeKind}. `
+            + (masqueradeKind === 2
+              ? 'A custom level can wear a built-in kind, so a deleted built-in could be rebuilt with its kind intact.'
+              : 'RoleTypeKind is server-assigned on create, so a deleted built-in could NOT be rebuilt with its kind.'));
+    } else {
+      voidRow('access.built-in-level.masquerade-roletypekind-readback',
+        'Does the read-back keep RoleTypeKind 2, or is it forced to 0?',
+        'access.built-in-level.masquerade-create-accepted failed, so there is nothing to read back');
+    }
+
+    // The non-destructive proxy for question 4: if SharePoint guards DELETE on
+    // RoleTypeKind, it can be shown here without touching a real built-in.
+    if (masqueradeKind === 2) {
+      const guarded = await deleteLevel(masqueradeId);
+      record('access.built-in-level.masquerade-delete-guarded',
+        'Is DELETE refused for a custom level wearing a built-in RoleTypeKind?',
+        guarded.ok ? 'DELETED' : isRefusal(guarded.status) ? 'REFUSED' : 'NOT ESTABLISHED',
+        guarded.ok
+          ? `HTTP ${guarded.status}. The guard is not keyed on RoleTypeKind, so this says nothing about a real built-in.`
+          : `HTTP ${guarded.status}: ${guarded.error}`);
+      if (guarded.ok) {
+        const index = ownedLevels.findIndex((owned) => owned.id === masqueradeId);
+        if (index >= 0) ownedLevels[index].deleted = true;
+      }
+    } else {
+      voidRow('access.built-in-level.masquerade-delete-guarded',
+        'Is DELETE refused for a custom level wearing a built-in RoleTypeKind?',
+        masquerade.ok
+          ? `the level read back with RoleTypeKind ${masqueradeKind}, so it is not wearing a built-in kind and cannot answer this`
+          : 'access.built-in-level.masquerade-create-accepted failed, so there is no level to delete');
+    }
+
+    // ---- RENAME (question 6) ---------------------------------------------
+    // Collides with whatever this site's RoleTypeKind 2 level is ACTUALLY
+    // called, not with the English word, because the built-in names are
+    // localised and a hard-coded 'Read' would make this vacuous elsewhere.
+    const readerName = readerDefinition.Name;
+    const renameCreate = await post('web/roledefinitions', {
+      __metadata: { type: 'SP.RoleDefinition' },
+      Name: RENAME_LEVEL,
+      Description: PROBE_DESCRIPTION,
+      BasePermissions: { __metadata: { type: 'SP.BasePermissions' }, High: '0', Low: String(OPEN_BIT) },
+    });
+    const renameId = await idOfCreated(renameCreate, RENAME_LEVEL);
+    if (renameId != null) {
+      ownedLevels.push({ id: renameId, name: RENAME_LEVEL, row: 'access.built-in-level.rename-level-removed' });
+      const collided = await renameLevel(renameId, readerName);
+      record('access.built-in-level.rename-to-builtin-accepted',
+        'May a custom level take the built-in Read level\'s exact Name?',
+        collided.ok ? 'ACCEPTED' : isRefusal(collided.status) ? 'REFUSED' : 'NOT ESTABLISHED',
+        collided.ok
+          ? `HTTP ${collided.status}. Id=${renameId} now also answers to '${readerName}', beside built-in Id=${readerDefinition.Id}.`
+          : `HTTP ${collided.status}: ${collided.error}`);
+
+      if (collided.ok) {
+        // The consequence that matters: the deploy resolves levels by name.
+        const filtered = await get(
+          `web/roledefinitions?$filter=Name eq '${odataName(readerName)}'&$select=Id,Name,RoleTypeKind`);
+        const matched = (filtered.ok && filtered.d && filtered.d.results) || [];
+        const resolved = await get(
+          `web/roledefinitions/getbyname('${odataName(readerName)}')?$select=Id,Name,RoleTypeKind`);
+        const resolvedId = resolved.ok && resolved.d ? resolved.d.Id : null;
+        record('access.built-in-level.duplicate-name-resolution',
+          'With a duplicate name present, which Id does getbyname() resolve to?',
+          !resolved.ok ? 'NOT ESTABLISHED' : resolvedId === readerDefinition.Id ? 'RESOLVES TO BUILT-IN' : 'RESOLVES TO IMPOSTOR',
+          !resolved.ok
+            ? `$filter returned ${matched.length} row(s); getbyname answered HTTP ${resolved.status}: ${resolved.error}`
+            : `$filter returned ${matched.length} row(s) [`
+              + matched.map((row) => `Id=${row.Id} kind=${row.RoleTypeKind}`).join(', ')
+              + `]; getbyname resolved to Id=${resolvedId} (built-in is Id=${readerDefinition.Id}, `
+              + `impostor is Id=${renameId}).`);
+      } else {
+        voidRow('access.built-in-level.duplicate-name-resolution',
+          'With a duplicate name present, which Id does getbyname() resolve to?',
+          'access.built-in-level.rename-to-builtin-accepted was refused, so no duplicate exists to resolve');
+      }
+      // Renamed back at once. The duplicate is the most dangerous state this
+      // probe can leave behind, because anything resolving a level by name
+      // while it stands may bind the wrong one.
+      await renameLevel(renameId, RENAME_LEVEL);
+    } else {
+      record('access.built-in-level.rename-to-builtin-accepted',
+        'May a custom level take the built-in Read level\'s exact Name?',
+        'NOT ESTABLISHED',
+        `the probe's own level was not created, or was created without an Id this could resolve: HTTP ${renameCreate.status}${renameCreate.error ? `: ${renameCreate.error}` : ''}`);
+      voidRow('access.built-in-level.duplicate-name-resolution',
+        'With a duplicate name present, which Id does getbyname() resolve to?',
+        'access.built-in-level.rename-to-builtin-accepted was never asked, because its level was not created');
+    }
+
+    // ---- EDIT (questions 2 and 3), safest first --------------------------
+    const verdicts = new Map();
+    for (const entry of LEVELS) {
+      const question = `Does a one-bit MERGE stick on the built-in ${entry.english}?`;
+      if (restoreFailures.length) {
+        record(entry.ids.editable, question, 'NOT REACHED', 'an earlier level did not restore, so the run stopped writing');
+        record(entry.ids.cascade, `While that bit was cleared on ${entry.english}, did any OTHER bit change?`, 'NOT REACHED', 'the run stopped writing');
+        record(entry.ids.restore, `Did ${entry.english} read back at exactly its pre-write mask?`, 'NOT REACHED', 'the run stopped writing');
+        continue;
+      }
+      const definition = byKind.get(entry.kind);
+      const before = await readLevel(definition.Id);
+      const preMask = before.ok ? maskOf(before.d) : null;
+      if (preMask === null) {
+        record(entry.ids.editable, question, 'NOT ESTABLISHED',
+          `could not read ${entry.english} (Id=${definition.Id}) immediately before writing: HTTP ${before.status} ${before.error || 'no bitmap in the payload'}`);
+        voidRow(entry.ids.cascade, `While that bit was cleared on ${entry.english}, did any OTHER bit change?`,
+          `${entry.ids.editable} could not establish a pre-write mask`);
+        voidRow(entry.ids.restore, `Did ${entry.english} read back at exactly its pre-write mask?`,
+          `${entry.ids.editable} could not establish a pre-write mask`);
+        continue;
+      }
+      const chosen = clearableBit(preMask);
+      if (!chosen) {
+        record(entry.ids.editable, question, 'NOT ESTABLISHED',
+          `${entry.english} carries no named, unprotected, low-half bit to clear (${describeMask(preMask)}), and the probe does not widen its rule to find one`);
+        voidRow(entry.ids.cascade, `While that bit was cleared on ${entry.english}, did any OTHER bit change?`,
+          `${entry.ids.editable} had no eligible bit`);
+        voidRow(entry.ids.restore, `Did ${entry.english} read back at exactly its pre-write mask?`,
+          `${entry.ids.editable} had no eligible bit`);
+        continue;
+      }
+      const [bitName, bit] = chosen;
+      const target = preMask & ~bit;
+      log('INFO', `${entry.english} (Id=${definition.Id}): clearing ${bitName} from ${describeMask(preMask)} to ${describeMask(target)}.`);
+      const wrote = await writeMask(definition.Id, target);
+      const after = await readLevel(definition.Id);
+      const afterMask = after.ok ? maskOf(after.d) : null;
+
+      const cleared = afterMask !== null && (afterMask & bit) === 0n;
+      const editableOutcome = afterMask === null
+        ? 'NOT ESTABLISHED'
+        : cleared ? 'EDITABLE' : wrote.ok ? 'ACCEPTED BUT IGNORED' : 'REFUSED';
+      verdicts.set(entry.slug, editableOutcome);
+      record(entry.ids.editable, question, editableOutcome,
+        afterMask === null
+          ? `MERGE answered HTTP ${wrote.status}${wrote.ok ? '' : `: ${wrote.error}`}, and the read-back could not be decoded: HTTP ${after.status} ${after.error || 'no bitmap in the payload'}`
+          : `MERGE answered HTTP ${wrote.status}${wrote.ok ? '' : `: ${wrote.error}`}; cleared ${bitName}; read back ${describeMask(afterMask)} against a pre-write ${describeMask(preMask)}`);
+
+      const cascadeQuestion = `While that bit was cleared on ${entry.english}, did any OTHER bit change?`;
+      if (!cleared || afterMask === null) {
+        voidRow(entry.ids.cascade, cascadeQuestion,
+          `${entry.ids.editable} recorded ${editableOutcome}, so no bit was cleared and there was nothing to observe alongside it`);
+      } else {
+        const moved = afterMask ^ target;
+        record(entry.ids.cascade, cascadeQuestion,
+          moved === 0n ? 'NO CASCADE' : 'CASCADED',
+          moved === 0n
+            ? `the read-back equals the requested mask exactly, so clearing ${bitName} moved nothing else`
+            : `bits [${decodeMask(moved).join(', ') || describeMask(moved)}] differ between the requested ${describeMask(target)} and the read-back ${describeMask(afterMask)}`);
+      }
+
+      // Restore, then verify by exact read-back. The status of the restoring
+      // write decides nothing; only the mask that comes back does.
+      const restored = await writeMask(definition.Id, preMask);
+      const back = await readLevel(definition.Id);
+      const backMask = back.ok ? maskOf(back.d) : null;
+      const restoreOk = backMask !== null && backMask === preMask;
+      record(entry.ids.restore, `Did ${entry.english} read back at exactly its pre-write mask?`,
+        restoreOk ? 'PASS' : 'FAIL',
+        restoreOk
+          ? `restore answered HTTP ${restored.status}; ${describeMask(backMask)} matches the pre-write mask exactly`
+          : `restore answered HTTP ${restored.status}${restored.ok ? '' : `: ${restored.error}`}; read back `
+            + `${backMask === null ? 'nothing decodable' : describeMask(backMask)} against a pre-write ${describeMask(preMask)}`);
+      if (!restoreOk) {
+        restoreFailures.push({
+          level: entry.english, id: definition.Id, name: definition.Name,
+          writeBackHigh: halves(preMask).High, writeBackLow: halves(preMask).Low,
+        });
+      }
+    }
+
+    // ---- The documentation, compared against the run ---------------------
+    const disagreements = LEVELS
+      .filter((entry) => verdicts.has(entry.slug))
+      .map((entry) => {
+        const observed = verdicts.get(entry.slug);
+        const predicted = entry.documented === 'refused' ? 'REFUSED' : 'EDITABLE';
+        return { entry, observed, predicted, agrees: observed === predicted };
+      });
+    const judged = disagreements.filter((row) => row.observed !== 'NOT ESTABLISHED');
+    const differing = judged.filter((row) => !row.agrees);
+    record('access.built-in-level.documented-editability-agrees',
+      'Does the run agree with what Microsoft documents, level by level?',
+      judged.length === 0 ? 'NOT ESTABLISHED' : differing.length === 0 ? 'AGREES' : 'DISAGREES',
+      judged.length === 0
+        ? 'no level produced a decidable edit verdict, so there is nothing to compare'
+        : `${judged.length} level(s) judged: `
+          + judged.map((row) => `${row.entry.english} documented ${row.predicted}, observed ${row.observed}`).join('; ')
+          + (differing.length === 0
+            ? '. Every level behaved as documented.'
+            : `. DISAGREES on ${differing.map((row) => row.entry.english).join(', ')}. `
+              + differing.map((row) => row.entry.cite).join(' ')));
+
+    // ---- DELETE (question 4) ---------------------------------------------
+    const rebuildable = masqueradeKind === 2;
+    for (const entry of LEVELS) {
+      const question = `Is DELETE refused on the built-in ${entry.english}?`;
+      const definition = byKind.get(entry.kind);
+      if (!ALLOW_DESTRUCTIVE_DELETE) {
+        record(entry.ids.deletable, question, 'NOT ESTABLISHED',
+          'ALLOW_DESTRUCTIVE_DELETE is false. Microsoft documents four of the six roster levels as '
+          + 'deletable, so this arm is a request to delete a built-in permission level, not a '
+          + 'refusal-capture experiment. Set it only on a disposable site.');
+        continue;
+      }
+      if (!rebuildable) {
+        voidRow(entry.ids.deletable, question,
+          'access.built-in-level.masquerade-roletypekind-readback showed RoleTypeKind is not preserved '
+          + 'on create, so a successful delete could not be undone. This probe does not ask a question '
+          + 'whose "yes" it cannot reverse.');
+        continue;
+      }
+      if (restoreFailures.length) {
+        record(entry.ids.deletable, question, 'NOT REACHED', 'an earlier level did not restore, so the run stopped writing');
+        continue;
+      }
+      const before = await readLevel(definition.Id);
+      const preMask = before.ok ? maskOf(before.d) : null;
+      if (preMask === null) {
+        record(entry.ids.deletable, question, 'NOT ESTABLISHED',
+          `could not fingerprint ${entry.english} immediately before deleting it, and this probe does not delete what it cannot rebuild`);
+        continue;
+      }
+      const removed = await deleteLevel(definition.Id);
+      if (!removed.ok) {
+        record(entry.ids.deletable, question,
+          isRefusal(removed.status) ? 'REFUSED' : 'NOT ESTABLISHED',
+          `HTTP ${removed.status}: ${removed.error}`);
+        continue;
+      }
+      // Deleted. Rebuild at once from the fingerprint, and say plainly what a
+      // rebuild cannot bring back.
+      const rebuilt = await post('web/roledefinitions', {
+        __metadata: { type: 'SP.RoleDefinition' },
+        Name: before.d.Name,
+        Description: before.d.Description || '',
+        RoleTypeKind: before.d.RoleTypeKind,
+        BasePermissions: { __metadata: { type: 'SP.BasePermissions' }, ...halves(preMask) },
+      });
+      const check = rebuilt.ok && rebuilt.d && rebuilt.d.Id != null
+        ? await readLevel(rebuilt.d.Id)
+        : { ok: false, status: rebuilt.status, error: rebuilt.error, d: null };
+      const rebuiltMask = check.ok ? maskOf(check.d) : null;
+      const rebuiltOk = rebuiltMask === preMask && check.ok && check.d.RoleTypeKind === before.d.RoleTypeKind;
+      record(entry.ids.deletable, question, 'DELETED',
+        `DELETE answered HTTP ${removed.status}. Rebuild ${rebuiltOk ? 'verified' : 'NOT verified'}: `
+        + `new Id=${rebuilt.d && rebuilt.d.Id} (was ${definition.Id}), kind=${check.d ? check.d.RoleTypeKind : 'unread'}, `
+        + `${rebuiltMask === null ? 'bitmap unread' : describeMask(rebuiltMask)} against ${describeMask(preMask)}. `
+        + 'The Id changed and every role assignment naming the old level is gone at every scope.');
+      if (!rebuiltOk) {
+        restoreFailures.push({
+          level: entry.english, id: definition.Id, name: before.d.Name,
+          writeBackHigh: halves(preMask).High, writeBackLow: halves(preMask).Low,
+        });
+      }
+    }
+  } finally {
+    // ---- Cleanup: only what this probe created, by Id ---------------------
+    for (const owned of ownedLevels) {
+      if (owned.deleted) continue;
+      await renameLevel(owned.id, owned.name);
+      let gone = await deleteLevel(owned.id);
+      if (!gone.ok) {
+        // A level wearing a built-in RoleTypeKind may be refused; drop the
+        // kind first rather than leave the object behind.
+        await merge(`web/roledefinitions(${owned.id})`, {
+          __metadata: { type: 'SP.RoleDefinition' }, RoleTypeKind: 0,
+        });
+        gone = await deleteLevel(owned.id);
+      }
+      owned.deleted = gone.ok;
+      owned.status = gone.status;
+      owned.error = gone.error;
+    }
+    // Verified by re-enumeration rather than by the delete's status code, and
+    // by Id rather than by name, because a name is what this probe just proved
+    // is not an identity.
+    const remaining = await enumerateLevels();
+    const survivingIds = new Set(
+      ((remaining.ok && remaining.d && remaining.d.results) || []).map((row) => row.Id));
+    for (const [row, name, question] of [
+      ['access.built-in-level.masquerade-level-removed', MASQUERADE_LEVEL, 'Was the masquerade level this probe created removed again?'],
+      ['access.built-in-level.rename-level-removed', RENAME_LEVEL, 'Was the rename level this probe created removed again?'],
+    ]) {
+      const owned = ownedLevels.find((candidate) => candidate.row === row);
+      if (isVoid(row)) {
+        // A control refused the write arm, so this row is already void and
+        // "nothing was created" is not the reason worth keeping.
+        continue;
+      }
+      if (!owned) {
+        record(row, question, 'NOT ESTABLISHED', `'${name}' was never created, so there was nothing to remove`);
+      } else if (!remaining.ok) {
+        record(row, question, 'NOT ESTABLISHED',
+          `could not re-enumerate to confirm removal: HTTP ${remaining.status}: ${remaining.error}`);
+      } else {
+        const survives = survivingIds.has(owned.id);
+        record(row, question, survives ? 'FAIL' : 'PASS',
+          survives
+            ? `Id=${owned.id} named '${name}' is STILL PRESENT after DELETE answered HTTP ${owned.status}${owned.error ? `: ${owned.error}` : ''}. Delete it by hand.`
+            : `Id=${owned.id} named '${name}' is gone from web/roledefinitions.`);
+      }
+    }
+
+    if (restoreFailures.length) {
+      log('FAIL', `${restoreFailures.length} level(s) were NOT restored. Fix this by hand before leaving the site.`);
+      for (const failure of restoreFailures) {
+        log('FAIL', `  ${failure.level} (Id=${failure.id}, '${failure.name}'): MERGE BasePermissions High='${failure.writeBackHigh}' Low='${failure.writeBackLow}'.`);
+      }
+    }
+    console.table(results);
+  }
+  return { results, restoreFailures, restored: restoreFailures.length === 0 };
+})();
