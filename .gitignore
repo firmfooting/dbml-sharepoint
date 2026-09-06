@@ -52,6 +52,17 @@ test/manual/captures/
 # will not cross the colon, so the colon is in the pattern. Nothing here is
 # tracked.
 extract.js.txt
+
+# Manual identification runs, ignored for the same reason and with the same
+# defaults. `identify-script` writes identify.js.txt into the current
+# directory, and the script downloads sharepoint-identify.json, whose payload
+# carries the site URL it read and the operator's UPN. A browser saving a
+# second copy names it identify-1.txt, sharepoint-identify (1).json and so on,
+# so the patterns allow for the suffix.
+identify.js.txt
+identify-*.txt
+sharepoint-identify*.json
+
 *:Zone.Identifier
 human-run/
 
