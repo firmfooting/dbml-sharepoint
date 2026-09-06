@@ -164,7 +164,16 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
   hand-edited page. Do not edit the page. It was hand-maintained once and
   silently rotted into a document where all 194 rules stopped rendering.
 - **Emitted JS.** For template changes, build an example and `node --check` the
-  emitted scripts.
+  emitted scripts. That proves they parse and nothing more. A name is resolved
+  only when its branch runs, so a scope error on a path no test exercises is
+  invisible to it: `extract.js` shipped an abort that logged a variable
+  declared inside another function, and the one branch whose job was to
+  explain a failure threw a ReferenceError instead, leaving the operator an
+  unhandled rejection and no reason (#454). Every emitted script is now
+  executed against a mock web, by a `test_*_runtime.py` module or by
+  `test_assessgen.py` and `test_verifygen.py`. A new script needs one, and so
+  does a new branch in an existing script that only runs when something goes
+  wrong.
 - **`uv run pytest` runs with `filterwarnings = ["error"]`.** A new dependency
   that emits a DeprecationWarning at import time will abort collection across
   every test module, which looks like a catastrophic failure rather than a
