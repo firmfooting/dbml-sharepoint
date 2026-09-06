@@ -24,9 +24,16 @@ follow.
       ships with (token under $50, manager decides to $150, integrity owner
       above that). A bar scaled to somebody else's ladder means nothing.
 - [ ] **Decide your review horizon before first deploy.** The *Reviews
-      due* view on `DR_Interest` filters `ReviewDate <= today+30`, matching
-      the monthly cadence in governance. Change the `today+30` in
+      due* view on `DR_Interest` filters `NextReviewDue <= today+30`,
+      matching the monthly cadence in governance. Change the `today+30` in
       `mapping.yaml` now if yours differs.
+- [ ] **Decide your review interval before first deploy.** `NextReviewDue`
+      is calculated, twelve months from `LastReviewedDate` or from
+      `DeclaredDate` while no review has been recorded. The template ships
+      the annual cadence the governance document states. Change the `+12`
+      and the matching `+13` in the formula together if yours differs: the
+      second is the month-end clamp, and moving one without the other makes
+      the clamp compute a different month than the date it is clamping.
 - [ ] The headers show `Interest: <title>` and `Offer: <title>` on saved
       rows, and `New declaration` before the title is filled in, updating
       live as it is typed.
@@ -49,10 +56,15 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates five interests
-(one per status, including a managed conflict whose review falls inside
-the window) and five offers, one per decision, with the **same offeror
+(one per status) and five offers, one per decision, with the **same offeror
 appearing twice** so that *By offeror* shows the repeat pattern the annual
 report is looking for.
+
+The interests are dated so the derived **Next review due** lands on a spread
+without being seeded, which a calculated column cannot be: one managed
+conflict overdue, one due inside the thirty-day window, two not yet due, and
+the ceased one blank. Two of them carry no **Last reviewed date**, which is
+the never-reviewed state the register is meant to make visible.
 
 **Delete the demo rows before staff start declaring.** Every demo Title
 begins with `[DEMO]`, so they are obvious in every view, they are matched
@@ -91,36 +103,56 @@ list, which is worse here than almost anywhere else in the library.
       pending decision from fourteen months ago is worse than one from last
       week, not less relevant.
 - [ ] List Settings -> Indexed columns shows `Status`, `DeclaredBy` and
-      `ReviewDate` on Interest, and `Decision`, `OfferedTo` and
+      `LastReviewedDate` on Interest, and `Decision`, `OfferedTo` and
       `OfferedDate` on GiftBenefit. The build manifest lists the same six.
+      `NextReviewDue` is **not** there and cannot be: SharePoint does not
+      index a calculated column, and the build refuses one that names it.
+      The *Reviews due* filter therefore reads an unindexed column, which is
+      fine until the list passes the view threshold; the typed half is
+      indexed so the queries that can use it do.
 - [ ] **As an ordinary Member, this is the test that matters.** You can
       submit a declaration to each list but cannot edit it afterwards,
       and on the New form you never see the assessment fields at all. On
-      `DR_Interest`, **Status**, **Management plan**, **Review date** and
-      **Ceased date** are absent. On `DR_GiftBenefit`, **Decision** and
+      `DR_Interest`, **Status**, **Management plan**, **Last reviewed date**
+      and **Ceased date** are absent. On `DR_GiftBenefit`, **Decision** and
       **Decided by** are absent. Governance says the declarer never
       assesses their own declaration and the person offered a gift never
       decides their own gift; this is what makes that structural rather
       than cultural.
 - [ ] As a Coordinator: you can assess. On an existing interest, set
-      **Status** to *Assessed - managed* and **Management plan** and
-      **Review date** both appear; set it to *Ceased* and **Ceased date**
-      appears. On an existing offer, move **Decision** off *Pending
-      decision* and **Decided by** appears. Changing back hides them again
-      while keeping whatever was typed. SharePoint has no mechanism to
-      clear a hidden field.
-- [ ] `DR_Interest` carries **two** chained save rules sharing one
-      message, because SharePoint gives a list a single validation formula.
-      Try each: *Assessed - managed* with **Review date** empty; *Ceased*
-      with **Ceased date** empty. Both are refused, and both show the same
-      message naming both checks.
+      **Status** to *Assessed - managed* and **Management plan** appears;
+      set it to *Ceased* and **Ceased date** appears. On an existing offer,
+      move **Decision** off *Pending decision* and **Decided by** appears.
+      Changing back hides them again while keeping whatever was typed.
+      SharePoint has no mechanism to clear a hidden field. **Last reviewed
+      date** is on the edit form at every status, because the annual cadence
+      covers every live interest and not only the managed ones.
+- [ ] **Next review due is read-only, on every form and for everybody.**
+      There is no box to type in, including for a coordinator and for a site
+      owner. That is the control: a date somebody can type is a date
+      somebody can push out. Completing a review means moving **Last
+      reviewed date**, and the due date follows.
+- [ ] **Next review due is populated on every live row**, including one
+      never reviewed, where it counts twelve months from **Declared date**.
+      It is blank on the **Ceased** row.
+- [ ] `DR_Interest` carries **one** list save rule: *Ceased* with **Ceased
+      date** empty is refused. The per-column date rules are hoisted into
+      the same formula, so its message names them all.
 - [ ] `DR_GiftBenefit` carries **no** list rule. That is not an omission:
       see below.
-- [ ] Four per-column save rules, each with its own message: a future
-      **Declared date** or **Ceased date** on Interest, a future
-      **Offered date** or a negative **Estimated value** on GiftBenefit.
-- [ ] `ReviewDate` escalates to the severe treatment once it is past, and
-      the escalation is suppressed on a **Ceased** row.
+- [ ] Five per-column save rules, each with its own message: a future
+      **Declared date**, **Last reviewed date** or **Ceased date** on
+      Interest, a future **Offered date** or a negative **Estimated value**
+      on GiftBenefit.
+- [ ] **Next review due** escalates to the severe treatment once it is past,
+      and the escalation is suppressed on a **Ceased** row. If you seeded,
+      the overdue managed conflict shows it.
+- [ ] **Review Date (retired)** still exists, holds whatever it held, and is
+      on no view and no New form. Transfer its values into **Last reviewed
+      date** wherever the old value recorded a review that actually
+      happened, then delete the column with the columns sidecar. Do not
+      delete it from the DBML: the column would stay live on the site and
+      drift the user-added-columns audit on every report refresh.
 - [ ] Populate **DR Compliance Coordinators**; delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
@@ -136,9 +168,15 @@ list, which is worse here than almost anywhere else in the library.
   at save. It stays a governance check, and *Annual disclosure* shows
   **Decided by** so a blank one is visible in the report that matters most.
 - **The management plan on a managed interest.** `ManagementPlan` is rich
-  text, which a validation formula cannot reference either. The date half
-  of that governance rule *is* enforced; the plan half is what the *Reviews
-  due* view shows the column for.
+  text, which a validation formula cannot reference either. The plan half of
+  that governance rule is what the *Reviews due* view shows the column for.
+  The date half is no longer a save rule and no longer needs to be: every
+  live row gets a due date by construction, because `NextReviewDue` counts
+  from the required `DeclaredDate` until a review is recorded.
+- **The review actually happening.** Nothing can make somebody look. What
+  the split does remove is the ability to push the due date out: the only
+  date anybody can type is **Last reviewed date**, which is a claim that a
+  review happened, and it is refused if dated in the future.
 - **Declaring at all.** No register can require a declaration nobody makes.
   The annual attestation is the control, and *My interests* is what makes
   it a two-minute read rather than a project.

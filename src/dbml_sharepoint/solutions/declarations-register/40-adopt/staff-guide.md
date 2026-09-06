@@ -16,8 +16,8 @@ reporting line? Declare it.
 3. **Type**, **Declared date** (today), and **Detail**: the facts of the
    interest and where it could touch your role. Don't self-assess. That's
    the coordinator's job with your manager. The form makes that literal:
-   **Status**, **Management plan**, **Review date** and **Ceased date**
-   are not on the New form at all, so there is nothing there to
+   **Status**, **Management plan**, **Last reviewed date** and **Ceased
+   date** are not on the New form at all, so there is nothing there to
    self-assess with.
 4. Save. You can't edit it afterwards; if the interest changes materially,
    submit a fresh declaration and tell the coordinator the old one has
@@ -51,7 +51,7 @@ exists to see).
 | **Live interests** | The default. Everything not ceased, grouped by who declared it. |
 | **My interests** | Just yours. This is the annual attestation. |
 | **Awaiting assessment** | Declarations nobody has assessed yet, oldest first: the coordinators' ten-day clock. |
-| **Reviews due** | Managed conflicts due for review inside the next thirty days, with the management plan. |
+| **Reviews due** | Live interests due for review inside the next thirty days, with the management plan for the managed ones. |
 | **Ceased** | Interests that have ended, most recently ceased first. |
 
 ### DR_GiftBenefit
