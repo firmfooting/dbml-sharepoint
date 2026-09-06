@@ -2565,6 +2565,103 @@
       ]
     },
     {
+      "file": "lookup-showfield-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two probe-owned lists, a second target text column, two target rows, a lookup column and one source item"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.lookup.control-showfield-fixture",
+              "depends_on": []
+            },
+            {
+              "id": "field.lookup.showfield-merge-accepted",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-property-readback",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-stored-id-preserved",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-api-display-value",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-rendered-view",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-display-name-spelling",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.lookup.control-showfield-fixture"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "field",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "field.lookup.showfield-edit-form",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "source-edit-form",
+              "page": "source item edit form at DefaultEditFormUrl?ID=<source item>",
+              "assertions": [
+                "the lookup field shows the target Title sentinel, the AlternateLabel sentinel, or something else recorded verbatim"
+              ]
+            }
+          ],
+          "controls": [
+            "field.lookup.control-showfield-fixture"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
       "file": "multi-value-probe.js",
       "surface": "field",
       "harness": "shared-v2",
