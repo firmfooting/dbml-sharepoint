@@ -38,12 +38,15 @@ from dbml_sharepoint.analysis.lookups import (
 )
 from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
+    ITEM_URL_COLUMN,
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
     SYSTEM_DISPLAY_TITLES,
     USERS_KEY_LIST,
+    fk_key_column,
     person_key_column,
+    report_output_names,
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
@@ -89,6 +92,13 @@ class _ListPlan:
     # list of ids rather than of strings, and `Text.Combine` over numbers
     # raises, so the flag decides whether the members are converted first.
     multi_value_joins: list[tuple[str, bool]] = field(default_factory=list)
+    # The report columns the DECLARED fields contribute, in column order,
+    # from `report_columns.report_output_names`. `m_types` and
+    # `multi_value_joins` above hold the same names split by how the query
+    # types them; this is the one list the rename step reads, and it is the
+    # one `checks/_naming` reads too, so a rule about the report's names
+    # cannot compare a different set from the one the query produces.
+    output_columns: list[str] = field(default_factory=list)
     # (landed column, SQL type)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
     # (fk column, target list title, target display column)
@@ -213,6 +223,12 @@ def _build_plans(
             sp = map_column(col, enum_names)
             if sp.kind != "Skip":
                 plan.field_internal_names.append(sp.name)
+            # What a lookup into the target DISPLAYS names one of the columns
+            # this field contributes, so it is resolved before the arms below
+            # rather than inside the one that needs it. `display_column_for`
+            # answers Title for a target with no mapping entry, which is why
+            # this needs no None branch.
+            lookup_display = _display_column(bundle, sp.target_list or "")
             match sp.kind:
                 case "Skip":
                     plan.selects.append("Id")
@@ -248,7 +264,7 @@ def _build_plans(
                     _plan_person(plan, sp.name)
                 case "Lookup":
                     target = sp.target_list or ""
-                    display = _display_column(bundle, target)
+                    display = lookup_display
                     plan.selects.append(f"{sp.name}Id")
                     plan.selects.append(f"{sp.name}/{display}")
                     plan.expands.append(sp.name)
@@ -360,6 +376,12 @@ def _build_plans(
                         f"arm in _sp_type_cell -- rather than letting it fall "
                         f"out of every generated query.",
                     )
+            # After the arms, so an unhandled kind is refused by the `case _`
+            # above with the entity and the column in the message rather than
+            # by the shared derivation's `assert_never`, which knows neither.
+            plan.output_columns += report_output_names(
+                sp, lookup_display=lookup_display,
+            )
         # After the schema's own columns, so they sit at the end of every
         # query and view. MEASURED 2026-09-02 on a live tenant: /items answers
         # $select=Created,Modified,AuthorId,Author/Title,EditorId,Editor/Title
@@ -384,18 +406,14 @@ def _build_plans(
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
             # auto-splits ("RiskOwnerTitle" -> "Risk Owner Title").
-            # `multi_value_joins` is listed alongside `m_types` because it is
-            # the only output column NOT in `m_types`, and a renameable name
-            # that this loop cannot see is a column that silently keeps its
-            # internal name in a model where every other column got its
-            # display title.
-            for out_name in (
-                [name for name, _ in plan.m_types]
-                + [name for name, _ in plan.multi_value_joins]
-                + ["ItemURL"]
-            ):
-                if out_name in system_outputs:
-                    continue
+            #
+            # Read off `output_columns` rather than off `m_types` plus
+            # `multi_value_joins`, so the set renamed here is the set
+            # `checks/_naming` refuses a collision against. The system
+            # columns are absent from it by construction: they are not
+            # declared fields, and the loop below gives them SharePoint's own
+            # titles.
+            for out_name in [*plan.output_columns, ITEM_URL_COLUMN]:
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
@@ -435,17 +453,6 @@ def _plan_datetime(plan: _ListPlan, name: str, *, date_only: bool) -> None:
 
 
 # ---------------------------------------------------------------- Power Query
-
-
-def _fk_key_column(fk_col: str) -> str:
-    """The site-qualified name for a foreign key column.
-
-    `IncidentId` becomes `Incident Key`, matching the `<Entity> Key` the
-    target table exposes, so the relationship reads as one name on both
-    sides. Spaced to sit alongside the other model-facing names, which are
-    display titles rather than internal ones.
-    """
-    return f"{fk_col.removesuffix('Id')} Key"
 
 
 def _m_string(text: str) -> str:
@@ -710,7 +717,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "        {" + ", ".join(f'"{name}"' for name in declared) + "}",
         "    ),",
         '    WithItemURL = Table.AddColumn(',
-        '        Declared, "ItemURL",',
+        f'        Declared, "{ITEM_URL_COLUMN}",',
         f'        each SiteRoot & "{plan.item_url_path}" & Number.ToText([Id]),',
         "        type text",
         "    ),",
@@ -751,7 +758,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         lines[-1] += ","
         lines += [
             f"    {step} = Table.AddColumn(",
-            f'        {prev}, "{_fk_key_column(fk_col)}",',
+            f'        {prev}, "{fk_key_column(fk_col)}",',
             # Null-guarded: an optional lookup leaves the FK null, and
             # Number.ToText(null) RAISES rather than returning null, which
             # would fail the whole refresh on one blank field.
@@ -1197,7 +1204,7 @@ def generate_reporting_md(
                 target_title,
             )
             lines.append(
-                f"| {plan.list_title} | {_fk_key_column(fk_col)} "
+                f"| {plan.list_title} | {fk_key_column(fk_col)} "
                 f"| {target_title} | {target_entity} Key |",
             )
         if plan.users_table:

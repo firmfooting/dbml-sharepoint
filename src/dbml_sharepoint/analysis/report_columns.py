@@ -16,8 +16,10 @@ reaches it with no override at all: `auto_display_name` splits `SiteUrl` to
 `Site Url`, `SiteName` to `Site Name` and `ListTitle` to `List Title`.
 """
 
+from typing import assert_never
+
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
-from dbml_sharepoint.analysis.typemap import is_person
+from dbml_sharepoint.analysis.typemap import SPField, is_person
 
 #: Added to the row table for every entity, before the model-facing rename.
 #: `Site Url` and `Site Name` say which SITE a row came from; `List Title`
@@ -43,6 +45,67 @@ SYSTEM_DISPLAY_TITLES: dict[str, str] = {"Author": "Created By", "Editor": "Modi
 #: The namespace the users dimension keys itself under. A leading underscore
 #: like the query's own name, so no list title can produce the same key.
 USERS_KEY_LIST = "_Users"
+
+#: The helper column linking each row back to its SharePoint item. Added by
+#: the query itself, so no declared column stands behind it.
+ITEM_URL_COLUMN = "ItemURL"
+
+
+def report_output_names(sp: SPField, *, lookup_display: str) -> tuple[str, ...]:
+    """The report columns one declared field contributes, in query order.
+
+    THE NAMES `Table.RenameColumns` ACTUALLY SEES, which for a record-valued
+    field are not the declared name. A URL value, a person expand and a lookup
+    expand all arrive as records, so the query keeps a part of each under a
+    derived name and the declared name never reaches the rename. Comparing the
+    declared column's display title therefore asks about a column the report
+    does not have: it refused a `URL` column named `SiteUrl`, whose report
+    column is `SiteUrlUrl` and renames to `Site Url Url`, and let through a
+    `URL` column named `Site`, whose report column IS `SiteUrl` and does
+    collide with the `Site Url` the pack adds (#202).
+
+    `lookup_display` is the column a lookup into the target shows, from
+    `analysis.lookups.display_column_for`. Every other kind ignores it.
+
+    A fourteenth `FieldKind` fails `uv run mypy` on the `assert_never` below,
+    which is the point: a kind whose report columns nobody has decided must
+    not resolve to silence in a rule that refuses builds. The runtime raise
+    behind it is a backstop only, because `_build_plans` reaches its own
+    `case _` first and that one names the entity and the column.
+    """
+    match sp.kind:
+        case "Skip":
+            # The auto-increment Id is never created; the query reads
+            # SharePoint's own.
+            return ("Id",)
+        case "URL":
+            return (f"{sp.name}Url",)
+        case "User":
+            return (f"{sp.name}Id", f"{sp.name}Title")
+        case "Lookup":
+            return (f"{sp.name}Id", f"{sp.name}{lookup_display}")
+        case "LookupMulti":
+            # No expand, so no display column: expanding a collection yields a
+            # nested table per row and the query carries the ids alone.
+            return (f"{sp.name}Id",)
+        case (
+            "Text" | "Note" | "Choice" | "MultiChoice"
+            | "Number" | "Boolean" | "DateTime" | "Calculated"
+        ):
+            return (sp.name,)
+        case _:
+            assert_never(sp.kind)
+
+
+def fk_key_column(fk_column: str) -> str:
+    """The `... Key` a single-value lookup carries into its target's rows.
+
+    `IncidentId` becomes `Incident Key`, matching the `<Entity> Key` the
+    target table exposes, so the relationship reads as one name on both
+    sides. Spaced to sit alongside the other model-facing names, which are
+    display titles rather than internal ones.
+    """
+    return f"{fk_column.removesuffix('Id')}{REPORT_KEY_SUFFIX}"
 
 
 def system_person_columns() -> tuple[str, ...]:
