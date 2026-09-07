@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: ef9b8882
+ * REVISION: 1a52ca2f
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -438,7 +438,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ef9b8882. Quote this when reporting results.');
+  log('INFO', 'probe revision 1a52ca2f. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -836,8 +836,10 @@
     const build = BUILD_FIXTURE || wanted <= SMALL_FILES
       ? await uploadUpTo(path, folderUrl, wanted, cap)
       : { uploaded: 0, from: 0, held: 0, stoppedAt: null, reason: 'BUILD_FIXTURE is off' };
-    const counted = await spGet(`${path}?$select=ItemCount`);
-    const count = (counted.ok && counted.body) ? counted.body.ItemCount : -1;
+    // ItemCount is timer-job-cached and lags a fresh upload burst by minutes,
+    // so read the live count from the newest FileLeafRef number instead — the
+    // same signal resumeFrom already trusts, and the uploads are contiguous.
+    const count = await resumeFrom(path, 0);
     return {
       ok: true, folderUrl, count, build,
       created: made.made, columns: columns.note,

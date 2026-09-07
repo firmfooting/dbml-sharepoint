@@ -618,8 +618,10 @@
     const build = BUILD_FIXTURE || wanted <= SMALL_FILES
       ? await uploadUpTo(path, folderUrl, wanted, cap)
       : { uploaded: 0, from: 0, held: 0, stoppedAt: null, reason: 'BUILD_FIXTURE is off' };
-    const counted = await spGet(`${path}?$select=ItemCount`);
-    const count = (counted.ok && counted.body) ? counted.body.ItemCount : -1;
+    // ItemCount is timer-job-cached and lags a fresh upload burst by minutes,
+    // so read the live count from the newest FileLeafRef number instead — the
+    // same signal resumeFrom already trusts, and the uploads are contiguous.
+    const count = await resumeFrom(path, 0);
     return {
       ok: true, folderUrl, count, build,
       created: made.made, columns: columns.note,
