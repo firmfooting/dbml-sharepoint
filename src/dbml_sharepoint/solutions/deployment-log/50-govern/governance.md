@@ -135,13 +135,24 @@ no other copy exists. The per-site sidecars are not a backup: a site only
 has them for the runs that could not reach the central lists, and its run
 log is Title-only.
 
-## Migration from the single combined list
+## Retiring the old lists
 
-A site that ran an earlier version of this family kept everything on one
-list, `dbml-deployment-log`. This version never renames or deletes it: it
-stays exactly where it was, still readable, and nothing reads or writes it
-after the redeploy. `firmfooting_Deployments` and `firmfooting_Changes` are
-created beside it, empty. Moving `dbml-deployment-log`'s rows into the two
-new lists by hand, or leaving it as an inert archive until you delete it
-yourself, is the log owner's call to make and record here. Chosen approach:
-______.
+This rename retires three lists across the estate. This tool never renames,
+deletes or writes to any of them again; disposal is by hand, entirely on
+the log owner's schedule.
+
+| Old list | Where | Found in |
+| --- | --- | --- |
+| `dbml-deployment-log` | this site, the central log | Site Contents |
+| `dbml Local Log` | every site that deployed anything before this rename | hidden; not in Site Contents |
+| `dbml_Logs` | every site that deployed anything before this rename | hidden; not in Site Contents |
+
+`firmfooting_Deployments` and `firmfooting_Changes` are created beside
+`dbml-deployment-log`, empty, the next time this family is redeployed here.
+`dbml Local Log` and `dbml_Logs` are per-site sidecars that any family's
+deploy creates when it cannot reach the central log; being hidden, they will
+not show up while browsing Site Contents on a site that has one.
+
+All three still hold their history and are still readable, and all three
+are safe to delete once their rows are no longer wanted: nothing reads or
+writes any of them after this rename. Chosen approach: ______.

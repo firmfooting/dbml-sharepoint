@@ -259,6 +259,13 @@ absence is the signal that they are.
 Bump `schema_version`, rebuild, re-paste. Re-pasting does not touch the rows
 already in the log.
 
+A site that ran an earlier version of this family keeps `dbml-deployment-log`
+beside the new `firmfooting_Deployments` and `firmfooting_Changes`: this tool
+never renames, deletes or writes to it again. It is safe to delete by hand
+once its rows are no longer wanted. `50-govern/governance.md` has the full
+disposal note, including the two hidden per-site lists this rename also
+retires.
+
 ## Enterprise reporting access
 
 The deploy declares the `dbml Enterprise Readers` site group, shared with

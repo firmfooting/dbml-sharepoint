@@ -35,14 +35,14 @@ notes: |
 
   READ THIS IF A SITE ALREADY RUNS THIS FAMILY. This tool never renames or
   deletes a list. Redeploying creates `firmfooting_Deployments` and
-  `firmfooting_Changes` beside the existing `dbml-deployment-log`, which is
-  left exactly as it was: still there, still holding its history, still
-  readable. Nothing reads or writes it after the redeploy. Move its rows
-  into the two new lists by hand if the history is worth keeping, or leave
-  it and delete it once you no longer need it. There is no automatic
-  migration path, because a marker migration only works for a list that
-  keeps its title, and this one does not. A deploy pointed at the OLD title
-  with an explicit `--deployment-log-list dbml-deployment-log` does NOT keep
+  `firmfooting_Changes` beside the existing `dbml-deployment-log`, which
+  stays exactly where it was: still there, still holding its history, still
+  readable. Nothing reads or writes it after the redeploy, and this tool
+  never deletes it either. `dbml-deployment-log` is safe to delete by hand
+  once its rows are no longer wanted; that is the log owner's call, on the
+  log owner's schedule, and is covered in `50-govern/governance.md`. A
+  deploy pointed at the OLD title with an explicit
+  `--deployment-log-list dbml-deployment-log` does NOT keep
   working the way it used to: that list predates `CENTRAL_LOG_COLUMNS` and
   is missing `Application`, so `externalStructured` comes back false and
   every stamp degrades to Title alone. StampKind, StampUtc, SourceSite,
