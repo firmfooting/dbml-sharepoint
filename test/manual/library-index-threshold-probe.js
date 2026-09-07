@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: 1de597c5
+ * REVISION: 5e294262
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -220,8 +220,8 @@
 // library past 5,001 items, a selective $filter on Id is served (HTTP 200)
 // while the same filter on Title, Name (FileLeafRef), Created, Modified,
 // Author and Editor is each refused with SPQueryThrottledException. Only Id
-// carries a native index; every other system column — including Title and
-// Name — must be explicitly indexed before it can be queried past the
+// carries a native index; every other system column, including Title and
+// Name, must be explicitly indexed before it can be queried past the
 // threshold (2026-09-08 run, 13/13 settled, both controls held).
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -447,7 +447,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 1de597c5. Quote this when reporting results.');
+  log('INFO', 'probe revision 5e294262. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -846,7 +846,7 @@
       ? await uploadUpTo(path, folderUrl, wanted, cap)
       : { uploaded: 0, from: 0, held: 0, stoppedAt: null, reason: 'BUILD_FIXTURE is off' };
     // ItemCount is timer-job-cached and lags a fresh upload burst by minutes,
-    // so read the live count from the newest FileLeafRef number instead — the
+    // so read the live count from the newest FileLeafRef number instead; the
     // same signal resumeFrom already trusts, and the uploads are contiguous.
     const count = await resumeFrom(path, 0);
     return {
