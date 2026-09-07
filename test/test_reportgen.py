@@ -85,7 +85,7 @@ def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
 def test_powerquery_types_follow_the_schema() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert '{"DueDate", type date}' in task
+    assert '{"DueDate", each AsDate(_), type date}' in task
     assert '{"Id", Int64.Type}' in task
     schema, bundle = _calculated()
     risk = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
@@ -2027,7 +2027,9 @@ def test_the_added_column_reader_finds_the_expression_and_not_a_blank() -> None:
     returned "" for everything would make them agree about nothing."""
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert _added_column_expression(task, "ItemURL").startswith("each SiteRoot &")
+    assert _added_column_expression(task, "ItemURL").startswith(
+        "each ItemUrlBase &",
+    )
     with pytest.raises(AssertionError, match="Absent Key"):
         _added_column_expression(task, "Absent Key")
 
@@ -2144,10 +2146,28 @@ _SELECT_STEP = re.compile(
 )
 
 
+_DATES_STEP = re.compile(
+    r"Dates = Table\.TransformColumns\(\s*\w+,\s*\{(?P<body>.*?)\n\s*\}",
+    re.DOTALL,
+)
+
+
 def _typed_columns(query: str) -> list[str]:
+    """Every column the query gives a type, from either step that gives one.
+
+    Date columns left `Table.TransformColumnTypes` on 2026-09-07: a
+    calculated date is served as untyped text and a bare conversion put an
+    error value in every cell, which Power BI renders as a blank column. A
+    helper still reading only that step would report the selection as
+    carrying columns nothing typed.
+    """
     typed = _TYPING_STEP.search(query)
     assert typed is not None, "no typing step"
-    return re.findall(r'\{"([^"]+)",', typed["body"])
+    names = re.findall(r'\{"([^"]+)",', typed["body"])
+    dates = _DATES_STEP.search(query)
+    if dates is not None:
+        names += re.findall(r'\{"([^"]+)",', dates["body"])
+    return names
 
 
 def test_powerquery_keeps_exactly_the_typed_columns_after_typing() -> None:
@@ -2162,7 +2182,12 @@ def test_powerquery_keeps_exactly_the_typed_columns_after_typing() -> None:
     typing = _TYPING_STEP.search(task)
     assert typing is not None
     assert select["prev"] == typing["step"]
-    assert re.findall(r'"([^"]+)"', select["body"]) == _typed_columns(task)
+    kept = re.findall(r'"([^"]+)"', select["body"])
+    # A set, because dates are typed by a step of their own and the selection
+    # stays in schema order; the length check keeps the duplicate a list
+    # comparison used to catch, which would rename one column twice.
+    assert set(kept) == set(_typed_columns(task))
+    assert len(kept) == len(set(kept))
     assert re.search(
         rf'Table\.AddColumn\(\s*{select["step"]}, "ItemURL"', task,
     ), "ItemURL is not built on the selected columns"
@@ -2215,16 +2240,6 @@ def _accumulated_names(query: str, step: str) -> list[str]:
     return re.findall(r'"([^"]+)"', match.group(1))
 
 
-def _typed_names(query: str) -> list[str]:
-    """The column names the `Table.TransformColumnTypes` step converts."""
-    match = re.search(
-        r"    Typed = Table\.TransformColumnTypes\(\n"
-        r"        \w+,\n        \{(.*?)\n        \}", query, re.S,
-    )
-    assert match is not None, f"no Typed step in:\n{query}"
-    return re.findall(r'\{"([^"]+)",', match.group(1))
-
-
 def test_a_zero_row_list_does_not_fail_the_whole_refresh() -> None:
     """Every column a later step names is guaranteed to exist first.
 
@@ -2245,13 +2260,12 @@ def test_a_zero_row_list_does_not_fail_the_whole_refresh() -> None:
     for name, query in generate_powerquery(schema, bundle, "default").items():
         ensured = _accumulated_names(query, "Ensured")
         assert "Id" in ensured, name
-        for column_name in _typed_names(query):
+        for column_name in _typed_columns(query):
             assert column_name in ensured, f"{name}: {column_name} unguarded"
         # `Table.SelectColumns` reads the same set one step later.
-        declared = re.search(r"    Declared = Table\.SelectColumns\(\n"
-                             r"        Typed,\n        \{(.*?)\}", query, re.S)
+        declared = _SELECT_STEP.search(query)
         assert declared is not None, name
-        for column_name in re.findall(r'"([^"]+)"', declared.group(1)):
+        for column_name in re.findall(r'"([^"]+)"', declared["body"]):
             assert column_name in ensured, f"{name}: {column_name} unguarded"
 
 
@@ -2263,19 +2277,10 @@ def test_the_zero_row_guard_covers_a_multi_value_column() -> None:
     column that an empty list does not answer with -- the same failure, one
     step earlier, on the only shape the first test cannot see.
     """
-    schema = make_schema(
-        make_table("Risk", column("Title", required=True)),
-        make_table(
-            "Programme",
-            column("Title", required=True),
-            column("Risks", "multi"),
-        ),
-        make_ref("Programme.Risks", "Risk.Id"),
-    )
-    bundle = make_bundle(entities=["Risk", "Programme"])
-    query = generate_powerquery(schema, bundle, "default")["APP_Programme.pq"]
+    schema, bundle = _multi_value()
+    query = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
     assert "JoinedMultiValue = Table.TransformColumns(" in query
-    assert "RisksId" in _accumulated_names(query, "Ensured"), query
+    assert "AuditEvents" in _accumulated_names(query, "Ensured"), query
 
 
 def test_the_users_dimension_survives_a_site_with_no_rows() -> None:
@@ -2292,7 +2297,7 @@ def test_the_users_dimension_survives_a_site_with_no_rows() -> None:
     ensured = _accumulated_names(users, "Ensured")
     assert "Id" in ensured
     assert "ContentTypeId" in ensured
-    for column_name in _typed_names(users):
+    for column_name in _typed_columns(users):
         assert column_name in ensured, column_name
 
 
@@ -2324,7 +2329,10 @@ def test_a_calculated_date_arrives_as_text_and_is_still_a_date() -> None:
     )
     query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
     assert "AsDate = (v as any) as nullable date =>" in query
-    typed = _typed_names(query)
+    # The bare conversion step specifically: `_typed_columns` reads both.
+    step = _TYPING_STEP.search(query)
+    assert step is not None
+    typed = re.findall(r'\{"([^"]+)",', step["body"])
     assert "NextReviewDue" not in typed, query
     # The declared one goes the same way: the pack cannot tell from the wire
     # which of the two it is holding, and one converter over both is the
@@ -2340,7 +2348,7 @@ def test_a_calculated_date_arrives_as_text_and_is_still_a_date() -> None:
 def test_the_tolerant_date_converter_cannot_fail_a_refresh() -> None:
     """Every branch of it ends in a value, so a shape nobody anticipated
     blanks one column instead of blocking the whole batch."""
-    schema, bundle = _calculated()
+    schema, bundle = _simple()
     seen = 0
     for name, query in generate_powerquery(schema, bundle, "default").items():
         if "AsDate =" not in query:
@@ -2350,7 +2358,7 @@ def test_the_tolerant_date_converter_cannot_fail_a_refresh() -> None:
         body = body.split("\n    Source =")[0]
         assert "try" in body, name
         assert "otherwise null" in body, name
-    assert seen, "no query in the calculated fixture carries a date column"
+    assert seen, "no query in the fixture carries a date column"
 
 
 def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
