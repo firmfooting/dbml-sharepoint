@@ -108,7 +108,8 @@ KNOWN_CONTEXT = {
     # the stamp fields it reads off a run-log row.
     "marker_terminator", "marker_kinds",
     "list_kind", "group_kind", "level_kind", "scratch_kind",
-    "run_log_title", "run_log_previous_titles", "change_log_title", "stamp_fields",
+    "run_log_title", "run_log_previous_titles", "change_log_title",
+    "change_log_previous_titles", "stamp_fields",
     "payload_format", "payload_version",
     # Off only for identify.js. The site-match guard is there because a write
     # on the wrong site cannot be taken back, and a read-only inventory has

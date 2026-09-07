@@ -44,6 +44,10 @@ RUN_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml Local Log",)
 #: The per-site change log. Named for what a row is, not for what it is not.
 CHANGE_LOG_TITLE = "dbml_Changes"
 
+#: What `CHANGE_LOG_TITLE` declared before this convention landed. Same
+#: reasoning and same READING-only recognition as `RUN_LOG_PREVIOUS_TITLES`.
+CHANGE_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Logs",)
+
 #: The CENTRAL deployment log, on the org's logging site. `firmfooting` rather
 #: than `dbml` because it holds rows from every firmfooting application, of
 #: which this tool is one. Probed, never created by a deploy.
