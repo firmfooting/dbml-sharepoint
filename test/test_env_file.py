@@ -1,8 +1,10 @@
 # test/test_env_file.py
+import re
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _paths import REPO_ROOT
 
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
@@ -16,6 +18,15 @@ from dbml_sharepoint.model.env_file import (
     describe_env_provenance,
     read_env_file,
 )
+
+#: The hand-written table this page shows next to the generated `--help`
+#: listing; see the paragraph under it, which says explicitly that the two
+#: are kept in sync by hand rather than by a generator.
+CLI_REFERENCE = REPO_ROOT / "website" / "docs" / "reference" / "cli.md"
+
+#: A `DBMLSP_` token found anywhere in cli.md's prose, not just its table
+#: rows -- the precedence and location paragraphs both name real keys too.
+DBMLSP_TOKEN = re.compile(r"\bDBMLSP_[A-Z0-9_]+\b")
 
 
 def _write(tmp_path: Path, text: str, name: str = ENV_FILENAME) -> Path:
@@ -47,6 +58,38 @@ def test_env_settings_has_exactly_the_registered_fields() -> None:
     assert ENV_SETTINGS[3].parameter == "deployment_log_site"
     assert ENV_SETTINGS[4].key == "DBMLSP_CHANGE_LOG_LIST"
     assert ENV_SETTINGS[4].parameter == "change_log_list"
+
+
+def test_cli_reference_documents_exactly_the_registered_keys() -> None:
+    """cli.md's `dbml-sharepoint.env` table is hand-written, not generated
+    (the page says so itself, in the paragraph right under the table), so
+    nothing regenerates it when `ENV_SETTINGS` gains, loses or renames a key.
+
+    Found this way: the page recently claimed "There is one key today" and
+    showed a one-row table while `ENV_SETTINGS` held five, and no gate
+    noticed. `test_generated_findings_page_is_current` cannot be reused as
+    written -- that page IS generated, and cli.md is a hand-written document
+    with a table embedded in it, not a document a script could reproduce
+    byte for byte. So this asserts the narrower true thing instead: every
+    registered key is documented, and every documented key is registered.
+    That catches both a key added to the code and a key invented in the
+    prose, without requiring the surrounding prose to match anything.
+    """
+    page = CLI_REFERENCE.read_text(encoding="utf-8")
+    registered = {setting.key for setting in ENV_SETTINGS}
+    documented = set(DBMLSP_TOKEN.findall(page))
+
+    undocumented = sorted(registered - documented)
+    assert not undocumented, (
+        f"ENV_SETTINGS has keys cli.md does not mention: {undocumented}. "
+        f"Add a row to the dbml-sharepoint.env table in {CLI_REFERENCE}."
+    )
+
+    invented = sorted(documented - registered)
+    assert not invented, (
+        f"cli.md mentions DBMLSP_ keys ENV_SETTINGS does not register: "
+        f"{invented}. Fix the table in {CLI_REFERENCE}."
+    )
 
 
 def test_parses_key_value_pairs(tmp_path: Path) -> None:

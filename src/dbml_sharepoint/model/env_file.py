@@ -58,6 +58,7 @@ CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
 
 # No `validate` field: `execute_build` already validates what it consumes, and
 # importing `cli.py`'s validators here would cycle and drag typer into `model/`.
+# Documented by hand in website/docs/reference/cli.md; add a key there too.
 ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
     EnvSetting(
         key=ENTERPRISE_READER_KEY,
