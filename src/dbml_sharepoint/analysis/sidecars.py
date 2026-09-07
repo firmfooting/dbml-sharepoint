@@ -123,14 +123,6 @@ def scratch_marker_for(title: str) -> str:
     )
 
 
-#: The central deployment log's marker. Same grammar, own name: the sidecar
-#: owns the list by this Description compared whole, exactly like the
-#: on-site sidecars.
-def central_log_marker() -> str:
-    """The exact Description the sidecar owns ``firmfooting_Deployments`` by."""
-    return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
-
-
 def run_log_title() -> str:
     """The run log's title, for templates and tests to share."""
     return RUN_LOG_TITLE
