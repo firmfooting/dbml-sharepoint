@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: 8db68e8e
+ * REVISION: 9a51867b
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -167,6 +167,12 @@
 // to refuse, this one by the run above and a wrong `ShowField` by Learn's
 // `Field element (List)`, which lookup-showfield-probe.js records as warning
 // that a display name there "does not raise an error, but breaks the field".
+// finding: cross-lookup-list-to-library-write-refused - a list's lookup into a
+// library binds (both Title and Name BOUND) but its value cannot be SET through
+// the item MERGE: the write is refused HTTP 500 for a file target and for a
+// folder target alike (run of 2026-09-07). A library-targeted lookup on a list
+// is therefore create-only via the standard write path. The library-to-list
+// direction has no such refusal: its item write HELD in the same run.
 // finding: cross-lookup-fixture-must-be-acyclic - the three containers are
 // arranged so no two look up into each other. `multilookup-probe.js` records
 // that SharePoint refuses to recycle a list another list's lookup points into,
@@ -415,7 +421,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 8db68e8e. Quote this when reporting results.');
+  log('INFO', 'probe revision 9a51867b. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
