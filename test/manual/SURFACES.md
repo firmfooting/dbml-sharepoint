@@ -253,14 +253,27 @@ behave on libraries.
 
 Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`,
 `folder`, `content-type`, `form`, `view`, `formula`, `access`, `query`,
-`field`, `search`
+`field`, `search`, `index`
 
 Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`,
 `library-column-interactions-probe.js`, `library-form-probe.js`,
 `library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`,
 `library-query-probe.js`, `library-field-probe.js`,
-`library-view-search-probe.js`
+`library-view-search-probe.js`, `library-index-probe.js`
+
+`index` is the newest scope and it is a divergence question, which is what
+qualifies it for `library` rather than for `scale`. `scale.index` holds what a
+GENERIC LIST does with `SP.Field.Indexed`: `threshold-index-probe.js` measured
+that a MERGE of `Indexed: true` is accepted there and reads back true, on Text,
+Choice, Person and Lookup columns alike. `library.index` asks whether a
+document library answers the same, by the same method, and whether it reaches
+the two columns a library has that a list does not name the same way,
+`FileLeafRef` and `Title`. The question is worth its own scope because
+`templates/deploy/_indexes.js.j2` sends the flag to a library exactly as it
+sends it to a list, and verifies the write by reading the field's IDENTITY
+rather than its `Indexed` value, so a library that accepts the flag and drops
+it passes every deploy phase.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -329,6 +342,7 @@ surface boundary, and are listed for the same reason:
 | `library-content-type-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-column-interactions-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-form-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-index-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
@@ -355,6 +369,8 @@ different questions and take different ids. They do not merge.
 | Does a multi-value lookup carry its source's index | the column was created after the source was indexed | `field.multilookup.source-index-carry-at-create` |
 | How many lookups can one view project | a 6,000-row fixture, past the item threshold | `scale.join.lookup-column-ceiling` |
 | How many lookups can one view project | a four-row list, nowhere near the threshold | `scale.join.control-ceiling-small-list` |
+| Does `Indexed: true` stick on a text column | on a generic list, beside a 6,000-row fixture the index is then exercised against | `scale.index.indexed-autoindexed-flags` |
+| Does `Indexed: true` stick on a text column | on a document library, the flag alone, with no threshold fixture behind it | `library.index.text-column-indexed` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)

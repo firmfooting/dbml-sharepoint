@@ -5949,6 +5949,105 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-index-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library, one lookup target list, three columns on the library, and an Indexed flag on five of its columns"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists and libraries on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.index.fixture-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.index.control-description-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "library.index.control-unknown-property-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "library.index.text-column-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-columns-created",
+                "library.index.control-description-sticks",
+                "library.index.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.index.choice-column-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-columns-created",
+                "library.index.control-description-sticks",
+                "library.index.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.index.lookup-column-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-columns-created",
+                "library.index.control-description-sticks",
+                "library.index.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.index.name-column-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.control-description-sticks",
+                "library.index.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.index.title-column-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.control-description-sticks",
+                "library.index.control-unknown-property-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.index.fixture-columns-created",
+            "library.index.control-description-sticks",
+            "library.index.control-unknown-property-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
