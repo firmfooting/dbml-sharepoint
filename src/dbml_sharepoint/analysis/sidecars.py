@@ -33,6 +33,14 @@ from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 #: slug and is frozen there at creation.
 RUN_LOG_TITLE = "dbml_Deployments"
 
+#: What `RUN_LOG_TITLE` declared before this convention landed. A site
+#: deployed under an older build still carries its run log under this name,
+#: with real history in it; `identify.js.j2` recognises it here for READING
+#: only, so `sidecarFor` does not report years of deployments as absent. This
+#: tool never renames the old list, and a redeploy still creates
+#: `RUN_LOG_TITLE` fresh rather than adopting it.
+RUN_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml Local Log",)
+
 #: The per-site change log. Named for what a row is, not for what it is not.
 CHANGE_LOG_TITLE = "dbml_Changes"
 

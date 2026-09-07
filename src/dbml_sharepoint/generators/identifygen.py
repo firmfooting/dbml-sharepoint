@@ -86,6 +86,7 @@ def generate_identify_js(*, generated_at: str, site_url: str | None = None) -> s
         level_kind=LEVEL_KIND,
         scratch_kind=SCRATCH_KIND,
         run_log_title=sidecars.RUN_LOG_TITLE,
+        run_log_previous_titles=sidecars.RUN_LOG_PREVIOUS_TITLES,
         change_log_title=sidecars.CHANGE_LOG_TITLE,
         stamp_fields=RUN_LOG_STAMP_FIELDS,
     )
