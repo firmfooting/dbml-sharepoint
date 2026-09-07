@@ -71,6 +71,13 @@ _HARNESS = textwrap.dedent(r"""
     // loggingFailures entry it leaves can be checked for naming that list
     // and not the Deployments one beside it.
     const FAIL_CENTRAL_CHANGE_FIELDS = false;
+    // Models the state every central site is in until this family is
+    // redeployed to it: the Changes list's own existence probe 404s while
+    // the Deployments list beside it is fully reachable, exactly as it is
+    // when --deployment-log-list is pointed at an old dbml-deployment-log
+    // and --deployment-changes is left at its new default, unprovisioned,
+    // title.
+    const CENTRAL_CHANGES_ABSENT = false;
     const FAIL_RUN_LOG_FIELD_CREATES = false;
     const REFUSE_CHANGE_FIELD = '';
     const SEED_ITEMS = {};
@@ -265,6 +272,9 @@ _HARNESS = textwrap.dedent(r"""
         const centralByTitle = new RegExp(
           `lists/getbytitle\\('${centralTitle}'\\)\\?\\$select=(.*)$`).exec(u);
         if (centralByTitle && centralByTitle[1] === 'Id,ListItemEntityTypeFullName') {
+          if (CENTRAL_CHANGES_ABSENT && centralTitle === 'CENTRAL_CHANGES_LIST') {
+            return notFound();
+          }
           return reply(200, { d: {
             Id: guid(centralList.probeGuid, 1),
             ListItemEntityTypeFullName: centralList.itemType } });
@@ -481,6 +491,7 @@ def _run_deploy(
     central_columns: bool = True,
     central_change_columns: bool = True,
     central_absent: bool = False,
+    central_changes_absent: bool = False,
     central_can_close: bool = False,
     fail_central_writes: bool = False,
     fail_central_change_fields: bool = False,
@@ -506,6 +517,11 @@ def _run_deploy(
     if central_absent:
         harness = _substitute(
             harness, "const CENTRAL_ABSENT = false;", "const CENTRAL_ABSENT = true;",
+        )
+    if central_changes_absent:
+        harness = _substitute(
+            harness, "const CENTRAL_CHANGES_ABSENT = false;",
+            "const CENTRAL_CHANGES_ABSENT = true;",
         )
     if central_can_close:
         # 2 | 4: AddListItems plus EditListItems.
@@ -1243,6 +1259,42 @@ def test_a_central_log_predating_the_change_columns_drops_the_change_feed() -> N
         "the dropped change feed was written to the site instead"
     )
     assert "predates the change columns" in run["output"]
+    assert "change event(s) were counted and dropped" in run["output"]
+
+
+def test_a_central_log_site_with_no_changes_list_yet_still_takes_the_stamps() -> None:
+    """The state every central site is in until this family is redeployed:
+    `Deployments` reachable, `Changes` 404, because the two are probed and
+    provisioned independently and a fleet operator upgrades one deploy at a
+    time.
+
+    Unlike the predates-the-change-columns case above, `Changes` here does
+    not exist at all, so the run never learns whether it "found no columns"
+    -- it never gets past the list read. The message has to say NOT FOUND,
+    not short a column, and it has to name the Changes list rather than the
+    Deployments one that just succeeded beside it.
+    """
+    run = _run_deploy(central_changes_absent=True)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+
+    stamps = run["state"]["central"]
+    assert stamps, "an absent Changes list blocked the Deployments stamps"
+    assert all(set(CENTRAL_LOG_COLUMNS) <= set(row) for row in stamps)
+    assert run["state"]["centralChanges"] == [], (
+        "a change row reached a Changes list that does not exist"
+    )
+    assert CHANGE_LOG_TITLE not in run["state"]["lists"], (
+        "an absent central Changes list fell back to a per-site sidecar"
+    )
+
+    assert not [
+        f for f in run["summary"]["loggingFailures"]
+        if EXTERNAL_CHANGE_LOG_DEFAULT in json.dumps(f)
+    ], "a clean 404 was recorded as a failure rather than logged and carried on"
+
+    assert (
+        f"has no list '{EXTERNAL_CHANGE_LOG_DEFAULT}'" in run["output"]
+    ), run["output"]
     assert "change event(s) were counted and dropped" in run["output"]
 
 
