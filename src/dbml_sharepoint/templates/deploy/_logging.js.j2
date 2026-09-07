@@ -339,7 +339,7 @@
         log('INFO', `Central change log '${EXTERNAL_CHANGE_LOG_TITLE}': this account holds no EditListItems, `
           + `which is the drop-box posture working as designed. Change rows are APPENDED and the previous row `
           + `for a key is not closed, so more than one row per key can read as current; take the latest `
-          + `EffectiveFrom per SourceSite and ChangeKey.`);
+          + `EffectiveFrom per SourceSite, ChangeKey and Application.`);
       }
     } else if (SIDECARS_ENABLED) {
       log('INFO', `Logging mode LOCAL: no central log was reachable, so this run records itself in `
