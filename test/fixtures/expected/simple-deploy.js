@@ -2221,6 +2221,14 @@
     return {
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
+      // The display name the mapping declares for this list's Title, or
+      // undefined, which reconcileDeclaredField reads as "call it Title".
+      //
+      // It has to arrive HERE rather than ride in the body: the reconcile
+      // derives its desired title from display_title and never reads
+      // body.Title, so a patch carrying the new name would have been
+      // compared against 'Title' and the column renamed straight back.
+      display_title: list.title_patch.Title,
       // Title is not a declared field, so it carries no declared formulas.
       // All three sentinels must be explicit: `undefined !== UNMANAGED`
       // reads as "managed", which MERGEs an empty message onto the built-in
@@ -3134,8 +3142,9 @@
     await assertFieldImmutableShape(listName, field, actual, targetGuid);
     const desired = declaredFieldState(listName, field);
     // Desired display Title is display_title (rename-after-create): fields
-    // are created titled with their internal name, then renamed. Synthetic
-    // callers (the built-in Title patch) carry no display_title.
+    // are created titled with their internal name, then renamed. The
+    // synthetic built-in Title patch carries one only when the mapping
+    // declares one, so an undeclared Title still reconciles to 'Title'.
     const desiredTitle = field.display_title != null ? field.display_title : field.title;
     const derivedMismatch = Object.entries(desired.derived)
       .some(([name, value]) => !sameDerivedValue(name, actual[name], value));
@@ -5105,12 +5114,39 @@
         }
       }
 
+      // The built-in Title is renamed HERE, between the plain wave and the
+      // calculated tail, for the reason the tail's own comment gives about
+      // every other column: a formula names a column by its DISPLAY name, and
+      // the rename is what gives it that name.
+      //
+      // MEASURED on a live tenant 2026-09-07, test/manual/
+      // title-rename-probe.js revision 709c786d. With Title renamed, a
+      // calculated create whose formula said `[Title]` was refused HTTP 500,
+      // "The formula refers to a column that does not exist", while the same
+      // formula naming the new title was accepted. This write used to sit
+      // AFTER the tail, which is exactly the order that fails: Title was
+      // outside the loop and so outside the loop's rule.
+      //
+      // Not moved further forward, to the top of the lane. The plain wave's
+      // reads are what surface an ownership loss raised in another lane, and
+      // a write before any of them would be a write this lane could not yet
+      // know it had lost the right to make. No shipped family references
+      // Title from a client-validation or list-validation formula, and both
+      // of those are applied after this point anyway.
+      if (list.title_patch) {
+        await assertLaneOwnership();
+        laneDigest = await getDigest();
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
+      }
+
       // The calculated tail, one write at a time, and each column renamed
       // before the next is created: a calc-on-calc formula names the column
       // ahead of it by the display title only the rename gives it. Every plain
       // column of this list has been created and renamed by the time this
-      // runs. No lookup target and no projections reach here, because a
-      // calculated column has neither.
+      // runs, the built-in Title included. No lookup target and no projections
+      // reach here, because a calculated column has neither.
       for (const col of calculatedFields) {
         try {
           await assertLaneOwnership();
@@ -5134,13 +5170,6 @@
             phase: '2.1', list: list.title, column: col.title, error: err.message,
           });
         }
-      }
-
-      if (list.title_patch) {
-        await assertLaneOwnership();
-        await reconcileDeclaredField(
-          list.title, syntheticTitleField(list), null, laneDigest, false,
-        );
       }
 
       laneDigest = await getDigest();

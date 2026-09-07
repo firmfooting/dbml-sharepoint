@@ -484,6 +484,27 @@ def build_schema_json(
 
         fields_phase1: list[dict[str, Any]] = []
         title_patch: dict[str, Any] | None = None
+        # The built-in Title's display name, resolved once for the list
+        # because two things need it and they must not disagree: the patch
+        # that renames the column, and the formula rewrite below.
+        #
+        # MEASURED on a live tenant 2026-09-07, test/manual/
+        # title-rename-probe.js revision 709c786d. A MERGE of a new Title onto
+        # a base-template list's built-in Title answered HTTP 204 and the field
+        # read back Title="Risk Statement", InternalName="Title",
+        # StaticName="Title"; both addresses still resolved and an item POST
+        # carrying `Title` still created a row. #426 had refused the
+        # declaration precisely because that was unmeasured.
+        #
+        # `None` when the resolved name IS "Title", which is what `auto` gives
+        # an undeclared Title. Emitting the rename anyway would put a no-op
+        # property in every bundle every family ships, and a reviewer reading a
+        # deploy diff could not tell it from a real one.
+        title_display: str | None = bundle.mapping.display_name_for(
+            table_name, "Title",
+        )
+        if title_display == "Title":
+            title_display = None
 
         for col in table.columns:
             if (table.name, col.name) in cross_site_keys:
@@ -509,6 +530,8 @@ def build_schema_json(
                     "Required": col.required,
                     "Description": format_description(col.note),
                 }
+                if title_display is not None:
+                    title_patch["Title"] = title_display
                 if col.default is not None:
                     title_patch["DefaultValue"] = col.default
                     field_defaults_out.append({
@@ -576,6 +599,14 @@ def build_schema_json(
             f["title"]: bundle.mapping.display_name_for(table_name, f["title"])
             for f in fields_phase1
         }
+        # Title is not a declared field, so it is not in `fields_phase1` and
+        # the comprehension above cannot see it. Without this line a formula
+        # naming the renamed Title keeps saying `[Title]`, and the live run
+        # above refused exactly that: HTTP 500, "The formula refers to a column
+        # that does not exist". Nothing in the build or the deploy readback can
+        # see the difference, because the create never happens.
+        if title_display is not None:
+            display_map["Title"] = title_display
         table_formatting = bundle.mapping.column_formatting.get(table_name, {})
         # form_visibility carries per-column visibility as a composed
         # ClientValidationFormula. Never write SchemaXml ShowIn*Form:
@@ -657,6 +688,8 @@ def build_schema_json(
                 "__metadata": {"type": "SP.FieldText"},
                 "Required": False,
             }
+            if title_display is not None:
+                title_patch["Title"] = title_display
 
         declared_validation = effective_validation
         lists.append({

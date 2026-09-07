@@ -2504,16 +2504,19 @@ def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
     assert only(findings, FindingCode.DISPLAY_TITLE_TOO_LONG).severity == "error"
 
 
-def test_a_display_name_override_on_title_is_refused() -> None:
-    """Title is rendered, so the not-rendered rule cannot catch this one.
+def test_a_display_name_override_on_title_is_accepted() -> None:
+    """Refused between #426 and 2026-09-07, on an explicit "unmeasured".
 
-    jsgen builds Title's patch object and `continue`s before any display-name
-    handling, so the patch carries no `Title` property and the column keeps
-    its name. The override still reaches the view width map, the form body
-    section field list and the Power Query rename. The first two resolve a
-    field by its DISPLAY name (Learn's own list-form sample says so: "reference
-    your fields here using their display name"), so they would address a field
-    the list does not have, and every deploy phase would still pass.
+    The deploy provisioned Title through a patch that carried no `Title`
+    property, so the column kept its name while the view width map, the form
+    body section field list and the Power Query rename all took the override.
+    The first two resolve a field by its DISPLAY name (Learn's own list-form
+    sample says so: "reference your fields here using their display name"),
+    so a bundle named a field the list did not have and every deploy phase
+    still passed.
+
+    test/manual/title-rename-probe.js measured the rename on a live tenant
+    and the patch now carries the display title, so all four halves agree.
 
     https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-configuration#configure-custom-body-with-one-or-more-sections
     """
@@ -2526,12 +2529,40 @@ def test_a_display_name_override_on_title_is_refused() -> None:
         ),
     )
 
-    finding = only(findings, FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN)
-    assert finding.severity == "error"
-    assert "Invoice Number" in finding.message
-    # Not also reported as an unrendered column: Title IS rendered, and two
-    # findings for one line would send the reader to the wrong rule.
-    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
+    # By exact set rather than by absence of one code: the code that used to
+    # fire here is gone, so an absence test would pass over any replacement.
+    assert {f.code for f in findings} == {FindingCode.ENTITY_HAS_NO_NOTE}
+
+
+def test_the_ordinary_display_title_rules_still_govern_title() -> None:
+    """Accepting the override is not the same as exempting it.
+
+    Title now goes through the same length and collision rules as every other
+    column, which is the whole point of routing it through them rather than
+    around them.
+    """
+    long_findings = validate_against_mapping(
+        make_schema(make_table("Invoice", make_column("Title"))),
+        make_bundle(
+            entities=["Invoice"],
+            display_name_mode="title-case",
+            display_name_overrides={"Invoice": {"Title": "T" * 256}},
+        ),
+    )
+    assert only(long_findings, FindingCode.DISPLAY_TITLE_TOO_LONG).severity == "error"
+
+    # `auto` rather than the legacy mode above: the collision rule resolves
+    # every column through `display_name_for`, which only reads the overrides
+    # under `auto`, so the other mode could not see the clash at all.
+    clash = validate_against_mapping(
+        make_schema(make_table("Invoice", make_column("Title"), make_column("Ref"))),
+        make_bundle(
+            entities=["Invoice"],
+            display_name_mode="auto",
+            display_name_overrides={"Invoice": {"Title": "Ref"}},
+        ),
+    )
+    assert only(clash, FindingCode.DUPLICATE_DISPLAY_TITLE).severity == "error"
 
 
 def test_a_display_name_override_on_a_column_named_title_elsewhere_is_kept(
@@ -2539,8 +2570,8 @@ def test_a_display_name_override_on_a_column_named_title_elsewhere_is_kept(
     """The refusal is about the built-in Title, not the substring.
 
     A projected `<Lookup>Title` column is a real deployed field and renaming
-    it is exactly what lookup projections are for, so the rule must key on the
-    whole name.
+    it is exactly what lookup projections are for, so the rules must key on
+    the whole name rather than on the substring.
     """
     findings = validate_against_mapping(
         make_schema(
@@ -2555,7 +2586,7 @@ def test_a_display_name_override_on_a_column_named_title_elsewhere_is_kept(
         ),
     )
 
-    none_of(findings, FindingCode.DISPLAY_TITLE_ON_TITLE_COLUMN)
+    none_of(findings, FindingCode.COLUMN_NOT_RENDERED)
 
 
 def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:

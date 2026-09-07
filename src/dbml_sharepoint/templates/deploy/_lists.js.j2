@@ -368,12 +368,39 @@
         }
       }
 
+      // The built-in Title is renamed HERE, between the plain wave and the
+      // calculated tail, for the reason the tail's own comment gives about
+      // every other column: a formula names a column by its DISPLAY name, and
+      // the rename is what gives it that name.
+      //
+      // MEASURED on a live tenant 2026-09-07, test/manual/
+      // title-rename-probe.js revision 709c786d. With Title renamed, a
+      // calculated create whose formula said `[Title]` was refused HTTP 500,
+      // "The formula refers to a column that does not exist", while the same
+      // formula naming the new title was accepted. This write used to sit
+      // AFTER the tail, which is exactly the order that fails: Title was
+      // outside the loop and so outside the loop's rule.
+      //
+      // Not moved further forward, to the top of the lane. The plain wave's
+      // reads are what surface an ownership loss raised in another lane, and
+      // a write before any of them would be a write this lane could not yet
+      // know it had lost the right to make. No shipped family references
+      // Title from a client-validation or list-validation formula, and both
+      // of those are applied after this point anyway.
+      if (list.title_patch) {
+        await assertLaneOwnership();
+        laneDigest = await getDigest();
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
+      }
+
       // The calculated tail, one write at a time, and each column renamed
       // before the next is created: a calc-on-calc formula names the column
       // ahead of it by the display title only the rename gives it. Every plain
       // column of this list has been created and renamed by the time this
-      // runs. No lookup target and no projections reach here, because a
-      // calculated column has neither.
+      // runs, the built-in Title included. No lookup target and no projections
+      // reach here, because a calculated column has neither.
       for (const col of calculatedFields) {
         try {
           await assertLaneOwnership();
@@ -397,13 +424,6 @@
             phase: '{{ phase.number }}', list: list.title, column: col.title, error: err.message,
           });
         }
-      }
-
-      if (list.title_patch) {
-        await assertLaneOwnership();
-        await reconcileDeclaredField(
-          list.title, syntheticTitleField(list), null, laneDigest, false,
-        );
       }
 
       laneDigest = await getDigest();
