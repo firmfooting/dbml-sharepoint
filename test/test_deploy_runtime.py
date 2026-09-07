@@ -431,6 +431,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // by-GUID branch writes to all of them at once, which is right for the
     // seal flag and wrong for a name each list chooses for itself.
     const TITLE_RENAME_KEYS = [...TITLE_SETTINGS_KEYS, 'Title'];
+    // Sealed: true is DELIBERATELY synthetic, and known to be so. On a
+    // generic list SharePoint refuses every route to it (measured 2026-09-07,
+    // test/manual/title-seal-probe.js); the four sealed Titles that census
+    // found were all document libraries, which `document_library_unsupported`
+    // refuses today. So this seeds a state no list the tool provisions can be
+    // in yet, on purpose: it is the state a library WILL be in when issue #14
+    // lands, and it is the only way to exercise the unseal and re-seal path
+    // before then.
     const titleState = (listTitle) => (titles[listTitle] ||= {
       Sealed: true, Required: true, Description: '', DefaultValue: null,
       Indexed: false, Title: 'Title',

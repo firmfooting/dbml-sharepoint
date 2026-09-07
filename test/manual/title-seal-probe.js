@@ -5,7 +5,7 @@
  *   Is there any route by which the built-in Title column of a list comes to
  *   carry Sealed = true, and does any live list on this site have one?
  *
- * REVISION: 8b5ec017
+ * REVISION: 7a65b1bb
  *
  * WHY: 32f5600 (2026-07-27, "a sealed built-in Title no longer makes a site
  * un-deployable") added a whole branch for this state. PREPARE probes Title
@@ -80,9 +80,12 @@
  *       answer to how a list Title could ever have one.
  *   field.title.seal-census              OBSERVE (read only): across the
  *       visible lists on this site, what does Sealed read as on each built-in
- *       Title? The empirical half. A single sealed one makes the branch real;
- *       none across a site this tool has deployed to is the strongest
- *       evidence available that it is not.
+ *       Title, and on which BaseTemplate? The empirical half. A single sealed
+ *       one makes the branch real; none across a site this tool has deployed
+ *       to is the strongest evidence available that it is not. The template
+ *       travels with the verdict because WHICH lists carry one is the
+ *       finding: a generic list (100) and a document library (101) are
+ *       different answers about different objects.
  *
  * WHAT IT WRITES. One scratch list, recycled on the way out, and two columns
  * plus seal attempts on that list only. Every other request is a GET. It
@@ -312,7 +315,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 8b5ec017. Quote this when reporting results.');
+  log('INFO', 'probe revision 7a65b1bb. Quote this when reporting results.');
 
   const SCRATCH = 'dbmlsp Probe TitleSeal';
   // Ownership is the DESCRIPTION, never the title. A same-title list this
@@ -328,7 +331,11 @@
   // otherwise turn a read-only question into a long run; the answer this
   // wants is "does ANY list have one", and a bounded sweep that says how far
   // it got answers that honestly.
-  const CENSUS_LIMIT = 40;
+  //
+  // Raised from 40 after the 2026-09-07 run capped out at 40 of 43 and left
+  // three lists unasked, which is exactly the shape that hides the one
+  // counterexample a census exists to find.
+  const CENSUS_LIMIT = 250;
 
   const Q_FIXTURE = 'fixture: a scratch list this probe owns exists, on base template 100, with a built-in Title to work on';
   const Q_CONTROL = 'control: does a column this probe created take Sealed:true by field MERGE and read it back on this list?';
@@ -559,12 +566,26 @@
     const looked = visible.slice(0, CENSUS_LIMIT);
     const sealedOnes = [];
     const unreadable = [];
+    const unsealedTemplates = Object.create(null);
     let unsealed = 0;
     for (const list of looked) {
       const field = await readTitleOf(
         `web/lists/getbytitle('${encodeURIComponent(list.Title).replace(/'/g, "''")}')`);
       if (field === null) { unreadable.push(list.Title); continue; }
-      if (field.Sealed === true) sealedOnes.push(list.Title); else unsealed += 1;
+      // BaseTemplate travels with the verdict. The 2026-09-07 run reported
+      // four sealed Titles by NAME (Documents, Form Templates, Site Assets,
+      // Style Library) and every one of them reads as a document library, but
+      // the row carried no template, so that was an inference from four names
+      // rather than a measurement. 100 is a generic list; a library is 101
+      // and its relatives.
+      const where = `${list.Title} (BaseTemplate ${list.BaseTemplate})`;
+      if (field.Sealed === true) {
+        sealedOnes.push(where);
+      } else {
+        unsealed += 1;
+        unsealedTemplates[list.BaseTemplate] =
+          (unsealedTemplates[list.BaseTemplate] || 0) + 1;
+      }
     }
     // Titles are named only when SEALED, and that is the whole reason this
     // row can be quoted: an unsealed list contributes a count, a sealed one
@@ -578,6 +599,8 @@
            + `: ${sealedOnes.length} with Sealed=true`
            + `${sealedOnes.length ? ` (${sealedOnes.join(', ')})` : ''}, `
            + `${unsealed} with Sealed=false`
+           + ` (by BaseTemplate: ${Object.keys(unsealedTemplates).sort()
+             .map((t) => `${t}x${unsealedTemplates[t]}`).join(' ') || 'none'})`
            + `${unreadable.length ? `, ${unreadable.length} unreadable` : ''}`);
   }
 

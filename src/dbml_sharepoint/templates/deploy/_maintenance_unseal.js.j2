@@ -25,6 +25,22 @@
     // that can unseal walked declared columns only. Probed unconditionally
     // (the loop below writes ONLY if it finds Sealed true), so a normal
     // site pays one read and nothing changes.
+    //
+    // WHERE A SEALED TITLE ACTUALLY COMES FROM, measured 2026-09-07 by
+    // test/manual/title-seal-probe.js. It is not something anyone does to a
+    // list: on a generic list (BaseTemplate 100) every route was refused,
+    // both MERGE spellings with HTTP 400 "Operation is not valid due to the
+    // current state of the object", and a SchemaXml carrying Sealed="TRUE"
+    // answered 204 and changed nothing. The site collection's own Title site
+    // column reads Sealed=false, so nothing descends. What the census DID
+    // find was four sealed Titles on one site, and every one of them a
+    // DOCUMENT LIBRARY.
+    //
+    // So this branch is unreachable for the lists this tool provisions today,
+    // because `document_library_unsupported` refuses a library outright, and
+    // it stops being unreachable the day issue #14 lands library support.
+    // Keep it. Deleting it would be deleting the handling for the one kind of
+    // list where a sealed Title is the norm rather than the exception.
     for (const list of SCHEMA.lists) {
       if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
