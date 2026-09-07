@@ -614,14 +614,22 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # deployment record is not rated, and no System section because the whole
     # row is auto-stamped: a System heading here would be a heading over the
     # entire form.
-    ("deployment-log", "dbml-deployment-log"): {
+    ("deployment-log", "Deployments"): {
         "The stamp": "Identify",
         "Where it ran": "Identify",
         "What was deployed": "Act",
         "What the run did": "Govern",
-        # A change row is the same list's other shape, so its section sits
-        # last and reads as part of the same Govern beat.
-        "What changed": "Govern",
+    },
+    # `Changes` is the central family's other list, split from `Deployments`
+    # in the same rename that gave both an Application column. Same
+    # reasoning as above: two consecutive Identify sections (what changed AND
+    # where), no Assess beat (a change is not rated) and no System beat (the
+    # whole row is auto-stamped).
+    ("deployment-log", "Changes"): {
+        "The change": "Identify",
+        "Where it happened": "Identify",
+        "Before and after": "Act",
+        "When": "Govern",
     },
 }
 
@@ -1790,7 +1798,16 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     family that references every other list in the estate carries no joins
     for doing it. The worst is unchanged and is still shared by
     programme-governance/Activity and /ServiceRequest at 9, re-derived
-    rather than assumed."""
+    rather than assumed.
+
+    RE-MEASURED 2026-09-07 across 35 templates / 68 entities, when
+    deployment-log split its one combined list into `Deployments` and
+    `Changes`: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 4, 8 -> 2, 9 -> 2. Both halves
+    land in the floor band for the same reason the combined list did:
+    neither carries a person column or a Lookup. Re-measuring surfaced that
+    the entry above was already stale on two counts unrelated to this split
+    -- band 4 was 20, not 21, and band 5 was 4, not 3 -- which this entry
+    corrects rather than propagates. The worst is unchanged at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
@@ -1821,8 +1838,8 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 67, (
-        f"{counted} entities were surveyed, not the 67 the distribution above "
+    assert counted == 68, (
+        f"{counted} entities were surveyed, not the 68 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."

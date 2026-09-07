@@ -23,7 +23,7 @@ from _node import NODE
 from _node import run_node as _run
 
 from dbml_sharepoint.analysis import sidecars
-from dbml_sharepoint.analysis.provenance import MARKER_PREFIX, marker_for_object
+from dbml_sharepoint.analysis.provenance import MARKER_PREFIX, SCRATCH_KIND, marker_for_object
 from dbml_sharepoint.generators.identifygen import (
     PAYLOAD_FORMAT,
     PAYLOAD_VERSION,
@@ -43,6 +43,8 @@ RUN_LOG_ID = "aaaaaaaa-0000-0000-0000-000000000004"
 CHANGE_LOG_ID = "aaaaaaaa-0000-0000-0000-000000000005"
 DOCS_ID = "aaaaaaaa-0000-0000-0000-000000000006"
 DECOY_ID = "aaaaaaaa-0000-0000-0000-000000000007"
+OLD_RUN_LOG_ID = "aaaaaaaa-0000-0000-0000-000000000008"
+OLD_CHANGE_LOG_ID = "aaaaaaaa-0000-0000-0000-000000000009"
 
 _HARNESS = textwrap.dedent(r"""
     const CONFIG = {};
@@ -346,6 +348,73 @@ def test_the_run_log_is_found_by_its_marker_not_its_title() -> None:
             row["Title"] = "Renamed By Somebody"
     payload, _, _, _ = _run_script(config)
     assert payload["lastDeployment"]["ReleaseTag"] == "2.1.0"
+
+
+def test_a_site_carrying_only_the_old_run_log_still_reports_its_history() -> None:
+    """A site deployed before the `dbml_Deployments` rename still carries its
+    run log under the pre-rename title, marker and all. `sidecarFor` has to
+    recognise that declared name too, or a site with years of history prints
+    the same "no deployment record" line as one that was never deployed."""
+    old_title = sidecars.RUN_LOG_PREVIOUS_TITLES[0]
+    config = _config()
+    for row in config["lists"]:
+        if row["Title"] == sidecars.RUN_LOG_TITLE:
+            row["Title"] = old_title
+            row["Description"] = marker_for_object(kind=SCRATCH_KIND, name=old_title, family=None)
+    payload, _, _, out = _run_script(config)
+    assert payload["lastDeployment"]["ReleaseTag"] == "2.1.0"
+    run_log_row = _by_title(payload, old_title)
+    assert run_log_row["owned"] is True
+    assert run_log_row["declaredName"] == old_title
+    assert "No deployment record" not in out
+
+
+def test_the_current_run_log_title_is_preferred_over_an_old_one() -> None:
+    """A site redeployed since the rename can carry both titles. The current
+    one is the list this tool keeps writing to, so its history is what gets
+    reported rather than the older, now-frozen list."""
+    old_title = sidecars.RUN_LOG_PREVIOUS_TITLES[0]
+    config = _config()
+    config["lists"].append(_list(
+        old_title, OLD_RUN_LOG_ID, items=1, hidden=True,
+        description=marker_for_object(kind=SCRATCH_KIND, name=old_title, family=None),
+    ))
+    config["items"][OLD_RUN_LOG_ID] = [
+        {"Id": 1, "Title": "deployment stop", "StampKind": "stop", "ReleaseTag": "1.0.0"},
+    ]
+    payload, _, _, _ = _run_script(config)
+    assert payload["lastDeployment"]["ReleaseTag"] == "2.1.0"
+
+
+def test_a_site_carrying_only_the_old_change_log_still_reports_it() -> None:
+    """`CHANGE_LOG_TITLE` was `dbml_Logs` before this rename too, and a site
+    deployed under that build still carries its change log under that title.
+    `changeLog` in the payload must not read as null on a site with real
+    change history simply because the title changed."""
+    old_title = sidecars.CHANGE_LOG_PREVIOUS_TITLES[0]
+    config = _config()
+    for row in config["lists"]:
+        if row["Title"] == sidecars.CHANGE_LOG_TITLE:
+            row["Title"] = old_title
+            row["Description"] = marker_for_object(kind=SCRATCH_KIND, name=old_title, family=None)
+    payload, _, _, _ = _run_script(config)
+    assert payload["changeLog"] == {"title": old_title, "rows": 19}
+    change_log_row = _by_title(payload, old_title)
+    assert change_log_row["owned"] is True
+    assert change_log_row["declaredName"] == old_title
+
+
+def test_the_current_change_log_title_is_preferred_over_an_old_one() -> None:
+    """A site redeployed since the rename can carry both change logs; the
+    current one is reported, the same preference as the run log."""
+    old_title = sidecars.CHANGE_LOG_PREVIOUS_TITLES[0]
+    config = _config()
+    config["lists"].append(_list(
+        old_title, OLD_CHANGE_LOG_ID, items=3, hidden=True,
+        description=marker_for_object(kind=SCRATCH_KIND, name=old_title, family=None),
+    ))
+    payload, _, _, _ = _run_script(config)
+    assert payload["changeLog"] == {"title": sidecars.CHANGE_LOG_TITLE, "rows": 19}
 
 
 def test_a_site_with_no_markers_reports_nothing_owned_and_reads_no_columns() -> None:

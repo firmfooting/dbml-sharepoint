@@ -40,6 +40,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.sidecars import (
+    APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     EXTERNAL_LOG_ROW_PREFIX,
@@ -111,6 +112,7 @@ def generate_deploy_js(
     enterprise_reader: str | None = None,
     env_provenance: EnvProvenance = NO_ENV_FILE,
     deployment_log_list: str = "",
+    deployment_log_change_list: str = "",
     deployment_log_site: str = "",
     sidecar_run_log_title: str | None = None,
     sidecar_run_log_marker: str | None = None,
@@ -188,6 +190,10 @@ def generate_deploy_js(
         sidecar_change_log_marker=sidecar_change_log_marker,
         sidecar_change_fields=sidecar_change_fields or [],
         deployment_log_list=deployment_log_list,
+        # The CENTRAL Changes list, probed and written independently of the
+        # Deployments list above: this run's stamps do not depend on it, and
+        # it does not depend on them.
+        deployment_log_change_list=deployment_log_change_list,
         deployment_log_site=deployment_log_site,
         # The stamp columns the `deployment-log` family declares, and the
         # Title prefix every stamp carries. Rendered from the one authority
@@ -196,12 +202,16 @@ def generate_deploy_js(
         # prefix that drifts stops the rows being recognisable as this
         # tool's.
         deployment_log_columns=list(CENTRAL_LOG_COLUMNS),
-        # The CHANGE columns the same family declares. A central log carrying
-        # every one of them takes the type-2 change feed as well as the
-        # stamps, which is what lets a run with a central log create no
+        # The CHANGE columns the family declares on the Changes list. A
+        # central Changes list carrying every one of them takes the type-2
+        # change feed, which is what lets a run with a central log create no
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
         deployment_log_row_prefix=EXTERNAL_LOG_ROW_PREFIX,
+        # Which firmfooting application this build is. Written into every
+        # central row and every change-log row so a reader recovers it from a
+        # declared column rather than by parsing DeployerVersion.
+        application_name=APPLICATION_NAME,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

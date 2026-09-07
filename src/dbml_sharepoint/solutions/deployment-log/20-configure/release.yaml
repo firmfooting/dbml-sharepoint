@@ -1,15 +1,63 @@
-release: "1.0.0"
-date: "2026-09-05"
+release: "2.1.0"
+date: "2026-09-07"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "1.1.0"
+schema_version: "2.1.0"
 notes: |
-  Central deployment log template. Deploy this to the logging site once;
-  every other family's deploy then stamps the list it creates. Bump
-  schema_version on any DBML/mapping change before redeploying, and check
-  CENTRAL_LOG_COLUMNS in analysis/sidecars.py still names every column a
-  cross-web stamp writes.
+  2.1.0 finishes what 2.0.0 started. The deploy writer previously declared
+  two lists but still posted every change row to `firmfooting_Deployments`
+  with `StampKind: 'change'`, which made the split cosmetic: `Changes`
+  existed and was reachable, and nothing ever wrote to it. The writer now
+  posts change rows to `firmfooting_Changes` instead, probed and written
+  independently of the stamps, so a Changes list that is absent,
+  unreachable or short a column costs only the change feed and a fleet's
+  stamps are unaffected either way.
 
-  1.1.0 carries the change feed as well as the stamps. A deploy that reaches
-  this list writes its type-2 change rows here and creates no per-site
-  sidecars, so the list gained the eight CHANGE_FIELDS columns and the
-  drop-box posture that keeps a contributor from editing what it wrote.
+  `change` is retired from the `stamp_kind` enum on `Deployments`, because a
+  change row can no longer reach that list. Any row already carrying that
+  value was written by a build older than 2.0.0. What SharePoint does with a
+  stored Choice value that is no longer in the field's Choices list has NOT
+  been measured here, so an operator with existing central rows should look
+  at one before assuming it still renders.
+
+  Every other deploy in the fleet already probes both new titles by default:
+  `DBMLSP_DEPLOY_LOG_LIST` for `firmfooting_Deployments` and the new
+  `DBMLSP_DEPLOY_CHANGES` for `firmfooting_Changes`, both deriving from the
+  same constants this family's entities are named for. A fleet operator
+  needs no configuration change once this family is redeployed to the
+  logging site.
+
+  2.0.0 is a breaking rename: the single `dbml-deployment-log` list splits
+  into `firmfooting_Deployments` and `firmfooting_Changes`, one per row
+  shape, under the family's own prefix rather than a bare title. Every other
+  firmfooting application, dbml-sharepoint included, can now write to this
+  log without one closing another's rows; both new lists gain a required
+  Application column, indexed, that says which application wrote each row.
+
+  READ THIS IF A SITE ALREADY RUNS THIS FAMILY. This tool never renames or
+  deletes a list. Redeploying creates `firmfooting_Deployments` and
+  `firmfooting_Changes` beside the existing `dbml-deployment-log`, which
+  stays exactly where it was: still there, still holding its history, still
+  readable. Nothing reads or writes it after the redeploy, and this tool
+  never deletes it either. `dbml-deployment-log` is safe to delete by hand
+  once its rows are no longer wanted; that is the log owner's call, on the
+  log owner's schedule, and is covered in `50-govern/governance.md`. A
+  deploy pointed at the OLD title with an explicit
+  `--deployment-log-list dbml-deployment-log` does NOT keep
+  working the way it used to: that list predates `CENTRAL_LOG_COLUMNS` and
+  is missing `Application`, so `externalStructured` comes back false and
+  every stamp degrades to Title alone. StampKind, StampUtc, SourceSite,
+  ReleaseTag, SchemaVersion, DeployerVersion, Operator and Details all stop
+  being written. The override also only redirects `Deployments`; change
+  rows still go to the default `firmfooting_Changes` regardless.
+
+  The permission level is renamed to `{prefix} Deployments Submit Only`
+  and both new lists take the same drop-box posture the single list had.
+  Groups are unchanged: `dbml List Administrators` and `dbml
+  Enterprise Readers` already conform to the fleet's naming convention and
+  membership is never reconciled, so renaming a group would recreate it
+  empty and orphan whoever already held access through the old one.
+
+  1.1.0 carried the change feed as well as the stamps, on the single list
+  2.0.0 split. `Changes` carries the eleven CENTRAL_CHANGE_COLUMNS columns
+  (analysis/sidecars.py) plus Title, and the drop-box posture that keeps a
+  contributor from editing what it wrote.

@@ -8,22 +8,27 @@
 | Deploying operators | n/a | Being in this site's Members group before they deploy anywhere |
 | Whoever reviews the estate | n/a | The unfinished-run and abort sweeps below |
 
-## What the list enforces at save, and what stays a governance check
+## What the lists enforce at save, and what stays a governance check
 
-The list enforces one thing itself, with its own message on the form:
+Each list enforces one thing itself, with its own message on the form:
 
 | Enforced at save | Rule |
 | --- | --- |
-| `StampUtc` | Cannot be in the future |
+| `Deployments.StampUtc` | Cannot be in the future |
+| `Changes.EffectiveFrom` | Cannot be in the future |
 
 Everything else here is a **governance check**: a sweep, a review or a
-permissions decision, not something SharePoint refuses. Two of them look
+permissions decision, not something SharePoint refuses. Three of them look
 enforceable and are not, and the reason is worth recording so nobody spends
 an afternoon trying:
 
 - **A stop stamp with no matching start.** That rule reads a second row, and
   a SharePoint validation formula sees only the row being saved. It cannot be
   expressed at any strength, so it is the unfinished-run sweep below.
+- **More than one current row for a key, site and application.** The type-2
+  close is supposed to leave exactly one, but it reads three columns to
+  decide which row to close and a validation formula on the row being saved
+  cannot see the others. It stays a query, not a rule.
 - **A stamp claiming a site it did not come from.** Rows arrive cross-web
   from whoever pasted a deploy elsewhere, and `SourceSite` is a text column
   the script fills, not an identity SharePoint checks. Anyone who can add a
@@ -32,7 +37,7 @@ an afternoon trying:
   it: having written a wrong site, they cannot go back and edit it, and the
   row keeps their name on it.
 
-## The silent-failure this list has, and how to notice it
+## The silent-failure these lists have, and how to notice it
 
 An operator who cannot add items here gets a **graceful skip**, not an error.
 That is deliberate: a permissions problem on a logging site must never fail a
@@ -51,14 +56,15 @@ So the absence has to be swept for rather than waited for:
 
 ## Permissions
 
-This list is a **drop box**, and it is the one family in the collection whose
-permissions are a control rather than a convenience. Site Members hold
-`dbml Log Submit Only`: they may add a row, read back only the rows they
-created, and edit or delete nothing, including what they wrote themselves.
-That is exactly what an operator deploying any family anywhere needs and no
-more. The mechanism is in `30-deploy/deploy.md` under "The drop box"; the
-governance point is that the record of what somebody's deploy did cannot be
-rewritten by the person it describes.
+Both lists are a **drop box**, and this is the one family in the collection
+whose permissions are a control rather than a convenience. Site Members hold
+`firmfooting Deployments Submit Only` on each: they may add a
+row, read back only the rows they created, and edit or delete nothing,
+including what they wrote themselves. That is exactly what an operator
+deploying any family anywhere needs and no more. The mechanism is in
+`30-deploy/deploy.md` under "The drop box"; the governance point is that the
+record of what somebody's deploy did cannot be rewritten by the person it
+describes.
 
 Full Control stays with `dbml List Administrators`, which is empty by default
 and gains the running operator per deploy of *this* family, with the site
@@ -78,7 +84,7 @@ Three decisions the log owner makes and records here:
 
 `dbml Enterprise Readers` holds Full Control here rather than Read, because
 a read-trimmed list gives a Read holder only its own rows and a fleet
-reporting account has none. That is a deliberate elevation on the one list
+reporting account has none. That is a deliberate elevation on the two lists
 this posture protects, the build warns about it
 (`enterprise_reader_on_trimmed_list`), and `30-deploy/deploy.md` carries the
 live probe that has to run before anything narrower is trusted. If you are
@@ -102,11 +108,11 @@ not running fleet reporting, empty the group and the elevation costs nothing.
 
 ## Retention
 
-Deployment stamps are **operational records of change**, not personal data in
-any meaningful sense, though they do carry operator logins. The default
-posture is to keep them: this list is small per deploy, and its value is
-entirely in being long-running. "When did this site last change, and to what?"
-is a question asked years later.
+Deployment stamps and change rows are **operational records of change**, not
+personal data in any meaningful sense, though they do carry operator logins.
+The default posture is to keep them: each list is small per deploy, and its
+value is entirely in being long-running. "When did this site last change,
+and to what?" is a question asked years later.
 
 If you do set a retention period, set it in whole releases rather than in
 months, and never delete the provenance rows: they are the only record of
@@ -114,15 +120,40 @@ which version of the tool built what. Chosen period: ______.
 
 ## Lifecycle
 
-This list is expected to **grow forever** and is the one family in the
-collection where that is the design rather than a smell. It grows faster than
-the stamps alone suggest, because a deploy that reaches this list writes its
-change feed here too and makes no per-site sidecars at all. The indexes on
-`StampKind`, `SourceSite`, `StampUtc`, `ChangeKey` and `IsCurrent` are what
-keep the filtered views and the change-row close working past the list view
-threshold; do not remove them.
+Both lists are expected to **grow forever** and this is the one family in the
+collection where that is the design rather than a smell. `Changes` grows
+faster than `Deployments`, because a deploy writes one change row per change
+and only a handful of stamp rows per run. The indexes on `Deployments`
+(`StampKind`, `SourceSite`, `StampUtc`,
+`Application`) and on `Changes` (`SourceSite`, `ChangeKey`, `IsCurrent`,
+`Application`) are what keep the filtered views and the change-row close
+working past the list view threshold; do not remove them.
 
-Never run `rollback.js.txt` against this list once it holds real stamps.
-Rolling it back deletes the estate's entire deployment history, and no other
-copy exists. The per-site sidecars are not a backup: a site only has them
-for the runs that could not reach this list, and its run log is Title-only.
+Never run `rollback.js.txt` against either list once it holds real stamps.
+Rolling one back deletes that part of the estate's deployment history, and
+no other copy exists. The per-site sidecars are not a backup: a site only
+has them for the runs that could not reach the central lists. Its run log
+is created with its own stamp columns, not Title alone; Title-only is the
+fallback for a run whose account cannot create them.
+
+## Retiring the old lists
+
+This rename retires three lists across the estate. This tool never renames,
+deletes or writes to any of them again; disposal is by hand, entirely on
+the log owner's schedule.
+
+| Old list | Where | Found in |
+| --- | --- | --- |
+| `dbml-deployment-log` | this site, the central log | Site Contents |
+| `dbml Local Log` | every site that deployed anything before this rename | hidden; not in Site Contents |
+| `dbml_Logs` | every site that deployed anything before this rename | hidden; not in Site Contents |
+
+`firmfooting_Deployments` and `firmfooting_Changes` are created beside
+`dbml-deployment-log`, empty, the next time this family is redeployed here.
+`dbml Local Log` and `dbml_Logs` are per-site sidecars that any family's
+deploy creates when it cannot reach the central log; being hidden, they will
+not show up while browsing Site Contents on a site that has one.
+
+All three still hold their history and are still readable, and all three
+are safe to delete once their rows are no longer wanted: nothing reads or
+writes any of them after this rename. Chosen approach: ______.

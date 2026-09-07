@@ -972,6 +972,57 @@ def test_manifest_reports_the_env_file_that_was_read() -> None:
     assert "Field lists are shown RESOLVED" in md
 
 
+def test_manifest_describes_the_central_change_list_when_one_is_configured() -> None:
+    """The central-log paragraph gained a nested block for the Changes list
+    when a deploy targets one; nothing asserted its rendered text."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        sidecar_run_log_title="dbml_Deployments",
+        sidecar_change_log_title="dbml_Changes",
+        deployment_log_site="firmfooting-logging",
+        deployment_log_list="firmfooting_Deployments",
+        deployment_log_change_list="firmfooting_Changes",
+    )
+    assert "the Deployments list `firmfooting_Deployments`" in md
+    assert "Change rows go to the Changes list `firmfooting_Changes`" in md
+    assert "DBMLSP_DEPLOY_CHANGES" in md
+
+
+def test_manifest_omits_the_change_list_paragraph_without_one() -> None:
+    """A central log with no reachable Changes list gets no promise of one."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        sidecar_run_log_title="dbml_Deployments",
+        sidecar_change_log_title="dbml_Changes",
+        deployment_log_site="firmfooting-logging",
+        deployment_log_list="firmfooting_Deployments",
+    )
+    assert "central deployment log" in md
+    assert "Change rows go to the Changes list" not in md
+
+
 def test_the_versioning_and_field_count_bullets_stay_on_separate_lines() -> None:
     """The two bullets used to render as one line, because trim_blocks eats
     the newline after the block tag that closed the Versioning branch.

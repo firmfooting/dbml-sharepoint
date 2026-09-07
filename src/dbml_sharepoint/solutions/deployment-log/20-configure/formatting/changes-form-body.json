@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The change",
+      "fields": ["Title", "ChangeKey", "ChangeKind", "TargetName", "ReleaseTag"]
+    },
+    {
+      "displayname": "Where it happened",
+      "fields": ["SourceSite", "Application"]
+    },
+    {
+      "displayname": "Before and after",
+      "fields": ["OldValue", "NewValue"]
+    },
+    {
+      "displayname": "When",
+      "fields": ["EffectiveFrom", "EffectiveTo", "IsCurrent"]
+    }
+  ]
+}

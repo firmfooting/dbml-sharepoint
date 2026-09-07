@@ -6,7 +6,7 @@ reach, never deleted by this tool. A run whose central log answers goes
 there and nowhere else: one sink per run, decided once, because a record
 split across two places is worse than either place alone.
 
-- ``dbml Local Log`` records THIS run: a deployment start stamp, a
+- ``dbml_Deployments`` records THIS run: a deployment start stamp, a
   deployment stop stamp, and provenance documentation naming what built
   the bundle, from which release, read at which time, by whom. Title
   carries the human-readable line, and ``RUN_LOG_STAMP_COLUMNS`` carries
@@ -14,7 +14,7 @@ split across two places is worse than either place alone.
   those columns existed is REUSED, so the deploy creates the ones it
   finds missing and degrades to a Title-only stamp if it cannot.
 
-- ``dbml_Logs`` records CHANGES as type-2 slowly-changing-dimension rows:
+- ``dbml_Changes`` records CHANGES as type-2 slowly-changing-dimension rows:
   one row per change with the old value and the new value side by side,
   keyed by ``ChangeKey``. Hidden and insert-only from the deploy's point of
   view. The enterprise reader group holds Read on it so a Power Automate
@@ -28,21 +28,39 @@ of the same title that is not this tool's.
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 
-#: The run log. Unprefixed so it is greppable in the SharePoint UI exactly
-#: as spelled, with the space: operators see "dbml Local Log" in list
-#: settings next to every other list.
-RUN_LOG_TITLE = "dbml Local Log"
+#: The per-site deployment log. `prefix_Entity` like every family list, so the
+#: URL carries no escape: MEASURED 2026-09-06, a space in a title reaches the
+#: slug and is frozen there at creation.
+RUN_LOG_TITLE = "dbml_Deployments"
 
-#: The change log. Dotted so its REST identity is distinct from the run
-#: log's, and so the Power Automate reader convention (one list per feed)
-#: has a name that survives a copy between environments.
-CHANGE_LOG_TITLE = "dbml_Logs"
+#: What `RUN_LOG_TITLE` declared before this convention landed. A site
+#: deployed under an older build still carries its run log under this name,
+#: with real history in it; `identify.js.j2` recognises it here for READING
+#: only, so `sidecarFor` does not report years of deployments as absent. This
+#: tool never renames the old list, and a redeploy still creates
+#: `RUN_LOG_TITLE` fresh rather than adopting it.
+RUN_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml Local Log",)
 
-#: The external deployment log this tool appends to only when it already
-#: exists. Probed, never created: its absence means the site does not run
-#: one, and inventing it here would fight whoever owns it. Empty default:
-#: nothing is probed unless the operator names a list.
-EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
+#: The per-site change log. Named for what a row is, not for what it is not.
+CHANGE_LOG_TITLE = "dbml_Changes"
+
+#: What `CHANGE_LOG_TITLE` declared before this convention landed. Same
+#: reasoning and same READING-only recognition as `RUN_LOG_PREVIOUS_TITLES`.
+CHANGE_LOG_PREVIOUS_TITLES: tuple[str, ...] = ("dbml_Logs",)
+
+#: The CENTRAL deployment log, on the org's logging site. `firmfooting` rather
+#: than `dbml` because it holds rows from every firmfooting application, of
+#: which this tool is one. Probed, never created by a deploy.
+EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
+
+#: The CENTRAL change log, its type-2 half. Split from the deployments list so
+#: that each name is true of every row in it.
+EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
+
+#: Which application wrote a central row. Written into the `Application`
+#: column so a reader does not have to parse it out of a version string, and
+#: so the type-2 close can tell two applications' rows apart.
+APPLICATION_NAME = "dbml-sharepoint"
 
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
@@ -54,11 +72,13 @@ EXTERNAL_LOG_DEFAULT = "dbml-deployment-log"
 #: effect of provisioning a register.
 CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
 
-#: The title-only row the external log receives. The list belongs to its
-#: operator and its schema is unknown, so the ONLY column every generic
-#: list is guaranteed is Title. Anything richer would make this tool
-#: refuse on somebody else's schema.
-EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
+#: The Title prefix every external-log row carries, structured columns or
+#: not: the list belongs to its operator and its schema is unknown, so the
+#: ONLY column every generic list is guaranteed is Title. Derived from
+#: `APPLICATION_NAME` rather than restated, because the Title prefix and
+#: the `Application` column name the same application; a name declared
+#: twice would let a rename change one and miss the other.
+EXTERNAL_LOG_ROW_PREFIX = APPLICATION_NAME
 
 #: The stamp columns the `deployment-log` family declares on the central
 #: list, and the ones a cross-web stamp fills when its probe finds them
@@ -71,7 +91,7 @@ EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
 #: from the list it writes into.
 CENTRAL_LOG_COLUMNS: tuple[str, ...] = (
     "StampKind", "StampUtc", "SourceSite", "ReleaseTag",
-    "SchemaVersion", "DeployerVersion", "Operator", "Details",
+    "SchemaVersion", "DeployerVersion", "Operator", "Details", "Application",
 )
 
 #: `Hidden` on both sidecars. The run log exists so the stamps survive the
@@ -81,14 +101,14 @@ SIDECAR_HIDDEN = True
 
 
 def run_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml Local Log`` by."""
+    """The exact Description the deploy owns ``dbml_Deployments`` by."""
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=RUN_LOG_TITLE, family=None,
     )
 
 
 def change_log_marker() -> str:
-    """The exact Description the deploy owns ``dbml_Logs`` by."""
+    """The exact Description the deploy owns ``dbml_Changes`` by."""
     return scratch_marker_for(CHANGE_LOG_TITLE)
 
 
@@ -103,14 +123,6 @@ def scratch_marker_for(title: str) -> str:
     return provenance.marker_for_object(
         kind=provenance.SCRATCH_KIND, name=title, family=None,
     )
-
-
-#: The central deployment log's marker. Same grammar, own name: the sidecar
-#: owns the list by this Description compared whole, exactly like the
-#: on-site sidecars.
-def central_log_marker() -> str:
-    """The exact Description the sidecar owns ``dbml-deployment-log`` by."""
-    return scratch_marker_for(EXTERNAL_LOG_DEFAULT)
 
 
 def run_log_title() -> str:
@@ -149,6 +161,21 @@ def change_log_title() -> str:
 #: the column has to travel with the row. It is not indexed here: on a
 #: per-site log every row carries the same value, and the central list
 #: declares its own index on it in the family's `schema.dbml`.
+#:
+#: Application names the firmfooting application that wrote the row, so a
+#: reader can tell two applications' rows apart even when they share a
+#: ChangeKey and a SourceSite. This field set creates the PER-SITE change
+#: log's columns; that log's own close still filters only ChangeKey and
+#: IsCurrent. Application is indexed here anyway because CHANGE_FIELDS is
+#: shared with the CENTRAL list, whose close (`deploy/_logging.js.j2`)
+#: already reads Application as the fourth clause of a four-way AND with
+#: SourceSite, ChangeKey and IsCurrent. Microsoft documents that a filter is
+#: blocked once it would scan past the 5,000-item list view threshold
+#: without an indexed column, and recommends leading with the most
+#: selective one, not that every clause needs its own index; these columns
+#: are indexed as a precaution rather than to satisfy a rule Learn does not
+#: state:
+#: https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
         "__metadata": {"type": entity_type_for_type_kind(2)},
@@ -221,6 +248,14 @@ CHANGE_FIELDS: tuple[dict[str, object], ...] = (
         "MaxLength": 255,
         "Description": "The release that made the change.",
     },
+    {
+        "__metadata": {"type": entity_type_for_type_kind(2)},
+        "Title": "Application",
+        "FieldTypeKind": 2,
+        "MaxLength": 255,
+        "Indexed": True,
+        "Description": "The firmfooting application that wrote this row.",
+    },
 )
 
 #: The internal names a CENTRAL log has to carry before this tool will write
@@ -244,13 +279,13 @@ CENTRAL_CHANGE_COLUMNS: tuple[str, ...] = tuple(
 #: The create body never carried them either, so a FRESH run log was in the
 #: same state.
 #:
-#: The names are deliberately the central log's names minus DeployerVersion:
-#: one row shape reads the same whether it was found on the site or in the
-#: central list. SourceSite is redundant on a per-site log and carried anyway,
-#: because these rows are the FALLBACK for the central ones and a fallback
-#: that drops a column cannot be lifted into the central list later without
-#: guessing which site it came from. Nothing is indexed, because this list
-#: holds two rows per run and is read by eye.
+#: The names are deliberately the central log's names minus DeployerVersion
+#: and Application: one row shape reads the same whether it was found on the
+#: site or in the central list. SourceSite is redundant on a per-site log and
+#: carried anyway, because these rows are the FALLBACK for the central ones
+#: and a fallback that drops a column cannot be lifted into the central list
+#: later without guessing which site it came from. Nothing is indexed,
+#: because this list holds two rows per run and is read by eye.
 #:
 #: Details is a Note to match `deployment-log`'s own `longtext` declaration,
 #: with the same create-body shape jsgen builds for a Note column.

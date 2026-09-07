@@ -39,7 +39,9 @@
   const LEVEL_KIND = {{ level_kind | tojson }};
   const SCRATCH_KIND = {{ scratch_kind | tojson }};
   const RUN_LOG_TITLE = {{ run_log_title | tojson }};
+  const RUN_LOG_PREVIOUS_TITLES = {{ run_log_previous_titles | tojson }};
   const CHANGE_LOG_TITLE = {{ change_log_title | tojson }};
+  const CHANGE_LOG_PREVIOUS_TITLES = {{ change_log_previous_titles | tojson }};
   const STAMP_FIELDS = {{ stamp_fields | tojson }};
 
   const log = (level, msg) => console.log(`[SP-IDENTIFY] [${level}] ${msg}`);
@@ -174,15 +176,28 @@
   // renames a sidecar and its marker follows, so a by-title search would miss
   // a renamed log and report a site as never deployed.
   //
+  // `names` is tried in order, current title first: a site named this tool
+  // owns still reads under an earlier declared name, such as the run log's
+  // pre-rename `dbml Local Log` or the change log's pre-rename `dbml_Logs`.
+  // Recognising an old name is for READING only; nothing here writes to,
+  // renames or adopts it, and a redeploy still creates the current title
+  // fresh rather than migrating into it.
+  //
   // Rows are read whole rather than through a `$select`. A run log created
   // before a stamp column existed is reused, and selecting a column that is
   // not there answers HTTP 400, which would turn a partial record into no
   // record at all.
-  const sidecarFor = (name) => lists.find(
-    (l) => l.owned && l.kind === SCRATCH_KIND && l.declaredName === name,
-  ) || null;
-  const runLogList = sidecarFor(RUN_LOG_TITLE);
-  const changeLogList = sidecarFor(CHANGE_LOG_TITLE);
+  const sidecarFor = (names) => {
+    for (const name of names) {
+      const found = lists.find(
+        (l) => l.owned && l.kind === SCRATCH_KIND && l.declaredName === name,
+      );
+      if (found) return found;
+    }
+    return null;
+  };
+  const runLogList = sidecarFor([RUN_LOG_TITLE, ...RUN_LOG_PREVIOUS_TITLES]);
+  const changeLogList = sidecarFor([CHANGE_LOG_TITLE, ...CHANGE_LOG_PREVIOUS_TITLES]);
 
   let lastDeployment = null;
   if (runLogList && runLogList.id && runLogList.itemCount) {
@@ -277,8 +292,10 @@
   } else {
     // The run log arrived after some sites had already been built, so its
     // absence means the site has no record rather than that it was never
-    // deployed.
-    log('INFO', `No deployment record on this site: '${RUN_LOG_TITLE}' is absent or empty. Sites deployed before the run log existed carry none.`);
+    // deployed. Name whichever title was actually checked: `runLogList`
+    // when a run log (current or previously named) was found but carries no
+    // rows, RUN_LOG_TITLE when none was found at all.
+    log('INFO', `No deployment record on this site: '${runLogList ? runLogList.title : RUN_LOG_TITLE}' is absent or empty. Sites deployed before the run log existed carry none.`);
   }
 
   const text = JSON.stringify(payload, null, 2);
