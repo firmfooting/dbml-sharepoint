@@ -132,8 +132,9 @@ working past the list view threshold; do not remove them.
 Never run `rollback.js.txt` against either list once it holds real stamps.
 Rolling one back deletes that part of the estate's deployment history, and
 no other copy exists. The per-site sidecars are not a backup: a site only
-has them for the runs that could not reach the central lists, and its run
-log is Title-only.
+has them for the runs that could not reach the central lists. Its run log
+is created with its own stamp columns, not Title alone; Title-only is the
+fallback for a run whose account cannot create them.
 
 ## Retiring the old lists
 

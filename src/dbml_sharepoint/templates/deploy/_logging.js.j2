@@ -327,7 +327,7 @@
     const LOG_MODE = externalReady ? 'CENTRAL' : 'LOCAL';
     if (LOG_MODE === 'CENTRAL') {
       log('INFO', `Logging mode CENTRAL: '${EXTERNAL_LOG_TITLE}' on '${EXTERNAL_LOG_SITE}' takes this run's `
-        + `stamps${externalStructured ? '' : ' as Title alone (the list carries no stamp columns)'}; `
+        + `stamps${externalStructured ? '' : ' as Title alone (the list is missing one or more stamp columns)'}; `
         + `change rows ${centralChangeReady ? `go to '${EXTERNAL_CHANGE_LOG_TITLE}'` : 'are counted and dropped (see below)'}. `
         + `No sidecar lists are created on this site.`);
       if (changeListReady && !centralChangeReady) {
