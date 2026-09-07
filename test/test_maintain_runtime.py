@@ -434,7 +434,51 @@ def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
     assert summary["list"]["provisioned_by_dbml_sharepoint"] is False
     assert summary["list"]["allow_deletion"] is False
     names = [row["internal_name"] for row in tables[0]]
-    assert names == ["ColumnOne", "ColumnTwo", "Related", "Orphan"]
+    # Title leads, and is the one row that is not a custom column. See
+    # test_the_state_table_names_the_built_in_title below for why it is here.
+    assert names == ["Title", "ColumnOne", "ColumnTwo", "Related", "Orphan"]
+
+
+def test_the_state_table_names_the_built_in_title() -> None:
+    """The column an operator most wants to check, and the one the readout
+    could not show.
+
+    `isCustom` excludes anything with `FromBaseType`, and the built-in Title
+    reads `FromBaseType: true` on every list (measured 2026-09-07,
+    test/manual/title-seal-probe.js, on two sites). So the one column whose
+    display name a site owner can change without touching anything the tool
+    manages was the one column this script never printed.
+
+    It is reported and never offered: `isCustom` still decides what the seal
+    and unseal loops touch, and the same run established that a generic
+    list's Title refuses `Sealed: true` by every route, so offering it would
+    only produce an error an operator cannot act on.
+    """
+    summary, _calls, _prompts, tables = _protection(_config(), [""])
+    row = next(r for r in tables[0] if r["internal_name"] == "Title")
+    assert row["built_in"] is True
+    assert row["title"] == "Title"
+    assert all(r.get("built_in") is False
+               for r in tables[0] if r["internal_name"] != "Title")
+    # The count keeps meaning what it meant, so a readout gaining a row does
+    # not silently restate how many columns the operator owns.
+    assert summary["list"]["custom_columns"] == 4
+    assert summary["list"]["built_in_title"] == {"title": "Title", "sealed": True}
+
+
+def test_the_built_in_title_is_reported_but_never_offered_for_sealing() -> None:
+    """The seal and unseal loops keep reading `isCustom`.
+
+    A generic list refuses Sealed:true on its built-in Title with HTTP 400
+    (measured, as above), so a loop that included it would fail on a write
+    nothing can make succeed, on every run, on every list.
+    """
+    _summary, calls, _prompts, _tables = _protection(_config(), ["seal", ""])
+    title_writes = [
+        c for c in calls
+        if c["method"] == "POST" and c.get("body") and F_TITLE in c["url"]
+    ]
+    assert title_writes == [], f"the seal loop reached the built-in Title: {title_writes}"
 
 
 def test_a_missing_list_aborts_and_names_what_exists() -> None:

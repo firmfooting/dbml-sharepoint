@@ -587,6 +587,88 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     )
 
 
+def _fields_harness(fields: list[dict[str, str]]) -> str:
+    """`_ASSESS_HARNESS` answering every field enumeration with `fields`.
+
+    The default harness answers `/fields` with an empty result set, which the
+    display-title check reads as "not provisioned yet" and skips. That is the
+    right default and it is also why a variant is needed to make the check
+    fire at all.
+    """
+    # Two-space indent: _ASSESS_HARNESS is dedented, so the source's own
+    # indentation is not what this has to match at runtime.
+    branch = (
+        "  if (path.endsWith('/fields')) {\n"
+        f"    return respond(200, {{ d: {{ results: {json.dumps(fields)} }} }});\n"
+        "  }\n"
+    )
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    assert _ASSESS_HARNESS.count(marker) == 1
+    return _ASSESS_HARNESS.replace(marker, branch + marker, 1)
+
+
+_DISPLAY_KEY = "display_titles:"
+
+
+def _display_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    return [f for f in summary["findings"] if f["key"].startswith(_DISPLAY_KEY)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_reports_a_column_renamed_on_the_site() -> None:
+    """Between deploys nothing else can see this either.
+
+    Renaming a column needs Manage Lists, which Full Control, Design and Edit
+    all carry, and the next deploy silently puts the declared name back. So a
+    rename lives and dies with nobody told, and the column it matters most for
+    is the built-in Title, which the maintenance sidecar's `isCustom` filter
+    excludes for reading FromBaseType:true.
+    """
+    declared = _declared_descriptions()
+    summary = _run_assess(
+        declared,
+        harness=_fields_harness([
+            {"InternalName": "DueDate", "Title": "Renamed By Hand"},
+            {"InternalName": "SortOrder", "Title": "Sort Order"},
+        ]),
+    )
+    drifted = _display_findings(summary)
+    assert drifted, f"a renamed column drew no finding: {summary['findings']}"
+    detail = " ".join(f["detail"] for f in drifted)
+    assert "DueDate" in detail and "Renamed By Hand" in detail and '"Due Date"' in detail
+    # Named with BOTH values: a finding saying only that something differs
+    # sends the reader back to the site to find out what.
+    assert "SortOrder" not in detail, (
+        "a column matching its declaration was reported as drifted: " + detail
+    )
+    # INFO, not WARN: the deploy repairs this, so it is a report and not a
+    # gate, and a warning that always resolves itself stops meaning anything.
+    assert all(f["level"] == "INFO" for f in drifted), drifted
+    assert summary["verdict"] != "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_is_quiet_when_every_display_title_matches() -> None:
+    """A check that always fires is noise, and noise gets ignored."""
+    declared = _declared_descriptions()
+    summary = _run_assess(
+        declared,
+        harness=_fields_harness([
+            {"InternalName": "DueDate", "Title": "Due Date"},
+            {"InternalName": "SortOrder", "Title": "Sort Order"},
+        ]),
+    )
+    assert _display_findings(summary) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_the_site_does_not_have_yet_is_not_reported_as_drifted() -> None:
+    """A first deploy has provisioned none of them, and painting the console
+    red over every declared column would bury the findings that matter."""
+    summary = _run_assess(_declared_descriptions())  # the default: no fields
+    assert _display_findings(summary) == []
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_assess_is_quiet_when_every_marker_is_present() -> None:
     """A check that always fires is noise, and noise gets ignored."""

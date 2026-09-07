@@ -42,17 +42,39 @@
 
   async function printState() {
     const meta = await getOne(`${listPath}?$select=AllowDeletion,ItemCount`, `'${LIST_TITLE}' settings`);
-    const fields = (await readFields()).filter(isCustom);
+    const all = await readFields();
+    const fields = all.filter(isCustom);
     const sealed = fields.filter((f) => f.Sealed === true).length;
+    // The built-in Title, REPORTED and never offered. `isCustom` excludes
+    // anything FromBaseType and Title reads FromBaseType:true on every list
+    // (measured 2026-09-07, test/manual/title-seal-probe.js, two sites), so
+    // the one column whose display name a site owner can change without
+    // touching anything this tool manages was the one column this readout
+    // never showed. It stays out of `fields`, which is what the seal and
+    // unseal loops walk: the same run established that a generic list
+    // refuses Sealed:true on its Title by every route, so offering it would
+    // only produce an error nobody can act on.
+    const builtInTitle = all.find((f) => f.InternalName === 'Title') || null;
     log('INFO', `'${LIST_TITLE}': AllowDeletion ${meta.AllowDeletion} (${meta.AllowDeletion ? 'deletable' : 'deletion blocked'}), `
-      + `${meta.ItemCount} item(s), ${fields.length} custom column(s), ${sealed} sealed.`);
-    console.table(fields.map((f) => ({
+      + `${meta.ItemCount} item(s), ${fields.length} custom column(s), ${sealed} sealed`
+      + `${builtInTitle ? `; built-in Title displays as '${builtInTitle.Title}'` : ''}.`);
+    const row = (f, builtIn) => ({
       internal_name: f.InternalName, title: f.Title, type: f.TypeAsString,
       sealed: f.Sealed === true, read_only: f.ReadOnlyField === true,
-    })));
+      built_in: builtIn,
+    });
+    console.table([
+      ...(builtInTitle ? [row(builtInTitle, true)] : []),
+      ...fields.map((f) => row(f, false)),
+    ]);
     summary.list = {
       title: LIST_TITLE, id: LIST_ID, allow_deletion: meta.AllowDeletion, item_count: meta.ItemCount,
       custom_columns: fields.length, sealed_columns: sealed, provisioned_by_dbml_sharepoint: provisioned,
+      // Its DISPLAY title, which is the drift a deploy would silently correct
+      // and nothing else reports between deploys.
+      built_in_title: builtInTitle
+        ? { title: builtInTitle.Title, sealed: builtInTitle.Sealed === true }
+        : null,
     };
     return { meta, fields };
   }
