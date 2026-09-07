@@ -902,7 +902,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00\u201320:00"
+        "site time 04:00–20:00"
       ],
       "scenarios": [
         {
@@ -6046,6 +6046,199 @@
             "library.index.control-unknown-property-refused"
           ],
           "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "cross-lookup-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library holding one file and one folder, two scratch generic lists holding three items between them, four lookup columns across them, an Indexed flag on two of those, and up to fourteen empty lookup columns on each of two containers for the join walks"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists and libraries on the site",
+        "permission to upload a file and create a folder in a library"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.lookup.fixture-containers-ready",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.lookup.control-list-to-list-lookup-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-unsupported-operand-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created"
+              ]
+            },
+            {
+              "id": "library.lookup.library-to-list-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused"
+              ]
+            },
+            {
+              "id": "library.lookup.library-to-list-item-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "library.lookup.library-to-list-created"
+              ]
+            },
+            {
+              "id": "library.lookup.library-to-list-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "library.lookup.library-to-list-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-title-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-item-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "library.lookup.list-to-library-title-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-folder-row-selectable",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "library.lookup.list-to-library-title-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-indexed",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "library.lookup.list-to-library-title-created"
+              ]
+            },
+            {
+              "id": "scale.join.control-list-lookup-ceiling",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused"
+              ]
+            },
+            {
+              "id": "scale.join.library-lookup-ceiling",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused"
+              ]
+            },
+            {
+              "id": "scale.join.list-to-library-costs-a-join",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created",
+                "library.lookup.control-unsupported-operand-refused",
+                "scale.join.control-list-lookup-ceiling",
+                "library.lookup.list-to-library-title-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.lookup.fixture-containers-ready",
+            "library.lookup.control-list-to-list-lookup-created",
+            "library.lookup.control-unsupported-operand-refused",
+            "scale.join.control-list-lookup-ceiling"
+          ]
+        },
+        {
+          "id": "picker-enumeration",
+          "surface": "library",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "library.lookup.picker-enumerates-files",
+              "depends_on": [
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.list-to-library-title-created"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "picker-open",
+              "page": "the scratch source list's NewForm.aspx, with the list-to-library lookup's dropdown open",
+              "assertions": [
+                "the dropdown is open and its entries are legible",
+                "the number of entries offered is countable: the library holds exactly one file and one folder, so one entry means the picker enumerates files and two means it enumerates items",
+                "each entry's label is readable, or visibly blank, because a library row carries FileLeafRef and may carry no Title"
+              ]
+            }
+          ],
+          "controls": [
+            "library.lookup.fixture-containers-ready",
+            "library.lookup.list-to-library-title-created"
+          ]
         }
       ]
     }

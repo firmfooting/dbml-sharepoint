@@ -253,14 +253,14 @@ behave on libraries.
 
 Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`,
 `folder`, `content-type`, `form`, `view`, `formula`, `access`, `query`,
-`field`, `search`, `index`
+`field`, `search`, `index`, `lookup`
 
 Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`,
 `library-column-interactions-probe.js`, `library-form-probe.js`,
 `library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`,
 `library-query-probe.js`, `library-field-probe.js`,
-`library-view-search-probe.js`, `library-index-probe.js`
+`library-view-search-probe.js`, `library-index-probe.js`, `cross-lookup-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -274,6 +274,18 @@ the two columns a library has that a list does not name the same way,
 sends it to a list, and verifies the write by reading the field's IDENTITY
 rather than its `Indexed` value, so a library that accepts the flag and drops
 it passes every deploy phase.
+
+`lookup` is the newest scope and it is about a lookup that CROSSES the two
+container kinds, in either direction. `field.lookup` holds what a lookup does
+when both ends are generic lists: `projected-lookup-probe.js` measured creation
+and projection there, `multilookup-probe.js` the multi-value form. A lookup
+whose target is a document library points at rows that are FILES, and a lookup
+held on a document library sits on a container whose rows cannot be created by
+an item POST at all, so neither is the same question as `field.lookup` and
+neither is answered by it. The scope is on `library` rather than on `field`
+because the subject is the divergence between the containers, which is the
+keying rule applied: a reader asking what is known about libraries should find
+both directions without knowing which probe measured them.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -323,6 +335,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `save-instant-paths-probe.js` | `formula` | `hidden-list-readback` | `field.list.*` |
 | `list-settings-probe.js` | `field` | the thirteen `*-sticks` rows measured on the document library, with that container's fixture, its two controls and its property enumeration | `library.doc-lib.*` |
 | `list-settings-probe.js` | `field` | `read-security-on-list`, `write-security-on-list`, `read-security-on-library`, `write-security-on-library`, because item-level permission trimming is an access question wherever it is set | `access.item-acl.*` |
+| `cross-lookup-probe.js` | `library` | `control-list-lookup-ceiling`, `library-lookup-ceiling`, `list-to-library-costs-a-join`, because a ceiling on how many lookups one view may project is a join question whichever container holds them | `scale.join.*` |
 
 Some probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
@@ -343,6 +356,7 @@ surface boundary, and are listed for the same reason:
 | `library-column-interactions-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-form-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-index-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `cross-lookup-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
@@ -371,6 +385,11 @@ different questions and take different ids. They do not merge.
 | How many lookups can one view project | a four-row list, nowhere near the threshold | `scale.join.control-ceiling-small-list` |
 | Does `Indexed: true` stick on a text column | on a generic list, beside a 6,000-row fixture the index is then exercised against | `scale.index.indexed-autoindexed-flags` |
 | Does `Indexed: true` stick on a text column | on a document library, the flag alone, with no threshold fixture behind it | `library.index.text-column-indexed` |
+| How many lookups can one view project | a one-item list, as the baseline the library is compared against | `scale.join.control-list-lookup-ceiling` |
+| How many lookups can one view project | a document library, through the same walk on the same fixture | `scale.join.library-lookup-ceiling` |
+| Is a lookup created and bound by `createfieldasxml` | both ends generic lists | `field.lookup.control-primary-lookup-created` |
+| Is a lookup created and bound by `createfieldasxml` | the column is held by a document library | `library.lookup.library-to-list-created` |
+| Is a lookup created and bound by `createfieldasxml` | the target is a document library | `library.lookup.list-to-library-title-created` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
