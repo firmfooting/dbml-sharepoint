@@ -72,11 +72,13 @@ APPLICATION_NAME = "dbml-sharepoint"
 #: effect of provisioning a register.
 CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
 
-#: The title-only row the external log receives. The list belongs to its
-#: operator and its schema is unknown, so the ONLY column every generic
-#: list is guaranteed is Title. Anything richer would make this tool
-#: refuse on somebody else's schema.
-EXTERNAL_LOG_ROW_PREFIX = "dbml-sharepoint"
+#: The Title prefix every external-log row carries, structured columns or
+#: not: the list belongs to its operator and its schema is unknown, so the
+#: ONLY column every generic list is guaranteed is Title. Derived from
+#: `APPLICATION_NAME` rather than restated, because the Title prefix and
+#: the `Application` column name the same application; a name declared
+#: twice would let a rename change one and miss the other.
+EXTERNAL_LOG_ROW_PREFIX = APPLICATION_NAME
 
 #: The stamp columns the `deployment-log` family declares on the central
 #: list, and the ones a cross-web stamp fills when its probe finds them

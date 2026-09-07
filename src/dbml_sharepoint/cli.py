@@ -1044,6 +1044,19 @@ def execute_build(
         external_log = ""
         external_change_log = ""
 
+    # Each title is validated on its own above, so nothing there catches the
+    # two naming the SAME list: both probes would succeed against it, stamp
+    # rows and change rows would land side by side on one list, and whatever
+    # broke downstream (a column the wrong row shape does not carry, a close
+    # query matching rows it should not) would blame that symptom rather
+    # than the two flags that caused it.
+    if external_log and external_change_log and external_log == external_change_log:
+        raise typer.BadParameter(
+            "--deployment-log-list and --deployment-changes must not name "
+            f"the same list ({external_log!r}); each central list wants its "
+            "own title.",
+        )
+
     # `isinstance`, not `is not None`: the declined sentinel means nobody is
     # enrolled and must skip validation and the group check just as `None` does.
     if isinstance(enterprise_reader, str):

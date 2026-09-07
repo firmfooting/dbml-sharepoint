@@ -2410,6 +2410,39 @@ def test_an_empty_deployment_changes_disables_only_the_change_feed(
     )
 
 
+def test_deployment_log_list_and_deployment_changes_cannot_name_the_same_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each title is validated on its own, so nothing else catches the two
+    flags naming the SAME list.
+
+    Left unrefused, both probes would succeed against it and stamp rows and
+    change rows would land side by side on one list -- safe, in that nothing
+    crashes, but fail-quiet: whatever broke downstream would be blamed on a
+    column or a query, not on the two flags that actually caused it.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-list", "Shared_List",
+        "--deployment-changes", "Shared_List",
+    ])
+    assert result.exit_code == 2
+    output = _normalise_rendered_output(result.output)
+    assert "--deployment-log-list and --deployment-changes" in output
+    assert "Shared_List" in output
+
+    # Both disabled together is the documented shared off-switch, not this
+    # refusal: '' equals '' but names no list at all.
+    both_empty = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-log-list", "",
+        "--deployment-changes", "",
+    ])
+    assert both_empty.exit_code == 0, both_empty.output
+
+
 def test_an_env_file_can_supply_deployment_changes_and_a_flag_wins(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
