@@ -155,6 +155,13 @@
 // the MERGE and compares its Id, deliberately not its `Indexed` value. So a
 // container that accepts the flag and drops it passes the deploy silently,
 // which is what makes the light half of this question worth asking on its own.
+// finding: library-index-name-column-refused - Indexed=true is REFUSED on a
+// document library's Name column (FileLeafRef), and it is the one column the
+// two controls cleared for a real refusal: the positive control proved the
+// MERGE method reaches a library field, and the negative control proved a
+// refusal is distinguishable from a failure. A library cannot satisfy
+// `indexes { Name }`, and the shipped index phase reads identity not value, so
+// nothing downstream of the deploy can see it.
 (async () => {
 {% include "_probe_harness.js.j2" %}
 

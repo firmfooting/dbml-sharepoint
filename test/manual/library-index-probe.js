@@ -9,7 +9,7 @@
  *   library has that a list does not name the same way, `FileLeafRef` (the
  *   Name column) and `Title`?
  *
- * REVISION: ba066b77
+ * REVISION: 9be6ce9d
  *
  * WHY: `templates/deploy/_indexes.js.j2` asserts `Indexed: true` on every
  * declared indexed column and verifies the write by reading the field back.
@@ -152,6 +152,13 @@
 // the MERGE and compares its Id, deliberately not its `Indexed` value. So a
 // container that accepts the flag and drops it passes the deploy silently,
 // which is what makes the light half of this question worth asking on its own.
+// finding: library-index-name-column-refused - Indexed=true is REFUSED on a
+// document library's Name column (FileLeafRef), and it is the one column the
+// two controls cleared for a real refusal: the positive control proved the
+// MERGE method reaches a library field, and the negative control proved a
+// refusal is distinguishable from a failure. A library cannot satisfy
+// `indexes { Name }`, and the shipped index phase reads identity not value, so
+// nothing downstream of the deploy can see it.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -376,7 +383,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ba066b77. Quote this when reporting results.');
+  log('INFO', 'probe revision 9be6ce9d. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibIndex';
   const TARGET = 'dbmlsp Probe LibIndex Target';
