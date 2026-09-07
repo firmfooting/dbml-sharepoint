@@ -197,7 +197,7 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
 `lookup-showfield-probe.js`, `boolean-field-probe.js`,
-`title-rename-probe.js`
+`title-rename-probe.js`, `title-seal-probe.js`
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 

@@ -7394,6 +7394,75 @@
       ]
     },
     {
+      "file": "title-seal-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list and a text control column on it, plus seal attempts against that list's own built-in Title"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.title.seal-web-site-column",
+              "depends_on": []
+            },
+            {
+              "id": "field.title.seal-census",
+              "depends_on": []
+            },
+            {
+              "id": "field.title.seal-fixture-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.title.seal-control-declared",
+              "depends_on": [
+                "field.title.seal-fixture-list"
+              ]
+            },
+            {
+              "id": "field.title.seal-merge-spfield",
+              "depends_on": [
+                "field.title.seal-fixture-list",
+                "field.title.seal-control-declared"
+              ]
+            },
+            {
+              "id": "field.title.seal-merge-spfieldtext",
+              "depends_on": [
+                "field.title.seal-fixture-list",
+                "field.title.seal-control-declared"
+              ]
+            },
+            {
+              "id": "field.title.seal-schemaxml",
+              "depends_on": [
+                "field.title.seal-fixture-list",
+                "field.title.seal-control-declared"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.title.seal-fixture-list",
+            "field.title.seal-control-declared"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "today-semantics-probe.js",
       "surface": "formula",
       "harness": "shared-v1",
