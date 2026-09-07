@@ -187,8 +187,8 @@ An involvement needs both its activity and its stakeholder to exist. Enter the
 governance forums, the recurring roles, the individuals who hold
 accountability in their own right, and the external bodies you are
 answerable to, including the provider. Give each stakeholder a `Contact` unless
-it is a Forum, and every External stakeholder a `ServiceDeskAddress`. Nothing in
-SharePoint enforces either: `Contact` is a person column and person
+it is a Forum, and every External stakeholder an `ExternalContactDetails`.
+Nothing in SharePoint enforces either: `Contact` is a person column and person
 operands are refused in validation formulas, so it is a quarterly check
 read on *Active stakeholders*, which renders both columns so that a blank is
 visible.

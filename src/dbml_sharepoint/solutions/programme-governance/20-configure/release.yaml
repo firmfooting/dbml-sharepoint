@@ -1,8 +1,34 @@
-release: "2.4.0"
-date: "2026-09-06"
+release: "3.0.0"
+date: "2026-09-07"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "2.4.0"
+schema_version: "3.0.0"
 notes: |
+  3.0.0 renames Stakeholder.ServiceDeskAddress to ExternalContactDetails and
+  removes the display_names override that gave it the title "External
+  Contact Details". The override existed because UAT feedback (family
+  issue #2) found the column reaches external bodies generally, not only
+  service desks, and the internal name stayed because views, Power Query
+  and SQL keyed on it. The operator has since deleted the column from the
+  live site by hand, so it holds no data anywhere, and that is the one
+  window in which the internal name can change for free.
+  auto_display_name("ExternalContactDetails") returns "External Contact
+  Details", the same string the override produced, so the rename changes
+  nothing an operator sees.
+
+  BREAKING for any site that still holds data under ServiceDeskAddress.
+  The deploy creates a new, empty ExternalContactDetails column and stops
+  managing ServiceDeskAddress entirely; the old column and whatever it
+  holds are left untouched on the list. Nothing is migrated, and this tool
+  never deletes a column. An operator with data in ServiceDeskAddress must
+  copy it across by hand, before or after redeploying, then delete the old
+  column with dbml-sharepoint columns-script. Anything reading the column
+  by its internal name, a Power Query query, the SQL views, a Flow, a
+  report built against the list, breaks and has to be repointed at
+  ExternalContactDetails.
+
+  This rename is not safe in general. It is safe here only because the
+  column was already empty on the one site this change targets.
+
   2.4.0 makes BusinessProcess.NextReviewDue CALCULATED, twelve months after
   LastReviewedDate, and gives BusinessProcess a multi-value Stakeholders
   lookup.

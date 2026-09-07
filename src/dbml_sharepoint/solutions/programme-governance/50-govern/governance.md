@@ -93,7 +93,7 @@ for up to two years in its Routine half.
    write the number in, because a vague sense of "a lot" is never challenged.
 7. **Check *Active stakeholders* against the org chart.** Anybody who has left,
    and any forum disbanded, gets the departed-person workflow below. The
-   view carries both `Contact` and `ServiceDeskAddress` so a blank of
+   view carries both `Contact` and `ExternalContactDetails` so a blank of
    either kind is visible while reading.
 8. **Look for the activities that are not there.** No view can show an
    absent row, so this is a walk along three axes: each workstream, in
@@ -176,7 +176,7 @@ map has not been mapped; it has been remembered, and the register's one
 durable promise is that the map can be found.
 
 Two more checks of the same shape live in "The provider boundary" below: an
-External stakeholder names a `ServiceDeskAddress` while every other non-Forum
+External stakeholder names an `ExternalContactDetails` while every other non-Forum
 stakeholder names a `Contact`, and the provider is never the Accountable. Both
 are refused for the same reason and both have a view behind them.
 
@@ -488,7 +488,7 @@ afterwards can authorise it a moment later.
 | Version history is read on every row changed since the last review | Quarterly | The audit that replaces a read-only posture on the accountability layer |
 | `GOV Accountability Maintainers` matches the Responsible and Accountable population | Quarterly | Group membership is neither declared nor reconciled by the deployer |
 | The activities that are not there | Quarterly | No view can show an absent row |
-| An External stakeholder names a `ServiceDeskAddress`, and every other non-Forum stakeholder names a `Contact` | Quarterly | `Contact` is a person column, and "required unless StakeholderKind is Forum" is the same refusal for the same reason |
+| An External stakeholder names an `ExternalContactDetails`, and every other non-Forum stakeholder names a `Contact` | Quarterly | `Contact` is a person column, and "required unless StakeholderKind is Forum" is the same refusal for the same reason |
 | The provider is never the Accountable | Quarterly | Person and lookup operands are both refused |
 | Consultation is not concentrated on one stakeholder | Quarterly | A judgement about a distribution, which no formula reads |
 | Narrative fields are sampled for identifiable content | Quarterly, programme owner | Multi-line columns cannot be validation operands, and a length measure is refused in conditions |
@@ -645,7 +645,7 @@ and the same read catches it.
 
 The provider is one row in `GOV_Stakeholder`, with `StakeholderKind: External`
 and `Status: Active`. Its `Contact` stays **blank** and its
-`ServiceDeskAddress` carries the provider's service desk address or queue,
+`ExternalContactDetails` carries the provider's service desk address or queue,
 for anything that does not belong on a request row.
 
 That is a deliberate exception to the ordinary contact rule, and it has two
@@ -653,8 +653,9 @@ halves. Naming an external engineer in `Contact` invites every reader to
 treat them as the owner of the thing, and a person column would imply the
 recipient is accountable for the request. Leaving the stakeholder unreachable
 would be the other failure, because a name nobody can act on is not a
-vocabulary entry. So: **an External stakeholder names a `ServiceDeskAddress` and
-leaves `Contact` blank; every other non-Forum stakeholder names a `Contact`.**
+vocabulary entry. So: **an External stakeholder names an
+`ExternalContactDetails` and leaves `Contact` blank; every other non-Forum
+stakeholder names a `Contact`.**
 Both columns render on *Active stakeholders*, and a maintainer scanning that
 view each quarter is the whole enforcement mechanism, because `Contact` is
 a person column and validation formulas refuse person operands.
