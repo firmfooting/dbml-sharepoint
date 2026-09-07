@@ -12,12 +12,12 @@ notes: |
   unreachable or short a column costs only the change feed and a fleet's
   stamps are unaffected either way.
 
-  `change` is retired from the `stamp_kind` enum on `Deployments`: a change
-  row never reaches that list now, so `change` was never a value any writer
-  could send there. A row already stamped `change` by a build older than
-  2.0.0 keeps that value on read; SharePoint does not require a stored
-  Choice value to remain in the field's current Choices list, so narrowing
-  the set does not touch existing rows.
+  `change` is retired from the `stamp_kind` enum on `Deployments`, because a
+  change row can no longer reach that list. Any row already carrying that
+  value was written by a build older than 2.0.0. What SharePoint does with a
+  stored Choice value that is no longer in the field's Choices list has NOT
+  been measured here, so an operator with existing central rows should look
+  at one before assuming it still renders.
 
   Every other deploy in the fleet already probes both new titles by default:
   `DBMLSP_DEPLOY_LOG_LIST` for `firmfooting_Deployments` and the new

@@ -2373,6 +2373,78 @@ def test_an_env_file_can_supply_both_log_lists_and_a_flag_wins(
     assert '"dbml-deployment-log"' in js2  # the flag's value is what ships
 
 
+def test_an_empty_deployment_changes_disables_only_the_change_feed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--deployment-changes ''` turns off the central change feed while the
+    central stamps keep going.
+
+    Unlike `--deployment-log-list` and `--deployment-log-site`, which are one
+    feature and disable each other, the change list is probed and written
+    independently of the deployments list: disabling it alone must leave the
+    deployments list's title in the emitted script exactly as if nothing had
+    been said. A padded variant is not the disable and is refused by name, so
+    nothing invisible can turn the feed off.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-changes", "",
+    ])
+    assert result.exit_code == 0, result.output
+
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert 'EXTERNAL_CHANGE_LOG_TITLE = ""' in js
+    assert f'EXTERNAL_LOG_TITLE = "{sidecars.EXTERNAL_LOG_DEFAULT}"' in js
+    assert f'"{sidecars.RUN_LOG_TITLE}"' in js  # the built-in sidecars stay too
+
+    padded = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-changes", " ",
+    ])
+    assert padded.exit_code == 2
+    assert (
+        "--deployment-changes must not be empty, padded, or whitespace."
+        in _normalise_rendered_output(padded.output)
+    )
+
+
+def test_an_env_file_can_supply_deployment_changes_and_a_flag_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DBMLSP_DEPLOY_CHANGES` resolves under the same precedence as its
+    siblings: file supplies, flag overrides, and the transcript says which
+    won.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+    (Path("dbml-sharepoint.env").write_text(
+        "DBMLSP_DEPLOY_CHANGES=Programme_Changes\n",
+        encoding="utf-8", newline="\n",
+    ))
+
+    from_file = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+    assert from_file.exit_code == 0, from_file.output
+    js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert '"Programme_Changes"' in js
+    assert "DBMLSP_DEPLOY_CHANGES = Programme_Changes (from the file)" in from_file.output
+
+    by_flag = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--deployment-changes", "OtherOrg_Changes",
+    ])
+    assert by_flag.exit_code == 0, by_flag.output
+    assert (
+        "DBMLSP_DEPLOY_CHANGES = Programme_Changes"
+        " (from the file; overridden, using OtherOrg_Changes)"
+        in by_flag.output
+    )
+    js2 = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
+    assert '"OtherOrg_Changes"' in js2  # the flag's value is what ships
+
+
 #: Every command that hands its whole option set to a shared executor, and
 #: the executor it hands them to. Both pairs, not just the one that broke:
 #: the defect is a property of the SHAPE, so a third pair added later is
