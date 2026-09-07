@@ -405,7 +405,7 @@
         changeLogId = await ensureSidecar(CHANGE_LOG_TITLE, CHANGE_LOG_MARKER);
       } catch (err) {
         // The second ownership guard, and the second documented halt: a list
-        // titled `dbml_Logs` whose Description is not this tool's marker
+        // titled `dbml_Changes` whose Description is not this tool's marker
         // belongs to somebody else, and writing a change feed into it is the
         // one thing this phase must never do. On summary.errors deliberately
         // -- unlike every other failure here, this one stops the run at the
@@ -715,7 +715,7 @@
     // Deployments. ChangeKey is unique WITHIN a site -- `list: APP_Risk` is
     // a key two different sites both raise -- so a close keyed on ChangeKey
     // alone would let one site's deploy retire another site's current row.
-    // All three sides of that AND are indexed on the family's list, which is
+    // All four sides of that AND are indexed on the family's list, which is
     // what keeps the filter under the 5,000-item threshold on a list that
     // grows with every change any firmfooting application makes.
     //

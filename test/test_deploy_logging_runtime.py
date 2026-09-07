@@ -1246,14 +1246,16 @@ def test_a_central_log_predating_the_change_columns_drops_the_change_feed() -> N
     assert "change event(s) were counted and dropped" in run["output"]
 
 
-def test_every_central_row_names_the_application_that_wrote_it() -> None:
+def test_every_central_row_names_the_application_that_wrote_it(
+    central_run: dict[str, Any],
+) -> None:
     """Both central lists hold rows from every firmfooting application.
 
     `DeployerVersion` carries `dbml-sharepoint/0.1.0`, so the application is
     recoverable only by parsing a version string, which would oblige a second
     application to adopt this one's format by convention. A column states it.
     """
-    run = _run_deploy(central_can_close=True, seeded_central_rows=True)
+    run = central_run
     central = run["state"]["central"] + run["state"]["centralChanges"]
     assert central, "the run wrote no central rows"
     assert all(row.get("Application") == "dbml-sharepoint" for row in central), (
