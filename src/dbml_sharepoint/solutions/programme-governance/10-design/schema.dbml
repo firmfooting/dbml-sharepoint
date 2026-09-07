@@ -248,16 +248,16 @@ Table Workstream {
 }
 
 Table Stakeholder {
-  Id                 int                [pk, increment]
-  Title              nvarchar           [not null, unique, note: 'The stakeholder as everyone refers to it: "Executive Director", "Shared service provider", "Digital Programme Board"']
-  StakeholderKind    gov_stakeholder_kind [not null, default: 'Individual', note: 'Individual: this person, whatever position they hold. Role: the position, whoever holds it, so the row survives a change of person. Forum: a committee or meeting. External: a body outside the organisation']
-  Contact            person             [note: 'For an Individual, themselves. For a Role, whoever holds it now. For a Forum, its chair or secretariat. Leave blank on an external body and fill External Contact Details instead']
+  Id                      int                [pk, increment]
+  Title                   nvarchar           [not null, unique, note: 'The stakeholder as everyone refers to it: "Executive Director", "Shared service provider", "Digital Programme Board"']
+  StakeholderKind         gov_stakeholder_kind [not null, default: 'Individual', note: 'Individual: this person, whatever position they hold. Role: the position, whoever holds it, so the row survives a change of person. Forum: a committee or meeting. External: a body outside the organisation']
+  Contact                 person             [note: 'For an Individual, themselves. For a Role, whoever holds it now. For a Forum, its chair or secretariat. Leave blank on an external body and fill External Contact Details instead']
   // Not a person column, on purpose: naming an external engineer here invites
   // every reader to treat them as the owner of the thing, and accountability
   // stays inside the health service. Costs no join.
-  ServiceDeskAddress nvarchar           [note: 'How an external body is reached: a portal, queue or shared mailbox. An External stakeholder names this and leaves Contact blank; every other non-Forum stakeholder names a Contact']
-  Status             gov_stakeholder_status [not null, default: 'Active', note: 'Set Inactive when a person leaves or a forum is disbanded. Never delete a stakeholder; activities and involvements point at it and would be orphaned']
-  Notes              nvarchar           [note: 'Anything a reader needs to interpret this stakeholder correctly: its terms of reference, its meeting cadence, who it reports to']
+  ExternalContactDetails  nvarchar           [note: 'How an external body is reached: a portal, queue or shared mailbox. An External stakeholder names this and leaves Contact blank; every other non-Forum stakeholder names a Contact']
+  Status                  gov_stakeholder_status [not null, default: 'Active', note: 'Set Inactive when a person leaves or a forum is disbanded. Never delete a stakeholder; activities and involvements point at it and would be orphaned']
+  Notes                   nvarchar           [note: 'Anything a reader needs to interpret this stakeholder correctly: its terms of reference, its meeting cadence, who it reports to']
 
   indexes {
     StakeholderKind

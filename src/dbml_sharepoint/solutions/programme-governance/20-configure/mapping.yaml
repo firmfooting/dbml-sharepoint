@@ -468,12 +468,6 @@ prevent_list_deletion: true
 
 display_names:
   mode: auto
-  overrides:
-    Stakeholder:
-      # UAT live-run feedback (family issue #2): the column reaches external
-      # bodies generally, not only service desks. The internal name stays
-      # ServiceDeskAddress; views, Power Query and SQL key on it.
-      ServiceDeskAddress: "External Contact Details"
 
 # Column formatting: the fleet style standard (website/docs/reference/
 # style-guide.md), SharePoint's own severity boxes and icons, tokens resolved
@@ -695,15 +689,15 @@ views:
         TargetEndDate: 160
         Purpose: 280
   Stakeholder:
-    # Carries Contact AND ServiceDeskAddress on purpose: an External stakeholder
-    # with no service desk address and a non-Forum internal stakeholder with no
-    # contact are both quarterly checks that no save rule can make, because
-    # person operands are refused in validation formulas. A blank has to be
-    # visible while somebody is reading.
+    # Carries Contact AND ExternalContactDetails on purpose: an External
+    # stakeholder with no external contact details and a non-Forum internal
+    # stakeholder with no contact are both quarterly checks that no save rule
+    # can make, because person operands are refused in validation formulas.
+    # A blank has to be visible while somebody is reading.
     - title: "Active stakeholders"
       renamed_from: ["Active parties"]
       default: true
-      fields: [Title, StakeholderKind, Contact, ServiceDeskAddress, Notes]
+      fields: [Title, StakeholderKind, Contact, ExternalContactDetails, Notes]
       where:
         - { field: Status, op: eq, value: "Active" }
       sort:
@@ -712,10 +706,10 @@ views:
         Title: 280
         StakeholderKind: 130
         Contact: 160
-        ServiceDeskAddress: 240
+        ExternalContactDetails: 240
         Notes: 200
     - title: "By kind"
-      fields: [Title, StakeholderKind, Contact, ServiceDeskAddress, Notes]
+      fields: [Title, StakeholderKind, Contact, ExternalContactDetails, Notes]
       where:
         - { field: Status, op: eq, value: "Active" }
       group_by: { field: StakeholderKind, collapsed: false }
@@ -725,7 +719,7 @@ views:
         Title: 280
         StakeholderKind: 130
         Contact: 160
-        ServiceDeskAddress: 240
+        ExternalContactDetails: 240
         Notes: 200
     - title: "Retired stakeholders"
       renamed_from: ["Retired parties"]
@@ -1929,7 +1923,7 @@ demo_items:
       values:
         Title: "[DEMO] Shared services provider service desk"
         StakeholderKind: "External"
-        ServiceDeskAddress: "servicedesk@provider.example"
+        ExternalContactDetails: "servicedesk@provider.example"
         Status: "Active"
         Notes: "Demo row. Every tenant-level change reaches the provider as a service request on this site. The provider is never Accountable for a programme activity."
     - key: stakeholder-steering
