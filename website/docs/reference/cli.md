@@ -49,17 +49,22 @@ between that and a mispaste.
 
 `build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
 defaults for flags an operator would otherwise retype on every
-invocation. There is one key today:
+invocation. There are five keys today:
 
 | Key | Flag it supplies | Meaning |
 | --- | --- | --- |
 | `DBMLSP_ENTERPRISE_READER` | `--enterprise-reader` | UPN of the enterprise-reader service account to enrol |
+| `DBMLSP_DEPLOY_LOG_LIST` | `--deployment-log-list` | Title of the central deployment log list to stamp start/stop/provenance rows into |
+| `DBMLSP_DEPLOY_CHANGES` | `--deployment-changes` | Title of the central change log to write type-2 change rows into, beside the deployment log above |
+| `DBMLSP_DEPLOY_LOG_SITE` | `--deployment-log-site` | Title of the central logging site the deployment log list lives on |
+| `DBMLSP_CHANGE_LOG_LIST` | `--change-log-list` | Title of the hidden per-site change log the deploy writes type-2 rows into |
 
 Every key carries the `DBMLSP_` prefix; a key without it, or one this
 table does not list, is refused rather than silently skipped.
 `dbml-sharepoint build --help` lists the same set next to `--env-file`,
-generated from the same registry as this table, so the two cannot drift
-apart.
+genuinely generated from `ENV_SETTINGS` (`model/env_file.py`) at runtime.
+This table is not: it is kept in sync with that registry by hand, so check
+it against `ENV_SETTINGS` when a key is added, renamed or removed.
 
 **Why this filename, and not `.env`.** The parser refuses any line it
 cannot understand: a stray `export FOO=bar`, an unknown key, a repeated
