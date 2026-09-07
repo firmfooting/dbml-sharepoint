@@ -42,8 +42,13 @@ notes: |
   it and delete it once you no longer need it. There is no automatic
   migration path, because a marker migration only works for a list that
   keeps its title, and this one does not. A deploy pointed at the OLD title
-  with an explicit `--deployment-log-list dbml-deployment-log` keeps
-  working against it until that override is removed.
+  with an explicit `--deployment-log-list dbml-deployment-log` does NOT keep
+  working the way it used to: that list predates `CENTRAL_LOG_COLUMNS` and
+  is missing `Application`, so `externalStructured` comes back false and
+  every stamp degrades to Title alone. StampKind, StampUtc, SourceSite,
+  ReleaseTag, SchemaVersion, DeployerVersion, Operator and Details all stop
+  being written. The override also only redirects `Deployments`; change
+  rows still go to the default `firmfooting_Changes` regardless.
 
   The permission level is renamed to `{prefix} Deployments Submit Only`
   and both new lists take the same drop-box posture the single list had.
