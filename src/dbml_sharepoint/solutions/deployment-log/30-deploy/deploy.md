@@ -87,11 +87,14 @@ requires per-list confirmation before every delete.
       `SourceSite`, `ChangeKey`, `IsCurrent` and `Application`. The build
       manifest lists the same, per list. `Changes` is the one in the
       catalogue that grows with every change any firmfooting application
-      makes anywhere in the tenant, so its indexes are what keep the type-2
-      close working past the list view threshold: a deploy closing a change
-      row filters `SourceSite and ChangeKey and Application and IsCurrent` as
-      one four-way AND, and every side of an AND has to be indexed for that
-      filter to survive it.
+      makes anywhere in the tenant: a deploy closing a change row filters
+      `SourceSite and ChangeKey and Application and IsCurrent` as one
+      four-way AND.
+      [Microsoft documents](https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column)
+      that such a filter is blocked once it would scan past the list view
+      threshold without an indexed column, and recommends leading with the
+      most selective one, not that every side of an AND needs its own; all
+      four columns are indexed here as a precaution.
 - [ ] The New form on `Deployments` shows four sections: **The stamp**,
       **Where it ran**, **What was deployed**, **What the run did**, each
       holding the fields named in

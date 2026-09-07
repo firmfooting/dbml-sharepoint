@@ -715,9 +715,13 @@
     // Deployments. ChangeKey is unique WITHIN a site -- `list: APP_Risk` is
     // a key two different sites both raise -- so a close keyed on ChangeKey
     // alone would let one site's deploy retire another site's current row.
-    // All four sides of that AND are indexed on the family's list, which is
-    // what keeps the filter under the 5,000-item threshold on a list that
-    // grows with every change any firmfooting application makes.
+    // All four sides of that AND are indexed on the family's list, which
+    // grows with every change any firmfooting application makes. Microsoft
+    // documents that such a filter is blocked once it would scan past the
+    // 5,000-item threshold without an indexed column, and recommends
+    // leading with the most selective one, not that every side needs its
+    // own index; these are indexed as a precaution.
+    // https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column
     //
     // No StampKind, and no StampUtc: the Changes list carries neither column
     // now that a change row has its own list rather than sharing

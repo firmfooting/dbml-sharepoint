@@ -99,10 +99,14 @@ Table Changes {
 
   // SourceSite, ChangeKey, Application and IsCurrent are the type-2 close
   // filter, read as one four-way AND (`SourceSite eq X and ChangeKey eq Y
-  // and Application eq Z and IsCurrent eq true`). EVERY side of an AND has
-  // to be indexed for the filter to survive the 5,000-item list view
-  // threshold, and this is a list that grows with every change any
-  // firmfooting application makes, on any site.
+  // and Application eq Z and IsCurrent eq true`), on a list that grows
+  // with every change any firmfooting application makes, on any site.
+  // Microsoft documents that such a filter is blocked once it would scan
+  // past the 5,000-item list view threshold without an indexed column,
+  // and recommends leading with the most selective one, not that every
+  // side of an AND needs its own; all four are indexed here as a
+  // precaution.
+  // https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column
   indexes {
     SourceSite
     ChangeKey

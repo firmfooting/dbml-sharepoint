@@ -157,11 +157,19 @@ def change_log_title() -> str:
 #: declares its own index on it in the family's `schema.dbml`.
 #:
 #: Application names the firmfooting application that wrote the row, so a
-#: reader (and, once the close filters on it, the type-2 close itself) can
-#: tell two applications' rows apart even when they share a ChangeKey and a
-#: SourceSite. Indexed here, unlike SourceSite, because that close filter
-#: will add it as a third clause of the same AND, and every clause of an AND
-#: needs its own index to survive the 5,000-item list view threshold.
+#: reader can tell two applications' rows apart even when they share a
+#: ChangeKey and a SourceSite. This field set creates the PER-SITE change
+#: log's columns; that log's own close still filters only ChangeKey and
+#: IsCurrent. Application is indexed here anyway because CHANGE_FIELDS is
+#: shared with the CENTRAL list, whose close (`deploy/_logging.js.j2`)
+#: already reads Application as the fourth clause of a four-way AND with
+#: SourceSite, ChangeKey and IsCurrent. Microsoft documents that a filter is
+#: blocked once it would scan past the 5,000-item list view threshold
+#: without an indexed column, and recommends leading with the most
+#: selective one, not that every clause needs its own index; these columns
+#: are indexed as a precaution rather than to satisfy a rule Learn does not
+#: state:
+#: https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column
 CHANGE_FIELDS: tuple[dict[str, object], ...] = (
     {
         "__metadata": {"type": entity_type_for_type_kind(2)},
