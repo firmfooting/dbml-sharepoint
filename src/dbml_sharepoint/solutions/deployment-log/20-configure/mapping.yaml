@@ -7,7 +7,7 @@
 # `firmfooting_Changes`, and every other family's deploy probes those exact
 # literals (analysis/sidecars.py, EXTERNAL_LOG_DEFAULT and
 # EXTERNAL_CHANGE_LOG_DEFAULT). DBMLSP_DEPLOY_LOG_LIST and
-# DBMLSP_CHANGE_LOG_LIST default to the same strings. Renaming an entity here
+# DBMLSP_DEPLOY_CHANGES default to the same strings. Renaming an entity here
 # renames the address the whole fleet is pointed at; change both sides or
 # neither.
 prefix: "firmfooting_"
