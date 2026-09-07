@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: 05a150f9
+ * REVISION: 8db68e8e
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -43,10 +43,18 @@
  *        `projected-lookup-probe.js` already measured, so a failure says the
  *        METHOD did not work on this site, not that a library is special.
  *        Every cross-container row is then void rather than open.
- *   library.lookup.control-missing-target-refused
- *        NEGATIVE CONTROL: is a Lookup whose `List` names a GUID no list has
- *        refused? Without it an ACCEPTED row below is not a finding, because
- *        this probe could not tell a created column from a refused one.
+ *   library.lookup.control-unsupported-operand-refused
+ *        NEGATIVE CONTROL: does the same `createfieldasxml` call refuse a
+ *        schema SharePoint rejects, visibly enough for this probe to read the
+ *        refusal? Without it an ACCEPTED row below is not a finding, because
+ *        this probe could not tell a created column from a refused one. The
+ *        schema sent is a Calculated column whose formula names the positive
+ *        control's Lookup, which `analysis/checks/_structure.py` records
+ *        SharePoint refusing on a live tenant on 2026-08-10 with HTTP 500,
+ *        "One or more column references are not allowed, because the columns
+ *        are defined as a data type that is not supported in formulas". It
+ *        runs after the positive control, because the operand it names is the
+ *        column the positive control creates.
  *   library.lookup.library-to-list-created
  *        LIBRARY -> LIST: is a Lookup column on a document library, targeting
  *        a generic list's `Title`, created, and does it read back as a Lookup
@@ -92,8 +100,8 @@
  * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
  *   Depends on (asserted, read back): the three containers exist; the target
  *   rows, the file and the folder exist; a list-to-list Lookup is created and
- *   reads back bound to its target; a Lookup naming a GUID no list has is
- *   refused.
+ *   reads back bound to its target; the same `createfieldasxml` call refuses a
+ *   Calculated column whose formula names a Lookup operand.
  *   Observes (recorded, never asserted): whether each cross-container Lookup
  *   is accepted, what `LookupList`, `LookupField` and `TypeAsString` read
  *   back, whether an item write takes, what `$expand` projects, whether a
@@ -145,6 +153,20 @@
  * WHEN FINISHED: delete the source list FIRST, then the library, then the
  * target list. That order is not tidiness; see the acyclic finding below.
  */
+// finding: cross-lookup-dangling-list-guid-accepted - a lookup column naming a
+// List GUID no list on the web has is ACCEPTED at creation and read back,
+// rather than refused. Measured on 2026-09-07: createfieldasxml answered HTTP
+// 200 and the column read back LookupList holding the GUID that names nothing.
+// This is the observation that broke the original negative control, which was
+// written on the assumption of a refusal and therefore reported CONTROL
+// FAILED, METHOD VOID and voided every measurement under it. A lookup's `List`
+// is stored as written and resolved later, so acceptance of a create says
+// nothing about the target existing. The control was rewritten to a case
+// SharePoint is measured to refuse; see the row itself. No lookup-specific
+// refusal was available to use instead: the two candidates are both known not
+// to refuse, this one by the run above and a wrong `ShowField` by Learn's
+// `Field element (List)`, which lookup-showfield-probe.js records as warning
+// that a display name there "does not raise an error, but breaks the field".
 // finding: cross-lookup-fixture-must-be-acyclic - the three containers are
 // arranged so no two look up into each other. `multilookup-probe.js` records
 // that SharePoint refuses to recycle a list another list's lookup points into,
@@ -393,7 +415,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 05a150f9. Quote this when reporting results.');
+  log('INFO', 'probe revision 8db68e8e. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
@@ -408,11 +430,12 @@
   const LIST_TO_LIB_TITLE = 'XListToLibTitle';
   const LIST_TO_LIB_NAME = 'XListToLibName';
   const CONTROL_LOOKUP = 'XListToList';
-  const BOGUS_LOOKUP = 'XListToNowhere';
-  // A GUID no list on this web has. Not a near-miss of the target's own id:
-  // the control asks whether an unknown target is refused, not whether a typo
-  // in a real GUID is tolerated.
-  const MISSING_TARGET = '3f2a1c7e-9b04-4d51-8a6f-0e1d2c3b4a59';
+  // The negative control's column. A Calculated field whose formula names a
+  // Lookup operand, which is one of the five operand types
+  // calculated-operand-probe.js measured SharePoint refusing at field
+  // creation. Not a lookup naming a target that does not exist: that case was
+  // measured ACCEPTED, and the dangling-GUID finding in the header records it.
+  const CONTROL_CALC = 'XCalcOverLookup';
 
   // How many empty lookups each join walk creates to walk up to a ceiling
   // with. 14 is the figure threshold-index-probe.js used to find 12, so a
@@ -438,8 +461,9 @@
     log('INFO', `seed ${TGT_ROWS.length} rows in '${TGT}' and one row in '${SRC}'.`);
     log('INFO', `Would create ${LIB_TO_LIST} on the LIBRARY pointing at '${TGT}',`);
     log('INFO', `${LIST_TO_LIB_TITLE} and ${LIST_TO_LIB_NAME} on '${SRC}' pointing at the`);
-    log('INFO', `LIBRARY, ${CONTROL_LOOKUP} on '${SRC}' pointing at '${TGT}' as a positive`);
-    log('INFO', `control, and ${BOGUS_LOOKUP} naming a GUID no list has as a negative one.`);
+    log('INFO', `LIBRARY, and ${CONTROL_LOOKUP} on '${SRC}' pointing at '${TGT}' as a positive`);
+    log('INFO', `control. Would then send ${CONTROL_CALC}, a Calculated column computing from`);
+    log('INFO', `${CONTROL_LOOKUP}, as a negative control, which SharePoint is measured to refuse.`);
     log('INFO', 'Would then write a value through each direction, MERGE Indexed=true onto');
     log('INFO', `each cross-container lookup, and create up to ${JOIN_COLUMNS} empty lookups`);
     log('INFO', 'on the library and on the source list to walk each one to its join ceiling.');
@@ -463,7 +487,7 @@
   expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
   expect('library.lookup.fixture-containers-ready', 'The three containers, the target rows, the file and the folder all exist');
   expect('library.lookup.control-list-to-list-lookup-created', 'POSITIVE CONTROL: a Lookup created by createfieldasxml between two generic lists is created and reads back bound');
-  expect('library.lookup.control-missing-target-refused', 'NEGATIVE CONTROL: a Lookup naming a target GUID no list has is refused');
+  expect('library.lookup.control-unsupported-operand-refused', 'NEGATIVE CONTROL: the same createfieldasxml call refuses a Calculated column whose formula names a Lookup operand');
   expect('library.lookup.library-to-list-created', 'LIBRARY -> LIST: is a Lookup on a document library, targeting a list Title, created and bound?');
   expect('library.lookup.library-to-list-item-write', 'Does setting that lookup on a FILE row of the library take and read back?');
   expect('library.lookup.library-to-list-indexed', 'Does Indexed=true stick on a lookup column held by a document library?');
@@ -772,7 +796,7 @@
   const abortEverything = (reason) => {
     record('library.lookup.fixture-containers-ready', 'The three containers, the target rows, the file and the folder all exist', 'ABORTED', reason);
     record('library.lookup.control-list-to-list-lookup-created', 'POSITIVE CONTROL: a Lookup created by createfieldasxml between two generic lists is created and reads back bound', 'ABORTED', reason);
-    record('library.lookup.control-missing-target-refused', 'NEGATIVE CONTROL: a Lookup naming a target GUID no list has is refused', 'ABORTED', reason);
+    record('library.lookup.control-unsupported-operand-refused', 'NEGATIVE CONTROL: the same createfieldasxml call refuses a Calculated column whose formula names a Lookup operand', 'ABORTED', reason);
     record('library.lookup.library-to-list-created', 'LIBRARY -> LIST: is a Lookup on a document library, targeting a list Title, created and bound?', 'ABORTED', reason);
     record('library.lookup.library-to-list-item-write', 'Does setting that lookup on a FILE row of the library take and read back?', 'ABORTED', reason);
     record('library.lookup.library-to-list-indexed', 'Does Indexed=true stick on a lookup column held by a document library?', 'ABORTED', reason);
@@ -914,23 +938,53 @@
            : '. Nothing below can be read as a statement about document libraries, because '
              + 'the same call did not work between two generic lists.'));
 
-  // ---- NEGATIVE CONTROL: is an unknown target refused? -------------------
-  const bogus = await addField(srcPath, lookupXml(BOGUS_LOOKUP, MISSING_TARGET, 'Title'));
-  const bogusRead = bogus.ok ? await readField(srcPath, BOGUS_LOOKUP) : null;
-  const refusalDetectable = !bogus.ok && isRefusal(bogus.status);
-  record('library.lookup.control-missing-target-refused', 'NEGATIVE CONTROL: a Lookup naming a target GUID no list has is refused',
-         bogus.ok ? 'CONTROL FAILED, METHOD VOID'
+  // ---- NEGATIVE CONTROL: does this call ever say no here? ----------------
+  // The SAME createfieldasxml POST, on the same list, carrying a schema
+  // SharePoint is measured to refuse: a Calculated column computing from a
+  // Lookup. calculated-operand-probe.js sent that shape against a live tenant
+  // on 2026-08-10 and got HTTP 500, "One or more column references are not
+  // allowed, because the columns are defined as a data type that is not
+  // supported in formulas", which analysis/checks/_structure.py cites as the
+  // reason CALCULATED_FORMULA_UNSUPPORTED_OPERAND is an error. The operand is
+  // the positive control's own lookup, so this runs after it.
+  const calcOverLookupXml =
+    `<Field Type="Calculated" DisplayName="${CONTROL_CALC}" Name="${CONTROL_CALC}" `
+    + 'ResultType="Text">'
+    + `<Formula>=[${CONTROL_LOOKUP}]</Formula>`
+    + `<FieldRefs><FieldRef Name="${CONTROL_LOOKUP}"/></FieldRefs></Field>`;
+  // A leftover column from an earlier run would be refused as a duplicate
+  // name, and this row would then report REFUSED on a refusal that says
+  // nothing about the operand. Checked rather than assumed away by CLEANUP.
+  const calcAlready = control.bound && !readFailed(await readField(srcPath, CONTROL_CALC));
+  const notSent = !control.bound
+    ? `${CONTROL_LOOKUP} was never created, so the operand this control computes from does not `
+      + 'exist and a refusal here would be a different refusal. The positive control row above '
+      + 'already voids everything this one guards.'
+    : calcAlready
+      ? `${CONTROL_CALC} already exists on '${SRC}', so this create would be refused as a `
+        + 'duplicate name whatever SharePoint thinks of the operand. Re-run with CLEANUP = true.'
+      : null;
+  const negative = notSent === null ? await addField(srcPath, calcOverLookupXml) : null;
+  const refusalDetectable = negative !== null && !negative.ok && isRefusal(negative.status);
+  record('library.lookup.control-unsupported-operand-refused', 'NEGATIVE CONTROL: the same createfieldasxml call refuses a Calculated column whose formula names a Lookup operand',
+         negative === null ? 'NOT ESTABLISHED'
            : refusalDetectable ? 'REFUSED' : 'CONTROL FAILED, METHOD VOID',
-         bogus.ok
-           ? `a Lookup naming List={${MISSING_TARGET}}, which no list on this web has, was `
-             + `ACCEPTED with HTTP ${bogus.status} and read back `
-             + `${bogusRead && !readFailed(bogusRead) ? `LookupList=${show(bogusRead.body.LookupList)}` : 'unreadably'}. `
-             + 'This probe cannot tell a created lookup from a refused one, so no ACCEPTED row '
-             + 'below would be a finding.'
+         negative === null
+           ? notSent
            : refusalDetectable
-             ? `HTTP ${bogus.status}: ${clip(bogus.text, 240)}`
-             : `the request failed with HTTP ${bogus.status}, which is about who is asking or `
-               + `about the moment, not the server refusing the content: ${clip(bogus.text, 200)}`);
+             ? `${CONTROL_CALC}, a Calculated column computing from the Lookup ${CONTROL_LOOKUP}, `
+               + `was REFUSED: HTTP ${negative.status}: ${clip(negative.text, 240)}. An accepted `
+               + 'create and a refused one are distinguishable on this site, so an ACCEPTED row '
+               + 'below is an observation about SharePoint rather than about this probe.'
+             : negative.ok
+               ? `${CONTROL_CALC}, a Calculated column computing from the Lookup `
+                 + `${CONTROL_LOOKUP}, was ACCEPTED with HTTP ${negative.status}. SharePoint `
+                 + 'refused that operand on a live tenant on 2026-08-10, so an acceptance here '
+                 + 'says this probe cannot tell a created column from a refused one and no '
+                 + 'ACCEPTED row below would be a finding.'
+               : `the request failed with HTTP ${negative.status}, which is about who is asking `
+                 + 'or about the moment, not the server refusing the content: '
+                 + `${clip(negative.text, 200)}`);
 
   // Both controls must hold. The positive one says the call reaches a field
   // collection at all; the negative one says an accepted create and a refused

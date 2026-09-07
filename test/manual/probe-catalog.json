@@ -6088,10 +6088,11 @@
               ]
             },
             {
-              "id": "library.lookup.control-missing-target-refused",
+              "id": "library.lookup.control-unsupported-operand-refused",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
-                "library.lookup.fixture-containers-ready"
+                "library.lookup.fixture-containers-ready",
+                "library.lookup.control-list-to-list-lookup-created"
               ]
             },
             {
@@ -6100,7 +6101,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused"
+                "library.lookup.control-unsupported-operand-refused"
               ]
             },
             {
@@ -6109,7 +6110,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "library.lookup.library-to-list-created"
               ]
             },
@@ -6119,7 +6120,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "library.lookup.library-to-list-created"
               ]
             },
@@ -6129,7 +6130,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused"
+                "library.lookup.control-unsupported-operand-refused"
               ]
             },
             {
@@ -6138,7 +6139,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused"
+                "library.lookup.control-unsupported-operand-refused"
               ]
             },
             {
@@ -6147,7 +6148,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "library.lookup.list-to-library-title-created"
               ]
             },
@@ -6157,7 +6158,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "library.lookup.list-to-library-title-created"
               ]
             },
@@ -6167,7 +6168,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "library.lookup.list-to-library-title-created"
               ]
             },
@@ -6177,7 +6178,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused"
+                "library.lookup.control-unsupported-operand-refused"
               ]
             },
             {
@@ -6186,7 +6187,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused"
+                "library.lookup.control-unsupported-operand-refused"
               ]
             },
             {
@@ -6195,7 +6196,7 @@
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
-                "library.lookup.control-missing-target-refused",
+                "library.lookup.control-unsupported-operand-refused",
                 "scale.join.control-list-lookup-ceiling",
                 "library.lookup.list-to-library-title-created"
               ]
@@ -6206,7 +6207,7 @@
             "library.doc-lib.fixture-library-created",
             "library.lookup.fixture-containers-ready",
             "library.lookup.control-list-to-list-lookup-created",
-            "library.lookup.control-missing-target-refused",
+            "library.lookup.control-unsupported-operand-refused",
             "scale.join.control-list-lookup-ceiling"
           ]
         },
