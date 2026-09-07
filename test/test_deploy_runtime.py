@@ -433,10 +433,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const TITLE_RENAME_KEYS = [...TITLE_SETTINGS_KEYS, 'Title'];
     // Sealed: true is DELIBERATELY synthetic, and known to be so. On a
     // generic list SharePoint refuses every route to it (measured 2026-09-07,
-    // test/manual/title-seal-probe.js); the four sealed Titles that census
-    // found were all document libraries, which `document_library_unsupported`
-    // refuses today. So this seeds a state no list the tool provisions can be
-    // in yet, on purpose: it is the state a library WILL be in when issue #14
+    // test/manual/title-seal-probe.js); every sealed Title that census found,
+    // 8 of 8 across a whole site, was BaseTemplate 101, and this tool builds
+    // only 100. So this seeds a state no list the tool provisions can be in
+    // yet, on purpose: it is the state a library WILL be in when issue #14
     // lands, and it is the only way to exercise the unseal and re-seal path
     // before then.
     const titleState = (listTitle) => (titles[listTitle] ||= {
