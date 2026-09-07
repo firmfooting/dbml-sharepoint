@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: 1a52ca2f
+ * REVISION: 1de597c5
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -189,7 +189,9 @@
  *      paste resumes where the last one stopped.
  *   5. Copy the whole RESULTS block back verbatim.
  *
- * STATUS: NOT YET RUN. Every row below is unmeasured.
+ * STATUS: RUN 1 (2026-09-08), 13/13 settled. Only Id is natively indexed;
+ * Title, Name, Created, Modified, Author and Editor all refuse past the
+ * threshold (SPQueryThrottledException).
  *
  * WHEN FINISHED: set CLEANUP_AT_END with both write gates and re-paste.
  * Expect more than one pass, because a library past 5,000 items will not empty
@@ -214,6 +216,13 @@
 // a selective filter on Name is served past the threshold, the index serving
 // it cannot be one any author added, and if it is refused, no author can fix
 // it either.
+// finding: library-index-threshold-native-index-is-id-only - on a document
+// library past 5,001 items, a selective $filter on Id is served (HTTP 200)
+// while the same filter on Title, Name (FileLeafRef), Created, Modified,
+// Author and Editor is each refused with SPQueryThrottledException. Only Id
+// carries a native index; every other system column — including Title and
+// Name — must be explicitly indexed before it can be queried past the
+// threshold (2026-09-08 run, 13/13 settled, both controls held).
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -438,7 +447,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 1a52ca2f. Quote this when reporting results.');
+  log('INFO', 'probe revision 1de597c5. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
