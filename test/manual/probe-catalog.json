@@ -7578,6 +7578,162 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-large-list-preindex-group-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "the permanent fixture 'dbmlsp Probe PreIndex' built by library-large-list-preindex-fixture-probe.js: 5,100 files, PChoice indexed while the library still held 4,900 and the moment stamped into its Description, PNumber left unindexed. This probe reads that fixture and never builds it, repairs it or writes to it",
+        "PChoice still reading Indexed=true and still carrying the fixture's stamp. The index is the only irreplaceable value here: clearing it turns the library into a second copy of the post-hoc case #481 already measured, and writing it again past 5,000 files cannot put it back. The fixture would have to be rebuilt from empty",
+        "PNumber still reading Indexed=false, because an unindexed column is the only thing that can witness the throttle being enforced on this library at this size",
+        "about a minute of an operator's attention. The bounded re-send is not an index build wait, since nothing in this run writes the flag, so cutting it short loses samples rather than invalidating the reading"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.large-list.fixture-preindex-library-present",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-preindex-index-written-under-threshold",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-witness-unindexed",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-id-query-served",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-absent-column-refused",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-unindexed-filter-refused",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-preindex-witness-unindexed",
+                "library.large-list.control-absent-column-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.control-render-where-absent-refused",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-missing-group-column-ungrouped",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.control-render-where-absent-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.control-preindex-filter-serves",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-preindex-index-written-under-threshold",
+                "library.large-list.control-absent-column-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.control-preindex-group-by-narrowed-honoured",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.control-id-query-served",
+                "library.large-list.control-render-where-absent-refused",
+                "library.large-list.control-missing-group-column-ungrouped"
+              ]
+            },
+            {
+              "id": "library.large-list.preindex-group-by-indexed-column",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-preindex-index-written-under-threshold",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.control-render-where-absent-refused",
+                "library.large-list.control-missing-group-column-ungrouped",
+                "library.large-list.control-preindex-filter-serves",
+                "library.large-list.control-preindex-group-by-narrowed-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.preindex-filter-serves-while-group-by-refused",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-preindex-index-written-under-threshold",
+                "library.large-list.control-absent-column-refused",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.control-preindex-filter-serves"
+              ]
+            },
+            {
+              "id": "library.large-list.preindex-group-by-unindexed-column",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-preindex-witness-unindexed",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.control-render-where-absent-refused",
+                "library.large-list.control-missing-group-column-ungrouped",
+                "library.large-list.control-preindex-group-by-narrowed-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.group-by-native-index-column",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.control-id-query-served",
+                "library.large-list.control-render-where-absent-refused",
+                "library.large-list.control-missing-group-column-ungrouped",
+                "library.large-list.control-preindex-group-by-narrowed-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.preindex-group-by-refusal-signature",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.control-absent-column-refused",
+                "library.large-list.control-render-where-absent-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.large-list.fixture-preindex-library-present",
+            "library.large-list.fixture-preindex-index-written-under-threshold",
+            "library.large-list.fixture-preindex-witness-unindexed",
+            "library.large-list.control-id-query-served",
+            "library.large-list.control-absent-column-refused",
+            "library.large-list.control-unindexed-filter-refused",
+            "library.large-list.control-render-where-absent-refused",
+            "library.large-list.control-missing-group-column-ungrouped",
+            "library.large-list.control-preindex-filter-serves",
+            "library.large-list.control-preindex-group-by-narrowed-honoured"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
