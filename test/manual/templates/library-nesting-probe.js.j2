@@ -39,7 +39,9 @@
  *        would be about this probe rather than about SharePoint.
  *   library.folder.fixture-nested-folders-created
  *        Do the three folders exist, and does each one read back at the nested
- *        path it was asked for rather than beside its parent?
+ *        path it was asked for rather than beside its parent? Asked of folders
+ *        THIS run created: the ladder is recycled before it is built, and a
+ *        folder that survives that is recorded rather than built on.
  *   library.folder.fixture-files-placed
  *        Do the four files exist at the three depths they were uploaded to, and
  *        does each read back holding the choice value written to it?
@@ -171,6 +173,27 @@
 // holds. This probe groups by the parent-folder column and READS THAT COLUMN
 // BACK first, because a group-by over a column the library does not hold is the
 // negative control rather than a measurement.
+// finding: library-nesting-a-folder-read-answers-for-a-folder-that-is-not-there
+// - first live run 2026-09-08, revision 3937f7ae, against a library this run
+// had just created, so no ladder folder could have been in it. A read of
+// `GetFolderByServerRelativeUrl('<library root>/nestlevel-alpha')?$select=Exists`
+// answered HTTP 200 at all three levels, and the negative control's read of
+// `?$select=Exists,ServerRelativeUrl` answered HTTP 200 for a folder under a
+// parent that does not exist. The same three folders, read with
+// `$select=Name,ServerRelativeUrl,Exists,ItemCount`, returned 404. HTTP ok is
+// therefore not presence on this surface. folderIsThere() below reads the body
+// rather than the status, and is right whichever way a tenant answers.
+// finding: library-nesting-a-dirty-fixture-aborts-the-probe - the same run
+// recorded 3 settled, 1 failed and 7 aborted. Reading HTTP 200 as presence sent
+// all three folder creations down an "already present" path, so nothing was
+// built, the ladder read back 404, and every question under the fixture
+// aborted. The negative control failed the same way, reporting REFUSED, BUT THE
+// FOLDER EXISTS about a folder that was not there. Two changes, because either
+// alone leaves the failure available: the ladder and the control's folders are
+// RECYCLED before anything is built, so a folder an earlier run left cannot
+// answer this run's question, and the reuse path is gone, so a folder still
+// present after the reset is recorded rather than built on. A fixture that
+// reuses what it finds measures the previous run.
 (async () => {
 {% include "_probe_harness.js.j2" %}
 
@@ -240,10 +263,13 @@
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first, with its folders.`);
     } else {
-      log('INFO', `CLEANUP is off: an existing '${LIB}' would be reused, and folders`);
-      log('INFO', "from a previous run would answer this run's questions.");
-      log('INFO', 'Set CLEANUP = true for a clean run.');
+      log('INFO', `CLEANUP is off: an existing '${LIB}' would be reused. Set`);
+      log('INFO', 'CLEANUP = true to start from no library at all.');
     }
+    log('INFO', `Either way, the folders '${LEVELS[0]}' and '${MISSING_PARENT}'`);
+    log('INFO', 'inside that library are RECYCLED before the ladder is built,');
+    log('INFO', 'because a ladder built on leftovers measures the previous run.');
+    log('INFO', 'They are restorable from the site recycle bin.');
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
   }
@@ -374,37 +400,102 @@
     ? folderUrl
     : `${folderUrl}/${LEVELS.slice(0, depth).join('/')}`);
 
+  // Is a folder THERE? Not "did the endpoint answer": see the folder-read
+  // finding above, where a read of a folder that could not be there came back
+  // HTTP 200. Both signals in the body are taken, because the live run recorded
+  // the 404 only for the select naming Name and ItemCount. A folder is there
+  // when the body carries a Name and does not say Exists is false, which is
+  // right whether a tenant refuses the read or answers it.
+  const readFolder = async (path) => spGet(
+    `web/GetFolderByServerRelativeUrl('${path}')`
+    + '?$select=Name,ServerRelativeUrl,Exists,ItemCount');
+  const folderIsThere = (read) => !readFailed(read)
+    && read.body.Name !== undefined && read.body.Exists !== false;
+
+  // Both spellings folder-probe.js tries, in its order. RECYCLED rather than
+  // deleted, so anything this clears is restorable from the site recycle bin.
+  const recycleFolder = async (path) => {
+    digest = await getDigest();
+    const gone = await spPost(
+      `web/GetFolderByServerRelativeUrl('${path}')/recycle`, {}, digest);
+    if (gone.ok) return gone;
+    digest = await getDigest();
+    return spPost(`web/GetFolderByServerRelativeUrl('${path}')/recycle()`, {}, digest);
+  };
+
+  // ---- Pre-run reset of the folder ladder ------------------------------
+  // The library outlives a run, whether CLEANUP is off or an earlier run left
+  // it behind, and so do the folders in it. See the dirty-fixture finding
+  // above. Only the folders NAMED here are touched, nothing is enumerated, and
+  // the deepest goes first so that no row rests on a recycle taking children
+  // with it. The control's two folders are cleared as well: a leftover there
+  // makes a refusal and a read-back contradict each other.
+  const stalePaths = [];
+  for (let level = LEVELS.length; level >= 1; level -= 1) stalePaths.push(pathAt(level));
+  stalePaths.push(`${pathAt(0)}/${MISSING_PARENT}/${LEVELS[0]}`);
+  stalePaths.push(`${pathAt(0)}/${MISSING_PARENT}`);
+  const resetNotes = [];
+  for (const path of stalePaths) {
+    if (!folderIsThere(await readFolder(path))) continue;
+    const gone = await recycleFolder(path);
+    resetNotes.push(`'${path}' was left by an earlier run: recycle HTTP `
+      + `${gone.status}, and it now reads `
+      + `${folderIsThere(await readFolder(path)) ? 'STILL PRESENT' : 'absent'}`);
+  }
+  if (resetNotes.length === 0) {
+    resetNotes.push('no folder from an earlier run was found to clear');
+  }
+
   // ---- control-missing-parent-refused: NEGATIVE CONTROL ----------------
   // Addressed at a parent that was never created, and named so that the ladder
   // below cannot create it later. The FolderCollection spelling is used rather
   // than the full-path one because Learn's own full-path example spans two
   // levels, so a full-path create under a missing parent could legitimately
   // succeed by creating both, which would be a finding and not a control.
+  // Read BEFORE the create as well as after. A folder already sitting at the
+  // path makes the refusal and the read-back contradict each other, and that
+  // contradiction reads exactly like SharePoint refusing a create it performed
+  // anyway. It is a leftover, so the row records it and voids rather than
+  // reporting a SharePoint that does two things at once.
+  const orphanPath = `${pathAt(0)}/${MISSING_PARENT}/${LEVELS[0]}`;
+  const orphanBefore = await readFolder(orphanPath);
+  const orphanWasThere = folderIsThere(orphanBefore);
   digest = await getDigest();
   const orphan = await spPost(
     `web/GetFolderByServerRelativeUrl('${pathAt(0)}/${MISSING_PARENT}')`
     + `/folders/add(url='${LEVELS[0]}')`, {}, digest);
-  const orphanBack = await spGet(
-    `web/GetFolderByServerRelativeUrl('${pathAt(0)}/${MISSING_PARENT}/${LEVELS[0]}')`
-    + '?$select=Exists,ServerRelativeUrl');
-  const folderControlHeld = !orphan.ok && isRefusal(orphan.status) && !orphanBack.ok;
+  const orphanBack = await readFolder(orphanPath);
+  const orphanIsThere = folderIsThere(orphanBack);
+  const folderControlHeld = !orphanWasThere && !orphan.ok
+    && isRefusal(orphan.status) && !orphanIsThere;
   record('library.folder.control-missing-parent-refused', Q.missingParent,
-         orphan.ok ? 'FAIL' : isRefusal(orphan.status)
-           ? (orphanBack.ok ? 'REFUSED, BUT THE FOLDER EXISTS' : 'PASS')
-           : 'NOT ESTABLISHED',
-         `a folder creation under '${MISSING_PARENT}', which was never created, `
-         + `returned HTTP ${orphan.status}`
+         orphanWasThere
+           ? 'DIRTY FIXTURE, THE FOLDER WAS THERE BEFORE THE CREATE'
+           : orphan.ok
+             ? 'FAIL'
+             : isRefusal(orphan.status)
+               ? (orphanIsThere ? 'REFUSED, BUT THE FOLDER EXISTS' : 'PASS')
+               : 'NOT ESTABLISHED',
+         `${resetNotes.join('; ')}. A folder creation under '${MISSING_PARENT}', `
+         + `which this probe never creates, returned HTTP ${orphan.status}`
          + (orphan.ok ? '' : `: ${clip(orphan.text, 220)}`)
-         + `; reading the folder it would have made returned HTTP ${orphanBack.status}. `
-         + (orphan.ok
-           ? 'A creation addressed at a parent that does not exist was ACCEPTED, so '
-             + 'this probe cannot tell a folder it created from one it did not, and the '
-             + 'nesting rows are void whichever way they go.'
-           : isRefusal(orphan.status) && !orphanBack.ok
-             ? 'A failed folder creation is observable, so a nesting row below is about '
-               + 'SharePoint rather than about this probe.'
-             : 'Neither signature: the refusal was not the server rejecting the '
-               + 'content, or the folder exists anyway.'));
+         + `; the folder it would have made read HTTP ${orphanBefore.status} as `
+         + `${clip(show(orphanBefore.body), 200)} before the create and HTTP `
+         + `${orphanBack.status} as ${clip(show(orphanBack.body), 200)} after. `
+         + (orphanWasThere
+           ? 'The folder was there BEFORE the create, so this run cannot read the '
+             + 'read-back as a consequence of the create. The row records what it saw '
+             + 'and is void: the reset could not clear a folder an earlier run left.'
+           : orphan.ok
+             ? 'A creation addressed at a parent that does not exist was ACCEPTED, so '
+               + 'this probe cannot tell a folder it created from one it did not, and the '
+               + 'nesting rows are void whichever way they go.'
+             : isRefusal(orphan.status) && !orphanIsThere
+               ? 'A failed folder creation is observable, so a nesting row below is about '
+                 + 'SharePoint rather than about this probe.'
+               : 'Neither signature: the refusal was not the server rejecting the '
+                 + 'content, or the folder exists anyway.'),
+         orphanWasThere ? 'void' : undefined);
 
   // ---- fixture: the choice column --------------------------------------
   const notes = [];
@@ -433,14 +524,19 @@
   // records what happened at every level rather than at the deepest only.
   const spellings = [];
   const madeFolders = [];
+  const leftovers = [];
   for (let level = 0; level < LEVELS.length; level += 1) {
     const parent = pathAt(level);
     const name = LEVELS[level];
-    const already = await spGet(
-      `web/GetFolderByServerRelativeUrl('${pathAt(level + 1)}')?$select=Exists`);
-    if (already.ok) {
-      spellings.push(`'${name}' already present`);
-      madeFolders.push({ level, spelling: 'already present', res: already });
+    // No reuse path, deliberately. The reset above cleared what an earlier run
+    // left, so a folder still here is one this probe could not clear, and
+    // building the ladder on it would answer this run's question with somebody
+    // else's folder. See the dirty-fixture finding above.
+    const before = await readFolder(pathAt(level + 1));
+    if (folderIsThere(before)) {
+      leftovers.push(`'${name}' survived the pre-run reset, so this run did not create it`);
+      spellings.push(`'${name}' NOT CREATED: it was already there after the reset`);
+      madeFolders.push({ level, spelling: 'left over', res: before });
       continue;
     }
     // The three spellings Learn documents, in the order it documents them.
@@ -472,14 +568,14 @@
   // the folder landed at the nested path rather than beside its parent.
   const levelReads = [];
   for (let level = 1; level <= LEVELS.length; level += 1) {
-    const read = await spGet(
-      `web/GetFolderByServerRelativeUrl('${pathAt(level)}')`
-      + '?$select=Name,ServerRelativeUrl,Exists,ItemCount');
+    const read = await readFolder(pathAt(level));
     levelReads.push({
       level,
       status: read.status,
       body: readFailed(read) ? null : read.body,
-      at: !readFailed(read) && read.body.ServerRelativeUrl === pathAt(level),
+      // folderIsThere first: a path this read merely echoed back is not a
+      // folder at that path. See the folder-read finding above.
+      at: folderIsThere(read) && read.body.ServerRelativeUrl === pathAt(level),
     });
   }
   // The parent's own Folders collection, which is what makes the deepest folder
@@ -490,13 +586,18 @@
     ? parentChildren.body.value.map((child) => child.Name)
     : [];
 
-  const foldersReady = colReady && levelReads.every((read) => read.at);
+  const foldersReady = colReady && leftovers.length === 0
+    && levelReads.every((read) => read.at);
   record('library.folder.fixture-nested-folders-created', Q.folders,
          foldersReady ? 'PASS' : 'FAIL',
-         `${notes.join('; ')}. ${spellings.join('; ')}. `
+         `${notes.join('; ')}. ${resetNotes.join('; ')}. ${spellings.join('; ')}. `
          + `Read back: ${levelReads.map((read) => `level ${read.level} HTTP ${read.status} `
            + `${show(read.body)}`).join('; ')}. `
-         + `The Folders collection of '${LEVELS[1]}' holds ${show(childNames)}.`);
+         + `The Folders collection of '${LEVELS[1]}' holds ${show(childNames)}.`
+         + (leftovers.length
+           ? ` DIRTY FIXTURE: ${leftovers.join('; ')}, so this row is about a folder `
+             + 'an earlier run left rather than about SharePoint.'
+           : ''));
 
   if (!foldersReady) {
     record('library.folder.fixture-files-placed', Q.files,

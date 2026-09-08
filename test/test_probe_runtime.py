@@ -995,8 +995,9 @@ _NESTING_MEASUREMENTS = (
 #: every file and every subfolder. What the CONFIG varies is each way a live
 #: run could make the probe's classifiers wrong: a nested create that lands
 #: somewhere else, a create under a parent that does not exist being accepted,
-#: a scope that changes nothing, a group-by SharePoint ignores, and a second
-#: FieldRef it drops.
+#: a scope that changes nothing, a group-by SharePoint ignores, a second
+#: FieldRef it drops, a read that answers for a folder that is not there, a
+#: folder an earlier run left behind, and a recycle that will not clear it.
 _NESTING_HARNESS = textwrap.dedent("""
     const CONFIG = __CONFIG__;
 
@@ -1030,6 +1031,36 @@ _NESTING_HARNESS = textwrap.dedent("""
     const addFolder = (path) => {
       const name = path.slice(path.lastIndexOf('/') + 1);
       folders.set(path, { Name: name, ServerRelativeUrl: path, Exists: true, ItemCount: 0 });
+    };
+
+    // Reading a folder that is NOT there. `exists-false` is the shape run
+    // 20260908T032653 recorded on a library it had just created: the read
+    // answered HTTP 200 unless it named Name or ItemCount, and 404 when it did.
+    // `not-found` is the other tenant the probe has to be right on, refusing
+    // the read whatever the select. A probe reading HTTP ok as presence passes
+    // against `not-found` and skips its whole fixture against `exists-false`.
+    const absentFolderRead = (path, rest) => {
+      if (CONFIG.absentFolder === 'not-found') {
+        return jsonResponse(404, { error: 'no such folder' });
+      }
+      if (/Name|ItemCount/.test(rest)) return jsonResponse(404, { error: 'not found' });
+      return jsonResponse(200, { ServerRelativeUrl: path, Exists: false });
+    };
+
+    // Recycling a folder takes what is under it. The probe's reset clears the
+    // deepest folder first and so does not rest on that, which makes this the
+    // generous case rather than the behaviour the reset needs.
+    const recycleFolder = (path) => {
+      if (CONFIG.folderRecycle === 'refused') {
+        return jsonResponse(500, { error: 'this folder cannot be recycled' });
+      }
+      for (const held of [...folders.keys()]) {
+        if (held === path || held.startsWith(`${path}/`)) folders.delete(held);
+      }
+      for (let at = files.length - 1; at >= 0; at -= 1) {
+        if (String(files[at].FileRef).startsWith(`${path}/`)) files.splice(at, 1);
+      }
+      return jsonResponse(200, { value: 'recycled' });
     };
 
     // A folder creation, addressed at a parent. The two ways a live run could
@@ -1156,6 +1187,26 @@ _NESTING_HARNESS = textwrap.dedent("""
           ServerRelativeUrl: ROOT, fields,
         });
         addFolder(ROOT);
+        // What an earlier run left behind, which the probe has to clear rather
+        // than build on. `ladder` is the nested tree with a file in it;
+        // `orphan-parent` is the folder the negative control addresses, whose
+        // presence makes a refused create and a successful read-back
+        // contradict each other.
+        if (CONFIG.leftover === 'ladder' || CONFIG.leftover === 'both') {
+          addFolder(`${ROOT}/nestlevel-alpha`);
+          addFolder(`${ROOT}/nestlevel-alpha/nestlevel-bravo`);
+          addFolder(`${ROOT}/nestlevel-alpha/nestlevel-bravo/nestlevel-charlie`);
+          files.push({
+            Id: nextItemId, FileLeafRef: 'left-over.txt',
+            FileRef: `${ROOT}/nestlevel-alpha/left-over.txt`,
+            FileDirRef: `${ROOT}/nestlevel-alpha`, FileSystemObjectType: 0,
+          });
+          nextItemId += 1;
+        }
+        if (CONFIG.leftover === 'orphan-parent' || CONFIG.leftover === 'both') {
+          addFolder(`${ROOT}/nestlevel-never-created`);
+          addFolder(`${ROOT}/nestlevel-never-created/nestlevel-alpha`);
+        }
         return jsonResponse(201, { Id: 'list-1' });
       }
 
@@ -1176,7 +1227,11 @@ _NESTING_HARNESS = textwrap.dedent("""
           nextItemId += 1;
           return jsonResponse(200, { Name: name });
         }
-        if (!folders.has(path)) return jsonResponse(404, { error: 'no such folder' });
+        if (rest.startsWith('/recycle')) {
+          if (!folders.has(path)) return jsonResponse(404, { error: 'no such folder' });
+          return recycleFolder(path);
+        }
+        if (!folders.has(path)) return absentFolderRead(path, rest);
         if (rest.startsWith('/Folders')) {
           return jsonResponse(200, { value: [...folders.values()].filter(
             (folder) => folder.ServerRelativeUrl.startsWith(`${path}/`)
@@ -1276,6 +1331,12 @@ def _run_nesting_probe(**config: str) -> dict[str, dict[str, str]]:
         "compose": "both",
         "missingGroupBy": "flat",
         "dirRef": "selectable",
+        # The shape a live tenant answered a missing folder with, so every
+        # nesting test runs against it and a probe reading HTTP ok as presence
+        # cannot pass by default.
+        "absentFolder": "exists-false",
+        "folderRecycle": "ok",
+        "leftover": "none",
         **config,
     }
     script = (
@@ -1430,3 +1491,71 @@ def test_a_path_column_that_cannot_be_selected_still_leaves_the_fixture_readable
     assert rows["library.folder.file-in-nested-folder"]["outcome"] == (
         "UPLOADED, FileRef CARRIES THE PATH, FileDirRef NOT SELECTABLE"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_tenant_that_refuses_a_read_of_a_missing_folder_answers_the_same() -> None:
+    """The two ways a tenant can answer a read of a folder that is not there,
+    and the probe has to be right on both. `exists-false` is the default every
+    other nesting test runs against, because it is what the first live run
+    recorded; a 404 must not change a single row."""
+    rows = _run_nesting_probe(absentFolder="not-found")
+
+    assert rows["library.folder.control-missing-parent-refused"]["outcome"] == "PASS"
+    assert rows["library.folder.fixture-nested-folders-created"]["outcome"] == "PASS"
+    assert rows["library.folder.nesting-depth"]["outcome"] == "NESTS THREE DEEP"
+    assert not [row for row in rows.values() if row["state"] in {"open", "void"}]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_ladder_an_earlier_run_left_is_reset_rather_than_reused() -> None:
+    """A fixture that builds on what it finds measures the previous run. The
+    ladder has to be cleared and rebuilt, and the row has to say so: every
+    folder named as created by an endpoint spelling rather than found."""
+    rows = _run_nesting_probe(leftover="both")
+
+    folders = rows["library.folder.fixture-nested-folders-created"]
+    assert folders["outcome"] == "PASS"
+    assert "was left by an earlier run" in folders["evidence"]
+    assert "NOT CREATED" not in folders["evidence"]
+    assert rows["library.folder.control-missing-parent-refused"]["outcome"] == "PASS"
+    assert rows["library.folder.nesting-depth"]["outcome"] == "NESTS THREE DEEP"
+    assert not [row for row in rows.values() if row["state"] in {"open", "void"}]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_leftover_the_reset_cannot_clear_fails_the_fixture_rather_than_reusing_it() -> None:
+    """The failure the first live run hit, in the shape it can still take: a
+    folder from an earlier run that this run did not create. Building on it
+    would answer this run's question with somebody else's folder, so the
+    fixture row fails and everything under it reports ABORTED, which is open."""
+    rows = _run_nesting_probe(leftover="ladder", folderRecycle="refused")
+
+    folders = rows["library.folder.fixture-nested-folders-created"]
+    assert folders["outcome"] == "FAIL"
+    assert "DIRTY FIXTURE" in folders["evidence"]
+    assert {
+        row_id for row_id, row in rows.items() if row["outcome"] == "ABORTED"
+    } == {*_NESTING_MEASUREMENTS, "library.folder.fixture-files-placed"}
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_control_folder_left_by_an_earlier_run_voids_rather_than_contradicting() -> None:
+    """A folder already sitting where the refused create would have put one
+    makes the refusal and the read-back contradict each other. That is a
+    leftover, not a SharePoint that refuses a create it performed, so the
+    control records what it saw and voids the two rows it gates."""
+    rows = _run_nesting_probe(leftover="orphan-parent", folderRecycle="refused")
+
+    control = rows["library.folder.control-missing-parent-refused"]
+    assert control["outcome"] == "DIRTY FIXTURE, THE FOLDER WAS THERE BEFORE THE CREATE"
+    assert control["state"] == "void"
+    assert {row_id for row_id, row in rows.items() if row["state"] == "void"} == {
+        "library.folder.control-missing-parent-refused",
+        *_NESTING_FOLDER_ROWS,
+    }
+    # The ladder is a different set of folders, so it still builds and the rows
+    # that do not rest on the folder control still answer.
+    assert rows["library.folder.fixture-nested-folders-created"]["outcome"] == "PASS"
+    assert rows["library.folder.view-flattens-depth"]["state"] == "settled"
