@@ -253,7 +253,7 @@ behave on libraries.
 
 Scopes: `doc-lib`, `file-vs-item`, `file`, `column`, `validation`,
 `folder`, `content-type`, `form`, `view`, `formula`, `access`, `query`,
-`field`, `search`, `index`, `lookup`
+`field`, `search`, `index`, `lookup`, `large-list`
 
 Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-columns-probe.js`, `folder-probe.js`, `library-content-type-probe.js`,
@@ -263,7 +263,7 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-view-search-probe.js`, `library-index-probe.js`,
 `cross-lookup-probe.js`, `library-index-threshold-probe.js`,
 `library-grouping-probe.js`, `library-nesting-probe.js`,
-`library-view-interaction-probe.js`
+`library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -289,6 +289,16 @@ neither is answered by it. The scope is on `library` rather than on `field`
 because the subject is the divergence between the containers, which is the
 keying rule applied: a reader asking what is known about libraries should find
 both directions without knowing which probe measured them.
+
+`large-list` is about ENUMERATING a document library that holds more than 5,000
+rows: what a query, a view, a page and a folder scope return when the container
+is past the list view threshold. That is a different subject from `library.index`,
+which asks whether a library carries `SP.Field.Indexed` on a given column, and
+from `scale.threshold`, which holds what a GENERIC LIST does past the same
+figure. The scope was added with `library-large-list-fixture-probe.js`, which
+answers nothing and builds the permanent library the enumeration probes read:
+its library name, target list name, column names, file names and value formulas
+are a contract, and a probe reading that fixture files its rows here.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -365,6 +375,7 @@ surface boundary, and are listed for the same reason:
 | `library-nesting-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-nesting-probe.js` | `control-missing-group-column-ungrouped` and `control-group-by-single-value-column`, the two grouping controls its folder-depth rows rest on, kept under the ids `library-grouping-probe.js` registers for the same questions by the same method | `library.view.*` |
 | `library-view-interaction-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-large-list-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description

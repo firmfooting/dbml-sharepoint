@@ -2223,6 +2223,87 @@
       ]
     },
     {
+      "file": "library-large-list-fixture-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one fixed document library holding 5500 small text files, seven columns on the library and six of them set on every file, and one fixed list holding ten lookup target rows"
+      ],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "a site the operator is willing to leave a permanent 5500-file library on",
+        "several pastes: the upload is capped per run and resumes from the newest file name",
+        "the fixture is left in place on purpose, so this probe has no cleanup path and the CLEANUP flag does nothing"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-target-list-seeded",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-target-list-seeded"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-file-count",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-values-written",
+              "depends_on": [
+                "library.large-list.fixture-target-list-seeded",
+                "library.large-list.fixture-columns-created",
+                "library.large-list.fixture-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-calculated-column-computes",
+              "depends_on": [
+                "library.large-list.fixture-columns-created",
+                "library.large-list.fixture-values-written"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-distribution",
+              "depends_on": [
+                "library.large-list.fixture-file-count",
+                "library.large-list.fixture-values-written"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.large-list.fixture-target-list-seeded",
+            "library.large-list.fixture-columns-created",
+            "library.large-list.fixture-file-count",
+            "library.large-list.fixture-values-written"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-formula-probe.js",
       "surface": "library",
       "harness": "shared-v1",
