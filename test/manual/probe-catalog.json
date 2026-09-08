@@ -1893,6 +1893,108 @@
       ]
     },
     {
+      "file": "library-nesting-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a choice column, three folders nested three deep, and four files placed at three depths"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.folder.control-missing-parent-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.folder.fixture-nested-folders-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.folder.fixture-files-placed",
+              "depends_on": [
+                "library.folder.fixture-nested-folders-created"
+              ]
+            },
+            {
+              "id": "library.folder.nesting-depth",
+              "depends_on": [
+                "library.folder.fixture-nested-folders-created",
+                "library.folder.control-missing-parent-refused"
+              ]
+            },
+            {
+              "id": "library.folder.file-in-nested-folder",
+              "depends_on": [
+                "library.folder.fixture-files-placed",
+                "library.folder.control-missing-parent-refused"
+              ]
+            },
+            {
+              "id": "library.folder.view-flattens-depth",
+              "depends_on": [
+                "library.folder.fixture-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.control-missing-group-column-ungrouped",
+              "depends_on": [
+                "library.folder.fixture-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.control-group-by-single-value-column",
+              "depends_on": [
+                "library.folder.fixture-files-placed"
+              ]
+            },
+            {
+              "id": "library.folder.group-by-path-depth",
+              "depends_on": [
+                "library.folder.fixture-files-placed",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.folder.nesting-with-metadata-group-by",
+              "depends_on": [
+                "library.folder.fixture-files-placed",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.folder.control-missing-parent-refused",
+            "library.folder.fixture-nested-folders-created",
+            "library.folder.fixture-files-placed",
+            "library.view.control-missing-group-column-ungrouped",
+            "library.view.control-group-by-single-value-column"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-grouping-probe.js",
       "surface": "library",
       "harness": "shared-v1",
