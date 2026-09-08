@@ -1,8 +1,14 @@
-release: "3.2.0"
+release: "3.2.1"
 date: "2026-09-08"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "3.2.0"
+schema_version: "3.2.1"
 notes: |
+  3.2.1 indexes Involvement.NextContact. The "Identified, not yet engaged"
+  view filters EngagementStatus and sorts on NextContact, and past the
+  5,000-item threshold an unindexed SORT column fails a view the same way an
+  unindexed filter does. Additive: no column, name or value changes, and the
+  index phase creates it idempotently.
+
   3.2.0 also puts the date a save rule requires on the views you set the
   status from. Reported live: marking an action Done from "My actions" was
   refused for a blank Completed Date, and the grid had no cell to put one in,
