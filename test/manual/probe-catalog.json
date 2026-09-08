@@ -7483,6 +7483,101 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-large-list-preindex-fixture-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one fixed document library holding 5100 small text files, two columns on the library and both set on every file, an index on the Choice column written while the library is still under 5000 files, and a stamp recording that moment in that column's Description"
+      ],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "a site the operator is willing to leave a second permanent 5100-file library on",
+        "several pastes: the upload is capped per run and resumes from the newest file name",
+        "BUILD_FIXTURE set true, without which the probe only checks how far the fixture has already been built",
+        "the index write is sandwiched at 4900 files and the probe refuses to send it once the library is at or past 5000, so a library that crossed unindexed cannot become this fixture",
+        "the fixture is left in place on purpose, so this probe has no cleanup path and the CLEANUP flag does nothing"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-preindex-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.large-list.control-preindex-description-sticks",
+              "depends_on": [
+                "library.large-list.fixture-preindex-columns-created"
+              ]
+            },
+            {
+              "id": "library.large-list.control-preindex-unknown-property-refused",
+              "depends_on": [
+                "library.large-list.fixture-preindex-columns-created"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-index-written-under-threshold",
+              "depends_on": [
+                "library.large-list.fixture-preindex-columns-created",
+                "library.large-list.control-preindex-description-sticks",
+                "library.large-list.control-preindex-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-witness-unindexed",
+              "depends_on": [
+                "library.large-list.fixture-preindex-columns-created"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-file-count",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-preindex-columns-created"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-values-written",
+              "depends_on": [
+                "library.large-list.fixture-preindex-columns-created",
+                "library.large-list.fixture-preindex-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-distribution",
+              "depends_on": [
+                "library.large-list.fixture-preindex-file-count",
+                "library.large-list.fixture-preindex-values-written"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.large-list.fixture-preindex-columns-created",
+            "library.large-list.control-preindex-description-sticks",
+            "library.large-list.control-preindex-unknown-property-refused",
+            "library.large-list.fixture-preindex-file-count",
+            "library.large-list.fixture-preindex-values-written"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

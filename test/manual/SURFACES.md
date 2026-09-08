@@ -266,7 +266,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`,
 `library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`,
 `library-large-list-group-view-probe.js`,
-`library-large-list-multilevel-group-view-probe.js`
+`library-large-list-multilevel-group-view-probe.js`,
+`library-large-list-preindex-fixture-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -369,6 +370,27 @@ single-level version honoured and where the threshold cannot reach it. Without
 that control a refusal at full size could be the shape rather than the size, and
 the three ids that would then be misread declare a dependency on it.
 
+`library-large-list-preindex-fixture-probe.js` files here and mints its own ids
+rather than reusing any of that frame, because it reads a DIFFERENT library.
+Every index this repository has measured past the threshold was written after
+the container was already past it, and the guidance an operator meets says to
+index before the container grows past 5,000. So the probe builds a second
+permanent library, `dbmlsp Probe PreIndex`, whose group-by column is indexed
+while it holds 4,900 files and which is then topped up to 5,100. Its rows all
+carry the `preindex-` stem for that reason: `fixture-preindex-columns-created`
+and `fixture-preindex-file-count` are the same shape of question as the first
+fixture probe's, asked against a different library, and the keying rule makes
+that a new id rather than a second record. The one id it does reuse is
+`library.doc-lib.fixture-library-created`, because creating a document library
+is the same question by the same method whichever library it creates.
+`fixture-preindex-index-written-under-threshold` is the row the probe exists
+for, and it is the one that cannot be re-observed: the build takes about six
+pastes and only one of them writes the index, so that pass stamps the observed
+file count and an ISO timestamp into the column's own `Description` and every
+later pass reports the row by quoting the stamp. A column reading
+`Indexed=true` with no stamp is reported open, because the flag alone is
+equally consistent with a write at 4,900 files and one at 5,099.
+
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
 that the surface is almost entirely unprobed. `library` was in that position
@@ -445,6 +467,7 @@ surface boundary, and are listed for the same reason:
 | `library-nesting-probe.js` | `control-missing-group-column-ungrouped` and `control-group-by-single-value-column`, the two grouping controls its folder-depth rows rest on, kept under the ids `library-grouping-probe.js` registers for the same questions by the same method | `library.view.*` |
 | `library-view-interaction-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-large-list-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-large-list-preindex-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
@@ -497,6 +520,12 @@ different questions and take different ids. They do not merge.
 | Does an index let a group-by through past the threshold | the same Choice column, re-sent for minutes rather than for one, with the filter on it interleaved | `library.large-list.group-by-indexed-column-generous-wait` |
 | Does an index let a group-by through past the threshold | three columns and a three-level `<GroupBy>`, each index waited out | `library.large-list.multilevel-group-by-indexed` |
 | Is a group-by honoured on a single-value column | three columns at once, unindexed, past the list view threshold | `library.large-list.multilevel-group-by-unindexed` |
+| Does a Description MERGE stick on a library column | the pre-index fixture's Number column, chosen because the Choice column's Description carries that fixture's one durable piece of evidence | `library.large-list.control-preindex-description-sticks` |
+| Is an unknown `SP.Field` property refused | sent at the pre-index fixture's Number column | `library.large-list.control-preindex-unknown-property-refused` |
+| Is `Indexed=true` accepted on a library's Choice column | written past the list view threshold, on a library already holding 5,500 files | `library.large-list.index-choice-column` |
+| Is `Indexed=true` accepted on a library's Choice column | written BELOW the threshold, on a second library holding 4,900 files, which is the ordering the index guidance names | `library.large-list.fixture-preindex-index-written-under-threshold` |
+| Does a library hold the file count its fixture contract names | the shared fixture, 5,500 files indexed after crossing | `library.large-list.fixture-file-count` |
+| Does a library hold the file count its fixture contract names | the pre-index fixture, 5,100 files indexed before crossing | `library.large-list.fixture-preindex-file-count` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
