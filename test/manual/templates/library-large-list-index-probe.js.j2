@@ -28,6 +28,14 @@
  * marker on LVText, written as the positive control and put back in the same
  * pass.
  *
+ * WHAT THE TEARDOWN CLEARS, and it is not only this run's writes. With
+ * REMOVE_INDEXES_AT_END set, every contract column reading Indexed=true when
+ * the run starts is put back to false, together with every column this run
+ * indexed from unindexed. The re-paste that restores the fixture is by
+ * definition a run that finds the columns already indexed, so a teardown
+ * scoped to its own writes would have nothing to clear and would leave the
+ * fixture exactly as it found it.
+ *
  * WHAT #472 ALREADY SETTLED, and is therefore not re-asked here.
  * `library-index-threshold-probe.js` ran on 2026-09-08: past the threshold, a
  * selective filter on Id is SERVED, while Title, Name (FileLeafRef), Created,
@@ -198,8 +206,10 @@
  * STATUS: NOT YET RUN.
  *
  * WHEN FINISHED: set REMOVE_INDEXES_AT_END with both write gates and re-paste
- * to return the fixture's columns to unindexed. Leaving them indexed is a
- * choice, not a default: say which it was in the transcript.
+ * to return the fixture's columns to unindexed. That paste clears every
+ * contract column reading Indexed=true, whichever run turned it on, and prints
+ * which ones read false afterwards. Leaving them indexed is a choice, not a
+ * default: say which it was in the transcript.
  */
 // finding: large-list-index-fixture-is-read-not-rebuilt - the fixture this
 // probe measures costs six pastes to build, so nothing here uploads a file or
@@ -222,6 +232,13 @@
 // indexes stays indexed unless REMOVE_INDEXES_AT_END is set on a following
 // paste. A probe written after this one must READ the Indexed flag on this
 // fixture rather than assume it carries none.
+// finding: large-list-index-teardown-clears-what-it-finds-not-what-it-wrote -
+// run 2026-09-08: the REMOVE_INDEXES_AT_END re-paste reverted nothing. The
+// teardown filtered to columns whose start flag was Indexed=false and which
+// this run then indexed, and the whole point of that paste is that the five
+// columns already read Indexed=true, so the filter matched none of them. The
+// teardown now clears every contract column that reads Indexed=true at the
+// start as well, which is the only version of it a re-paste can use.
 // finding: large-list-index-text-number-choice-date-lookup-take - run 2026-09-08:
 // on a library of 5500 files, a MERGE of Indexed:true as SP.Field held on LVText,
 // LVNumber, LVChoice, LVDate and LVLookup; each read Indexed=false before and
@@ -247,9 +264,10 @@
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
   // Teardown, and the only thing here that undoes anything: MERGE Indexed
-  // false back onto every column this run indexed, so the fixture returns to
-  // the state a before/after measurement needs. Off, because a run whose after
-  // half is still waiting on an index build needs the index to still be there.
+  // false back onto every contract column that is indexed, whether this run
+  // indexed it or found it that way, so the fixture returns to the state a
+  // before/after measurement needs. Off, because a run whose after half is
+  // still waiting on an index build needs the index to still be there.
   const REMOVE_INDEXES_AT_END = false;
 
   // ---- The fixture contract, restated ----------------------------------
@@ -379,7 +397,8 @@
     log('INFO', 'It also writes a Description marker on one column as a control and puts');
     log('INFO', 'it straight back. No file, item, column or list is created or deleted.');
     log('INFO', REMOVE_INDEXES_AT_END
-      ? 'REMOVE_INDEXES_AT_END is ON: the index flags would be put back at the end.'
+      ? 'REMOVE_INDEXES_AT_END is ON: every contract column that is indexed at the end'
+        + ' would be put back to Indexed=false, including any a previous run left.'
       : 'REMOVE_INDEXES_AT_END is off: the columns would be LEFT indexed, and a later'
         + ' probe reading this fixture would see that.');
     log('INFO', 'CLEANUP does NOTHING in this probe: it would recycle the fixture.');
@@ -1007,28 +1026,67 @@
   report();
 
   // ---- Teardown ---------------------------------------------------------
+  // Two sets, and they are not the same one. What THIS run turned on is what a
+  // measurement run reports leaving behind. What the teardown has to clear is
+  // every contract column that is indexed at all, because the paste that
+  // restores the fixture is by construction the one that finds the columns
+  // already indexed: on 2026-09-08 a REMOVE_INDEXES_AT_END re-paste reverted
+  // nothing, the five columns the run before it had indexed all read
+  // Indexed=true at the start, and a teardown scoped to its own writes had
+  // nothing in it.
   const indexedByThisRun = CANDIDATES
     .filter((row) => indexResults[row.field] && indexResults[row.field].indexed
       && flags[row.field].indexed === false)
+    .map((row) => row.field);
+  const indexedOnArrival = CANDIDATES
+    .filter((row) => flags[row.field].indexed === true)
     .map((row) => row.field);
   if (!REMOVE_INDEXES_AT_END) {
     log('INFO', indexedByThisRun.length
       ? `The fixture's columns are LEFT INDEXED: ${indexedByThisRun.join(', ')}.`
       : 'No column was indexed by this run, so the fixture is unchanged.');
+    if (indexedOnArrival.length) {
+      log('INFO', `Still indexed from a previous run: ${indexedOnArrival.join(', ')}.`);
+    }
     log('INFO', 'A probe written after this one must READ the Indexed flag on this fixture');
     log('INFO', 'rather than assume it carries none. To put them back, set');
     log('INFO', 'REMOVE_INDEXES_AT_END = true with both write gates and re-paste.');
     return;
   }
 
-  for (const name of indexedByThisRun) {
+  const toClear = CANDIDATES
+    .map((row) => row.field)
+    .filter((name) => indexedByThisRun.indexOf(name) !== -1
+      || indexedOnArrival.indexOf(name) !== -1);
+  if (!toClear.length) {
+    log('INFO', 'REMOVE_INDEXES_AT_END is on and no contract column read Indexed=true, so '
+      + 'there is nothing to put back.');
+    return;
+  }
+  log('INFO', `REMOVE_INDEXES_AT_END: clearing ${toClear.join(', ')}`
+    + (indexedOnArrival.length
+      ? `. ${indexedOnArrival.join(', ')} arrived indexed from an earlier run and are `
+        + 'cleared too, which is what the re-paste is for.'
+      : '.'));
+
+  const cleared = [];
+  const stillIndexed = [];
+  for (const name of toClear) {
     const off = await mergeField(name, { Indexed: false }, 'SP.Field');
     const back = await readField(name);
-    const cleared = off.ok && !readFailed(back) && back.body.Indexed === false;
-    log(cleared ? 'OK' : 'FAIL',
-        cleared
+    const isClear = off.ok && !readFailed(back) && back.body.Indexed === false;
+    (isClear ? cleared : stillIndexed).push(name);
+    log(isClear ? 'OK' : 'FAIL',
+        isClear
           ? `${name}: Indexed is back to false.`
           : `${name}: Indexed is still ${readFailed(back) ? 'unreadable' : show(back.body.Indexed)} `
             + `after HTTP ${off.status} ${clip(off.text, 160)}. The fixture is NOT restored.`);
   }
+  log(stillIndexed.length ? 'FAIL' : 'OK',
+      `Teardown: ${cleared.length} of ${toClear.length} column(s) read Indexed=false on the `
+      + `readback${cleared.length ? `: ${cleared.join(', ')}` : ''}`
+      + (stillIndexed.length
+        ? `. STILL INDEXED: ${stillIndexed.join(', ')}. The next run cannot take the unindexed `
+          + 'half of a before/after measurement on those.'
+        : '. The fixture is back to the state a before/after measurement needs.'));
 })();

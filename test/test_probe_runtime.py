@@ -2730,11 +2730,19 @@ _LARGE_LIST_INDEX_SHRINK = {
 }
 
 
-def _large_list_index_probe_js() -> str:
+def _large_list_index_probe_js(remove_indexes: bool = False) -> str:
     """The rendered index probe with its gates open, its waits shrunk and its
-    result table exposed."""
+    result table exposed.
+
+    ``remove_indexes`` opens the teardown flag the operator sets on the paste
+    that restores the fixture, so the restore runs here rather than only in a
+    live console.
+    """
     js = LARGE_LIST_INDEX_PROBE.read_text(encoding="utf-8")
-    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+    gates = ["CONFIRMED", "ALLOW_WRITES"]
+    if remove_indexes:
+        gates.append("REMOVE_INDEXES_AT_END")
+    for gate in gates:
         opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
         assert opened != js, f"the {gate} gate is not spelled as this test expects"
         js = opened
@@ -2753,7 +2761,7 @@ def _large_list_index_probe_js() -> str:
     return exposed
 
 
-def _large_list_index_output(**config: Any) -> str:
+def _large_list_index_output(remove_indexes: bool = False, **config: Any) -> str:
     settings: dict[str, Any] = {
         "count": 5500,
         "library": "present",
@@ -2770,7 +2778,7 @@ def _large_list_index_output(**config: Any) -> str:
     return _run(
         _LARGE_LIST_INDEX_HARNESS.replace("__CONFIG__", json.dumps(settings))
         + "\n"
-        + _large_list_index_probe_js()
+        + _large_list_index_probe_js(remove_indexes=remove_indexes)
     )
 
 
@@ -2950,3 +2958,85 @@ def test_a_refused_type_hint_is_not_reported_as_a_refused_column() -> None:
     row = rows["library.large-list.index-calculated-column"]
     assert row["outcome"] == "INDEXED"
     assert "The refusal was the TYPE HINT" in row["evidence"]
+
+
+#: What the live run of 2026-09-08 left on the fixture: the five plain
+#: single-value columns took an index, MultiChoice and Calculated refused one.
+#: That state is what the REMOVE_INDEXES_AT_END re-paste has to find and clear.
+_LEFT_INDEXED = ["LVText", "LVNumber", "LVChoice", "LVDate", "LVLookup"]
+_REFUSES_AN_INDEX = {"LVMultiChoice": "refused", "LVCalc": "refused"}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_teardown_clears_the_indexes_an_earlier_run_left() -> None:
+    """The paste that restores the fixture is, by construction, a run that
+    finds the columns already indexed: the run before it indexed them.
+
+    Measured on 2026-09-08: a teardown scoped to the columns THIS run indexed
+    from unindexed matched nothing on that paste and reverted nothing, while
+    the header promised the fixture back. So the columns that arrive indexed
+    are cleared too.
+    """
+    output = _large_list_index_output(
+        remove_indexes=True,
+        preIndexed=_LEFT_INDEXED,
+        indexWrite={"default": "takes", **_REFUSES_AN_INDEX},
+    )
+
+    for column in _LEFT_INDEXED:
+        assert f"[OK] {column}: Indexed is back to false." in output, column
+    # Neither of these ever carried an index, so there is nothing on them to
+    # put back and the teardown must not report clearing one.
+    for column in ("LVMultiChoice", "LVCalc"):
+        assert f"{column}: Indexed is back to false." not in output, column
+    assert (
+        "[OK] Teardown: 5 of 5 column(s) read Indexed=false on the readback"
+    ) in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_teardown_clears_what_this_run_indexed() -> None:
+    """The other half of the union, unchanged: a run that indexes seven columns
+    from unindexed and is told to tidy up puts all seven back."""
+    output = _large_list_index_output(remove_indexes=True)
+
+    for column in ("LVText", "LVNumber", "LVChoice", "LVDate", "LVMultiChoice",
+                   "LVLookup", "LVCalc"):
+        assert f"[OK] {column}: Indexed is back to false." in output, column
+    assert (
+        "[OK] Teardown: 7 of 7 column(s) read Indexed=false on the readback"
+    ) in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_teardown_write_that_changes_nothing_is_not_reported_as_restored() -> None:
+    """The teardown writes, so it reads back. A MERGE accepted and dropped
+    leaves the fixture indexed, and a run that said otherwise would send the
+    next operator to measure a before half that is not there.
+    """
+    output = _large_list_index_output(
+        remove_indexes=True,
+        preIndexed=_LEFT_INDEXED,
+        indexWrite={"default": "ignored"},
+    )
+
+    for column in _LEFT_INDEXED:
+        assert f"[FAIL] {column}: Indexed is still true" in output, column
+    assert "[FAIL] Teardown: 0 of 5 column(s) read Indexed=false" in output
+    assert "STILL INDEXED: LVText, LVNumber, LVChoice, LVDate, LVLookup" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_measurement_run_reverts_nothing_and_names_both_sets() -> None:
+    """Without the flag nothing is undone, which is what a run still waiting on
+    an index build needs. The two sets are reported apart: what this run
+    indexed, and what it found already indexed.
+    """
+    output = _large_list_index_output(preIndexed=["LVChoice"])
+
+    assert "Indexed is back to false" not in output
+    assert (
+        "The fixture's columns are LEFT INDEXED: LVText, LVNumber, LVDate, "
+        "LVMultiChoice, LVLookup, LVCalc."
+    ) in output
+    assert "Still indexed from a previous run: LVChoice." in output
