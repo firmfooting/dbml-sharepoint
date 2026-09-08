@@ -1,0 +1,1535 @@
+/**
+ * dbml-sharepoint PROBE: WHAT DO GROUPING AND VIEW RENDERING DO PAST 5,000 ITEMS?
+ *
+ * ONE QUESTION, asked five ways:
+ *   A view past the list view threshold has three moving parts, and only the
+ *   filter has been measured. Does a GROUP-BY run at this size, does an index
+ *   change that, does the DEFAULT VIEW render at all, and does `Scope`
+ *   ("Recursive", "RecursiveAll") move any of it?
+ *
+ * REVISION: e1ebbe4f
+ *
+ * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
+ * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
+ * dbmlsp-lv-00001.txt upward, carrying LVText, LVChoice (Alpha..Delta),
+ * LVNumber, LVDate, LVMultiChoice, LVCalc and LVLookup. Nothing here uploads a
+ * file, creates a column, creates a folder or writes an item value.
+ *
+ * WHAT IT LEAVES BEHIND: nothing. Two writes, both on LVChoice and both undone
+ * in the same pass: a Description marker, put back, and one MERGE of
+ * `Indexed: true`, cleared at the end. Every later probe reading this fixture
+ * needs it unindexed, because an unindexed column is the only thing that can
+ * witness the throttle, so a run that cannot clear the flag says so loudly
+ * rather than leaving a fixture nobody was told had changed.
+ *
+ * WHAT IS ALREADY SETTLED, and is therefore not re-derived here.
+ *   #472, `library-index-threshold-probe.js`, run 2026-09-08: past the
+ *   threshold a selective OData filter on Id is SERVED, while Title, Name
+ *   (FileLeafRef), Created, Modified, Author and Editor are each REFUSED with
+ *   SPQueryThrottledException. Only Id carries a native index.
+ *   #478, `library-large-list-index-probe.js`, run 2026-09-08: LVText,
+ *   LVNumber, LVChoice, LVDate and LVLookup all accept `Indexed: true` on this
+ *   fixture, an index turns a refused filter or sort into a served one, and an
+ *   index lifts its own column only. LVMultiChoice and LVCalc are REFUSED.
+ *   #479, `library-large-list-calculated-probe.js`, run 2026-09-08: the
+ *   group-by control it took on the UNINDEXED LVChoice came back HTTP 500 with
+ *   the threshold signature. The grouping mechanism itself is throttled at this
+ *   size, which is the observation this probe exists to confirm and then push
+ *   on: it means #479 could attribute nothing to the column being calculated,
+ *   and it leaves "what does an index do to a group-by" unasked.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. All of it files under `library.large-list`,
+ * the scope for reading this fixture past the threshold. Seven ids are already
+ * registered by #478 or #479, kept because the question and the method are the
+ * same and one question takes one id however many probes answer it.
+ *
+ *   library.large-list.fixture-library-present
+ *        Is the fixture library there, holding more than 5,000 files, with the
+ *        seven contract columns reading back as their types?
+ *   library.large-list.fixture-index-flags-clear
+ *        Does every contract column read Indexed=false before this run writes
+ *        anything? LVChoice arriving indexed would make question one measure an
+ *        indexed group-by while calling it an unindexed one.
+ *   library.large-list.control-id-query-served
+ *        POSITIVE CONTROL: is a selective OData filter on Id served past the
+ *        threshold? Id is the one natively indexed column, so this establishes
+ *        that a served answer is observable on this library at this size.
+ *   library.large-list.control-absent-column-refused
+ *        NEGATIVE CONTROL: is an OData filter naming a column the library does
+ *        not hold refused WITHOUT the throttle signature? Every reading below
+ *        turns on telling a throttle apart from a rejected request.
+ *   library.large-list.control-unindexed-filter-refused
+ *        NEGATIVE CONTROL: is a selective OData filter on an unindexed contract
+ *        column refused WITH the throttle signature? Without it the library is
+ *        not demonstrably enforcing the threshold.
+ *   library.large-list.control-render-where-absent-refused
+ *        NEGATIVE CONTROL: is a RenderListDataAsStream query whose `<Where>`
+ *        names a column the library does not hold refused, and refused WITHOUT
+ *        the throttle signature? The three controls above are OData. This is the
+ *        same discrimination on the surface every grouped question below uses.
+ *   library.large-list.control-missing-group-column-ungrouped
+ *        NEGATIVE CONTROL: does a group-by naming a column the library does not
+ *        hold come back IGNORED, with the rows the same query returns with no
+ *        <GroupBy> at all?
+ *   library.large-list.control-choice-description-sticks
+ *        POSITIVE CONTROL: does a Description MERGE on LVChoice itself read
+ *        back? A MERGE that never reaches this column would report it as
+ *        unindexable whatever SharePoint thinks of indexing it.
+ *   library.large-list.control-choice-unknown-property-refused
+ *        NEGATIVE CONTROL: is a MERGE naming a property SP.Field does not have
+ *        refused on LVChoice? Without it, "the write was accepted" says nothing.
+ *   library.large-list.control-group-by-single-value-column
+ *        QUESTION ONE, the confirmation: is a `<GroupBy>` on the UNINDEXED
+ *        LVChoice honoured, ignored or refused past 5,000 items? #479 recorded
+ *        REFUSED (threshold) under this id, which is why the id is reused. It is
+ *        the SUBJECT here rather than an instrument, and nothing below declares
+ *        a dependency on it: a refusal is this probe's first result, not a
+ *        failed control that voids the rest.
+ *   library.large-list.group-by-native-index-column
+ *        QUESTION TWO, the half that needs no write: is a group-by on Id, the
+ *        one natively indexed column, served past 5,000 items? If it is, an
+ *        index is what a group-by wants, measured without touching the fixture.
+ *   library.large-list.index-choice-column
+ *        The write question two rests on: does `Indexed: true` still take on
+ *        LVChoice at this size? #478 recorded INDEXED. It is re-asked rather
+ *        than cited so the transcript is self-contained.
+ *   library.large-list.group-by-indexed-column
+ *        QUESTION TWO: is the same group-by on LVChoice honoured, ignored or
+ *        refused once the column is indexed?
+ *   library.large-list.default-view-renders-first-page
+ *        QUESTION THREE: does the library's DEFAULT VIEW serve its first page
+ *        past 5,000 items, and does an ad-hoc view with no filter and no
+ *        grouping serve one?
+ *   library.large-list.scope-recursive-changes-throttle
+ *        QUESTION FOUR: do `Scope="Recursive"` and `Scope="RecursiveAll"` change
+ *        what the flat query and the grouped query are given, or is the throttle
+ *        the same at every scope?
+ *   library.large-list.filtered-group-by-past-threshold
+ *        QUESTION FIVE: with the row set narrowed by a `<Where>` on the natively
+ *        indexed Id, is a group-by on the unindexed LVChoice served, and are its
+ *        labels the values the filtered rows actually hold?
+ *
+ * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
+ *   Depends on (asserted, read back): the fixture library exists, holds more
+ *   than 5,000 files counted from the newest file name, and carries the seven
+ *   contract columns as their declared types; every contract column reads
+ *   Indexed=false before anything is written; an OData filter on Id is served;
+ *   an OData filter naming an absent column is refused without the throttle
+ *   signature; an OData filter on an unindexed contract column is refused with
+ *   it; a rendered query whose <Where> names an absent column is refused; a
+ *   group-by naming an absent column is ignored; a Description MERGE on LVChoice
+ *   sticks and an unknown property on it is refused.
+ *   Observes (recorded, never asserted): whether a group-by is served, refused
+ *   or ignored on an unindexed column, on the natively indexed Id, on an indexed
+ *   LVChoice and over a filtered row set; whether the default view renders;
+ *   which rows and which statuses each Scope value returns; and what group
+ *   labels come back. NOTHING here asserts that a group-by is honoured at any
+ *   point. A run where every grouped query is refused is a successful run.
+ *
+ * WHY THE HONOURED READING IS A RESULT HERE, NOT A PRECONDITION. On a small
+ * library `library-grouping-probe.js` takes a positive control first: a group-by
+ * on a single-value Choice column comes back honoured, so an unhonoured group-by
+ * elsewhere is about the column. That control CANNOT be taken at this size,
+ * because #479 measured exactly that query returning the threshold. So this
+ * probe does not open with a grouping it needs to work. Every verdict is written
+ * to be readable without one: a throttle is read off the signature in the body,
+ * an honoured grouping off the markers SharePoint adds, and an ignored one off
+ * the same query sent with no <GroupBy> in the same run. The one honoured
+ * reading this probe may produce, on Id or on the indexed LVChoice, is a finding
+ * rather than an instrument.
+ *
+ * HOW A GROUPING IS READ, inherited from `library-grouping-probe.js` and
+ * `library-view-interaction-probe.js`. A `<GroupBy>` naming a column that does
+ * not exist came back HTTP 200 with flat rows on 2026-09-08, so a group-by is
+ * never refused FOR ITS COLUMN NAME and "accepted" means nothing. The
+ * discriminator is HONOURED against IGNORED: an honoured group-by returns rows
+ * carrying `<Field>.COUNT.group`, `<Field>.newgroup` and `<Field>.groupindex`,
+ * and an ignored one returns what the same query returns with no `<GroupBy>`.
+ * A throttle is a third thing and is not that refusal: it comes back with the
+ * threshold signature in the body, which is what control-render-where-absent-
+ * refused establishes is distinguishable here. Every grouped question sends the
+ * collapsed query, the expanded query and one flat baseline for that reason. A
+ * collapsed row carries no file name, so nothing here reads file names off one.
+ *
+ * WHY THE SCOPE QUESTION IS ASKED ON A FLAT FIXTURE, and what that limits it to.
+ * `library-large-list-fixture-probe.js` uploads every file to the library root,
+ * so there is no depth here for `Recursive` to flatten. The subfolders the root
+ * actually holds are READ and reported rather than assumed, because a library
+ * carries a Forms folder it did not create and because a later probe may have
+ * added one. What question four therefore measures is narrow and is stated as
+ * such: whether the Scope attribute changes the THROTTLE, not whether it
+ * flattens depth. `library-nesting-probe.js` settled the flattening on a small
+ * library, and the two are different questions with different fixtures.
+ *
+ * THE Id VALUE TYPE IS TRIED, NOT ASSUMED. Question five needs a `<Where>` on
+ * Id, and a `<Value Type=...>` spelled wrongly comes back as a rejected request,
+ * which is the same shape as a refusal that would be the finding. So both
+ * documented spellings for a counter are sent in turn, the one that reaches the
+ * query planner is used, and the row names which one answered.
+ *
+ * WHY OData FOR THE FILTER CONTROLS. From `library-index-threshold-probe.js`:
+ * past the threshold an OData `$filter` no index can serve returns HTTP 500
+ * SPQueryThrottledException while the same predicate in CAML returns HTTP 200
+ * with a silently partial answer, so OData is the surface that reports the
+ * threshold as an error. The grouped questions have to use the rendered view
+ * surface, because a `<GroupBy>` has nowhere else to live, and that is why the
+ * refusal discrimination is established separately on both surfaces.
+ *
+ * A BOUNDED WAIT AFTER THE INDEX WRITE. SharePoint builds the index behind the
+ * `Indexed` flag asynchronously, so a query sent the instant the flag flips can
+ * still be refused. The after half of question two waits for the OData filter on
+ * LVChoice to be served, then re-sends the grouped query up to
+ * INDEX_WAIT_ATTEMPTS times, INDEX_WAIT_MS apart.
+ *
+ * THE HARNESS CLEANUP FLAG DOES NOTHING HERE, on purpose. resetList() is never
+ * called and CLEANUP is ignored: it would recycle a fixture that takes six
+ * pastes to build.
+ *
+ * WHERE THE ENDPOINTS COME FROM. Every URL, element and attribute is one
+ * Microsoft Learn documents, because a wrong spelling returns 404, isRefusal()
+ * counts 404 as a refusal, and the probe would then print a claim about
+ * SharePoint that was really a typo:
+ *   Field read and MERGE via `fields/getbyinternalnameortitle('<name>')`:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   Items, `$filter`, `$select` and `$top`:
+ *     "Working with lists and list items with REST"
+ *   Reading a view's rows without opening the page, and the default view a
+ *   request with no ViewXml is served from:
+ *     "SP.List.renderListDataAsStream method"
+ *   The `<Query>` children, in the order the syntax block gives them:
+ *     "Query element (List)"
+ *   Grouping a query, and the `Collapse` attribute:
+ *     "GroupBy element (Query)"
+ *   The comparison, its operands and the `Type` attribute of a value:
+ *     "Geq element (Query)", "FieldRef element (Query)", "Value element (Query)"
+ *   The `Scope` attribute of `<View>`, whose documented values are `FilesOnly`
+ *   (files of a specific folder), `Recursive` (all files of all folders) and
+ *   `RecursiveAll` (all files and all subfolders of all folders):
+ *     "View element (List)"
+ *   The library's own root folder and its subfolders:
+ *     "Working with folders and files with REST"
+ *   The threshold and the index model it rests on:
+ *     https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
+ *     https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+ *
+ * SCOPE OF CLAIMS: one tenant, one library, one caller context, one moment. The
+ * threshold is documented as an effective figure rather than a constant, and the
+ * negative controls are what detect a fixture sitting too close to it.
+ *
+ * HOW TO RUN: the run plan, in order
+ *   1. Open the site holding 'dbmlsp Probe LargeLib'. If it is not built, run
+ *      library-large-list-fixture-probe.js first; this probe will not build it.
+ *   2. If a previous run left the fixture's columns indexed, run
+ *      library-large-list-index-probe.js with REMOVE_INDEXES_AT_END first.
+ *   3. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   4. Set CONFIRMED and ALLOW_WRITES true. Paste. Expect a minute or two: the
+ *      index build is asynchronous and the after half waits for it.
+ *   5. Copy the whole RESULTS block back verbatim, including the teardown lines
+ *      after it.
+ *
+ * STATUS: NOT YET RUN. Authored against the merged findings of #472, #478 and
+ * #479. Nothing below has been observed on a live site, and the finding lines
+ * are inherited or about method until it has.
+ */
+// finding: large-list-group-view-fixture-is-read-not-rebuilt - the fixture this
+// probe measures costs six pastes to build, so nothing here uploads a file,
+// creates a column or creates a folder, CLEANUP is ignored, and resetList() is
+// never called. The contract it reads is stated in
+// library-large-list-fixture-probe.js and the column types are read back.
+// finding: large-list-group-view-leaves-the-fixture-unindexed - #478 leaves the
+// columns it indexes indexed and hands the operator a teardown flag. This probe
+// writes one index flag, on LVChoice, and clears it in the same pass. An
+// unindexed column is what witnesses the throttle, so a fixture left indexed
+// takes the instrument away from the next probe rather than merely changing it.
+// finding: large-list-group-view-index-flags-are-read-not-assumed - #478's
+// teardown returns the contract columns to unindexed, and threshold-index-probe.js
+// watched SharePoint index a column on its own between two runs. Both mean the
+// flag has to be read at the start of every run: LVChoice arriving indexed would
+// make question one measure an indexed group-by and call it an unindexed one.
+// finding: large-list-group-view-unindexed-group-by-throttles-inherited - #479,
+// run 2026-09-08: a <GroupBy> on the unindexed LVChoice on this fixture came back
+// HTTP 500 with the threshold signature, so the grouping mechanism throttles at
+// this size and #479 could attribute nothing about grouping to the column being
+// calculated. Question one re-asks it by the same method rather than citing it.
+// finding: large-list-group-view-a-group-by-is-never-refused-for-its-column -
+// inherited from library-grouping-probe.js, first live run 2026-09-08: a
+// <GroupBy> naming a column that does not exist returned HTTP 200 with flat rows.
+// That is what makes "accepted" meaningless and the honoured/ignored pair the
+// discriminator. A THROTTLE is a different refusal and carries the threshold
+// signature in the body, which is why control-render-where-absent-refused exists:
+// without it, a rejected render and a throttled one read the same.
+// finding: large-list-group-view-collapsed-rows-carry-no-file-name - inherited
+// from library-grouping-probe.js, second live run 2026-09-08: a collapsed query's
+// rows did not carry the FileLeafRef its ViewFields named. Nothing here reads a
+// file name off a collapsed row, and a label count is read against the RowLimit,
+// never as a distinct-value count.
+// finding: large-list-group-view-honoured-reading-is-a-result-not-a-precondition
+// - the positive grouping control library-grouping-probe.js opens with cannot be
+// taken at this size, because #479 measured that exact query returning the
+// threshold. So no row here depends on a grouping that works. A throttle is read
+// off its signature, an honoured grouping off the markers, and an ignored one off
+// the same query with no <GroupBy> in the same run.
+// finding: large-list-group-view-fixture-is-flat-so-scope-has-no-depth - the
+// fixture probe uploads every file to the library root, so question four measures
+// whether Scope changes the THROTTLE and not whether it flattens depth.
+// library-nesting-probe.js settled the flattening on a small library, run
+// 2026-09-08: no Scope returns direct children, FilesOnly returns the root files,
+// and Recursive and RecursiveAll flatten. The subfolders this library holds are
+// read and reported rather than assumed, because a library carries a Forms folder
+// nobody created.
+// finding: large-list-group-view-id-value-type-is-tried-not-assumed - a
+// <Value Type=...> spelled wrongly returns a rejected request, the same shape as
+// the refusal that would be the finding. Question five sends both documented
+// counter spellings in turn and names the one that reached the query planner.
+// finding: large-list-group-view-native-index-is-id-only - inherited from #472,
+// run 2026-09-08: on this library past 5,001 files a selective filter on Id is
+// served while Title, Name, Created, Modified, Author and Editor are each refused
+// with SPQueryThrottledException. That is what makes the Id group-by the one
+// indexed grouping this probe can take without writing anything.
+// finding: large-list-group-view-group-by-throttles-even-on-id - measured
+// 2026-09-08: a group-by on Id, the one natively-indexed column, still returns
+// HTTP 500 (threshold). An index does not lift a group-by the way it lifts a
+// filter.
+// finding: large-list-group-view-index-lifts-filter-not-group-by - measured
+// 2026-09-08: after LVChoice was indexed, the selective filter on LVChoice was
+// SERVED, but the group-by on LVChoice was still REFUSED (threshold). Indexing a
+// column rescues its filter, not its group-by; grouping always aggregates the
+// whole row set.
+// finding: large-list-group-view-default-view-serves-first-page - measured
+// 2026-09-08: the default "All Documents" view renders HTTP 200, 30 rows, past
+// 5,000 files. The threshold bites filters and group-bys on non-Id columns, not
+// the plain first page of a view.
+// finding: large-list-group-view-scope-does-not-change-the-throttle - measured
+// 2026-09-08: Scope=null / Recursive / RecursiveAll each leave the group-by
+// throttle unchanged on a flat fixture.
+// finding: large-list-group-view-id-narrowed-group-by-is-honoured - measured
+// 2026-09-08: an Id-guarded <Where> (Id >= newest-5, six rows) with a group-by is
+// SERVED. The only escape from the group-by throttle is to narrow the row set
+// first, so the aggregation runs over a handful of rows.
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  log('INFO', 'probe revision e1ebbe4f. Quote this when reporting results.');
+
+  // ---- The fixture contract, restated ----------------------------------
+  // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
+  const LIB = 'dbmlsp Probe LargeLib';
+  const TEXT = 'LVText';
+  const CHOICE = 'LVChoice';
+  const NUMBER = 'LVNumber';
+  const DATE = 'LVDate';
+  const MULTI = 'LVMultiChoice';
+  const CALC = 'LVCalc';
+  const LOOKUP = 'LVLookup';
+  // Each column beside the type the fixture created it as. Read back, so a
+  // library of the right name holding different columns is caught here rather
+  // than reported as a platform finding.
+  const COLUMN_TYPES = [
+    [TEXT, 'Text'],
+    [NUMBER, 'Number'],
+    [CHOICE, 'Choice'],
+    [DATE, 'DateTime'],
+    [MULTI, 'MultiChoice'],
+    [LOOKUP, 'Lookup'],
+    [CALC, 'Calculated'],
+  ];
+  // The fixture's value formulas, for the columns queried below. The predicted
+  // row counts come from these and the file count, so a served answer is
+  // checked rather than believed.
+  const CHOICES = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+  const CHOICE_MATCH = CHOICES[0];
+  const NUMBER_MATCH = 7;
+  const TEXT_MATCH = 'text-7';
+
+  // More than the documented 5,000, so every query below is asked past it.
+  const FLOOR = 5001;
+  // Well below any page ceiling, so a query that fills the page is visibly
+  // uncounted rather than quietly rounded.
+  const PAGE = 100;
+  // The same figure for a rendered view, and for the same reason.
+  const ROW_LIMIT = 100;
+  const FILE_NUMBER = /dbmlsp-lv-(\d+)\.txt$/;
+  // The two strings a throttled query comes back with. Everything here turns on
+  // telling this refusal from a rejected request, which is what the two
+  // absent-column controls measure, once per surface.
+  const THROTTLE = /exceeds the list view threshold|SPQueryThrottledException/i;
+  // A column name the library does not hold, for the three negative controls.
+  const ABSENT_COLUMN = 'LVNoSuchColumnAtAll';
+  // A name SP.Field does not have. Deliberately not a near-miss of a real
+  // property: the control asks whether an unknown name is refused, not whether
+  // a typo is tolerated.
+  const UNKNOWN_PROPERTY = 'NoSuchFieldPropertyAtAll';
+  const DESCRIPTION_MARKER = 'dbmlsp large-list group-view control marker';
+  // One bounded re-read after a write. Same figure and same reasoning as
+  // library-large-list-index-probe.js: a readback racing a write is a false
+  // negative, a retry loop eventually passes anything.
+  const REREAD_MS = 1500;
+  // The wait for an asynchronous index build.
+  const INDEX_WAIT_ATTEMPTS = 10;
+  const INDEX_WAIT_MS = 6000;
+  // The keys an honoured group-by carries, named rather than matched on the
+  // column name: every column in this fixture is called LV*, so a /group/i test
+  // over a label key would report a grouping that is only a coincidence.
+  const GROUP_MARKER = /\.COUNT\.group$|\.newgroup$|\.groupindex$/;
+  // Every documented value of the View Scope attribute that flattens, plus the
+  // attribute's absence, which is the shape every other question here sends.
+  const SCOPES = [null, 'Recursive', 'RecursiveAll'];
+  // How far back from the newest item id question five's <Where> reaches. Small
+  // enough that the filtered answer is countable by eye, and the row count is
+  // READ rather than predicted: item ids need not be contiguous.
+  const GUARD_SPAN = 5;
+  // Both documented spellings for a counter value, tried in turn. See the
+  // id-value-type finding.
+  const ID_VALUE_TYPES = ['Counter', 'Integer'];
+
+  const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  const lit = (value) => String(value).replace(/'/g, "''");
+  const show = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
+  const clip = (text, length) => String(text === undefined ? '' : text).slice(0, length);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const libPath = `web/lists/getbytitle('${odataName(LIB)}')`;
+  const fieldPath = (name) =>
+    `${libPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
+
+  if (!CONFIRMED) {
+    log('INFO', `Would READ the existing library '${LIB}' on ${WEB}: its file count, its`);
+    log('INFO', 'seven columns, their Indexed flags, its default view and the subfolders of');
+    log('INFO', 'its root. It builds NOTHING. It would then send selective OData filters');
+    log('INFO', `reading at most ${PAGE} rows each, and rendered view reads of at most`);
+    log('INFO', `${ROW_LIMIT} rows: flat, grouped, filtered, and at each documented Scope.`);
+    log('INFO', `It writes twice, both on ${CHOICE}: a Description marker, put straight back,`);
+    log('INFO', 'and one MERGE of Indexed=true, which is cleared before the run ends. No');
+    log('INFO', 'file, item, column, folder or list is created or deleted, and no index is');
+    log('INFO', 'left behind.');
+    log('INFO', 'CLEANUP does NOTHING in this probe: it would recycle the fixture.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write a field.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+  if (CLEANUP) {
+    log('INFO', 'CLEANUP is on and is IGNORED here: it would recycle a fixture that takes');
+    log('INFO', 'six pastes to build. This probe has no destructive path at all.');
+  }
+
+  expect('library.large-list.fixture-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries the seven contract columns`);
+  expect('library.large-list.fixture-index-flags-clear', 'Every contract column reads Indexed=false before this run writes anything');
+  expect('library.large-list.control-id-query-served', 'POSITIVE CONTROL: a selective filter on Id is served past the threshold');
+  expect('library.large-list.control-absent-column-refused', 'NEGATIVE CONTROL: a filter naming a column the library does not hold is refused WITHOUT the throttle signature');
+  expect('library.large-list.control-unindexed-filter-refused', 'NEGATIVE CONTROL: a selective filter on an unindexed contract column is refused WITH the throttle signature');
+  expect('library.large-list.control-render-where-absent-refused', 'NEGATIVE CONTROL: a rendered query whose <Where> names a column the library does not hold is refused WITHOUT the throttle signature');
+  expect('library.large-list.control-missing-group-column-ungrouped', 'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored');
+  expect('library.large-list.control-choice-description-sticks', `POSITIVE CONTROL: a Description MERGE on ${CHOICE} itself reads back`);
+  expect('library.large-list.control-choice-unknown-property-refused', `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CHOICE}`);
+  expect('library.large-list.control-group-by-single-value-column', `Is a group-by on the unindexed ${CHOICE} honoured, ignored or refused past 5,000 items`);
+  expect('library.large-list.group-by-native-index-column', 'Is a group-by on Id, the one natively indexed column, served past 5,000 items');
+  expect('library.large-list.index-choice-column', `Does Indexed=true take on ${CHOICE} (Choice) past 5,000 items`);
+  expect('library.large-list.group-by-indexed-column', `Is a group-by on ${CHOICE} honoured, ignored or refused once the column is indexed`);
+  expect('library.large-list.default-view-renders-first-page', 'Does the library default view serve its first page past 5,000 items');
+  expect('library.large-list.scope-recursive-changes-throttle', 'Do Scope="Recursive" and Scope="RecursiveAll" change what a flat and a grouped query are given');
+  expect('library.large-list.filtered-group-by-past-threshold', `Is a group-by on the unindexed ${CHOICE} served once a <Where> on Id has narrowed the rows`);
+
+  // Every row still carrying the harness sentinel, stamped with one reason. A
+  // run that stops early must not report questions it never asked as merely
+  // unreached.
+  const abortRemaining = (outcome, why) => {
+    for (const row of RESULTS) {
+      if (row.evidence === 'the run did not reach this question') {
+        record(row.id, row.question, outcome, why);
+      }
+    }
+  };
+
+  // ---- Reading instruments ---------------------------------------------
+  // No $select on a field read, for the reason native-index-probe.js records:
+  // one unrecognised name errors the whole request, and every column would then
+  // read as unreadable rather than as missing one property.
+  const readField = async (name) => spGet(fieldPath(name));
+
+  const mergeField = async (name, body, type) => {
+    const digest = await getDigest();
+    return spPost(fieldPath(name), { __metadata: { type }, ...body }, digest, {
+      Accept: 'application/json;odata=verbose',
+      'Content-Type': 'application/json;odata=verbose',
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': '*',
+    });
+  };
+
+  // The entity type SharePoint itself reports for a field, read verbose because
+  // nometadata is defined by not carrying it. Only ever consulted after a
+  // refusal, to separate a rejected TYPE from a rejected WRITE.
+  const entityTypeOf = async (name) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${fieldPath(name)}`, {
+        headers: { Accept: 'application/json;odata=verbose' },
+      });
+      if (!res.ok) return null;
+      const body = await res.json().catch(() => null);
+      return (body && body.d && body.d.__metadata && body.d.__metadata.type) || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const indexedNow = (read) => !readFailed(read) && read.body.Indexed === true;
+
+  // One OData query, classified from the FULL body and quoted from a clipped
+  // copy. Classifying from the clipped text would miss a throttle signature that
+  // sits past the clip.
+  const askQuery = async (query, label, select) => {
+    const r = await spGet(`${libPath}/items?$select=${select || 'Id'}&$top=${PAGE}&${query}`);
+    const raw = r.body ? JSON.stringify(r.body) : '';
+    return {
+      ok: r.ok,
+      status: r.status,
+      label,
+      rows: (r.ok && r.body && Array.isArray(r.body.value)) ? r.body.value.length : -1,
+      value: (r.ok && r.body && Array.isArray(r.body.value)) ? r.body.value : [],
+      throttled: THROTTLE.test(raw),
+      transient: r.status === 429 || r.status === 408 || r.status === 503,
+      body: raw ? clip(raw, 260) : '(no body)',
+    };
+  };
+  const askFilter = (filter, select) =>
+    askQuery(`$filter=${encodeURIComponent(filter)}`, `$filter=${filter}`, select);
+
+  // `expected` is the row count the fixture's own formulas give this filter.
+  // null means the count is not being compared, which is only ever the case for
+  // a filter whose match set is bigger than the page.
+  const judge = (result, expected) => {
+    if (result.transient) return 'NOT ESTABLISHED (throttled)';
+    if (result.throttled) return 'REFUSED (threshold)';
+    if (isRefusal(result.status)) return 'REFUSED (request rejected; read the body)';
+    if (!result.ok) return `NOT ESTABLISHED (HTTP ${result.status})`;
+    if (result.rows === PAGE) return 'SERVED (page full, so the count is unreadable)';
+    if (expected !== null && result.rows !== expected) {
+      return `NOT ESTABLISHED (served ${result.rows} row(s) where the fixture gives ${expected})`;
+    }
+    return `SERVED (${result.rows} row(s))`;
+  };
+
+  // The bounded wait for an asynchronous index build. A transient status stops
+  // it: this waits for an index to appear, not for a tenant to calm down.
+  const untilServed = async (ask) => {
+    const started = Date.now();
+    let attempts = 0;
+    let last = null;
+    while (attempts < INDEX_WAIT_ATTEMPTS) {
+      if (attempts) await sleep(INDEX_WAIT_MS);
+      last = await ask();
+      attempts += 1;
+      if (last.ok || last.transient) break;
+    }
+    return { result: last, attempts, waitedMs: Date.now() - started };
+  };
+
+  // ---- Reading a rendered view -----------------------------------------
+  const rowsOf = (res) => {
+    if (readFailed(res)) return [];
+    if (Array.isArray(res.body.Row)) return res.body.Row;
+    if (res.body.ListData && Array.isArray(res.body.ListData.Row)) return res.body.ListData.Row;
+    return [];
+  };
+
+  // One ViewXml. Every part is optional and every part is named by the caller,
+  // because the whole subject here is which combination was sent. `<Query>`
+  // children go Where then GroupBy, the order the syntax block in "Query element
+  // (List)" gives them. The absent-column controls pass their own `fields`, so a
+  // column that does not exist is named ONLY in the clause under measurement and
+  // never in <ViewFields>, where a refusal would be about the wrong clause: the
+  // rule library-grouping-probe.js set for the same control.
+  const viewXmlFor = (opts) => {
+    const scope = (opts.scope === undefined || opts.scope === null) ? '' : ` Scope="${opts.scope}"`;
+    const where = opts.minId === undefined || opts.minId === null
+      ? (opts.whereOn
+        ? `<Where><Eq><FieldRef Name="${opts.whereOn}"/>`
+          + `<Value Type="Text">${opts.whereValue}</Value></Eq></Where>`
+        : '')
+      : `<Where><Geq><FieldRef Name="ID"/>`
+        + `<Value Type="${opts.idType}">${opts.minId}</Value></Geq></Where>`;
+    const grouping = opts.groupBy
+      ? `<GroupBy Collapse="${opts.collapse || 'TRUE'}">`
+        + `<FieldRef Name="${opts.groupBy}"/></GroupBy>`
+      : '';
+    const fields = opts.fields
+      || ['FileLeafRef', NUMBER].concat(opts.groupBy ? [opts.groupBy] : []);
+    return `<View${scope}><Query>${where}${grouping}</Query><ViewFields>`
+      + fields.map((name) => `<FieldRef Name="${name}"/>`).join('')
+      + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
+  };
+
+  // `noViewXml` sends the parameters object with no ViewXml at all, which is how
+  // "SP.List.renderListDataAsStream method" documents a render of the list's own
+  // default view. That is question three's first leg and it is the only request
+  // here whose query this probe did not write.
+  const askView = async (opts) => {
+    const xml = opts.noViewXml ? null : viewXmlFor(opts);
+    const digest = await getDigest();
+    const res = await spPost(`${libPath}/RenderListDataAsStream`,
+                             { parameters: xml === null ? {} : { ViewXml: xml } }, digest);
+    return {
+      res,
+      rows: rowsOf(res),
+      xml: xml === null ? '(no ViewXml: the list default view)' : xml,
+      throttled: THROTTLE.test(res.text || ''),
+      transient: res.status === 429 || res.status === 408 || res.status === 503,
+    };
+  };
+
+  const judgeView = (seen) => {
+    if (seen.transient) return 'NOT ESTABLISHED (throttled)';
+    if (seen.throttled) return 'REFUSED (threshold)';
+    if (!seen.res.ok && isRefusal(seen.res.status)) {
+      return 'REFUSED (request rejected; read the body)';
+    }
+    if (!seen.res.ok) return `NOT ESTABLISHED (HTTP ${seen.res.status})`;
+    if (seen.rows.length === ROW_LIMIT) {
+      return `SERVED (${seen.rows.length} row(s), which is the RowLimit, so the count is a page`
+        + ' rather than a total)';
+    }
+    return `SERVED (${seen.rows.length} row(s))`;
+  };
+
+  // The coarse class a scope comparison is made on. Row counts are recorded
+  // beside it rather than folded into it: RecursiveAll is documented to add
+  // subfolder rows, and a different count is not a different throttle.
+  const classOf = (seen) => {
+    if (seen.transient) return 'transient';
+    if (seen.throttled) return 'refused-threshold';
+    if (!seen.res.ok && isRefusal(seen.res.status)) return 'rejected';
+    if (!seen.res.ok) return `http-${seen.res.status}`;
+    return 'served';
+  };
+
+  const markersIn = (rows) => {
+    const seen = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        if (GROUP_MARKER.test(key) && !seen.includes(key)) seen.push(key);
+      }
+    }
+    return seen;
+  };
+
+  // The file names a query returned, server-produced and read only off rows that
+  // carry one. A collapsed row does not. See the collapsed-row finding.
+  const namesOf = (rows) => rows
+    .map((row) => String(row.FileLeafRef === undefined ? '' : row.FileLeafRef))
+    .filter((name) => name !== '');
+
+  const distinct = (values) => {
+    const seen = [];
+    for (const value of values) {
+      const key = show(value);
+      if (!seen.some((held) => show(held) === key)) seen.push(value);
+    }
+    return seen;
+  };
+
+  // Everything the SERVER said about one grouping, and nothing this probe worked
+  // out for itself: a probe that sorts flat rows into buckets by reading each
+  // row's value has measured its own arithmetic.
+  const observeGroup = async (opts) => {
+    const collapsed = await askView({ ...opts, collapse: 'TRUE' });
+    const expanded = await askView({ ...opts, collapse: 'FALSE' });
+    const flat = await askView({ ...opts, groupBy: null });
+    const markers = markersIn(collapsed.rows);
+    const labels = collapsed.rows.map(
+      (row) => (opts.groupBy && opts.groupBy in row ? row[opts.groupBy] : undefined));
+    const served = judgeView(collapsed);
+    const verdict = !served.startsWith('SERVED') ? served
+      : markers.length ? 'HONOURED'
+        : (flat.res.ok && collapsed.rows.length === flat.rows.length) ? 'IGNORED'
+          : 'NOT ESTABLISHED (no group markers, and the flat baseline did not answer)';
+    return {
+      collapsed, expanded, flat, markers, labels, verdict,
+      text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s) `
+        + `against a RowLimit of ${ROW_LIMIT}, labels ${clip(show(labels), 240)}, grouping `
+        + `markers ${clip(show(markers), 240)}, first row `
+        + `${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 300)}; expanded HTTP `
+        + `${expanded.res.status} returned ${expanded.rows.length} row(s); the same query with no `
+        + `<GroupBy> returned HTTP ${flat.res.status} with ${flat.rows.length} row(s); ViewXml `
+        + `${clip(collapsed.xml, 300)}`
+        + (collapsed.res.ok ? '' : `; collapsed body ${clip(collapsed.res.text, 220)}`),
+    };
+  };
+
+  // The same bounded wait, for a grouped query rather than an OData one.
+  const untilGrouped = async (opts) => {
+    const started = Date.now();
+    let attempts = 0;
+    let last = null;
+    while (attempts < INDEX_WAIT_ATTEMPTS) {
+      if (attempts) await sleep(INDEX_WAIT_MS);
+      last = await observeGroup(opts);
+      attempts += 1;
+      if (last.collapsed.res.ok || last.collapsed.transient) break;
+    }
+    return { seen: last, attempts, waitedMs: Date.now() - started };
+  };
+
+  // ---- fixture-library-present -----------------------------------------
+  const libRead = await spGet(`${libPath}?$select=Title,BaseTemplate,ItemCount`);
+  const libOk = !readFailed(libRead);
+  // Counted from the newest file NAME, never from ItemCount, and read with the
+  // one ordering the fixture probe established is served past the threshold:
+  // $orderby=Id desc on the natively indexed Id.
+  const newest = libOk
+    ? await spGet(`${libPath}/items?$select=Id,FileLeafRef&$orderby=Id desc&$top=1`)
+    : null;
+  const newestRow = (newest && !readFailed(newest) && Array.isArray(newest.body.value)
+    && newest.body.value.length) ? newest.body.value[0] : null;
+  const digits = newestRow ? String(newestRow.FileLeafRef || '').match(FILE_NUMBER) : null;
+  const count = digits ? Number(digits[1]) : 0;
+  const newestId = newestRow ? newestRow.Id : null;
+
+  const flags = {};
+  const columnProblems = [];
+  if (libOk) {
+    for (const [name, wanted] of COLUMN_TYPES) {
+      const read = await readField(name);
+      const ok = !readFailed(read);
+      flags[name] = {
+        read: ok,
+        status: read.status,
+        type: ok ? read.body.TypeAsString : null,
+        indexed: ok && typeof read.body.Indexed === 'boolean' ? read.body.Indexed : null,
+        auto: ok && typeof read.body.AutoIndexed === 'boolean' ? read.body.AutoIndexed : null,
+        description: ok ? read.body.Description : null,
+      };
+      if (!ok) columnProblems.push(`${name} did not read back (HTTP ${read.status})`);
+      else if (flags[name].type !== wanted) {
+        columnProblems.push(`${name} is ${show(flags[name].type)}, wanted ${wanted}`);
+      }
+    }
+  }
+
+  const flagNote = (name) => `${name}: Indexed=${show(flags[name] ? flags[name].indexed : null)}`
+    + `, AutoIndexed=${show(flags[name] ? flags[name].auto : null)}`;
+  const present = libOk && count >= FLOOR && columnProblems.length === 0;
+  record('library.large-list.fixture-library-present',
+         `The fixture library '${LIB}' is present, holds more than 5,000 files and carries the seven contract columns`,
+         !libOk ? 'ABORTED' : count < FLOOR ? 'SHORT' : columnProblems.length ? 'FAIL' : 'PASS',
+         (libOk
+           ? `the newest file is ${show(newestRow ? newestRow.FileLeafRef : null)}, so the library `
+             + `holds ${count} file(s) against the ${FLOOR} this probe needs; ItemCount reads `
+             + `${show(libRead.body.ItemCount)} and is not what the count is taken from`
+           : `the library did not read back (HTTP ${libRead.status}): ${clip(show(libRead.body), 200)}`)
+         + '. '
+         + (columnProblems.length
+           ? `column problems: ${columnProblems.join('; ')}`
+           : libOk
+             ? 'every contract column read back as its declared type, and their index flags are '
+               + `${COLUMN_TYPES.map(([name]) => flagNote(name)).join('; ')}`
+             : '')
+         + (present
+           ? '. This probe does not build the fixture. It is owned by '
+             + 'library-large-list-fixture-probe.js.'
+           : '. Run library-large-list-fixture-probe.js until its fixture rows read PASS, '
+             + 'then re-paste this one.'));
+
+  if (!present) {
+    abortRemaining('ABORTED',
+                   'the fixture was not readable as this probe needs it, so no query was sent '
+                   + 'and no field was written');
+    report();
+    return;
+  }
+
+  // ---- fixture-index-flags-clear ---------------------------------------
+  // Read before anything is written. #478 leaves the columns it indexes indexed
+  // unless its teardown flag was set, and threshold-index-probe.js watched
+  // SharePoint index a column on its own between two runs.
+  const indexedAlready = COLUMN_TYPES
+    .map(([name]) => name)
+    .filter((name) => flags[name].indexed !== false);
+  const choiceUnindexed = flags[CHOICE].indexed === false;
+  record('library.large-list.fixture-index-flags-clear',
+         'Every contract column reads Indexed=false before this run writes anything',
+         indexedAlready.length === 0 ? 'PASS' : choiceUnindexed ? 'FAIL' : 'ABORTED',
+         `${COLUMN_TYPES.map(([name]) => flagNote(name)).join('; ')}`
+         + (indexedAlready.length === 0
+           ? '. Nothing carries an index, so the unindexed half of every measurement below is '
+             + 'takeable and the throttle has a witness.'
+           : `. Not clear: ${indexedAlready.join(', ')} did not read Indexed=false. `
+             + (choiceUnindexed
+               ? `${CHOICE} itself is unindexed, so questions one and two can still be asked, but `
+                 + 'the witness for the throttle has to be a column that is still unindexed and '
+                 + 'the row below names which one answered.'
+               : `${CHOICE} is NOT unindexed, so question one cannot be asked at all: a group-by `
+                 + 'measured on it now would be an indexed group-by reported as an unindexed one. '
+                 + 'Run library-large-list-index-probe.js with REMOVE_INDEXES_AT_END, then '
+                 + 're-paste.')));
+
+  if (!choiceUnindexed) {
+    abortRemaining('ABORTED',
+                   `${CHOICE} arrived indexed, so the unindexed half of this probe cannot be `
+                   + 'measured and no write was sent. Clear the fixture indexes and re-paste');
+    report();
+    return;
+  }
+
+  // The predicted row counts, from the fixture's formulas and the file count. A
+  // served answer carrying a different number was answered from something other
+  // than the fixture this probe thinks it is reading.
+  const tally = (predicate) => {
+    let total = 0;
+    for (let n = 1; n <= count; n += 1) if (predicate(n)) total += 1;
+    return total;
+  };
+  const numberExpected = tally((n) => n % 1000 === NUMBER_MATCH);
+  const textExpected = tally((n) => `text-${n % 100}` === TEXT_MATCH);
+  // Bigger than the page on any real fixture, so its count is not compared.
+  const choiceExpected = tally((n) => CHOICES[n % 4] === CHOICE_MATCH);
+  const choiceFilter = `${CHOICE} eq '${lit(CHOICE_MATCH)}'`;
+
+  // ---- control-id-query-served -----------------------------------------
+  const idFilter = await askFilter(`Id eq ${newestId}`);
+  const idFilterOutcome = judge(idFilter, 1);
+  const idServed = idFilterOutcome.startsWith('SERVED');
+  record('library.large-list.control-id-query-served',
+         'POSITIVE CONTROL: a selective filter on Id is served past the threshold',
+         idServed ? 'SERVED' : 'CONTROL FAILED, METHOD VOID',
+         `${idFilter.label} on ${count} file(s): HTTP ${idFilter.status}, ${idFilterOutcome}`
+         + (idServed
+           ? '. A served answer is therefore observable on this library at this size, which is '
+             + 'what the Id-guarded question below rests on.'
+           : `. Body: ${idFilter.body}. Id is the one natively indexed column `
+             + '(library-index-threshold-probe.js, 2026-09-08), so a refusal here says the method '
+             + 'cannot observe a served answer at all, not that an index is missing.'));
+
+  // ---- control-absent-column-refused -----------------------------------
+  const absent = await askFilter(`${ABSENT_COLUMN} eq 'x'`);
+  const absentRefused = isRefusal(absent.status) && !absent.throttled;
+  record('library.large-list.control-absent-column-refused',
+         'NEGATIVE CONTROL: a filter naming a column the library does not hold is refused WITHOUT the throttle signature',
+         absentRefused ? 'REFUSED (request rejected, no throttle signature)'
+           : 'CONTROL FAILED, METHOD VOID',
+         `${absent.label}: HTTP ${absent.status}, throttle signature `
+         + `${absent.throttled ? 'PRESENT' : 'absent'}: ${absent.body}`
+         + (absentRefused
+           ? '. A rejected request and a throttled one are therefore distinguishable on the OData '
+             + 'surface, which is what every filter refusal below is read against.'
+           : absent.throttled
+             ? '. A filter on a column that does not exist came back carrying the throttle '
+               + 'signature, so no refusal below can be attributed to the threshold.'
+             : '. The server did not refuse a filter on a column that does not exist, so a '
+               + 'refusal below cannot be read as the server rejecting the query either.'));
+
+  // ---- control-unindexed-filter-refused --------------------------------
+  // The witness is whichever contract column still reads Indexed=false, taken in
+  // preference order with the subject column first.
+  const WITNESSES = [
+    { field: CHOICE, filter: choiceFilter, expected: null, matching: choiceExpected },
+    { field: TEXT, filter: `${TEXT} eq '${lit(TEXT_MATCH)}'`, expected: textExpected,
+      matching: textExpected },
+    { field: NUMBER, filter: `${NUMBER} eq ${NUMBER_MATCH}`, expected: numberExpected,
+      matching: numberExpected },
+  ];
+  const witness = WITNESSES.find((row) => flags[row.field].indexed === false) || null;
+  const witnessSeen = witness === null ? null : await askFilter(witness.filter);
+  const witnessOutcome = witnessSeen === null ? null : judge(witnessSeen, witness.expected);
+  const throttleEnforced = witnessOutcome !== null
+    && witnessOutcome.startsWith('REFUSED (threshold)') && absentRefused;
+  record('library.large-list.control-unindexed-filter-refused',
+         'NEGATIVE CONTROL: a selective filter on an unindexed contract column is refused WITH the throttle signature',
+         witness === null ? 'NOT ESTABLISHED'
+           : throttleEnforced ? 'REFUSED (threshold)' : 'CONTROL FAILED, METHOD VOID',
+         witness === null
+           ? 'every contract column read Indexed=true at the start of this run, so there is no '
+             + 'unindexed column left to witness a throttle with. Run '
+             + 'library-large-list-index-probe.js with REMOVE_INDEXES_AT_END, then re-paste: '
+             + `flags were ${COLUMN_TYPES.map(([name]) => flagNote(name)).join('; ')}`
+           : `${witnessSeen.label} on ${count} file(s), matching ${witness.matching} of them: HTTP `
+             + `${witnessSeen.status}, ${witnessOutcome}. ${flagNote(witness.field)}: `
+             + `${witnessSeen.body}`
+             + (throttleEnforced
+               ? '. The library is therefore past the threshold and throttling is enforced on it, '
+                 + 'so a refusal below is the threshold and an answer served below is worth '
+                 + 'something.'
+               : '. Without a refusal here nothing below is evidence of the threshold: the '
+                 + 'library may simply not be far enough past it for this tenant to enforce it.'));
+
+  // ---- control-render-where-absent-refused -----------------------------
+  // The same discrimination as control-absent-column-refused, on the surface the
+  // grouped questions use. ViewFields deliberately omits ABSENT_COLUMN: it is
+  // named in the <Where> alone, so a refusal is about the clause under
+  // measurement.
+  const renderAbsent = await askView({ whereOn: ABSENT_COLUMN, whereValue: 'x',
+                                       fields: ['FileLeafRef'] });
+  const renderAbsentRefused = !renderAbsent.res.ok && isRefusal(renderAbsent.res.status)
+    && !renderAbsent.throttled;
+  record('library.large-list.control-render-where-absent-refused',
+         'NEGATIVE CONTROL: a rendered query whose <Where> names a column the library does not hold is refused WITHOUT the throttle signature',
+         renderAbsentRefused ? 'REFUSED (request rejected, no throttle signature)'
+           : 'CONTROL FAILED, METHOD VOID',
+         `RenderListDataAsStream with <Where> on ${ABSENT_COLUMN}: HTTP `
+         + `${renderAbsent.res.status} with ${renderAbsent.rows.length} row(s), throttle signature `
+         + `${renderAbsent.throttled ? 'PRESENT' : 'absent'}: ${clip(renderAbsent.res.text, 240)}`
+         + (renderAbsentRefused
+           ? '. A rejected render and a throttled one are therefore distinguishable, so a REFUSED '
+             + '(threshold) verdict on a grouped query below is the threshold rather than the '
+             + 'server rejecting the query.'
+           : renderAbsent.throttled
+             ? '. A rendered query naming a column that does not exist came back carrying the '
+               + 'throttle signature, so no grouped refusal below can be attributed to the '
+               + 'threshold.'
+             : '. The render surface did not refuse a query naming a column that does not exist, '
+               + 'so a refusal below cannot be read as the server rejecting what was sent '
+               + 'either.'));
+
+  // ---- default-view-renders-first-page ---------------------------------
+  // Two legs. The first is the library's own default view, rendered by sending
+  // no ViewXml at all, which is the only request here whose query this probe did
+  // not write. The second is an ad-hoc view with no <Where> and no <GroupBy>,
+  // which is also the flat baseline every grouped question is compared against.
+  // The view definition is read with NO $select, the rule native-index-probe.js
+  // records: one unrecognised name errors the whole request.
+  const defaultView = await spGet(`${libPath}/DefaultView`);
+  const viewNote = readFailed(defaultView)
+    ? `the default view did not read back (HTTP ${defaultView.status})`
+    : `default view ${show(defaultView.body.Title)}, RowLimit `
+      + `${show(defaultView.body.RowLimit)}, Scope ${show(defaultView.body.Scope)}, ViewQuery `
+      + `${clip(show(defaultView.body.ViewQuery), 200)}`;
+  const defaultRender = await askView({ noViewXml: true });
+  const adHocFlat = await askView({});
+  const defaultOutcome = judgeView(defaultRender);
+  const adHocOutcome = judgeView(adHocFlat);
+  const defaultServed = defaultOutcome.startsWith('SERVED');
+  const adHocServed = adHocOutcome.startsWith('SERVED');
+  record('library.large-list.default-view-renders-first-page',
+         'Does the library default view serve its first page past 5,000 items',
+         defaultServed && adHocServed ? 'BOTH SERVE THE FIRST PAGE'
+           : defaultServed ? 'DEFAULT VIEW SERVES, AD-HOC FLAT VIEW DOES NOT'
+             : adHocServed ? 'AD-HOC FLAT VIEW SERVES, DEFAULT VIEW DOES NOT'
+               : defaultRender.throttled ? 'REFUSED (threshold)'
+                 : `NOT ESTABLISHED (${defaultOutcome})`,
+         `on ${count} file(s). ${viewNote}. Rendered with no ViewXml: HTTP `
+         + `${defaultRender.res.status}, ${defaultOutcome}, throttle signature `
+         + `${defaultRender.throttled ? 'PRESENT' : 'absent'}`
+         + (defaultRender.res.ok ? '' : `: ${clip(defaultRender.res.text, 220)}`)
+         + `. An ad-hoc <View> with no <Where> and no <GroupBy> at a RowLimit of ${ROW_LIMIT}: `
+         + `HTTP ${adHocFlat.res.status}, ${adHocOutcome}`
+         + (adHocFlat.res.ok ? '' : `: ${clip(adHocFlat.res.text, 220)}`)
+         + (defaultServed
+           ? '. A page of rows is a page, not a count: what is OBSERVED is that the container '
+             + 'renders past the threshold, and nothing here says how many rows it would return '
+             + 'without the limit.'
+           : '. A default view that does not render is the failure an operator sees first, and it '
+             + 'is recorded here as what it is rather than inferred from the grouped rows below.'));
+
+  // ---- control-missing-group-column-ungrouped --------------------------
+  // ViewFields deliberately omits ABSENT_COLUMN, for the same reason as the
+  // <Where> control above.
+  const groupAbsent = await observeGroup({ groupBy: ABSENT_COLUMN,
+                                           fields: ['FileLeafRef', NUMBER] });
+  const groupIgnorable = groupAbsent.verdict === 'IGNORED';
+  record('library.large-list.control-missing-group-column-ungrouped',
+         'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored',
+         groupIgnorable ? 'IGNORED' : 'CONTROL FAILED, METHOD VOID',
+         `${groupAbsent.verdict}. ${groupAbsent.text}`
+         + (groupIgnorable
+           ? '. An ignored group-by is therefore observable and is not the same reading as an '
+             + 'honoured one, which is the only discriminator a served group-by offers.'
+           : '. A group-by naming a column that does not exist did not come back as the flat '
+             + 'query, so honoured and ignored are not separable on this run and a served grouped '
+             + 'row below says less than it appears to.'));
+
+  // ---- group-by-native-index-column ------------------------------------
+  // The half of question two that needs no write: Id is the one natively indexed
+  // column on this library (#472), so this asks what an index does to a group-by
+  // without touching the fixture.
+  const groupId = await observeGroup({ groupBy: 'ID', fields: ['FileLeafRef', NUMBER, 'ID'] });
+  const idGroupHonoured = groupId.verdict === 'HONOURED';
+  record('library.large-list.group-by-native-index-column',
+         'Is a group-by on Id, the one natively indexed column, served past 5,000 items',
+         groupId.verdict,
+         `${groupId.text}. Id is natively indexed on this library and nothing else is `
+         + '(library-index-threshold-probe.js, 2026-09-08), so this is an INDEXED group-by taken '
+         + 'with no write at all. Every file carries its own Id, so an honoured grouping here is '
+         + `one group per row and the ${ROW_LIMIT} RowLimit is what bounds the answer: the row `
+         + 'count is a page of groups and is not a distinct-value count'
+         + (idGroupHonoured
+           ? '. It also gives this run one honoured grouping to read the markers against, which '
+             + 'is a result rather than a precondition: see the honoured-reading finding in the '
+             + 'header.'
+           : '. Read this beside the two questions below: if an indexed group-by is not served '
+             + 'either, an index is not what a group-by past the threshold wants.'));
+
+  // ---- control-group-by-single-value-column: QUESTION ONE --------------
+  // The confirmation. #479 recorded REFUSED (threshold) under this id, on this
+  // column, on this fixture, by this method. It is the subject here, so nothing
+  // declares a dependency on it and a refusal voids nothing.
+  const groupChoiceBefore = await observeGroup({ groupBy: CHOICE });
+  record('library.large-list.control-group-by-single-value-column',
+         `Is a group-by on the unindexed ${CHOICE} honoured, ignored or refused past 5,000 items`,
+         groupChoiceBefore.verdict,
+         `with ${flagNote(CHOICE)} as read at the start of the run, over ${count} file(s) and the `
+         + `four values ${show(CHOICES)}: ${groupChoiceBefore.text}`
+         + (groupChoiceBefore.verdict.startsWith('REFUSED (threshold)')
+           ? `. This CONFIRMS #479 by the same method: the grouping mechanism itself is throttled `
+             + 'at this size on a column carrying no index, which is why #479 could attribute '
+             + 'nothing about grouping to its column being calculated. What an index does to it '
+             + 'is the next two rows.'
+           : '. #479 recorded this same query as REFUSED (threshold) on 2026-09-08, so a '
+             + 'different answer here is a change in the fixture or in the tenant and the two '
+             + 'transcripts have to be read together.'));
+
+  // ---- filtered-group-by-past-threshold: QUESTION FIVE ------------------
+  // Taken while LVChoice is still unindexed, so the only thing that could serve
+  // this grouping is the <Where> narrowing the rows. The Id value type is tried
+  // rather than assumed: see the finding in the header.
+  const minId = newestId - GUARD_SPAN;
+  const idTypeAttempts = [];
+  let idType = null;
+  for (const type of ID_VALUE_TYPES) {
+    const seen = await askView({ minId, idType: type, fields: ['FileLeafRef', NUMBER, CHOICE] });
+    idTypeAttempts.push(`Type="${type}": HTTP ${seen.res.status}, ${judgeView(seen)}`
+      + (seen.res.ok ? '' : ` ${clip(seen.res.text, 160)}`));
+    if (seen.res.ok || seen.throttled) {
+      idType = type;
+      break;
+    }
+  }
+  const filterVoid = !idServed
+    ? 'the positive control was not served, so an Id clause cannot narrow anything on this run '
+      + 'and the filtered grouping measures nothing'
+    : !renderAbsentRefused
+      ? 'the render surface did not separate a rejected request from a throttled one, so a '
+        + 'refusal here could not be read either way'
+      : null;
+  if (filterVoid !== null) {
+    record('library.large-list.filtered-group-by-past-threshold',
+           `Is a group-by on the unindexed ${CHOICE} served once a <Where> on Id has narrowed the rows`,
+           'VOID', filterVoid, 'void');
+  } else if (idType === null) {
+    record('library.large-list.filtered-group-by-past-threshold',
+           `Is a group-by on the unindexed ${CHOICE} served once a <Where> on Id has narrowed the rows`,
+           'NOT ESTABLISHED',
+           'neither documented counter spelling reached the query planner, so the <Where> this '
+           + 'question needs was never accepted and nothing about grouping was measured: '
+           + idTypeAttempts.join('; '));
+  } else {
+    const filtered = await observeGroup({ minId, idType, groupBy: CHOICE,
+                                          fields: ['FileLeafRef', NUMBER, CHOICE] });
+    const filteredRows = filtered.flat.rows;
+    const filteredNames = namesOf(filteredRows);
+    // Both sides are server-produced: the per-row values come from the EXPANDED
+    // query and the labels from the COLLAPSED one. Nothing here buckets a flat
+    // answer for itself.
+    const rowValues = distinct(filtered.expanded.rows
+      .filter((row) => CHOICE in row)
+      .map((row) => row[CHOICE]));
+    const labels = distinct(filtered.labels.filter((label) => label !== undefined));
+    const overFiltered = filtered.verdict === 'HONOURED' && labels.length > 0
+      && labels.every((label) => rowValues.some((value) => show(value) === show(label)));
+    const outcome = filtered.verdict !== 'HONOURED' ? filtered.verdict
+      : overFiltered ? 'HONOURED OVER THE FILTERED ROWS'
+        : 'HONOURED, BUT A LABEL NAMES A VALUE THE FILTERED ROWS DO NOT HOLD';
+    record('library.large-list.filtered-group-by-past-threshold',
+           `Is a group-by on the unindexed ${CHOICE} served once a <Where> on Id has narrowed the rows`,
+           outcome,
+           `<Where><Geq> on ID at ${minId} (the newest item id ${newestId} less ${GUARD_SPAN}), `
+           + `with ${flagNote(CHOICE)}. The counter spelling was tried rather than assumed: `
+           + `${idTypeAttempts.join('; ')}, so Type="${idType}" is what answered. The same filter `
+           + `with no <GroupBy> returned ${filteredRows.length} row(s) naming `
+           + `${clip(show(filteredNames), 240)}, a count READ rather than predicted because item `
+           + `ids need not be contiguous. ${filtered.text}. The values those filtered rows hold, `
+           + `off the expanded query, are ${clip(show(rowValues), 200)} and the collapsed labels `
+           + `are ${clip(show(labels), 200)}`
+           + (filtered.verdict.startsWith('REFUSED (threshold)')
+             ? `. A <Where> on the natively indexed Id narrowing the answer to a handful of rows `
+               + 'does NOT let a group-by on an unindexed column through: the throttle is about '
+               + 'the column the grouping names, not about how many rows survive the filter.'
+             : overFiltered
+               ? '. The group was built over the rows the filter kept, so a filtered view groups '
+                 + 'what it shows. Read this beside library.view.filter-with-group-by, which '
+                 + 'measured the same composition on a library of six files.'
+               : filtered.verdict === 'HONOURED'
+                 ? '. A label names a value no filtered row carries, which is the signature of a '
+                   + 'group built over more than the filtered rows.'
+                 : '. The grouped half did not come back served, so what the group was built over '
+                   + 'was not observed.'));
+  }
+
+  // ---- scope-recursive-changes-throttle: QUESTION FOUR ------------------
+  // The subfolders the root actually holds are read, because RecursiveAll is
+  // documented to add subfolder rows and a library carries a Forms folder nobody
+  // created. Nothing here asserts the fixture is flat; it reports what it found.
+  const folderRead = await spGet(`${libPath}/RootFolder/Folders?$select=Name&$top=50`);
+  const folderNames = (!readFailed(folderRead) && Array.isArray(folderRead.body.value))
+    ? folderRead.body.value.map((row) => row.Name)
+    : null;
+  const scopeLegs = [];
+  for (const scope of SCOPES) {
+    const flatLeg = await askView({ scope });
+    const groupLeg = await askView({ scope, groupBy: CHOICE });
+    scopeLegs.push({ scope, flatLeg, groupLeg,
+                     flatClass: classOf(flatLeg), groupClass: classOf(groupLeg) });
+  }
+  const sameFlat = scopeLegs.every((leg) => leg.flatClass === scopeLegs[0].flatClass);
+  const sameGroup = scopeLegs.every((leg) => leg.groupClass === scopeLegs[0].groupClass);
+  const scopeVoid = !renderAbsentRefused
+    ? 'the render surface did not separate a rejected request from a throttled one, so a scope '
+      + 'that changed a refusal could not be read as changing the throttle'
+    : null;
+  if (scopeVoid !== null) {
+    record('library.large-list.scope-recursive-changes-throttle',
+           'Do Scope="Recursive" and Scope="RecursiveAll" change what a flat and a grouped query are given',
+           'VOID', scopeVoid, 'void');
+  } else {
+    record('library.large-list.scope-recursive-changes-throttle',
+           'Do Scope="Recursive" and Scope="RecursiveAll" change what a flat and a grouped query are given',
+           sameFlat && sameGroup ? 'NO CHANGE TO THE THROTTLE AT ANY SCOPE'
+             : `SCOPE CHANGES THE ANSWER (flat ${sameFlat ? 'unchanged' : 'changes'}, grouped `
+               + `${sameGroup ? 'unchanged' : 'changes'})`,
+           `on ${count} file(s), with ${flagNote(CHOICE)}. `
+           + scopeLegs.map((leg) => `Scope=${show(leg.scope)}: flat HTTP `
+             + `${leg.flatLeg.res.status} ${judgeView(leg.flatLeg)} (${leg.flatClass}), grouped on `
+             + `${CHOICE} HTTP ${leg.groupLeg.res.status} ${judgeView(leg.groupLeg)} `
+             + `(${leg.groupClass})`).join('; ')
+           + '. The root folder holds '
+           + (folderNames === null
+             ? `subfolders that did not read back (HTTP ${folderRead.status})`
+             : `${folderNames.length} subfolder(s), ${clip(show(folderNames), 200)}`)
+           + '. The fixture probe uploads every file to the root, so there is no depth here for '
+           + 'Recursive to flatten and this row is about the THROTTLE alone; '
+           + 'library-nesting-probe.js settled the flattening on a small library. The comparison '
+           + 'is made on the refusal class rather than on the row count, because RecursiveAll is '
+           + 'documented to add subfolder rows and a different count is not a different throttle.');
+  }
+
+  // ---- control-choice-description-sticks -------------------------------
+  // The field MERGE itself, proved on the very column the index write targets and
+  // on a property whose readback is not in doubt.
+  const priorDescription = flags[CHOICE].description;
+  const setDesc = await mergeField(CHOICE, { Description: DESCRIPTION_MARKER }, 'SP.Field');
+  let descRead = await readField(CHOICE);
+  let descReRead = false;
+  const descriptionNow = () => (readFailed(descRead) ? null : descRead.body.Description);
+  if (setDesc.ok && descriptionNow() !== DESCRIPTION_MARKER) {
+    await sleep(REREAD_MS);
+    descRead = await readField(CHOICE);
+    descReRead = true;
+  }
+  const descSticks = setDesc.ok && descriptionNow() === DESCRIPTION_MARKER;
+  record('library.large-list.control-choice-description-sticks',
+         `POSITIVE CONTROL: a Description MERGE on ${CHOICE} itself reads back`,
+         descSticks ? 'DESCRIPTION STUCK' : 'CONTROL FAILED, METHOD VOID',
+         `MERGE Description on ${CHOICE} returned HTTP ${setDesc.status}; it reads back `
+         + `${show(descriptionNow())}`
+         + (descReRead ? `, on a re-read ${REREAD_MS} ms later` : '')
+         + (descSticks
+           ? '. A field MERGE reaches this column, so an index write below that changes nothing '
+             + 'is the column and not a write that never arrived.'
+           : `: ${clip(setDesc.text, 200)}. Nothing below can distinguish a column that refuses an `
+             + 'index from a MERGE that never arrived.'));
+  let descriptionRestored = !descSticks;
+  if (descSticks) {
+    // The marker is this probe's, not the fixture's. Put it back in the same
+    // pass, and say so loudly if that fails.
+    const restored = await mergeField(
+      CHOICE,
+      { Description: priorDescription === null || priorDescription === undefined
+        ? '' : priorDescription },
+      'SP.Field');
+    descriptionRestored = restored.ok;
+    log(restored.ok ? 'OK' : 'FAIL',
+        restored.ok
+          ? `Description on ${CHOICE} put back to ${show(priorDescription)}.`
+          : `Description on ${CHOICE} is still the control marker: the restore returned HTTP `
+            + `${restored.status} ${clip(restored.text, 200)}`);
+  }
+
+  // ---- control-choice-unknown-property-refused -------------------------
+  const unknown = await mergeField(CHOICE, { [UNKNOWN_PROPERTY]: 'x' }, 'SP.Field');
+  const unknownRefused = isRefusal(unknown.status);
+  record('library.large-list.control-choice-unknown-property-refused',
+         `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CHOICE}`,
+         unknownRefused ? 'REFUSED' : 'CONTROL FAILED, METHOD VOID',
+         `MERGE ${UNKNOWN_PROPERTY} on ${CHOICE} returned HTTP ${unknown.status}: `
+         + `${clip(unknown.text, 200)}`
+         + (unknownRefused
+           ? '. The endpoint therefore rejects a property it does not know, so "the write was '
+             + 'accepted" below would mean the property was recognised.'
+           : '. An unknown property was ACCEPTED, so acceptance of Indexed=true below would say '
+             + 'nothing about whether the property was recognised.'));
+
+  // ---- index-choice-column ---------------------------------------------
+  // #478 recorded INDEXED on this column. It is re-asked rather than cited, so
+  // that question two rests on a state this transcript observed.
+  const methodControlsHeld = descSticks && unknownRefused;
+  const wrote = await mergeField(CHOICE, { Indexed: true }, 'SP.Field');
+  let afterWrite = await readField(CHOICE);
+  let indexReRead = false;
+  if (wrote.ok && !indexedNow(afterWrite)) {
+    await sleep(REREAD_MS);
+    afterWrite = await readField(CHOICE);
+    indexReRead = true;
+  }
+  let indexTook = indexedNow(afterWrite);
+  let indexOutcome = null;
+  const afterNote = readFailed(afterWrite)
+    ? `unreadable after (HTTP ${afterWrite.status})`
+    : `Indexed=${show(afterWrite.body.Indexed)}, `
+      + `AutoIndexed=${show(afterWrite.body.AutoIndexed)} after`;
+
+  if (wrote.ok) {
+    const evidence = `MERGE Indexed:true as SP.Field on a library of ${count} file(s) returned `
+      + `HTTP ${wrote.status}; ${flagNote(CHOICE)} before, ${afterNote}`
+      + (indexReRead ? `, on a re-read ${REREAD_MS} ms later` : '')
+      + (indexTook
+        ? '. This confirms #478 by the same method. The teardown below clears it, so the fixture '
+          + 'is left as it was found.'
+        : '. The write was accepted and changed nothing, which is the failure class this '
+          + 'repository exists to find, and it contradicts #478');
+    if (!indexTook && !methodControlsHeld) {
+      indexOutcome = 'VOID';
+      record('library.large-list.index-choice-column',
+             `Does Indexed=true take on ${CHOICE} (Choice) past 5,000 items`,
+             'VOID',
+             `${evidence}. The method controls did not hold (a Description MERGE `
+             + `${descSticks ? 'stuck' : 'did not stick'} and an unknown property was `
+             + `${unknownRefused ? 'refused' : 'accepted'}), so a write that changed nothing `
+             + 'cannot be told from a write that never arrived',
+             'void');
+    } else {
+      indexOutcome = indexTook ? 'INDEXED' : 'SILENTLY IGNORED';
+      record('library.large-list.index-choice-column',
+             `Does Indexed=true take on ${CHOICE} (Choice) past 5,000 items`,
+             indexOutcome, evidence);
+    }
+  } else if (!isRefusal(wrote.status)) {
+    indexOutcome = 'NOT ESTABLISHED';
+    record('library.large-list.index-choice-column',
+           `Does Indexed=true take on ${CHOICE} (Choice) past 5,000 items`,
+           'NOT ESTABLISHED',
+           `the MERGE failed with HTTP ${wrote.status}, which is about who is asking or about the `
+           + `moment rather than the server refusing it: ${clip(wrote.text, 200)}`);
+  } else {
+    // Refused as SP.Field. Ask once more with the type SharePoint itself reports
+    // for this field, because a rejected type hint and a rejected write are
+    // otherwise the same observation.
+    const ownType = await entityTypeOf(CHOICE);
+    const retried = ownType && ownType !== 'SP.Field'
+      ? await mergeField(CHOICE, { Indexed: true }, ownType)
+      : null;
+    const afterRetry = retried && retried.ok ? await readField(CHOICE) : null;
+    indexTook = afterRetry !== null && indexedNow(afterRetry);
+    indexOutcome = indexTook ? 'INDEXED' : 'REFUSED';
+    const asBase = `MERGE Indexed:true as SP.Field was REFUSED, HTTP ${wrote.status}, verbatim: `
+      + clip(wrote.text, 300);
+    record('library.large-list.index-choice-column',
+           `Does Indexed=true take on ${CHOICE} (Choice) past 5,000 items`,
+           indexOutcome,
+           indexTook
+             ? `${asBase}. Retried naming the type SharePoint reports for this field, ${ownType}: `
+               + `HTTP ${retried.status}, and Indexed read back true. The refusal was the TYPE `
+               + 'HINT, not the column. Note the deployer sends SP.Field. The teardown below '
+               + 'clears the flag.'
+             : `${asBase}. `
+               + (retried === null
+                 ? (ownType === null
+                   ? 'The field entity type could not be read, so a type mismatch was not ruled '
+                     + 'out.'
+                   : `SharePoint reports this field as ${ownType}, the same base type, so there `
+                     + 'was no type mismatch to rule out.')
+                 : `Retried as ${ownType}: HTTP ${retried.status}`
+                   + (retried.ok
+                     ? `, and Indexed read back ${afterRetry && !readFailed(afterRetry)
+                       ? show(afterRetry.body.Indexed) : 'unreadable'}`
+                     : `: ${clip(retried.text, 160)}`)
+                   + '. The refusal is the column, not the type hint.')
+               + ` This CONTRADICTS #478, which recorded ${CHOICE} as taking an index on this `
+               + 'fixture, so question two cannot be asked and the two transcripts have to be '
+               + 'read together.');
+  }
+
+  // ---- group-by-indexed-column: QUESTION TWO ---------------------------
+  if (!indexTook) {
+    record('library.large-list.group-by-indexed-column',
+           `Is a group-by on ${CHOICE} honoured, ignored or refused once the column is indexed`,
+           'NOT ESTABLISHED',
+           `${CHOICE} did not take an index this run (index-choice-column: ${indexOutcome}), so `
+           + 'there is no indexed half to measure. What an index does to a group-by cannot be '
+           + 'asked of a column that has not got one. The nearest answer this run holds is '
+           + `group-by-native-index-column, which asked the same thing of Id: ${groupId.verdict}.`);
+  } else {
+    // The index build is asynchronous. Wait for the OData filter on this column
+    // to be served, which is the signal #478 used, then re-send the grouped
+    // query while it is still refused.
+    const waitedFilter = await untilServed(() => askFilter(choiceFilter));
+    const filterAfter = judge(waitedFilter.result, null);
+    const waitedGroup = await untilGrouped({ groupBy: CHOICE });
+    const groupAfter = waitedGroup.seen;
+    const changed = groupChoiceBefore.verdict !== groupAfter.verdict;
+    record('library.large-list.group-by-indexed-column',
+           `Is a group-by on ${CHOICE} honoured, ignored or refused once the column is indexed`,
+           groupAfter.verdict,
+           `before the index, the same query was ${groupChoiceBefore.verdict}. The index write was `
+           + `${indexOutcome}. The OData filter ${choiceFilter} was then ${filterAfter} after `
+           + `${waitedFilter.attempts} attempt(s) and ${waitedFilter.waitedMs} ms, which is the `
+           + `signal #478 used that the index had built. The grouped query, over `
+           + `${waitedGroup.attempts} attempt(s) and ${waitedGroup.waitedMs} ms: ${groupAfter.text}`
+           + (changed
+             ? '. The answer changed with the index and nothing else about the query changed, so '
+               + 'the index is what the group-by wanted.'
+             : '. The answer did not change with the index. SharePoint builds the index behind '
+               + 'the flag, so a query still refused here does not establish that an index cannot '
+               + 'lift a grouped throttle: re-paste in a few minutes, when the flag is already '
+               + 'written, to take the after half alone.'));
+  }
+
+  report();
+
+  // ---- Teardown ---------------------------------------------------------
+  // Two writes to undo. The Description marker is restored above; this reports
+  // whether that worked, and clears the index flag this run wrote.
+  if (!descriptionRestored) {
+    log('FAIL', `The Description marker is still on ${CHOICE}. Put it back to `
+      + `${show(priorDescription)} by hand: the fixture is not as this run found it.`);
+  }
+  if (!indexTook) {
+    log('OK', `No index was left on ${CHOICE}: the MERGE of Indexed=true was not accepted, so the `
+      + 'fixture is as this run found it.');
+    return;
+  }
+  const off = await mergeField(CHOICE, { Indexed: false }, 'SP.Field');
+  const back = await readField(CHOICE);
+  const isClear = off.ok && !readFailed(back) && back.body.Indexed === false;
+  log(isClear ? 'OK' : 'FAIL',
+      isClear
+        ? `${CHOICE}: Indexed is back to false, so this run left no index on the shared fixture.`
+        : `${CHOICE}: Indexed is still ${readFailed(back) ? 'unreadable' : show(back.body.Indexed)} `
+          + `after HTTP ${off.status} ${clip(off.text, 160)}. THE FIXTURE IS NOT RESTORED: the `
+          + 'next probe reading this library has no unindexed column to witness the throttle '
+          + 'with. Clear it by hand, or run library-large-list-index-probe.js with '
+          + 'REMOVE_INDEXES_AT_END.');
+})();
