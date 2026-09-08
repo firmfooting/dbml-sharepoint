@@ -7,7 +7,7 @@
  *   view threshold, and is that value stored or worked out per row when the
  *   query runs?
  *
- * REVISION: 58ebde30
+ * REVISION: 1fa24077
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -263,6 +263,24 @@
 // library-large-list-fixture-probe.js set: one unrecognised name errors a whole
 // $select, so LVCalc is selected on its own and a selection problem cannot
 // masquerade as a value SharePoint failed to compute.
+// finding: large-list-calculated-filter-is-rejected-not-throttled - measured
+// 2026-09-08: a selective $filter on LVCalc returns HTTP 400 (request rejected,
+// read the body), not the HTTP 500 SPQueryThrottledException an unindexed stored
+// column returns. A calculated column cannot be filtered on at all, so the
+// index-vs-throttle question does not arise for it.
+// finding: large-list-calculated-id-guard-does-not-rescue - measured 2026-09-08:
+// "Id eq <n> and LVCalc eq <v>" is also HTTP 400. Narrowing the row set with an
+// Id clause first does not let a calculated-value clause through; it is refused
+// at query-parse time regardless of how few rows remain.
+// finding: large-list-calculated-value-is-materialised - measured 2026-09-08:
+// LVCalc reads back the computed number ("1000.000000..." for LVNumber=500) in
+// its own request, so the value is computed and returned, not recomputed on the
+// fly at filter time.
+// finding: large-list-calculated-group-by-is-unattributable - measured
+// 2026-09-08: a group-by on the unindexed LVChoice control came back HTTP 500
+// (threshold), so the group-by mechanism itself throttles at this size and an
+// unhonoured group-by on LVCalc cannot be attributed to the column being
+// calculated. That unindexed group-by throttle is the group-view probe's subject.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -487,7 +505,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 58ebde30. Quote this when reporting results.');
+  log('INFO', 'probe revision 1fa24077. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
