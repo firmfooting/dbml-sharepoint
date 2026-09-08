@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY VIEW GROUP?
  *
- * REVISION: f0809646
+ * REVISION: b9dafa7e
  *
  * ONE QUESTION, on the column kinds nothing has measured:
  *   `library-view-probe.js` measured group-by on a SINGLE-VALUE metadata
@@ -41,11 +41,13 @@
  *        Its own row, and not part of the two above: a multi-value lookup on a
  *        document library is the least certain part of the fixture, and a
  *        failure there must void one measurement rather than all of them.
- *   library.view.control-missing-group-column-refused
- *        NEGATIVE CONTROL: is a group-by naming a column that does not exist
- *        refused? Without it an ACCEPTED group-by is not a finding, because
- *        this probe could not tell a group-by SharePoint honoured from one it
- *        ignored.
+ *   library.view.control-missing-group-column-ungrouped
+ *        NEGATIVE CONTROL: does a group-by naming a column that does not exist
+ *        come back UNGROUPED? A group-by is never refused, so the discriminator
+ *        is the shape of the answer: flat rows carrying no group label, against
+ *        the group rows the positive control reads. Without both signatures an
+ *        ACCEPTED group-by is not a finding, because this probe could not tell
+ *        a group-by SharePoint honoured from one it ignored.
  *   library.view.control-group-by-single-value-column
  *        POSITIVE CONTROL: group-by on the single-value Choice column, the
  *        case `library-view-probe.js` already measured working. It proves THIS
@@ -76,7 +78,8 @@
  *   Depends on (asserted, read back): the library and the target list exist;
  *   the three grouping columns exist and read back as their asked-for types;
  *   the four files exist; each file reads back holding the values written to
- *   it; a group-by naming a missing column is refused; a group-by on a
+ *   it; a group-by naming a missing column comes back ungrouped, on the same
+ *   rows the query returns with no group-by at all; a group-by on a
  *   single-value column produces group rows this probe can read.
  *   Observes (recorded, never asserted): for every column kind, whether the
  *   group-by is accepted, how many group rows come back, what the group labels
@@ -85,11 +88,12 @@
  *   that a library groups by any of these columns at all. A run where every
  *   group-by is refused is a successful run with an important answer.
  *
- * HOW A GROUP IS READ, and what is deliberately not done. Both observations
- * this probe reasons from are produced by the SERVER: the collapsed query's
- * group rows, and the expanded query's row count against the known file count.
- * See the client-side-partition finding below for why the obvious third method
- * is not used.
+ * HOW A GROUP IS READ, and what is deliberately not done. Every observation
+ * this probe reasons from is produced by the SERVER: the collapsed query's
+ * group rows, the expanded query's row count against the known file count, and
+ * the rows the same query returns with no `<GroupBy>` at all, which is what the
+ * negative control compares against. See the client-side-partition finding
+ * below for the method that is deliberately not used.
  *
  * ABORTED VERSUS VOID, because the two are not interchangeable here. A fixture
  * that never built records ABORTED downstream, which is open: a re-run can
@@ -127,6 +131,18 @@
  * WHEN FINISHED: delete the LIBRARY first, then the target list. That order is
  * not tidiness; see the acyclic finding below.
  */
+// finding: library-grouping-a-group-by-is-never-refused - the first live run,
+// 2026-09-08, sent a <GroupBy> naming a column that does not exist and got HTTP
+// 200 back with flat rows. A negative control asserting a REFUSAL therefore
+// failed on a probe that was working, and voided six measurements that had been
+// made. The discriminator a group-by needs is not refused against accepted but
+// HONOURED against IGNORED: an honoured group-by returns group rows, fewer than
+// the files, each carrying the grouping markers `<Field>.COUNT.group`,
+// `<Field>.newgroup` and `<Field>.groupindex` that the positive control
+// recorded on GroupChoice in that run; an ignored one returns the flat rows.
+// The control measures the flat shape in the same run rather than assuming it
+// is one row per file, by sending the same query twice and varying only the
+// <GroupBy>.
 // finding: library-grouping-client-side-partition-is-not-evidence - a probe
 // that sends a grouped query, gets flat rows back and sorts them into buckets
 // by reading each row's value has measured its own arithmetic. The rows would
@@ -386,7 +402,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f0809646. Quote this when reporting results.');
+  log('INFO', 'probe revision b9dafa7e. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibGroup';
   const TGT = 'dbmlsp Probe LibGroup Target';
@@ -402,6 +418,9 @@
   const TGT_ROWS = ['dbmlsp group target A', 'dbmlsp group target B'];
   const CHOICES = ['Alpha', 'Beta', 'Gamma'];
   const ROW_LIMIT = 50;
+  // Named once: the negative control's question is quoted in three places, and
+  // three spellings of one question is how a summary stops matching a row.
+  const Q_NEGATIVE = 'NEGATIVE CONTROL: a group-by naming a column that does not exist comes back ungrouped, flat rows carrying no group label';
 
   // The fixture is built so the two candidate multi-value behaviours give
   // DIFFERENT numbers, on both observations:
@@ -461,7 +480,7 @@
   expect('library.view.fixture-columns-created', 'The target list, its rows and the three grouping columns exist and read back as their asked-for types');
   expect('library.view.fixture-values-written', 'Every file reads back holding the values written to it, and one multi-value item shape took');
   expect('library.view.fixture-multi-lookup-ready', 'A multi-value lookup on the library is created and holds values');
-  expect('library.view.control-missing-group-column-refused', 'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused');
+  expect('library.view.control-missing-group-column-ungrouped', Q_NEGATIVE);
   expect('library.view.control-group-by-single-value-column', 'POSITIVE CONTROL: a group-by on a single-value Choice column returns group rows this probe can read');
   expect('library.view.group-by-multi-value-choice', 'Group-by on a multi-value choice: one row per value held, or one group per set?');
   expect('library.view.group-by-multi-value-lookup', 'Group-by on a multi-value lookup: one row per value held, or one group per set?');
@@ -571,7 +590,7 @@
   // Everything this probe measures, so an abort can report the truth about all
   // of it rather than about the rows it happened to reach.
   const MEASUREMENTS = [
-    ['library.view.control-missing-group-column-refused', 'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused'],
+    ['library.view.control-missing-group-column-ungrouped', Q_NEGATIVE],
     ['library.view.control-group-by-single-value-column', 'POSITIVE CONTROL: a group-by on a single-value Choice column returns group rows this probe can read'],
     ['library.view.group-by-multi-value-choice', 'Group-by on a multi-value choice: one row per value held, or one group per set?'],
     ['library.view.group-by-multi-value-lookup', 'Group-by on a multi-value lookup: one row per value held, or one group per set?'],
@@ -861,11 +880,18 @@
     return [];
   };
 
-  const groupBy = async (fieldName, collapse, renderOptions) => {
-    const fields = ['FileLeafRef', fieldName];
-    const viewXml = `<View><Query><GroupBy Collapse="${collapse}">`
-      + `<FieldRef Name="${fieldName}"/></GroupBy></Query><ViewFields>`
-      + fields.map((name) => `<FieldRef Name="${name}"/>`).join('')
+  // `fields` defaults to the grouped column beside Name. The negative control
+  // passes its own, so a column that does not exist is named ONLY in the
+  // <GroupBy> and never in <ViewFields>, where a refusal would be about the
+  // wrong clause. A null fieldName sends the same query with no <GroupBy> at
+  // all, which is the flat shape that control compares against.
+  const groupBy = async (fieldName, collapse, renderOptions, fields) => {
+    const viewFields = fields || ['FileLeafRef', fieldName];
+    const grouping = fieldName === null
+      ? ''
+      : `<GroupBy Collapse="${collapse}"><FieldRef Name="${fieldName}"/></GroupBy>`;
+    const viewXml = `<View><Query>${grouping}</Query><ViewFields>`
+      + viewFields.map((name) => `<FieldRef Name="${name}"/>`).join('')
       + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
     const parameters = renderOptions === undefined
       ? { ViewXml: viewXml }
@@ -873,6 +899,15 @@
     digest = await getDigest();
     const res = await spPost(`${libPath}/RenderListDataAsStream`, { parameters }, digest);
     return { res, rows: rowsOf(res) };
+  };
+
+  const countByFile = (rows) => {
+    const perFile = {};
+    for (const row of rows) {
+      const name = row.FileLeafRef === undefined ? '(no FileLeafRef)' : String(row.FileLeafRef);
+      perFile[name] = (perFile[name] || 0) + 1;
+    }
+    return perFile;
   };
 
   // Everything the SERVER said about one grouping, and nothing this probe
@@ -883,11 +918,7 @@
     const labels = collapsed.rows.map((row) => (fieldName in row ? row[fieldName] : undefined));
     const keys = collapsed.rows.length ? Object.keys(collapsed.rows[0]) : [];
     const groupKeys = keys.filter((key) => /group/i.test(key) || key.startsWith(`${fieldName}.`));
-    const perFile = {};
-    for (const row of expanded.rows) {
-      const name = row.FileLeafRef === undefined ? '(no FileLeafRef)' : String(row.FileLeafRef);
-      perFile[name] = (perFile[name] || 0) + 1;
-    }
+    const perFile = countByFile(expanded.rows);
     return {
       collapsed, expanded, labels, keys, groupKeys, perFile,
       refused: !collapsed.res.ok && isRefusal(collapsed.res.status),
@@ -900,24 +931,64 @@
     };
   };
 
-  // ---- control-missing-group-column-refused: NEGATIVE CONTROL ----------
-  const missingXml = `<View><Query><GroupBy Collapse="TRUE"><FieldRef Name="${MISSING}"/></GroupBy>`
-    + `</Query><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
-  digest = await getDigest();
-  const junk = await spPost(`${libPath}/RenderListDataAsStream`,
-                            { parameters: { ViewXml: missingXml } }, digest);
-  const negativeHeld = !junk.ok && isRefusal(junk.status);
-  record('library.view.control-missing-group-column-refused',
-         'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused',
-         junk.ok ? 'FAIL' : negativeHeld ? 'PASS' : 'NOT ESTABLISHED',
-         junk.ok
-           ? `a group-by naming '${MISSING}' was ACCEPTED with HTTP ${junk.status} and returned `
-             + `${rowsOf(junk).length} row(s). This run cannot tell a group-by SharePoint honoured `
-             + 'from one it ignored, so every group-by answer below is void.'
-           : negativeHeld
-             ? `refused with HTTP ${junk.status}: ${clip(junk.text, 260)}`
-             : `the request failed with HTTP ${junk.status}, which is not the server rejecting the `
-               + `payload: ${clip(junk.text, 200)}`);
+  // ---- control-missing-group-column-ungrouped: NEGATIVE CONTROL --------
+  // See the never-refused finding in the header for why this row is not about
+  // a refusal. It establishes the IGNORED signature: the two queries below
+  // differ only in the <GroupBy>, so the flat row count is measured in this run
+  // rather than assumed to be the file count.
+  //
+  // The markers are named rather than matched on the column name. Every column
+  // in this fixture is called Group*, so the /group/i test observe() uses over
+  // a real column's keys would match a label key here and report a grouping
+  // that is only a naming coincidence.
+  const GROUP_MARKER = /\.COUNT\.group$|\.newgroup$|\.groupindex$/;
+  const markersIn = (rows, fieldName) => {
+    const seen = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        const marks = GROUP_MARKER.test(key)
+          || key === fieldName || key.startsWith(`${fieldName}.`);
+        if (marks && !seen.includes(key)) seen.push(key);
+      }
+    }
+    return seen;
+  };
+
+  // The premise, read back rather than assumed. A column somebody else made
+  // under this name would make the rows below a real grouping.
+  const missingField = await readField(libPath, MISSING);
+  const missingSeen = await groupBy(MISSING, 'TRUE', undefined, ['FileLeafRef']);
+  const ungroupedSeen = await groupBy(null, 'TRUE', undefined, ['FileLeafRef']);
+  const missingMarkers = markersIn(missingSeen.rows, MISSING);
+  const missingPerFile = countByFile(missingSeen.rows);
+  const flatSignature = !missingField.ok
+    && missingSeen.res.ok && ungroupedSeen.res.ok
+    && missingMarkers.length === 0
+    && missingSeen.rows.length === ungroupedSeen.rows.length
+    && FILES.every((file) => missingPerFile[file.name] === 1);
+  const negativeHeld = flatSignature;
+  record('library.view.control-missing-group-column-ungrouped', Q_NEGATIVE,
+         flatSignature ? 'PASS' : missingMarkers.length ? 'FAIL' : 'NOT ESTABLISHED',
+         `'${MISSING}' read back HTTP ${missingField.status}`
+         + `${missingField.ok ? ', so the column EXISTS and this is not a control' : ''}; `
+         + `a group-by naming it returned HTTP ${missingSeen.res.status} with `
+         + `${missingSeen.rows.length} row(s) over ${FILES.length} file(s), rows per file `
+         + `${clip(show(missingPerFile), 300)}, grouping markers `
+         + `${clip(show(missingMarkers), 300)}, first row `
+         + `${clip(show(missingSeen.rows.length ? missingSeen.rows[0] : null), 400)}; `
+         + `the same query with no <GroupBy> returned HTTP ${ungroupedSeen.res.status} with `
+         + `${ungroupedSeen.rows.length} row(s)`
+         + (missingSeen.res.ok ? '' : `; body ${clip(missingSeen.res.text, 220)}`)
+         + (flatSignature
+           ? '. Flat rows, one per file, carrying no group label, and the same rows the '
+             + 'ungrouped query returns, so a group-by SharePoint ignored is observable and '
+             + 'is not the group rows the positive control reads.'
+           : missingMarkers.length
+             ? '. The rows carry the markers an honoured group-by carries, so this run cannot '
+               + 'tell a group-by SharePoint honoured from one it ignored, and every group-by '
+               + 'answer below is void.'
+             : '. Neither signature: the ignored one was not observed, so a flat answer below '
+               + 'cannot be read as a group-by SharePoint ignored.'));
 
   // ---- control-group-by-single-value-column: POSITIVE CONTROL ----------
   const controlSeen = await observe(SINGLE);

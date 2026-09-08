@@ -1935,7 +1935,7 @@
               ]
             },
             {
-              "id": "library.view.control-missing-group-column-refused",
+              "id": "library.view.control-missing-group-column-ungrouped",
               "depends_on": [
                 "library.view.fixture-values-written"
               ]
@@ -1950,7 +1950,7 @@
               "id": "library.view.group-by-multi-value-choice",
               "depends_on": [
                 "library.view.fixture-values-written",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             },
@@ -1958,7 +1958,7 @@
               "id": "library.view.group-by-multi-value-lookup",
               "depends_on": [
                 "library.view.fixture-multi-lookup-ready",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             },
@@ -1966,7 +1966,7 @@
               "id": "library.view.group-by-lookup-column",
               "depends_on": [
                 "library.view.fixture-values-written",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             },
@@ -1974,7 +1974,7 @@
               "id": "library.view.group-by-null-title",
               "depends_on": [
                 "library.view.fixture-values-written",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             },
@@ -1982,7 +1982,7 @@
               "id": "library.view.group-by-name-column",
               "depends_on": [
                 "library.view.fixture-values-written",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             },
@@ -1990,7 +1990,7 @@
               "id": "library.view.multi-value-group-by-stored-on-view",
               "depends_on": [
                 "library.view.fixture-values-written",
-                "library.view.control-missing-group-column-refused",
+                "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
               ]
             }
@@ -2001,7 +2001,7 @@
             "library.view.fixture-columns-created",
             "library.view.fixture-values-written",
             "library.view.fixture-multi-lookup-ready",
-            "library.view.control-missing-group-column-refused",
+            "library.view.control-missing-group-column-ungrouped",
             "library.view.control-group-by-single-value-column"
           ],
           "depends_on": []
