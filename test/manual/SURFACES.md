@@ -264,7 +264,7 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `cross-lookup-probe.js`, `library-index-threshold-probe.js`,
 `library-grouping-probe.js`, `library-nesting-probe.js`,
 `library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`,
-`library-large-list-index-probe.js`
+`library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -310,6 +310,18 @@ size, and whether it turns a refused filter or sort into an answered one. The
 subject is the threshold, the evidence is the shared fixture, and a reader
 asking what is known about a library past 5,000 rows should find it without
 knowing which of the two scopes the write half belongs to.
+
+`library-large-list-calculated-probe.js` files here for the same reason, and it
+reuses four of that probe's ids rather than minting its own:
+`fixture-library-present`, `control-id-query-served`,
+`control-absent-column-refused` and `control-unindexed-filter-refused` are the
+same questions by the same method against the same fixture, so they are one id
+with two records. `index-calculated-column` is reused for the same reason and is
+a confirmation rather than a discovery: #478 recorded the flag as refused on a
+calculated column, and the four questions after it are only worth reading if that
+refusal still holds when they are asked. `control-id-query-served` is answered
+there in two shapes, a filter and a sort, and here in the filter shape only,
+because nothing in this probe sorts.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -422,6 +434,14 @@ different questions and take different ids. They do not merge.
 | Is a lookup created and bound by `createfieldasxml` | the target is a document library | `library.lookup.list-to-library-title-created` |
 | Does a view group by folder | `<FieldRef Name="Folder"/>` on a library holding one folder at the root | `library.view.group-by-folder` |
 | Does a view group by folder | the parent-folder column, on a library holding a folder three deep | `library.folder.group-by-path-depth` |
+| Is a group-by honoured on a single-value column | a library holding a handful of files | `library.view.control-group-by-single-value-column` |
+| Is a group-by honoured on a single-value column | the shared fixture, past the list view threshold | `library.large-list.control-group-by-single-value-column` |
+| Is a group-by naming an absent column ignored | a library holding a handful of files | `library.view.control-missing-group-column-ungrouped` |
+| Is a group-by naming an absent column ignored | the shared fixture, past the list view threshold | `library.large-list.control-missing-group-column-ungrouped` |
+| Does a Description MERGE stick on a library column | a text column, as the control for indexing seven columns | `library.large-list.control-description-sticks` |
+| Does a Description MERGE stick on a library column | the calculated column itself, whose index refusal it is the control for | `library.large-list.control-calculated-description-sticks` |
+| Is an unknown `SP.Field` property refused | sent at a text column | `library.large-list.control-unknown-property-refused` |
+| Is an unknown `SP.Field` property refused | sent at the calculated column, where a MERGE may not arrive at all | `library.large-list.control-calculated-unknown-property-refused` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
