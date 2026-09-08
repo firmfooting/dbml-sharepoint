@@ -222,6 +222,25 @@
 // indexes stays indexed unless REMOVE_INDEXES_AT_END is set on a following
 // paste. A probe written after this one must READ the Indexed flag on this
 // fixture rather than assume it carries none.
+// finding: large-list-index-text-number-choice-date-lookup-take - run 2026-09-08:
+// on a library of 5500 files, a MERGE of Indexed:true as SP.Field held on LVText,
+// LVNumber, LVChoice, LVDate and LVLookup; each read Indexed=false before and
+// Indexed=true after. The plain single-value column kinds are all indexable past
+// the threshold.
+// finding: large-list-index-multichoice-and-calculated-refuse - run 2026-09-08:
+// the same MERGE was REFUSED (HTTP 500, "This column type is not supported") on
+// LVMultiChoice and on the calculated LVCalc. A multi-value choice column and a
+// calculated column cannot be indexed on this surface, so a view that filters or
+// groups on either past the threshold cannot be rescued with an index.
+// finding: large-list-index-removes-filter-and-sort-throttle - run 2026-09-08:
+// a selective filter that throttled with no index was served once the column
+// took one: LVNumber eq 7 went HTTP 500 REFUSED (threshold) before to HTTP 200
+// SERVED (6 rows) after Indexed:true; $orderby=LVText did the same for sort. An
+// index is therefore the tool that turns a full scan into a seek on this surface.
+// finding: large-list-index-is-per-column - run 2026-09-08: at one moment a
+// filter on the indexed LVNumber was SERVED while a filter on the still-unindexed
+// LVChoice was REFUSED (threshold). An index lifts its own column only; it is
+// not a library-wide switch, so every filtered or grouped column needs its own.
 (async () => {
 {% include "_probe_harness.js.j2" %}
 
