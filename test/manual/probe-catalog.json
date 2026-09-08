@@ -7889,6 +7889,200 @@
           ]
         }
       ]
+    },
+    {
+      "file": "library-large-list-modern-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two views on the existing fixture library, 'UI By PChoice' and 'UI By PNumber', each a single-level collapsed <GroupBy>. Neither becomes the default view. No file, item value, column or field MERGE is written, and in particular the index on PChoice is never cleared"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "the permanent fixture 'dbmlsp Probe PreIndex' built by library-large-list-preindex-fixture-probe.js: 5,100 files, PChoice indexed while the library still held 4,900 and the moment stamped into its Description, PNumber left unindexed. This probe reads that fixture, builds nothing and repairs nothing",
+        "PChoice still reading Indexed=true and still carrying the fixture's stamp. Clearing it turns the library into a second copy of the post-hoc case #481 already measured, and writing it again past 5,000 files cannot put it back",
+        "a browser rendering the pages, and a document library on the same site holding FEWER than 5,000 items to read the capture control on. view-aggregations-probe.js records that the modern list web part does not render under the capture browser, so without that control a blank grid past 5,000 and a capture lane that renders nothing produce the same screenshot",
+        "six pastes, one per STATE, each on the page that state names and each after the page has finished rendering. A pasted script cannot navigate the page it is running in and come back",
+        "a screenshot of every state, hashed per the harness standard. A state whose DOM read is ambiguous is MANUAL rather than a pass, and the screenshot is what a human reads it against",
+        "a final paste with STATE = 0 and CLEANUP = true to remove the two views. The library, its files and PChoice's index are left exactly as they were"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.large-list.fixture-preindex-library-present",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-preindex-index-written-under-threshold",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-preindex-witness-unindexed",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-ui-grouped-views-created",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-fixture-readable-after-view-writes",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-ui-grouped-views-created"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-default-view-unchanged",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present",
+                "library.large-list.fixture-ui-grouped-views-created"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-group-by-indexed-column-folder-scoped",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.large-list.fixture-preindex-library-present",
+            "library.large-list.fixture-preindex-index-written-under-threshold",
+            "library.large-list.fixture-preindex-witness-unindexed",
+            "library.large-list.control-ui-fixture-readable-after-view-writes",
+            "library.large-list.control-ui-default-view-unchanged"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "state-matrix",
+          "findings": [
+            {
+              "id": "library.large-list.control-ui-modern-renders-below-threshold",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.control-ui-page-identity-matches-fixture",
+              "depends_on": [
+                "library.large-list.fixture-preindex-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-experience-is-modern",
+              "depends_on": [
+                "library.large-list.control-ui-page-identity-matches-fixture"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-default-view-renders-past-threshold",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-page-identity-matches-fixture",
+                "library.large-list.control-ui-experience-is-modern",
+                "library.large-list.control-ui-default-view-unchanged"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-group-by-indexed-column-renders",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-page-identity-matches-fixture",
+                "library.large-list.control-ui-experience-is-modern",
+                "library.large-list.fixture-ui-grouped-views-created",
+                "library.large-list.fixture-preindex-index-written-under-threshold"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-group-by-unindexed-column-renders",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-page-identity-matches-fixture",
+                "library.large-list.control-ui-experience-is-modern",
+                "library.large-list.fixture-ui-grouped-views-created",
+                "library.large-list.fixture-preindex-witness-unindexed"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-column-header-filter-past-threshold",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-page-identity-matches-fixture",
+                "library.large-list.control-ui-experience-is-modern",
+                "library.large-list.fixture-preindex-index-written-under-threshold"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-threshold-banner-text",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-page-identity-matches-fixture"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "capture-control",
+              "page": "a document library on this site holding fewer than 5,000 items",
+              "assertions": [
+                "a modern library page renders rows in this browser at all"
+              ]
+            },
+            {
+              "role": "default-view",
+              "page": "the fixture library's default view, past 5,000 files",
+              "assertions": [
+                "file rows render, or the threshold banner appears"
+              ]
+            },
+            {
+              "role": "grouped-indexed",
+              "page": "'UI By PChoice', grouped on the indexed column",
+              "assertions": [
+                "group headers and their counts render, or the threshold banner appears"
+              ]
+            },
+            {
+              "role": "grouped-unindexed",
+              "page": "'UI By PNumber', grouped on the unindexed column",
+              "assertions": [
+                "collapsible group regions render, or the threshold banner appears"
+              ]
+            },
+            {
+              "role": "filter-pane",
+              "page": "'UI By PChoice' with the PChoice column-header filter pane open by hand",
+              "assertions": [
+                "the pane offers the column's values, or it refuses"
+              ]
+            }
+          ],
+          "controls": [
+            "library.large-list.control-ui-modern-renders-below-threshold",
+            "library.large-list.control-ui-page-identity-matches-fixture",
+            "library.large-list.control-ui-experience-is-modern",
+            "library.large-list.fixture-ui-grouped-views-created"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
     }
   ]
 }
