@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DO A VIEW'S FILTER, GROUP-BY AND FOLDER SCOPE INTERACT?
  *
- * REVISION: e81bc6cb
+ * REVISION: c7ad0222
  *
  * ONE QUESTION, on the composition nothing has measured:
  *   `library-view-probe.js` measured a filter on a single-value column and a
@@ -214,6 +214,20 @@
 // row sets rather than asserting a precedence, and why a read pointed at a
 // folder that was never created is recorded as evidence: a parameter SharePoint
 // ignores answers the same rows as one it never received.
+// finding: library-view-interaction-filter-runs-before-the-group - run
+// 2026-09-08: a <Where> and a <GroupBy> on the same query apply the filter
+// first. A group label carried only by the files the filter removes does not
+// appear in the filtered answer, so the group is built over the filtered rows,
+// not over all rows with the filter applied to the result.
+// finding: library-view-interaction-filter-applies-inside-the-folder - run
+// 2026-09-08: a filtered view invoked with a folder parameter filters the rows
+// inside that folder, not the whole library. The folder scope does not widen to
+// the library, and the filter does not widen past the folder.
+// finding: library-view-interaction-filter-group-and-folder-compose - run
+// 2026-09-08: a filter, a group-by and a folder scope applied together return
+// the rows that satisfy all three, with the group labels over those rows. None
+// of the three mechanisms drops another; a layout that wants filtered, grouped,
+// folder-scoped views gets all three at once.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -438,7 +452,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision e81bc6cb. Quote this when reporting results.');
+  log('INFO', 'probe revision c7ad0222. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewInt';
   // Text, so that <Value Type="Text"> is the spelling Learn documents rather
