@@ -2051,3 +2051,423 @@ def test_a_refusal_nobody_can_observe_voids_a_refused_row() -> None:
         "THE FILTER RUNS BEFORE THE GROUP"
     )
     assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+LARGE_LIST_PROBE = MANUAL / "library-large-list-fixture-probe.js"
+
+#: A SharePoint that holds the fixture library, and answers a DateTime read the
+#: way run 20260908T050038 recorded: the instant the write carried, rendered in
+#: the SITE's zone and naming no zone at all. What CONFIG varies is each way a
+#: live run could make the fixture's verification wrong: which form a date comes
+#: back in, which multi-value payload shape the tenant accepts, whether the site
+#: zone reads at all, and whether an unrelated column write takes.
+_LARGE_LIST_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const ROOT = '/sites/test/largelib';
+    const LIB = 'dbmlsp Probe LargeLib';
+    const TGT = 'dbmlsp Probe LargeLib Target';
+    const FIELD_TYPES = {
+      LVText: 'Text', LVChoice: 'Choice', LVNumber: 'Number', LVDate: 'DateTime',
+      LVMultiChoice: 'MultiChoice', LVCalc: 'Calculated', LVLookup: 'Lookup',
+    };
+
+    const lists = new Map();
+    const madeFields = new Set();
+    const targetRows = [];
+    const files = new Map();
+    const itemsById = new Map();
+    let nextItemId = 1;
+    let nextTargetId = 1;
+
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FILE_URL = /^web\\/GetFileByServerRelativeUrl\\('([^']*)'\\)(.*)$/;
+    const FOLDER_URL = /^web\\/GetFolderByServerRelativeUrl\\('([^']*)'\\)(.*)$/;
+    const FIELD = /getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM = /^\\/items\\((\\d+)\\)/;
+    const ADD_URL = /url='([^']+)'/;
+
+    // How this SharePoint hands a DateTime back. 'bare-site-local' is the shape
+    // the live run recorded: the right instant, rendered eight hours behind UTC
+    // and carrying neither a Z nor an offset, so a reader who parses it in the
+    // BROWSER's zone gets a third answer again.
+    const renderDate = (iso) => {
+      if (CONFIG.dateReadBack === 'missing') return null;
+      const ms = Date.parse(iso);
+      if (CONFIG.dateReadBack === 'utc-z') return new Date(ms).toISOString();
+      const shift = CONFIG.dateReadBack === 'wrong-day' ? 86400000 : 0;
+      const offsetMin = CONFIG.dateReadBack === 'bare-utc' ? 0 : -480;
+      return new Date(ms + shift + offsetMin * 60000)
+        .toISOString().replace(/\\.000Z$/, '');
+    };
+
+    // Which payload shape the multi-value column arrived in. The probe tries
+    // three and this tenant accepts exactly one, so a run that keeps the wrong
+    // one writes nothing and a run that keeps none stops.
+    const shapeOf = (value) => {
+      if (Array.isArray(value)) return 'bare-array';
+      if (value && Array.isArray(value.results)) {
+        return value.__metadata ? 'collection-metadata' : 'bare-results';
+      }
+      return 'unknown';
+    };
+
+    const readItem = (item, select) => {
+      const out = { Id: item.Id, FileLeafRef: item.FileLeafRef };
+      if (/LVCalc/.test(select)) {
+        // Serialised the way the live run reported it, as decimal text.
+        out.LVCalc = item.LVNumber === null || item.LVNumber === undefined
+          ? null : `${(item.LVNumber * 2).toFixed(14)}`;
+        return out;
+      }
+      out.LVText = item.LVText;
+      out.LVChoice = item.LVChoice;
+      out.LVNumber = item.LVNumber;
+      out.LVDate = item.LVDate === null ? null : renderDate(item.LVDate);
+      out.LVMultiChoice = item.LVMultiChoice;
+      out.LVLookupId = item.LVLookupId;
+      return out;
+    };
+
+    globalThis.fetch = async (url, init = {}) => {
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      const method = init.method || 'GET';
+      const headers = init.headers || {};
+      const verb = headers['X-HTTP-Method'] || method;
+      let payload = null;
+      if (typeof init.body === 'string') {
+        try { payload = JSON.parse(init.body); } catch { payload = null; }
+      }
+
+      if (path === 'contextinfo') {
+        return jsonResponse(200, {
+          d: { GetContextWebInformation: { FormDigestValue: 'digest' } },
+        });
+      }
+
+      if (path.startsWith('web/RegionalSettings/TimeZone')) {
+        if (CONFIG.zone === 'unreadable') {
+          return jsonResponse(500, { error: 'the regional settings are unavailable' });
+        }
+        if (CONFIG.zone === 'no-information') {
+          return jsonResponse(200, { Description: '(UTC-08:00) Pacific Time' });
+        }
+        return jsonResponse(200, {
+          Description: '(UTC-08:00) Pacific Time',
+          Information: { Bias: 480, StandardBias: 0, DaylightBias: -60 },
+        });
+      }
+
+      if (path === 'web/lists' && method === 'POST') {
+        const id = `{list-${lists.size + 1}}`;
+        lists.set(payload.Title, { Id: id, Title: payload.Title });
+        return jsonResponse(200, { Id: id, Title: payload.Title });
+      }
+
+      // A file upload. The body is the file's bytes, so it never parses as JSON.
+      const folder = path.match(FOLDER_URL);
+      if (folder && method === 'POST') {
+        const named = folder[2].match(ADD_URL);
+        const name = named ? named[1] : null;
+        if (name === null) return jsonResponse(400, { error: 'no url argument' });
+        if (!files.has(name)) {
+          const item = {
+            Id: nextItemId, FileLeafRef: name, LVText: null, LVChoice: null,
+            LVNumber: null, LVDate: null, LVMultiChoice: null, LVLookupId: null,
+          };
+          nextItemId += 1;
+          files.set(name, item);
+          itemsById.set(item.Id, item);
+        }
+        return jsonResponse(200, { ServerRelativeUrl: `${ROOT}/${name}` });
+      }
+
+      const fileRead = path.match(FILE_URL);
+      if (fileRead) {
+        const name = fileRead[1].slice(fileRead[1].lastIndexOf('/') + 1);
+        const item = files.get(name);
+        if (!item) return jsonResponse(404, { error: `no file named ${name}` });
+        const select = fileRead[2];
+        if (/\\$select=Id$/.test(select)) return jsonResponse(200, { Id: item.Id });
+        return jsonResponse(200, readItem(item, select));
+      }
+
+      const list = path.match(LIST);
+      if (list) {
+        const title = list[1].replace(/''/g, "'");
+        const rest = list[2];
+        const held = lists.get(title);
+        if (!held) return jsonResponse(404, { error: `no list named ${title}` });
+
+        if (rest.startsWith('/fields/createfieldasxml')) {
+          const named = String(payload.parameters.SchemaXml).match(/Name="([^"]+)"/);
+          madeFields.add(named[1]);
+          return jsonResponse(200, { InternalName: named[1] });
+        }
+        const field = rest.match(FIELD);
+        if (field) {
+          const name = field[1];
+          if (!madeFields.has(name)) {
+            return jsonResponse(404, { error: `no field named ${name}` });
+          }
+          return jsonResponse(200, {
+            InternalName: name,
+            TypeAsString: FIELD_TYPES[name],
+            LookupList: name === 'LVLookup' ? lists.get(TGT).Id : undefined,
+            OutputType: name === 'LVCalc' ? 9 : undefined,
+          });
+        }
+        if (rest.startsWith('/RootFolder')) {
+          return jsonResponse(200, { ServerRelativeUrl: ROOT });
+        }
+        if (rest.includes('ListItemEntityTypeFullName')) {
+          return jsonResponse(200, {
+            ListItemEntityTypeFullName: 'SP.Data.LargeLibItem',
+          });
+        }
+
+        // A MERGE onto one library item: the column write the whole fixture
+        // rests on.
+        const item = rest.match(ITEM);
+        if (item && verb === 'MERGE') {
+          const held2 = itemsById.get(Number(item[1]));
+          if (!held2) return jsonResponse(404, { error: 'no such item' });
+          // __metadata is a verbose construct and a nometadata Content-Type
+          // rejects it rather than ignoring it. The probe pairs the two, and a
+          // mock that accepted the mismatch would let that pairing rot.
+          const contentType = headers['Content-Type'] || '';
+          if (payload.__metadata && !/verbose/.test(contentType)) {
+            return jsonResponse(400, {
+              'odata.error': { message: { value: 'metadata sent without verbose odata' } },
+            });
+          }
+          const sent = shapeOf(payload.LVMultiChoice);
+          if (sent !== CONFIG.multiShape) {
+            return jsonResponse(400, {
+              'odata.error': {
+                code: '-1, Microsoft.SharePoint.Client.InvalidClientQueryException',
+                message: { value: `the ${sent} payload is not accepted here` },
+              },
+            });
+          }
+          held2.LVText = CONFIG.textWrite === 'dropped' ? null : payload.LVText;
+          held2.LVChoice = payload.LVChoice;
+          held2.LVNumber = payload.LVNumber;
+          held2.LVDate = payload.LVDate;
+          held2.LVMultiChoice = payload.LVMultiChoice.results
+            || payload.LVMultiChoice;
+          held2.LVLookupId = payload.LVLookupId;
+          return jsonResponse(204, {});
+        }
+
+        if (rest.startsWith('/items') && method === 'POST') {
+          const row = { Id: nextTargetId, Title: payload.Title };
+          nextTargetId += 1;
+          targetRows.push(row);
+          return jsonResponse(200, row);
+        }
+        if (rest.startsWith('/items')) {
+          if (title === TGT) {
+            return jsonResponse(200, { value: targetRows.map((row) => ({ ...row })) });
+          }
+          // The resume read: the newest file by Id, and nothing else.
+          const all = [...files.values()].sort((a, b) => b.Id - a.Id);
+          const top = all.slice(0, 1)
+            .map((held3) => ({ Id: held3.Id, FileLeafRef: held3.FileLeafRef }));
+          return jsonResponse(200, { value: top });
+        }
+        return jsonResponse(200, { Id: held.Id, Title: held.Title });
+      }
+
+      return jsonResponse(404, { error: `unrouted ${method} ${path}` });
+    };
+""")
+
+
+#: The build is shrunk so a test run is a few hundred requests rather than
+#: sixteen thousand. Every value is still a pure function of the file number, so
+#: a twelve-file fixture exercises the same comparisons as a 5,500-file one.
+_LARGE_LIST_SHRINK = {
+    "TARGET_FILES": ("5500", "12"),
+    "UPLOAD_CAP": ("1000", "12"),
+    "VERIFY_EVERY": ("250", "4"),
+}
+
+
+def _large_list_probe_js() -> str:
+    """The rendered fixture probe with its gates open, its build on, its size
+    shrunk and its result table exposed."""
+    js = LARGE_LIST_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES", "BUILD_FIXTURE"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    for name, (shipped, small) in _LARGE_LIST_SHRINK.items():
+        shrunk = js.replace(f"  const {name} = {shipped};", f"  const {name} = {small};", 1)
+        assert shrunk != js, f"{name} does not ship as {shipped}"
+        js = shrunk
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _run_large_list_probe(**config: str) -> dict[str, dict[str, str]]:
+    """Run the fixture probe and return id -> the whole recorded row."""
+    settings: dict[str, str] = {
+        # The shape the live run recorded, so every test here runs against it
+        # and a probe that parses a bare stamp in the browser's zone cannot
+        # pass by default.
+        "dateReadBack": "bare-site-local",
+        "multiShape": "bare-array",
+        "zone": "pacific",
+        "textWrite": "ok",
+        **config,
+    }
+    script = (
+        _LARGE_LIST_HARNESS.replace("__CONFIG__", json.dumps(settings))
+        + "\n"
+        + _large_list_probe_js()
+    )
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_read_back_in_the_site_zone_is_not_read_as_a_lost_write() -> None:
+    """The 2026-09-08 regression, as a gate. The tenant returns LVDate as the
+    right instant rendered in the site's zone and naming no zone, which is the
+    same instant the write carried. The build must complete rather than declare
+    file one incomplete and redo it on every paste.
+    """
+    rows = _run_large_list_probe()
+
+    assert rows["library.large-list.fixture-file-count"]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-values-written"]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-calculated-column-computes"]["outcome"] == "PASS"
+    # The form is OBSERVED, so the row has to print which one came back rather
+    # than leave a reader to assume it was UTC.
+    evidence = rows["library.large-list.fixture-values-written"]["evidence"]
+    assert "a wall clock naming no zone, -480min" in evidence, evidence
+    assert "the site's candidate offsets are +0min / -480min / -420min" in evidence, evidence
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("shape", ["utc-z", "bare-utc"])
+def test_a_date_read_back_as_utc_is_the_same_instant(shape: str) -> None:
+    """The other two forms the same instant can arrive in. A tenant that answers
+    with a Z, and one that answers a bare stamp that is already UTC, are both
+    the instant that was written and neither is a lost write."""
+    rows = _run_large_list_probe(dateReadBack=shape)
+
+    assert rows["library.large-list.fixture-file-count"]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-values-written"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_a_day_out_is_still_read_as_a_lost_write() -> None:
+    """The tolerance must not swallow the thing it was widened for. Resolving a
+    zone-less stamp against the site's offsets moves it by at most eight hours
+    here, and consecutive files are a day apart, so a date off by a day has to
+    stay a mismatch.
+    """
+    rows = _run_large_list_probe(dateReadBack="wrong-day")
+
+    assert rows["library.large-list.fixture-file-count"]["outcome"] == "SHORT"
+    assert "LVDate=" in rows["library.large-list.fixture-file-count"]["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_that_never_arrives_is_read_as_a_lost_write() -> None:
+    """A MERGE that took for every column but this one. The instant comparison
+    must not read a missing value as a formatting difference."""
+    rows = _run_large_list_probe(dateReadBack="missing")
+
+    assert rows["library.large-list.fixture-file-count"]["outcome"] == "SHORT"
+    assert "LVDate=null" in rows["library.large-list.fixture-file-count"]["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("shape", ["bare-array", "bare-results", "collection-metadata"])
+def test_the_first_payload_shape_that_writes_and_reads_back_wins(shape: str) -> None:
+    """The shape experiment, against a tenant accepting each candidate in turn.
+    Whichever one this tenant takes, the build completes and the row names it,
+    because the winner is observed rather than assumed."""
+    rows = _run_large_list_probe(multiShape=shape)
+
+    assert rows["library.large-list.fixture-file-count"]["outcome"] == "PASS"
+    written = rows["library.large-list.fixture-values-written"]
+    assert written["outcome"] == "PASS"
+    assert f"the shape that took is '{shape}'" in written["evidence"], written["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_shape_that_took_is_not_discarded_for_another_columns_mismatch() -> None:
+    """The depends-on / observes split, as a gate. LVText does not write, and
+    the multi-value shape has nothing to do with that. The run must stop naming
+    LVText, and must not report that no payload shape worked: bare-array wrote
+    LVMultiChoice and read it back, which is the whole question a shape answers.
+    """
+    rows = _run_large_list_probe(textWrite="dropped")
+
+    count = rows["library.large-list.fixture-file-count"]
+    assert count["outcome"] == "SHORT"
+    assert "LVText=null" in count["evidence"], count["evidence"]
+    assert "no multi-value item payload shape" not in count["evidence"], count["evidence"]
+    assert "the multi-value payload shape in use is 'bare-array'" in count["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_tenant_that_takes_no_payload_shape_stops_the_build() -> None:
+    """Every candidate refused. That is a real answer about this tenant and the
+    row has to say so, rather than upload files with an empty column."""
+    rows = _run_large_list_probe(multiShape="none")
+
+    count = rows["library.large-list.fixture-file-count"]
+    assert count["outcome"] == "SHORT"
+    assert "no multi-value item payload shape wrote LVMultiChoice" in count["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("zone", ["unreadable", "no-information"])
+def test_a_site_zone_that_does_not_read_stops_the_build_rather_than_guessing(
+    zone: str,
+) -> None:
+    """Fail closed. Without the site's offsets a zone-less stamp cannot be
+    resolved, and a comparison that guessed would either redo a correct fixture
+    from file one or certify a broken one. Nothing is uploaded and every row
+    from the file count down stays open.
+    """
+    rows = _run_large_list_probe(zone=zone)
+
+    # The library, the target list and the columns were all built before the
+    # zone is needed, so they still answer.
+    assert rows["library.large-list.fixture-columns-created"]["outcome"] == "PASS"
+    for check in (
+        "library.large-list.fixture-file-count",
+        "library.large-list.fixture-values-written",
+        "library.large-list.fixture-calculated-column-computes",
+        "library.large-list.fixture-distribution",
+    ):
+        assert rows[check]["outcome"] == "ABORTED", check
+        assert rows[check]["state"] == "open", check
+    assert "RegionalSettings" in rows["library.large-list.fixture-file-count"]["evidence"]
