@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY NEST FOLDERS?
  *
- * REVISION: 722212ee
+ * REVISION: b2d567a3
  *
  * ONE QUESTION, on the depth nothing has measured:
  *   `folder-probe.js` created ONE folder at the library root and settled what a
@@ -191,6 +191,27 @@
 // answer this run's question, and the reuse path is gone, so a folder still
 // present after the reset is recorded rather than built on. A fixture that
 // reuses what it finds measures the previous run.
+// finding: library-nesting-a-ladder-nests-three-deep - run 2026-09-08: a folder
+// ladder three levels deep (alpha/bravo/charlie) creates and reads back through
+// the folder endpoint, each level a folder whose parent is a folder. Nothing
+// caps the depth at one.
+// finding: library-nesting-files-upload-into-nested-folders - run 2026-09-08:
+// Files/add against a depth-three folder path uploads the file there, and both
+// path columns (FileDirRef and FileRef) read back the full nested path, not the
+// leaf or the library root.
+// finding: library-nesting-view-flattens-by-default-recursive-scope - run
+// 2026-09-08: a view read with Scope=null returns only direct children (the
+// root file and the top folder), Scope="FilesOnly" only the root file, and only
+// Scope="Recursive"/"RecursiveAll" flatten the files at depth. Depth is
+// therefore collapsed only when the scope asks for it.
+// finding: library-nesting-file-dir-ref-groups-under-full-path - run 2026-09-08:
+// a group-by on FileDirRef groups a file three deep under its full path
+// (alpha/bravo/charlie), not its leaf folder name and not its direct parent.
+// finding: library-nesting-folder-and-metadata-group-by-compose - run
+// 2026-09-08: a <GroupBy> naming FileDirRef and a metadata column together
+// groups on BOTH dimensions; the folder group does not clobber the metadata
+// group and the metadata group does not clobber the folder. A layout that wants
+// folder then metadata grouping gets both.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -415,7 +436,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 722212ee. Quote this when reporting results.');
+  log('INFO', 'probe revision b2d567a3. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibNest';
   const COL = 'NestChoice';
