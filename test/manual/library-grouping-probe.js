@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY VIEW GROUP?
  *
- * REVISION: 6dd1a3be
+ * REVISION: 640a1cdf
  *
  * ONE QUESTION, on the column kinds nothing has measured:
  *   `library-view-probe.js` measured group-by on a SINGLE-VALUE metadata
@@ -187,6 +187,32 @@
 // file target and folder target alike), while the library-to-list direction's
 // item write held in the same run. A fixture built the other way round would
 // have no values to group by and would report that as a grouping finding.
+// finding: library-grouping-multi-value-choice-groups-per-set - run 2026-09-08:
+// a group-by on a multi-value choice column returns one group row per SET, not
+// per value. A file holding ["Alpha","Beta"] surfaced as a single group whose
+// label named both values, and the expanded query returned one row per file, so
+// no file was split across values. This closes the long-standing grouping
+// question: a multi-value choice is grouped as a whole set.
+// finding: library-grouping-multi-value-lookup-grouping-not-established - run
+// 2026-09-08: the multi-value lookup grouping could not be pinned to per-set or
+// per-value. The collapsed query returned 5 rows (an empty group plus a lookup
+// value repeated across two rows each) against the 4 rows the expanded query
+// returned one-per-file, so the two server observations disagree and the
+// question stays open; the disagreement itself is recorded, no candidate is
+// asserted.
+// finding: library-grouping-lookup-labels-are-structured-objects - run
+// 2026-09-08: the group labels of a single-value lookup are structured objects
+// {"lookupId":..,"lookupValue":..,"isSecretFieldValue":..}, neither the bare
+// display field nor an encoded id/value pair. A client can read the display
+// text, but only by decoding the object, not by taking the label as a string.
+// finding: library-grouping-null-title-surfaces-empty-group - run 2026-09-08: a
+// library where three of four files carry a null Title groups the nulls into
+// one empty-looking group and the single titled file into another. A null Title
+// is therefore a distinct group label, not a dropped row.
+// finding: library-grouping-view-stores-rewritten-group-by - run 2026-09-08:
+// the SP.View created with a <GroupBy> in its ViewQuery read the group-by back
+// with whitespace normalised (a space inserted before the self-closing />). The
+// group-by is stored, but the exact ViewQuery string does not round-trip.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -411,7 +437,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6dd1a3be. Quote this when reporting results.');
+  log('INFO', 'probe revision 640a1cdf. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibGroup';
   const TGT = 'dbmlsp Probe LibGroup Target';
