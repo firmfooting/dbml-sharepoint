@@ -3,6 +3,18 @@ date: "2026-09-08"
 deployer_version: "dbml-sharepoint/0.1.0"
 schema_version: "3.2.0"
 notes: |
+  3.2.0 also puts the date a save rule requires on the views you set the
+  status from. Reported live: marking an action Done from "My actions" was
+  refused for a blank Completed Date, and the grid had no cell to put one in,
+  so the only way through was to open the full form. Completed Date, Resolved
+  Date and Decision Date now ride on the ten views whose own purpose is that
+  transition, so one Quick Edit save satisfies the rule. The rules themselves
+  are unchanged: an action finished on a date nobody can name is still In
+  progress.
+
+  Ten further views show a trigger without its requirement and are left that
+  way deliberately; the mapping's views section says which and why.
+
   3.2.0 separates HOW FAR an involvement has got from HOW MUCH AUTHORITY it
   carries. Involvement (Agree, Consulted, Informed) is unchanged and still
   means authority. A new EngagementStatus (Identified, Scheduled, Engaged)

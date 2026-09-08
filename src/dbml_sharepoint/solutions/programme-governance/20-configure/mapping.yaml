@@ -644,6 +644,27 @@ field_sets:
   Issue:
     issue: [Title, Workstream, Severity, Status, Owner, RaisedDate]
 
+# A view that lets you set a value in Quick Edit must also carry whatever a
+# save rule then requires. Reported live 2026-09-08: marking an action Done
+# from "My actions" was refused for a blank Completed Date, and the grid had
+# no cell to put one in, so the only way through was the full form. The
+# conditional-visibility formula reveals the date the moment Status changes on
+# a FORM, which is why Edit all works; Quick Edit does not use the form at all
+# and shows the view's columns.
+#
+# So the date now rides on the views whose OWN PURPOSE is that transition:
+# closing an action, resolving an issue, recording a decision. Ten views.
+#
+# Ten more still show a trigger without its requirement, and are left that
+# way on purpose. Activity's Escalation Route is required by a change of
+# KIND, criticality or role rather than by a lifecycle step, and it is long
+# free text nobody types into a grid. ServiceRequest's authorisation and
+# minutes belong to the handler working a request on its form, where the
+# justification and the escalation narrative are. Both are deliberate edits
+# on a form, not a tick in a grid, and carrying three more columns across
+# five views each would cost every reader of those views to serve an edit
+# nobody makes there.
+#
 # Declared views (deployed and reconciled by the views phase; undeclared views
 # are never touched). Widths are pixel ColumnWidth per view and the keys are
 # INTERNAL names. The build rewrites them to display titles, because
@@ -1278,7 +1299,7 @@ views:
     # person column, which is what the current-user sentinel exists for.
     - title: "My actions"
       default: true
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: AssignedTo, op: eq, value: me }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1293,10 +1314,11 @@ views:
         Status: 120
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     # Read FIRST at the fortnightly, so the exception is not buried in the
     # whole list.
     - title: "Overdue"
-      fields: ["@action", RelatedRiskTitle]
+      fields: ["@action", RelatedRiskTitle, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
         - { field: DueDate, op: lt, value: today }
@@ -1310,8 +1332,9 @@ views:
         DueDate: 160
         Status: 120
         RelatedRiskTitle: 220
+        CompletedDate: 160
     - title: "Open by person"
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: AssignedTo, collapsed: true }
@@ -1326,6 +1349,7 @@ views:
         Status: 120
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     - title: "Done and dropped"
       fields: ["@action", CompletedDate, Notes]
       where:
@@ -1346,7 +1370,7 @@ views:
     # workstream so each lead's broken things arrive together.
     - title: "Open"
       default: true
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: Workstream, collapsed: false }
@@ -1364,10 +1388,11 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     # Phase 1's answer to a severe issue, and phase 2 flow D's fallback: both
     # exist, and the view works with the flow off.
     - title: "Severe and open"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Severity, op: in, value: ["Major", "Critical"] }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1383,8 +1408,9 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     - title: "By owner"
-      fields: ["@issue", RelatedRiskTitle]
+      fields: ["@issue", RelatedRiskTitle, ResolvedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: Owner, collapsed: false }
@@ -1398,6 +1424,7 @@ views:
         Owner: 160
         RaisedDate: 160
         RelatedRiskTitle: 220
+        ResolvedDate: 160
     - title: "Resolved and closed"
       fields: ["@issue", ResolvedDate, Resolution]
       where:
@@ -1417,7 +1444,7 @@ views:
     # Workstream and Owner are the two fields an occasional raiser cannot
     # answer, so the view surfaces wherever either is still blank.
     - title: "Needs triage"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - any_of:
             - { field: Workstream, op: is_null }
@@ -1433,10 +1460,11 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     # "Did the thing I reported get seen, and where is it now?" Author is the
     # built-in Created By column; an issue has no separate raiser column.
     - title: "My raised items"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Author, op: eq, value: me }
       sort:
@@ -1450,6 +1478,7 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
   Decision:
     # The queue comes first and the log second, because the list now holds
     # both and only one of them is work. Status is the only thing separating
@@ -1458,7 +1487,7 @@ views:
     - title: "Awaiting decision"
       default: true
       fields: [Title, Status, RaisedDate, Activity, Workstream,
-               ResolutionSought, Author]
+               ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
       sort:
@@ -1471,6 +1500,7 @@ views:
         Workstream: 180
         ResolutionSought: 280
         Author: 170
+        DecisionDate: 150
     - title: "Decision log"
       fields: [Title, Status, DecisionDate, Workstream, DecidedBy,
                DecidedByForum, RecommendedByForum, SupersedesDecisionTitle,
@@ -1494,7 +1524,7 @@ views:
     # older than that has missed both, so it is stuck rather than pending.
     - title: "Stalled proposals"
       fields: [Title, Status, RaisedDate, Activity, Workstream,
-               ResolutionSought, Author]
+               ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
         - { field: RaisedDate, op: lt, value: today-42 }
@@ -1508,6 +1538,7 @@ views:
         Workstream: 180
         ResolutionSought: 280
         Author: 170
+        DecisionDate: 150
 
     # Quarterly step 9 renders Modified and Editor, most recent first, so the
     # reviewer can read down to the last review.
