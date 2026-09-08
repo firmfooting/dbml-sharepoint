@@ -267,7 +267,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`,
 `library-large-list-group-view-probe.js`,
 `library-large-list-multilevel-group-view-probe.js`,
-`library-large-list-preindex-fixture-probe.js`
+`library-large-list-preindex-fixture-probe.js`,
+`library-large-list-preindex-group-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -390,6 +391,36 @@ file count and an ISO timestamp into the column's own `Description` and every
 later pass reports the row by quoting the stamp. A column reading
 `Indexed=true` with no stamp is reported open, because the flag alone is
 equally consistent with a write at 4,900 files and one at 5,099.
+
+`library-large-list-preindex-group-view-probe.js` changes the FIXTURE rather
+than the query. #481 settled that a column indexed while its library was already
+past 5,000 files serves a filter and does not serve a group-by, in the same pair
+of requests, for as long as it is asked. The guidance an operator meets says to
+index before the library passes 5,000, so this probe reads a second permanent
+library, `dbmlsp Probe PreIndex`, whose Choice column was indexed at 4,900 files
+and carried past the threshold, and sends #481's queries at it. It reuses six
+ids. `fixture-preindex-index-written-under-threshold` and
+`fixture-preindex-witness-unindexed` come from
+`library-large-list-preindex-fixture-probe.js`, which builds that library and
+stamps the count and the moment of the index write into the column's
+Description, because `Indexed=true` seen by a later pass cannot say WHEN it was
+written and when is the entire subject. `control-id-query-served`,
+`control-absent-column-refused`, `control-unindexed-filter-refused`,
+`control-render-where-absent-refused` and `control-missing-group-column-ungrouped`
+are the same questions by the same method, asked of the second library, and
+`group-by-native-index-column` is #480's subject asked there too. What is NOT
+reused is `fixture-library-present`: the equivalent row is
+`fixture-preindex-library-present`, because a different library is a different
+question and a reader must not have to work out which fixture a record came
+from. `control-preindex-filter-serves` and
+`control-preindex-group-by-narrowed-honoured` are new for the same reason, and
+the second one is the instrument: a single-level `<GroupBy>` proved over an
+`Id`-narrowed row set on THIS library, since the column names and the build
+differ from the fixture #480 measured that composition on.
+`preindex-group-by-unindexed-column` is a SUBJECT and not a control, on the
+argument #480 and #481 already made: a group-by refused at this size is the
+result three probes have now recorded, so spelling it as a control would make
+the finding indistinguishable from a broken instrument.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -526,6 +557,13 @@ different questions and take different ids. They do not merge.
 | Is `Indexed=true` accepted on a library's Choice column | written BELOW the threshold, on a second library holding 4,900 files, which is the ordering the index guidance names | `library.large-list.fixture-preindex-index-written-under-threshold` |
 | Does a library hold the file count its fixture contract names | the shared fixture, 5,500 files indexed after crossing | `library.large-list.fixture-file-count` |
 | Does a library hold the file count its fixture contract names | the pre-index fixture, 5,100 files indexed before crossing | `library.large-list.fixture-preindex-file-count` |
+| Does an index let a group-by through past the threshold | a Choice column indexed BEFORE its library passed 5,000 files, on a second fixture built for the ordering | `library.large-list.preindex-group-by-indexed-column` |
+| Does the filter serve while the group-by on the same column is refused, in one pair of requests | the index written after the library passed 5,000 files | `library.large-list.indexed-filter-serves-while-group-by-refused` |
+| Does the filter serve while the group-by on the same column is refused, in one pair of requests | the index written before it | `library.large-list.preindex-filter-serves-while-group-by-refused` |
+| Is a single-level `<GroupBy>` honoured over an `Id`-narrowed row set | on the fixture whose columns are indexed by the probe that reads it | `library.large-list.filtered-group-by-past-threshold` |
+| Is a single-level `<GroupBy>` honoured over an `Id`-narrowed row set | on the fixture that arrives indexed, whose column names and build differ | `library.large-list.control-preindex-group-by-narrowed-honoured` |
+| Is the fixture library present and past the list view threshold | `dbmlsp Probe LargeLib`, indexed and unindexed by whichever probe is reading it | `library.large-list.fixture-library-present` |
+| Is the fixture library present and past the list view threshold | `dbmlsp Probe PreIndex`, whose Choice column was indexed at 4,900 files and never cleared | `library.large-list.fixture-preindex-library-present` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
