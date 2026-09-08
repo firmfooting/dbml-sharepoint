@@ -270,7 +270,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-group-view-probe.js`,
 `library-large-list-multilevel-group-view-probe.js`,
 `library-large-list-preindex-fixture-probe.js`,
-`library-large-list-preindex-group-view-probe.js`
+`library-large-list-preindex-group-view-probe.js`,
+`library-large-list-modern-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -424,6 +425,35 @@ argument #480 and #481 already made: a group-by refused at this size is the
 result three probes have now recorded, so spelling it as a control would make
 the finding indistinguishable from a broken instrument.
 
+`library-large-list-modern-view-probe.js` changes the LAYER rather than the
+fixture or the query. Everything above measures REST: an OData `$filter` and a
+`<GroupBy>` sent through `RenderListDataAsStream`. This probe reads the modern
+document library page rendering the same views in a browser, on the same
+`dbmlsp Probe PreIndex` library, because the effective threshold Microsoft
+documents for the modern experience is higher than the 5,000 the query surfaces
+enforce. Its questions take the `ui-` stem under `large-list` rather than a
+`ui` scope of their own: the subject is still enumerating a document library
+past the list view threshold, and the grammar allows exactly two dots, so the
+layer belongs in the question rather than in a third part. Three ids are reused
+from the fixture probe, `fixture-preindex-library-present`,
+`fixture-preindex-index-written-under-threshold` and
+`fixture-preindex-witness-unindexed`, since the fixture and the method are the
+same. `control-ui-modern-renders-below-threshold` is the row the rest depends
+on: `view-aggregations-probe.js` provisions its fixture classic and records
+that the modern list web part does not render under the capture browser, so a
+blank grid past 5,000 and a capture lane that renders nothing produce the same
+screenshot. Reading the same instrument on a library UNDER the threshold is
+what separates them, and every rendered row is void rather than open when it
+fails. `ui-group-by-unindexed-column-renders` is a witness with nothing
+depending on it, because the unindexed column holds a thousand distinct values
+over 5,100 files and a refusal there is not attributable to the missing index
+alone. `ui-group-by-indexed-column-folder-scoped` is registered and recorded
+open: it needs a folder holding fewer than 5,000 files inside a library holding
+more than 5,000, and neither permanent fixture has one. Adding a folder to
+either would break the `$orderby=Id desc&$top=1` resume read both fixture
+probes fail closed on, so answering it needs a large library built with
+folders, which is a fixture probe rather than a change to this one.
+
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
 that the surface is almost entirely unprobed. `library` was in that position
@@ -566,6 +596,10 @@ different questions and take different ids. They do not merge.
 | Is a single-level `<GroupBy>` honoured over an `Id`-narrowed row set | on the fixture that arrives indexed, whose column names and build differ | `library.large-list.control-preindex-group-by-narrowed-honoured` |
 | Is the fixture library present and past the list view threshold | `dbmlsp Probe LargeLib`, indexed and unindexed by whichever probe is reading it | `library.large-list.fixture-library-present` |
 | Is the fixture library present and past the list view threshold | `dbmlsp Probe PreIndex`, whose Choice column was indexed at 4,900 files and never cleared | `library.large-list.fixture-preindex-library-present` |
+| Does an index let a group-by through past the threshold | the modern library PAGE rendering a grouped view in a browser, where every REST surface refuses one | `library.large-list.ui-group-by-indexed-column-renders` |
+| Is a group-by honoured on a single-value column | an unindexed column on the rendered page, beside the indexed one on the same library | `library.large-list.ui-group-by-unindexed-column-renders` |
+| Does the default view serve past the list view threshold | `RenderListDataAsStream` returning its first page of rows | `library.large-list.default-view-renders-first-page` |
+| Does the default view serve past the list view threshold | the modern library page rendering file rows a person can see | `library.large-list.ui-default-view-renders-past-threshold` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
