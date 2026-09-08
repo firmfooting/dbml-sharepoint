@@ -7,7 +7,7 @@
  *   change that, does the DEFAULT VIEW render at all, and does `Scope`
  *   ("Recursive", "RecursiveAll") move any of it?
  *
- * REVISION: 09d7f39d
+ * REVISION: e1ebbe4f
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -287,6 +287,26 @@
 // served while Title, Name, Created, Modified, Author and Editor are each refused
 // with SPQueryThrottledException. That is what makes the Id group-by the one
 // indexed grouping this probe can take without writing anything.
+// finding: large-list-group-view-group-by-throttles-even-on-id - measured
+// 2026-09-08: a group-by on Id, the one natively-indexed column, still returns
+// HTTP 500 (threshold). An index does not lift a group-by the way it lifts a
+// filter.
+// finding: large-list-group-view-index-lifts-filter-not-group-by - measured
+// 2026-09-08: after LVChoice was indexed, the selective filter on LVChoice was
+// SERVED, but the group-by on LVChoice was still REFUSED (threshold). Indexing a
+// column rescues its filter, not its group-by; grouping always aggregates the
+// whole row set.
+// finding: large-list-group-view-default-view-serves-first-page - measured
+// 2026-09-08: the default "All Documents" view renders HTTP 200, 30 rows, past
+// 5,000 files. The threshold bites filters and group-bys on non-Id columns, not
+// the plain first page of a view.
+// finding: large-list-group-view-scope-does-not-change-the-throttle - measured
+// 2026-09-08: Scope=null / Recursive / RecursiveAll each leave the group-by
+// throttle unchanged on a flat fixture.
+// finding: large-list-group-view-id-narrowed-group-by-is-honoured - measured
+// 2026-09-08: an Id-guarded <Where> (Id >= newest-5, six rows) with a group-by is
+// SERVED. The only escape from the group-by throttle is to narrow the row set
+// first, so the aggregation runs over a handful of rows.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -511,7 +531,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 09d7f39d. Quote this when reporting results.');
+  log('INFO', 'probe revision e1ebbe4f. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
