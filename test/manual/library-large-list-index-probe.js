@@ -7,7 +7,7 @@
  *   on any column but Id. Does adding an index to a custom column take, and
  *   does it turn that refusal into an answer?
  *
- * REVISION: 7fdb5a40
+ * REVISION: 3dcd7ba2
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -200,7 +200,8 @@
  *      together.
  *   5. Copy the whole RESULTS block back verbatim.
  *
- * STATUS: NOT YET RUN.
+ * STATUS: RUN 2026-09-08. Measurement 17/17 settled; the findings block above
+ * carries the results, and REMOVE_INDEXES_AT_END returned the fixture to unindexed.
  *
  * WHEN FINISHED: set REMOVE_INDEXES_AT_END with both write gates and re-paste
  * to return the fixture's columns to unindexed. That paste clears every
@@ -479,7 +480,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 7fdb5a40. Quote this when reporting results.');
+  log('INFO', 'probe revision 3dcd7ba2. Quote this when reporting results.');
 
   // Teardown, and the only thing here that undoes anything: MERGE Indexed
   // false back onto every contract column that is indexed, whether this run
