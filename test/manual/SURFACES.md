@@ -263,7 +263,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-view-search-probe.js`, `library-index-probe.js`,
 `cross-lookup-probe.js`, `library-index-threshold-probe.js`,
 `library-grouping-probe.js`, `library-nesting-probe.js`,
-`library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`
+`library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`,
+`library-large-list-index-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -299,6 +300,16 @@ figure. The scope was added with `library-large-list-fixture-probe.js`, which
 answers nothing and builds the permanent library the enumeration probes read:
 its library name, target list name, column names, file names and value formulas
 are a contract, and a probe reading that fixture files its rows here.
+
+`library-large-list-index-probe.js` files its INDEX questions here rather than
+under `library.index` for the same keying reason. `library.index` holds whether
+a library accepts `SP.Field.Indexed` at all, measured on a small library it
+creates for itself. The questions here are what an index does once the
+container is past the threshold: whether the write is still accepted at that
+size, and whether it turns a refused filter or sort into an answered one. The
+subject is the threshold, the evidence is the shared fixture, and a reader
+asking what is known about a library past 5,000 rows should find it without
+knowing which of the two scopes the write half belongs to.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement

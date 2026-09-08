@@ -2471,3 +2471,572 @@ def test_a_site_zone_that_does_not_read_stops_the_build_rather_than_guessing(
         assert rows[check]["outcome"] == "ABORTED", check
         assert rows[check]["state"] == "open", check
     assert "RegionalSettings" in rows["library.large-list.fixture-file-count"]["evidence"]
+
+
+LARGE_LIST_INDEX_PROBE = MANUAL / "library-large-list-index-probe.js"
+
+#: A SharePoint holding the built large-library fixture, controllable in the
+#: ways this measurement can go wrong: whether the threshold is enforced at
+#: all, what a filter on a column that does not exist comes back as, whether an
+#: index MERGE takes, is silently dropped or is refused, and how many queries
+#: pass before the index behind an accepted flag actually serves.
+_LARGE_LIST_INDEX_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const LIB = 'dbmlsp Probe LargeLib';
+    const COUNT = CONFIG.count;
+    const PAGE = 100;
+    const CHOICES = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+    const TYPES = {
+      LVText: 'Text', LVNumber: 'Number', LVChoice: 'Choice', LVDate: 'DateTime',
+      LVMultiChoice: 'MultiChoice', LVLookup: 'Lookup', LVCalc: 'Calculated',
+    };
+    const ENTITY_TYPES = {
+      LVText: 'SP.FieldText', LVNumber: 'SP.FieldNumber', LVChoice: 'SP.FieldChoice',
+      LVDate: 'SP.FieldDateTime', LVMultiChoice: 'SP.FieldMultiChoice',
+      LVLookup: 'SP.FieldLookup', LVCalc: 'SP.FieldCalculated',
+    };
+
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FIELD = /getbyinternalnameortitle\\('([^']+)'\\)/;
+
+    // One entry per contract column: the flag, the description, and how many
+    // more queries have to arrive before the index behind an accepted flag
+    // serves anything. The last one is what makes the asynchronous build
+    // testable rather than a comment.
+    const fields = new Map();
+    for (const name of Object.keys(TYPES)) {
+      fields.set(name, {
+        Indexed: CONFIG.preIndexed.indexOf(name) !== -1,
+        AutoIndexed: false,
+        Description: '',
+        pending: 0,
+      });
+    }
+
+    const fileName = (n) => `dbmlsp-lv-${String(n).padStart(5, '0')}.txt`;
+    // The fixture's own value formulas. A mock answering with a fixed row
+    // count would let the probe's count comparison pass on the wrong query.
+    const valueFor = (n) => ({
+      LVText: `text-${n % 100}`,
+      LVChoice: CHOICES[n % 4],
+      LVNumber: n % 1000,
+    });
+    const rowsMatching = (column, literal) => {
+      const out = [];
+      for (let n = 1; n <= COUNT; n += 1) {
+        const held = valueFor(n)[column];
+        if (held !== undefined && String(held) === String(literal)) out.push(n);
+      }
+      return out;
+    };
+
+    const throttled = () => jsonResponse(500, {
+      'odata.error': {
+        code: '-2147024860, Microsoft.SharePoint.SPQueryThrottledException',
+        message: {
+          value: 'The attempted operation is prohibited because it exceeds the '
+            + 'list view threshold enforced by the administrator.',
+        },
+      },
+    });
+    const noSuchColumn = (column) => (CONFIG.absentColumn === 'throttled'
+      ? throttled()
+      : jsonResponse(400, {
+        'odata.error': {
+          message: { value: `Field or property "${column}" does not exist.` },
+        },
+      }));
+
+    const canServe = (state) => {
+      if (CONFIG.throttle === 'off') return true;
+      if (!state.Indexed) return false;
+      if (state.pending > 0) { state.pending -= 1; return false; }
+      return true;
+    };
+    const page = () => {
+      const out = [];
+      for (let n = 1; n <= Math.min(PAGE, COUNT); n += 1) out.push({ Id: n });
+      return out;
+    };
+    const writeMode = (name) => CONFIG.indexWrite[name] || CONFIG.indexWrite.default;
+
+    globalThis.fetch = async (url, init = {}) => {
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      const method = init.method || 'GET';
+      const headers = init.headers || {};
+      const verb = headers['X-HTTP-Method'] || method;
+      let payload = null;
+      if (typeof init.body === 'string') {
+        try { payload = JSON.parse(init.body); } catch { payload = null; }
+      }
+
+      if (path === 'contextinfo') {
+        return jsonResponse(200, {
+          d: { GetContextWebInformation: { FormDigestValue: 'digest' } },
+        });
+      }
+
+      const list = path.match(LIST);
+      if (!list) return jsonResponse(404, { error: `unrouted ${method} ${path}` });
+      if (list[1] !== LIB || CONFIG.library === 'missing') {
+        return jsonResponse(404, { error: `no list named ${list[1]}` });
+      }
+      const rest = list[2];
+
+      const field = rest.match(FIELD);
+      if (field) {
+        const name = field[1];
+        const state = fields.get(name);
+        if (!state) return jsonResponse(404, { error: `no field named ${name}` });
+
+        if (verb === 'MERGE') {
+          // __metadata is a verbose construct and a nometadata Content-Type
+          // rejects it rather than ignoring it. The probe pairs the two, and a
+          // mock that accepted the mismatch would let that pairing rot.
+          const contentType = headers['Content-Type'] || '';
+          if (payload.__metadata && !/verbose/.test(contentType)) {
+            return jsonResponse(400, {
+              'odata.error': { message: { value: 'metadata sent without verbose odata' } },
+            });
+          }
+          const sentType = payload.__metadata ? payload.__metadata.type : null;
+          const keys = Object.keys(payload).filter((key) => key !== '__metadata');
+          const unknown = keys.filter(
+            (key) => key !== 'Indexed' && key !== 'Description');
+          if (unknown.length && CONFIG.unknownProperty !== 'accepted') {
+            return jsonResponse(400, {
+              'odata.error': {
+                message: {
+                  value: `The property '${unknown[0]}' does not exist on type 'SP.Field'.`,
+                },
+              },
+            });
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'Description')
+              && CONFIG.descriptionWrite !== 'dropped') {
+            state.Description = payload.Description;
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'Indexed')) {
+            const mode = writeMode(name);
+            if (mode === 'refused') {
+              return jsonResponse(500, {
+                'odata.error': {
+                  message: { value: 'This field type does not support indexing.' },
+                },
+              });
+            }
+            if (mode === 'type-hint' && sentType === 'SP.Field') {
+              return jsonResponse(500, {
+                'odata.error': {
+                  message: { value: `Cannot convert SP.Field to ${ENTITY_TYPES[name]}.` },
+                },
+              });
+            }
+            if (mode !== 'ignored') {
+              state.Indexed = payload.Indexed === true;
+              state.pending = payload.Indexed === true ? CONFIG.buildAttempts : 0;
+            }
+          }
+          console.log(`__MERGE__ ${name} ${JSON.stringify(keys)}`);
+          return jsonResponse(204, {});
+        }
+
+        const body = {
+          InternalName: name,
+          TypeAsString: CONFIG.columnTypes[name] || TYPES[name],
+          Indexed: state.Indexed,
+          AutoIndexed: state.AutoIndexed,
+          Description: state.Description,
+        };
+        if (/verbose/.test(headers.Accept || '')) {
+          return jsonResponse(200, {
+            d: { ...body, __metadata: { type: ENTITY_TYPES[name] } },
+          });
+        }
+        return jsonResponse(200, body);
+      }
+
+      if (rest.startsWith('/items')) {
+        const orderby = rest.match(/\\$orderby=([^&]+)/);
+        // The count read: the newest file by Id, which Id's native index
+        // serves past the threshold.
+        if (orderby && /^Id desc/.test(orderby[1])) {
+          return jsonResponse(200, {
+            value: [{ Id: COUNT, FileLeafRef: fileName(COUNT) }],
+          });
+        }
+
+        const filter = rest.match(/\\$filter=(.+)$/);
+        if (filter) {
+          const parsed = String(filter[1]).match(
+            /^(\\w+) eq (?:'([^']*)'|([0-9]+))$/);
+          if (!parsed) {
+            return jsonResponse(400, {
+              'odata.error': { message: { value: `unparsed filter ${filter[1]}` } },
+            });
+          }
+          const column = parsed[1];
+          const literal = parsed[2] === undefined ? Number(parsed[3]) : parsed[2];
+          if (column === 'Id') {
+            return jsonResponse(200, {
+              value: literal <= COUNT ? [{ Id: literal }] : [],
+            });
+          }
+          const state = fields.get(column);
+          if (!state) return noSuchColumn(column);
+          if (!canServe(state)) return throttled();
+          return jsonResponse(200, {
+            value: rowsMatching(column, literal).slice(0, PAGE).map((n) => ({ Id: n })),
+          });
+        }
+
+        if (orderby) {
+          const column = String(orderby[1]).split(' ')[0];
+          if (column === 'Id') return jsonResponse(200, { value: page() });
+          const state = fields.get(column);
+          if (!state) return noSuchColumn(column);
+          if (!canServe(state)) return throttled();
+          return jsonResponse(200, { value: page() });
+        }
+        return jsonResponse(400, { error: `unrouted items query ${rest}` });
+      }
+
+      return jsonResponse(200, { Title: LIB, BaseTemplate: 101, ItemCount: COUNT });
+    };
+""")
+
+
+#: The two waits, shrunk so the whole suite runs in milliseconds. Neither
+#: figure changes what is measured: the wait is bounded by attempts, and the
+#: attempts are what the row reports.
+_LARGE_LIST_INDEX_SHRINK = {
+    "REREAD_MS": ("1500", "1"),
+    "INDEX_WAIT_MS": ("6000", "1"),
+}
+
+
+def _large_list_index_probe_js(remove_indexes: bool = False) -> str:
+    """The rendered index probe with its gates open, its waits shrunk and its
+    result table exposed.
+
+    ``remove_indexes`` opens the teardown flag the operator sets on the paste
+    that restores the fixture, so the restore runs here rather than only in a
+    live console.
+    """
+    js = LARGE_LIST_INDEX_PROBE.read_text(encoding="utf-8")
+    gates = ["CONFIRMED", "ALLOW_WRITES"]
+    if remove_indexes:
+        gates.append("REMOVE_INDEXES_AT_END")
+    for gate in gates:
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    for name, (shipped, small) in _LARGE_LIST_INDEX_SHRINK.items():
+        shrunk = js.replace(
+            f"  const {name} = {shipped};", f"  const {name} = {small};", 1
+        )
+        assert shrunk != js, f"{name} does not ship as {shipped}"
+        js = shrunk
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _large_list_index_output(remove_indexes: bool = False, **config: Any) -> str:
+    settings: dict[str, Any] = {
+        "count": 5500,
+        "library": "present",
+        "throttle": "enforced",
+        "absentColumn": "rejected",
+        "descriptionWrite": "sticks",
+        "unknownProperty": "refused",
+        "indexWrite": {"default": "takes"},
+        "buildAttempts": 0,
+        "preIndexed": [],
+        "columnTypes": {},
+        **config,
+    }
+    return _run(
+        _LARGE_LIST_INDEX_HARNESS.replace("__CONFIG__", json.dumps(settings))
+        + "\n"
+        + _large_list_index_probe_js(remove_indexes=remove_indexes)
+    )
+
+
+def _run_large_list_index_probe(**config: Any) -> dict[str, dict[str, str]]:
+    """Run the index probe and return id -> the whole recorded row."""
+    output = _large_list_index_output(**config)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_index_that_takes_and_serves_is_read_as_the_index_serving() -> None:
+    """The tenant this probe hopes for: every column accepts the flag and the
+    index serves immediately. Every control holds, every column answers, and
+    the two before/after rows and the per-column row all settle.
+    """
+    rows = _run_large_list_index_probe()
+
+    assert rows["library.large-list.fixture-library-present"]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-index-flags-clear"]["outcome"] == "PASS"
+    assert rows["library.large-list.control-id-query-served"]["outcome"] == (
+        "SERVED (filter and sort)"
+    )
+    for column in ("text", "number", "choice", "date", "multichoice", "lookup",
+                   "calculated"):
+        check = f"library.large-list.index-{column}-column"
+        assert rows[check]["outcome"] == "INDEXED", check
+    assert rows["library.large-list.index-removes-filter-throttle"]["outcome"] == (
+        "INDEX SERVES THE FILTER"
+    )
+    assert rows["library.large-list.index-removes-sort-throttle"]["outcome"] == (
+        "INDEX SERVES THE SORT"
+    )
+    assert rows["library.large-list.index-is-per-column"]["outcome"] == "PER COLUMN"
+    assert [row["id"] for row in rows.values() if row["state"] != "settled"] == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_flag_that_is_accepted_and_dropped_is_not_reported_as_an_index() -> None:
+    """The failure class this repository exists to find: HTTP 204 and nothing
+    changed. Both method controls hold, so the verdict is the column's.
+    """
+    rows = _run_large_list_index_probe(indexWrite={"default": "ignored"})
+
+    assert rows["library.large-list.index-number-column"]["outcome"] == (
+        "SILENTLY IGNORED"
+    )
+    assert rows["library.large-list.control-description-sticks"]["outcome"] == (
+        "DESCRIPTION STUCK"
+    )
+    # No column carries an index, so neither before/after pair has an after
+    # half, and neither row may claim one.
+    for check in ("library.large-list.index-removes-filter-throttle",
+                  "library.large-list.index-removes-sort-throttle"):
+        assert rows[check]["outcome"] == "NOT ESTABLISHED", check
+        assert "took an index" in rows[check]["evidence"], check
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_dropped_write_is_void_when_the_method_control_collapses() -> None:
+    """A write that changed nothing and a write that never arrived are the same
+    observation. With the Description control down, SILENTLY IGNORED is a
+    verdict this run cannot support, so it is void rather than recorded.
+    """
+    rows = _run_large_list_index_probe(
+        indexWrite={"default": "ignored"}, descriptionWrite="dropped",
+    )
+
+    assert rows["library.large-list.control-description-sticks"]["outcome"] == (
+        "CONTROL FAILED, METHOD VOID"
+    )
+    row = rows["library.large-list.index-number-column"]
+    assert row["outcome"] == "VOID"
+    assert row["state"] == "void"
+    assert "never arrived" in row["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_after_half_waits_for_an_index_that_is_still_building() -> None:
+    """SharePoint builds the index behind the flag. Three refusals then an
+    answer is an index that works, and the row has to reach it rather than
+    conclude on the first refusal.
+    """
+    rows = _run_large_list_index_probe(buildAttempts=3)
+
+    row = rows["library.large-list.index-removes-filter-throttle"]
+    assert row["outcome"] == "INDEX SERVES THE FILTER"
+    assert "over 4 attempt(s)" in row["evidence"], row["evidence"]
+    assert rows["library.large-list.index-removes-sort-throttle"]["outcome"] == (
+        "INDEX SERVES THE SORT"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_index_that_never_serves_is_not_reported_as_the_index_failing() -> None:
+    """The wait runs out. That is not evidence that the index does not lift the
+    throttle, and the row must stay open and say why.
+    """
+    rows = _run_large_list_index_probe(buildAttempts=999)
+
+    row = rows["library.large-list.index-removes-filter-throttle"]
+    assert row["outcome"] == "NOT ESTABLISHED (still refused after 10 attempt(s))"
+    assert row["state"] == "open"
+    assert "builds the index behind the flag" in row["evidence"]
+    # The flag itself still took, and that is a separate question with its own
+    # answer.
+    assert rows["library.large-list.index-number-column"]["outcome"] == "INDEXED"
+    assert rows["library.large-list.index-is-per-column"]["outcome"] == (
+        "NOT ESTABLISHED"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throttled_refusal_on_a_column_that_does_not_exist_voids_the_pairs() -> None:
+    """If a filter naming a column the library does not hold comes back
+    carrying the throttle signature, no refusal in this run can be attributed
+    to the threshold. The three measurements are void, not open.
+    """
+    rows = _run_large_list_index_probe(absentColumn="throttled")
+
+    assert rows["library.large-list.control-absent-column-refused"]["outcome"] == (
+        "CONTROL FAILED, METHOD VOID"
+    )
+    for check in ("library.large-list.index-removes-filter-throttle",
+                  "library.large-list.index-removes-sort-throttle",
+                  "library.large-list.index-is-per-column"):
+        assert rows[check]["outcome"] == "VOID", check
+        assert rows[check]["state"] == "void", check
+    # The index writes are a different question and still answer.
+    assert rows["library.large-list.index-lookup-column"]["outcome"] == "INDEXED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_short_of_the_threshold_is_not_written_to_at_all() -> None:
+    """The fixture is somebody else's expensive object. A run that cannot
+    verify it writes nothing to it, and every question says so.
+    """
+    output = _large_list_index_output(count=400)
+    line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
+    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+    assert rows["library.large-list.fixture-library-present"]["outcome"] == "SHORT"
+    assert rows["library.large-list.index-number-column"]["outcome"] == "ABORTED"
+    assert rows["library.large-list.index-number-column"]["state"] == "open"
+    assert "__MERGE__" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_that_arrives_indexed_cannot_supply_the_unindexed_half() -> None:
+    """SharePoint has been measured indexing a column on its own between two
+    runs. A column already carrying an index has no before half, and the rows
+    that need one must say that rather than report the after half alone.
+    """
+    rows = _run_large_list_index_probe(preIndexed=["LVNumber", "LVText"])
+
+    flags = rows["library.large-list.fixture-index-flags-clear"]
+    assert flags["outcome"] == "ALREADY INDEXED"
+    assert flags["state"] == "open"
+    assert rows["library.large-list.index-number-column"]["outcome"] == (
+        "NOT ESTABLISHED"
+    )
+    for check in ("library.large-list.index-removes-filter-throttle",
+                  "library.large-list.index-removes-sort-throttle"):
+        assert rows[check]["outcome"] == "NOT ESTABLISHED", check
+        assert "started unindexed" in rows[check]["evidence"], check
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_type_hint_is_not_reported_as_a_refused_column() -> None:
+    """The retry that separates the two. SP.Field is refused, the type
+    SharePoint reports for the field is accepted, and the column is indexed:
+    reporting REFUSED there would retire a column that works.
+    """
+    rows = _run_large_list_index_probe(indexWrite={"default": "type-hint"})
+
+    row = rows["library.large-list.index-calculated-column"]
+    assert row["outcome"] == "INDEXED"
+    assert "The refusal was the TYPE HINT" in row["evidence"]
+
+
+#: What the live run of 2026-09-08 left on the fixture: the five plain
+#: single-value columns took an index, MultiChoice and Calculated refused one.
+#: That state is what the REMOVE_INDEXES_AT_END re-paste has to find and clear.
+_LEFT_INDEXED = ["LVText", "LVNumber", "LVChoice", "LVDate", "LVLookup"]
+_REFUSES_AN_INDEX = {"LVMultiChoice": "refused", "LVCalc": "refused"}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_teardown_clears_the_indexes_an_earlier_run_left() -> None:
+    """The paste that restores the fixture is, by construction, a run that
+    finds the columns already indexed: the run before it indexed them.
+
+    Measured on 2026-09-08: a teardown scoped to the columns THIS run indexed
+    from unindexed matched nothing on that paste and reverted nothing, while
+    the header promised the fixture back. So the columns that arrive indexed
+    are cleared too.
+    """
+    output = _large_list_index_output(
+        remove_indexes=True,
+        preIndexed=_LEFT_INDEXED,
+        indexWrite={"default": "takes", **_REFUSES_AN_INDEX},
+    )
+
+    for column in _LEFT_INDEXED:
+        assert f"[OK] {column}: Indexed is back to false." in output, column
+    # Neither of these ever carried an index, so there is nothing on them to
+    # put back and the teardown must not report clearing one.
+    for column in ("LVMultiChoice", "LVCalc"):
+        assert f"{column}: Indexed is back to false." not in output, column
+    assert (
+        "[OK] Teardown: 5 of 5 column(s) read Indexed=false on the readback"
+    ) in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_teardown_clears_what_this_run_indexed() -> None:
+    """The other half of the union, unchanged: a run that indexes seven columns
+    from unindexed and is told to tidy up puts all seven back."""
+    output = _large_list_index_output(remove_indexes=True)
+
+    for column in ("LVText", "LVNumber", "LVChoice", "LVDate", "LVMultiChoice",
+                   "LVLookup", "LVCalc"):
+        assert f"[OK] {column}: Indexed is back to false." in output, column
+    assert (
+        "[OK] Teardown: 7 of 7 column(s) read Indexed=false on the readback"
+    ) in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_teardown_write_that_changes_nothing_is_not_reported_as_restored() -> None:
+    """The teardown writes, so it reads back. A MERGE accepted and dropped
+    leaves the fixture indexed, and a run that said otherwise would send the
+    next operator to measure a before half that is not there.
+    """
+    output = _large_list_index_output(
+        remove_indexes=True,
+        preIndexed=_LEFT_INDEXED,
+        indexWrite={"default": "ignored"},
+    )
+
+    for column in _LEFT_INDEXED:
+        assert f"[FAIL] {column}: Indexed is still true" in output, column
+    assert "[FAIL] Teardown: 0 of 5 column(s) read Indexed=false" in output
+    assert "STILL INDEXED: LVText, LVNumber, LVChoice, LVDate, LVLookup" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_measurement_run_reverts_nothing_and_names_both_sets() -> None:
+    """Without the flag nothing is undone, which is what a run still waiting on
+    an index build needs. The two sets are reported apart: what this run
+    indexed, and what it found already indexed.
+    """
+    output = _large_list_index_output(preIndexed=["LVChoice"])
+
+    assert "Indexed is back to false" not in output
+    assert (
+        "The fixture's columns are LEFT INDEXED: LVText, LVNumber, LVDate, "
+        "LVMultiChoice, LVLookup, LVCalc."
+    ) in output
+    assert "Still indexed from a previous run: LVChoice." in output

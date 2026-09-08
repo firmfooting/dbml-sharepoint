@@ -6791,6 +6791,183 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-large-list-index-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "index flags on the seven columns of the permanent large-library fixture, left in place unless REMOVE_INDEXES_AT_END is set on a following paste",
+        "a Description marker on one of those columns, put back in the same pass"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "the permanent fixture 'dbmlsp Probe LargeLib' built by library-large-list-fixture-probe.js: this probe reads it and never builds it",
+        "a second paste if a before/after row is still refused, because SharePoint builds the index behind the flag asynchronously"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.large-list.fixture-library-present",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-index-flags-clear",
+              "depends_on": [
+                "library.large-list.fixture-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-id-query-served",
+              "depends_on": [
+                "library.large-list.fixture-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-absent-column-refused",
+              "depends_on": [
+                "library.large-list.fixture-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-unindexed-filter-refused",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-absent-column-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.control-description-sticks",
+              "depends_on": [
+                "library.large-list.fixture-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.control-unknown-property-refused",
+              "depends_on": [
+                "library.large-list.fixture-library-present"
+              ]
+            },
+            {
+              "id": "library.large-list.index-text-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-number-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-choice-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-date-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-multichoice-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-lookup-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-calculated-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-description-sticks",
+                "library.large-list.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.index-removes-filter-throttle",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-id-query-served",
+                "library.large-list.control-absent-column-refused",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.index-number-column",
+                "library.large-list.index-text-column"
+              ]
+            },
+            {
+              "id": "library.large-list.index-removes-sort-throttle",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-id-query-served",
+                "library.large-list.control-absent-column-refused",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.index-number-column",
+                "library.large-list.index-text-column"
+              ]
+            },
+            {
+              "id": "library.large-list.index-is-per-column",
+              "depends_on": [
+                "library.large-list.fixture-library-present",
+                "library.large-list.fixture-index-flags-clear",
+                "library.large-list.control-id-query-served",
+                "library.large-list.control-absent-column-refused",
+                "library.large-list.control-unindexed-filter-refused",
+                "library.large-list.index-removes-filter-throttle"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.large-list.fixture-library-present",
+            "library.large-list.fixture-index-flags-clear",
+            "library.large-list.control-id-query-served",
+            "library.large-list.control-absent-column-refused",
+            "library.large-list.control-unindexed-filter-refused",
+            "library.large-list.control-description-sticks",
+            "library.large-list.control-unknown-property-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
