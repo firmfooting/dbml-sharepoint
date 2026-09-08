@@ -1995,6 +1995,118 @@
       ]
     },
     {
+      "file": "library-view-interaction-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a text column and a choice column, two folders nested two deep, and six files placed at three depths"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.fixture-interaction-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.fixture-interaction-folders-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.fixture-interaction-columns-created"
+              ]
+            },
+            {
+              "id": "library.view.fixture-interaction-files-placed",
+              "depends_on": [
+                "library.view.fixture-interaction-columns-created",
+                "library.view.fixture-interaction-folders-created"
+              ]
+            },
+            {
+              "id": "library.view.control-missing-column-refused",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.control-filter-single-value-column",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.control-missing-group-column-ungrouped",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.control-group-by-single-value-column",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed"
+              ]
+            },
+            {
+              "id": "library.view.filter-with-group-by",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed",
+                "library.view.control-filter-single-value-column",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column",
+                "library.view.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.filter-in-folder-scope",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed",
+                "library.view.control-filter-single-value-column",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column",
+                "library.view.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.filter-group-by-and-folder-scope",
+              "depends_on": [
+                "library.view.fixture-interaction-files-placed",
+                "library.view.control-filter-single-value-column",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column",
+                "library.view.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.fixture-interaction-columns-created",
+            "library.view.fixture-interaction-folders-created",
+            "library.view.fixture-interaction-files-placed",
+            "library.view.control-missing-column-refused",
+            "library.view.control-filter-single-value-column",
+            "library.view.control-missing-group-column-ungrouped",
+            "library.view.control-group-by-single-value-column"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-grouping-probe.js",
       "surface": "library",
       "harness": "shared-v1",

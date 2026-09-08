@@ -1559,3 +1559,495 @@ def test_a_control_folder_left_by_an_earlier_run_voids_rather_than_contradicting
     # that do not rest on the folder control still answer.
     assert rows["library.folder.fixture-nested-folders-created"]["outcome"] == "PASS"
     assert rows["library.folder.view-flattens-depth"]["state"] == "settled"
+
+
+# --------------------------------------------------------------------------
+# library-view-interaction-probe.js: what a view's filter, group-by and folder
+# scope do when they are sent together.
+# --------------------------------------------------------------------------
+INTERACTION_PROBE = MANUAL / "library-view-interaction-probe.js"
+
+#: The three composition rows, and only those. They rest on the filter control
+#: and the two grouping controls, so a control that did not hold voids these and
+#: nothing else.
+_INTERACTION_COMPOSED = (
+    "library.view.filter-with-group-by",
+    "library.view.filter-in-folder-scope",
+    "library.view.filter-group-by-and-folder-scope",
+)
+
+#: Every question the probe asks after its fixture, which is what an abort has
+#: to report as open rather than as answered.
+_INTERACTION_MEASUREMENTS = (
+    "library.view.control-missing-column-refused",
+    "library.view.control-filter-single-value-column",
+    "library.view.control-missing-group-column-ungrouped",
+    "library.view.control-group-by-single-value-column",
+    *_INTERACTION_COMPOSED,
+)
+
+#: A SharePoint that holds a folder tree and answers a view query built from a
+#: `<Where>`, a `<GroupBy>`, a `Scope` and a `FolderServerRelativeUrl`. What the
+#: CONFIG varies is each way a live run could make the probe's classifiers
+#: wrong: a filter that changes nothing, a group built over rows the filter took
+#: out, a folder parameter that scopes nothing, each of the three being dropped
+#: when all three are sent at once, a group-by SharePoint ignores, a `<Where>`
+#: naming a missing column that is accepted, a folder an earlier run left, and a
+#: recycle that will not clear it.
+_INTERACTION_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const ROOT = '/sites/test/lib';
+    const lists = new Map();
+    const folders = new Map();
+    const files = [];
+    let nextItemId = 1;
+
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FOLDER = /^web\\/GetFolderByServerRelativeUrl\\('([^']*)'\\)(.*)$/;
+    const FIELD = /getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM = /^\\/items\\((\\d+)\\)/;
+    const URL_ARG = /\\('([^']+)'\\)/;
+    const NAMED_URL_ARG = /url='([^']+)'/;
+
+    const addFolder = (path) => {
+      const name = path.slice(path.lastIndexOf('/') + 1);
+      folders.set(path, { Name: name, ServerRelativeUrl: path, Exists: true, ItemCount: 0 });
+    };
+
+    // The shape a live tenant answered a read of a folder that is not there
+    // with: HTTP 200 unless the select names Name or ItemCount. A probe reading
+    // HTTP ok as presence skips its whole fixture against this.
+    const absentFolderRead = (path, rest) => {
+      if (CONFIG.absentFolder === 'not-found') {
+        return jsonResponse(404, { error: 'no such folder' });
+      }
+      if (/Name|ItemCount/.test(rest)) return jsonResponse(404, { error: 'not found' });
+      return jsonResponse(200, { ServerRelativeUrl: path, Exists: false });
+    };
+
+    const recycleFolder = (path) => {
+      if (CONFIG.folderRecycle === 'refused') {
+        return jsonResponse(500, { error: 'this folder cannot be recycled' });
+      }
+      for (const held of [...folders.keys()]) {
+        if (held === path || held.startsWith(`${path}/`)) folders.delete(held);
+      }
+      for (let at = files.length - 1; at >= 0; at -= 1) {
+        if (String(files[at].FileRef).startsWith(`${path}/`)) files.splice(at, 1);
+      }
+      return jsonResponse(200, { value: 'recycled' });
+    };
+
+    const createFolder = (parentPath, name) => {
+      if (!folders.has(parentPath)) {
+        return jsonResponse(404, { error: `no folder at ${parentPath}` });
+      }
+      addFolder(`${parentPath}/${name}`);
+      return jsonResponse(200, { ServerRelativeUrl: `${parentPath}/${name}` });
+    };
+
+    const pick = (row, fields) => {
+      if (!fields.length) return { ...row };
+      const out = {};
+      for (const name of fields) out[name] = row[name] === undefined ? '' : row[name];
+      return out;
+    };
+
+    const groupedRows = (rows, names) => {
+      const groups = new Map();
+      for (const row of rows) {
+        const labels = names.map((name) => (row[name] === undefined ? '' : row[name]));
+        const key = JSON.stringify(labels);
+        const held = groups.get(key) || { labels, count: 0 };
+        held.count += 1;
+        groups.set(key, held);
+      }
+      return [...groups.values()].map((group) => {
+        const out = {};
+        names.forEach((name, at) => {
+          out[name] = group.labels[at];
+          out[`${name}.COUNT.group`] = String(group.count);
+          out[`${name}.newgroup`] = '1';
+          out[`${name}.groupindex`] = '1_';
+        });
+        return out;
+      });
+    };
+
+    // One view query. The three mechanisms are applied independently so that a
+    // CONFIG can drop exactly one of them, which is the case the probe's
+    // three-way row exists to name.
+    const render = (held, viewXml, folderParam) => {
+      const scoped = /<View Scope="([^"]+)"/.exec(viewXml);
+      const scope = scoped === null ? null : scoped[1];
+      const where = /<Where><Eq><FieldRef Name="([^"]+)"\\/><Value Type="[^"]*">([^<]*)<\\/Value>/
+        .exec(viewXml);
+      const asked = (viewXml.split('<GroupBy')[1] || '').split('</GroupBy>')[0];
+      const names = [...asked.matchAll(/Name="([^"]+)"/g)].map((hit) => hit[1]);
+      const fields = [...(viewXml.split('<ViewFields>')[1] || '').split('</ViewFields>')[0]
+        .matchAll(/Name="([^"]+)"/g)].map((hit) => hit[1]);
+
+      const threeWay = where !== null && names.length > 0 && folderParam !== null;
+      const dropFolder = threeWay && CONFIG.threeWay === 'drop-folder';
+      const dropFilter = threeWay && CONFIG.threeWay === 'drop-filter';
+      const dropGroup = threeWay && CONFIG.threeWay === 'drop-group';
+
+      const base = (folderParam === null || dropFolder || CONFIG.folder === 'ignored')
+        ? ROOT : folderParam;
+      const deep = scope === 'Recursive' || scope === 'RecursiveAll';
+      const all = files.filter((file) => (deep
+        ? String(file.FileRef).startsWith(`${base}/`)
+        : file.FileDirRef === base));
+      let rows = all;
+      if (where !== null) {
+        if (!held.fields.has(where[1])) {
+          if (CONFIG.missingWhere !== 'accepted') {
+            return jsonResponse(500, { error: `no column named ${where[1]}` });
+          }
+        } else if (CONFIG.filter !== 'ignored' && !dropFilter) {
+          rows = all.filter((file) => String(file[where[1]]) === where[2]);
+        }
+      }
+
+      const flat = () => jsonResponse(200, {
+        Row: rows.map((row) => pick({ ...row, FSObjType: '0' }, fields)),
+      });
+      if (!names.length || dropGroup) return flat();
+      if (names.some((name) => !held.fields.has(name))) {
+        if (CONFIG.missingGroupBy === 'grouped') {
+          return jsonResponse(200, { Row: groupedRows(rows, names) });
+        }
+        // What a live run recorded for a group-by naming a column that does not
+        // exist: as many rows as the ungrouped query, none of them carrying the
+        // ViewFields the query asked for.
+        return jsonResponse(200, {
+          Row: rows.map(() => ({ PreviewThumbnailsQualitySets: '' })),
+        });
+      }
+      if (!viewXml.includes('Collapse="TRUE"')) return flat();
+      // The group headings. `over-every-row` builds them from the rows the
+      // filter took out as well, which is the behaviour the order row names.
+      const source = (CONFIG.groupOrder === 'over-every-row') ? all : rows;
+      return jsonResponse(200, { Row: groupedRows(source, names) });
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url).split('/_api/')[1] || '';
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? null : String(opts.body);
+      const sent = () => JSON.parse(raw || '{}');
+
+      if (u.includes('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u === 'web/lists' && method === 'POST') {
+        const made = sent();
+        const fields = new Map();
+        for (const name of ['Title', 'FileLeafRef', 'FileRef', 'FileDirRef']) {
+          fields.set(name, { TypeAsString: name === 'Title' ? 'Text' : 'Lookup' });
+        }
+        lists.set(made.Title, {
+          Id: 'list-1', Title: made.Title, BaseTemplate: made.BaseTemplate,
+          ServerRelativeUrl: ROOT, fields,
+        });
+        addFolder(ROOT);
+        // What an earlier run left behind, which the probe has to clear rather
+        // than build on.
+        if (CONFIG.leftover === 'folders') {
+          addFolder(`${ROOT}/intlevel-outer`);
+          addFolder(`${ROOT}/intlevel-outer/intlevel-inner`);
+        }
+        return jsonResponse(201, { Id: 'list-1' });
+      }
+
+      const atFolder = FOLDER.exec(u);
+      if (atFolder) {
+        const path = atFolder[1];
+        const rest = atFolder[2];
+        if (rest.startsWith('/folders/add')) {
+          return createFolder(path, NAMED_URL_ARG.exec(rest)[1]);
+        }
+        if (rest.startsWith('/Files/add')) {
+          if (!folders.has(path)) return jsonResponse(404, { error: 'no such folder' });
+          const name = NAMED_URL_ARG.exec(rest)[1];
+          files.push({
+            Id: nextItemId, FileLeafRef: name, FileRef: `${path}/${name}`,
+            FileDirRef: path, FileSystemObjectType: 0,
+          });
+          nextItemId += 1;
+          return jsonResponse(200, { Name: name });
+        }
+        if (rest.startsWith('/recycle')) {
+          if (!folders.has(path)) return jsonResponse(404, { error: 'no such folder' });
+          return recycleFolder(path);
+        }
+        if (!folders.has(path)) return absentFolderRead(path, rest);
+        return jsonResponse(200, { ...folders.get(path) });
+      }
+      if (u.startsWith('web/folders/add')) {
+        const path = URL_ARG.exec(u)[1];
+        return createFolder(path.slice(0, path.lastIndexOf('/')),
+                            path.slice(path.lastIndexOf('/') + 1));
+      }
+      if (u === 'web/folders' && method === 'POST') {
+        const path = sent().ServerRelativeUrl;
+        return createFolder(path.slice(0, path.lastIndexOf('/')),
+                            path.slice(path.lastIndexOf('/') + 1));
+      }
+
+      const named = LIST.exec(u);
+      if (!named) return jsonResponse(404, { error: `no such endpoint: ${u}` });
+      const held = lists.get(decodeURIComponent(named[1]));
+      const rest = named[2];
+      if (!held) return jsonResponse(404, { error: 'list not found' });
+
+      if (rest.startsWith('/RenderListDataAsStream')) {
+        const parameters = sent().parameters || {};
+        const folderParam = parameters.FolderServerRelativeUrl === undefined
+          ? null : parameters.FolderServerRelativeUrl;
+        return render(held, String(parameters.ViewXml || ''), folderParam);
+      }
+      if (rest.startsWith('/fields/createfieldasxml')) {
+        const xml = sent().parameters.SchemaXml;
+        held.fields.set(/ Name="([^"]+)"/.exec(xml)[1],
+                        { TypeAsString: /Type="([^"]+)"/.exec(xml)[1] });
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/fields/')) {
+        const name = FIELD.exec(rest)[1];
+        const field = held.fields.get(name);
+        return field
+          ? jsonResponse(200, { InternalName: name, ...field })
+          : jsonResponse(404, { error: 'field not found' });
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: held.ServerRelativeUrl });
+      }
+
+      const one = ITEM.exec(rest);
+      if (one) {
+        const item = files.find((row) => row.Id === Number(one[1]));
+        if (!item) return jsonResponse(404, { error: 'item not found' });
+        if (verb === 'MERGE') {
+          for (const [name, value] of Object.entries(sent())) {
+            if (!held.fields.has(name)) {
+              return jsonResponse(500, { error: `no column named ${name}` });
+            }
+            item[name] = value;
+          }
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, { ...item });
+      }
+      if (rest.startsWith('/items')) {
+        return jsonResponse(200, { value: files.map((file) => ({ ...file })) });
+      }
+      return jsonResponse(200, { Id: held.Id, Title: held.Title });
+    };
+""")
+
+
+def _interaction_probe_js() -> str:
+    """The rendered interaction probe with its gates open and its table exposed."""
+    js = INTERACTION_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _run_interaction_probe(**config: str) -> dict[str, dict[str, str]]:
+    """Run the interaction probe and return id -> the whole recorded row."""
+    settings: dict[str, str] = {
+        "filter": "honoured",
+        "folder": "honoured",
+        "groupOrder": "filter-first",
+        "threeWay": "all",
+        "missingGroupBy": "flat",
+        "missingWhere": "refused",
+        "absentFolder": "exists-false",
+        "folderRecycle": "ok",
+        "leftover": "none",
+        **config,
+    }
+    script = (
+        _INTERACTION_HARNESS.replace("__CONFIG__", json.dumps(settings))
+        + "\n"
+        + _interaction_probe_js()
+    )
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_view_whose_filter_group_and_folder_all_apply_records_all_three() -> None:
+    """A SharePoint that applies each mechanism. Every control holds, the order
+    row reads the filter as running first, the folder row reads the filter as
+    applying inside the folder, and the three-way composes.
+    """
+    rows = _run_interaction_probe()
+
+    for check in _INTERACTION_MEASUREMENTS[:4]:
+        assert rows[check]["outcome"] == "PASS", check
+    assert rows["library.view.fixture-interaction-columns-created"]["outcome"] == "PASS"
+    assert rows["library.view.fixture-interaction-folders-created"]["outcome"] == "PASS"
+    assert rows["library.view.fixture-interaction-files-placed"]["outcome"] == "PASS"
+    assert rows["library.view.filter-with-group-by"]["outcome"] == (
+        "THE FILTER RUNS BEFORE THE GROUP"
+    )
+    assert rows["library.view.filter-in-folder-scope"]["outcome"] == (
+        "THE FILTER APPLIES INSIDE THE FOLDER"
+    )
+    assert rows["library.view.filter-group-by-and-folder-scope"]["outcome"] == (
+        "ALL THREE COMPOSE"
+    )
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_group_headings_built_over_rows_the_filter_removed_are_read_as_that() -> None:
+    """The whole point of the fixture: one group value is carried only by files
+    the filter removes, so a heading for it can only come from a group built
+    before the filter ran. The rows still come back filtered, which is what
+    makes this different from a filter that was dropped.
+    """
+    rows = _run_interaction_probe(groupOrder="over-every-row")
+
+    assert rows["library.view.filter-with-group-by"]["outcome"] == (
+        "THE GROUP IS BUILT OVER EVERY ROW"
+    )
+    assert rows["library.view.filter-with-group-by"]["state"] == "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_folder_parameter_that_scopes_nothing_is_not_read_as_a_filter_answer() -> None:
+    """A tenant that ignores FolderServerRelativeUrl answers the folder read
+    with the whole library. The row has to say the parameter changed nothing
+    rather than reporting whatever the filter did.
+    """
+    rows = _run_interaction_probe(folder="ignored")
+
+    assert rows["library.view.filter-in-folder-scope"]["outcome"] == (
+        "THE FOLDER PARAMETER CHANGED NOTHING, THE READ IS LIBRARY-WIDE"
+    )
+    # The three-way then has no folder scope to hold either, and the row says
+    # which mechanism went rather than calling the composition a success.
+    assert rows["library.view.filter-group-by-and-folder-scope"]["outcome"] == (
+        "THE FOLDER SCOPE IS DROPPED"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_each_mechanism_dropped_from_the_three_way_is_named_by_the_row() -> None:
+    """Three runs, one per mechanism the tenant drops when all three are sent
+    together. A row that answered ALL THREE COMPOSE here would be the failure
+    this probe exists to catch.
+    """
+    dropped = {
+        "drop-folder": "THE FOLDER SCOPE IS DROPPED",
+        "drop-filter": "THE FILTER IS DROPPED",
+        "drop-group": "THE GROUP IS DROPPED",
+    }
+    for setting, outcome in dropped.items():
+        rows = _run_interaction_probe(threeWay=setting)
+        assert rows["library.view.filter-group-by-and-folder-scope"]["outcome"] == outcome
+        # The pairwise rows are unaffected, because the tenant only drops one
+        # when all three arrive at once.
+        assert rows["library.view.filter-with-group-by"]["outcome"] == (
+            "THE FILTER RUNS BEFORE THE GROUP"
+        )
+        assert rows["library.view.filter-in-folder-scope"]["outcome"] == (
+            "THE FILTER APPLIES INSIDE THE FOLDER"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_filter_that_changes_nothing_voids_every_composition_row() -> None:
+    """A filter that is accepted and applied to nothing is the one failure that
+    makes every composition row a statement about this probe. The control has to
+    catch it, and the three rows have to be void rather than answered.
+    """
+    rows = _run_interaction_probe(filter="ignored")
+
+    assert rows["library.view.control-filter-single-value-column"]["outcome"] == (
+        "FAIL, THE FILTER CHANGED NOTHING"
+    )
+    for check in _INTERACTION_COMPOSED:
+        assert rows[check]["state"] == "void", check
+        assert rows[check]["outcome"] == "NOT ESTABLISHED", check
+    # The observation survives the void: the reader loses the verdict, not the
+    # data.
+    assert "expanded HTTP" in rows["library.view.filter-with-group-by"]["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_by_the_tenant_ignores_voids_the_grouped_rows_only() -> None:
+    """A tenant that answers a group-by naming a missing column WITH group rows
+    leaves the probe unable to tell an honoured group-by from an ignored one.
+    """
+    rows = _run_interaction_probe(missingGroupBy="grouped")
+
+    assert rows["library.view.control-missing-group-column-ungrouped"]["outcome"] == "FAIL"
+    for check in _INTERACTION_COMPOSED:
+        assert rows[check]["state"] == "void", check
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_folder_an_earlier_run_left_aborts_rather_than_answering() -> None:
+    """A fixture built on leftovers measures the previous run. The folders row
+    has to fail and everything under it has to be open, not void: a re-run on a
+    site somebody has cleaned can still answer.
+    """
+    rows = _run_interaction_probe(leftover="folders", folderRecycle="refused")
+
+    assert rows["library.view.fixture-interaction-folders-created"]["outcome"] == "FAIL"
+    assert "survived the pre-run reset" in (
+        rows["library.view.fixture-interaction-folders-created"]["evidence"]
+    )
+    for check in _INTERACTION_MEASUREMENTS:
+        assert rows[check]["outcome"] == "ABORTED", check
+        assert rows[check]["state"] == "open", check
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refusal_nobody_can_observe_voids_a_refused_row() -> None:
+    """A tenant that accepts a <Where> naming a column that does not exist makes
+    a refusal unreadable. A composition row that comes back refused is then
+    recorded rather than answered, and the rows that were not refused still
+    answer.
+    """
+    rows = _run_interaction_probe(missingWhere="accepted")
+
+    assert rows["library.view.control-missing-column-refused"]["outcome"] == "FAIL"
+    # Nothing here was refused, so the three rows still answer: the refusal
+    # control gates a REFUSED verdict and nothing else.
+    assert rows["library.view.filter-with-group-by"]["outcome"] == (
+        "THE FILTER RUNS BEFORE THE GROUP"
+    )
+    assert not [row for row in rows.values() if row["state"] == "void"]
