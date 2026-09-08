@@ -108,6 +108,26 @@
   "declares_versioning": true,
   "group_renames": [],
   "level_renames": [],
+  "list_display_titles": [
+    [
+      "APP_Project",
+      [
+        [
+          "SortOrder",
+          "Sort Order"
+        ]
+      ]
+    ],
+    [
+      "APP_Task",
+      [
+        [
+          "DueDate",
+          "Due Date"
+        ]
+      ]
+    ]
+  ],
   "list_markers": [
     [
       "APP_Project",
@@ -1061,6 +1081,49 @@
         );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+      }
+    }
+
+    // Column display titles, compared against what the mapping declares.
+    //
+    // Between deploys nothing else can see this. Renaming a column needs
+    // Manage Lists, which Full Control, Design and Edit all carry, and the
+    // deploy silently puts the declared name back at the next run, so a
+    // rename lives and dies without anybody being told. That matters most
+    // for the built-in Title, which no other surface reports: the maintenance
+    // sidecar filters on `isCustom` and Title reads FromBaseType:true.
+    //
+    // INFO rather than WARN, deliberately. The deploy repairs this, so it is
+    // a report and not a gate, and a warning that always resolves itself is
+    // how a warning stops meaning anything. Silent when everything matches.
+    for (const [title, columns] of (TARGETS.list_display_titles || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      const key = `display_titles:${title}`;
+      const live = await probeGet(
+        `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title&$top=500`);
+      if (!live.ok) {
+        // Absent is not drifted. The collision loop above already reported
+        // whether this list exists, so staying quiet here avoids two
+        // findings for one fact.
+        if (live.status !== 404) {
+          finding(2, key, 'INFO', `Could not read the columns of '${title}' (HTTP ${live.status || live.error}); declared display titles were not compared.`);
+        }
+        continue;
+      }
+      const byInternal = new Map();
+      for (const f of ((live.d && live.d.results) || [])) {
+        byInternal.set(String(f.InternalName), f.Title);
+      }
+      const drifted = [];
+      for (const [internal, declaredTitle] of columns) {
+        if (!byInternal.has(internal)) continue;  // not provisioned yet
+        const actual = byInternal.get(internal);
+        if (actual !== declaredTitle) {
+          drifted.push(`${internal} displays as ${JSON.stringify(actual)}, declared ${JSON.stringify(declaredTitle)}`);
+        }
+      }
+      if (drifted.length > 0) {
+        finding(2, key, 'INFO', `'${title}': ${drifted.length} column display title(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
       }
     }
 
@@ -2221,6 +2284,14 @@
     return {
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
+      // The display name the mapping declares for this list's Title, or
+      // undefined, which reconcileDeclaredField reads as "call it Title".
+      //
+      // It has to arrive HERE rather than ride in the body: the reconcile
+      // derives its desired title from display_title and never reads
+      // body.Title, so a patch carrying the new name would have been
+      // compared against 'Title' and the column renamed straight back.
+      display_title: list.title_patch.Title,
       // Title is not a declared field, so it carries no declared formulas.
       // All three sentinels must be explicit: `undefined !== UNMANAGED`
       // reads as "managed", which MERGEs an empty message onto the built-in
@@ -3134,8 +3205,9 @@
     await assertFieldImmutableShape(listName, field, actual, targetGuid);
     const desired = declaredFieldState(listName, field);
     // Desired display Title is display_title (rename-after-create): fields
-    // are created titled with their internal name, then renamed. Synthetic
-    // callers (the built-in Title patch) carry no display_title.
+    // are created titled with their internal name, then renamed. The
+    // synthetic built-in Title patch carries one only when the mapping
+    // declares one, so an undeclared Title still reconciles to 'Title'.
     const desiredTitle = field.display_title != null ? field.display_title : field.title;
     const derivedMismatch = Object.entries(desired.derived)
       .some(([name, value]) => !sameDerivedValue(name, actual[name], value));
@@ -4606,6 +4678,30 @@
     // that can unseal walked declared columns only. Probed unconditionally
     // (the loop below writes ONLY if it finds Sealed true), so a normal
     // site pays one read and nothing changes.
+    //
+    // WHERE A SEALED TITLE ACTUALLY COMES FROM, measured 2026-09-07 by
+    // test/manual/title-seal-probe.js over two sites. It is not something
+    // anyone does to a list. On a generic list every route was refused: both
+    // MERGE spellings with HTTP 400 "Operation is not valid due to the
+    // current state of the object", and a SchemaXml carrying Sealed="TRUE"
+    // answered 204 and changed nothing, which is the silent kind of failure
+    // and the reason that row asserts the readback rather than the status.
+    // The site collection's own Title site column reads Sealed=false, so
+    // nothing descends.
+    //
+    // What the census found, reading all 33 lists of one site: 8 sealed
+    // Titles, every one of them BaseTemplate 101, and all 24 BaseTemplate 100
+    // lists unsealed. The correlation is with 101 specifically rather than
+    // with libraries in general: the site's one BaseTemplate 119 page library
+    // reads unsealed too.
+    //
+    // So this branch is unreachable today, and shut twice over: kind
+    // 'DocumentLibrary' is refused by `document_library_unsupported`, and
+    // `unsupported_base_template` allows only 100, which is the guard that
+    // closes the door the first refusal's own advice would otherwise open.
+    // It stops being unreachable the day issue #14 lands library support.
+    // Keep it. Deleting it would delete the handling for the one template
+    // where a sealed Title is the norm rather than the exception.
     for (const list of SCHEMA.lists) {
       if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
     }
@@ -5105,12 +5201,39 @@
         }
       }
 
+      // The built-in Title is renamed HERE, between the plain wave and the
+      // calculated tail, for the reason the tail's own comment gives about
+      // every other column: a formula names a column by its DISPLAY name, and
+      // the rename is what gives it that name.
+      //
+      // MEASURED on a live tenant 2026-09-07, test/manual/
+      // title-rename-probe.js revision 709c786d. With Title renamed, a
+      // calculated create whose formula said `[Title]` was refused HTTP 500,
+      // "The formula refers to a column that does not exist", while the same
+      // formula naming the new title was accepted. This write used to sit
+      // AFTER the tail, which is exactly the order that fails: Title was
+      // outside the loop and so outside the loop's rule.
+      //
+      // Not moved further forward, to the top of the lane. The plain wave's
+      // reads are what surface an ownership loss raised in another lane, and
+      // a write before any of them would be a write this lane could not yet
+      // know it had lost the right to make. No shipped family references
+      // Title from a client-validation or list-validation formula, and both
+      // of those are applied after this point anyway.
+      if (list.title_patch) {
+        await assertLaneOwnership();
+        laneDigest = await getDigest();
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
+      }
+
       // The calculated tail, one write at a time, and each column renamed
       // before the next is created: a calc-on-calc formula names the column
       // ahead of it by the display title only the rename gives it. Every plain
       // column of this list has been created and renamed by the time this
-      // runs. No lookup target and no projections reach here, because a
-      // calculated column has neither.
+      // runs, the built-in Title included. No lookup target and no projections
+      // reach here, because a calculated column has neither.
       for (const col of calculatedFields) {
         try {
           await assertLaneOwnership();
@@ -5134,13 +5257,6 @@
             phase: '2.1', list: list.title, column: col.title, error: err.message,
           });
         }
-      }
-
-      if (list.title_patch) {
-        await assertLaneOwnership();
-        await reconcileDeclaredField(
-          list.title, syntheticTitleField(list), null, laneDigest, false,
-        );
       }
 
       laneDigest = await getDigest();

@@ -468,6 +468,38 @@ prevent_list_deletion: true
 
 display_names:
   mode: auto
+  overrides:
+    # The built-in Title, one list at a time. "Title" says nothing about what
+    # the column holds, and on ten lists it said the same nothing ten times.
+    # Each name here is the DBML note on that column, shortened to a label.
+    #
+    # The internal name stays `Title` and cannot move (SP.Field exposes no
+    # setter for InternalName), so views, Power Query, the SQL views, flows
+    # and every item write are untouched. MEASURED on a live tenant
+    # 2026-09-07, test/manual/title-rename-probe.js.
+    Workstream:
+      Title: "Workstream"
+    Stakeholder:
+      Title: "Stakeholder"
+    Activity:
+      Title: "Activity"
+    Involvement:
+      # Not "Involvement": this list already has a column of that name for the
+      # RACI role. The Title holds the INPUT the stakeholder brings, which is
+      # what its note asks for.
+      Title: "Input"
+    ServiceRequest:
+      Title: "Service Request"
+    Risk:
+      Title: "Risk"
+    Action:
+      Title: "Action"
+    Issue:
+      Title: "Issue"
+    Decision:
+      Title: "Decision"
+    BusinessProcess:
+      Title: "Business Process"
 
 # Column formatting: the fleet style standard (website/docs/reference/
 # style-guide.md), SharePoint's own severity boxes and icons, tokens resolved

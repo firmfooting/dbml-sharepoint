@@ -147,6 +147,14 @@
     return {
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
+      // The display name the mapping declares for this list's Title, or
+      // undefined, which reconcileDeclaredField reads as "call it Title".
+      //
+      // It has to arrive HERE rather than ride in the body: the reconcile
+      // derives its desired title from display_title and never reads
+      // body.Title, so a patch carrying the new name would have been
+      // compared against 'Title' and the column renamed straight back.
+      display_title: list.title_patch.Title,
       // Title is not a declared field, so it carries no declared formulas.
       // All three sentinels must be explicit: `undefined !== UNMANAGED`
       // reads as "managed", which MERGEs an empty message onto the built-in
@@ -1035,8 +1043,9 @@
     await assertFieldImmutableShape(listName, field, actual, targetGuid);
     const desired = declaredFieldState(listName, field);
     // Desired display Title is display_title (rename-after-create): fields
-    // are created titled with their internal name, then renamed. Synthetic
-    // callers (the built-in Title patch) carry no display_title.
+    // are created titled with their internal name, then renamed. The
+    // synthetic built-in Title patch carries one only when the mapping
+    // declares one, so an undeclared Title still reconciles to 'Title'.
     const desiredTitle = field.display_title != null ? field.display_title : field.title;
     const derivedMismatch = Object.entries(desired.derived)
       .some(([name, value]) => !sameDerivedValue(name, actual[name], value));

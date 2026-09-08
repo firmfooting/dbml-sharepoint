@@ -4049,3 +4049,84 @@ def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path
         {"name": name, "expected_marker": marker_for_group(name, family)}
         for name in ("ADOPT Programme Leads", "GOV Program Governance", "ADOPT Program Governance")
     ]
+
+
+# --- The built-in Title takes a display title --------------------------------
+#
+# MEASURED on a live tenant 2026-09-07, test/manual/title-rename-probe.js,
+# revision 709c786d. A MERGE of a new Title onto a base-template list's
+# built-in Title answered HTTP 204 and the field read back Title="Risk
+# Statement", InternalName="Title", StaticName="Title". Both addresses still
+# resolved, and an item POST carrying `Title` still created a row.
+#
+# The constraint the same run found, and the reason these two tests are one
+# pair: a calculated column whose formula said `[Title]` was REFUSED after the
+# rename, HTTP 500 "The formula refers to a column that does not exist", while
+# the identical formula naming the new display title was accepted. SharePoint
+# resolves a formula by DISPLAY name, so a bundle that renames Title without
+# rewriting the formulas that reference it deploys a broken column.
+
+
+def _titled(
+    tmp_path: Path, override: str, *, formula: str | None = None,
+) -> dict[str, Any]:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    tail = ["display_names:", "  mode: auto", "  overrides:", "    Risk:",
+            f"      Title: {override!r}"]
+    if formula is not None:
+        tail += ["calculated_formulas:", "  Risk:", f"    Live: {formula!r}"]
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, *(
+            ["Live calculated_text"] if formula is not None else []
+        )),
+        mapping=with_tail(entities("Risk"), "\n".join(tail)),
+    )
+    sj = build_schema_json(schema, bundle, "default")
+    return next(lst for lst in sj["lists"] if lst["title"] == "APP_Risk")
+
+
+def test_a_display_name_override_renames_the_built_in_title(
+    tmp_path: Path,
+) -> None:
+    """The patch carries the declared title, so the column is actually renamed.
+
+    #330 found the override reaching the view width map, the form body section
+    field list and the Power Query rename while never reaching the column, so
+    the bundle referenced a display title the deploy did not create. #426
+    refused the declaration because the rename was unmeasured. It is measured
+    now, so the patch carries it and the four halves agree.
+    """
+    risk = _titled(tmp_path, "Risk Statement")
+    assert risk["title_patch"]["Title"] == "Risk Statement"
+
+
+def test_an_undeclared_title_keeps_the_patch_free_of_a_display_title(
+    tmp_path: Path,
+) -> None:
+    """`auto` resolves Title to "Title", which is the name it already has.
+
+    Emitting the no-op would put a redundant property in every bundle every
+    family ships, and a reviewer reading a deploy diff could not tell it from
+    a real rename.
+    """
+    risk = _titled(tmp_path, "Title")
+    assert "Title" not in risk["title_patch"]
+
+
+def test_a_formula_referencing_title_is_rewritten_to_its_display_name(
+    tmp_path: Path,
+) -> None:
+    """The constraint the probe found, in the one place that can honour it.
+
+    `display_map` is built from the declared fields, and Title is not one, so
+    before this the rewrite left `[Title]` alone and the calculated create was
+    refused on the live site with "The formula refers to a column that does
+    not exist".
+    """
+    risk = _titled(
+        tmp_path, "Risk Statement", formula='=CONCATENATE("x",[Title])',
+    )
+    live = next(f for f in risk["fields_phase1"] if f["title"] == "Live")
+    assert live["body"]["Formula"] == '=CONCATENATE("x",[Risk Statement])'

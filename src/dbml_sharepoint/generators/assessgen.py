@@ -16,6 +16,7 @@ from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
@@ -46,6 +47,9 @@ def assess_targets(
     correct (or, worse, staying silent on one it does not).
     """
     prefix = bundle.mapping.prefix
+    m = bundle.mapping
+    by_name = {table.name: table for table in schema.tables}
+    cross_site_keys = m.cross_site_keys()
     titles: list[str] = []
     templates: set[int] = set()
     table_names: list[str] = []
@@ -56,6 +60,16 @@ def assess_targets(
     # `__proto__` sets the prototype instead of creating an own property,
     # and the marker check then finds nothing and stays silent.
     markers: list[tuple[str, str]] = []
+    # [[list title, [[internal name, declared display title], ...]], ...] for
+    # every column whose display title differs from its internal name. Pairs
+    # for the same reason `markers` is: emitted as a JS object literal, a
+    # column named `__proto__` would set the prototype instead of becoming a
+    # key, and the check would then compare nothing and stay silent.
+    #
+    # Only the DIFFERENT ones. A site where every column displays under its
+    # internal name has nothing to drift, and carrying the identities would
+    # roughly double this payload for no check.
+    display_titles: list[list[Any]] = []
     # [[new title, [[previous title, previous marker], ...]], ...], lists
     # rather than tuples so the Python side compares equal to the JSON.
     renames: list[list[Any]] = []
@@ -71,6 +85,25 @@ def assess_targets(
         templates.add(int(entity.base_template))
         table_names.append(table_name)
         markers.append((prefix + table_name, marker_for(family, table_name)))
+        table = by_name.get(table_name)
+        if table is not None:
+            # Declared columns only. A lookup PROJECTION is renamed by the
+            # deploy too and can drift the same way, but the set of projection
+            # names lives on the validator's context, which a generator may
+            # not import from, and duplicating how they are spelled here is
+            # exactly the drift `analysis/joins.py` exists to prevent. Worth a
+            # shared helper when somebody needs it; not worth a second
+            # spelling now.
+            declared = [
+                [column, m.display_name_for(table_name, column)]
+                for column in sorted(rendered_columns(
+                    table,
+                    {c for (e, c) in cross_site_keys if e == table_name},
+                ))
+                if m.display_name_for(table_name, column) != column
+            ]
+            if declared:
+                display_titles.append([prefix + table_name, declared])
     m = bundle.mapping
     perms = m.permissions
     # [[current name, [[previous name, previous marker], ...]], ...] for
@@ -108,6 +141,7 @@ def assess_targets(
         "uses_today": clock_usage(schema, m, table_names).uses_today,
         "list_titles": titles,
         "list_markers": markers,
+        "list_display_titles": display_titles,
         "list_renames": renames,
         "level_renames": level_renames,
         "group_renames": group_renames,

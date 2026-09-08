@@ -1,8 +1,34 @@
-release: "3.0.0"
+release: "3.1.0"
 date: "2026-09-07"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "3.0.0"
+schema_version: "3.1.0"
 notes: |
+  3.1.0 gives every list's built-in Title column a display name that says
+  what it holds: Workstream, Stakeholder, Activity, Input, Service Request,
+  Risk, Action, Issue, Decision, Business Process. Each is the DBML note on
+  that column shortened to a label. Involvement is "Input" rather than
+  "Involvement" because that list already has a column of that name for the
+  RACI role, and its Title holds the input the stakeholder brings.
+
+  NOT breaking, and nothing needs migrating. Only the DISPLAY name moves.
+  The internal name stays `Title` and cannot move: SP.Field exposes no
+  setter for InternalName, and a live run on 2026-09-07
+  (test/manual/title-rename-probe.js) renamed a base-template Title and read
+  back InternalName="Title", StaticName="Title", with both addresses still
+  resolving and an item POST carrying `Title` still creating a row. Views,
+  Power Query, the SQL views, flows and every item write are untouched.
+
+  The Power Query rename step and the form and view references move to the
+  new names, which is what they were always going to do; before this release
+  they moved while the column did not, and the tool refused the declaration
+  for that reason.
+
+  The one thing that does change is calculated formulas. SharePoint resolves
+  a formula by DISPLAY name, so `Risk.LiveRiskTitle` and
+  `Decision.LiveDecisionTitle` are emitted as `[Risk]` and `[Decision]`
+  rather than `[Title]`. The deploy renames Title before it creates the
+  calculated columns, so a redeploy converges on its own.
+
   3.0.0 renames Stakeholder.ServiceDeskAddress to ExternalContactDetails and
   removes the display_names override that gave it the title "External
   Contact Details". The override existed because UAT feedback (family

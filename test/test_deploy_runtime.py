@@ -426,9 +426,22 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // fails that read-back, which looks like a deploy defect.
     const TITLE_SETTINGS_KEYS = ['Sealed', 'Required', 'Description',
       'DefaultValue', 'Indexed'];
+    // The display title is per LIST, so it is applied only on the by-name
+    // branch below. Every list's Title shares one GUID in this mock, and the
+    // by-GUID branch writes to all of them at once, which is right for the
+    // seal flag and wrong for a name each list chooses for itself.
+    const TITLE_RENAME_KEYS = [...TITLE_SETTINGS_KEYS, 'Title'];
+    // Sealed: true is DELIBERATELY synthetic, and known to be so. On a
+    // generic list SharePoint refuses every route to it (measured 2026-09-07,
+    // test/manual/title-seal-probe.js); every sealed Title that census found,
+    // 8 of 8 across a whole site, was BaseTemplate 101, and this tool builds
+    // only 100. So this seeds a state no list the tool provisions can be in
+    // yet, on purpose: it is the state a library WILL be in when issue #14
+    // lands, and it is the only way to exercise the unseal and re-seal path
+    // before then.
     const titleState = (listTitle) => (titles[listTitle] ||= {
       Sealed: true, Required: true, Description: '', DefaultValue: null,
-      Indexed: false,
+      Indexed: false, Title: 'Title',
     });
     const titleField = (listTitle) => ({
       Id: '11111111-1111-1111-1111-111111111111',
@@ -738,7 +751,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           const f = Object.values(created).find(candidate => candidate.Id === byId);
           if (f && parsed.Sealed != null) f.Sealed = parsed.Sealed;
         } else if (named === 'Title') {
-          for (const k of TITLE_SETTINGS_KEYS) {
+          // TITLE_RENAME_KEYS, so a display-title MERGE reads back changed.
+          // InternalName deliberately does not move with it: the live run
+          // (test/manual/title-rename-probe.js, 2026-09-07) renamed a
+          // base-template Title and read back InternalName="Title".
+          for (const k of TITLE_RENAME_KEYS) {
             if (parsed[k] !== undefined) titleState(listTitle)[k] = parsed[k];
           }
         } else if (named) {
@@ -7618,3 +7635,69 @@ def test_an_unreadable_column_is_not_reported_as_left_unsealed() -> None:
     assert {e["sealState"] for e in reseal} == {"unverified"}, reseal
     assert "left UNSEALED" not in output, output[-3000:]
     assert "may already be sealed" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_title_rename_lands_before_any_calculated_column(
+    tmp_path: Path,
+) -> None:
+    """Order is the whole of this, and getting it wrong fails the deploy.
+
+    MEASURED on a live tenant 2026-09-07, test/manual/title-rename-probe.js
+    revision 709c786d: after the built-in Title was renamed, a calculated
+    column whose formula said `[Title]` was REFUSED with HTTP 500, "The
+    formula refers to a column that does not exist", while the identical
+    formula naming the new display title was accepted. SharePoint resolves a
+    formula by DISPLAY name, and the generator rewrites every reference to the
+    name the column will have.
+
+    So the rename has to be applied before the column that names it is
+    created. The Title patch used to be the LAST write of the field wave,
+    after the calculated tail, which is exactly the order that fails. The
+    calculated loop's own comment already states the rule for declared
+    columns ("each column renamed before the next is created"); Title was
+    outside the loop and outside the rule.
+    """
+    js = _declared_deploy_js(
+        tmp_path,
+        """
+        display_names:
+          mode: auto
+          overrides:
+            Escalation:
+              Title: "Escalation Summary"
+        calculated_formulas:
+          Escalation:
+            Live: '=CONCATENATE("x",[Title])'
+        """,
+        extra_lines=("Live calculated_text",),
+    )
+    script = _ADOPTED_HARNESS + "\n" + js.replace(
+        "})();",
+        "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    line = next(
+        (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert line is not None, "harness produced no call log"
+    calls = json.loads(line.removeprefix("__CALLS__"))
+
+    def first(predicate: Any) -> int:
+        for i, call in enumerate(calls):
+            if call["method"] == "POST" and call.get("body") and predicate(call):
+                return i
+        raise AssertionError("no such call in the log")
+
+    # Either address: the reconcile MERGEs by GUID when it has already read
+    # the field back, which is the same filter the seal tests above use.
+    rename = first(lambda c: '"Title":"Escalation Summary"' in c["body"]
+                   and ("getbyinternalnameortitle('Title')" in c["url"]
+                        or "/fields(guid'" in c["url"]))
+    formula = first(lambda c: "Formula" in c["body"])
+    assert rename < formula, (
+        "the calculated column naming the renamed Title is created before the "
+        f"rename that gives it that name (rename at {rename}, create at {formula})"
+    )
+    # The formula the create carries is the rewritten one, so the pair above
+    # is about ORDER rather than about the generator having done nothing.
+    assert "[Escalation Summary]" in calls[formula]["body"]

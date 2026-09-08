@@ -104,6 +104,26 @@
   "declares_versioning": true,
   "group_renames": [],
   "level_renames": [],
+  "list_display_titles": [
+    [
+      "APP_Project",
+      [
+        [
+          "SortOrder",
+          "Sort Order"
+        ]
+      ]
+    ],
+    [
+      "APP_Task",
+      [
+        [
+          "DueDate",
+          "Due Date"
+        ]
+      ]
+    ]
+  ],
   "list_markers": [
     [
       "APP_Project",
@@ -641,6 +661,49 @@
         );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+      }
+    }
+
+    // Column display titles, compared against what the mapping declares.
+    //
+    // Between deploys nothing else can see this. Renaming a column needs
+    // Manage Lists, which Full Control, Design and Edit all carry, and the
+    // deploy silently puts the declared name back at the next run, so a
+    // rename lives and dies without anybody being told. That matters most
+    // for the built-in Title, which no other surface reports: the maintenance
+    // sidecar filters on `isCustom` and Title reads FromBaseType:true.
+    //
+    // INFO rather than WARN, deliberately. The deploy repairs this, so it is
+    // a report and not a gate, and a warning that always resolves itself is
+    // how a warning stops meaning anything. Silent when everything matches.
+    for (const [title, columns] of (TARGETS.list_display_titles || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      const key = `display_titles:${title}`;
+      const live = await probeGet(
+        `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title&$top=500`);
+      if (!live.ok) {
+        // Absent is not drifted. The collision loop above already reported
+        // whether this list exists, so staying quiet here avoids two
+        // findings for one fact.
+        if (live.status !== 404) {
+          finding(2, key, 'INFO', `Could not read the columns of '${title}' (HTTP ${live.status || live.error}); declared display titles were not compared.`);
+        }
+        continue;
+      }
+      const byInternal = new Map();
+      for (const f of ((live.d && live.d.results) || [])) {
+        byInternal.set(String(f.InternalName), f.Title);
+      }
+      const drifted = [];
+      for (const [internal, declaredTitle] of columns) {
+        if (!byInternal.has(internal)) continue;  // not provisioned yet
+        const actual = byInternal.get(internal);
+        if (actual !== declaredTitle) {
+          drifted.push(`${internal} displays as ${JSON.stringify(actual)}, declared ${JSON.stringify(declaredTitle)}`);
+        }
+      }
+      if (drifted.length > 0) {
+        finding(2, key, 'INFO', `'${title}': ${drifted.length} column display title(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
       }
     }
 
