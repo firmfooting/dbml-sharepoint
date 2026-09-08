@@ -260,7 +260,9 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-column-interactions-probe.js`, `library-form-probe.js`,
 `library-view-probe.js`, `library-formula-probe.js`, `library-access-probe.js`,
 `library-query-probe.js`, `library-field-probe.js`,
-`library-view-search-probe.js`, `library-index-probe.js`, `cross-lookup-probe.js`, `library-index-threshold-probe.js`
+`library-view-search-probe.js`, `library-index-probe.js`,
+`cross-lookup-probe.js`, `library-index-threshold-probe.js`,
+`library-grouping-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -358,6 +360,7 @@ surface boundary, and are listed for the same reason:
 | `library-index-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `cross-lookup-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-index-threshold-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-grouping-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description

@@ -1,0 +1,887 @@
+{# test/manual/templates/library-grouping-probe.js.j2
+   Rendered to test/manual/library-grouping-probe.js by render_probes.py.
+   Edit the template, not the rendered .js. #}
+/**
+ * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY VIEW GROUP?
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION, on the column kinds nothing has measured:
+ *   `library-view-probe.js` measured group-by on a SINGLE-VALUE metadata
+ *   column and group-by on folder. Every other column kind a layout generator
+ *   can be asked to group a library by is unmeasured. What does a view do with
+ *   a multi-value column, with a lookup the library holds, with a Title that
+ *   is null on most files, and with Name?
+ *
+ * WHY, and why the multi-value row is the one that matters: issue #281. The
+ * validator treats a single-value and a multi-value column identically at the
+ * group-by boundary, so a build may emit a group-by over a multi-value column
+ * with nothing in the stack able to say what the page then shows. The two
+ * candidate behaviours are not variants of one another. A file listed under
+ * EVERY value it holds makes the group counts add up to more than the file
+ * count; a file listed once under a joined label makes one group per distinct
+ * SET. A rule cannot be written for either until one of them is measured.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`,
+ * `<surface>.<scope>.<question>`. Every measurement is about how a document
+ * library's view diverges from a generic list's, so they file under
+ * `library.view.*` beside the two rows `library-view-probe.js` already holds
+ * there. The library-creation row keeps the id the other library probes share.
+ *
+ *   library.doc-lib.fixture-library-created
+ *        Does a document library create at all (BaseTemplate 101)? The same
+ *        question by the same method as `library-view-probe.js`,
+ *        `cross-lookup-probe.js` and the rest, so it keeps their id.
+ *   library.view.fixture-columns-created
+ *        Do the target list, its two rows, and the three grouping columns on
+ *        the library (single-value Choice, MultiChoice, single-value Lookup)
+ *        exist and read back as the types they were asked for?
+ *   library.view.fixture-values-written
+ *        Do the four files exist, and does each one read back holding the
+ *        values this probe wrote? Reports WHICH multi-value item shape took,
+ *        because Learn documents none of them.
+ *   library.view.fixture-multi-lookup-ready
+ *        Its own row, and not part of the two above: a multi-value lookup on a
+ *        document library is the least certain part of the fixture, and a
+ *        failure there must void one measurement rather than all of them.
+ *   library.view.control-missing-group-column-refused
+ *        NEGATIVE CONTROL: is a group-by naming a column that does not exist
+ *        refused? Without it an ACCEPTED group-by is not a finding, because
+ *        this probe could not tell a group-by SharePoint honoured from one it
+ *        ignored.
+ *   library.view.control-group-by-single-value-column
+ *        POSITIVE CONTROL: group-by on the single-value Choice column, the
+ *        case `library-view-probe.js` already measured working. It proves THIS
+ *        probe can read the shape of a group that works, and it records what a
+ *        working group row looks like, so a null result below is a statement
+ *        about the column kind rather than about the reader.
+ *   library.view.group-by-multi-value-choice
+ *        The #281 question. One row per value held, or one group per set?
+ *   library.view.group-by-multi-value-lookup
+ *        The same question where the multiple values are lookups into a list.
+ *   library.view.group-by-lookup-column
+ *        LIBRARY -> LIST: group by a single-value lookup the library holds.
+ *        What do the group labels carry, the target's display field, an id, or
+ *        an encoded pair?
+ *   library.view.group-by-null-title
+ *        Title is null on a file after upload (settled at
+ *        `library.file-vs-item.title-after-upload`), so a library grouped by
+ *        Title is mostly a null group. Is there one, and what is its heading?
+ *   library.view.group-by-name-column
+ *        Group by Name (`FileLeafRef`), the column a library has and a generic
+ *        list does not.
+ *   library.view.multi-value-group-by-stored-on-view
+ *        The surface a generator actually writes: does an `SP.View` created
+ *        with a `<GroupBy>` over the multi-value column store it, and does the
+ *        ViewQuery read back as it was sent?
+ *
+ * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
+ *   Depends on (asserted, read back): the library and the target list exist;
+ *   the three grouping columns exist and read back as their asked-for types;
+ *   the four files exist; each file reads back holding the values written to
+ *   it; a group-by naming a missing column is refused; a group-by on a
+ *   single-value column produces group rows this probe can read.
+ *   Observes (recorded, never asserted): for every column kind, whether the
+ *   group-by is accepted, how many group rows come back, what the group labels
+ *   are, which keys the group rows carry, how many rows the expanded query
+ *   returns, and how many of them each file appears on. NOTHING here asserts
+ *   that a library groups by any of these columns at all. A run where every
+ *   group-by is refused is a successful run with an important answer.
+ *
+ * HOW A GROUP IS READ, and what is deliberately not done. Both observations
+ * this probe reasons from are produced by the SERVER: the collapsed query's
+ * group rows, and the expanded query's row count against the known file count.
+ * See the client-side-partition finding below for why the obvious third method
+ * is not used.
+ *
+ * ABORTED VERSUS VOID, because the two are not interchangeable here. A fixture
+ * that never built records ABORTED downstream, which is open: a re-run can
+ * clear it. A control that did not hold records the observation it made and
+ * marks the row void, because on this site, by this method, the row cannot be
+ * answered however many times it is re-run.
+ *
+ * MICROSOFT LEARN CITATIONS. Every URL below is one Learn documents rather
+ * than one assembled from memory, because a wrong spelling returns 404,
+ * `isRefusal` counts 404 as a refusal, and the probe would then print a claim
+ * about SharePoint that was really a typo:
+ *
+ *   List and library creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   Field creation via POST to `fields/createfieldasxml`, and the `List`,
+ *   `ShowField` and `Mult` attributes of a Lookup field:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   File upload via `RootFolder/Files/add(url=,overwrite=)`:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   Item metadata updates via MERGE to `items(...)`:
+ *     "Working with lists and list items with REST"
+ *   Grouping a query, and the `Collapse` attribute:
+ *     "GroupBy element (List)"
+ *   Reading a view's rows without opening the page, and `RenderOptions`:
+ *     "SP.List.renderListDataAsStream method"
+ *   View creation via POST to `views`, and `ViewQuery`:
+ *     "SP.ViewCollection.add method"
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the LIBRARY first, then the target list. That order is
+ * not tidiness; see the acyclic finding below.
+ */
+// finding: library-grouping-client-side-partition-is-not-evidence - a probe
+// that sends a grouped query, gets flat rows back and sorts them into buckets
+// by reading each row's value has measured its own arithmetic. The rows would
+// partition the same way with no <GroupBy> in the query at all, so the method
+// cannot separate a grouping SharePoint performed from one it ignored. The two
+// observations used here are both server-produced: the COLLAPSED query's group
+// rows (their count, their labels, the keys they carry), and the EXPANDED
+// query's row count against a file count this probe knows because it uploaded
+// the files. A file returned on more rows than it has is the server splitting
+// it, and nothing else can produce that.
+// finding: library-grouping-fixture-must-be-acyclic - the library holds a
+// lookup into the target list, so the target list cannot be recycled while the
+// library exists. `multilookup-probe.js` records SharePoint refusing to recycle
+// a list another list's lookup points into, and `cross-lookup-probe.js` carries
+// the same finding. CLEANUP here removes the library before the target for
+// that reason, and the header tells the operator the same order.
+// finding: library-grouping-multi-value-write-shape-is-list-measured - the item
+// payload a multi-value column takes was measured on a generic LIST, not on a
+// library: `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [..]}`
+// for a MultiChoice (multi-value-probe.js run 3, 2026-08-17) and
+// `{"<Name>Id": {"results": [..]}}` for a multi-value lookup
+// (multilookup-probe.js, 2026-09-02), both quoted in analysis/typemap.py. A
+// library reaches its rows through `items(id)` and is not the container either
+// run used, so the shape is tried as an ordered experiment rather than assumed:
+// the two nometadata shapes library-column-interactions-probe.js sends on a
+// library first, then the verbose list-measured shape. The fixture row reports
+// which one took, and a shape that returns HTTP 200 without reading back is not
+// counted as one that took.
+// finding: library-grouping-lookup-direction-is-library-to-list - the lookup
+// columns here are held BY the library and point AT a list, never the reverse.
+// `cross-lookup-probe.js` measured on 2026-09-07 that a list's lookup into a
+// library binds but its value cannot be SET through the item MERGE (HTTP 500,
+// file target and folder target alike), while the library-to-list direction's
+// item write held in the same run. A fixture built the other way round would
+// have no values to group by and would report that as a grouping finding.
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe LibGroup';
+  const TGT = 'dbmlsp Probe LibGroup Target';
+  const SINGLE = 'GroupChoice';
+  const MULTI = 'GroupMultiChoice';
+  const LOOKUP = 'GroupLookup';
+  const MULTILOOKUP = 'GroupMultiLookup';
+  // Never created. The negative control names it, and a run that finds this
+  // column present would be reading somebody else's column.
+  const MISSING = 'GroupNoSuchColumnAtAll';
+  const VIEW_TITLE = 'dbmlsp Probe LibGroup View';
+  const TITLED = 'dbmlsp probe titled file';
+  const TGT_ROWS = ['dbmlsp group target A', 'dbmlsp group target B'];
+  const CHOICES = ['Alpha', 'Beta', 'Gamma'];
+  const ROW_LIMIT = 50;
+
+  // The fixture is built so the two candidate multi-value behaviours give
+  // DIFFERENT numbers, on both observations:
+  //   one row per value  -> 5 expanded rows over 4 files, every label a value
+  //   one group per set  -> 4 expanded rows over 4 files, one label naming two
+  // The fourth file holds nothing at all, so every column also has an empty
+  // group to report, which is what the Title question needs as well.
+  const FILES = [
+    {
+      name: 'dbmlsp-group-a-b.txt',
+      single: 'Alpha', multi: ['Alpha', 'Beta'],
+      target: 0, targets: [0, 1], title: TITLED,
+    },
+    {
+      name: 'dbmlsp-group-b.txt',
+      single: 'Beta', multi: ['Beta'],
+      target: 1, targets: [1], title: null,
+    },
+    {
+      name: 'dbmlsp-group-c.txt',
+      single: 'Alpha', multi: ['Gamma'],
+      target: 0, targets: [0], title: null,
+    },
+    {
+      name: 'dbmlsp-group-none.txt',
+      single: null, multi: [],
+      target: null, targets: [], title: null,
+    },
+  ];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a LIST '${TGT}' with ${TGT_ROWS.length} rows on ${WEB},`);
+    log('INFO', `a DOCUMENT LIBRARY '${LIB}', and on the library the columns`);
+    log('INFO', `'${SINGLE}' (Choice), '${MULTI}' (MultiChoice), '${LOOKUP}' and`);
+    log('INFO', `'${MULTILOOKUP}' (Lookup and LookupMulti into '${TGT}').`);
+    log('INFO', `Would upload ${FILES.length} small text files, write metadata on`);
+    log('INFO', 'three of them and leave the fourth empty, leave Title null on all');
+    log('INFO', 'but one, then send one grouped RenderListDataAsStream query per');
+    log('INFO', `column kind and create one view titled '${VIEW_TITLE}'.`);
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' then '${TGT}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: existing containers would be reused, and rows');
+      log('INFO', "from a previous run would answer this run's questions.");
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.view.fixture-columns-created', 'The target list, its rows and the three grouping columns exist and read back as their asked-for types');
+  expect('library.view.fixture-values-written', 'Every file reads back holding the values written to it, and one multi-value item shape took');
+  expect('library.view.fixture-multi-lookup-ready', 'A multi-value lookup on the library is created and holds values');
+  expect('library.view.control-missing-group-column-refused', 'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused');
+  expect('library.view.control-group-by-single-value-column', 'POSITIVE CONTROL: a group-by on a single-value Choice column returns group rows this probe can read');
+  expect('library.view.group-by-multi-value-choice', 'Group-by on a multi-value choice: one row per value held, or one group per set?');
+  expect('library.view.group-by-multi-value-lookup', 'Group-by on a multi-value lookup: one row per value held, or one group per set?');
+  expect('library.view.group-by-lookup-column', 'Group-by on a lookup the library holds: what do the group labels carry?');
+  expect('library.view.group-by-name-column', 'Group-by on Name (FileLeafRef), the column a library has and a list does not');
+  expect('library.view.group-by-null-title', 'Group-by on Title where Title is null on most files: is there a null group, and what is its heading?');
+  expect('library.view.multi-value-group-by-stored-on-view', 'Does an SP.View store a GroupBy over the multi-value column, and does ViewQuery read back as sent?');
+
+  const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  const libPath = `web/lists/getbytitle('${odataName(LIB)}')`;
+  const tgtPath = `web/lists/getbytitle('${odataName(TGT)}')`;
+  const show = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
+  const clip = (text, length) => String(text === undefined ? '' : text).slice(0, length);
+
+  let digest = await getDigest();
+
+  // A raw request body, not JSON: Files/add takes the file's bytes.
+  const rawPost = async (path, body, extraHeaders = {}) => {
+    digest = await getDigest();
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+          ...extraHeaders,
+        },
+        body,
+      });
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+      return { ok: res.ok, status: res.status, body: parsed, text };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: String(err) };
+    }
+  };
+
+  const addField = async (container, schemaXml) => {
+    digest = await getDigest();
+    return spPost(`${container}/fields/createfieldasxml`, {
+      parameters: { SchemaXml: schemaXml, Options: 8 },
+    }, digest);
+  };
+
+  // No $select on a field read, for the reason native-index-probe.js records:
+  // one unrecognised name errors the WHOLE request, so a column missing one
+  // property would read as a column that cannot be read at all.
+  const readField = async (container, name) =>
+    spGet(`${container}/fields/getbyinternalnameortitle('${odataName(name)}')`);
+
+  const mergeItem = async (itemId, body) => {
+    digest = await getDigest();
+    return spPost(`${libPath}/items(${itemId})`, body, digest, {
+      'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*',
+    });
+  };
+
+  // The verbose write, for the one candidate shape that carries `__metadata`.
+  // That is a verbose OData construct and the harness's nometadata
+  // Content-Type REJECTS it rather than ignoring it: threshold-index-probe.js
+  // lost a whole live run to exactly this, and
+  // test_a_probe_sending_metadata_uses_verbose_odata pins the pairing.
+  let itemEntityType = null;
+  const mergeItemVerbose = async (itemId, body) => {
+    if (itemEntityType === null) return { ok: false, status: 0, body: null, text: 'the library item entity type could not be read, so no verbose write was sent' };
+    digest = await getDigest();
+    return spPost(`${libPath}/items(${itemId})`, { __metadata: { type: itemEntityType }, ...body }, digest, {
+      Accept: 'application/json;odata=verbose',
+      'Content-Type': 'application/json;odata=verbose',
+      'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*',
+    });
+  };
+
+  // ---- fixture-library-created -----------------------------------------
+  if (CLEANUP) {
+    // Library first, then target. See the acyclic finding in the header.
+    await resetList(LIB);
+    await resetList(TGT);
+  }
+
+  const ensureContainer = async (path, title, template, description) => {
+    const found = await spGet(path);
+    if (found.ok && found.body) return { made: null, id: found.body.Id, note: `'${title}' already present` };
+    digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: title, BaseTemplate: template, Description: description,
+    }, digest);
+    return {
+      made,
+      id: made.ok && made.body ? made.body.Id : null,
+      note: made.ok
+        ? `created '${title}'`
+        : `'${title}' FAILED HTTP ${made.status}: ${clip(made.text, 200)}`,
+    };
+  };
+
+  const library = await ensureContainer(libPath, LIB, 101,
+    'dbml-sharepoint library-grouping probe library. Safe to delete.');
+  record('library.doc-lib.fixture-library-created',
+         'A document library is created (BaseTemplate 101)',
+         library.id === null ? 'FAIL' : library.made === null ? 'ALREADY PRESENT' : 'PASS',
+         library.made === null && library.id !== null
+           ? 'reusing an existing library. Set CLEANUP = true for a clean answer'
+           : library.note);
+
+  // Everything this probe measures, so an abort can report the truth about all
+  // of it rather than about the rows it happened to reach.
+  const MEASUREMENTS = [
+    ['library.view.control-missing-group-column-refused', 'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused'],
+    ['library.view.control-group-by-single-value-column', 'POSITIVE CONTROL: a group-by on a single-value Choice column returns group rows this probe can read'],
+    ['library.view.group-by-multi-value-choice', 'Group-by on a multi-value choice: one row per value held, or one group per set?'],
+    ['library.view.group-by-multi-value-lookup', 'Group-by on a multi-value lookup: one row per value held, or one group per set?'],
+    ['library.view.group-by-lookup-column', 'Group-by on a lookup the library holds: what do the group labels carry?'],
+    ['library.view.group-by-name-column', 'Group-by on Name (FileLeafRef), the column a library has and a list does not'],
+    ['library.view.group-by-null-title', 'Group-by on Title where Title is null on most files: is there a null group, and what is its heading?'],
+    ['library.view.multi-value-group-by-stored-on-view', 'Does an SP.View store a GroupBy over the multi-value column, and does ViewQuery read back as sent?'],
+  ];
+  // ABORTED is open, not void: the fixture never built, so no question was
+  // asked, and a re-run can clear every row this touches.
+  const abortEverything = (reason) => {
+    for (const [id, question] of MEASUREMENTS) {
+      record(id, question, 'ABORTED', reason);
+    }
+    return report();
+  };
+
+  if (library.id === null) {
+    record('library.view.fixture-columns-created',
+           'The target list, its rows and the three grouping columns exist and read back as their asked-for types',
+           'ABORTED', library.note);
+    record('library.view.fixture-values-written',
+           'Every file reads back holding the values written to it, and one multi-value item shape took',
+           'ABORTED', 'the library was never created');
+    record('library.view.fixture-multi-lookup-ready',
+           'A multi-value lookup on the library is created and holds values',
+           'ABORTED', 'the library was never created');
+    return abortEverything(`the scratch library was never created: ${library.note}`);
+  }
+
+  // ---- fixture-columns-created -----------------------------------------
+  const notes = [];
+  const target = await ensureContainer(tgtPath, TGT, 100,
+    'dbml-sharepoint library-grouping probe lookup target. Safe to delete.');
+  notes.push(target.note);
+
+  const targetRowIds = [];
+  const targetTitleById = {};
+  if (target.id !== null) {
+    const existing = await spGet(`${tgtPath}/items?$select=Id,Title&$top=50`);
+    const rows = (!readFailed(existing) && Array.isArray(existing.body.value)) ? existing.body.value : [];
+    for (const title of TGT_ROWS) {
+      const found = rows.find((row) => row.Title === title);
+      if (found) {
+        targetRowIds.push(found.Id);
+        targetTitleById[found.Id] = title;
+        continue;
+      }
+      digest = await getDigest();
+      const made = await spPost(`${tgtPath}/items`, { Title: title }, digest);
+      if (made.ok && made.body) {
+        targetRowIds.push(made.body.Id);
+        targetTitleById[made.body.Id] = title;
+      }
+    }
+    notes.push(`${targetRowIds.length}/${TGT_ROWS.length} target row(s)`);
+  }
+
+  const choiceXml = (type, name) =>
+    `<Field Type="${type}" DisplayName="${name}" Name="${name}">`
+    + `<CHOICES>${CHOICES.map((c) => `<CHOICE>${c}</CHOICE>`).join('')}</CHOICES></Field>`;
+  const lookupXml = (type, name, mult) =>
+    `<Field Type="${type}" DisplayName="${name}" Name="${name}"`
+    + (mult ? ' Mult="TRUE"' : '')
+    + ` List="{${target.id}}" ShowField="Title"/>`;
+
+  // Create one column and read it back, returning what the row wants to print.
+  // Says nothing about whether the result is good: the caller owns the verdict.
+  const ensureColumn = async (name, schemaXml, wantedType) => {
+    const before = await readField(libPath, name);
+    const made = before.ok ? null : await addField(libPath, schemaXml);
+    const read = before.ok ? before : await readField(libPath, name);
+    const ok = !readFailed(read) && read.body.TypeAsString === wantedType;
+    return {
+      ok,
+      note: `${name}: ` + (made === null ? 'already present' : `create HTTP ${made.status}`)
+        + (made === null || made.ok ? '' : ` ${clip(made.text, 160)}`)
+        + '; readback ' + (readFailed(read)
+          ? `failed HTTP ${read.status}`
+          : `TypeAsString=${show(read.body.TypeAsString)}`
+            + ` LookupList=${show(read.body.LookupList)}`
+            + ` AllowMultipleValues=${show(read.body.AllowMultipleValues)}`),
+    };
+  };
+
+  const singleCol = await ensureColumn(SINGLE, choiceXml('Choice', SINGLE), 'Choice');
+  notes.push(singleCol.note);
+  const multiCol = await ensureColumn(MULTI, choiceXml('MultiChoice', MULTI), 'MultiChoice');
+  notes.push(multiCol.note);
+  const lookupCol = target.id === null
+    ? { ok: false, note: `${LOOKUP}: not attempted, the target list has no id` }
+    : await ensureColumn(LOOKUP, lookupXml('Lookup', LOOKUP, false), 'Lookup');
+  notes.push(lookupCol.note);
+
+  const columnsReady = target.id !== null
+    && targetRowIds.length === TGT_ROWS.length
+    && singleCol.ok && multiCol.ok && lookupCol.ok;
+  record('library.view.fixture-columns-created',
+         'The target list, its rows and the three grouping columns exist and read back as their asked-for types',
+         columnsReady ? 'PASS' : 'FAIL',
+         notes.join('; '));
+
+  // The multi-value lookup, on its own so its failure voids one row only.
+  const multiLookupCol = target.id === null
+    ? { ok: false, note: `${MULTILOOKUP}: not attempted, the target list has no id` }
+    : await ensureColumn(MULTILOOKUP, lookupXml('LookupMulti', MULTILOOKUP, true), 'LookupMulti');
+
+  if (!columnsReady) {
+    record('library.view.fixture-values-written',
+           'Every file reads back holding the values written to it, and one multi-value item shape took',
+           'ABORTED', 'the grouping columns were not all created, so no values were written');
+    record('library.view.fixture-multi-lookup-ready',
+           'A multi-value lookup on the library is created and holds values',
+           'ABORTED', `${multiLookupCol.note}; the rest of the fixture did not build`);
+    return abortEverything(`the fixture columns did not build: ${notes.join('; ')}`);
+  }
+
+  // ---- fixture-values-written ------------------------------------------
+  const rootRead = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);
+  const folderUrl = (!readFailed(rootRead)) ? rootRead.body.ServerRelativeUrl : null;
+  if (folderUrl === null) {
+    record('library.view.fixture-values-written',
+           'Every file reads back holding the values written to it, and one multi-value item shape took',
+           'ABORTED', `the library RootFolder did not read back (HTTP ${rootRead.status}), so no file could be uploaded`);
+    record('library.view.fixture-multi-lookup-ready',
+           'A multi-value lookup on the library is created and holds values',
+           'ABORTED', 'no file was uploaded, so nothing held a value');
+    return abortEverything('the library RootFolder did not read back, so the fixture has no files');
+  }
+
+  const uploads = [];
+  for (const file of FILES) {
+    const uploaded = await rawPost(
+      `web/GetFolderByServerRelativeUrl('${folderUrl}')/Files/add(url='${file.name}',overwrite=true)`,
+      `dbml-sharepoint library-grouping probe payload for ${file.name}`,
+      { 'Content-Type': 'text/plain' });
+    uploads.push(uploaded.ok
+      ? `uploaded '${file.name}'`
+      : `upload of '${file.name}' FAILED HTTP ${uploaded.status}: ${clip(uploaded.text, 160)}`);
+  }
+
+  const entityRead = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
+  itemEntityType = (!readFailed(entityRead)) ? entityRead.body.ListItemEntityTypeFullName : null;
+
+  const itemsRead = await spGet(`${libPath}/items?$select=Id,FileLeafRef&$top=100`);
+  const itemRows = (!readFailed(itemsRead) && Array.isArray(itemsRead.body.value)) ? itemsRead.body.value : [];
+  const itemIdByName = {};
+  for (const row of itemRows) itemIdByName[row.FileLeafRef] = row.Id;
+
+  // Learn documents no multi-value item payload at all, so the shape is an
+  // ordered experiment. See the write-shape finding in the header for where
+  // each candidate comes from and why none of them is assumed.
+  const MULTI_SHAPES = [
+    { name: 'bare-array', verbose: false, build: (values) => values },
+    { name: 'bare-results', verbose: false, build: (values) => ({ results: values }) },
+    { name: 'collection-metadata', verbose: true, build: (values) => ({ __metadata: { type: 'Collection(Edm.String)' }, results: values }) },
+  ];
+  const LOOKUP_SHAPES = [
+    { name: 'bare-array', verbose: false, build: (ids) => ids },
+    { name: 'bare-results', verbose: false, build: (ids) => ({ results: ids }) },
+    { name: 'verbose-results', verbose: true, build: (ids) => ({ results: ids }) },
+  ];
+
+  const valuesOf = (raw) => {
+    if (Array.isArray(raw)) return raw;
+    if (raw && Array.isArray(raw.results)) return raw.results;
+    return null;
+  };
+  const sameSet = (left, right) => left !== null
+    && left.length === right.length
+    && right.every((value) => left.some((held) => String(held) === String(value)));
+
+  // Try each shape in order and stop at the first that WRITES AND READS BACK.
+  // Stopping at HTTP 200 alone would count a write that silently kept nothing
+  // as a success, which is the failure class this project exists to close.
+  let winningShape = { multi: null, lookup: null };
+  const writeMultiValue = async (itemId, column, selectKey, values, shapes, kind) => {
+    const remembered = winningShape[kind];
+    const ordered = remembered
+      ? [remembered].concat(shapes.filter((shape) => shape !== remembered))
+      : shapes;
+    const attempts = [];
+    for (const shape of ordered) {
+      const body = { [column]: shape.build(values) };
+      const wrote = shape.verbose
+        ? await mergeItemVerbose(itemId, body)
+        : await mergeItem(itemId, body);
+      if (!wrote.ok) {
+        attempts.push(`${shape.name} write HTTP ${wrote.status}`);
+        continue;
+      }
+      const read = await spGet(`${libPath}/items(${itemId})?$select=${selectKey}`);
+      const back = readFailed(read) ? null : valuesOf(read.body[selectKey]);
+      if (sameSet(back, values)) {
+        winningShape[kind] = shape;
+        return { ok: true, shape: shape.name, note: `${shape.name} took and read back ${show(back)}` };
+      }
+      attempts.push(`${shape.name} wrote HTTP ${wrote.status} but read back ${show(back)}`);
+    }
+    return { ok: false, shape: null, note: attempts.join(', ') };
+  };
+
+  const writeNotes = [];
+  const multiLookupNotes = [multiLookupCol.note];
+  let multiLookupValuesOk = multiLookupCol.ok;
+  for (const file of FILES) {
+    const itemId = itemIdByName[file.name];
+    if (itemId === undefined) {
+      writeNotes.push(`'${file.name}' has no list item, so nothing was written to it`);
+      continue;
+    }
+    const scalar = {};
+    if (file.single !== null) scalar[SINGLE] = file.single;
+    if (file.title !== null) scalar.Title = file.title;
+    if (file.target !== null) scalar[`${LOOKUP}Id`] = targetRowIds[file.target];
+    if (Object.keys(scalar).length) {
+      const wrote = await mergeItem(itemId, scalar);
+      writeNotes.push(wrote.ok
+        ? `'${file.name}' scalar write HTTP ${wrote.status}`
+        : `'${file.name}' scalar write FAILED HTTP ${wrote.status}: ${clip(wrote.text, 160)}`);
+    }
+    if (file.multi.length) {
+      const wrote = await writeMultiValue(itemId, MULTI, MULTI, file.multi, MULTI_SHAPES, 'multi');
+      writeNotes.push(`'${file.name}' ${MULTI}: ${wrote.note}`);
+    }
+    if (multiLookupCol.ok && file.targets.length) {
+      const ids = file.targets.map((index) => targetRowIds[index]);
+      const wrote = await writeMultiValue(itemId, `${MULTILOOKUP}Id`, `${MULTILOOKUP}Id`, ids, LOOKUP_SHAPES, 'lookup');
+      multiLookupNotes.push(`'${file.name}': ${wrote.note}`);
+      if (!wrote.ok) multiLookupValuesOk = false;
+    }
+  }
+
+  // The readback that decides the fixture row. Selected in one call because
+  // every name in it belongs to a column this run has already read back.
+  const backRead = await spGet(
+    `${libPath}/items?$select=Id,Title,FileLeafRef,${SINGLE},${MULTI},${LOOKUP}Id&$top=100`);
+  const backRows = (!readFailed(backRead) && Array.isArray(backRead.body.value)) ? backRead.body.value : [];
+  const mismatches = [];
+  for (const file of FILES) {
+    const row = backRows.find((candidate) => candidate.FileLeafRef === file.name);
+    if (!row) {
+      mismatches.push(`'${file.name}' is not in the library`);
+      continue;
+    }
+    if ((row[SINGLE] === undefined ? null : row[SINGLE]) !== file.single) {
+      mismatches.push(`'${file.name}' ${SINGLE} read back ${show(row[SINGLE])}, wrote ${show(file.single)}`);
+    }
+    if ((row.Title === undefined ? null : row.Title) !== file.title) {
+      mismatches.push(`'${file.name}' Title read back ${show(row.Title)}, wrote ${show(file.title)}`);
+    }
+    const heldMulti = valuesOf(row[MULTI]) || [];
+    if (!sameSet(heldMulti, file.multi)) {
+      mismatches.push(`'${file.name}' ${MULTI} read back ${show(row[MULTI])}, wrote ${show(file.multi)}`);
+    }
+    const wantedTarget = file.target === null ? null : targetRowIds[file.target];
+    const heldTarget = row[`${LOOKUP}Id`] === undefined ? null : row[`${LOOKUP}Id`];
+    if (wantedTarget !== null && heldTarget !== wantedTarget) {
+      mismatches.push(`'${file.name}' ${LOOKUP}Id read back ${show(heldTarget)}, wrote ${show(wantedTarget)}`);
+    }
+  }
+
+  const valuesReady = mismatches.length === 0 && winningShape.multi !== null;
+  record('library.view.fixture-values-written',
+         'Every file reads back holding the values written to it, and one multi-value item shape took',
+         valuesReady ? 'PASS' : 'FAIL',
+         `${uploads.join('; ')}. ${writeNotes.join('; ')}. `
+         + `multi-value item shape that took: ${show(winningShape.multi ? winningShape.multi.name : null)}. `
+         + (mismatches.length ? `readback mismatches: ${mismatches.join('; ')}` : 'every file read back as written'));
+
+  record('library.view.fixture-multi-lookup-ready',
+         'A multi-value lookup on the library is created and holds values',
+         multiLookupCol.ok && multiLookupValuesOk ? 'PASS' : 'FAIL',
+         multiLookupNotes.join('; '));
+
+  if (!valuesReady) {
+    return abortEverything(
+      `the files did not read back holding the values written to them, so a group-by over `
+      + `them would report the fixture rather than SharePoint: ${mismatches.join('; ') || 'no multi-value shape took'}`);
+  }
+
+  // ---- Reading a grouping ----------------------------------------------
+  const rowsOf = (res) => {
+    if (readFailed(res)) return [];
+    if (Array.isArray(res.body.Row)) return res.body.Row;
+    if (res.body.ListData && Array.isArray(res.body.ListData.Row)) return res.body.ListData.Row;
+    return [];
+  };
+
+  const groupBy = async (fieldName, collapse, renderOptions) => {
+    const fields = ['FileLeafRef', fieldName];
+    const viewXml = `<View><Query><GroupBy Collapse="${collapse}">`
+      + `<FieldRef Name="${fieldName}"/></GroupBy></Query><ViewFields>`
+      + fields.map((name) => `<FieldRef Name="${name}"/>`).join('')
+      + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
+    const parameters = renderOptions === undefined
+      ? { ViewXml: viewXml }
+      : { ViewXml: viewXml, RenderOptions: renderOptions };
+    digest = await getDigest();
+    const res = await spPost(`${libPath}/RenderListDataAsStream`, { parameters }, digest);
+    return { res, rows: rowsOf(res) };
+  };
+
+  // Everything the SERVER said about one grouping, and nothing this probe
+  // worked out for itself. See the client-side-partition finding in the header.
+  const observe = async (fieldName) => {
+    const collapsed = await groupBy(fieldName, 'TRUE');
+    const expanded = await groupBy(fieldName, 'FALSE');
+    const labels = collapsed.rows.map((row) => (fieldName in row ? row[fieldName] : undefined));
+    const keys = collapsed.rows.length ? Object.keys(collapsed.rows[0]) : [];
+    const groupKeys = keys.filter((key) => /group/i.test(key) || key.startsWith(`${fieldName}.`));
+    const perFile = {};
+    for (const row of expanded.rows) {
+      const name = row.FileLeafRef === undefined ? '(no FileLeafRef)' : String(row.FileLeafRef);
+      perFile[name] = (perFile[name] || 0) + 1;
+    }
+    return {
+      collapsed, expanded, labels, keys, groupKeys, perFile,
+      refused: !collapsed.res.ok && isRefusal(collapsed.res.status),
+      text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s), `
+        + `labels ${clip(show(labels), 300)}, group-shaped keys ${clip(show(groupKeys), 300)}, `
+        + `first row ${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 400)}; `
+        + `expanded HTTP ${expanded.res.status} returned ${expanded.rows.length} row(s) over `
+        + `${FILES.length} file(s), rows per file ${clip(show(perFile), 300)}`
+        + (collapsed.res.ok ? '' : `; collapsed body ${clip(collapsed.res.text, 220)}`),
+    };
+  };
+
+  // ---- control-missing-group-column-refused: NEGATIVE CONTROL ----------
+  const missingXml = `<View><Query><GroupBy Collapse="TRUE"><FieldRef Name="${MISSING}"/></GroupBy>`
+    + `</Query><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
+  digest = await getDigest();
+  const junk = await spPost(`${libPath}/RenderListDataAsStream`,
+                            { parameters: { ViewXml: missingXml } }, digest);
+  const negativeHeld = !junk.ok && isRefusal(junk.status);
+  record('library.view.control-missing-group-column-refused',
+         'NEGATIVE CONTROL: a group-by naming a column that does not exist is refused',
+         junk.ok ? 'FAIL' : negativeHeld ? 'PASS' : 'NOT ESTABLISHED',
+         junk.ok
+           ? `a group-by naming '${MISSING}' was ACCEPTED with HTTP ${junk.status} and returned `
+             + `${rowsOf(junk).length} row(s). This run cannot tell a group-by SharePoint honoured `
+             + 'from one it ignored, so every group-by answer below is void.'
+           : negativeHeld
+             ? `refused with HTTP ${junk.status}: ${clip(junk.text, 260)}`
+             : `the request failed with HTTP ${junk.status}, which is not the server rejecting the `
+               + `payload: ${clip(junk.text, 200)}`);
+
+  // ---- control-group-by-single-value-column: POSITIVE CONTROL ----------
+  const controlSeen = await observe(SINGLE);
+  // The same collapsed query with RenderOptions 2 (ListData), recorded here
+  // once rather than doubling every question: if the group row shape depends
+  // on RenderOptions, the reader needs to know which shape the rows below are.
+  const controlListData = await groupBy(SINGLE, 'TRUE', 2);
+  const controlLabels = controlSeen.labels.map((label) => String(label === null || label === undefined ? '' : label));
+  const positiveHeld = controlSeen.collapsed.res.ok
+    && controlSeen.collapsed.rows.length >= 2
+    && controlLabels.some((label) => label.includes('Alpha'))
+    && controlLabels.some((label) => label.includes('Beta'));
+  record('library.view.control-group-by-single-value-column',
+         'POSITIVE CONTROL: a group-by on a single-value Choice column returns group rows this probe can read',
+         positiveHeld ? 'PASS' : 'CONTROL FAILED, METHOD VOID',
+         `${SINGLE}: ${controlSeen.text}. With RenderOptions 2: HTTP `
+         + `${controlListData.res.status}, ${controlListData.rows.length} row(s), first row `
+         + `${clip(show(controlListData.rows.length ? controlListData.rows[0] : null), 400)}`
+         + (positiveHeld
+           ? ''
+           : '. A group-by on the column kind library-view-probe.js already measured working did '
+             + 'not return group rows this probe could read, so nothing below is a statement about '
+             + 'the other column kinds.'));
+
+  const controlsHeld = negativeHeld && positiveHeld;
+  const controlReason = negativeHeld
+    ? 'the positive control did not hold, so this run cannot read the shape of a group that works'
+    : 'the negative control did not hold, so this run cannot tell a group-by SharePoint honoured from one it ignored';
+
+  // Publish one measurement, keeping the observation either way. A void row
+  // still carries what was seen: the reader loses the verdict, not the data.
+  const publish = (id, question, outcome, evidence) => {
+    if (controlsHeld) {
+      record(id, question, outcome, evidence);
+      return;
+    }
+    record(id, question, 'NOT ESTABLISHED', `${evidence}. Recorded rather than answered: ${controlReason}.`, 'void');
+  };
+
+  // The two candidate multi-value behaviours differ in TWO server-produced
+  // observations, and a verdict is named only when both agree. A joined label
+  // beside a row count that also exceeds the file count is neither candidate,
+  // and is reported as neither rather than as the nearer one.
+  const namesBoth = (label, first, second) => {
+    const text = Array.isArray(label) ? label.join(' ') : String(label === null || label === undefined ? '' : label);
+    return text.includes(first) && text.includes(second);
+  };
+  const multiValueVerdict = (seen, first, second) => {
+    if (seen.refused) {
+      return { outcome: 'REFUSED', note: `the group-by was refused. ${seen.text}` };
+    }
+    if (!seen.collapsed.res.ok || !seen.expanded.res.ok) {
+      return { outcome: 'NOT ESTABLISHED', note: `a grouped query failed without refusing. ${seen.text}` };
+    }
+    const joined = seen.labels.filter((label) => namesBoth(label, first, second));
+    const split = seen.expanded.rows.length > FILES.length;
+    if (joined.length && !split) {
+      return {
+        outcome: 'ONE GROUP PER SET',
+        note: `group label(s) ${clip(show(joined), 200)} name both ${first} and ${second}, and the `
+          + `expanded query returned one row per file. ${seen.text}`,
+      };
+    }
+    if (!joined.length && split) {
+      return {
+        outcome: 'ONE ROW PER VALUE',
+        note: `no group label names two values, and the expanded query returned `
+          + `${seen.expanded.rows.length} row(s) over ${FILES.length} file(s), so the file holding `
+          + `two values came back under each of them. ${seen.text}`,
+      };
+    }
+    return {
+      outcome: 'NOT ESTABLISHED',
+      note: `the two observations do not agree on either candidate: joined label(s) `
+        + `${clip(show(joined), 200)}, expanded rows ${seen.expanded.rows.length} against `
+        + `${FILES.length} file(s). ${seen.text}`,
+    };
+  };
+
+  // ---- group-by-multi-value-choice -------------------------------------
+  const multiSeen = await observe(MULTI);
+  const multiVerdict = multiValueVerdict(multiSeen, 'Alpha', 'Beta');
+  publish('library.view.group-by-multi-value-choice',
+          'Group-by on a multi-value choice: one row per value held, or one group per set?',
+          multiVerdict.outcome, `${MULTI}: ${multiVerdict.note}`);
+
+  // ---- group-by-multi-value-lookup -------------------------------------
+  if (!multiLookupCol.ok || !multiLookupValuesOk) {
+    record('library.view.group-by-multi-value-lookup',
+           'Group-by on a multi-value lookup: one row per value held, or one group per set?',
+           'NOT ESTABLISHED',
+           `the multi-value lookup fixture did not build, so there were no multi-value lookup `
+           + `values to group: ${multiLookupNotes.join('; ')}`,
+           'void');
+  } else {
+    const lookupSeen = await observe(MULTILOOKUP);
+    const lookupVerdict = multiValueVerdict(lookupSeen, TGT_ROWS[0], TGT_ROWS[1]);
+    publish('library.view.group-by-multi-value-lookup',
+            'Group-by on a multi-value lookup: one row per value held, or one group per set?',
+            lookupVerdict.outcome, `${MULTILOOKUP}: ${lookupVerdict.note}`);
+  }
+
+  // ---- group-by-lookup-column ------------------------------------------
+  const singleLookupSeen = await observe(LOOKUP);
+  const lookupLabels = singleLookupSeen.labels.map(
+    (label) => String(label === null || label === undefined ? '' : label));
+  const carriesTitle = lookupLabels.some((label) => TGT_ROWS.some((title) => label.includes(title)));
+  const carriesEncoding = lookupLabels.some((label) => label.includes(';#'));
+  publish('library.view.group-by-lookup-column',
+          'Group-by on a lookup the library holds: what do the group labels carry?',
+          singleLookupSeen.refused
+            ? 'REFUSED'
+            : !singleLookupSeen.collapsed.res.ok
+              ? 'NOT ESTABLISHED'
+              : carriesTitle && !carriesEncoding
+                ? 'LABELS CARRY THE DISPLAY FIELD'
+                : carriesTitle && carriesEncoding
+                  ? 'LABELS CARRY AN ENCODED PAIR'
+                  : 'LABELS CARRY NEITHER THE DISPLAY FIELD NOR AN ENCODED PAIR',
+          `${LOOKUP} into '${TGT}'.Title, target row titles ${show(TGT_ROWS)}, `
+          + `label ids ${show(targetTitleById)}. ${singleLookupSeen.text}`);
+
+  // ---- group-by-name-column --------------------------------------------
+  const nameSeen = await observe('FileLeafRef');
+  const nameLabels = nameSeen.labels.map((label) => String(label === null || label === undefined ? '' : label));
+  const everyFileIsALabel = FILES.every((file) => nameLabels.some((label) => label.includes(file.name)));
+  publish('library.view.group-by-name-column',
+          'Group-by on Name (FileLeafRef), the column a library has and a list does not',
+          nameSeen.refused
+            ? 'REFUSED'
+            : !nameSeen.collapsed.res.ok
+              ? 'NOT ESTABLISHED'
+              : everyFileIsALabel && nameSeen.collapsed.rows.length === FILES.length
+                ? 'ONE GROUP PER FILE'
+                : 'ACCEPTED, GROUPS DO NOT MATCH THE FILES',
+          `FileLeafRef over ${FILES.length} distinct file names. ${nameSeen.text}`);
+
+  // ---- group-by-null-title ---------------------------------------------
+  // Title is null on a file after upload, settled at
+  // library.file-vs-item.title-after-upload, and this fixture leaves it null
+  // on three of four files. The question is what heading the null group takes.
+  const titleSeen = await observe('Title');
+  const nullLabels = titleSeen.labels.filter(
+    (label) => label === null || label === undefined || String(label).trim() === '');
+  publish('library.view.group-by-null-title',
+          'Group-by on Title where Title is null on most files: is there a null group, and what is its heading?',
+          titleSeen.refused
+            ? 'REFUSED'
+            : !titleSeen.collapsed.res.ok
+              ? 'NOT ESTABLISHED'
+              : nullLabels.length
+                ? 'NULL GROUP PRESENT'
+                : 'NO NULL GROUP',
+          `${FILES.filter((file) => file.title === null).length} of ${FILES.length} file(s) have a `
+          + `null Title and one holds ${show(TITLED)}. Empty-looking label(s) `
+          + `${clip(show(nullLabels), 200)}. ${titleSeen.text}`);
+
+  // ---- multi-value-group-by-stored-on-view ------------------------------
+  const sentQuery = `<GroupBy Collapse="TRUE"><FieldRef Name="${MULTI}"/></GroupBy>`;
+  digest = await getDigest();
+  const viewMade = await spPost(`${libPath}/views`, {
+    Title: VIEW_TITLE, ViewQuery: sentQuery, RowLimit: ROW_LIMIT,
+  }, digest);
+  const viewsRead = await spGet(`${libPath}/views?$select=Title,ViewQuery,ServerRelativeUrl&$top=100`);
+  const storedView = (!readFailed(viewsRead) && Array.isArray(viewsRead.body.value))
+    ? viewsRead.body.value.find((view) => view.Title === VIEW_TITLE) || null
+    : null;
+  const storedQuery = storedView ? storedView.ViewQuery : null;
+  publish('library.view.multi-value-group-by-stored-on-view',
+          'Does an SP.View store a GroupBy over the multi-value column, and does ViewQuery read back as sent?',
+          !viewMade.ok && isRefusal(viewMade.status)
+            ? 'REFUSED'
+            : storedQuery === null
+              ? 'NOT ESTABLISHED'
+              : storedQuery === sentQuery
+                ? 'STORED AS SENT'
+                : String(storedQuery).includes('GroupBy')
+                  ? 'STORED, REWRITTEN'
+                  : 'STORED WITHOUT THE GROUPBY',
+          `create HTTP ${viewMade.status}${viewMade.ok ? '' : `: ${clip(viewMade.text, 200)}`}; `
+          + `sent ViewQuery ${show(sentQuery)}; read back ${show(storedQuery)}; `
+          + `view url ${show(storedView ? storedView.ServerRelativeUrl : null)}`);
+
+  return report();
+})();
