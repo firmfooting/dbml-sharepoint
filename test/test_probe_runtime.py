@@ -2303,7 +2303,7 @@ _LARGE_LIST_HARNESS = textwrap.dedent("""
 #: a twelve-file fixture exercises the same comparisons as a 5,500-file one.
 _LARGE_LIST_SHRINK = {
     "TARGET_FILES": ("5500", "12"),
-    "UPLOAD_CAP": ("2000", "12"),
+    "UPLOAD_CAP": ("1000", "12"),
     "VERIFY_EVERY": ("250", "4"),
 }
 

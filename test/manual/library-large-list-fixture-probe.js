@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: BUILD THE PERSISTENT LARGE-LIBRARY FIXTURE.
  *
- * REVISION: 6a9fdbb7
+ * REVISION: 9804d6f0
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a document
  * library that later probes measure, and every row it records is a
@@ -204,6 +204,12 @@
 // about: on 2026-09-08 a shape that wrote HTTP 204 and stored its values was
 // discarded because LVDate compared wrong, and the run reported that no shape
 // took. A mismatch in another column now stops the build under its own name.
+// finding: large-list-fixture-upload-exceeds-the-run-timeout - the harness caps
+// a run at 900s. The metadata-writing build (Files/add plus a seven-column MERGE
+// per file, with a readback every 250 files) fits about 1250 files in that
+// window; a UPLOAD_CAP of 2000 overshot it, so the first post-fix run was killed
+// mid-upload and reported "crashed" with 0 settled even though 1250 files had
+// been written. UPLOAD_CAP is 1000 so a paste finishes inside the run window.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -428,7 +434,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6a9fdbb7. Quote this when reporting results.');
+  log('INFO', 'probe revision 9804d6f0. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -456,8 +462,11 @@
 
   // ---- Run shape -------------------------------------------------------
   // At most this many files per paste, so a run is bounded and an operator
-  // gets a progress report instead of a hung tab.
-  const UPLOAD_CAP = 2000;
+  // gets a progress report instead of a hung tab. 1000, not 2000: the harness
+  // caps a run at 900s, and the metadata-writing build (upload + a seven-column
+  // MERGE per file) fits about 1250 files in that window; 2000 overshoots it.
+  // See the run-timeout finding in the header.
+  const UPLOAD_CAP = 1000;
   // A form digest lives about thirty minutes, so it is refreshed per block of
   // files rather than per file.
   const DIGEST_EVERY = 200;
