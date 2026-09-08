@@ -1,0 +1,1404 @@
+/**
+ * dbml-sharepoint PROBE: WHAT DOES A CALCULATED COLUMN DO PAST 5,000 ITEMS?
+ *
+ * ONE QUESTION, asked five ways:
+ *   A calculated column cannot be indexed. So what happens to a view that
+ *   filters or groups on its computed value once the library is past the list
+ *   view threshold, and is that value stored or worked out per row when the
+ *   query runs?
+ *
+ * REVISION: 1fa24077
+ *
+ * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
+ * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
+ * dbmlsp-lv-00001.txt upward, carrying LVText, LVChoice, LVNumber, LVDate,
+ * LVMultiChoice, LVLookup and the calculated LVCalc. LVCalc is
+ * `=[LVNumber]*2` with an output type of Number and nothing ever writes it, so
+ * every value it holds was produced by SharePoint. Nothing here uploads a file,
+ * creates a column or writes an item value.
+ *
+ * WHAT IT LEAVES BEHIND: nothing. The only writes are a Description marker on
+ * LVCalc, put back in the same pass, and one MERGE of `Indexed: true` on LVCalc
+ * that #478 already measured as refused. If that write unexpectedly takes, the
+ * teardown clears it in the same pass and says whether the readback confirmed
+ * it. This probe never leaves an index on the shared fixture, because a probe
+ * written after it would then be measuring a fixture nobody said had changed.
+ *
+ * WHAT IS ALREADY SETTLED, and is therefore not re-derived here.
+ *   #472, `library-index-threshold-probe.js`, run 2026-09-08: past the
+ *   threshold a selective filter on Id is SERVED, while Title, Name
+ *   (FileLeafRef), Created, Modified, Author and Editor are each REFUSED with
+ *   SPQueryThrottledException. Only Id carries a native index.
+ *   #478, `library-large-list-index-probe.js`, run 2026-09-08: LVText,
+ *   LVNumber, LVChoice, LVDate and LVLookup all accept `Indexed: true` on this
+ *   fixture, an index turns a refused filter or sort into a served one, and an
+ *   index lifts its own column only. LVMultiChoice and LVCalc were REFUSED,
+ *   HTTP 500, "This column type is not supported".
+ * The first question below re-asks that refusal by the same method, which is a
+ * confirmation rather than a discovery. Everything after it measures what a
+ * column that cannot be indexed does to a query at this size, which nothing in
+ * this repository has asked.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`. All of it files under `library.large-list`,
+ * the scope for reading this fixture past the threshold. Four ids are the ones
+ * #478 registers, kept because the question and the method are the same and one
+ * question takes one id however many probes answer it.
+ *
+ *   library.large-list.fixture-library-present
+ *        Is the fixture library there, holding more than 5,000 files, with the
+ *        seven contract columns reading back as their types?
+ *   library.large-list.fixture-calculated-column-shape
+ *        Does LVCalc read back as a Calculated column, and what Formula and
+ *        OutputType does it carry? The formula is what makes every predicted
+ *        value below predictable, so it is read rather than assumed.
+ *   library.large-list.control-id-query-served
+ *        POSITIVE CONTROL: is a selective filter on Id served past the
+ *        threshold? Id is the one natively indexed column, so this establishes
+ *        that a served answer is observable on this library at this size.
+ *   library.large-list.control-absent-column-refused
+ *        NEGATIVE CONTROL: is a filter naming a column the library does not
+ *        hold refused WITHOUT the throttle signature? Every reading below turns
+ *        on telling a throttle apart from a rejected request.
+ *   library.large-list.control-unindexed-filter-refused
+ *        NEGATIVE CONTROL: is a selective filter on an unindexed contract
+ *        column refused WITH the throttle signature? Without it the library is
+ *        not demonstrably enforcing the threshold.
+ *   library.large-list.control-number-filter-shape-accepted
+ *        CONTROL: does the same `<column> eq <integer>` shape reach the query
+ *        planner on LVNumber, a plain Number column? A calculated column that
+ *        cannot be a filter operand and a literal spelled wrongly both come
+ *        back as a rejected request, and only this separates them.
+ *   library.large-list.control-calculated-description-sticks
+ *        POSITIVE CONTROL: does a Description MERGE on LVCalc itself read back?
+ *        A MERGE that never reaches this column would report it as unindexable
+ *        whatever SharePoint thinks of indexing a calculated column.
+ *   library.large-list.control-calculated-unknown-property-refused
+ *        NEGATIVE CONTROL: is a MERGE naming a property SP.Field does not have
+ *        refused on LVCalc? Without it, "the write was accepted" says nothing.
+ *   library.large-list.control-group-by-single-value-column
+ *        POSITIVE CONTROL: is a group-by on LVChoice HONOURED past 5,000 items?
+ *        Grouping is never refused for naming a bad column, so the discriminator
+ *        is honoured against ignored and it is established here first.
+ *   library.large-list.control-missing-group-column-ungrouped
+ *        NEGATIVE CONTROL: does a group-by naming a column the library does not
+ *        hold come back IGNORED, with the rows the same query returns with no
+ *        <GroupBy> at all?
+ *   library.large-list.index-calculated-column
+ *        QUESTION ONE, the confirmation: does `Indexed: true` take on LVCalc
+ *        past 5,000 items? #478 recorded REFUSED. Three outcomes are still
+ *        distinguished, because a run that recorded only the expected one would
+ *        be an assertion wearing a measurement's clothes: INDEXED, SILENTLY
+ *        IGNORED and REFUSED.
+ *   library.large-list.filter-on-calculated-value
+ *        QUESTION TWO: is a selective OData `$filter` on LVCalc served or
+ *        refused with no index on it, and, if the index write took after all,
+ *        does the answer change?
+ *   library.large-list.group-by-calculated-value
+ *        QUESTION THREE: is a `<GroupBy>` on LVCalc honoured, ignored or
+ *        refused past 5,000 items, and does that change once indexed?
+ *   library.large-list.calculated-value-read-past-threshold
+ *        QUESTION FOUR: does a read of LVCalc on one file past the threshold
+ *        return the computed number, and in what serialised form?
+ *   library.large-list.calculated-filter-index-guarded
+ *        QUESTION FOUR, the other half: with the row set narrowed to one row by
+ *        the natively indexed Id, is a further `LVCalc eq <value>` clause
+ *        evaluated? A matching value and a non-matching one are both sent, so a
+ *        clause SharePoint accepted and ignored is visible as one row where
+ *        nought was correct.
+ *
+ * THE DEPENDS-ON / OBSERVES SPLIT, STATED:
+ *   Depends on (asserted, read back): the fixture library exists, holds more
+ *   than 5,000 files counted from the newest file name, and carries the seven
+ *   contract columns as their declared types; LVCalc is a Calculated column
+ *   whose stored formula names LVNumber; a filter on Id is served; a filter
+ *   naming an absent column is refused without the throttle signature; a filter
+ *   on an unindexed contract column is refused with it; the integer literal
+ *   shape reaches the planner on LVNumber; a Description MERGE on LVCalc sticks
+ *   and an unknown property on it is refused; a group-by on LVChoice is
+ *   honoured and a group-by on an absent column is ignored.
+ *   Observes (recorded, never asserted): whether LVCalc accepts an index and
+ *   what it says when it does not; whether a filter and a group-by on the
+ *   computed value are served, refused or ignored; what form the computed value
+ *   is serialised in; and whether a calculated clause under an index guard is
+ *   evaluated. NOTHING here asserts that any of those takes a particular value.
+ *   A run where every one of them is refused is a successful run.
+ *
+ * WHY THE INDEX QUESTION IS ASKED AGAIN AT ALL. #478 measured it once, on one
+ * tenant, at one moment, and the four questions after it are only worth reading
+ * if the refusal still holds when they are asked. Re-asking it in the same run
+ * costs one MERGE and makes the transcript self-contained: a reader does not
+ * have to trust that the fixture was in the state another transcript left it
+ * in. The refusal text is recorded verbatim for the same reason.
+ *
+ * WHY A THROTTLED FILTER ON LVCalc WOULD NOT ON ITS OWN SETTLE QUESTION FOUR.
+ * Nothing on this library but Id carries an index, so a filter on ANY custom
+ * column is refused whether its values are stored unindexed or worked out per
+ * row. The throttle therefore separates neither. What does separate them is the
+ * index-guarded pair: if `Id eq <n> and LVCalc eq <value>` is served, the
+ * calculated clause is legal and is evaluated over a row set an index already
+ * narrowed, which is the shape of a value computed on read. If it is rejected
+ * without the throttle signature while the same shape on LVNumber is throttled,
+ * a calculated column is not a filter operand here at all. Both readings are
+ * recorded as what they are, and neither is assumed.
+ *
+ * HOW A GROUPING IS READ, inherited from `library-grouping-probe.js` and
+ * `library-view-interaction-probe.js`. A `<GroupBy>` naming a column that does
+ * not exist came back HTTP 200 with flat rows on 2026-09-08, so a group-by is
+ * effectively never refused for its column name and "accepted" means nothing.
+ * The discriminator is HONOURED against IGNORED: an honoured group-by returns
+ * rows carrying `<Field>.COUNT.group`, `<Field>.newgroup` and
+ * `<Field>.groupindex`, and an ignored one returns what the same query returns
+ * with no `<GroupBy>`. Every grouped question here sends the collapsed query,
+ * the expanded query and one flat baseline for that reason. A collapsed row
+ * carries no file name, so nothing here reads file names off one.
+ *
+ * WHY OData FOR THE FILTERS, AND WHY THEY ARE SELECTIVE. Both from
+ * `library-index-threshold-probe.js`: past the threshold an OData `$filter` no
+ * index can serve returns HTTP 500 SPQueryThrottledException while the same
+ * predicate in CAML returns HTTP 200 with a silently partial answer, so OData
+ * is the only surface that reports the threshold; and a result that fills the
+ * page is a page ceiling rather than a count, so every filter here matches a
+ * handful of known rows, `$top` is 100, and a full page is recorded as answered
+ * but uncounted.
+ *
+ * THE ROW COUNTS ARE CHECKED AGAINST THE FIXTURE'S OWN FORMULAS. LVNumber is
+ * `n % 1000` and LVCalc is twice it, so the number of files matching
+ * `LVNumber eq 7` and the number matching `LVCalc eq 14` are the same six rows
+ * and both are computable from the file count alone. A served answer carrying
+ * the wrong number of rows is recorded as NOT ESTABLISHED: it means the query
+ * was answered from something other than the fixture this probe thinks it is
+ * reading.
+ *
+ * THE CALCULATED COLUMN IS READ IN ITS OWN REQUEST, the rule
+ * `library-large-list-fixture-probe.js` set when it built this fixture: one
+ * unrecognised name errors a whole `$select`, so a calculated column selected
+ * beside the written ones would make the written ones read as unreadable and a
+ * selection problem would masquerade as an uncomputed value.
+ *
+ * A BOUNDED WAIT ONLY IF THE INDEX TAKES. SharePoint builds the index behind
+ * the `Indexed` flag asynchronously, so a query sent the instant the flag flips
+ * can still be refused. The after halves of questions two and three are
+ * therefore re-sent up to INDEX_WAIT_ATTEMPTS times, INDEX_WAIT_MS apart. On
+ * the expected run there is no after half at all, because the flag never flips.
+ *
+ * THE HARNESS CLEANUP FLAG DOES NOTHING HERE, on purpose. resetList() is never
+ * called and CLEANUP is ignored: it would recycle a fixture that takes six
+ * pastes to build.
+ *
+ * WHERE THE ENDPOINTS COME FROM. Every URL, element and attribute is one
+ * Microsoft Learn documents, because a wrong spelling returns 404, isRefusal()
+ * counts 404 as a refusal, and the probe would then print a claim about
+ * SharePoint that was really a typo:
+ *   Field read and MERGE via `fields/getbyinternalnameortitle('<name>')`, and
+ *   the `Formula` and `OutputType` a calculated field carries:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   Items, `$filter`, `$select` and `$top`:
+ *     "Working with lists and list items with REST"
+ *   Reading a view's rows without opening the page:
+ *     "SP.List.renderListDataAsStream method"
+ *   Grouping a query, and the `Collapse` attribute:
+ *     "GroupBy element (Query)"
+ *   The `<Query>` children, in the order the syntax block gives them:
+ *     "Query element (List)"
+ *   The threshold and the index model it rests on:
+ *     https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
+ *     https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+ *
+ * SCOPE OF CLAIMS: one tenant, one library, one caller context, one moment. The
+ * threshold is documented as an effective figure rather than a constant, and
+ * the negative controls are what detect a fixture sitting too close to it.
+ *
+ * HOW TO RUN: the run plan, in order
+ *   1. Open the site holding 'dbmlsp Probe LargeLib'. If it is not built, run
+ *      library-large-list-fixture-probe.js first; this probe will not build it.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Set CONFIRMED and ALLOW_WRITES true. Paste. Expect under a minute unless
+ *      the index write takes, which turns on the two bounded waits.
+ *   4. Copy the whole RESULTS block back verbatim, including the teardown lines
+ *      after it.
+ *
+ * STATUS: NOT YET RUN. Authored against the merged findings of #472 and #478.
+ * Nothing below has been observed on a live site, and the finding lines are
+ * inherited or about method until it has.
+ */
+// finding: large-list-calculated-fixture-is-read-not-rebuilt - the fixture this
+// probe measures costs six pastes to build, so nothing here uploads a file or
+// creates a column, CLEANUP is ignored, and resetList() is never called. The
+// contract it reads is stated in library-large-list-fixture-probe.js and the
+// column types are read back rather than assumed.
+// finding: large-list-calculated-leaves-no-index-behind - #478 leaves the
+// columns it indexes indexed and hands the operator a teardown flag. This probe
+// writes one index flag, on the column #478 measured as refusing it, and clears
+// it in the same pass if it took. A shared fixture that changes state without a
+// probe saying so makes every later run unreadable.
+// finding: large-list-calculated-index-flags-are-read-not-assumed - #478's
+// teardown returns the contract columns to unindexed, and threshold-index-probe.js
+// watched SharePoint index a column on its own between two runs. Both mean the
+// flag has to be read at the start of every run: a control column that arrives
+// indexed cannot witness a throttle, and LVCalc arriving indexed would make the
+// confirmation below say nothing.
+// finding: large-list-calculated-index-refusal-inherited - #478, run 2026-09-08:
+// a MERGE of Indexed:true as SP.Field on LVCalc was REFUSED, HTTP 500, "This
+// column type is not supported", the same refusal LVMultiChoice gave. Question
+// one re-asks it by the same method rather than citing it, so that the four
+// questions after it rest on a state this transcript observed.
+// finding: large-list-calculated-throttle-does-not-separate-stored-from-computed
+// - no column on this fixture but Id carries an index at the start of a run, so
+// a refused filter on LVCalc is what an unindexed stored column would give too.
+// The index-guarded pair is what separates them, and the non-matching half of
+// that pair is what catches a clause SharePoint accepted and ignored.
+// finding: large-list-calculated-a-group-by-is-never-refused - inherited from
+// library-grouping-probe.js, first live run 2026-09-08: a <GroupBy> naming a
+// column that does not exist returned HTTP 200 with flat rows. The discriminator
+// is honoured against ignored, read off the group markers SharePoint adds, and
+// both controls for it are taken here at this fixture's size rather than
+// inherited from a six-file library.
+// finding: large-list-calculated-collapsed-rows-carry-no-file-name - inherited
+// from library-grouping-probe.js, second live run 2026-09-08: a collapsed
+// query's rows did not carry the FileLeafRef its ViewFields named. Nothing here
+// reads a file name off a collapsed row, and the label count is read only
+// against the RowLimit, never as a distinct-value count.
+// finding: large-list-calculated-value-read-is-its-own-request - the rule
+// library-large-list-fixture-probe.js set: one unrecognised name errors a whole
+// $select, so LVCalc is selected on its own and a selection problem cannot
+// masquerade as a value SharePoint failed to compute.
+// finding: large-list-calculated-filter-is-rejected-not-throttled - measured
+// 2026-09-08: a selective $filter on LVCalc returns HTTP 400 (request rejected,
+// read the body), not the HTTP 500 SPQueryThrottledException an unindexed stored
+// column returns. A calculated column cannot be filtered on at all, so the
+// index-vs-throttle question does not arise for it.
+// finding: large-list-calculated-id-guard-does-not-rescue - measured 2026-09-08:
+// "Id eq <n> and LVCalc eq <v>" is also HTTP 400. Narrowing the row set with an
+// Id clause first does not let a calculated-value clause through; it is refused
+// at query-parse time regardless of how few rows remain.
+// finding: large-list-calculated-value-is-materialised - measured 2026-09-08:
+// LVCalc reads back the computed number ("1000.000000..." for LVNumber=500) in
+// its own request, so the value is computed and returned, not recomputed on the
+// fly at filter time.
+// finding: large-list-calculated-group-by-is-unattributable - measured
+// 2026-09-08: a group-by on the unindexed LVChoice control came back HTTP 500
+// (threshold), so the group-by mechanism itself throttles at this size and an
+// unhonoured group-by on LVCalc cannot be attributed to the column being
+// calculated. That unindexed group-by throttle is the group-view probe's subject.
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  log('INFO', 'probe revision 1fa24077. Quote this when reporting results.');
+
+  // ---- The fixture contract, restated ----------------------------------
+  // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
+  const LIB = 'dbmlsp Probe LargeLib';
+  const TEXT = 'LVText';
+  const CHOICE = 'LVChoice';
+  const NUMBER = 'LVNumber';
+  const DATE = 'LVDate';
+  const MULTI = 'LVMultiChoice';
+  const CALC = 'LVCalc';
+  const LOOKUP = 'LVLookup';
+  // Each column beside the type the fixture created it as. Read back, so a
+  // library of the right name holding different columns is caught here rather
+  // than reported as a platform finding.
+  const COLUMN_TYPES = [
+    [TEXT, 'Text'],
+    [NUMBER, 'Number'],
+    [CHOICE, 'Choice'],
+    [DATE, 'DateTime'],
+    [MULTI, 'MultiChoice'],
+    [LOOKUP, 'Lookup'],
+    [CALC, 'Calculated'],
+  ];
+  // The fixture's value formulas, for the columns queried below. The predicted
+  // row counts come from these and the file count, so a served answer is
+  // checked rather than believed.
+  const CHOICES = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+  const NUMBER_MATCH = 7;
+  // LVCalc is `=[LVNumber]*2`, so this matches exactly the files LVNumber eq 7
+  // matches. Two predicates over one row set is what makes the shape control
+  // and the measurement comparable.
+  const CALC_MATCH = NUMBER_MATCH * 2;
+  const TEXT_MATCH = 'text-7';
+  const CHOICE_MATCH = CHOICES[0];
+
+  // More than the documented 5,000, so every query below is asked past it.
+  const FLOOR = 5001;
+  // Well below any page ceiling, so a query that fills the page is visibly
+  // uncounted rather than quietly rounded.
+  const PAGE = 100;
+  // The same figure for a rendered view, and for the same reason.
+  const ROW_LIMIT = 100;
+  const FILE_NUMBER = /dbmlsp-lv-(\d+)\.txt$/;
+  // The two strings a throttled query comes back with. Everything here turns
+  // on telling this refusal from a rejected request, which is what
+  // control-absent-column-refused measures.
+  const THROTTLE = /exceeds the list view threshold|SPQueryThrottledException/i;
+  // A column name the library does not hold, for the two negative controls.
+  const ABSENT_COLUMN = 'LVNoSuchColumnAtAll';
+  // A name SP.Field does not have. Deliberately not a near-miss of a real
+  // property: the control asks whether an unknown name is refused, not whether
+  // a typo is tolerated.
+  const UNKNOWN_PROPERTY = 'NoSuchFieldPropertyAtAll';
+  const DESCRIPTION_MARKER = 'dbmlsp large-list calculated control marker';
+  // One bounded re-read after a write. Same figure and same reasoning as
+  // library-large-list-index-probe.js: a readback racing a write is a false
+  // negative, a retry loop eventually passes anything.
+  const REREAD_MS = 1500;
+  // The wait for an asynchronous index build, used only if the index takes.
+  const INDEX_WAIT_ATTEMPTS = 10;
+  const INDEX_WAIT_MS = 6000;
+  // The keys an honoured group-by carries, named rather than matched on the
+  // column name: every column in this fixture is called LV*, so a /group/i test
+  // over a label key would report a grouping that is only a coincidence.
+  const GROUP_MARKER = /\.COUNT\.group$|\.newgroup$|\.groupindex$/;
+
+  const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  const lit = (value) => String(value).replace(/'/g, "''");
+  const show = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
+  const clip = (text, length) => String(text === undefined ? '' : text).slice(0, length);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const libPath = `web/lists/getbytitle('${odataName(LIB)}')`;
+  const fieldPath = (name) =>
+    `${libPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
+
+  if (!CONFIRMED) {
+    log('INFO', `Would READ the existing library '${LIB}' on ${WEB}: its file count, its`);
+    log('INFO', 'seven columns, their Indexed flags, and the Formula and OutputType on');
+    log('INFO', `${CALC}. It builds NOTHING. It would then send selective OData filters`);
+    log('INFO', `reading at most ${PAGE} rows each, and grouped view reads of at most`);
+    log('INFO', `${ROW_LIMIT} rows, on ${CALC} and on the two control columns.`);
+    log('INFO', `It writes twice: a Description marker on ${CALC}, put straight back, and`);
+    log('INFO', `one MERGE of Indexed=true on ${CALC}, which #478 measured as refused. If`);
+    log('INFO', 'that write takes, it is cleared before the run ends. No file, item,');
+    log('INFO', 'column or list is created or deleted, and no index is left behind.');
+    log('INFO', 'CLEANUP does NOTHING in this probe: it would recycle the fixture.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write a field.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+  if (CLEANUP) {
+    log('INFO', 'CLEANUP is on and is IGNORED here: it would recycle a fixture that takes');
+    log('INFO', 'six pastes to build. This probe has no destructive path at all.');
+  }
+
+  expect('library.large-list.fixture-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries the seven contract columns`);
+  expect('library.large-list.fixture-calculated-column-shape', `${CALC} reads back as a Calculated column whose stored formula names ${NUMBER}`);
+  expect('library.large-list.control-id-query-served', 'POSITIVE CONTROL: a selective filter on Id is served past the threshold');
+  expect('library.large-list.control-absent-column-refused', 'NEGATIVE CONTROL: a filter naming a column the library does not hold is refused WITHOUT the throttle signature');
+  expect('library.large-list.control-unindexed-filter-refused', 'NEGATIVE CONTROL: a selective filter on an unindexed contract column is refused WITH the throttle signature');
+  expect('library.large-list.control-number-filter-shape-accepted', `CONTROL: the same integer-literal filter shape reaches the query planner on ${NUMBER}`);
+  expect('library.large-list.control-calculated-description-sticks', `POSITIVE CONTROL: a Description MERGE on ${CALC} itself reads back`);
+  expect('library.large-list.control-calculated-unknown-property-refused', `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CALC}`);
+  expect('library.large-list.control-group-by-single-value-column', `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items`);
+  expect('library.large-list.control-missing-group-column-ungrouped', 'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored');
+  expect('library.large-list.index-calculated-column', `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`);
+  expect('library.large-list.filter-on-calculated-value', `Is a selective $filter on ${CALC} served or refused past 5,000 items`);
+  expect('library.large-list.group-by-calculated-value', `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`);
+  expect('library.large-list.calculated-value-read-past-threshold', `Does a read of ${CALC} on one file past the threshold return the computed number`);
+  expect('library.large-list.calculated-filter-index-guarded', `Is a clause on ${CALC} evaluated once Id has narrowed the row set to one`);
+
+  // Every row still carrying the harness sentinel, stamped with one reason. A
+  // run that stops early must not report questions it never asked as merely
+  // unreached.
+  const abortRemaining = (outcome, why) => {
+    for (const row of RESULTS) {
+      if (row.evidence === 'the run did not reach this question') {
+        record(row.id, row.question, outcome, why);
+      }
+    }
+  };
+
+  // ---- Reading instruments ---------------------------------------------
+  // No $select on a field read, for the reason native-index-probe.js records:
+  // one unrecognised name errors the whole request, and every column would then
+  // read as unreadable rather than as missing one property.
+  const readField = async (name) => spGet(fieldPath(name));
+
+  const mergeField = async (name, body, type) => {
+    const digest = await getDigest();
+    return spPost(fieldPath(name), { __metadata: { type }, ...body }, digest, {
+      Accept: 'application/json;odata=verbose',
+      'Content-Type': 'application/json;odata=verbose',
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': '*',
+    });
+  };
+
+  // The entity type SharePoint itself reports for a field, read verbose because
+  // nometadata is defined by not carrying it. Only ever consulted after a
+  // refusal, to separate a rejected TYPE from a rejected WRITE.
+  const entityTypeOf = async (name) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${fieldPath(name)}`, {
+        headers: { Accept: 'application/json;odata=verbose' },
+      });
+      if (!res.ok) return null;
+      const body = await res.json().catch(() => null);
+      return (body && body.d && body.d.__metadata && body.d.__metadata.type) || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const indexedNow = (read) => !readFailed(read) && read.body.Indexed === true;
+
+  // One query, classified from the FULL body and quoted from a clipped copy.
+  // Classifying from the clipped text would miss a throttle signature that sits
+  // past the clip.
+  const askQuery = async (query, label, select) => {
+    const r = await spGet(`${libPath}/items?$select=${select || 'Id'}&$top=${PAGE}&${query}`);
+    const raw = r.body ? JSON.stringify(r.body) : '';
+    return {
+      ok: r.ok,
+      status: r.status,
+      label,
+      rows: (r.ok && r.body && Array.isArray(r.body.value)) ? r.body.value.length : -1,
+      value: (r.ok && r.body && Array.isArray(r.body.value)) ? r.body.value : [],
+      throttled: THROTTLE.test(raw),
+      transient: r.status === 429 || r.status === 408 || r.status === 503,
+      body: raw ? clip(raw, 260) : '(no body)',
+    };
+  };
+  const askFilter = (filter, select) =>
+    askQuery(`$filter=${encodeURIComponent(filter)}`, `$filter=${filter}`, select);
+
+  // `expected` is the row count the fixture's own formulas give this filter.
+  // null means the count is not being compared, which is only ever the case for
+  // a filter whose match set is bigger than the page.
+  const judge = (result, expected) => {
+    if (result.transient) return 'NOT ESTABLISHED (throttled)';
+    if (result.throttled) return 'REFUSED (threshold)';
+    if (isRefusal(result.status)) return 'REFUSED (request rejected; read the body)';
+    if (!result.ok) return `NOT ESTABLISHED (HTTP ${result.status})`;
+    if (result.rows === PAGE) return 'SERVED (page full, so the count is unreadable)';
+    if (expected !== null && result.rows !== expected) {
+      return `NOT ESTABLISHED (served ${result.rows} row(s) where the fixture gives ${expected})`;
+    }
+    return `SERVED (${result.rows} row(s))`;
+  };
+
+  // The bounded wait for an asynchronous index build. A transient status stops
+  // it: this waits for an index to appear, not for a tenant to calm down.
+  const untilServed = async (ask) => {
+    const started = Date.now();
+    let attempts = 0;
+    let last = null;
+    while (attempts < INDEX_WAIT_ATTEMPTS) {
+      if (attempts) await sleep(INDEX_WAIT_MS);
+      last = await ask();
+      attempts += 1;
+      if (last.ok || last.transient) break;
+    }
+    return { result: last, attempts, waitedMs: Date.now() - started };
+  };
+
+  // ---- Reading a grouped view ------------------------------------------
+  const rowsOf = (res) => {
+    if (readFailed(res)) return [];
+    if (Array.isArray(res.body.Row)) return res.body.Row;
+    if (res.body.ListData && Array.isArray(res.body.ListData.Row)) return res.body.ListData.Row;
+    return [];
+  };
+
+  // One RenderListDataAsStream query. `<Query>` children go Where then GroupBy,
+  // the order the syntax block in "Query element (List)" gives them; there is no
+  // <Where> here, because the subject is the grouping alone. `fields` defaults
+  // to the grouped column beside the file name. The negative control passes its
+  // own, so a column that does not exist is named ONLY in the <GroupBy> and
+  // never in <ViewFields>, where a refusal would be about the wrong clause: the
+  // rule library-grouping-probe.js set for the same control.
+  const askView = async (column, collapse, fields) => {
+    const grouping = column === null
+      ? ''
+      : `<GroupBy Collapse="${collapse}"><FieldRef Name="${column}"/></GroupBy>`;
+    const viewFields = fields
+      || ['FileLeafRef', NUMBER].concat(column === null ? [] : [column]);
+    const viewXml = `<View><Query>${grouping}</Query><ViewFields>`
+      + viewFields.map((name) => `<FieldRef Name="${name}"/>`).join('')
+      + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
+    const digest = await getDigest();
+    const res = await spPost(`${libPath}/RenderListDataAsStream`,
+                             { parameters: { ViewXml: viewXml } }, digest);
+    return {
+      res,
+      rows: rowsOf(res),
+      throttled: THROTTLE.test(res.text || ''),
+      transient: res.status === 429 || res.status === 408 || res.status === 503,
+    };
+  };
+
+  const markersIn = (rows) => {
+    const seen = [];
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        if (GROUP_MARKER.test(key) && !seen.includes(key)) seen.push(key);
+      }
+    }
+    return seen;
+  };
+
+  // Everything the SERVER said about one grouping, and nothing this probe
+  // worked out for itself: a probe that sorts flat rows into buckets by reading
+  // each row's value has measured its own arithmetic.
+  const observeGroup = async (column, flat, fields) => {
+    const collapsed = await askView(column, 'TRUE', fields);
+    const expanded = await askView(column, 'FALSE', fields);
+    const markers = markersIn(collapsed.rows);
+    const labels = collapsed.rows.map((row) => (column in row ? row[column] : undefined));
+    const verdict = collapsed.transient ? 'NOT ESTABLISHED (throttled)'
+      : collapsed.throttled ? 'REFUSED (threshold)'
+        : (!collapsed.res.ok && isRefusal(collapsed.res.status))
+            ? 'REFUSED (request rejected; read the body)'
+          : !collapsed.res.ok ? `NOT ESTABLISHED (HTTP ${collapsed.res.status})`
+            : markers.length ? 'HONOURED'
+              : (flat.res.ok && collapsed.rows.length === flat.rows.length) ? 'IGNORED'
+                : 'NOT ESTABLISHED (no group markers, and the flat baseline did not answer)';
+    return {
+      collapsed, expanded, markers, labels, verdict,
+      text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s) `
+        + `against a RowLimit of ${ROW_LIMIT}, labels ${clip(show(labels), 240)}, grouping `
+        + `markers ${clip(show(markers), 240)}, first row `
+        + `${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 300)}; expanded HTTP `
+        + `${expanded.res.status} returned ${expanded.rows.length} row(s); the same query with `
+        + `no <GroupBy> returned HTTP ${flat.res.status} with ${flat.rows.length} row(s)`
+        + (collapsed.res.ok ? '' : `; collapsed body ${clip(collapsed.res.text, 220)}`),
+    };
+  };
+
+  // ---- fixture-library-present -----------------------------------------
+  const libRead = await spGet(`${libPath}?$select=Title,BaseTemplate,ItemCount`);
+  const libOk = !readFailed(libRead);
+  // Counted from the newest file NAME, never from ItemCount, and read with the
+  // one ordering the fixture probe established is served past the threshold:
+  // $orderby=Id desc on the natively indexed Id.
+  const newest = libOk
+    ? await spGet(`${libPath}/items?$select=Id,FileLeafRef&$orderby=Id desc&$top=1`)
+    : null;
+  const newestRow = (newest && !readFailed(newest) && Array.isArray(newest.body.value)
+    && newest.body.value.length) ? newest.body.value[0] : null;
+  const digits = newestRow ? String(newestRow.FileLeafRef || '').match(FILE_NUMBER) : null;
+  const count = digits ? Number(digits[1]) : 0;
+  const newestId = newestRow ? newestRow.Id : null;
+  const newestNumber = digits ? Number(digits[1]) : null;
+
+  const flags = {};
+  const columnProblems = [];
+  if (libOk) {
+    for (const [name, wanted] of COLUMN_TYPES) {
+      const read = await readField(name);
+      const ok = !readFailed(read);
+      flags[name] = {
+        read: ok,
+        status: read.status,
+        type: ok ? read.body.TypeAsString : null,
+        indexed: ok && typeof read.body.Indexed === 'boolean' ? read.body.Indexed : null,
+        auto: ok && typeof read.body.AutoIndexed === 'boolean' ? read.body.AutoIndexed : null,
+        description: ok ? read.body.Description : null,
+        formula: ok ? read.body.Formula : null,
+        outputType: ok ? read.body.OutputType : null,
+      };
+      if (!ok) columnProblems.push(`${name} did not read back (HTTP ${read.status})`);
+      else if (flags[name].type !== wanted) {
+        columnProblems.push(`${name} is ${show(flags[name].type)}, wanted ${wanted}`);
+      }
+    }
+  }
+
+  const flagNote = (name) => `${name}: Indexed=${show(flags[name] ? flags[name].indexed : null)}`
+    + `, AutoIndexed=${show(flags[name] ? flags[name].auto : null)}`;
+  const present = libOk && count >= FLOOR && columnProblems.length === 0;
+  record('library.large-list.fixture-library-present',
+         `The fixture library '${LIB}' is present, holds more than 5,000 files and carries the seven contract columns`,
+         !libOk ? 'ABORTED' : count < FLOOR ? 'SHORT' : columnProblems.length ? 'FAIL' : 'PASS',
+         (libOk
+           ? `the newest file is ${show(newestRow ? newestRow.FileLeafRef : null)}, so the library `
+             + `holds ${count} file(s) against the ${FLOOR} this probe needs; ItemCount reads `
+             + `${show(libRead.body.ItemCount)} and is not what the count is taken from`
+           : `the library did not read back (HTTP ${libRead.status}): ${clip(show(libRead.body), 200)}`)
+         + '. '
+         + (columnProblems.length
+           ? `column problems: ${columnProblems.join('; ')}`
+           : libOk
+             ? `every contract column read back as its declared type, and their index flags are `
+               + `${COLUMN_TYPES.map(([name]) => flagNote(name)).join('; ')}`
+             : '')
+         + (present
+           ? '. This probe does not build the fixture. It is owned by '
+             + 'library-large-list-fixture-probe.js.'
+           : '. Run library-large-list-fixture-probe.js until its fixture rows read PASS, '
+             + 'then re-paste this one.'));
+
+  if (!present) {
+    abortRemaining('ABORTED',
+                   'the fixture was not readable as this probe needs it, so no query was sent '
+                   + 'and no field was written');
+    report();
+    return;
+  }
+
+  // ---- fixture-calculated-column-shape ---------------------------------
+  // The formula is what makes every predicted value below predictable, so it is
+  // read rather than assumed. OutputType is OBSERVED: it is an enum whose
+  // numbering this repository has not established, and no outcome turns on it.
+  const calcFormula = flags[CALC].formula;
+  const formulaNamesNumber = typeof calcFormula === 'string' && calcFormula.includes(NUMBER);
+  record('library.large-list.fixture-calculated-column-shape',
+         `${CALC} reads back as a Calculated column whose stored formula names ${NUMBER}`,
+         formulaNamesNumber ? 'PASS'
+           : calcFormula === null || calcFormula === undefined
+             ? 'NOT ESTABLISHED' : 'FAIL',
+         `TypeAsString=${show(flags[CALC].type)}, Formula=${show(calcFormula)}, `
+         + `OutputType=${show(flags[CALC].outputType)}, ${flagNote(CALC)}`
+         + (formulaNamesNumber
+           ? `. The fixture states the formula as '=[${NUMBER}]*2', so a file whose ${NUMBER} is `
+             + `${NUMBER_MATCH} carries ${CALC}=${CALC_MATCH}, and that is where every predicted `
+             + 'count below comes from.'
+           : calcFormula === null || calcFormula === undefined
+             ? '. The field read carried no Formula, so the stored formula was not observed this '
+               + 'run and the predicted counts below rest on the fixture contract alone.'
+             : `. The stored formula does not name ${NUMBER}, so this library's ${CALC} is not the `
+               + 'one the fixture contract describes and the predicted counts below are wrong.'));
+
+  // The predicted row counts, from the fixture's formulas and the file count. A
+  // served answer carrying a different number was answered from something other
+  // than the fixture this probe thinks it is reading.
+  const tally = (predicate) => {
+    let total = 0;
+    for (let n = 1; n <= count; n += 1) if (predicate(n)) total += 1;
+    return total;
+  };
+  const numberExpected = tally((n) => n % 1000 === NUMBER_MATCH);
+  const calcExpected = tally((n) => (n % 1000) * 2 === CALC_MATCH);
+  const textExpected = tally((n) => `text-${n % 100}` === TEXT_MATCH);
+  // Bigger than the page on any real fixture, so its count is not compared.
+  const choiceExpected = tally((n) => CHOICES[n % 4] === CHOICE_MATCH);
+
+  const calcFilter = `${CALC} eq ${CALC_MATCH}`;
+  const numberFilter = `${NUMBER} eq ${NUMBER_MATCH}`;
+
+  // ---- control-id-query-served -----------------------------------------
+  const idFilter = await askFilter(`Id eq ${newestId}`);
+  const idFilterOutcome = judge(idFilter, 1);
+  const idServed = idFilterOutcome.startsWith('SERVED');
+  record('library.large-list.control-id-query-served',
+         'POSITIVE CONTROL: a selective filter on Id is served past the threshold',
+         idServed ? 'SERVED' : 'CONTROL FAILED, METHOD VOID',
+         `${idFilter.label} on ${count} file(s): HTTP ${idFilter.status}, ${idFilterOutcome}`
+         + (idServed
+           ? '. A served answer is therefore observable on this library at this size, which is '
+             + 'what the index-guarded question below rests on.'
+           : `. Body: ${idFilter.body}. Id is the one natively indexed column `
+             + '(library-index-threshold-probe.js, 2026-09-08), so a refusal here says the method '
+             + 'cannot observe a served answer at all, not that an index is missing.'));
+
+  // ---- control-absent-column-refused -----------------------------------
+  const absent = await askFilter(`${ABSENT_COLUMN} eq 'x'`);
+  const absentRefused = isRefusal(absent.status) && !absent.throttled;
+  record('library.large-list.control-absent-column-refused',
+         'NEGATIVE CONTROL: a filter naming a column the library does not hold is refused WITHOUT the throttle signature',
+         absentRefused ? 'REFUSED (request rejected, no throttle signature)'
+           : 'CONTROL FAILED, METHOD VOID',
+         `${absent.label}: HTTP ${absent.status}, throttle signature `
+         + `${absent.throttled ? 'PRESENT' : 'absent'}: ${absent.body}`
+         + (absentRefused
+           ? '. A rejected request and a throttled one are therefore distinguishable, which is '
+             + 'what every refusal below is read against.'
+           : absent.throttled
+             ? '. A filter on a column that does not exist came back carrying the throttle '
+               + 'signature, so no refusal below can be attributed to the threshold.'
+             : '. The server did not refuse a filter on a column that does not exist, so a '
+               + 'refusal below cannot be read as the server rejecting the query either.'));
+
+  // ---- control-unindexed-filter-refused --------------------------------
+  // The witness is whichever contract column still reads Indexed=false. #478
+  // leaves the columns it indexes indexed unless its teardown flag was set, so
+  // the column that can witness a throttle is read rather than named.
+  const WITNESSES = [
+    { field: CHOICE, filter: `${CHOICE} eq '${lit(CHOICE_MATCH)}'`, expected: null,
+      matching: choiceExpected },
+    { field: TEXT, filter: `${TEXT} eq '${lit(TEXT_MATCH)}'`, expected: textExpected,
+      matching: textExpected },
+    { field: NUMBER, filter: numberFilter, expected: numberExpected, matching: numberExpected },
+  ];
+  const witness = WITNESSES.find((row) => flags[row.field].indexed === false) || null;
+  const witnessSeen = witness === null ? null : await askFilter(witness.filter);
+  const witnessOutcome = witnessSeen === null ? null : judge(witnessSeen, witness.expected);
+  const throttleEnforced = witnessOutcome !== null
+    && witnessOutcome.startsWith('REFUSED (threshold)') && absentRefused;
+  record('library.large-list.control-unindexed-filter-refused',
+         'NEGATIVE CONTROL: a selective filter on an unindexed contract column is refused WITH the throttle signature',
+         witness === null ? 'NOT ESTABLISHED'
+           : throttleEnforced ? 'REFUSED (threshold)' : 'CONTROL FAILED, METHOD VOID',
+         witness === null
+           ? 'every contract column read Indexed=true at the start of this run, so there is no '
+             + 'unindexed column left to witness a throttle with. Run '
+             + 'library-large-list-index-probe.js with REMOVE_INDEXES_AT_END, then re-paste: '
+             + `flags were ${COLUMN_TYPES.map(([name]) => flagNote(name)).join('; ')}`
+           : `${witnessSeen.label} on ${count} file(s), matching ${witness.matching} of them: HTTP `
+             + `${witnessSeen.status}, ${witnessOutcome}. ${flagNote(witness.field)}: `
+             + `${witnessSeen.body}`
+             + (throttleEnforced
+               ? '. The library is therefore past the threshold and throttling is enforced on it, '
+                 + 'so a refusal below is the threshold and an answer served below is worth '
+                 + 'something.'
+               : '. Without a refusal here nothing below is evidence of the threshold: the '
+                 + 'library may simply not be far enough past it for this tenant to enforce it.'));
+
+  // ---- control-number-filter-shape-accepted ----------------------------
+  // A calculated column that is not a filter operand and an integer literal
+  // spelled wrongly both come back as a rejected request. This sends the same
+  // shape at a plain Number column: throttled or served both mean the planner
+  // accepted it, and only a plain rejection means the shape itself is wrong.
+  const numberSeen = await askFilter(numberFilter);
+  const numberOutcome = judge(numberSeen, numberExpected);
+  const shapeAccepted = numberSeen.throttled || numberOutcome.startsWith('SERVED');
+  record('library.large-list.control-number-filter-shape-accepted',
+         `CONTROL: the same integer-literal filter shape reaches the query planner on ${NUMBER}`,
+         shapeAccepted ? 'SHAPE ACCEPTED' : 'CONTROL FAILED, METHOD VOID',
+         `${numberSeen.label} on ${count} file(s), matching ${numberExpected} of them: HTTP `
+         + `${numberSeen.status}, ${numberOutcome}. ${flagNote(NUMBER)}: ${numberSeen.body}`
+         + (shapeAccepted
+           ? `. The planner either answered it or threw the threshold at it, so '<column> eq `
+             + `<integer>' is a shape this library parses and a plain rejection of the same shape `
+             + `on ${CALC} below is about the column rather than about the literal.`
+           : `. The same shape was rejected outright on a plain Number column, so a rejection on `
+             + `${CALC} cannot be attributed to it being calculated.`));
+
+  // ---- control-calculated-description-sticks ---------------------------
+  // The field MERGE itself, proved on the very column the index write targets
+  // and on a property whose readback is not in doubt.
+  const priorDescription = flags[CALC].description;
+  const setDesc = await mergeField(CALC, { Description: DESCRIPTION_MARKER }, 'SP.Field');
+  let descRead = await readField(CALC);
+  let descReRead = false;
+  const descriptionNow = () => (readFailed(descRead) ? null : descRead.body.Description);
+  if (setDesc.ok && descriptionNow() !== DESCRIPTION_MARKER) {
+    await sleep(REREAD_MS);
+    descRead = await readField(CALC);
+    descReRead = true;
+  }
+  const descSticks = setDesc.ok && descriptionNow() === DESCRIPTION_MARKER;
+  record('library.large-list.control-calculated-description-sticks',
+         `POSITIVE CONTROL: a Description MERGE on ${CALC} itself reads back`,
+         descSticks ? 'DESCRIPTION STUCK' : 'CONTROL FAILED, METHOD VOID',
+         `MERGE Description on ${CALC} returned HTTP ${setDesc.status}; it reads back `
+         + `${show(descriptionNow())}`
+         + (descReRead ? `, on a re-read ${REREAD_MS} ms later` : '')
+         + (descSticks
+           ? '. A field MERGE reaches this calculated column, so a refused index below is the '
+             + 'column refusing an index and not the write failing to arrive.'
+           : `: ${clip(setDesc.text, 200)}. Nothing below can distinguish a column that refuses `
+             + 'an index from a MERGE that never arrived.'));
+  let descriptionRestored = !descSticks;
+  if (descSticks) {
+    // The marker is this probe's, not the fixture's. Put it back in the same
+    // pass, and say so loudly if that fails.
+    const restored = await mergeField(
+      CALC,
+      { Description: priorDescription === null || priorDescription === undefined
+        ? '' : priorDescription },
+      'SP.Field');
+    descriptionRestored = restored.ok;
+    log(restored.ok ? 'OK' : 'FAIL',
+        restored.ok
+          ? `Description on ${CALC} put back to ${show(priorDescription)}.`
+          : `Description on ${CALC} is still the control marker: the restore returned HTTP `
+            + `${restored.status} ${clip(restored.text, 200)}`);
+  }
+
+  // ---- control-calculated-unknown-property-refused ---------------------
+  const unknown = await mergeField(CALC, { [UNKNOWN_PROPERTY]: 'x' }, 'SP.Field');
+  const unknownRefused = isRefusal(unknown.status);
+  record('library.large-list.control-calculated-unknown-property-refused',
+         `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CALC}`,
+         unknownRefused ? 'REFUSED' : 'CONTROL FAILED, METHOD VOID',
+         `MERGE ${UNKNOWN_PROPERTY} on ${CALC} returned HTTP ${unknown.status}: `
+         + `${clip(unknown.text, 200)}`
+         + (unknownRefused
+           ? '. The endpoint therefore rejects a property it does not know, so "the write was '
+             + 'accepted" below would mean the property was recognised.'
+           : '. An unknown property was ACCEPTED, so acceptance of Indexed=true below would say '
+             + 'nothing about whether the property was recognised.'));
+
+  // ---- The grouping controls -------------------------------------------
+  // One flat baseline, shared: none of the grouped queries below carries a
+  // <Where>, so the query they are each compared against is the same one.
+  const flat = await askView(null, 'TRUE');
+  const groupChoice = await observeGroup(CHOICE, flat);
+  const groupHonoured = groupChoice.verdict === 'HONOURED';
+  record('library.large-list.control-group-by-single-value-column',
+         `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items`,
+         groupHonoured ? 'HONOURED' : 'CONTROL FAILED, METHOD VOID',
+         `${groupChoice.verdict}. ${groupChoice.text}. The fixture gives ${CHOICE} four values, `
+         + `${show(CHOICES)}, over ${count} file(s)`
+         + (groupHonoured
+           ? '. A group-by is therefore honoured on this library at this size, so an unhonoured '
+             + `group-by on ${CALC} below is about the calculated column rather than about the `
+             + 'size of the container.'
+           : '. A group-by is not honoured here on a plain single-value column, so nothing below '
+             + `can attribute an unhonoured group-by to ${CALC} being calculated.`));
+
+  // ViewFields deliberately omits ABSENT_COLUMN: it is named in the <GroupBy>
+  // alone, so a refusal here would be about the clause under measurement.
+  const groupAbsent = await observeGroup(ABSENT_COLUMN, flat, ['FileLeafRef', NUMBER]);
+  const groupIgnorable = groupAbsent.verdict === 'IGNORED';
+  record('library.large-list.control-missing-group-column-ungrouped',
+         'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored',
+         groupIgnorable ? 'IGNORED' : 'CONTROL FAILED, METHOD VOID',
+         `${groupAbsent.verdict}. ${groupAbsent.text}`
+         + (groupIgnorable
+           ? '. An ignored group-by is therefore observable and is not the same reading as an '
+             + 'honoured one, which is the only discriminator a group-by offers.'
+           : '. A group-by naming a column that does not exist did not come back as the flat '
+             + 'query, so honoured and ignored are not separable on this run and every grouped '
+             + 'row below says less than it appears to.'));
+
+  // ---- calculated-value-read-past-threshold ----------------------------
+  // Two requests, and the separation is the fixture probe's rule: one
+  // unrecognised name errors a whole $select, so a calculated column selected
+  // beside the written ones would make the written ones read as unreadable.
+  const writtenRead = await askFilter(`Id eq ${newestId}`, `Id,FileLeafRef,${NUMBER}`);
+  const calcRead = await askFilter(`Id eq ${newestId}`, `Id,${CALC}`);
+  const writtenRow = writtenRead.value.length ? writtenRead.value[0] : null;
+  const calcRow = calcRead.value.length ? calcRead.value[0] : null;
+  const rawCalc = calcRow === null ? undefined : calcRow[CALC];
+  const calcNumber = Number(rawCalc);
+  const sourceNumber = writtenRow === null ? null : Number(writtenRow[NUMBER]);
+  // Two predictions, from two independent places: the row's own LVNumber, and
+  // the file number in its name. Agreeing is what says the value was computed
+  // from this row rather than carried from somewhere else.
+  const fromRow = sourceNumber === null ? null : sourceNumber * 2;
+  const fromName = newestNumber === null ? null : (newestNumber % 1000) * 2;
+  const calcComputed = calcRow !== null && rawCalc !== undefined
+    && Number.isFinite(calcNumber) && fromRow !== null && calcNumber === fromRow;
+  record('library.large-list.calculated-value-read-past-threshold',
+         `Does a read of ${CALC} on one file past the threshold return the computed number`,
+         calcRow === null ? `NOT ESTABLISHED (HTTP ${calcRead.status})`
+           : calcComputed ? 'COMPUTED VALUE RETURNED' : 'FAIL',
+         `file ${show(writtenRow ? writtenRow.FileLeafRef : null)}, item ${show(newestId)}, on a `
+         + `library of ${count} file(s). The written columns read back HTTP `
+         + `${writtenRead.status} with ${NUMBER}=${show(writtenRow ? writtenRow[NUMBER] : null)}; `
+         + `${CALC} read back in its own request, HTTP ${calcRead.status}, serialised as `
+         + `${show(rawCalc)}, which Number() gives ${show(Number.isFinite(calcNumber) ? calcNumber : null)}. `
+         + `The row's own ${NUMBER} predicts ${show(fromRow)} and the file name predicts `
+         + `${show(fromName)}`
+         + (calcRow === null
+           ? `. ${CALC} did not read back at all: ${calcRead.body}. A $select naming only Id and `
+             + 'this column is what was sent, so this is the column and not a selection problem '
+             + 'in a wider list.'
+           : calcComputed
+             ? `. The value is served past the threshold and it is the formula's answer for this `
+               + 'row. What is OBSERVED and not asserted is the serialised form, which a consumer '
+               + 'of this column has to parse.'
+             : `. The value served does not match the formula's answer for this row, so either `
+               + 'the fixture is not the one described or the column is not computing.'));
+
+  // ---- The before halves, taken before anything is written -------------
+  const calcBefore = await askFilter(calcFilter);
+  const calcBeforeOutcome = judge(calcBefore, calcExpected);
+  const groupCalcBefore = await observeGroup(CALC, flat);
+
+  // ---- calculated-filter-index-guarded ---------------------------------
+  // The row set is narrowed to one row by the natively indexed Id first, which
+  // is the clause order the index-guarded shape wants, and the calculated
+  // clause is then asked of that row. Both a matching and a non-matching value
+  // are sent: a clause SharePoint accepts and ignores serves one row for both.
+  const guardVoid = !idServed
+    ? 'the positive control was not served, so an Id clause cannot narrow anything on this run '
+      + 'and the guarded pair measures nothing'
+    : !absentRefused
+      ? 'the absent-column control did not separate a rejected request from a throttled one, so '
+        + 'a refusal here could not be read either way'
+      : !Number.isFinite(calcNumber)
+        ? `${CALC} did not read back as a number on the guarded row, so there is no value to `
+          + 'build a matching clause from'
+        : null;
+  if (guardVoid !== null) {
+    record('library.large-list.calculated-filter-index-guarded',
+           `Is a clause on ${CALC} evaluated once Id has narrowed the row set to one`,
+           'VOID', guardVoid, 'void');
+  } else {
+    const guardHit = await askFilter(`Id eq ${newestId} and ${CALC} eq ${calcNumber}`);
+    const guardMiss = await askFilter(`Id eq ${newestId} and ${CALC} eq ${calcNumber + 1}`);
+    const hitOutcome = judge(guardHit, 1);
+    const missOutcome = judge(guardMiss, 0);
+    const hitServed = hitOutcome.startsWith('SERVED');
+    const missServed = missOutcome.startsWith('SERVED');
+    const evaluated = hitServed && missServed;
+    const ignoredClause = hitServed && !missServed
+      && guardMiss.ok && guardMiss.rows === 1;
+    record('library.large-list.calculated-filter-index-guarded',
+           `Is a clause on ${CALC} evaluated once Id has narrowed the row set to one`,
+           evaluated ? 'EVALUATED UNDER AN INDEX GUARD'
+             : ignoredClause ? 'CLAUSE ACCEPTED AND IGNORED'
+               : guardHit.throttled ? 'REFUSED (threshold)'
+                 : isRefusal(guardHit.status) ? 'REFUSED (request rejected; read the body)'
+                   : `NOT ESTABLISHED (${hitOutcome})`,
+           `matching clause ${guardHit.label}: HTTP ${guardHit.status}, ${hitOutcome}. `
+           + `non-matching clause ${guardMiss.label}: HTTP ${guardMiss.status}, ${missOutcome}. `
+           + `The unguarded ${calcFilter} on the same run was ${calcBeforeOutcome}`
+           + (evaluated
+             ? `. The calculated clause is a legal predicate and it selects: it kept the row for `
+               + 'the value the column holds and dropped it for the value beside it, over a row '
+               + 'set the Id index had already narrowed. That is the shape of a value worked out '
+               + 'per row rather than sought in an index, and it is why the unguarded filter has '
+               + 'to scan.'
+             : ignoredClause
+               ? `. The non-matching clause returned the row too, so SharePoint accepted the `
+                 + `${CALC} clause and did not apply it. A view filtering on this column would `
+                 + 'show rows it says it excludes.'
+               : `. Bodies: ${guardHit.body} / ${guardMiss.body}. Read this beside `
+                 + 'control-number-filter-shape-accepted: a rejection there too means the shape, '
+                 + 'and a rejection only here means the calculated column is not a filter operand '
+                 + 'on this surface.'));
+  }
+
+  // ---- index-calculated-column -----------------------------------------
+  // #478 recorded REFUSED, HTTP 500, "This column type is not supported". Three
+  // outcomes are still separated, because a probe that recorded only the
+  // expected one would be an assertion wearing a measurement's clothes.
+  const methodControlsHeld = descSticks && unknownRefused;
+  let indexTook = false;
+  let indexRefusal = null;
+  // Whether THIS run sent the flag, which is not the same as whether the column
+  // is indexed: the teardown must clear what this run wrote and nothing else.
+  let indexWritten = false;
+  if (flags[CALC].indexed === true) {
+    record('library.large-list.index-calculated-column',
+           `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`,
+           'NOT ESTABLISHED',
+           `${CALC} already read Indexed=true before this run wrote anything, so a readback of `
+           + 'true would say nothing about the write. That contradicts #478, which recorded the '
+           + 'flag as refused on this column, so read it as a fixture somebody else changed '
+           + 'rather than as a platform finding. This probe does not clear a flag it did not '
+           + `write: ${flagNote(CALC)}`);
+  } else {
+    indexWritten = true;
+    const wrote = await mergeField(CALC, { Indexed: true }, 'SP.Field');
+    let after = await readField(CALC);
+    let reRead = false;
+    if (wrote.ok && !indexedNow(after)) {
+      await sleep(REREAD_MS);
+      after = await readField(CALC);
+      reRead = true;
+    }
+    const afterNote = readFailed(after)
+      ? `unreadable after (HTTP ${after.status})`
+      : `Indexed=${show(after.body.Indexed)}, AutoIndexed=${show(after.body.AutoIndexed)} after`;
+    indexTook = indexedNow(after);
+
+    if (wrote.ok) {
+      const evidence = `MERGE Indexed:true as SP.Field on a library of ${count} file(s) returned `
+        + `HTTP ${wrote.status}; ${flagNote(CALC)} before, ${afterNote}`
+        + (reRead ? `, on a re-read ${REREAD_MS} ms later` : '')
+        + (indexTook
+          ? '. This CONTRADICTS #478, which recorded the same MERGE as refused on this column. '
+            + 'The teardown below clears it, so the fixture is left as it was found.'
+          : '. The write was accepted and changed nothing, which is the failure class this '
+            + 'repository exists to find');
+      if (!indexTook && !methodControlsHeld) {
+        record('library.large-list.index-calculated-column',
+               `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`,
+               'VOID',
+               `${evidence}. The method controls did not hold (a Description MERGE `
+               + `${descSticks ? 'stuck' : 'did not stick'} and an unknown property was `
+               + `${unknownRefused ? 'refused' : 'accepted'}), so a write that changed nothing `
+               + 'cannot be told from a write that never arrived',
+               'void');
+      } else {
+        record('library.large-list.index-calculated-column',
+               `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`,
+               indexTook ? 'INDEXED' : 'SILENTLY IGNORED', evidence);
+      }
+    } else if (!isRefusal(wrote.status)) {
+      record('library.large-list.index-calculated-column',
+             `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`,
+             'NOT ESTABLISHED',
+             `the MERGE failed with HTTP ${wrote.status}, which is about who is asking or about `
+             + `the moment rather than the server refusing it: ${clip(wrote.text, 200)}`);
+    } else {
+      // Refused as SP.Field. Ask once more with the type SharePoint itself
+      // reports for this field, because a rejected type hint and a rejected
+      // write are otherwise the same observation.
+      indexRefusal = clip(wrote.text, 300);
+      const ownType = await entityTypeOf(CALC);
+      const retried = ownType && ownType !== 'SP.Field'
+        ? await mergeField(CALC, { Indexed: true }, ownType)
+        : null;
+      const afterRetry = retried && retried.ok ? await readField(CALC) : null;
+      indexTook = afterRetry !== null && indexedNow(afterRetry);
+      const asBase = `MERGE Indexed:true as SP.Field was REFUSED, HTTP ${wrote.status}, verbatim: `
+        + indexRefusal;
+      record('library.large-list.index-calculated-column',
+             `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`,
+             indexTook ? 'INDEXED' : 'REFUSED',
+             indexTook
+               ? `${asBase}. Retried naming the type SharePoint reports for this field, `
+                 + `${ownType}: HTTP ${retried.status}, and Indexed read back true. The refusal `
+                 + 'was the TYPE HINT, not the column, and that contradicts #478. Note the '
+                 + 'deployer sends SP.Field. The teardown below clears the flag.'
+               : `${asBase}. `
+                 + (retried === null
+                   ? (ownType === null
+                     ? 'The field entity type could not be read, so a type mismatch was not ruled '
+                       + 'out.'
+                     : `SharePoint reports this field as ${ownType}, the same base type, so there `
+                       + 'was no type mismatch to rule out.')
+                   : `Retried as ${ownType}: HTTP ${retried.status}`
+                     + (retried.ok
+                       ? `, and Indexed read back ${afterRetry && !readFailed(afterRetry)
+                         ? show(afterRetry.body.Indexed) : 'unreadable'}`
+                       : `: ${clip(retried.text, 160)}`)
+                     + '. The refusal is the column, not the type hint.')
+                 + ` This confirms #478 by the same method: a calculated column cannot be indexed `
+                 + 'on this surface, so a view filtering or grouping on one past the threshold '
+                 + 'cannot be rescued with an index.');
+    }
+  }
+
+  // ---- filter-on-calculated-value --------------------------------------
+  // The before half is always taken. The after half exists only if the index
+  // took, which on the expected run it does not.
+  const filterVoid = !idServed
+    ? 'the positive control was not served, so this method was never shown to observe a served '
+      + 'answer on this library at all'
+    : !absentRefused
+      ? 'the absent-column control did not separate a rejected request from a throttled one, so '
+        + 'no refusal here can be read as the threshold'
+      : !throttleEnforced
+        ? 'no unindexed contract column was refused with the throttle signature, so this library '
+          + 'was not shown to be enforcing the threshold and a refusal here has no established '
+          + 'cause'
+        : null;
+  if (filterVoid !== null) {
+    record('library.large-list.filter-on-calculated-value',
+           `Is a selective $filter on ${CALC} served or refused past 5,000 items`,
+           'VOID', filterVoid, 'void');
+  } else {
+    let afterNote = indexWritten
+      ? `. ${CALC} did not take an index this run, so there is no after half: what an index `
+        + 'would do to this filter cannot be asked of a column that refuses one'
+      : `. No index write was sent, because ${CALC} already read Indexed=true before this run `
+        + 'started, so the measurement above is of an ALREADY INDEXED calculated column and '
+        + 'there is no unindexed half to compare it against';
+    let outcome = calcBeforeOutcome.startsWith('REFUSED (threshold)') ? 'REFUSED (threshold)'
+      : calcBeforeOutcome.startsWith('SERVED') ? 'SERVED WITH NO INDEX'
+        : calcBeforeOutcome;
+    if (indexTook) {
+      const waited = await untilServed(() => askFilter(calcFilter));
+      const afterOutcome = judge(waited.result, calcExpected);
+      outcome = afterOutcome.startsWith('SERVED') ? 'INDEX SERVES THE FILTER'
+        : `${outcome}, still ${afterOutcome} after ${waited.attempts} attempt(s)`;
+      afterNote = `. After Indexed=true on ${CALC}: HTTP ${waited.result.status}, `
+        + `${afterOutcome}, over ${waited.attempts} attempt(s) and ${waited.waitedMs} ms. `
+        + 'SharePoint builds the index behind the flag, so a query still refused here does not '
+        + 'establish that the index fails to lift the throttle';
+    }
+    record('library.large-list.filter-on-calculated-value',
+           `Is a selective $filter on ${CALC} served or refused past 5,000 items`,
+           outcome,
+           `${calcFilter} on ${count} file(s), matching ${calcExpected} of them by the fixture's `
+           + `formula. With ${flagNote(CALC)} as read at the start of the run: HTTP `
+           + `${calcBefore.status}, ${calcBeforeOutcome}, throttle `
+           + `signature ${calcBefore.throttled ? 'PRESENT' : 'absent'}: ${calcBefore.body}`
+           + afterNote
+           + '. A refusal here on its own does not say whether the computed value is stored and '
+           + 'unindexed or worked out per row, because no custom column on this fixture carries '
+           + 'an index either way. calculated-filter-index-guarded is the row that separates '
+           + 'them.');
+  }
+
+  // ---- group-by-calculated-value ---------------------------------------
+  const groupVoid = !groupHonoured
+    ? `a group-by was not honoured on ${CHOICE}, a plain single-value column, so an unhonoured `
+      + `group-by on ${CALC} cannot be attributed to the column being calculated`
+    : !groupIgnorable
+      ? 'a group-by naming a column that does not exist did not come back as the flat query, so '
+        + 'honoured and ignored are not separable on this run'
+      : null;
+  if (groupVoid !== null) {
+    record('library.large-list.group-by-calculated-value',
+           `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`,
+           'VOID', groupVoid, 'void');
+  } else {
+    let groupAfter = '';
+    let groupOutcome = groupCalcBefore.verdict;
+    if (indexTook) {
+      const again = await observeGroup(CALC, flat);
+      groupOutcome = `${groupOutcome}, then ${again.verdict} with the index`;
+      groupAfter = `. After Indexed=true on ${CALC}: ${again.verdict}. ${again.text}`;
+    } else {
+      groupAfter = indexWritten
+        ? `. ${CALC} did not take an index this run, so there is no after half`
+        : `. No index write was sent, because ${CALC} already read Indexed=true before this run `
+          + 'started, so there is no unindexed half to compare against';
+    }
+    record('library.large-list.group-by-calculated-value',
+           `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`,
+           groupOutcome,
+           `with ${flagNote(CALC)} as read at the start of the run: ${groupCalcBefore.text}. `
+           + `The label count is bounded by the RowLimit of `
+           + `${ROW_LIMIT} and is not a distinct-value count: the fixture gives ${CALC} up to `
+           + `1000 distinct values over ${count} file(s), so a collapsed answer is a page of `
+           + 'groups rather than all of them'
+           + groupAfter
+           + `. Read this beside control-group-by-single-value-column, which took the same `
+           + `measurement on ${CHOICE} at the same size in the same run.`);
+  }
+
+  report();
+
+  // ---- Teardown ---------------------------------------------------------
+  // Two writes to undo, and only one of them is normally there. The Description
+  // marker is restored above; this reports whether that worked, and clears the
+  // index flag if the write this run made unexpectedly took.
+  if (!descriptionRestored) {
+    log('FAIL', `The Description marker is still on ${CALC}. Put it back to `
+      + `${show(priorDescription)} by hand: the fixture is not as this run found it.`);
+  }
+  if (!indexTook) {
+    log('OK', indexWritten
+      ? `No index was left on ${CALC}: the MERGE of Indexed=true was not accepted, so the `
+        + 'fixture is as this run found it.'
+      : `No index write was sent: ${CALC} already read Indexed=true before this run started, `
+        + 'and this probe does not clear a flag it did not write. Clear it with '
+        + 'library-large-list-index-probe.js and REMOVE_INDEXES_AT_END if it is unwanted.');
+    return;
+  }
+  const off = await mergeField(CALC, { Indexed: false }, 'SP.Field');
+  const back = await readField(CALC);
+  const isClear = off.ok && !readFailed(back) && back.body.Indexed === false;
+  log(isClear ? 'OK' : 'FAIL',
+      isClear
+        ? `${CALC}: Indexed is back to false, so this run left no index on the shared fixture.`
+        : `${CALC}: Indexed is still ${readFailed(back) ? 'unreadable' : show(back.body.Indexed)} `
+          + `after HTTP ${off.status} ${clip(off.text, 160)}. THE FIXTURE IS NOT RESTORED: a `
+          + 'probe reading this library after this run would be reading an indexed calculated '
+          + 'column that nothing else in this repository has recorded. Clear it by hand, or run '
+          + 'library-large-list-index-probe.js with REMOVE_INDEXES_AT_END.');
+})();
