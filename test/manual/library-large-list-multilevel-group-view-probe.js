@@ -13,7 +13,7 @@
  *   serving at the same moment the group-by is refused, and is that refusal
  *   still the threshold rather than something else?
  *
- * REVISION: 7a01a1a8
+ * REVISION: ed532902
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -330,7 +330,26 @@
 // reading back rendered in the site zone. LVDate's index build is therefore
 // watched with an $orderby, which has no literal to spell, and #478 measured a
 // sort going from refused to served on an indexed column.
-(async () => {
+// finding: multilevel-group-view-index-does-not-lift-a-group-by - measured
+// 2026-09-08: on LVChoice, whose index write was INDEXED and whose filter was
+// SERVED in 212 ms, a single-level <GroupBy> was re-sent for 176814 ms across
+// 12 attempts and came back REFUSED (threshold) every time. The answer did not
+// change over that window, which is the strongest form the claim can take from
+// one run: an index does not lift a group-by.
+// finding: multilevel-group-view-one-moment-separates-built-from-unserved -
+// measured 2026-09-08: each wait attempt sent the grouped query and then the
+// filter on the same indexed column back to back. At every timestamp (646 ms
+// through 176814 ms) the filter was SERVED while the group-by was REFUSED in the
+// same pair of requests, so "the index has not built" and "the index does not
+// serve an aggregation" are told apart, and the latter is what was observed.
+// finding: multilevel-group-view-three-level-group-by-is-rejected-not-throttled -
+// measured 2026-09-08: a three-FieldRef <GroupBy> returned HTTP 500 with code
+// -2147467259 "Cannot complete this action" and NO SPQueryThrottledException,
+// over three field orders AND over an Id-narrowed six-row set. A multi-level
+// group-by is refused by the query engine before the threshold applies, so it is
+// a different failure from the single-level throttle and no index or row count
+// rescues it.
+ (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
   // stops; nothing touches the tenant until the operator opts in.
@@ -553,8 +572,8 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-
-  log('INFO', 'probe revision 7a01a1a8. Quote this when reporting results.');
+ 
+  log('INFO', 'probe revision ed532902. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
