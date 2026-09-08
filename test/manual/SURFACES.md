@@ -265,7 +265,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-grouping-probe.js`, `library-nesting-probe.js`,
 `library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`,
 `library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`,
-`library-large-list-group-view-probe.js`
+`library-large-list-group-view-probe.js`,
+`library-large-list-multilevel-group-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -340,6 +341,33 @@ that comes back refused is a result, and the two must not be spelled the same
 way. The keying rule is what holds them together: one question takes one id
 however many probes ask it, and the role a check plays is a property of the
 probe rather than of the question.
+
+`library-large-list-multilevel-group-view-probe.js` re-opens what that probe
+left unsettled and reuses thirteen ids, one of which changes role for the second
+time. #480 waited about a minute for the index on the Choice column to lift the
+group-by, and recorded its own result as not conclusive because SharePoint
+builds the index behind the flag. So the reused ids are the whole instrument
+frame: `fixture-library-present`, `fixture-index-flags-clear`,
+`control-id-query-served`, `control-absent-column-refused`,
+`control-unindexed-filter-refused`, `control-render-where-absent-refused`,
+`control-missing-group-column-ungrouped`, `control-choice-description-sticks`,
+`control-choice-unknown-property-refused`, `index-choice-column`,
+`index-number-column` and `index-date-column`, each the same question by the
+same method against the same fixture.
+`control-group-by-single-value-column` is a SUBJECT here as it is in #480, for
+the same reason and with nothing declaring a dependency on it: it is the
+unindexed before half the generous wait is compared against.
+`multilevel-group-by-unindexed` is a subject on the same argument, even though
+the authoring brief called it a negative control. A control that fails voids
+what depends on it, and a group-by refused at this size is the result this
+probe went looking for, so spelling it as a control would make the finding
+indistinguishable from a broken instrument. What the probe does take as a
+control instead is `control-multilevel-group-by-narrowed-honoured`: a `<GroupBy>`
+carrying three `<FieldRef>` children is a shape no probe in this repository had
+sent, so it is proved over an `Id`-narrowed row set, where #480 measured the
+single-level version honoured and where the threshold cannot reach it. Without
+that control a refusal at full size could be the shape rather than the size, and
+the three ids that would then be misread declare a dependency on it.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -466,6 +494,9 @@ different questions and take different ids. They do not merge.
 | Is a query naming a column the library does not hold refused | a `<Where>` through `RenderListDataAsStream`, the surface a `<GroupBy>` lives on | `library.large-list.control-render-where-absent-refused` |
 | Does an index let a group-by through past the threshold | `Id`, the one natively indexed column, with no write at all | `library.large-list.group-by-native-index-column` |
 | Does an index let a group-by through past the threshold | a Choice column, measured before and after the probe indexes it | `library.large-list.group-by-indexed-column` |
+| Does an index let a group-by through past the threshold | the same Choice column, re-sent for minutes rather than for one, with the filter on it interleaved | `library.large-list.group-by-indexed-column-generous-wait` |
+| Does an index let a group-by through past the threshold | three columns and a three-level `<GroupBy>`, each index waited out | `library.large-list.multilevel-group-by-indexed` |
+| Is a group-by honoured on a single-value column | three columns at once, unindexed, past the list view threshold | `library.large-list.multilevel-group-by-unindexed` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
