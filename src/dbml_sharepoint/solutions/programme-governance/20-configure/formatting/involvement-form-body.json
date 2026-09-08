@@ -1,6 +1,22 @@
 {
   "sections": [
-    { "displayname": "State the input", "fields": ["Title", "Activity", "Stakeholder"] },
-    { "displayname": "How they are involved", "fields": ["Involvement", "Channel", "Notes"] }
+    {
+      "displayname": "State the input",
+      "fields": [
+        "Title",
+        "Activity",
+        "Stakeholder"
+      ]
+    },
+    {
+      "displayname": "How they are involved",
+      "fields": [
+        "Involvement",
+        "EngagementStatus",
+        "NextContact",
+        "Channel",
+        "Notes"
+      ]
+    }
   ]
 }

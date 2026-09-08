@@ -202,6 +202,13 @@ calculated_formulas:
 # made can be selected, while the projected Title keeps the row readable if
 # that decision is later withdrawn and its live title goes blank.
 lookup_projections:
+  # Stakeholder retires by Status and is never deleted, so an involvement can
+  # outlive the stakeholder it points at with nothing to show for it. The
+  # projection puts that on the row, which is the only place a view can read
+  # it. Choice projects like any other column: Workstream -> Phase below is
+  # the same shape.
+  Involvement:
+    Stakeholder: [Status]
   Action:
     RelatedRisk: [Title]
     Workstream: [Phase]
@@ -576,6 +583,17 @@ column_formatting:
   Involvement:
     Involvement: { style: pill,
                    map: { Agree: warning, Consulted: low, Informed: neutral } }
+    # A progress ramp, deliberately not the severity map above it. Identified
+    # is neutral because it is the correct state for a new row rather than a
+    # problem; it only becomes one when NextContact goes past, which the
+    # column below shows.
+    EngagementStatus: { style: pill,
+                        map: { Identified: neutral, Scheduled: low, Engaged: good } }
+    # Guarded off Engaged: once the engagement has happened the date is
+    # history, and an overdue treatment on it would paint every completed row
+    # red forever.
+    NextContact: { style: overdue-date,
+                   guard: { field: EngagementStatus, not: [Engaged] } }
   ServiceRequest:
     # Warning is "with the provider" and severe is "blocked on us": a request
     # handed back is the one the health service has to act on.
@@ -955,7 +973,8 @@ views:
     # list, which is the shape a RACI is normally drawn in.
     - title: "By activity"
       default: true
-      fields: [Title, Activity, Stakeholder, Involvement, Channel, Notes]
+      fields: [Title, Activity, Stakeholder, Involvement, EngagementStatus,
+               NextContact, Channel, Notes]
       group_by: { field: Activity, collapsed: false }
       sort:
         - { field: Involvement, direction: asc }
@@ -964,26 +983,61 @@ views:
         Activity: 240
         Stakeholder: 180
         Involvement: 130
+        EngagementStatus: 150
+        NextContact: 130
         Channel: 180
         Notes: 200
     - title: "By stakeholder"
       renamed_from: ["By party"]
-      fields: [Title, Stakeholder, Activity, Involvement, Channel]
+      fields: [Title, Stakeholder, StakeholderStatus, Activity, Involvement,
+               EngagementStatus, Channel]
       group_by: { field: Stakeholder, collapsed: false }
       sort:
         - { field: Title, direction: asc }
       widths:
         Title: 280
         Stakeholder: 180
+        StakeholderStatus: 120
         Activity: 240
         Involvement: 130
+        EngagementStatus: 150
         Channel: 180
+    # The backlog this release exists for. Everyone the programme has decided
+    # it needs and has not yet spoken to, oldest next-contact first, so a
+    # stalled engagement rises rather than sinking into Notes.
+    #
+    # Involvement is on it because the authority level is what makes the row
+    # urgent: an unapproached Agree blocks its activity, an unapproached
+    # Informed does not.
+    #
+    # A row whose EngagementStatus is BLANK stays out, which is what makes
+    # this safe to deploy onto a site whose existing rows predate the column:
+    # CAML <In> matches no null, so the backlog fills with real backlog rather
+    # than with every row already on the list. See the release notes for the
+    # one-time bulk set.
+    - title: "Identified, not yet engaged"
+      fields: [Title, Stakeholder, Activity, Involvement, EngagementStatus,
+               NextContact, Channel, Notes]
+      where:
+        - { field: EngagementStatus, op: in, value: ["Identified", "Scheduled"] }
+      sort:
+        - { field: NextContact, direction: asc }
+      widths:
+        Title: 280
+        Stakeholder: 180
+        Activity: 240
+        Involvement: 130
+        EngagementStatus: 150
+        NextContact: 130
+        Channel: 180
+        Notes: 200
     # Quarterly step 6, the overload detector. Grouped by stakeholder rather than by
     # activity on purpose: the failure it exists to reveal is one stakeholder made
     # Consulted (or, worse, Agree) on everything, and that is invisible in any
     # activity-first view. Involvement is shown so a reader can tell the two apart.
     - title: "Consultation load"
-      fields: [Title, Stakeholder, Involvement, Activity, Channel, Notes]
+      fields: [Title, Stakeholder, Involvement, EngagementStatus, Activity,
+               Channel, Notes]
       where:
         - { field: Involvement, op: in, value: ["Consulted", "Agree"] }
       group_by: { field: Stakeholder, collapsed: false }
@@ -993,6 +1047,7 @@ views:
         Title: 280
         Stakeholder: 180
         Involvement: 130
+        EngagementStatus: 150
         Activity: 240
         Channel: 180
         Notes: 200
@@ -2131,6 +2186,7 @@ demo_items:
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-privacy }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Email"
         Notes: "Demo row. Must be asked before the request is authorised, not after the provider has built it."
     - key: inv-provider-tenant
@@ -2139,6 +2195,7 @@ demo_items:
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-provider }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Ad hoc"
         Notes: "Demo row. Asked on the service request itself. The provider is consulted here and is never Accountable."
     - key: inv-steering-licensing
@@ -2147,6 +2204,7 @@ demo_items:
         Activity: { demo_ref: act-decide-licensing }
         Stakeholder: { demo_ref: stakeholder-steering }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Standing agenda item"
         Notes: "Demo row. The steering group is consulted on the model and the sponsor decides the budget."
     - key: inv-champions-migration
@@ -2155,6 +2213,7 @@ demo_items:
         Activity: { demo_ref: act-lead-migration }
         Stakeholder: { demo_ref: stakeholder-champions }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Meeting"
         Notes: "Demo row. The champions are the only people who know what each team actually opens first thing in the morning."
     - key: inv-clinical-cutover
@@ -2163,6 +2222,7 @@ demo_items:
         Activity: { demo_ref: act-lead-migration }
         Stakeholder: { demo_ref: stakeholder-clinical-lead }
         Involvement: "Informed"
+        EngagementStatus: "Engaged"
         Channel: "Report or dashboard"
         Notes: "Demo row. Told, not asked: the date is set by the workstream and the clinical lead needs to know it."
     - key: inv-privacy-comms
@@ -2171,16 +2231,38 @@ demo_items:
         Activity: { demo_ref: act-privacy-review }
         Stakeholder: { demo_ref: stakeholder-privacy }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Email"
-        Notes: "Demo row. Three of these six rows consult the same stakeholder, which is what the Consultation load view exists to show."
+        Notes: "Demo row. The second row consulting the privacy officer, which is what the Consultation load view exists to surface."
     - key: inv-director-tenant
       values:
         Title: "[DEMO] Whether a tenant-wide setting may change at all this quarter"
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-digital-director }
         Involvement: "Agree"
+        EngagementStatus: "Engaged"
         Channel: "Standing agenda item"
         Notes: "Demo row. The only Agree here: the approval does not proceed without it, which is the difference from the two Consulted rows on the same activity."
+    - key: inv-clinical-licensing
+      values:
+        Title: "[DEMO] Whether the licensing model leaves clinical systems short"
+        Activity: { demo_ref: act-decide-licensing }
+        Stakeholder: { demo_ref: stakeholder-clinical-lead }
+        Involvement: "Agree"
+        EngagementStatus: "Identified"
+        Channel: "Meeting"
+        Notes: "Demo row, and the reason Engagement Status is its own column. The licensing decision does not proceed without this sign-off, and nobody has approached them yet. Read the two columns together: high authority, no contact."
+    - key: inv-steering-migration
+      values:
+        Title: "[DEMO] Whether the cutover sequence fits the board's reporting cycle"
+        Activity: { demo_ref: act-lead-migration }
+        Stakeholder: { demo_ref: stakeholder-steering }
+        Involvement: "Consulted"
+        EngagementStatus: "Scheduled"
+        NextContact: "today+14"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Identified, a date set, not yet held. Both this row and the one above it are what the Identified, not yet engaged view lists."
+
   ServiceRequest:
     - key: tr-guest-access
       values:
