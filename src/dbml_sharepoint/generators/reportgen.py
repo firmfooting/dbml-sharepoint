@@ -104,9 +104,13 @@ class _ListPlan:
     # (fk column, target list title, target display column)
     joins: list[tuple[str, str, str]] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
-    # Site-relative path of the item display form, ending in "?ID=". The
-    # ItemURL helper column is SiteUrl + this + the item id.
+    # Site-relative path of the item display form, ending in "?ID=", built
+    # from the DECLARED title. The fallback when the list's own folder cannot
+    # be read, and what the SQL views use, having no site to read.
     item_url_path: str = ""
+    # What follows the list's own RootFolder to reach the same form. The
+    # refresh-time branch: see `_item_url_suffix`.
+    item_url_suffix: str = ""
     # (internal/out column, model-facing display name), populated only when
     # the mapping declares display_names; the rename is the LAST query step
     # so internal names remain the wire/OData contract.
@@ -198,6 +202,20 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     return f"/Lists/{list_title}/DispForm.aspx?ID="
 
 
+def _item_url_suffix(bundle: MappingBundle, entity_name: str) -> str:
+    """What follows the list's OWN folder to reach one item's display form.
+
+    The other half of :func:`_item_url_path`, for the branch that reads the
+    folder from the site instead of building it from the declared title. A
+    list's RootFolder is /Lists/<slug> and its form sits directly under it; a
+    library's RootFolder is the library, and its forms sit in Forms/.
+    """
+    entity = bundle.mapping.entities.get(entity_name)
+    if entity is not None and entity.kind == "DocumentLibrary":
+        return "/Forms/DispForm.aspx?ID="
+    return "/DispForm.aspx?ID="
+
+
 def _build_plans(
     schema: Schema, bundle: MappingBundle, site_role: str,
 ) -> list[_ListPlan]:
@@ -214,6 +232,7 @@ def _build_plans(
             entity=table.name,
             list_title=prefix + table.name,
             item_url_path=_item_url_path(bundle, table.name, prefix + table.name),
+            item_url_suffix=_item_url_suffix(bundle, table.name),
             users_table=bundle.mapping.reporting.users_table,
         )
         for col in table.columns:
@@ -581,9 +600,141 @@ _SITE_ROOT_M: list[str] = [
     "    ),",
 ]
 
+# The scheme and host of SiteRoot on their own, which is what turns a SERVER-
+# relative path (what SharePoint answers with) back into a URL a browser can
+# open. Bound after `_SITE_ROOT_M`, which it reads.
+#
+# A root site collection is legitimately https://tenant.sharepoint.com with no
+# path segment at all, so that shape falls through whole rather than being
+# treated as malformed.
+_SITE_ORIGIN_M: list[str] = [
+    "    SiteOrigin =",
+    "        let",
+    '            afterScheme = Text.PositionOf(SiteRoot, "//"),',
+    "            rest =",
+    '                if afterScheme < 0 then ""',
+    "                else Text.Range(SiteRoot, afterScheme + 2),",
+    '            slash = Text.PositionOf(rest, "/")',
+    "        in",
+    "            if afterScheme < 0 or slash < 0 then SiteRoot",
+    "            else Text.Start(SiteRoot, afterScheme + 2 + slash),",
+]
+
+# MEASURED on a live tenant, 2026-09-07: a calculated column of output type
+# Date is served as a PLAIN STRING. In one /items response `LastReviewedDate`
+# carried m:type="Edm.DateTime" and the calculated `NextReviewDue` beside it
+# carried no m:type at all, so OData.Feed landed the second as text, the
+# `type date` conversion errored on every row, and Power BI's default
+# `returnErrorValuesAsNull` turned each error into a blank. The column read as
+# empty rather than as broken, which is why the refresh reported nothing.
+#
+# One converter takes whichever shape arrives, so no step has to know which
+# kind of column it holds. Every branch ends in a value: a shape nobody
+# anticipated blanks one column, as today, rather than failing the batch.
+#
+# `Date.From` handles date, datetime and datetimezone directly. The second
+# branch is for text, where `DateTimeZone.From` parses ISO 8601 including the
+# `Z` without depending on the machine's culture, which `Date.From` over text
+# would.
+#
+# The site's own time zone is NOT applied here yet: a date-only value is site
+# -local midnight served in UTC, so truncating gives the previous day east of
+# UTC. That needs `RegionalSettings/TimeZone` measured first; issue #467.
+_AS_DATE_M: list[str] = [
+    "    AsDate = (v as any) as nullable date =>",
+    "        if v = null then null",
+    "        else try Date.From(v)",
+    "             otherwise",
+    "                 try Date.From(",
+    "                     DateTimeZone.RemoveZone(",
+    "                         DateTimeZone.From(Text.From(v))",
+    "                     )",
+    "                 )",
+    "                 otherwise null,",
+]
+
+# The two M type tokens `AsDate` covers, and so the two that must be kept out
+# of `Table.TransformColumnTypes`. Only `type date` today: a calculated column
+# is number, date or text, so `type datetimezone` always arrives typed.
+_TOLERANT_DATE_TYPES = frozenset({"type date"})
+
+
+def _item_url_base_m(plan: _ListPlan) -> list[str]:
+    """The display-form prefix for one list, read from the list at refresh.
+
+    MEASURED on a live tenant, 2026-09-07: a list RENAMED in place keeps the
+    URL slug it was created under, so a form path built from the declared
+    title is a dead link for every row while ``getbytitle`` on the new title
+    keeps working. The slug cannot be derived at build time; a mapping's
+    ``renamed_from`` records rename CANDIDATES rather than an ordered history,
+    and deriving it was tried against ten live lists and got two wrong, which
+    is worse than not trying because the two wrong ones are indistinguishable
+    from the eight right ones.
+
+    Same single-entity ``OData.Feed`` read as the site name above, evaluated
+    once per refresh rather than once per row, and it fails soft the same way
+    and for the same reason: a link is a convenience, the rows are the data.
+    """
+    endpoint = (
+        f"/_api/web/lists/getbytitle('{plan.list_title}')"
+        "/RootFolder?$select=ServerRelativeUrl"
+    )
+    return [
+        "    ItemUrlBase =",
+        "        try",
+        "            SiteOrigin",
+        "                & OData.Feed(",
+        f'                    SiteRoot & "{endpoint}",',
+        "                    null,",
+        '                    [Implementation = "2.0"]',
+        "                )[ServerRelativeUrl]",
+        f'                & "{plan.item_url_suffix}"',
+        f'        otherwise SiteRoot & "{plan.item_url_path}",',
+    ]
+
+
+def _ensured_m(prev: str, columns: list[str]) -> list[str]:
+    """Add any declared column the response left out, before anything reads it.
+
+    MEASURED on a live tenant, 2026-09-07: a list with ZERO items answers with
+    a table that has NO COLUMNS AT ALL, so the typing step failed on the first
+    name it asked for ("The column 'Id' of the table wasn't found") and Power
+    BI reported every other query in the batch as blocked behind it. Adding
+    one item and refreshing again succeeded with no other change.
+
+    A fresh deploy leaves every list empty, so that is the first refresh an
+    adopter runs. The 2026-08-11 guard covers only the expanded record
+    columns, which is the same failure seen from a list that had lookups.
+
+    The placeholder type does not matter: every one of these columns is
+    re-typed one step later, and over zero rows there is no value to convert.
+    """
+    names = ", ".join(f'"{name}"' for name in columns)
+    return [
+        "    Ensured = List.Accumulate(",
+        f"        {{{names}}},",
+        f"        {prev},",
+        "        (t, c) =>",
+        "            if List.Contains(Table.ColumnNames(t), c) then t",
+        "            else Table.AddColumn(t, c, each null, type text)",
+        "    ),",
+    ]
+
 
 def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     query_string = "?$select=" + ",".join(plan.selects)
+    # Every column a step below names. `multi_value_joins` is the one output
+    # column deliberately absent from `m_types` (its join step ascribes the
+    # type), and a set built from `m_types` alone would leave that one column
+    # unguarded and unselected.
+    declared = (
+        [name for name, _ in plan.m_types]
+        + [name for name, _ in plan.multi_value_joins]
+    )
+    dates = [
+        name for name, m_type in plan.m_types
+        if m_type in _TOLERANT_DATE_TYPES
+    ]
     header = [] if site_url is not None else [
         "// Requires a text parameter named SiteUrl holding the site URL,",
         "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
@@ -612,6 +763,9 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # The cost is one extra request per query per refresh instead of one
         # per site. `_api/web?$select=Title` is a single tiny read.
         *_SITE_NAME_M,
+        *_SITE_ORIGIN_M,
+        *_item_url_base_m(plan),
+        *(_AS_DATE_M if dates else []),
         "    Source = OData.Feed(",
         f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
         f'            & "{query_string}"',
@@ -653,6 +807,26 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
             f'        else Table.AddColumn({prev}, "{out}", each null, {m_type}),',
         ]
         prev = step
+    lines += _ensured_m(prev, declared)
+    prev = "Ensured"
+    if dates:
+        lines += [
+            "    // Whichever shape each date arrived in; see AsDate above.",
+            "    Dates = Table.TransformColumns(",
+            f"        {prev},",
+            "        {",
+        ]
+        lines += [
+            f'            {{"{name}", each AsDate(_), type date}},'
+            for name in dates
+        ]
+        # M list literals do not allow a trailing comma.
+        lines[-1] = lines[-1].rstrip(",")
+        lines += [
+            "        }",
+            "    ),",
+        ]
+        prev = "Dates"
     # The separator, and why it is that string, live in `analysis/exports.py` --
     # the check that refuses a member containing it needs the same fact, and a
     # generator is the wrong place for `analysis/` to import from.
@@ -691,18 +865,17 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     lines.append("    Typed = Table.TransformColumnTypes(")
     lines.append(f"        {prev},")
     lines.append("        {")
+    # Dates are already converted and typed by the step above; a bare
+    # conversion is exactly what put an error value in every one of their
+    # cells.
     for name, m_type in plan.m_types:
+        if m_type in _TOLERANT_DATE_TYPES:
+            continue
         lines.append(f'            {{"{name}", {m_type}}},')
     # M list literals do not allow a trailing comma.
     lines[-1] = lines[-1].rstrip(",")
     # Whatever SharePoint adds unasked rides through every step above, so the
-    # declared set is selected here. `multi_value_joins` is the one output
-    # column not in `m_types` (the join step types it), and a selection built
-    # from `m_types` alone would drop it silently.
-    declared = (
-        [name for name, _ in plan.m_types]
-        + [name for name, _ in plan.multi_value_joins]
-    )
+    # declared set is selected here.
     lines += [
         "        }",
         "    ),",
@@ -716,9 +889,11 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "        Typed,",
         "        {" + ", ".join(f'"{name}"' for name in declared) + "}",
         "    ),",
-        '    WithItemURL = Table.AddColumn(',
+        # The list's real URL, not one built from its declared title: see
+        # `_item_url_base_m`. Bound above, so it is one read per refresh.
+        "    WithItemURL = Table.AddColumn(",
         f'        Declared, "{ITEM_URL_COLUMN}",',
-        f'        each SiteRoot & "{plan.item_url_path}" & Number.ToText([Id]),',
+        "        each ItemUrlBase & Number.ToText([Id]),",
         "        type text",
         "    ),",
         # Where the row came from. One build covers one site, but a report
@@ -877,9 +1052,12 @@ def _render_users_m(*, site_url: str | None = None) -> str:
             f' else if Text.StartsWith([ContentTypeId], "{prefix}") then "{label}"'
         )
     kind_expression += ' else "Other"'
-    typed = ", ".join(
-        f'{{"{name}", {m_type}}}' for name, m_type, _ in _USERS_COLUMNS
-    ) + ', {"ContentTypeId", type text}'
+    # One per line, like every list query: the typing step is the one place a
+    # column can silently stop being typed, so it is read by tests and by
+    # people, and a single long line hides both.
+    typed = [
+        f'            {{"{name}", {m_type}}},' for name, m_type, _ in _USERS_COLUMNS
+    ] + ['            {"ContentTypeId", type text}']
     declared = ", ".join(f'"{name}"' for name, _, _ in _USERS_COLUMNS)
     renames = ", ".join(
         f'{{"{name}", "{display}"}}'
@@ -911,9 +1089,18 @@ def _render_users_m(*, site_url: str | None = None) -> str:
         "        null,",
         '        [Implementation = "2.0"]',
         "    ),",
+        # The users list is read like any other list and answers like one, so
+        # a site whose user information list the reporting account can see but
+        # that holds no rows fails the same way. See `_ensured_m`.
+        *_ensured_m(
+            "Source",
+            [name for name, _, _ in _USERS_COLUMNS] + ["ContentTypeId"],
+        ),
         "    Typed = Table.TransformColumnTypes(",
-        "        Source,",
-        f"        {{{typed}}}",
+        "        Ensured,",
+        "        {",
+        *typed,
+        "        }",
         "    ),",
         "    // Groups sit in the same list as people; this says which is which,",
         "    // so a report can keep the people and drop the rest.",
@@ -1264,11 +1451,13 @@ def generate_reporting_md(
     lines += [
         "",
         ("Both layers add an **ItemURL** helper column (the SharePoint "
-         "display-form link for the row, built from the site URL, the list "
-         "path and the item id), so any report visual can link straight "
-         "back to the source item. `data-dictionary.md` documents every "
-         "list and column plus the deployment metadata behind this "
-         "generation."),
+         "display-form link for the row), so any report visual can link "
+         "straight back to the source item. The Power Query reads each "
+         "list's own folder at refresh, so a list renamed in place still "
+         "links correctly; the SQL views have no site to read and build the "
+         "path from the declared title, which is a dead link for such a "
+         "list. `data-dictionary.md` documents every list and column plus "
+         "the deployment metadata behind this generation."),
         "",
         "## Data dictionary page (in-report)",
         "",
@@ -1718,8 +1907,9 @@ def generate_data_dictionary(
         "",
         "| Column | Construction | Purpose |",
         "|---|---|---|",
-        ("| ItemURL | SiteUrl + list form path + item id | Direct link from "
-         "any report row back to the SharePoint item (display form) |"),
+        ("| ItemURL | The list's own folder, read at refresh, + item id "
+         "(the SQL views use the declared list path instead) | Direct link "
+         "from any report row back to the SharePoint item (display form) |"),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",

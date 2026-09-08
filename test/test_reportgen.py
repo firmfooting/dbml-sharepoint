@@ -85,7 +85,7 @@ def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
 def test_powerquery_types_follow_the_schema() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert '{"DueDate", type date}' in task
+    assert '{"DueDate", each AsDate(_), type date}' in task
     assert '{"Id", Int64.Type}' in task
     schema, bundle = _calculated()
     risk = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
@@ -2027,7 +2027,9 @@ def test_the_added_column_reader_finds_the_expression_and_not_a_blank() -> None:
     returned "" for everything would make them agree about nothing."""
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert _added_column_expression(task, "ItemURL").startswith("each SiteRoot &")
+    assert _added_column_expression(task, "ItemURL").startswith(
+        "each ItemUrlBase &",
+    )
     with pytest.raises(AssertionError, match="Absent Key"):
         _added_column_expression(task, "Absent Key")
 
@@ -2144,10 +2146,28 @@ _SELECT_STEP = re.compile(
 )
 
 
+_DATES_STEP = re.compile(
+    r"Dates = Table\.TransformColumns\(\s*\w+,\s*\{(?P<body>.*?)\n\s*\}",
+    re.DOTALL,
+)
+
+
 def _typed_columns(query: str) -> list[str]:
+    """Every column the query gives a type, from either step that gives one.
+
+    Date columns left `Table.TransformColumnTypes` on 2026-09-07: a
+    calculated date is served as untyped text and a bare conversion put an
+    error value in every cell, which Power BI renders as a blank column. A
+    helper still reading only that step would report the selection as
+    carrying columns nothing typed.
+    """
     typed = _TYPING_STEP.search(query)
     assert typed is not None, "no typing step"
-    return re.findall(r'\{"([^"]+)",', typed["body"])
+    names = re.findall(r'\{"([^"]+)",', typed["body"])
+    dates = _DATES_STEP.search(query)
+    if dates is not None:
+        names += re.findall(r'\{"([^"]+)",', dates["body"])
+    return names
 
 
 def test_powerquery_keeps_exactly_the_typed_columns_after_typing() -> None:
@@ -2162,7 +2182,12 @@ def test_powerquery_keeps_exactly_the_typed_columns_after_typing() -> None:
     typing = _TYPING_STEP.search(task)
     assert typing is not None
     assert select["prev"] == typing["step"]
-    assert re.findall(r'"([^"]+)"', select["body"]) == _typed_columns(task)
+    kept = re.findall(r'"([^"]+)"', select["body"])
+    # A set, because dates are typed by a step of their own and the selection
+    # stays in schema order; the length check keeps the duplicate a list
+    # comparison used to catch, which would rename one column twice.
+    assert set(kept) == set(_typed_columns(task))
+    assert len(kept) == len(set(kept))
     assert re.search(
         rf'Table\.AddColumn\(\s*{select["step"]}, "ItemURL"', task,
     ), "ItemURL is not built on the selected columns"
@@ -2191,3 +2216,207 @@ def test_the_uppercase_id_run_is_recorded_where_the_selection_lives() -> None:
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "2026-09-02" in task
     assert '"ID 2"' in task
+
+
+# --- Defects reported by the first model built on a generated pack ----------
+#
+# Reported 2026-09-07 against 0.4.0 by the consumer of a `programme-governance`
+# 2.4.0 pack, building a Power BI model on a live site. Three of the four items
+# are fixed here; the fourth (every date-only column one day early east of UTC)
+# needs the site's time zone measured first and is issue #467.
+#
+# The unifying fault is that the pack is generated open-loop from the DECLARED
+# schema and never reconciled against a live feed, so each item is a place
+# where what SharePoint actually serves differs from what the declaration says
+# and nothing in the build can see it.
+
+
+def _accumulated_names(query: str, step: str) -> list[str]:
+    """The column names one `List.Accumulate` guard names, in order."""
+    match = re.search(
+        rf"    {step} = List\.Accumulate\(\n        \{{(.*?)\}},\n", query,
+    )
+    assert match is not None, f"no {step} step in:\n{query}"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def test_a_zero_row_list_does_not_fail_the_whole_refresh() -> None:
+    """Every column a later step names is guaranteed to exist first.
+
+    MEASURED on a live tenant, 2026-09-07: a list held zero items and the
+    refresh failed at the typing step with "The column 'Id' of the table
+    wasn't found", after which Power BI reported the other sixteen queries as
+    blocked behind it. Adding one item and refreshing again succeeded with no
+    other change. An empty `/items` response yields a table with NO COLUMNS AT
+    ALL, not merely without the expanded records the 2026-08-11 guard covers,
+    and a fresh deploy leaves every list empty, so this is the FIRST refresh
+    an adopter runs.
+
+    Written as an invariant over the emitted steps rather than as a search
+    for a string: a guard that stopped covering a column added later would
+    pass any presence test while failing the same way on the same site.
+    """
+    schema, bundle = _simple()
+    for name, query in generate_powerquery(schema, bundle, "default").items():
+        ensured = _accumulated_names(query, "Ensured")
+        assert "Id" in ensured, name
+        for column_name in _typed_columns(query):
+            assert column_name in ensured, f"{name}: {column_name} unguarded"
+        # `Table.SelectColumns` reads the same set one step later.
+        declared = _SELECT_STEP.search(query)
+        assert declared is not None, name
+        for column_name in re.findall(r'"([^"]+)"', declared["body"]):
+            assert column_name in ensured, f"{name}: {column_name} unguarded"
+
+
+def test_the_zero_row_guard_covers_a_multi_value_column() -> None:
+    """The one output column that is deliberately absent from `m_types`.
+
+    A multi-value column is typed by its own join step, so a guard built
+    from the typing list alone would leave `Table.TransformColumns` naming a
+    column that an empty list does not answer with -- the same failure, one
+    step earlier, on the only shape the first test cannot see.
+    """
+    schema, bundle = _multi_value()
+    query = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+    assert "JoinedMultiValue = Table.TransformColumns(" in query
+    assert "AuditEvents" in _accumulated_names(query, "Ensured"), query
+
+
+def test_the_users_dimension_survives_a_site_with_no_rows() -> None:
+    """`_Users` reads a list like any other and fails the same way."""
+    schema, bundle = _simple()
+    bundle = replace(
+        bundle,
+        mapping=replace(
+            bundle.mapping,
+            reporting=ReportingOptions(users_table=True),
+        ),
+    )
+    users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
+    ensured = _accumulated_names(users, "Ensured")
+    assert "Id" in ensured
+    assert "ContentTypeId" in ensured
+    for column_name in _typed_columns(users):
+        assert column_name in ensured, column_name
+
+
+def test_a_calculated_date_arrives_as_text_and_is_still_a_date() -> None:
+    """A calculated Date column is served with no `m:type`.
+
+    MEASURED on a live tenant, 2026-09-07: in one `/items` response
+    `LastReviewedDate` carried `m:type="Edm.DateTime"` and the calculated
+    `NextReviewDue` beside it carried none, so OData.Feed landed the second
+    as text, `type date` errored on every row, and Power BI's default
+    `returnErrorValuesAsNull` turned the error into a blank. The column read
+    as empty rather than as broken, which is why nothing in the refresh
+    complained.
+
+    So no date column goes through `Table.TransformColumnTypes` at all;
+    each is converted by a function that takes whichever shape arrives.
+    """
+    schema = make_schema(
+        make_table(
+            "Risk",
+            column("Title", required=True),
+            column("LastReviewedDate", "date"),
+            column("NextReviewDue", "calculated_date"),
+        ),
+    )
+    bundle = make_bundle(
+        entities=["Risk"],
+        calculated_formulas={"Risk": {"NextReviewDue": "=DATE(2026,1,1)"}},
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
+    assert "AsDate = (v as any) as nullable date =>" in query
+    # The bare conversion step specifically: `_typed_columns` reads both.
+    step = _TYPING_STEP.search(query)
+    assert step is not None
+    typed = re.findall(r'\{"([^"]+)",', step["body"])
+    assert "NextReviewDue" not in typed, query
+    # The declared one goes the same way: the pack cannot tell from the wire
+    # which of the two it is holding, and one converter over both is the
+    # only shape that cannot drift.
+    assert "LastReviewedDate" not in typed, query
+    for name in ("NextReviewDue", "LastReviewedDate"):
+        assert f'{{"{name}", each AsDate(_), type date}}' in query, name
+    # A DateTime column is untouched: a calculated column is only ever
+    # number, date or text, so `type datetimezone` always arrives typed.
+    assert "AsDateTimeZone" not in query
+
+
+def test_the_tolerant_date_converter_cannot_fail_a_refresh() -> None:
+    """Every branch of it ends in a value, so a shape nobody anticipated
+    blanks one column instead of blocking the whole batch."""
+    schema, bundle = _simple()
+    seen = 0
+    for name, query in generate_powerquery(schema, bundle, "default").items():
+        if "AsDate =" not in query:
+            continue
+        seen += 1
+        body = query.split("AsDate = (v as any) as nullable date =>")[1]
+        body = body.split("\n    Source =")[0]
+        assert "try" in body, name
+        assert "otherwise null" in body, name
+    assert seen, "no query in the fixture carries a date column"
+
+
+def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
+    """A renamed list keeps the slug it was created under.
+
+    MEASURED on a live tenant, 2026-09-07: one list was served at
+    `/Lists/<old name>/` because it was provisioned under an earlier name and
+    renamed in place, so every generated item link was dead while
+    `getbytitle` on the new title kept working. The slug cannot be derived at
+    build time: `renamed_from` records rename CANDIDATES rather than an
+    ordered history, and derivation was tried against ten live lists and got
+    two of them wrong, which is worse than not trying because the two wrong
+    ones look exactly like the eight right ones.
+
+    So the list's own folder is read at refresh time, the same single-entity
+    read the site name already uses, and it fails soft the same way.
+    """
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert (
+        "getbytitle('APP_Task')/RootFolder?$select=ServerRelativeUrl" in query
+    ), query
+    assert "[ServerRelativeUrl]" in query
+    # Read once per refresh, not once per row: the link is a column over the
+    # item id, and the base is a binding above it.
+    assert "each ItemUrlBase & Number.ToText([Id])" in query
+    # The declared path survives only as the fallback.
+    body = query.split("ItemUrlBase =")[1].split("\n    Source =")[0]
+    assert 'otherwise SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
+
+
+def test_a_document_library_link_points_at_its_forms_folder() -> None:
+    """A library's RootFolder is the library itself; its display form sits
+    one level down, which is the same difference the declared path carries."""
+    schema, bundle = _simple()
+    bundle = replace(
+        bundle,
+        mapping=replace(
+            bundle.mapping,
+            entities={
+                **bundle.mapping.entities,
+                "Task": replace(
+                    bundle.mapping.entities["Task"], kind="DocumentLibrary",
+                ),
+            },
+        ),
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert '& "/Forms/DispForm.aspx?ID="' in query, query
+    assert 'otherwise SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
+
+
+def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
+    """`ServerRelativeUrl` is `/sites/<site>/Lists/<slug>`, so the scheme and
+    host have to come from somewhere. A root site collection has no path
+    segment to cut at, so that shape must fall through to SiteRoot whole."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "    SiteOrigin =" in query
+    assert "SiteOrigin\n" in query.split("ItemUrlBase =")[1]
+    assert "if afterScheme < 0 or slash < 0 then SiteRoot" in query
