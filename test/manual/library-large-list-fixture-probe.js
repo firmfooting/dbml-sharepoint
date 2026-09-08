@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: BUILD THE PERSISTENT LARGE-LIBRARY FIXTURE.
  *
- * REVISION: 3bed7604
+ * REVISION: 6a9fdbb7
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a document
  * library that later probes measure, and every row it records is a
@@ -79,9 +79,9 @@
  * THE DEPENDS-ON / OBSERVES SPLIT, STATED. Every row here is a depends-on,
  * because the whole probe is a fixture. What is nonetheless OBSERVED and never
  * asserted: which multi-value payload shape SharePoint accepts, what form a
- * calculated number is serialised in, and what ids the target rows take. Those
- * are recorded in the evidence of the rows above and no outcome turns on any
- * of them being a particular value.
+ * calculated number is serialised in, which zone a date reads back rendered in,
+ * and what ids the target rows take. Those are recorded in the evidence of the
+ * rows above and no outcome turns on any of them being a particular value.
  *
  * VERIFICATION IS SAMPLED, and that is a deliberate narrowing rather than an
  * oversight. Reading every one of 5,500 files back would double an already long
@@ -134,6 +134,10 @@
  *   File upload via `GetFolderByServerRelativeUrl(...)/Files/add(url=,overwrite=)`
  *   and the item behind a file via `GetFileByServerRelativeUrl(...)/ListItemAllFields`:
  *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   The site's zone and the `Bias`, `StandardBias` and `DaylightBias` a bare
+ *   date read-back is resolved against, via `web/RegionalSettings/TimeZone`:
+ *     the same endpoint datetime-sentinel-probe.js reads, which returned an
+ *     Information block carrying all three on the 2026-09-03 live run.
  *   The list view threshold this fixture is built to sit past:
  *     https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
  *
@@ -181,6 +185,25 @@
 // count without querying, lets this probe verify a sample rather than the whole
 // library, and lets a resumed build produce exactly the file the interrupted one
 // would have produced.
+// finding: large-list-fixture-datetime-reads-back-in-a-zone-it-does-not-name -
+// on the 2026-09-08 run a file written LVDate="2020-01-02T00:00:00.000Z" read
+// back from ListItemAllFields as "2020-01-01T16:00:00": the same instant,
+// rendered in the site's own zone (480 minutes behind UTC on that date) and
+// carrying no Z and no offset. An offset-less stamp handed to Date.parse is read
+// in the BROWSER's zone, which is a third zone belonging to nobody in the
+// comparison, so the run called a correct write a lost one. The cost was not
+// only a false FAIL: the resume point redid file one on every paste, and the
+// multi-value shape experiment concluded that no shape worked. LVDate is
+// therefore compared as an INSTANT, a stamp naming no zone is read through
+// Date.UTC and resolved against the site's own candidate offsets, and the form
+// it came back in is printed rather than assumed.
+// finding: large-list-fixture-shape-experiment-is-decided-on-its-own-column -
+// a candidate payload shape is a statement about LVMultiChoice, so it is kept or
+// discarded on whether THAT column read back. The read-back used to be compared
+// over every column, which is the depends-on / observes split AGENTS.md warns
+// about: on 2026-09-08 a shape that wrote HTTP 204 and stored its values was
+// discarded because LVDate compared wrong, and the run reported that no shape
+// took. A mismatch in another column now stops the build under its own name.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -405,7 +428,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 3bed7604. Quote this when reporting results.');
+  log('INFO', 'probe revision 6a9fdbb7. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -466,15 +489,23 @@
   // Every value the fixture holds for one file, from the file's number alone.
   // `lookupIndex` is an index INTO the target rows, not a list item id; the ids
   // are read back and applied where the payload is built.
-  const wantedFor = (n) => ({
-    text: `text-${n % 100}`,
-    choice: CHOICES[n % 4],
-    number: n % 1000,
-    date: new Date(BASE_DATE_MS + (n % 365) * DAY_MS).toISOString(),
-    multi: [CHOICES[n % 4], CHOICES[(n + 1) % 4]],
-    lookupIndex: n % 10,
-    calc: (n % 1000) * 2,
-  });
+  // `dateMs` is the instant, `date` the UTC stamp written. Both are carried
+  // because the write needs a string and the comparison needs a number: the
+  // read-back does not come back in the form it went in as, so re-parsing the
+  // written string to compare against it would be parsing the wrong side.
+  const wantedFor = (n) => {
+    const dateMs = BASE_DATE_MS + (n % 365) * DAY_MS;
+    return {
+      text: `text-${n % 100}`,
+      choice: CHOICES[n % 4],
+      number: n % 1000,
+      dateMs,
+      date: new Date(dateMs).toISOString(),
+      multi: [CHOICES[n % 4], CHOICES[(n + 1) % 4]],
+      lookupIndex: n % 10,
+      calc: (n % 1000) * 2,
+    };
+  };
 
   if (!CONFIRMED) {
     log('INFO', `Would create a LIST '${TGT}' with ${TGT_ROW_COUNT} rows on ${WEB} and a`);
@@ -750,6 +781,44 @@
                      + 'there is no address to upload to');
   }
 
+  // ---- The zone a bare date read-back is rendered in --------------------
+  // See the read-back-zone finding in the header: LVDate can come back as a
+  // wall clock in the SITE's zone naming no zone at all, so the offsets such a
+  // stamp may carry are read from the site rather than assumed.
+  const zoneRead = await spGet('web/RegionalSettings/TimeZone');
+  const zoneInfo = (!readFailed(zoneRead) && zoneRead.body.Information) || null;
+  if (zoneInfo === null || typeof zoneInfo.Bias !== 'number') {
+    return abortFrom('library.large-list.fixture-file-count',
+                     `web/RegionalSettings/TimeZone did not read back a Bias (HTTP `
+                     + `${zoneRead.status}), so a ${DATE} stamp naming no zone could not be `
+                     + 'resolved to an instant. Nothing was uploaded, because a date comparison '
+                     + 'guessing its own zone would either redo a correct fixture or certify a '
+                     + 'broken one.');
+  }
+  // Windows convention: UTC = local + Bias + (Standard|Daylight)Bias, so local
+  // is UTC minus the two. Which of the two is in force on a given date is not
+  // stated and this fixture spans a year, so both stay candidates. Zero is a
+  // candidate as well: a bare stamp that is already UTC is the same instant and
+  // must not read as a lost write.
+  const BARE_OFFSETS_MIN = [...new Set([
+    0,
+    -(zoneInfo.Bias + (zoneInfo.StandardBias || 0)),
+    -(zoneInfo.Bias + (zoneInfo.DaylightBias || 0)),
+  ])];
+  const offsetLabel = (min) => `${min >= 0 ? '+' : ''}${min}min`;
+  // Accepting a stamp under any of several offsets is only sound while those
+  // offsets span less than a day, because consecutive file numbers are exactly
+  // a day apart and a wider spread would let one file's date satisfy another's.
+  // A real zone spans about fifteen hours at most, counting zero; anything
+  // wider is a zone this probe cannot reason about rather than one to guess at.
+  const offsetSpread = Math.max(...BARE_OFFSETS_MIN) - Math.min(...BARE_OFFSETS_MIN);
+  if (offsetSpread >= 1440) {
+    return abortFrom('library.large-list.fixture-file-count',
+                     `the site zone's candidate offsets span ${offsetSpread} minutes, a full day `
+                     + `or more, so a ${DATE} stamp naming no zone cannot be told from the next `
+                     + `file's. Information reads ${show(zoneInfo)}.`);
+  }
+
   // ---- Reading one file back -------------------------------------------
   // The six written columns in one call, and LVCalc in its own. Separated so a
   // problem selecting a calculated column cannot make the written columns read
@@ -766,11 +835,39 @@
     && left.length === right.length
     && right.every((value) => left.some((held) => String(held) === String(value)));
 
+  // Which form the date came back in. Observed and printed, never asserted: no
+  // outcome below turns on it being any one of them.
+  const dateFormsSeen = new Set();
+  const ISO_STAMP =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:?\d{2})?$/;
+
+  // Does this read-back hold the instant the file number asks for? A stamp that
+  // names its zone is unambiguous and Date.parse reads it. A stamp that names
+  // none is a wall clock, so it is read through Date.UTC, which keeps it one,
+  // and then matched against the site's own offsets. Date.parse must never see
+  // it: on an offset-less string it applies the browser's zone.
+  const dateHolds = (held, wantedMs) => {
+    const parts = typeof held === 'string' ? held.match(ISO_STAMP) : null;
+    if (!parts) return false;
+    if (parts[8]) {
+      if (Date.parse(held) !== wantedMs) return false;
+      dateFormsSeen.add(`${show(held)}, which names its own zone`);
+      return true;
+    }
+    const wall = Date.UTC(+parts[1], +parts[2] - 1, +parts[3], +parts[4], +parts[5], +parts[6],
+                          parts[7] ? Number(`${parts[7]}000`.slice(0, 3)) : 0);
+    const matched = BARE_OFFSETS_MIN.find((min) => wall - min * 60000 === wantedMs);
+    if (matched === undefined) return false;
+    dateFormsSeen.add(`${show(held)}, a wall clock naming no zone, `
+      + `${offsetLabel(matched)} from the instant written`);
+    return true;
+  };
+
   // What is wrong with one file, as a list of sentences. Empty means correct.
   // Compared by VALUE rather than by string: a number may come back as a
-  // number or as its decimal text, and a date comes back in whatever form
-  // SharePoint serialises it in, so a string comparison would report a
-  // formatting difference as a lost write.
+  // number or as its decimal text, and a date comes back as an instant that
+  // may be rendered in a zone it does not name, so a string comparison would
+  // report a rendering difference as a lost write.
   const mismatchesFor = (n, row) => {
     const want = wantedFor(n);
     const problems = [];
@@ -783,9 +880,8 @@
     if (Number(row[NUMBER]) !== want.number) {
       problems.push(`${NUMBER}=${show(row[NUMBER])} wanted ${show(want.number)}`);
     }
-    const heldDate = Date.parse(row[DATE]);
-    if (Number.isNaN(heldDate) || heldDate !== Date.parse(want.date)) {
-      problems.push(`${DATE}=${show(row[DATE])} wanted ${show(want.date)}`);
+    if (!dateHolds(row[DATE], want.dateMs)) {
+      problems.push(`${DATE}=${show(row[DATE])} wanted the instant ${show(want.date)}`);
     }
     if (!sameSet(valuesOf(row[MULTI]), want.multi)) {
       problems.push(`${MULTI}=${show(row[MULTI])} wanted ${show(want.multi)}`);
@@ -843,6 +939,12 @@
   // Try each shape in order and keep the first that WRITES AND READS BACK.
   // Stopping at HTTP 200 alone would count a write that silently kept nothing
   // as a success, which is the failure class this project exists to close.
+  //
+  // Decided on MULTI ALONE, for the reason in the shape-experiment finding: a
+  // shape is a statement about the multi-value payload, so letting another
+  // column disqualify one lets an unrelated defect pick the winner. The other
+  // columns are still compared, and returned so the caller can stop on them
+  // under their own name rather than as a shape that did not take.
   const discoverShape = async (n, itemId) => {
     for (const shape of MULTI_SHAPES) {
       const wrote = await writeValues(n, itemId, shape);
@@ -856,13 +958,17 @@
         continue;
       }
       const problems = mismatchesFor(n, back);
-      if (problems.length === 0) {
-        shapeNotes.push(`${shape.name}: took, and ${fileName(n)} read back complete`);
-        return shape;
+      const multiProblem = problems.find((problem) => problem.startsWith(`${MULTI}=`));
+      if (multiProblem !== undefined) {
+        shapeNotes.push(`${shape.name}: wrote HTTP ${wrote.status} but read back ${multiProblem}`);
+        continue;
       }
-      shapeNotes.push(`${shape.name}: wrote HTTP ${wrote.status} but read back ${problems.join(', ')}`);
+      const others = problems.filter((problem) => problem !== multiProblem);
+      shapeNotes.push(`${shape.name}: took, and ${fileName(n)} read back `
+        + (others.length ? `${MULTI} correct but ${others.join(', ')}` : 'complete'));
+      return { shape, others };
     }
-    return null;
+    return { shape: null, others: [] };
   };
 
   // ---- fixture-file-count ----------------------------------------------
@@ -965,11 +1071,19 @@
       }
       const itemId = idRead.body.Id;
       if (winningShape === null) {
-        winningShape = await discoverShape(n, itemId);
+        const found = await discoverShape(n, itemId);
+        winningShape = found.shape;
         if (winningShape === null) {
           stoppedAt = n;
           stopReason = `no multi-value item payload shape wrote ${MULTI} and read it back on `
             + `${fileName(n)}: ${shapeNotes.join('; ')}`;
+          break;
+        }
+        if (found.others.length) {
+          stoppedAt = n;
+          stopReason = `the '${winningShape.name}' shape wrote ${MULTI} and read it back, but `
+            + `${fileName(n)} read back ${found.others.join(', ')}. That is a column write `
+            + 'failing rather than a payload shape that did not take.';
           break;
         }
       } else {
@@ -1062,11 +1176,20 @@
   const shapeNote = winningShape === null
     ? `no shape was tried this run${shapeNotes.length ? `: ${shapeNotes.join('; ')}` : ''}`
     : `the shape that took is '${winningShape.name}' (${shapeNotes.join('; ')})`;
+  // Observed, never asserted. The site's candidates are printed beside the
+  // forms seen so a reader can check the resolution rather than take it.
+  const dateFormNote = `${DATE} came back as `
+    + (dateFormsSeen.size === 0
+      ? 'no value that held the instant asked for, so the form a correct one takes '
+        + 'was not observed this run'
+      : `${clip(show([...dateFormsSeen]), 300)}; the site's candidate offsets are `
+        + `${BARE_OFFSETS_MIN.map(offsetLabel).join(' / ')}`);
   record('library.large-list.fixture-values-written',
          'Every sampled file reads back holding the values its file number gives it',
          sampleProblems.length ? 'FAIL' : sampled.length === 0 ? 'ABORTED' : complete ? 'PASS' : 'SHORT',
          `${sampled.length} of ${SAMPLE.length} sample file(s) exist and were read back: `
          + `${show(sampled.map(fileName))}. Multi-value item payload: ${shapeNote}. `
+         + `${dateFormNote}. `
          + (sampleProblems.length
            ? `mismatches: ${sampleProblems.join('; ')}`
            : `every sampled file read back as its file number says it should. `
