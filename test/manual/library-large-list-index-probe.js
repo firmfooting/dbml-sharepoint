@@ -7,7 +7,7 @@
  *   on any column but Id. Does adding an index to a custom column take, and
  *   does it turn that refusal into an answer?
  *
- * REVISION: af945971
+ * REVISION: 6e48e634
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -58,7 +58,8 @@
  *        NEGATIVE CONTROL: is a filter naming a column the library does not
  *        hold refused WITHOUT the throttle signature? Every reading below turns
  *        on telling a throttle apart from a rejected request, and that
- *        discrimination is measured here rather than assumed.
+ *        discrimination is measured here rather than assumed. If it fails, the
+ *        three before/after rows are void rather than open.
  *   library.large-list.control-unindexed-filter-refused
  *        NEGATIVE CONTROL: is a selective filter on an unindexed contract
  *        column refused with the throttle signature? Without it the library is
@@ -83,7 +84,10 @@
  *        are distinguished and they are not the same finding: INDEXED (the
  *        write took and the flag reads true), SILENTLY IGNORED (the write was
  *        accepted and changed nothing, which is the failure class this
- *        repository exists to catch), and REFUSED (the server said no).
+ *        repository exists to catch), and REFUSED (the server said no). The
+ *        middle verdict is void unless both method controls held, because a
+ *        write that changed nothing and a write that never arrived look the
+ *        same from here.
  *   library.large-list.index-removes-filter-throttle
  *        QUESTION TWO: on ONE column, measured before and after, does a
  *        selective `$filter` go from refused to served once the column is
@@ -439,7 +443,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision af945971. Quote this when reporting results.');
+  log('INFO', 'probe revision 6e48e634. Quote this when reporting results.');
 
   // Teardown, and the only thing here that undoes anything: MERGE Indexed
   // false back onto every column this run indexed, so the fixture returns to
@@ -1014,9 +1018,22 @@
     };
   };
 
+  // SILENTLY IGNORED is the one verdict here that both method controls have to
+  // hold for. A write that changed nothing and a write that never arrived look
+  // identical, and only control-description-sticks separates them.
+  const methodControlsHeld = descSticks && unknownRefused;
   const runIndex = async (row) => {
     const result = await indexColumn(row.field);
     indexResults[row.field] = result;
+    if (result.outcome === 'SILENTLY IGNORED' && !methodControlsHeld) {
+      record(row.id, row.question, 'VOID',
+             `${result.evidence}. The method controls did not hold (a Description MERGE `
+             + `${descSticks ? 'stuck' : 'did not stick'} and an unknown property was `
+             + `${unknownRefused ? 'refused' : 'accepted'}), so a write that changed nothing `
+             + 'cannot be told from a write that never arrived',
+             'void');
+      return;
+    }
     record(row.id, row.question, result.outcome, result.evidence);
   };
 
@@ -1030,6 +1047,17 @@
   const usable = (name) => flags[name].indexed === false
     && indexResults[name] !== undefined && indexResults[name].indexed === true;
 
+  // The two controls the three measurements below cannot be read without. A
+  // refusal that cannot be attributed to the threshold is not evidence of one,
+  // and neither is a served answer on a library where nothing is served.
+  const methodVoid = !idServed
+    ? 'the positive control was not served, so this method was never shown to observe a '
+      + 'served answer on this library at all'
+    : !absentRefused
+      ? 'the absent-column control did not separate a rejected request from a throttled one, '
+        + 'so no refusal here can be read as the threshold'
+      : null;
+
   // ---- index-removes-filter-throttle -----------------------------------
   const FILTER_TRIES = [
     { field: NUMBER, filter: numberFilter, expected: numberExpected },
@@ -1037,13 +1065,10 @@
   ];
   const filterPick = FILTER_TRIES.find((row) => usable(row.field)) || null;
   let servedFilter = null;
-  if (!idServed) {
+  if (methodVoid !== null) {
     record('library.large-list.index-removes-filter-throttle',
            'On one column, does a selective $filter go from refused to served once the column is indexed',
-           'VOID',
-           'the positive control was not served, so this method was never shown to observe a '
-           + 'served answer on this library at all',
-           'void');
+           'VOID', methodVoid, 'void');
   } else if (filterPick === null) {
     record('library.large-list.index-removes-filter-throttle',
            'On one column, does a selective $filter go from refused to served once the column is indexed',
@@ -1088,13 +1113,10 @@
   // ---- index-removes-sort-throttle -------------------------------------
   const SORT_TRIES = [{ field: TEXT }, { field: NUMBER }];
   const sortPick = SORT_TRIES.find((row) => usable(row.field)) || null;
-  if (!idServed) {
+  if (methodVoid !== null) {
     record('library.large-list.index-removes-sort-throttle',
            'On one column, does an $orderby go from refused to served once the column is indexed',
-           'VOID',
-           'the positive control was not served, so a sort was never shown to be answerable on '
-           + 'this library at all',
-           'void');
+           'VOID', methodVoid, 'void');
   } else if (sortPick === null) {
     record('library.large-list.index-removes-sort-throttle',
            'On one column, does an $orderby go from refused to served once the column is indexed',
@@ -1133,7 +1155,11 @@
   // ---- index-is-per-column ---------------------------------------------
   // The pair is sent at ONE moment, with LVChoice still unindexed. That is why
   // LVChoice is a phase 2 write.
-  if (servedFilter === null) {
+  if (methodVoid !== null) {
+    record('library.large-list.index-is-per-column',
+           'With one column indexed, is its filter served while an unindexed sibling column is still refused',
+           'VOID', methodVoid, 'void');
+  } else if (servedFilter === null) {
     record('library.large-list.index-is-per-column',
            'With one column indexed, is its filter served while an unindexed sibling column is still refused',
            'NOT ESTABLISHED',
