@@ -264,7 +264,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `cross-lookup-probe.js`, `library-index-threshold-probe.js`,
 `library-grouping-probe.js`, `library-nesting-probe.js`,
 `library-view-interaction-probe.js`, `library-large-list-fixture-probe.js`,
-`library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`
+`library-large-list-index-probe.js`, `library-large-list-calculated-probe.js`,
+`library-large-list-group-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -322,6 +323,23 @@ calculated column, and the four questions after it are only worth reading if tha
 refusal still holds when they are asked. `control-id-query-served` is answered
 there in two shapes, a filter and a sort, and here in the filter shape only,
 because nothing in this probe sorts.
+
+`library-large-list-group-view-probe.js` files here for the same reason and
+reuses seven ids, including one that changes role. `fixture-library-present`,
+`fixture-index-flags-clear`, `control-id-query-served`,
+`control-absent-column-refused`, `control-unindexed-filter-refused`,
+`control-missing-group-column-ungrouped` and `index-choice-column` are the same
+questions by the same method against the same fixture, so they are one id with
+more than one record. `control-group-by-single-value-column` is the one that
+changes role: in the calculated probe it is an instrument, and its refusal is
+what stopped that probe attributing anything to the column being calculated,
+which makes the unindexed group-by throttle this probe's SUBJECT. So the id
+appears in this probe's findings and NOT in its scenario controls, and no check
+here declares a dependency on it. A control voids what depends on it; a subject
+that comes back refused is a result, and the two must not be spelled the same
+way. The keying rule is what holds them together: one question takes one id
+however many probes ask it, and the role a check plays is a property of the
+probe rather than of the question.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -442,6 +460,12 @@ different questions and take different ids. They do not merge.
 | Does a Description MERGE stick on a library column | the calculated column itself, whose index refusal it is the control for | `library.large-list.control-calculated-description-sticks` |
 | Is an unknown `SP.Field` property refused | sent at a text column | `library.large-list.control-unknown-property-refused` |
 | Is an unknown `SP.Field` property refused | sent at the calculated column, where a MERGE may not arrive at all | `library.large-list.control-calculated-unknown-property-refused` |
+| Does a Description MERGE stick on a library column | the Choice column, whose index write the group-view probe rests on | `library.large-list.control-choice-description-sticks` |
+| Is an unknown `SP.Field` property refused | sent at the Choice column, in the same run that indexes it | `library.large-list.control-choice-unknown-property-refused` |
+| Is a query naming a column the library does not hold refused | an OData `$filter`, the surface that reports the threshold as an error | `library.large-list.control-absent-column-refused` |
+| Is a query naming a column the library does not hold refused | a `<Where>` through `RenderListDataAsStream`, the surface a `<GroupBy>` lives on | `library.large-list.control-render-where-absent-refused` |
+| Does an index let a group-by through past the threshold | `Id`, the one natively indexed column, with no write at all | `library.large-list.group-by-native-index-column` |
+| Does an index let a group-by through past the threshold | a Choice column, measured before and after the probe indexes it | `library.large-list.group-by-indexed-column` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
