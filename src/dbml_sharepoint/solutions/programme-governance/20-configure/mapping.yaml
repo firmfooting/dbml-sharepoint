@@ -202,6 +202,13 @@ calculated_formulas:
 # made can be selected, while the projected Title keeps the row readable if
 # that decision is later withdrawn and its live title goes blank.
 lookup_projections:
+  # Stakeholder retires by Status and is never deleted, so an involvement can
+  # outlive the stakeholder it points at with nothing to show for it. The
+  # projection puts that on the row, which is the only place a view can read
+  # it. Choice projects like any other column: Workstream -> Phase below is
+  # the same shape.
+  Involvement:
+    Stakeholder: [Status]
   Action:
     RelatedRisk: [Title]
     Workstream: [Phase]
@@ -576,6 +583,17 @@ column_formatting:
   Involvement:
     Involvement: { style: pill,
                    map: { Agree: warning, Consulted: low, Informed: neutral } }
+    # A progress ramp, deliberately not the severity map above it. Identified
+    # is neutral because it is the correct state for a new row rather than a
+    # problem; it only becomes one when NextContact goes past, which the
+    # column below shows.
+    EngagementStatus: { style: pill,
+                        map: { Identified: neutral, Scheduled: low, Engaged: good } }
+    # Guarded off Engaged: once the engagement has happened the date is
+    # history, and an overdue treatment on it would paint every completed row
+    # red forever.
+    NextContact: { style: overdue-date,
+                   guard: { field: EngagementStatus, not: [Engaged] } }
   ServiceRequest:
     # Warning is "with the provider" and severe is "blocked on us": a request
     # handed back is the one the health service has to act on.
@@ -626,6 +644,27 @@ field_sets:
   Issue:
     issue: [Title, Workstream, Severity, Status, Owner, RaisedDate]
 
+# A view that lets you set a value in Quick Edit must also carry whatever a
+# save rule then requires. Reported live 2026-09-08: marking an action Done
+# from "My actions" was refused for a blank Completed Date, and the grid had
+# no cell to put one in, so the only way through was the full form. The
+# conditional-visibility formula reveals the date the moment Status changes on
+# a FORM, which is why Edit all works; Quick Edit does not use the form at all
+# and shows the view's columns.
+#
+# So the date now rides on the views whose OWN PURPOSE is that transition:
+# closing an action, resolving an issue, recording a decision. Ten views.
+#
+# Ten more still show a trigger without its requirement, and are left that
+# way on purpose. Activity's Escalation Route is required by a change of
+# KIND, criticality or role rather than by a lifecycle step, and it is long
+# free text nobody types into a grid. ServiceRequest's authorisation and
+# minutes belong to the handler working a request on its form, where the
+# justification and the escalation narrative are. Both are deliberate edits
+# on a form, not a tick in a grid, and carrying three more columns across
+# five views each would cost every reader of those views to serve an edit
+# nobody makes there.
+#
 # Declared views (deployed and reconciled by the views phase; undeclared views
 # are never touched). Widths are pixel ColumnWidth per view and the keys are
 # INTERNAL names. The build rewrites them to display titles, because
@@ -955,7 +994,8 @@ views:
     # list, which is the shape a RACI is normally drawn in.
     - title: "By activity"
       default: true
-      fields: [Title, Activity, Stakeholder, Involvement, Channel, Notes]
+      fields: [Title, Activity, Stakeholder, Involvement, EngagementStatus,
+               NextContact, Channel, Notes]
       group_by: { field: Activity, collapsed: false }
       sort:
         - { field: Involvement, direction: asc }
@@ -964,26 +1004,61 @@ views:
         Activity: 240
         Stakeholder: 180
         Involvement: 130
+        EngagementStatus: 150
+        NextContact: 130
         Channel: 180
         Notes: 200
     - title: "By stakeholder"
       renamed_from: ["By party"]
-      fields: [Title, Stakeholder, Activity, Involvement, Channel]
+      fields: [Title, Stakeholder, StakeholderStatus, Activity, Involvement,
+               EngagementStatus, Channel]
       group_by: { field: Stakeholder, collapsed: false }
       sort:
         - { field: Title, direction: asc }
       widths:
         Title: 280
         Stakeholder: 180
+        StakeholderStatus: 120
         Activity: 240
         Involvement: 130
+        EngagementStatus: 150
         Channel: 180
+    # The backlog this release exists for. Everyone the programme has decided
+    # it needs and has not yet spoken to, oldest next-contact first, so a
+    # stalled engagement rises rather than sinking into Notes.
+    #
+    # Involvement is on it because the authority level is what makes the row
+    # urgent: an unapproached Agree blocks its activity, an unapproached
+    # Informed does not.
+    #
+    # A row whose EngagementStatus is BLANK stays out, which is what makes
+    # this safe to deploy onto a site whose existing rows predate the column:
+    # CAML <In> matches no null, so the backlog fills with real backlog rather
+    # than with every row already on the list. See the release notes for the
+    # one-time bulk set.
+    - title: "Identified, not yet engaged"
+      fields: [Title, Stakeholder, Activity, Involvement, EngagementStatus,
+               NextContact, Channel, Notes]
+      where:
+        - { field: EngagementStatus, op: in, value: ["Identified", "Scheduled"] }
+      sort:
+        - { field: NextContact, direction: asc }
+      widths:
+        Title: 280
+        Stakeholder: 180
+        Activity: 240
+        Involvement: 130
+        EngagementStatus: 150
+        NextContact: 130
+        Channel: 180
+        Notes: 200
     # Quarterly step 6, the overload detector. Grouped by stakeholder rather than by
     # activity on purpose: the failure it exists to reveal is one stakeholder made
     # Consulted (or, worse, Agree) on everything, and that is invisible in any
     # activity-first view. Involvement is shown so a reader can tell the two apart.
     - title: "Consultation load"
-      fields: [Title, Stakeholder, Involvement, Activity, Channel, Notes]
+      fields: [Title, Stakeholder, Involvement, EngagementStatus, Activity,
+               Channel, Notes]
       where:
         - { field: Involvement, op: in, value: ["Consulted", "Agree"] }
       group_by: { field: Stakeholder, collapsed: false }
@@ -993,6 +1068,7 @@ views:
         Title: 280
         Stakeholder: 180
         Involvement: 130
+        EngagementStatus: 150
         Activity: 240
         Channel: 180
         Notes: 200
@@ -1223,7 +1299,7 @@ views:
     # person column, which is what the current-user sentinel exists for.
     - title: "My actions"
       default: true
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: AssignedTo, op: eq, value: me }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1238,10 +1314,11 @@ views:
         Status: 120
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     # Read FIRST at the fortnightly, so the exception is not buried in the
     # whole list.
     - title: "Overdue"
-      fields: ["@action", RelatedRiskTitle]
+      fields: ["@action", RelatedRiskTitle, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
         - { field: DueDate, op: lt, value: today }
@@ -1255,8 +1332,9 @@ views:
         DueDate: 160
         Status: 120
         RelatedRiskTitle: 220
+        CompletedDate: 160
     - title: "Open by person"
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: AssignedTo, collapsed: true }
@@ -1271,6 +1349,7 @@ views:
         Status: 120
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     - title: "Done and dropped"
       fields: ["@action", CompletedDate, Notes]
       where:
@@ -1291,7 +1370,7 @@ views:
     # workstream so each lead's broken things arrive together.
     - title: "Open"
       default: true
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: Workstream, collapsed: false }
@@ -1309,10 +1388,11 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     # Phase 1's answer to a severe issue, and phase 2 flow D's fallback: both
     # exist, and the view works with the flow off.
     - title: "Severe and open"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Severity, op: in, value: ["Major", "Critical"] }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1328,8 +1408,9 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     - title: "By owner"
-      fields: ["@issue", RelatedRiskTitle]
+      fields: ["@issue", RelatedRiskTitle, ResolvedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: Owner, collapsed: false }
@@ -1343,6 +1424,7 @@ views:
         Owner: 160
         RaisedDate: 160
         RelatedRiskTitle: 220
+        ResolvedDate: 160
     - title: "Resolved and closed"
       fields: ["@issue", ResolvedDate, Resolution]
       where:
@@ -1362,7 +1444,7 @@ views:
     # Workstream and Owner are the two fields an occasional raiser cannot
     # answer, so the view surfaces wherever either is still blank.
     - title: "Needs triage"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - any_of:
             - { field: Workstream, op: is_null }
@@ -1378,10 +1460,11 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
     # "Did the thing I reported get seen, and where is it now?" Author is the
     # built-in Created By column; an issue has no separate raiser column.
     - title: "My raised items"
-      fields: ["@issue", RelatedRiskTitle, Detail]
+      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
       where:
         - { field: Author, op: eq, value: me }
       sort:
@@ -1395,6 +1478,7 @@ views:
         RaisedDate: 160
         RelatedRiskTitle: 220
         Detail: 260
+        ResolvedDate: 160
   Decision:
     # The queue comes first and the log second, because the list now holds
     # both and only one of them is work. Status is the only thing separating
@@ -1403,7 +1487,7 @@ views:
     - title: "Awaiting decision"
       default: true
       fields: [Title, Status, RaisedDate, Activity, Workstream,
-               ResolutionSought, Author]
+               ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
       sort:
@@ -1416,6 +1500,7 @@ views:
         Workstream: 180
         ResolutionSought: 280
         Author: 170
+        DecisionDate: 150
     - title: "Decision log"
       fields: [Title, Status, DecisionDate, Workstream, DecidedBy,
                DecidedByForum, RecommendedByForum, SupersedesDecisionTitle,
@@ -1439,7 +1524,7 @@ views:
     # older than that has missed both, so it is stuck rather than pending.
     - title: "Stalled proposals"
       fields: [Title, Status, RaisedDate, Activity, Workstream,
-               ResolutionSought, Author]
+               ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
         - { field: RaisedDate, op: lt, value: today-42 }
@@ -1453,6 +1538,7 @@ views:
         Workstream: 180
         ResolutionSought: 280
         Author: 170
+        DecisionDate: 150
 
     # Quarterly step 9 renders Modified and Editor, most recent first, so the
     # reviewer can read down to the last review.
@@ -2131,6 +2217,7 @@ demo_items:
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-privacy }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Email"
         Notes: "Demo row. Must be asked before the request is authorised, not after the provider has built it."
     - key: inv-provider-tenant
@@ -2139,6 +2226,7 @@ demo_items:
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-provider }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Ad hoc"
         Notes: "Demo row. Asked on the service request itself. The provider is consulted here and is never Accountable."
     - key: inv-steering-licensing
@@ -2147,6 +2235,7 @@ demo_items:
         Activity: { demo_ref: act-decide-licensing }
         Stakeholder: { demo_ref: stakeholder-steering }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Standing agenda item"
         Notes: "Demo row. The steering group is consulted on the model and the sponsor decides the budget."
     - key: inv-champions-migration
@@ -2155,6 +2244,7 @@ demo_items:
         Activity: { demo_ref: act-lead-migration }
         Stakeholder: { demo_ref: stakeholder-champions }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Meeting"
         Notes: "Demo row. The champions are the only people who know what each team actually opens first thing in the morning."
     - key: inv-clinical-cutover
@@ -2163,6 +2253,7 @@ demo_items:
         Activity: { demo_ref: act-lead-migration }
         Stakeholder: { demo_ref: stakeholder-clinical-lead }
         Involvement: "Informed"
+        EngagementStatus: "Engaged"
         Channel: "Report or dashboard"
         Notes: "Demo row. Told, not asked: the date is set by the workstream and the clinical lead needs to know it."
     - key: inv-privacy-comms
@@ -2171,16 +2262,38 @@ demo_items:
         Activity: { demo_ref: act-privacy-review }
         Stakeholder: { demo_ref: stakeholder-privacy }
         Involvement: "Consulted"
+        EngagementStatus: "Engaged"
         Channel: "Email"
-        Notes: "Demo row. Three of these six rows consult the same stakeholder, which is what the Consultation load view exists to show."
+        Notes: "Demo row. The second row consulting the privacy officer, which is what the Consultation load view exists to surface."
     - key: inv-director-tenant
       values:
         Title: "[DEMO] Whether a tenant-wide setting may change at all this quarter"
         Activity: { demo_ref: act-approve-tenant-change }
         Stakeholder: { demo_ref: stakeholder-digital-director }
         Involvement: "Agree"
+        EngagementStatus: "Engaged"
         Channel: "Standing agenda item"
         Notes: "Demo row. The only Agree here: the approval does not proceed without it, which is the difference from the two Consulted rows on the same activity."
+    - key: inv-clinical-licensing
+      values:
+        Title: "[DEMO] Whether the licensing model leaves clinical systems short"
+        Activity: { demo_ref: act-decide-licensing }
+        Stakeholder: { demo_ref: stakeholder-clinical-lead }
+        Involvement: "Agree"
+        EngagementStatus: "Identified"
+        Channel: "Meeting"
+        Notes: "Demo row, and the reason Engagement Status is its own column. The licensing decision does not proceed without this sign-off, and nobody has approached them yet. Read the two columns together: high authority, no contact."
+    - key: inv-steering-migration
+      values:
+        Title: "[DEMO] Whether the cutover sequence fits the board's reporting cycle"
+        Activity: { demo_ref: act-lead-migration }
+        Stakeholder: { demo_ref: stakeholder-steering }
+        Involvement: "Consulted"
+        EngagementStatus: "Scheduled"
+        NextContact: "today+14"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Identified, a date set, not yet held. Both this row and the one above it are what the Identified, not yet engaged view lists."
+
   ServiceRequest:
     - key: tr-guest-access
       values:

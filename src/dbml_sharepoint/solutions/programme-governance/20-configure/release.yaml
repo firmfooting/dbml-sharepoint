@@ -1,8 +1,63 @@
-release: "3.1.0"
-date: "2026-09-07"
+release: "3.2.0"
+date: "2026-09-08"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "3.1.0"
+schema_version: "3.2.0"
 notes: |
+  3.2.0 also puts the date a save rule requires on the views you set the
+  status from. Reported live: marking an action Done from "My actions" was
+  refused for a blank Completed Date, and the grid had no cell to put one in,
+  so the only way through was to open the full form. Completed Date, Resolved
+  Date and Decision Date now ride on the ten views whose own purpose is that
+  transition, so one Quick Edit save satisfies the rule. The rules themselves
+  are unchanged: an action finished on a date nobody can name is still In
+  progress.
+
+  Ten further views show a trigger without its requirement and are left that
+  way deliberately; the mapping's views section says which and why.
+
+  3.2.0 separates HOW FAR an involvement has got from HOW MUCH AUTHORITY it
+  carries. Involvement (Agree, Consulted, Informed) is unchanged and still
+  means authority. A new EngagementStatus (Identified, Scheduled, Engaged)
+  and a NextContact date record whether the involvement has actually
+  happened, and a new view, "Identified, not yet engaged", lists the ones
+  that have not.
+
+  The alternative was a fourth member on Involvement itself, which was asked
+  for and rejected. It cannot say "we need this person to Agree and have not
+  approached them yet", which is the sentence the programme needs, and it
+  breaks the Consultation load view: that view filters Involvement in
+  [Consulted, Agree] to reveal one stakeholder made Consulted on everything,
+  so an identified would-be Agree on ten activities would have appeared in
+  none of them. Two axes keep both readings.
+
+  NOT breaking. Both columns are new and nothing existing changes meaning.
+
+  ONE MANUAL STEP on a site that already holds involvements. SharePoint
+  applies a column default to new items only, so every existing row reads
+  BLANK for Engagement Status rather than Engaged. The backlog view filters
+  on [Identified, Scheduled] and CAML matches no null, so blank rows stay
+  OUT of it and the view is trustworthy from the first refresh. They will
+  show blank in the two standing views until somebody fills them. Set them
+  all to Engaged in one bulk edit after deploying; every row that predates
+  this release is an involvement that has already happened.
+
+  Also in this release, and independent of the above:
+
+  - Involvement projects the stakeholder's Status, so an involvement still
+    live against a retired stakeholder is visible on the row. Stakeholder
+    retires by Status and is never deleted, and until now nothing carried
+    that fact to where a view could read it.
+  - The Involvement table note records that (Activity, Stakeholder) is NOT
+    unique and cannot be made so: SharePoint has no composite unique
+    constraint and a validation formula sees only the row being saved. The
+    quarterly walk is what catches a duplicate.
+
+  NOT added, deliberately: a save rule requiring NextContact while Scheduled.
+  That is a comparison against a blank date, which is the exact shape of
+  issue #156, an unmeasured live-site hazard already present in thirteen
+  shipped templates. The column note carries the rule and the view surfaces
+  a stall; a rule can follow once #156 is probed.
+
   3.1.0 gives every list's built-in Title column a display name that says
   what it holds: Workstream, Stakeholder, Activity, Input, Service Request,
   Risk, Action, Issue, Decision, Business Process. Each is the DBML note on
