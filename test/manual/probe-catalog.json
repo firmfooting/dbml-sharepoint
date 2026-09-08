@@ -1893,6 +1893,122 @@
       ]
     },
     {
+      "file": "library-grouping-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library, a small lookup target list, four test files, choice and lookup columns, and a grouped view"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.fixture-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.fixture-values-written",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "library.view.fixture-multi-lookup-ready",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "library.view.control-missing-group-column-ungrouped",
+              "depends_on": [
+                "library.view.fixture-values-written"
+              ]
+            },
+            {
+              "id": "library.view.control-group-by-single-value-column",
+              "depends_on": [
+                "library.view.fixture-values-written"
+              ]
+            },
+            {
+              "id": "library.view.group-by-multi-value-choice",
+              "depends_on": [
+                "library.view.fixture-values-written",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.view.group-by-multi-value-lookup",
+              "depends_on": [
+                "library.view.fixture-multi-lookup-ready",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.view.group-by-lookup-column",
+              "depends_on": [
+                "library.view.fixture-values-written",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.view.group-by-null-title",
+              "depends_on": [
+                "library.view.fixture-values-written",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.view.group-by-name-column",
+              "depends_on": [
+                "library.view.fixture-values-written",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            },
+            {
+              "id": "library.view.multi-value-group-by-stored-on-view",
+              "depends_on": [
+                "library.view.fixture-values-written",
+                "library.view.control-missing-group-column-ungrouped",
+                "library.view.control-group-by-single-value-column"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.fixture-columns-created",
+            "library.view.fixture-values-written",
+            "library.view.fixture-multi-lookup-ready",
+            "library.view.control-missing-group-column-ungrouped",
+            "library.view.control-group-by-single-value-column"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-formula-probe.js",
       "surface": "library",
       "harness": "shared-v1",
