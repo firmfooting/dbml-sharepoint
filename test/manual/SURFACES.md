@@ -262,7 +262,7 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-query-probe.js`, `library-field-probe.js`,
 `library-view-search-probe.js`, `library-index-probe.js`,
 `cross-lookup-probe.js`, `library-index-threshold-probe.js`,
-`library-grouping-probe.js`
+`library-grouping-probe.js`, `library-nesting-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -361,6 +361,8 @@ surface boundary, and are listed for the same reason:
 | `cross-lookup-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-index-threshold-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-grouping-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-nesting-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-nesting-probe.js` | `control-missing-group-column-ungrouped` and `control-group-by-single-value-column`, the two grouping controls its folder-depth rows rest on, kept under the ids `library-grouping-probe.js` registers for the same questions by the same method | `library.view.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
@@ -394,6 +396,8 @@ different questions and take different ids. They do not merge.
 | Is a lookup created and bound by `createfieldasxml` | both ends generic lists | `field.lookup.control-primary-lookup-created` |
 | Is a lookup created and bound by `createfieldasxml` | the column is held by a document library | `library.lookup.library-to-list-created` |
 | Is a lookup created and bound by `createfieldasxml` | the target is a document library | `library.lookup.list-to-library-title-created` |
+| Does a view group by folder | `<FieldRef Name="Folder"/>` on a library holding one folder at the root | `library.view.group-by-folder` |
+| Does a view group by folder | the parent-folder column, on a library holding a folder three deep | `library.folder.group-by-path-depth` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
