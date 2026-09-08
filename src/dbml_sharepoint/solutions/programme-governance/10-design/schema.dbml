@@ -343,6 +343,11 @@ Table Involvement {
     Stakeholder
     Involvement
     EngagementStatus
+    // The backlog view filters EngagementStatus and SORTS on this. Past the
+    // 5,000-item threshold an unindexed sort column fails the view the same
+    // way an unindexed filter does, so both halves of that view are indexed
+    // rather than only the one being compared.
+    NextContact
   }
 
   // NOT unique on (Activity, Stakeholder), and it cannot be made so here.
