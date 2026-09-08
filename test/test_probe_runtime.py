@@ -695,6 +695,12 @@ _GROUPING_HARNESS = textwrap.dedent("""
     const extra = (when) => (CONFIG.extraRow === when || CONFIG.extraRow === 'always'
       ? [{ FileLeafRef: 'dbmlsp-not-a-probe-file.txt' }] : []);
 
+    // The rows run 20260908T021507 got back for a <GroupBy> naming a column
+    // that does not exist: one per file, and none of them carrying the
+    // FileLeafRef the ViewFields asked for.
+    const namelessRows = (held) => held.items.map(
+      () => ({ PreviewThumbnailsQualitySets: '' }));
+
     const render = (held, viewXml) => {
       const asked = GROUP_BY.exec(viewXml);
       const fields = [...viewXml.matchAll(/<ViewFields>[\\s\\S]*<\\/ViewFields>/g)].length
@@ -710,7 +716,7 @@ _GROUPING_HARNESS = textwrap.dedent("""
           return jsonResponse(200, { Row: [groupRow('', held.items.length)(asked[2])] });
         }
         return jsonResponse(200, {
-          Row: flatRows(held, fields).concat(extra('grouped-only')),
+          Row: namelessRows(held).concat(extra('grouped-only')),
         });
       }
       if (asked && asked[1] === 'TRUE') {
@@ -876,7 +882,12 @@ def test_a_group_by_that_is_ignored_rather_than_refused_still_holds_the_control(
     200 with flat rows, and six measurements that had been made were voided.
 
     A group-by is never refused, so the control has to establish the IGNORED
-    signature instead: flat rows, one per file, carrying no group label.
+    signature instead: rows carrying no group label, as many as the same query
+    returns with no <GroupBy> at all.
+
+    The rows here are the ones run 20260908T021507 came back with, which carry
+    no FileLeafRef. Requiring one row per file over a count keyed by that name
+    voided the same six measurements a second time.
     """
     rows = _run_grouping_probe()
 
@@ -884,7 +895,9 @@ def test_a_group_by_that_is_ignored_rather_than_refused_still_holds_the_control(
         f"the control recorded {rows[_GROUPING_CONTROL]['outcome']!r} against a "
         f"group-by that came back flat, which is the answer the live run got."
     )
-    assert "Flat rows, one per file" in rows[_GROUPING_CONTROL]["evidence"]
+    assert "Flat rows carrying no group label" in rows[_GROUPING_CONTROL]["evidence"]
+    # The count is still reported, and is still the count the live run showed.
+    assert "rows per file " in rows[_GROUPING_CONTROL]["evidence"]
     assert rows["library.view.control-group-by-single-value-column"]["outcome"] == "PASS"
     assert not [row for row in rows.values() if row["state"] == "void"]
     assert rows["library.view.group-by-multi-value-choice"]["outcome"] == "ONE GROUP PER SET"
@@ -925,8 +938,8 @@ def test_a_row_the_ungrouped_query_also_returns_does_not_fail_the_control() -> N
     """The flat shape is measured, not assumed to be the file count.
 
     The live run's missing-column query returned five rows over four files.
-    What makes a response flat is that the same query returns it with no
-    <GroupBy> at all, and that no file is split across rows.
+    What makes a response flat is that the same query returns as many rows
+    with no <GroupBy> at all, carrying no grouping marker.
     """
     rows = _run_grouping_probe(extra_row="always")
 

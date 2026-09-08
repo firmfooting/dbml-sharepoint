@@ -81,8 +81,8 @@
  *   Depends on (asserted, read back): the library and the target list exist;
  *   the three grouping columns exist and read back as their asked-for types;
  *   the four files exist; each file reads back holding the values written to
- *   it; a group-by naming a missing column comes back ungrouped, on the same
- *   rows the query returns with no group-by at all; a group-by on a
+ *   it; a group-by naming a missing column comes back ungrouped, in as many
+ *   rows as the query returns with no group-by at all; a group-by on a
  *   single-value column produces group rows this probe can read.
  *   Observes (recorded, never asserted): for every column kind, whether the
  *   group-by is accepted, how many group rows come back, what the group labels
@@ -146,6 +146,15 @@
 // The control measures the flat shape in the same run rather than assuming it
 // is one row per file, by sending the same query twice and varying only the
 // <GroupBy>.
+// finding: library-grouping-a-collapsed-row-carries-no-file-name - the second
+// live run, 2026-09-08, sent the missing-column <GroupBy> with ViewFields
+// naming FileLeafRef and got four rows back that did not carry it, the first
+// being `{"PreviewThumbnailsQualitySets":""}`. A count of rows per file over
+// those rows is therefore undefined for every file, and the negative control,
+// which required one row per file, reported NOT ESTABLISHED against clean data
+// and voided six measurements a second time. The flat signature is decided by
+// the row count against the same query sent with no <GroupBy>, and by the
+// absence of the grouping markers; the per-file count is evidence only.
 // finding: library-grouping-client-side-partition-is-not-evidence - a probe
 // that sends a grouped query, gets flat rows back and sorts them into buckets
 // by reading each row's value has measured its own arithmetic. The rows would
@@ -742,12 +751,13 @@
   const missingSeen = await groupBy(MISSING, 'TRUE', undefined, ['FileLeafRef']);
   const ungroupedSeen = await groupBy(null, 'TRUE', undefined, ['FileLeafRef']);
   const missingMarkers = markersIn(missingSeen.rows, MISSING);
+  // Reported, never a clause of the verdict: a collapsed query's rows do not
+  // carry FileLeafRef. See the collapsed-row finding in the header.
   const missingPerFile = countByFile(missingSeen.rows);
   const flatSignature = !missingField.ok
     && missingSeen.res.ok && ungroupedSeen.res.ok
     && missingMarkers.length === 0
-    && missingSeen.rows.length === ungroupedSeen.rows.length
-    && FILES.every((file) => missingPerFile[file.name] === 1);
+    && missingSeen.rows.length === ungroupedSeen.rows.length;
   const negativeHeld = flatSignature;
   record('library.view.control-missing-group-column-ungrouped', Q_NEGATIVE,
          flatSignature ? 'PASS' : missingMarkers.length ? 'FAIL' : 'NOT ESTABLISHED',
@@ -762,9 +772,9 @@
          + `${ungroupedSeen.rows.length} row(s)`
          + (missingSeen.res.ok ? '' : `; body ${clip(missingSeen.res.text, 220)}`)
          + (flatSignature
-           ? '. Flat rows, one per file, carrying no group label, and the same rows the '
-             + 'ungrouped query returns, so a group-by SharePoint ignored is observable and '
-             + 'is not the group rows the positive control reads.'
+           ? '. Flat rows carrying no group label, as many as the same query returns with no '
+             + '<GroupBy> at all, so a group-by SharePoint ignored is observable and is not the '
+             + 'group rows the positive control reads.'
            : missingMarkers.length
              ? '. The rows carry the markers an honoured group-by carries, so this run cannot '
                + 'tell a group-by SharePoint honoured from one it ignored, and every group-by '
