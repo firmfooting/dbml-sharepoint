@@ -6241,6 +6241,145 @@
           ]
         }
       ]
+    },
+    {
+      "file": "library-index-threshold-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two fixed document libraries, 5001 small text files in one of them, two probe-owned columns on each, and metadata on one file in each"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "a site the operator is willing to put a 5001-file library on",
+        "several pastes: the upload is capped per run and resumes where it stopped"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.index.fixture-file-count",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.index.fixture-target-seeded",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.index.fixture-file-count"
+              ]
+            },
+            {
+              "id": "library.index.control-small-library-shapes",
+              "depends_on": []
+            },
+            {
+              "id": "library.index.control-threshold-id-served",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes"
+              ]
+            },
+            {
+              "id": "library.index.control-unindexed-refused",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes"
+              ]
+            },
+            {
+              "id": "library.index.control-unindexed-person-refused",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-title",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-refused"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-name",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-refused"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-created",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-refused"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-modified",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-refused"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-author",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-person-refused"
+              ]
+            },
+            {
+              "id": "library.index.threshold-filter-editor",
+              "depends_on": [
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded",
+                "library.index.control-small-library-shapes",
+                "library.index.control-threshold-id-served",
+                "library.index.control-unindexed-person-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.index.control-small-library-shapes",
+            "library.index.control-threshold-id-served",
+            "library.index.control-unindexed-refused",
+            "library.index.control-unindexed-person-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
