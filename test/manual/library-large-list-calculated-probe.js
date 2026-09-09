@@ -7,7 +7,7 @@
  *   view threshold, and is that value stored or worked out per row when the
  *   query runs?
  *
- * REVISION: 1fa24077
+ * REVISION: b7946bbc
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -77,13 +77,16 @@
  *        NEGATIVE CONTROL: is a MERGE naming a property SP.Field does not have
  *        refused on LVCalc? Without it, "the write was accepted" says nothing.
  *   library.large-list.control-group-by-single-value-column
- *        POSITIVE CONTROL: is a group-by on LVChoice HONOURED past 5,000 items?
- *        Grouping is never refused for naming a bad column, so the discriminator
- *        is honoured against ignored and it is established here first.
+ *        POSITIVE CONTROL: is a group-by on LVChoice HONOURED past 5,000 items
+ *        once a `<Where>` on the natively indexed Id has narrowed the rows? The
+ *        un-narrowed group-by throttles on every column at this size, so the
+ *        control is taken over the guarded row set and the un-narrowed reading
+ *        is reported beside it.
  *   library.large-list.control-missing-group-column-ungrouped
- *        NEGATIVE CONTROL: does a group-by naming a column the library does not
- *        hold come back IGNORED, with the rows the same query returns with no
- *        <GroupBy> at all?
+ *        Is a group-by naming a column the library does not hold ignored, with
+ *        the rows the same query returns with no <GroupBy> at all, or refused?
+ *        It was written as a negative control expecting IGNORED. Past 5,000
+ *        items it is refused instead, so it reports what it read.
  *   library.large-list.index-calculated-column
  *        QUESTION ONE, the confirmation: does `Indexed: true` take on LVCalc
  *        past 5,000 items? #478 recorded REFUSED. Three outcomes are still
@@ -254,6 +257,15 @@
 // is honoured against ignored, read off the group markers SharePoint adds, and
 // both controls for it are taken here at this fixture's size rather than
 // inherited from a six-file library.
+// finding: large-list-calculated-absent-column-group-by-is-refused-here -
+// measured 2026-09-08 on this library and on PreIndex: that same <GroupBy>
+// returns HTTP 500 carrying Microsoft.SharePoint.Client.UnknownError and no
+// threshold signature, while library-grouping, library-nesting and
+// library-view-interaction each read HTTP 200 with flat rows on a library
+// holding under ten files the same day. The request is identical, so the
+// refusal belongs to the container. The row reports what it read rather than
+// failing for not being ignored, and nothing depends on the ignored branch:
+// HONOURED is read off the group markers, never off the flat comparison.
 // finding: large-list-calculated-collapsed-rows-carry-no-file-name - inherited
 // from library-grouping-probe.js, second live run 2026-09-08: a collapsed
 // query's rows did not carry the FileLeafRef its ViewFields named. Nothing here
@@ -281,6 +293,13 @@
 // (threshold), so the group-by mechanism itself throttles at this size and an
 // unhonoured group-by on LVCalc cannot be attributed to the column being
 // calculated. That unindexed group-by throttle is the group-view probe's subject.
+// finding: large-list-calculated-narrowing-is-what-makes-the-control-takeable -
+// the group-view probe measured 2026-09-08 that an Id-guarded <Where> (Id >=
+// newest-5) with a group-by is SERVED and HONOURED on this same library, and
+// the preindex probe read the same twice. The throttle is on aggregating the
+// whole row set, so the only positive grouping control available at this size
+// runs over the narrowed rows. Both controls and both LVCalc readings are taken
+// that way from 2026-09-09, with the un-narrowed reading reported beside each.
 (async () => {
   // ---- Operator gate -------------------------------------------------
   // All default false. Pasting an unedited probe prints its plan and
@@ -505,7 +524,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 1fa24077. Quote this when reporting results.');
+  log('INFO', 'probe revision b7946bbc. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
@@ -555,6 +574,13 @@
   const THROTTLE = /exceeds the list view threshold|SPQueryThrottledException/i;
   // A column name the library does not hold, for the two negative controls.
   const ABSENT_COLUMN = 'LVNoSuchColumnAtAll';
+  // How far back from the newest item id the narrowed grouping's <Where> reaches.
+  // Small enough that the answer is countable by eye, and the row count is READ
+  // rather than predicted: item ids need not be contiguous.
+  const GUARD_SPAN = 5;
+  // Both documented spellings for a counter value, tried in turn. A wrong
+  // spelling comes back as a rejected request, the same shape as a refusal.
+  const ID_VALUE_TYPES = ['Counter', 'Integer'];
   // A name SP.Field does not have. Deliberately not a near-miss of a real
   // property: the control asks whether an unknown name is refused, not whether
   // a typo is tolerated.
@@ -614,8 +640,8 @@
   expect('library.large-list.control-number-filter-shape-accepted', `CONTROL: the same integer-literal filter shape reaches the query planner on ${NUMBER}`);
   expect('library.large-list.control-calculated-description-sticks', `POSITIVE CONTROL: a Description MERGE on ${CALC} itself reads back`);
   expect('library.large-list.control-calculated-unknown-property-refused', `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CALC}`);
-  expect('library.large-list.control-group-by-single-value-column', `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items`);
-  expect('library.large-list.control-missing-group-column-ungrouped', 'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored');
+  expect('library.large-list.control-group-by-single-value-column', `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items once a <Where> on Id has narrowed the rows`);
+  expect('library.large-list.control-missing-group-column-ungrouped', 'Is a group-by naming a column the library does not hold ignored or refused past 5,000 items');
   expect('library.large-list.index-calculated-column', `Does Indexed=true take on ${CALC} (Calculated) past 5,000 items`);
   expect('library.large-list.filter-on-calculated-value', `Is a selective $filter on ${CALC} served or refused past 5,000 items`);
   expect('library.large-list.group-by-calculated-value', `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`);
@@ -726,19 +752,24 @@
   };
 
   // One RenderListDataAsStream query. `<Query>` children go Where then GroupBy,
-  // the order the syntax block in "Query element (List)" gives them; there is no
-  // <Where> here, because the subject is the grouping alone. `fields` defaults
-  // to the grouped column beside the file name. The negative control passes its
-  // own, so a column that does not exist is named ONLY in the <GroupBy> and
-  // never in <ViewFields>, where a refusal would be about the wrong clause: the
-  // rule library-grouping-probe.js set for the same control.
-  const askView = async (column, collapse, fields) => {
+  // the order the syntax block in "Query element (List)" gives them. `narrow`
+  // is the Id guard the grouping controls need at this size, and is absent for
+  // the un-narrowed readings. `fields` defaults to the grouped column beside the
+  // file name. The negative control passes its own, so a column that does not
+  // exist is named ONLY in the <GroupBy> and never in <ViewFields>, where a
+  // refusal would be about the wrong clause: the rule library-grouping-probe.js
+  // set for the same control.
+  const askView = async (column, collapse, fields, narrow) => {
+    const where = narrow
+      ? '<Where><Geq><FieldRef Name="ID"/>'
+        + `<Value Type="${narrow.idType}">${narrow.minId}</Value></Geq></Where>`
+      : '';
     const grouping = column === null
       ? ''
       : `<GroupBy Collapse="${collapse}"><FieldRef Name="${column}"/></GroupBy>`;
     const viewFields = fields
       || ['FileLeafRef', NUMBER].concat(column === null ? [] : [column]);
-    const viewXml = `<View><Query>${grouping}</Query><ViewFields>`
+    const viewXml = `<View><Query>${where}${grouping}</Query><ViewFields>`
       + viewFields.map((name) => `<FieldRef Name="${name}"/>`).join('')
       + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
     const digest = await getDigest();
@@ -765,9 +796,9 @@
   // Everything the SERVER said about one grouping, and nothing this probe
   // worked out for itself: a probe that sorts flat rows into buckets by reading
   // each row's value has measured its own arithmetic.
-  const observeGroup = async (column, flat, fields) => {
-    const collapsed = await askView(column, 'TRUE', fields);
-    const expanded = await askView(column, 'FALSE', fields);
+  const observeGroup = async (column, flat, fields, narrow) => {
+    const collapsed = await askView(column, 'TRUE', fields, narrow);
+    const expanded = await askView(column, 'FALSE', fields, narrow);
     const markers = markersIn(collapsed.rows);
     const labels = collapsed.rows.map((row) => (column in row ? row[column] : undefined));
     const verdict = collapsed.transient ? 'NOT ESTABLISHED (throttled)'
@@ -780,7 +811,8 @@
                 : 'NOT ESTABLISHED (no group markers, and the flat baseline did not answer)';
     return {
       collapsed, expanded, markers, labels, verdict,
-      text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s) `
+      text: (narrow ? `over the rows with ID >= ${narrow.minId}: ` : 'over the whole library: ')
+        + `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s) `
         + `against a RowLimit of ${ROW_LIMIT}, labels ${clip(show(labels), 240)}, grouping `
         + `markers ${clip(show(markers), 240)}, first row `
         + `${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 300)}; expanded HTTP `
@@ -1046,37 +1078,67 @@
              + 'nothing about whether the property was recognised.'));
 
   // ---- The grouping controls -------------------------------------------
-  // One flat baseline, shared: none of the grouped queries below carries a
-  // <Where>, so the query they are each compared against is the same one.
+  // One flat baseline for the un-narrowed readings: the queries compared against
+  // it carry no <Where> either, so it is the same query minus the <GroupBy>.
   const flat = await askView(null, 'TRUE');
-  const groupChoice = await observeGroup(CHOICE, flat);
-  const groupHonoured = groupChoice.verdict === 'HONOURED';
+  const groupChoiceWide = await observeGroup(CHOICE, flat);
+
+  // The un-narrowed group-by throttles at this size on any column, so the
+  // positive control cannot be taken that way: see the narrowed-group-by
+  // finding. It is taken over an Id-guarded row set instead, and the counter
+  // spelling is tried rather than assumed.
+  const minId = newestId === null ? null : newestId - GUARD_SPAN;
+  const idTypeAttempts = [];
+  let narrow = null;
+  for (const type of minId === null ? [] : ID_VALUE_TYPES) {
+    const seen = await askView(null, 'TRUE', ['FileLeafRef', NUMBER], { minId, idType: type });
+    idTypeAttempts.push(`Type="${type}": HTTP ${seen.res.status}`
+      + (seen.res.ok ? `, ${seen.rows.length} row(s)` : ` ${clip(seen.res.text, 160)}`));
+    if (seen.res.ok) {
+      narrow = { minId, idType: type };
+      break;
+    }
+  }
+  const narrowNote = minId === null
+    ? 'the newest item id did not read back, so no Id guard could be built'
+    : `<Where><Geq> on ID at ${minId} (the newest item id ${newestId} less ${GUARD_SPAN}), `
+      + `spelling tried rather than assumed: ${idTypeAttempts.join('; ')}`;
+  const narrowFlat = narrow === null
+    ? null
+    : await askView(null, 'TRUE', ['FileLeafRef', NUMBER], narrow);
+  const groupChoice = narrow === null
+    ? null
+    : await observeGroup(CHOICE, narrowFlat, undefined, narrow);
+  const groupHonoured = groupChoice !== null && groupChoice.verdict === 'HONOURED';
   record('library.large-list.control-group-by-single-value-column',
-         `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items`,
+         `POSITIVE CONTROL: a group-by on ${CHOICE} is honoured past 5,000 items once a <Where> on Id has narrowed the rows`,
          groupHonoured ? 'HONOURED' : 'CONTROL FAILED, METHOD VOID',
-         `${groupChoice.verdict}. ${groupChoice.text}. The fixture gives ${CHOICE} four values, `
-         + `${show(CHOICES)}, over ${count} file(s)`
+         `${narrowNote}. Narrowed: ${groupChoice === null ? 'not attempted' : groupChoice.verdict}`
+         + `${groupChoice === null ? '' : `. ${groupChoice.text}`}. Un-narrowed, in the same run: `
+         + `${groupChoiceWide.verdict}. ${groupChoiceWide.text}. The fixture gives ${CHOICE} four `
+         + `values, ${show(CHOICES)}, over ${count} file(s)`
          + (groupHonoured
-           ? '. A group-by is therefore honoured on this library at this size, so an unhonoured '
-             + `group-by on ${CALC} below is about the calculated column rather than about the `
-             + 'size of the container.'
-           : '. A group-by is not honoured here on a plain single-value column, so nothing below '
-             + `can attribute an unhonoured group-by to ${CALC} being calculated.`));
+           ? '. A group-by is therefore honoured on this library at this size once the rows are '
+             + `narrowed, so an unhonoured group-by on ${CALC} over the same narrowed rows is `
+             + 'about the calculated column rather than about the size of the container.'
+           : '. A group-by is not honoured here on a plain single-value column even narrowed, so '
+             + `nothing below can attribute an unhonoured group-by to ${CALC} being calculated.`));
 
   // ViewFields deliberately omits ABSENT_COLUMN: it is named in the <GroupBy>
   // alone, so a refusal here would be about the clause under measurement.
   const groupAbsent = await observeGroup(ABSENT_COLUMN, flat, ['FileLeafRef', NUMBER]);
   const groupIgnorable = groupAbsent.verdict === 'IGNORED';
   record('library.large-list.control-missing-group-column-ungrouped',
-         'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored',
-         groupIgnorable ? 'IGNORED' : 'CONTROL FAILED, METHOD VOID',
+         'Is a group-by naming a column the library does not hold ignored or refused past 5,000 items',
+         groupAbsent.verdict,
          `${groupAbsent.verdict}. ${groupAbsent.text}`
          + (groupIgnorable
            ? '. An ignored group-by is therefore observable and is not the same reading as an '
              + 'honoured one, which is the only discriminator a group-by offers.'
-           : '. A group-by naming a column that does not exist did not come back as the flat '
-             + 'query, so honoured and ignored are not separable on this run and every grouped '
-             + 'row below says less than it appears to.'));
+           : '. See the absent-column-refused finding: the same request is served and ignored on '
+             + 'a small library, so what changed is the container rather than the request. The '
+             + 'grouped rows below read HONOURED off the server-produced group markers rather '
+             + 'than off a comparison with the flat query, so they do not need this reading.'));
 
   // ---- calculated-value-read-past-threshold ----------------------------
   // Two requests, and the separation is the fixture probe's rule: one
@@ -1121,7 +1183,10 @@
   // ---- The before halves, taken before anything is written -------------
   const calcBefore = await askFilter(calcFilter);
   const calcBeforeOutcome = judge(calcBefore, calcExpected);
-  const groupCalcBefore = await observeGroup(CALC, flat);
+  const groupCalcWide = await observeGroup(CALC, flat);
+  const groupCalcBefore = narrow === null
+    ? groupCalcWide
+    : await observeGroup(CALC, narrowFlat, undefined, narrow);
 
   // ---- calculated-filter-index-guarded ---------------------------------
   // The row set is narrowed to one row by the natively indexed Id first, which
@@ -1335,12 +1400,10 @@
 
   // ---- group-by-calculated-value ---------------------------------------
   const groupVoid = !groupHonoured
-    ? `a group-by was not honoured on ${CHOICE}, a plain single-value column, so an unhonoured `
-      + `group-by on ${CALC} cannot be attributed to the column being calculated`
-    : !groupIgnorable
-      ? 'a group-by naming a column that does not exist did not come back as the flat query, so '
-        + 'honoured and ignored are not separable on this run'
-      : null;
+    ? `a group-by was not honoured on ${CHOICE}, a plain single-value column, over the same `
+      + `narrowed row set, so an unhonoured group-by on ${CALC} cannot be attributed to the `
+      + 'column being calculated'
+    : null;
   if (groupVoid !== null) {
     record('library.large-list.group-by-calculated-value',
            `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`,
@@ -1349,7 +1412,9 @@
     let groupAfter = '';
     let groupOutcome = groupCalcBefore.verdict;
     if (indexTook) {
-      const again = await observeGroup(CALC, flat);
+      const again = narrow === null
+        ? await observeGroup(CALC, flat)
+        : await observeGroup(CALC, narrowFlat, undefined, narrow);
       groupOutcome = `${groupOutcome}, then ${again.verdict} with the index`;
       groupAfter = `. After Indexed=true on ${CALC}: ${again.verdict}. ${again.text}`;
     } else {
@@ -1361,14 +1426,15 @@
     record('library.large-list.group-by-calculated-value',
            `Is a group-by on ${CALC} honoured, ignored or refused past 5,000 items`,
            groupOutcome,
-           `with ${flagNote(CALC)} as read at the start of the run: ${groupCalcBefore.text}. `
-           + `The label count is bounded by the RowLimit of `
+           `with ${flagNote(CALC)} as read at the start of the run, ${narrowNote}: `
+           + `${groupCalcBefore.text}. Un-narrowed, in the same run: ${groupCalcWide.verdict}. `
+           + `${groupCalcWide.text}. The label count is bounded by the RowLimit of `
            + `${ROW_LIMIT} and is not a distinct-value count: the fixture gives ${CALC} up to `
            + `1000 distinct values over ${count} file(s), so a collapsed answer is a page of `
            + 'groups rather than all of them'
            + groupAfter
            + `. Read this beside control-group-by-single-value-column, which took the same `
-           + `measurement on ${CHOICE} at the same size in the same run.`);
+           + `measurement on ${CHOICE} over the same narrowed rows in the same run.`);
   }
 
   report();

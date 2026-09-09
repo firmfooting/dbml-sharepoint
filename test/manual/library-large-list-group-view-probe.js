@@ -7,7 +7,7 @@
  *   change that, does the DEFAULT VIEW render at all, and does `Scope`
  *   ("Recursive", "RecursiveAll") move any of it?
  *
- * REVISION: e1ebbe4f
+ * REVISION: 2bc55cc6
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -69,9 +69,10 @@
  *        the throttle signature? The three controls above are OData. This is the
  *        same discrimination on the surface every grouped question below uses.
  *   library.large-list.control-missing-group-column-ungrouped
- *        NEGATIVE CONTROL: does a group-by naming a column the library does not
- *        hold come back IGNORED, with the rows the same query returns with no
- *        <GroupBy> at all?
+ *        Is a group-by naming a column the library does not hold ignored, with
+ *        the rows the same query returns with no <GroupBy> at all, or refused?
+ *        It was written as a negative control expecting IGNORED. Past 5,000
+ *        items it is refused instead, so it reports what it read.
  *   library.large-list.control-choice-description-sticks
  *        POSITIVE CONTROL: does a Description MERGE on LVChoice itself read
  *        back? A MERGE that never reaches this column would report it as
@@ -259,6 +260,16 @@
 // discriminator. A THROTTLE is a different refusal and carries the threshold
 // signature in the body, which is why control-render-where-absent-refused exists:
 // without it, a rejected render and a throttled one read the same.
+// finding: large-list-group-view-absent-column-group-by-is-refused-here -
+// measured 2026-09-08 on this library and on PreIndex: that same <GroupBy>
+// returns HTTP 500 carrying Microsoft.SharePoint.Client.UnknownError and no
+// threshold signature, while library-grouping, library-nesting and
+// library-view-interaction each read HTTP 200 with flat rows on a library
+// holding under ten files the same day. The request is identical, so the
+// refusal belongs to the container. The row therefore reports what the absent
+// column did rather than failing for not being ignored, and the honoured
+// reading below is taken off server-produced group markers rather than off a
+// comparison with the flat query, so it does not rest on this one.
 // finding: large-list-group-view-collapsed-rows-carry-no-file-name - inherited
 // from library-grouping-probe.js, second live run 2026-09-08: a collapsed query's
 // rows did not carry the FileLeafRef its ViewFields named. Nothing here reads a
@@ -531,7 +542,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision e1ebbe4f. Quote this when reporting results.');
+  log('INFO', 'probe revision 2bc55cc6. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
@@ -644,7 +655,7 @@
   expect('library.large-list.control-absent-column-refused', 'NEGATIVE CONTROL: a filter naming a column the library does not hold is refused WITHOUT the throttle signature');
   expect('library.large-list.control-unindexed-filter-refused', 'NEGATIVE CONTROL: a selective filter on an unindexed contract column is refused WITH the throttle signature');
   expect('library.large-list.control-render-where-absent-refused', 'NEGATIVE CONTROL: a rendered query whose <Where> names a column the library does not hold is refused WITHOUT the throttle signature');
-  expect('library.large-list.control-missing-group-column-ungrouped', 'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored');
+  expect('library.large-list.control-missing-group-column-ungrouped', 'Is a group-by naming a column the library does not hold ignored or refused past 5,000 items');
   expect('library.large-list.control-choice-description-sticks', `POSITIVE CONTROL: a Description MERGE on ${CHOICE} itself reads back`);
   expect('library.large-list.control-choice-unknown-property-refused', `NEGATIVE CONTROL: a MERGE naming a property SP.Field does not have is refused on ${CHOICE}`);
   expect('library.large-list.control-group-by-single-value-column', `Is a group-by on the unindexed ${CHOICE} honoured, ignored or refused past 5,000 items`);
@@ -1152,15 +1163,16 @@
                                            fields: ['FileLeafRef', NUMBER] });
   const groupIgnorable = groupAbsent.verdict === 'IGNORED';
   record('library.large-list.control-missing-group-column-ungrouped',
-         'NEGATIVE CONTROL: a group-by naming a column the library does not hold comes back ignored',
-         groupIgnorable ? 'IGNORED' : 'CONTROL FAILED, METHOD VOID',
+         'Is a group-by naming a column the library does not hold ignored or refused past 5,000 items',
+         groupAbsent.verdict,
          `${groupAbsent.verdict}. ${groupAbsent.text}`
          + (groupIgnorable
            ? '. An ignored group-by is therefore observable and is not the same reading as an '
              + 'honoured one, which is the only discriminator a served group-by offers.'
-           : '. A group-by naming a column that does not exist did not come back as the flat '
-             + 'query, so honoured and ignored are not separable on this run and a served grouped '
-             + 'row below says less than it appears to.'));
+           : '. See the absent-column-refused finding: the same request is served and ignored on '
+             + 'a small library, so what changed is the container rather than the request. A '
+             + 'grouped row below reads HONOURED off the server-produced group markers rather '
+             + 'than off a comparison with the flat query, so it does not need this reading.'));
 
   // ---- group-by-native-index-column ------------------------------------
   // The half of question two that needs no write: Id is the one natively indexed

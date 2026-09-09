@@ -3651,8 +3651,7 @@
               "depends_on": [
                 "library.large-list.fixture-library-present",
                 "library.large-list.fixture-calculated-column-shape",
-                "library.large-list.control-group-by-single-value-column",
-                "library.large-list.control-missing-group-column-ungrouped"
+                "library.large-list.control-group-by-single-value-column"
               ]
             },
             {
