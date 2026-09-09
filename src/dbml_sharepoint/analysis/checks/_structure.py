@@ -319,11 +319,20 @@ def _entity_kind(entity_name: str, entity: EntityMapping) -> list[Finding]:
     those was observed on a tenant on 2026-07-29
     (test/manual/document-library-probe.js).
 
+    THE HEADER HALF OF THAT IS NOW ANSWERED, and it is the one #14 left open.
+    A content-type header whose title line reads [$FileLeafRef] does RENDER on
+    a library's file panel, showing the file name while the Title field beside
+    it sits visibly empty. Reviewed capture `library.doc-lib.header-fileleafref`,
+    verdict confirmed, 2026-09-03. So the header is a solved problem waiting on
+    a vocabulary, not an open question: what a library still cannot do is NAME
+    FileLeafRef, because it is absent from `column_projection.SYSTEM_COLUMN_TYPES`
+    and every rendered-column check therefore refuses it.
+
     Half-support (a library that provisions but can carry no view naming its
     files, no usable header and no demo rows) reads as a bug in every
-    direction. Refusing is the honest state until the work in issue #14 is
-    done: a file-upload step in the deploy, a file-identity column vocabulary,
-    and a header anatomy that does not rest on [$Title].
+    direction. Refusing stays the honest state until the rest of issue #14 is
+    done: a file-upload step in the deploy, and the file-identity column
+    vocabulary that lets a view, a formatter and that header name the file.
     """
     if entity.kind == "DocumentLibrary":
         return [Finding(

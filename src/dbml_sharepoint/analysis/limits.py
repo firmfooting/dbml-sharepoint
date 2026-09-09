@@ -310,6 +310,41 @@ MAX_FILTER_EDITOR_CONDITIONS = 10
 #: none. A view that silently shows a truncated answer is the failure those
 #: checks exist to prevent.
 #: https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
+#:
+#: A GROUP-BY PAST THE THRESHOLD ANSWERS DIFFERENTLY AT EACH LAYER, AND THE
+#: TWO DISAGREE. Do not carry a result from one to the other. Measured on a
+#: document library over 2026-09-08 and 2026-09-09.
+#:
+#: REST, through RenderListDataAsStream: a root-scoped `<GroupBy>` is REFUSED
+#: with SPQueryThrottledException and an index does not lift it
+#: (`library.large-list.preindex-group-by-refusal-signature` and
+#: `library.large-list.preindex-filter-serves-while-group-by-refused`, both
+#: settled: a Choice column indexed at 4,900 files and carried past the
+#: threshold still refused the aggregation while an OData `$filter` on that
+#: same index was served in the same request pair. A second fixture, indexed
+#: after the crossing, answered the same way). The same group-by scoped to a
+#: folder holding fewer than 5,000 files is HONOURED, with counts local to
+#: that folder (`library.large-list.foldered-group-by-folder-scoped` and
+#: `-folder-scoped-counts`). So at this layer the remedy is folder scope, and
+#: never an index.
+#:
+#: THE RENDERED MODERN PAGE, on the preindexed fixture: a grouped view on a column
+#: indexed BEFORE the crossing RENDERS, group header and counts, no threshold
+#: banner. The same view on an unindexed column fails with the banner reading
+#: "The number of items in the list exceeds the list view threshold, which is
+#: 5000 items". The ungrouped default view renders. So at this layer the index
+#: is what decides it, which is the opposite of the REST answer above.
+#: `library.large-list.ui-group-by-indexed-column-renders` is an operator
+#: reading of state3.png recorded in that run's verdict, not a DOM scan; the
+#: machine leg reports NOT REACHED and the catalogue still lists it open.
+#: `library.large-list.ui-group-by-unindexed-column-renders` is a machine
+#: verdict.
+#:
+#: GROUP-BY DEPTH IS TWO, AT ANY SIZE. One and two `<FieldRef>` children are
+#: HONOURED; three are REFUSED on a 240-file library well under the threshold
+#: (`library.large-list.multilevel-group-by-three-levels`). A three-level
+#: refusal on a large library is the shape, not the size, and an earlier run
+#: read it as a failed control for exactly that reason.
 LIST_VIEW_THRESHOLD = 5_000
 
 #: How many of the newest items a throttled, Metadata-Navigation-assisted query
