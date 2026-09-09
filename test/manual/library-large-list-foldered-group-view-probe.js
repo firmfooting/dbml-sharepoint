@@ -3,7 +3,7 @@
  * SERVE IT INSIDE A LIBRARY OVER 5,000, AND DOES A THREE-LEVEL GROUP-BY WORK
  * WHERE NOTHING IS NEAR THE THRESHOLD?
  *
- * REVISION: 32a05b27
+ * REVISION: 70db4e13
  *
  * TWO QUESTIONS, AND THEY ARE DELIBERATELY ASKED IN ONE RUN. Every large-list
  * probe before this one measured a group-by refused past 5,000 and could not
@@ -99,16 +99,38 @@
  * the rows satisfying all three, and a filter invoked with a folder parameter
  * filters inside that folder rather than across the library.
  *
- * NO Scope ATTRIBUTE IS SENT WITH THE FOLDER PARAMETER, and that is a decision
- * rather than an omission. "View element (List)" documents Scope="FilesOnly",
- * "Recursive" and "RecursiveAll", and documents that its ABSENCE displays only
- * the files and subfolders of a specific folder, which is exactly the scoping
- * this probe is asking about. Nothing has measured what a tenant does when the
- * folder parameter and a Scope attribute are BOTH set, and
- * `library-view-interaction-probe.js` says so in its own header. The fixture's
- * files sit directly inside the three folders with no nesting below them, so
- * the default scope reaches every file the question is about and the untested
- * precedence is not entangled with the measurement.
+ * EVERY QUERY NAMES ITS Scope, and the first live run is why. Revision 1 sent no
+ * Scope attribute at all, reasoning that "View element (List)" documents the
+ * ABSENCE of Scope as displaying the files and subfolders of a specific folder,
+ * which is the scoping this probe asks about. Run 20260909T092038 measured what
+ * that actually does on a foldered library: the ROOT-scoped group-by returned
+ * exactly three rows, the three folders as one empty-PChoice group of count
+ * three, because every one of the 5,256 files lives inside Alpha-F, Beta-F or
+ * Gamma-F and a query that does not descend never sees a file. The narrowed
+ * control's <Where> on ID matched nothing for the same reason and the three crux
+ * rows were correctly voided. So the absent Scope is the IMMEDIATE FOLDER on a
+ * document library, and every query this probe intends to span the library was
+ * silently folder-local.
+ *
+ * The scope is therefore explicit on both halves. A query meant to span the
+ * library carries Scope="RecursiveAll"; a query pointed at one folder carries
+ * Scope="FilesOnly". Both are values "View element (List)" documents, and
+ * `library-nesting-probe.js`, run 2026-09-08, measured what each returns: no
+ * Scope gives the direct children of the folder, FilesOnly its files alone, and
+ * Recursive and RecursiveAll flatten the files at depth. FilesOnly rather than
+ * the absent default because the fixture's folders hold files with nothing
+ * nested below them, so the two reach the same set and only the default is
+ * ambiguous about which reading was taken.
+ *
+ * WHAT THAT ENTERS DELIBERATELY. Nothing has measured what a tenant does when
+ * the folder parameter and a Scope attribute are BOTH set, and
+ * `library-view-interaction-probe.js` records that gap in its own header. This
+ * run sends the combination, so the gap is now inside the measurement rather
+ * than beside it. `control-foldered-folder-path-narrows` is what watches it: it
+ * sends the ungrouped query at the SAME folder and the SAME scope the crux uses
+ * and reads every returned file name through the fixture's own folder formula,
+ * so a Scope that overrode the folder, or a folder that overrode the Scope,
+ * shows as names from more than one folder before any grouped row is read.
  *
  * THE FOLDER PATH IS READ, NEVER DERIVED. A library's server-relative address
  * is not a function of its title: it is frozen at creation and a later rename
@@ -159,8 +181,9 @@
  *   throttle signature; a rendered query naming an absent column is refused
  *   WITHOUT it; the folder path reads back and an ungrouped folder-scoped query
  *   returns only files that folder holds; a single-level group-by is honoured
- *   over an Id-narrowed row set on the large library and over the whole small
- *   one; both created views read back carrying the grouping they were sent; the
+ *   over an Id-narrowed row set that actually reached ROWS on the large library,
+ *   and over the whole small one; both created views read back the grouping they
+ *   were sent; the
  *   newest file name is unchanged by those writes; and the capture browser
  *   renders a modern library page under the threshold.
  *   Observes (recorded, never asserted): whether the folder-scoped group-by is
@@ -331,10 +354,11 @@
  * Whether a folder scope changes what an aggregation is given is NOT taken from
  * any of those. It is the thing being measured.
  *
- * STATUS: NOT YET RUN. Authored against the merged findings of #472, #478, #479,
- * #480, #481, #483 and #485 and against the fixture contract of #489. Nothing
- * below has been observed on a live site, and the finding lines are inherited or
- * about method until it has.
+ * STATUS: RUN ONCE, AT REVISION 1, AND THE CRUX WENT VOID. Run 20260909T092038
+ * established the controls on Id and on the unindexed witness, and voided the
+ * three crux rows because every query it sent was folder-local. This revision
+ * changes the scope and nothing else. The scope findings above are live
+ * measurements; the folder-scoping answer itself is still unobserved.
  */
 // finding: foldered-group-view-writes-two-views-and-nothing-else - this probe
 // sends no MERGE, no field create, no file upload and no item write. It creates
@@ -347,14 +371,36 @@
 // is a property of RenderListDataParameters and not an attribute of <View>, so a
 // folder scope cannot be expressed in ViewXml at all. Every folder-scoped query
 // here puts it in the parameters object beside ViewXml.
-// finding: foldered-group-view-no-scope-attribute-with-the-folder - "View
-// element (List)" documents that the ABSENCE of Scope displays only the files
-// and subfolders of a specific folder, which is the scoping under measurement.
-// Nothing has measured what a tenant does when the folder parameter and a Scope
-// attribute are both set, and library-view-interaction-probe.js records that gap
-// in its own header. The fixture's files sit directly in the three folders with
-// nothing nested below, so the default scope reaches every file the question is
-// about and the untested precedence is left out of the measurement.
+// finding: foldered-group-view-the-absent-scope-is-the-immediate-folder - run
+// 20260909T092038, this probe at revision 1, which sent no Scope attribute: the
+// ROOT-scoped group-by returned exactly 3 rows, the three folders as one
+// empty-PChoice group of count 3, and the narrowed control's <Where> on ID
+// matched nothing. All 5,256 files sit inside the three folders, so a query that
+// does not descend sees no file at all. The absent Scope is therefore the
+// immediate folder on a document library, not the library, and every query that
+// run intended to span the library was folder-local. The OData $filter control
+// DID recurse in the same run, so this is a property of RenderListDataAsStream
+// rather than of the library.
+// finding: foldered-group-view-both-scopes-are-named-explicitly - a query meant
+// to span the library carries Scope="RecursiveAll" and a query pointed at one
+// folder carries Scope="FilesOnly". Both are values "View element (List)"
+// documents, and library-nesting-probe.js measured each on a live site on
+// 2026-09-08: no Scope gives the folder's direct children, FilesOnly its files
+// alone, Recursive and RecursiveAll flatten the files at depth. FilesOnly rather
+// than the absent default because the fixture's folders hold files with nothing
+// nested below, so the two reach the same set and only the default is ambiguous
+// about which reading was taken. The scope actually sent is printed in the
+// evidence of every row, so a future reader can tell a recursive reading from a
+// folder-local one without re-deriving it from the ViewXml.
+// finding: foldered-group-view-folder-and-scope-together-are-untested - nothing
+// in this repository has measured what a tenant does when the folder parameter
+// and a Scope attribute are BOTH set, and library-view-interaction-probe.js
+// records that gap in its own header. This run sends the combination, so the gap
+// is inside the measurement. control-foldered-folder-path-narrows watches it: it
+// sends the ungrouped query at the same folder and the same scope the crux uses
+// and maps every returned file name through the fixture's own folder formula, so
+// a scope that overrode the folder or a folder that overrode the scope shows as
+// names from more than one folder before any grouped row is read.
 // finding: foldered-group-view-the-folder-path-is-read-never-derived - a
 // library's server-relative address is frozen at creation and a rename does not
 // move it, so it is read from the library's own RootFolder and the folder name
@@ -664,7 +710,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 32a05b27. Quote this when reporting results.');
+  log('INFO', 'probe revision 70db4e13. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
@@ -744,11 +790,24 @@
   // column name: a /group/i test over a label key would report a grouping that
   // is only a coincidence of spelling.
   const GROUP_MARKER = /\.COUNT\.group$|\.newgroup$|\.groupindex$/;
+  // The two documented Scope values this run sends, one per half of the
+  // question. See the absent-scope finding: revision 1 sent neither and every
+  // query it meant to span the library was folder-local.
+  const SCOPE_LIBRARY = 'RecursiveAll';
+  const SCOPE_FOLDER = 'FilesOnly';
   // How far back from the newest item id the narrowed control's <Where> reaches.
   // Small enough that the grouping runs over a handful of rows, and the row
   // count is READ rather than predicted: item ids need not be contiguous, and on
   // this library the three folder rows are items too.
   const GUARD_SPAN = 5;
+  // What the fixture's numbering gives that <Where> if the ids run contiguously
+  // to the newest one, both ends included. QUOTED beside the reading and never
+  // asserted on, for the reason above. What IS asserted is that the clause
+  // reached rows at all: at revision 1 it reached none, because the deepest
+  // files sit inside folders the query never descended into, and a grouping over
+  // no rows carries no markers and reads exactly like a grouping that was
+  // ignored.
+  const NARROWED_EXPECTED = GUARD_SPAN + 1;
   // Both documented spellings for a counter value, tried in turn: a
   // <Value Type=...> spelled wrongly comes back as a rejected request, which is
   // the same shape as the refusal that would be the finding.
@@ -938,15 +997,25 @@
     return Array.isArray(opts.groupBy) ? opts.groupBy : [opts.groupBy];
   };
 
+  // Which Scope a query is sent at. Derived from the folder parameter so that no
+  // call site can forget it, overridable by naming `scope`, and `scope: null`
+  // still expresses "send no attribute", which is what revision 1 did. The value
+  // is carried out of askView and printed in the evidence of every row, so what
+  // was sent is read rather than inferred from the derivation rule.
+  const scopeOf = (opts) => (opts.scope === undefined
+    ? (opts.folder ? SCOPE_FOLDER : SCOPE_LIBRARY)
+    : opts.scope);
+
   // One ViewXml. Every part is optional and every part is named by the caller,
   // because the whole subject here is which combination was sent. `<Query>`
   // children go Where then GroupBy, the order the syntax block in "Query element
-  // (List)" gives them. NO Scope attribute is ever emitted: see the no-scope
-  // finding. The DEFAULT ViewFields names FileLeafRef and the grouped columns
-  // alone; the absent-column controls pass their own `fields`, so a column that
-  // does not exist is named ONLY in the clause under measurement and never in
-  // <ViewFields>, where a refusal would be about the wrong clause.
+  // (List)" gives them. The DEFAULT ViewFields names FileLeafRef and the grouped
+  // columns alone; the absent-column controls pass their own `fields`, so a
+  // column that does not exist is named ONLY in the clause under measurement and
+  // never in <ViewFields>, where a refusal would be about the wrong clause.
   const viewXmlFor = (opts) => {
+    const scope = scopeOf(opts);
+    const scoped = scope === null ? '' : ` Scope="${scope}"`;
     const where = opts.minId === undefined || opts.minId === null
       ? (opts.whereOn
         ? `<Where><Eq><FieldRef Name="${opts.whereOn}"/>`
@@ -961,13 +1030,14 @@
         + '</GroupBy>'
       : '';
     const fields = uniq(opts.fields || ['FileLeafRef'].concat(grouped));
-    return `<View><Query>${where}${grouping}</Query><ViewFields>`
+    return `<View${scoped}><Query>${where}${grouping}</Query><ViewFields>`
       + fields.map((name) => `<FieldRef Name="${name}"/>`).join('')
       + `</ViewFields><RowLimit>${ROW_LIMIT}</RowLimit></View>`;
   };
 
   // The folder travels in the parameters object beside ViewXml, never inside it.
-  // See the folder-parameter finding.
+  // See the folder-parameter finding. The Scope travels INSIDE the ViewXml, and
+  // the two together are the combination nothing had measured before this run.
   const askView = async (list, opts) => {
     const xml = viewXmlFor(opts);
     const parameters = { ViewXml: xml };
@@ -979,6 +1049,7 @@
       rows: rowsOf(res),
       xml,
       folder: opts.folder || null,
+      scope: scopeOf(opts),
       throttled: THROTTLE.test(res.text || ''),
       transient: res.status === 429 || res.status === 408 || res.status === 503,
     };
@@ -1058,13 +1129,18 @@
     return {
       collapsed, expanded, flat, markers, labels, verdict, grouped,
       folder: collapsed.folder,
+      scope: collapsed.scope,
       text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s) `
         + `against a RowLimit of ${ROW_LIMIT}, labels ${clip(show(labels), 300)}, grouping `
         + `markers ${clip(show(markers), 240)}, first row `
         + `${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 300)}; expanded HTTP `
         + `${expanded.res.status} returned ${expanded.rows.length} row(s); the same query with no `
         + `<GroupBy> returned HTTP ${flat.res.status} with ${flat.rows.length} row(s); folder `
-        + `parameter ${show(collapsed.folder)}; ViewXml ${clip(collapsed.xml, 320)}`
+        + `parameter ${show(collapsed.folder)} at Scope ${show(collapsed.scope)}, which is `
+        + `${collapsed.scope === SCOPE_LIBRARY ? 'the whole library including every folder'
+          : collapsed.scope === SCOPE_FOLDER ? 'the files of that folder alone'
+            : 'whatever this tenant defaults to, which revision 1 measured as the immediate folder'}`
+        + `; ViewXml ${clip(collapsed.xml, 320)}`
         + (collapsed.res.ok ? '' : `; collapsed body ${clip(collapsed.res.text, 220)}`),
     };
   };
@@ -1637,9 +1713,13 @@
                    + 'rather than a folder scope working.'));
 
     // ---- control-foldered-render-where-absent-refused --------------------
-    // The same discrimination on the surface every grouped question uses.
-    // ViewFields deliberately omits ABSENT_COLUMN: it is named in the <Where>
-    // alone, so a refusal is about the clause under measurement.
+    // The same discrimination on the surface every grouped question uses, and at
+    // the SAME Scope="RecursiveAll" the grouped questions use. At revision 1's
+    // folder-local default this control ran over the three folder rows, where a
+    // throttle cannot arise, so "refused without the throttle signature" was
+    // true of a query too small to have been throttled and discriminated
+    // nothing. ViewFields deliberately omits ABSENT_COLUMN: it is named in the
+    // <Where> alone, so a refusal is about the clause under measurement.
     const renderAbsent = await askView(libPath, { whereOn: ABSENT_COLUMN, whereValue: 'x',
                                                   fields: ['FileLeafRef'] });
     const renderAbsentRefused = !renderAbsent.res.ok && isRefusal(renderAbsent.res.status)
@@ -1648,7 +1728,8 @@
            'NEGATIVE CONTROL: a rendered query whose <Where> names a column the library does not hold is refused WITHOUT the throttle signature',
            renderAbsentRefused ? 'REFUSED (request rejected, no throttle signature)'
              : 'CONTROL FAILED, METHOD VOID',
-           `RenderListDataAsStream with <Where> on ${ABSENT_COLUMN}: HTTP `
+           `RenderListDataAsStream with <Where> on ${ABSENT_COLUMN}, at Scope `
+           + `${show(renderAbsent.scope)} over the whole library: HTTP `
            + `${renderAbsent.res.status} with ${renderAbsent.rows.length} row(s), throttle `
            + `signature ${renderAbsent.throttled ? 'PRESENT' : 'absent'}: `
            + `${clip(renderAbsent.res.text, 240)}`
@@ -1669,7 +1750,10 @@
     // server ignored, and it is taken on an UNGROUPED query because a collapsed
     // row carries no file name. Every returned name is mapped to a folder by the
     // fixture's own formula, so this is the fixture's arithmetic against
-    // SharePoint's row set rather than against itself.
+    // SharePoint's row set rather than against itself. It is also the row that
+    // watches the untested combination: it sends the same folder and the same
+    // Scope="FilesOnly" the crux sends, so a scope that overrode the folder shows
+    // as names from more than one folder here, before any grouped row is read.
     const scopeFolder = SCOPED_FOLDERS[0];
     const scopeFolderPath = folderPathOf(scopeFolder);
     const flatInFolder = scopeFolderPath === null ? null
@@ -1698,17 +1782,20 @@
              ? 'the library RootFolder did not read back, so no folder path was known and nothing '
                + 'could be pointed at one'
              : `an UNGROUPED RenderListDataAsStream with FolderServerRelativeUrl `
-               + `${show(scopeFolderPath)} and no Scope attribute returned HTTP `
+               + `${show(scopeFolderPath)} at Scope ${show(flatInFolder.scope)} returned HTTP `
                + `${flatInFolder.res.status} with ${flatInFolder.rows.length} row(s) against a `
                + `RowLimit of ${ROW_LIMIT}, of which ${scopedNames.length} carried a file name. `
                + `Mapping each name through the fixture's own folder formula puts them in `
                + `${show(scopedFolders)}, with ${strayNames} name(s) matching no fixture pattern. `
-               + `The same query with NO folder parameter returned HTTP ${flatAtRoot.res.status} `
+               + `The same query with NO folder parameter, at Scope ${show(flatAtRoot.scope)} `
+               + `across the whole library, returned HTTP ${flatAtRoot.res.status} `
                + `with ${flatAtRoot.rows.length} row(s)`)
            + '. '
            + (narrows
-             ? 'Every named row belongs to the folder that was asked for, so the parameter is '
-               + 'being honoured rather than ignored. That matters because a folder read can '
+             ? 'Every named row belongs to the folder that was asked for, so the folder parameter '
+               + 'and the Scope attribute together resolve to that folder rather than one '
+               + 'overriding the other, which is the combination nothing had measured before this '
+               + 'run. That matters because a folder read can '
                + 'answer HTTP 200 for a folder that could not have been there '
                + '(library-view-interaction-probe.js, 2026-09-08), and a parameter SharePoint '
                + 'ignores answers the same rows as one it never received. Without this row a '
@@ -1723,7 +1810,9 @@
     // The grouping instrument, proved where the threshold cannot reach it. The
     // Id value type is tried rather than assumed: a wrong spelling comes back as
     // a rejected request, the same shape as the refusal that would be the
-    // finding.
+    // finding. The floor is unchanged from revision 1, the newest item id less
+    // GUARD_SPAN; what changed is that at Scope="RecursiveAll" the <Where> can
+    // now reach the files it names, which all sit inside folders.
     const minId = newestId - GUARD_SPAN;
     const idTypeAttempts = [];
     let idType = null;
@@ -1758,22 +1847,38 @@
         fields: ['FileLeafRef', CHOICE],
         label: `group-by on ${CHOICE} over an Id-narrowed row set`,
       });
-      narrowedHeld = narrowed.verdict.startsWith('HONOURED');
+      // The rows the clause actually reached, read off the EXPANDED query: a
+      // collapsed answer carrying markers over no rows is an honoured grouping
+      // of nothing, which is what revision 1 could not have told apart from a
+      // grouping the server ignored.
+      const narrowedRows = narrowed.expanded.res.ok ? narrowed.expanded.rows.length : 0;
+      narrowedHeld = narrowed.verdict.startsWith('HONOURED') && narrowedRows > 0;
       record('library.large-list.control-foldered-group-by-narrowed-honoured',
              `POSITIVE CONTROL: a <GroupBy> on ${CHOICE} is honoured once a <Where> on Id has narrowed the rows to a handful`,
              narrowedHeld ? 'HONOURED' : 'CONTROL FAILED, METHOD VOID',
              `<Where><Geq> on ID at ${minId} (the newest item id ${newestId} less ${GUARD_SPAN}), `
              + `grouping on ${CHOICE}. The counter spelling was tried rather than assumed: `
              + `${idTypeAttempts.join('; ')}, so Type="${show(idType)}" is what answered. `
-             + `${narrowed.text}`
+             + `The clause reached ${narrowedRows} row(s); the fixture's numbering gives at most `
+             + `${NARROWED_EXPECTED} at or above that id, both ends included, and fewer if the ids `
+             + 'are not contiguous or if one of the three folder rows falls in the span. That '
+             + 'figure is quoted and not asserted on. What IS asserted is that the clause reached '
+             + 'rows at all: at revision 1, with no Scope attribute, it reached NONE, because '
+             + `every file sits inside a folder the query never descended into. ${narrowed.text}`
              + (narrowedHeld
                ? '. A <GroupBy> on this column is therefore a request this server accepts and '
                  + 'acts on, so a refusal of the same shape at size below is about the size. #480 '
                  + 'measured the same composition honoured on the first fixture; it is re-proved '
                  + 'here because this is a third library with its own build.'
-               : '. The grouping was not honoured even over a handful of rows, so a refusal of '
-                 + 'the same shape below cannot be attributed to the threshold: it may be the '
-                 + 'request. Read the collapsed body above before reading anything below it.'));
+               : narrowedRows === 0
+                 ? '. The <Where> reached no rows at all, so there was nothing to group and this '
+                   + 'says nothing about whether a <GroupBy> is honoured. That is the revision 1 '
+                   + 'failure repeating at a scope that was supposed to fix it: check the ViewXml '
+                   + 'above carries Scope="RecursiveAll" and that the newest item id is a file '
+                   + 'rather than a folder.'
+                 : '. The grouping was not honoured even over a handful of rows, so a refusal of '
+                   + 'the same shape below cannot be attributed to the threshold: it may be the '
+                   + 'request. Read the collapsed body above before reading anything below it.'));
     }
 
     // ---- foldered-group-by-root-scoped and the CRUX ----------------------
@@ -1794,9 +1899,9 @@
               + 'about, so a folder-scoped answer says nothing about the threshold'
             : null;
 
-    log('INFO', `Sending the group-by on ${CHOICE} pointed at ${scopeFolder}, up to `
-      + `${PAIR_ATTEMPTS} time(s) ${PAIR_WAIT_MS} ms apart, with the identical ROOT-scoped query `
-      + 'immediately after each one.');
+    log('INFO', `Sending the group-by on ${CHOICE} pointed at ${scopeFolder} at `
+      + `Scope="${SCOPE_FOLDER}", up to ${PAIR_ATTEMPTS} time(s) ${PAIR_WAIT_MS} ms apart, with `
+      + `the same query at Scope="${SCOPE_LIBRARY}" and no folder immediately after each one.`);
     const crux = await pairedReadings(libPath, {
       folder: scopeFolderPath, groupBy: CHOICE,
       fields: ['FileLeafRef', CHOICE],
@@ -1814,7 +1919,8 @@
            (cruxVoid === null ? '' : `${cruxVoid}. What was observed anyway: `)
            + (rootSeen === null
              ? 'the paired root-scoped reading was never taken'
-             : `the same ViewXml with NO folder parameter, over ${count} file(s) and the four `
+             : `the same ViewXml with NO folder parameter, at Scope="${SCOPE_LIBRARY}" so that it `
+               + `reaches every file inside the three folders, over ${count} file(s) and the four `
                + `values ${show(CHOICES)}, whose library-wide counts the fixture formulas give as `
                + `${show(libraryChoice)}. ${rootSeen.text}`)
            + (cruxVoid !== null || rootSeen === null
@@ -1825,9 +1931,14 @@
                  + 'different answer from the folder-scoped query beside it is the folder and '
                  + 'nothing else.'
                : '. The root-scoped group-by was NOT refused on this library, which contradicts '
-                 + 'three earlier runs by the same method. Read the crux row beside this one: if '
-                 + 'both serve, the folder scope is not what answered and this library is not '
-                 + 'behaving like the two flat ones.'),
+                 + 'three earlier runs by the same method. Count the rows before reading it as a '
+                 + 'result: revision 1 saw this serve THREE rows, one empty-PChoice group of the '
+                 + 'three folders, because the query never descended into them. A served answer '
+                 + 'whose group counts are a handful rather than near the library-wide figures '
+                 + `${show(libraryChoice)} is a scope that did not take. If it genuinely served `
+                 + 'across the library, read the crux row beside this one: if both serve, the '
+                 + 'folder scope is not what answered and this library is not behaving like the '
+                 + 'two flat ones.'),
            cruxVoid === null ? undefined : 'void');
 
     const cruxSeen = crux.seen;
@@ -1849,7 +1960,9 @@
              : cruxSeen === null ? 'NOT ESTABLISHED'
                : agree ? cruxSeen.verdict : `${cruxSeen.verdict} ON ${scopeFolder}, BUT THE TWO FOLDERS DISAGREE`,
            (cruxVoid === null ? '' : `${cruxVoid}. What was observed anyway: `)
-           + `the folder ${show(scopeFolderPath)} holds `
+           + `the folder parameter at Scope="${SCOPE_FOLDER}" against the root query's `
+           + `Scope="${SCOPE_LIBRARY}" and no folder, which two together are the whole difference `
+           + `between the halves of each pair. The folder ${show(scopeFolderPath)} holds `
            + `${folderPredicted[scopeFolder]} file(s) by the fixture's numbering, of which `
            + `${show(perFolderChoice[`${scopeFolder}/${CHOICES[0]}`])} carry `
            + `${show(CHOICES[0])}, inside a library of ${count}. The grouped query was sent `
@@ -1936,8 +2049,14 @@
              'POSITIVE CONTROL: a ONE-level <GroupBy> is honoured on the small library, so the depth rows below are about depth',
              'CONTROL FAILED, METHOD VOID', smallVoid, 'void');
     } else {
+      // scope: null on all three small-library queries, which sends no Scope
+      // attribute. The small library holds its 240 files at the root with no
+      // folders, so the default and RecursiveAll reach the same set, and #481's
+      // depth readings were taken without one. Keeping the ViewXml identical is
+      // what makes a refusal here comparable with the refusal #481 measured
+      // rather than a second variable inside the depth question.
       oneLevel = await observeGroup(smallPath, {
-        groupBy: M_CHOICE,
+        groupBy: M_CHOICE, scope: null,
         fields: ['FileLeafRef', M_CHOICE],
         label: `one-level group-by on ${M_CHOICE}`,
       });
@@ -1968,7 +2087,7 @@
           + 'attributed to the depth'
         : null;
     const twoLevel = smallVoid !== null ? null : await observeGroup(smallPath, {
-      groupBy: [M_CHOICE, M_FLAG],
+      groupBy: [M_CHOICE, M_FLAG], scope: null,
       fields: ['FileLeafRef', M_CHOICE, M_FLAG],
       label: `two-level group-by on ${M_CHOICE} then ${M_FLAG}`,
     });
@@ -1997,7 +2116,7 @@
 
     // ---- multilevel-group-by-three-levels --------------------------------
     const threeLevel = smallVoid !== null ? null : await observeGroup(smallPath, {
-      groupBy: LEVELS,
+      groupBy: LEVELS, scope: null,
       fields: ['FileLeafRef'].concat(LEVELS),
       label: `three-level group-by on ${LEVELS.join(' then ')}`,
     });
@@ -2103,6 +2222,12 @@
       }
       // There is no <Where> here: this is the view a person makes, and narrowing
       // it would answer the question the Id-narrowed control already answers.
+      // There is no Scope either, and unlike revision 1 that is now the
+      // considered choice rather than the only one. STATE 2 opens this view
+      // INSIDE a folder, so the folder-local default is exactly the rendered
+      // question; a view stored at Scope="RecursiveAll" would span the library
+      // from inside the folder and could only ever show the refusal the root
+      // query already measured.
       const query = `<GroupBy Collapse="TRUE" GroupLimit="${GROUP_LIMIT}">`
         + columns.map((name) => `<FieldRef Name="${name}"/>`).join('')
         + '</GroupBy>';
