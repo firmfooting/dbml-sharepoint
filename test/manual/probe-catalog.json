@@ -8235,6 +8235,285 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-large-list-foldered-group-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two views on the two existing fixture libraries, 'Foldered By PChoice' on 'dbmlsp Probe Foldered' and 'MultiLevel By Three' on 'dbmlsp Probe MultiLevel'. Neither becomes the default view. No file, item value, folder, column or field MERGE is written, and in particular the index on PChoice is never cleared: that flag was written below 5,000 files and writing it again past the crossing cannot put it back"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "the two permanent fixtures built by library-large-list-foldered-fixture-probe.js: 'dbmlsp Probe Foldered' at 5,256 files in three folders of 1,752, PChoice indexed while the library still held 4,900 and the moment stamped into its Description, PNumber left unindexed; and 'dbmlsp Probe MultiLevel' at 240 files with three columns and nothing indexed. This probe reads both, builds nothing and repairs nothing",
+        "PChoice still reading Indexed=true and still carrying the fixture's stamp. Clearing it turns the library into a foldered copy of the post-hoc case #481 already measured, and writing it again past 5,000 files cannot put it back",
+        "a browser rendering the pages, and a document library on the same site holding at least one file and fewer than 5,000 to read the capture control on. view-aggregations-probe.js records that the modern list web part does not render under the capture browser, so without that control a blank grid past 5,000 and a capture lane that renders nothing produce the same screenshot. An EMPTY library cannot answer it either, because it has no file row to render",
+        "four pastes, one per STATE, each on the page that state names and each after the page has finished rendering. A pasted script cannot navigate the page it is running in and come back",
+        "for STATE 2, navigating INTO one fixture folder by hand if the candidate address the setup prints does not land there. Nothing in this repository has measured which query parameter a modern library page takes a folder on, so the probe reads which folder rendered off the file names rather than off the address",
+        "a screenshot of every state, hashed per the harness standard. A state whose DOM read is ambiguous is MANUAL rather than a pass, and the screenshot is what a human reads it against",
+        "a final paste with STATE = 0 and CLEANUP = true to remove the two views. Both libraries, their files, their folders and PChoice's index are left exactly as they were"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.large-list.fixture-foldered-file-count",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-foldered-folder-counts",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-foldered-index-written-under-threshold",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-foldered-witness-unindexed",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-multilevel-file-count",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.fixture-multilevel-under-threshold",
+              "depends_on": [
+                "library.large-list.fixture-multilevel-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-foldered-id-query-served",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-foldered-unindexed-filter-refused",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-witness-unindexed"
+              ]
+            },
+            {
+              "id": "library.large-list.control-foldered-render-where-absent-refused",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-foldered-folder-path-narrows",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-folder-counts"
+              ]
+            },
+            {
+              "id": "library.large-list.control-foldered-group-by-narrowed-honoured",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.control-foldered-id-query-served",
+                "library.large-list.control-foldered-render-where-absent-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.foldered-group-by-root-scoped",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-index-written-under-threshold",
+                "library.large-list.control-foldered-unindexed-filter-refused",
+                "library.large-list.control-foldered-group-by-narrowed-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.foldered-group-by-folder-scoped",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-folder-counts",
+                "library.large-list.fixture-foldered-index-written-under-threshold",
+                "library.large-list.control-foldered-unindexed-filter-refused",
+                "library.large-list.control-foldered-group-by-narrowed-honoured",
+                "library.large-list.control-foldered-folder-path-narrows"
+              ]
+            },
+            {
+              "id": "library.large-list.foldered-group-by-folder-scoped-counts",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-folder-counts",
+                "library.large-list.control-foldered-unindexed-filter-refused",
+                "library.large-list.control-foldered-group-by-narrowed-honoured",
+                "library.large-list.control-foldered-folder-path-narrows"
+              ]
+            },
+            {
+              "id": "library.large-list.foldered-group-by-refusal-signature",
+              "depends_on": [
+                "library.large-list.control-foldered-render-where-absent-refused"
+              ]
+            },
+            {
+              "id": "library.large-list.control-multilevel-single-level-honoured",
+              "depends_on": [
+                "library.large-list.fixture-multilevel-file-count",
+                "library.large-list.fixture-multilevel-under-threshold"
+              ]
+            },
+            {
+              "id": "library.large-list.multilevel-group-by-two-levels",
+              "depends_on": [
+                "library.large-list.fixture-multilevel-file-count",
+                "library.large-list.fixture-multilevel-under-threshold",
+                "library.large-list.control-multilevel-single-level-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.multilevel-group-by-three-levels",
+              "depends_on": [
+                "library.large-list.fixture-multilevel-file-count",
+                "library.large-list.fixture-multilevel-under-threshold",
+                "library.large-list.control-multilevel-single-level-honoured"
+              ]
+            },
+            {
+              "id": "library.large-list.fixture-foldered-ui-views-created",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-multilevel-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-foldered-fixture-readable-after-view-writes",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-ui-views-created"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-foldered-default-view-unchanged",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-ui-views-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.large-list.fixture-foldered-file-count",
+            "library.large-list.fixture-foldered-folder-counts",
+            "library.large-list.fixture-foldered-index-written-under-threshold",
+            "library.large-list.fixture-foldered-witness-unindexed",
+            "library.large-list.fixture-multilevel-file-count",
+            "library.large-list.fixture-multilevel-under-threshold",
+            "library.large-list.control-foldered-id-query-served",
+            "library.large-list.control-foldered-unindexed-filter-refused",
+            "library.large-list.control-foldered-render-where-absent-refused",
+            "library.large-list.control-foldered-folder-path-narrows",
+            "library.large-list.control-foldered-group-by-narrowed-honoured",
+            "library.large-list.control-multilevel-single-level-honoured",
+            "library.large-list.control-ui-foldered-fixture-readable-after-view-writes",
+            "library.large-list.control-ui-foldered-default-view-unchanged"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "state-matrix",
+          "findings": [
+            {
+              "id": "library.large-list.control-ui-modern-renders-below-threshold",
+              "depends_on": []
+            },
+            {
+              "id": "library.large-list.control-ui-foldered-page-identity",
+              "depends_on": [
+                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-multilevel-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-folder-scope-rendered",
+              "depends_on": [
+                "library.large-list.fixture-foldered-folder-counts",
+                "library.large-list.control-ui-foldered-page-identity"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-group-by-indexed-column-folder-scoped",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-foldered-page-identity",
+                "library.large-list.control-ui-folder-scope-rendered",
+                "library.large-list.fixture-foldered-ui-views-created",
+                "library.large-list.fixture-foldered-index-written-under-threshold",
+                "library.large-list.fixture-foldered-folder-counts"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-group-by-multilevel-renders",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-foldered-page-identity",
+                "library.large-list.fixture-foldered-ui-views-created",
+                "library.large-list.fixture-multilevel-under-threshold"
+              ]
+            },
+            {
+              "id": "library.large-list.ui-threshold-banner-text",
+              "depends_on": [
+                "library.large-list.control-ui-modern-renders-below-threshold",
+                "library.large-list.control-ui-foldered-page-identity"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "capture-control",
+              "page": "a document library on this site holding at least one file and fewer than 5,000 items",
+              "assertions": [
+                "a modern library page renders rows in this browser at all"
+              ]
+            },
+            {
+              "role": "grouped-folder-scoped",
+              "page": "'Foldered By PChoice' on the 5,256-file library, opened inside the folder 'Alpha-F'",
+              "assertions": [
+                "the rendered file names all belong to one folder",
+                "group headers and their counts render, or the threshold banner appears"
+              ]
+            },
+            {
+              "role": "grouped-multilevel",
+              "page": "'MultiLevel By Three' on the 240-file library",
+              "assertions": [
+                "three levels of group header render, or fewer, and how many is read against how many the view stored"
+              ]
+            }
+          ],
+          "controls": [
+            "library.large-list.control-ui-modern-renders-below-threshold",
+            "library.large-list.control-ui-foldered-page-identity",
+            "library.large-list.control-ui-folder-scope-rendered",
+            "library.large-list.fixture-foldered-ui-views-created"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
     }
   ]
 }
