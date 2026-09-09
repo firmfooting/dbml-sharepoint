@@ -9,11 +9,11 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 52. Findings: 130. Captures superseded: 1.
+Runs: 71. Findings: 176. Captures superseded: 1.
 
-Probes: 45. Probed: 40. Not yet probed: 5.
+Probes: 60. Probed: 54. Not yet probed: 6.
 
-Checks with a probe result, not settled: 128 of 656. Checks with a reviewed capture, not settled: 4 of 36.
+Checks with a probe result, not settled: 174 of 924. Checks with a reviewed capture, not settled: 4 of 36.
 
 ## formula — 9 of 10 probes with evidence, 64 findings
 
@@ -214,11 +214,65 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 
 9 further checks in this surface are settled.
 
-## library — 13 of 13 probes with evidence, 2 findings
+## library — 26 of 27 probes with evidence, 48 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
+| [library.lookup.picker-enumerates-files](findings/cross-lookup-20260907-sandbox-library-lookup-picker-enumerates-files) | machine | open | cross-lookup/20260907-sandbox | — |
 | [library.access.unique-permissions-library](findings/library-access-20260903-sandbox-library-access-unique-permissions-library) | machine | open | library-access/20260903-sandbox | — |
+| [library.view.group-by-multi-value-lookup](findings/library-grouping-20260908-sandbox-library-view-group-by-multi-value-lookup) | machine | open | library-grouping/20260908-sandbox | — |
+| [library.large-list.control-group-by-single-value-column](findings/library-large-list-calculated-20260908-sandbox-library-large-list-control-group-by-single-value-column) | machine | failed | library-large-list-calculated/20260908-sandbox | — |
+| [library.large-list.control-missing-group-column-ungrouped](findings/library-large-list-calculated-20260908-sandbox-library-large-list-control-missing-group-column-ungrouped) | machine | failed | library-large-list-calculated/20260908-sandbox | — |
+| [library.large-list.group-by-calculated-value](findings/library-large-list-calculated-20260908-sandbox-library-large-list-group-by-calculated-value) | machine | void | library-large-list-calculated/20260908-sandbox | — |
+| [library.large-list.control-ui-modern-renders-below-threshold](findings/library-large-list-foldered-group-view-20260909-sandbox-library-large-list-control-ui-modern-renders-below-threshold) | machine | open | library-large-list-foldered-group-view/20260909-sandbox | — |
+| [library.large-list.ui-group-by-indexed-column-folder-scoped](findings/library-large-list-foldered-group-view-20260909-sandbox-library-large-list-ui-group-by-indexed-column-folder-scoped) | machine | open | library-large-list-foldered-group-view/20260909-sandbox | — |
+| [library.large-list.ui-group-by-multilevel-renders](findings/library-large-list-foldered-group-view-20260909-sandbox-library-large-list-ui-group-by-multilevel-renders) | machine | open | library-large-list-foldered-group-view/20260909-sandbox | — |
+| [library.large-list.ui-threshold-banner-text](findings/library-large-list-foldered-group-view-20260909-sandbox-library-large-list-ui-threshold-banner-text) | machine | open | library-large-list-foldered-group-view/20260909-sandbox | — |
+| [library.large-list.control-ui-folder-scope-rendered](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-control-ui-folder-scope-rendered) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.control-ui-foldered-page-identity](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-control-ui-foldered-page-identity) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.control-ui-modern-renders-below-threshold](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-control-ui-modern-renders-below-threshold) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.ui-group-by-indexed-column-folder-scoped](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-ui-group-by-indexed-column-folder-scoped) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.ui-group-by-multilevel-renders](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-ui-group-by-multilevel-renders) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.ui-threshold-banner-text](findings/library-large-list-foldered-group-view-20260909-sandbox-rest-library-large-list-ui-threshold-banner-text) | machine | open | library-large-list-foldered-group-view/20260909-sandbox-rest | — |
+| [library.large-list.control-missing-group-column-ungrouped](findings/library-large-list-group-view-20260908-sandbox-library-large-list-control-missing-group-column-ungrouped) | machine | failed | library-large-list-group-view/20260908-sandbox | — |
+| [library.large-list.filtered-group-by-past-threshold](findings/library-large-list-group-view-20260908-sandbox-library-large-list-filtered-group-by-past-threshold) | machine | void | library-large-list-group-view/20260908-sandbox | — |
+| [library.large-list.group-by-indexed-column](findings/library-large-list-group-view-20260908-sandbox-library-large-list-group-by-indexed-column) | machine | void | library-large-list-group-view/20260908-sandbox | — |
+| [library.large-list.group-by-native-index-column](findings/library-large-list-group-view-20260908-sandbox-library-large-list-group-by-native-index-column) | machine | void | library-large-list-group-view/20260908-sandbox | — |
+| [library.large-list.control-ui-default-view-unchanged](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-control-ui-default-view-unchanged) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.control-ui-fixture-readable-after-view-writes](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-control-ui-fixture-readable-after-view-writes) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.control-ui-modern-renders-below-threshold](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-control-ui-modern-renders-below-threshold) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.fixture-preindex-index-written-under-threshold](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-fixture-preindex-index-written-under-threshold) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.fixture-preindex-library-present](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-fixture-preindex-library-present) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.fixture-preindex-witness-unindexed](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-fixture-preindex-witness-unindexed) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.fixture-ui-grouped-views-created](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-fixture-ui-grouped-views-created) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.ui-column-header-filter-past-threshold](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-ui-column-header-filter-past-threshold) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.ui-default-view-renders-past-threshold](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-ui-default-view-renders-past-threshold) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.ui-group-by-indexed-column-folder-scoped](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-ui-group-by-indexed-column-folder-scoped) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.ui-group-by-indexed-column-renders](findings/library-large-list-modern-view-20260909-sandbox-library-large-list-ui-group-by-indexed-column-renders) | machine | open | library-large-list-modern-view/20260909-sandbox | — |
+| [library.large-list.control-missing-group-column-ungrouped](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-control-missing-group-column-ungrouped) | machine | failed | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.control-multilevel-group-by-narrowed-honoured](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-control-multilevel-group-by-narrowed-honoured) | machine | failed | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.group-by-indexed-column-generous-wait](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-group-by-indexed-column-generous-wait) | machine | void | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.multilevel-group-by-field-order](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-multilevel-group-by-field-order) | machine | void | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.multilevel-group-by-indexed](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-multilevel-group-by-indexed) | machine | void | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.multilevel-group-by-unindexed](findings/library-large-list-multilevel-group-view-20260908-sandbox-library-large-list-multilevel-group-by-unindexed) | machine | void | library-large-list-multilevel-group-view/20260908-sandbox | — |
+| [library.large-list.control-missing-group-column-ungrouped](findings/library-large-list-preindex-group-view-20260908-sandbox-library-large-list-control-missing-group-column-ungrouped) | machine | failed | library-large-list-preindex-group-view/20260908-sandbox | — |
+| [library.large-list.control-preindex-group-by-narrowed-honoured](findings/library-large-list-preindex-group-view-20260908-sandbox-library-large-list-control-preindex-group-by-narrowed-honoured) | machine | void | library-large-list-preindex-group-view/20260908-sandbox | — |
+| [library.large-list.group-by-native-index-column](findings/library-large-list-preindex-group-view-20260908-sandbox-library-large-list-group-by-native-index-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox | — |
+| [library.large-list.preindex-group-by-indexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-library-large-list-preindex-group-by-indexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox | — |
+| [library.large-list.preindex-group-by-unindexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-library-large-list-preindex-group-by-unindexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox | — |
+| [library.large-list.control-missing-group-column-ungrouped](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-control-missing-group-column-ungrouped) | machine | failed | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
+| [library.large-list.control-preindex-group-by-narrowed-honoured](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-control-preindex-group-by-narrowed-honoured) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
+| [library.large-list.group-by-native-index-column](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-group-by-native-index-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
+| [library.large-list.preindex-group-by-indexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-preindex-group-by-indexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
+| [library.large-list.preindex-group-by-unindexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-preindex-group-by-unindexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
 | [library.search.discovery-on-library](findings/library-view-search-20260904-sandbox-library-search-discovery-on-library) | machine | open | library-view-search/20260904-sandbox | — |
 
-72 further checks in this surface are settled.
+289 further checks in this surface are settled.
+
+Not yet probed: `library-large-list-foldered-fixture-probe.js`.
+
+## transport — 1 of 1 probes with evidence, 0 findings
+
+No findings in this surface.
+
+5 further checks in this surface are settled.
