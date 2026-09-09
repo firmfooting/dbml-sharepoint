@@ -203,6 +203,19 @@
 // returned one-per-file, so the two server observations disagree and the
 // question stays open; the disagreement itself is recorded, no candidate is
 // asserted.
+// finding: library-grouping-a-lookup-label-cannot-be-joined - the instrument
+// that read that run tested a joined label by joining the label array, which
+// yields "[object Object]" for a lookup because its elements are structured
+// objects rather than strings. So a per-set lookup label could not have been
+// seen even if the server had sent one, and the run above says nothing about
+// which candidate holds. Labels are projected to their lookupValue first from
+// 2026-09-09, and are reported in that form so the evidence survives its clip.
+// finding: library-grouping-a-split-shows-on-the-collapsed-side - the same
+// instrument read "the file holding two values was split" off the EXPANDED row
+// count alone, which stayed at one row per file in that run while the COLLAPSED
+// side returned five groups for four files. The server's own per-group counts
+// are summed from 2026-09-09, because a total over the file count means a file
+// was counted under more than one group whichever side shows it.
 // finding: library-grouping-lookup-labels-are-structured-objects - run
 // 2026-09-08: the group labels of a single-value lookup are structured objects
 // {"lookupId":..,"lookupValue":..,"isSecretFieldValue":..}, neither the bare
@@ -727,20 +740,43 @@
     return perFile;
   };
 
+  // A group label arrives as a string, or as an array of strings, or as an array
+  // of {lookupId, lookupValue, isSecretFieldValue} objects. Joining the last
+  // kind yields "[object Object]", so every label is projected to the values it
+  // names before anything reads it: see the lookup-label finding in the header.
+  const labelValues = (label) => {
+    const one = (item) => ((item !== null && typeof item === 'object' && 'lookupValue' in item)
+      ? String(item.lookupValue)
+      : String((item === null || item === undefined) ? '' : item));
+    return Array.isArray(label) ? label.map(one) : [one(label)];
+  };
+
   // Everything the SERVER said about one grouping, and nothing this probe
   // worked out for itself. See the client-side-partition finding in the header.
   const observe = async (fieldName) => {
     const collapsed = await groupBy(fieldName, 'TRUE');
     const expanded = await groupBy(fieldName, 'FALSE');
     const labels = collapsed.rows.map((row) => (fieldName in row ? row[fieldName] : undefined));
+    const shownLabels = labels.map(labelValues);
     const keys = collapsed.rows.length ? Object.keys(collapsed.rows[0]) : [];
     const groupKeys = keys.filter((key) => /group/i.test(key) || key.startsWith(`${fieldName}.`));
     const perFile = countByFile(expanded.rows);
+    // The server's own per-group tally, summed. More file slots than files means
+    // a file was counted under more than one group, which is the split the
+    // expanded row count did not show on the lookup: see the collapsed-side
+    // finding in the header.
+    const countKey = `${fieldName}.COUNT.group`;
+    const counted = collapsed.rows.reduce((total, row) => {
+      const one = Number(row[countKey]);
+      return (total === null || !Number.isFinite(one)) ? null : total + one;
+    }, 0);
     return {
-      collapsed, expanded, labels, keys, groupKeys, perFile,
+      collapsed, expanded, labels, shownLabels, keys, groupKeys, perFile, counted,
       refused: !collapsed.res.ok && isRefusal(collapsed.res.status),
       text: `collapsed HTTP ${collapsed.res.status} returned ${collapsed.rows.length} row(s), `
-        + `labels ${clip(show(labels), 300)}, group-shaped keys ${clip(show(groupKeys), 300)}, `
+        + `labels ${clip(show(shownLabels), 300)}, group counts summing `
+        + `${counted === null ? 'unreadable' : counted} over ${FILES.length} file(s), `
+        + `group-shaped keys ${clip(show(groupKeys), 300)}, `
         + `first row ${clip(show(collapsed.rows.length ? collapsed.rows[0] : null), 400)}; `
         + `expanded HTTP ${expanded.res.status} returned ${expanded.rows.length} row(s) over `
         + `${FILES.length} file(s), rows per file ${clip(show(perFile), 300)}`
@@ -851,8 +887,9 @@
   // beside a row count that also exceeds the file count is neither candidate,
   // and is reported as neither rather than as the nearer one.
   const namesBoth = (label, first, second) => {
-    const text = Array.isArray(label) ? label.join(' ') : String(label === null || label === undefined ? '' : label);
-    return text.includes(first) && text.includes(second);
+    const values = labelValues(label);
+    return values.some((text) => text.includes(first))
+      && values.some((text) => text.includes(second));
   };
   const multiValueVerdict = (seen, first, second) => {
     if (seen.refused) {
@@ -861,28 +898,36 @@
     if (!seen.collapsed.res.ok || !seen.expanded.res.ok) {
       return { outcome: 'NOT ESTABLISHED', note: `a grouped query failed without refusing. ${seen.text}` };
     }
-    const joined = seen.labels.filter((label) => namesBoth(label, first, second));
-    const split = seen.expanded.rows.length > FILES.length;
+    const joined = seen.labels.filter((label) => namesBoth(label, first, second))
+      .map(labelValues);
+    // A split shows on either server-produced side: an expanded row per value,
+    // or group counts holding more file slots than there are files. The lookup
+    // run showed it only on the collapsed side, which is the collapsed-side
+    // finding in the header.
+    const expandedSplit = seen.expanded.rows.length > FILES.length;
+    const countedSplit = seen.counted !== null && seen.counted > FILES.length;
+    const split = expandedSplit || countedSplit;
+    const sides = `the expanded query returned ${seen.expanded.rows.length} row(s) over `
+      + `${FILES.length} file(s) and the collapsed group counts sum to `
+      + `${seen.counted === null ? 'unreadable' : seen.counted}`;
     if (joined.length && !split) {
       return {
         outcome: 'ONE GROUP PER SET',
-        note: `group label(s) ${clip(show(joined), 200)} name both ${first} and ${second}, and the `
-          + `expanded query returned one row per file. ${seen.text}`,
+        note: `group label(s) ${clip(show(joined), 200)} name both ${first} and ${second}, and no `
+          + `file was counted twice: ${sides}. ${seen.text}`,
       };
     }
     if (!joined.length && split) {
       return {
         outcome: 'ONE ROW PER VALUE',
-        note: `no group label names two values, and the expanded query returned `
-          + `${seen.expanded.rows.length} row(s) over ${FILES.length} file(s), so the file holding `
-          + `two values came back under each of them. ${seen.text}`,
+        note: `no group label names two values, and the file holding two came back under each of `
+          + `them: ${sides}. ${seen.text}`,
       };
     }
     return {
       outcome: 'NOT ESTABLISHED',
       note: `the two observations do not agree on either candidate: joined label(s) `
-        + `${clip(show(joined), 200)}, expanded rows ${seen.expanded.rows.length} against `
-        + `${FILES.length} file(s). ${seen.text}`,
+        + `${clip(show(joined), 200)}, and ${sides}. ${seen.text}`,
     };
   };
 

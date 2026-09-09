@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: f2317623
+ * REVISION: 72f1c73c
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -51,6 +51,15 @@
  * enterprise-reader-probe.js already cover it on generic lists, and this
  * probe stays in the owner lane, which can break inheritance, grant a role
  * and read the assignment back on its own.
+ *
+ * STATUS: RUN ONCE, 2026-09-03. The role assignment attached at library scope
+ * and read back. The unique-permission rows did not settle, and the run's own
+ * transcript says why: after a successful break the library read
+ * HasUniqueRoleAssignments=false, and after a successful reset at teardown it
+ * read true. The file behaved the same way. The property reports the state
+ * BEFORE the write for a moment, so a single read after the call reads the old
+ * value. Every read of it is now a bounded re-read that reports each attempt,
+ * so a lagging property is separable from a break that did not hold.
  *
  * MICROSOFT LEARN CITATIONS
  *   List and library creation via POST to `web/lists`:
@@ -304,7 +313,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f2317623. Quote this when reporting results.');
+  log('INFO', 'probe revision 72f1c73c. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';
@@ -369,6 +378,35 @@
     }
   };
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // HasUniqueRoleAssignments lags the write that changes it: see the STATUS
+  // note. Every reading of it goes through here, which re-reads until the
+  // property reaches `wanted` or the attempts run out, and hands back every
+  // attempt so a lagging property is separable from a write that did not hold.
+  const UNIQUE_TRIES = 6;
+  const UNIQUE_WAIT_MS = 2000;
+  const readUnique = async (url, wanted) => {
+    const attempts = [];
+    let value = null;
+    let status = 0;
+    for (let i = 0; i < UNIQUE_TRIES; i += 1) {
+      if (i) await sleep(UNIQUE_WAIT_MS);
+      const res = await spGet(url);
+      status = res.status;
+      value = (res.ok && res.body) ? res.body.HasUniqueRoleAssignments : null;
+      attempts.push(`read ${i + 1}: HTTP ${res.status}, HasUniqueRoleAssignments=${String(value)}`);
+      if (value === wanted) break;
+    }
+    return {
+      value,
+      status,
+      reached: value === wanted,
+      text: `${attempts.length} read(s) waiting for ${String(wanted)}, over up to `
+        + `${(UNIQUE_TRIES - 1) * UNIQUE_WAIT_MS} ms: ${attempts.join('; ')}`,
+    };
+  };
+
   // The restore pass. Runs on every path out of the access questions, so a
   // break that happened is always paired with its reset. The file is reset
   // first (it inherits from the library), then the library (which inherits
@@ -381,13 +419,13 @@
         const fileReset = await spPost(
           `${listPath}/items(${fileItem.Id})/resetroleinheritance`, {}, digest);
         if (fileReset.ok) {
-          const fileAfter = await spGet(`${listPath}/items(${fileItem.Id})?$select=Id,HasUniqueRoleAssignments`);
-          const nowInheriting = fileAfter.ok && fileAfter.body
-            && fileAfter.body.HasUniqueRoleAssignments === false;
-          log(nowInheriting ? 'OK' : 'FAIL',
-              nowInheriting
+          const fileAfter = await readUnique(
+            `${listPath}/items(${fileItem.Id})?$select=Id,HasUniqueRoleAssignments`, false);
+          log(fileAfter.reached ? 'OK' : 'FAIL',
+              fileAfter.reached
                 ? `file '${FILE}' restored to inherited permissions.`
-                : `file '${FILE}' reset answered HTTP ${fileAfter.status}; verify by hand.`);
+                : `file '${FILE}' still does not read as inheriting; verify by hand. `
+                  + fileAfter.text);
         } else {
           log('FAIL', `Could not restore '${FILE}': HTTP ${fileReset.status} ${fileReset.text.slice(0, 200)}`);
         }
@@ -397,13 +435,12 @@
         let digest = await getDigest();
         const libReset = await spPost(`${listPath}/resetroleinheritance`, {}, digest);
         if (libReset.ok) {
-          const libAfter = await spGet(`${listPath}?$select=Title,HasUniqueRoleAssignments`);
-          const nowInheriting = libAfter.ok && libAfter.body
-            && libAfter.body.HasUniqueRoleAssignments === false;
-          log(nowInheriting ? 'OK' : 'FAIL',
-              nowInheriting
+          const libAfter = await readUnique(`${listPath}?$select=Title,HasUniqueRoleAssignments`, false);
+          log(libAfter.reached ? 'OK' : 'FAIL',
+              libAfter.reached
                 ? `library '${LIB}' restored to inherited permissions.`
-                : `library '${LIB}' reset answered HTTP ${libAfter.status}; verify by hand.`);
+                : `library '${LIB}' still does not read as inheriting; verify by hand. `
+                  + libAfter.text);
         } else {
           log('FAIL', `Could not restore '${LIB}': HTTP ${libReset.status} ${libReset.text.slice(0, 200)}`);
         }
@@ -578,20 +615,18 @@
                    'NOT ESTABLISHED', 'the library-scope grant failed, so the file scope was never reached', 'void');
           } else {
             // Q1 verdict: the library read back as holding unique permissions.
-            const libCheck = await spGet(`${listPath}?$select=Title,HasUniqueRoleAssignments`);
-            const uniqueNow = libCheck.ok && libCheck.body
-              && libCheck.body.HasUniqueRoleAssignments === true;
+            // Re-read rather than read once, because the property lags the
+            // break: see the STATUS note.
+            const libCheck = await readUnique(`${listPath}?$select=Title,HasUniqueRoleAssignments`, true);
             record('library.access.unique-permissions-library', Q_UNIQUE,
-                   uniqueNow ? 'SAME AS LIST' : 'NOT ESTABLISHED',
-                   uniqueNow
-                     ? `breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true) succeeded on `
-                       + `'${LIB}' and HasUniqueRoleAssignments read back true, exactly as the same `
-                       + 'call behaves on a generic list (lookup-acl-probe.js).'
-                     : 'after the break the library read HasUniqueRoleAssignments='
-                       + ((libCheck.ok && libCheck.body)
-                         ? libCheck.body.HasUniqueRoleAssignments
-                         : 'unreadable')
-                       + ` (HTTP ${libCheck.status})`);
+                   libCheck.reached ? 'SAME AS LIST' : 'NOT ESTABLISHED',
+                   `breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true) answered `
+                   + `HTTP 200 on '${LIB}'. ${libCheck.text}`
+                   + (libCheck.reached
+                     ? '. HasUniqueRoleAssignments read back true, exactly as the same call behaves '
+                       + 'on a generic list (lookup-acl-probe.js).'
+                     : '. The property never reached true, so the break did not take on this '
+                       + 'library, and a lagging read is ruled out by the attempts above.'));
 
             // Q2 verdict: the assignment attached at library scope and read back.
             const assignResp = await spGet(
@@ -658,10 +693,9 @@
                        + 'file that refuses it is a divergence.'
                        + (isRefusal(fGrant.status) ? '' : ' The status is not a refusal.'));
               } else {
-                const fCheck = await spGet(
-                  `${listPath}/items(${fileItem.Id})?$select=Id,HasUniqueRoleAssignments`);
-                const fileUnique = fCheck.ok && fCheck.body
-                  && fCheck.body.HasUniqueRoleAssignments === true;
+                const fCheck = await readUnique(
+                  `${listPath}/items(${fileItem.Id})?$select=Id,HasUniqueRoleAssignments`, true);
+                const fileUnique = fCheck.reached;
                 const fAssignResp = await spGet(
                   `${listPath}/items(${fileItem.Id})/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=50`);
                 const fRows = (fAssignResp.ok && fAssignResp.body && Array.isArray(fAssignResp.body.value))
@@ -674,14 +708,19 @@
                        (fileUnique && fileOwnersRow) ? 'SAME AS LIST' : 'ASSIGNMENT NOT READ BACK',
                        (fileUnique && fileOwnersRow)
                          ? `the file '${FILE}' (item Id ${fileItem.Id}) broke inheritance and read `
-                           + `HasUniqueRoleAssignments=true, and its OWN roleassignments read back `
-                           + `${fRows.length} row(s) including the owners group bound to Full Control. `
-                           + 'The file is the security-scoped object, exactly as a list item is on a '
-                           + 'generic list: the library does not diverge from the item-scoped model.'
-                         : `file unique read ${fileUnique === true ? 'true' : `failed (HTTP ${fCheck.status})`} and `
-                           + `its roleassignments answered HTTP ${fAssignResp.status} with ${fRows.length} `
-                           + `row(s); the owners-Full Control row did not read back under items(${fileItem.Id}). `
-                           + 'A list item would have read the assignment back; this is a divergence.');
+                           + `HasUniqueRoleAssignments=true (${fCheck.text}), and its OWN `
+                           + `roleassignments read back ${fRows.length} row(s) including the owners `
+                           + 'group bound to Full Control. The file is the security-scoped object, '
+                           + 'exactly as a list item is on a generic list: the library does not '
+                           + 'diverge from the item-scoped model.'
+                         : `${fCheck.text}; its roleassignments answered HTTP ${fAssignResp.status} `
+                           + `with ${fRows.length} row(s)`
+                           + (fileOwnersRow
+                             ? `. The owners-Full Control row read back under items(${fileItem.Id}), `
+                               + 'but the file never read as holding unique permissions.'
+                             : `. The owners-Full Control row did not read back under `
+                               + `items(${fileItem.Id}). A list item would have read the assignment `
+                               + 'back; this is a divergence.'));
               }
             }
           }

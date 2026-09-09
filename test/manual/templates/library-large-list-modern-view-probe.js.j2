@@ -128,14 +128,17 @@
  *   is never part of a verdict: a modern list page rewrites its own URL, and a
  *   view parameter in a URL says what was asked for rather than what rendered.
  *
- *   GROUPS. For the Choice column the four labels are known exactly, so the
- *   instrument looks for a leaf element whose trimmed text IS one of them, and
- *   quotes the enclosing row so a reader can see whether a count sits beside
- *   it. For the Number column the labels are integers, which no text scan can
- *   tell from any other integer on the page, so that state's label test is not
- *   run and is said not to be run. Both states also report how many elements
- *   carry `aria-expanded`, which is an ARIA convention for a collapsible
- *   region rather than a SharePoint marker.
+ *   GROUPS. For the Choice column the four labels are known exactly. A group
+ *   HEADER renders as one element reading "<column>: <label> (<count>)", so
+ *   the instrument looks for a leaf element whose text carries the label
+ *   followed by a parenthesised count, and quotes what it found. A leaf whose
+ *   text IS the bare label is a column CELL in a file row rather than a header,
+ *   so those hits are reported separately and are not the verdict. For the
+ *   Number column the labels are integers, which no text scan can tell from any
+ *   other integer on the page, so that state's label test is not run and is
+ *   said not to be run. Both states also report how many elements carry
+ *   `aria-expanded`, which is an ARIA convention for a collapsible region
+ *   rather than a SharePoint marker.
  *
  *   ROWS. Counted from the fixture's own file-name stem, `dbmlsp-pre-NNNNN.txt`,
  *   which is a fact about the fixture and cannot be renamed by a UI update. A
@@ -240,8 +243,10 @@
  *      that site. It checks the fixture, creates the two views, verifies the
  *      fixture is still readable, and prints the URL for every state below.
  *   3. STATE = 1, CONFIRMED = true. Open a document library on this site
- *      holding FEWER than 5,000 items, let it finish rendering, then paste.
- *      This is the capture control and it comes first on purpose.
+ *      holding AT LEAST ONE file and fewer than 5,000, let it finish rendering,
+ *      then paste. An empty library renders no file row however well the
+ *      browser works, so it cannot answer this control. This is the capture
+ *      control and it comes first on purpose.
  *   4. STATE = 2, 3 and 4 in turn. Open the URL the setup printed, let the page
  *      finish rendering, then paste. ALLOW_WRITES is not needed from here on
  *      and nothing after STATE 0 writes.
@@ -250,7 +255,10 @@
  *      will not open, report the row MANUAL rather than guessing.
  *   6. Screenshot every state, and copy each RESULTS block back verbatim. One
  *      paste answers one state; the rows it did not reach print NOT REACHED and
- *      that is what they are.
+ *      that is what they are. A NOT REACHED row is a row this paste did not
+ *      ask, so anything merging the six transcripts into one summary must KEEP
+ *      THE FIRST SETTLED VALUE for a row and never let a later leg's NOT
+ *      REACHED overwrite it.
  *
  * WHEN FINISHED: re-paste with STATE = 0, CLEANUP = true, CONFIRMED = true and
  * ALLOW_WRITES = true to remove the two views. Leave the library itself, its
@@ -262,9 +270,16 @@
  * The modern experience is a client render, so a result here is about this
  * browser as much as about SharePoint, which is exactly why STATE 1 exists.
  *
- * STATUS: NOT YET RUN. Authored against the merged findings of #472, #478,
- * #479, #480, #481 and #483. Nothing below has been observed on a live site,
- * and every finding line is inherited or about method until it has.
+ * STATUS: RUN TWICE. 2026-09-08 reached STATE 0 only. 2026-09-09 drove STATES
+ * 1 to 4 and settled, on the rendered page: the fixture library's page is
+ * MODERN and identifies itself as the fixture; the default view RENDERS its
+ * first page at 5,100 files; the grouped view on the unindexed PNumber is
+ * REFUSED with a threshold banner, whose English wording is now captured. The
+ * crux row read MANUAL, while the screenshot beside it shows the header
+ * "PChoice: Alpha (100+)" over file rows with no banner and the raw reading
+ * records 29 fixture file names and no banner phrase. That gap is a defect in
+ * the instrument, fixed below. STATE 5, the column-header filter pane, has not
+ * been opened.
  */
 // finding: modern-view-rest-refusal-is-settled-across-both-index-orderings -
 // #481 measured a group-by refused past 5,000 on a Choice column indexed AFTER
@@ -279,7 +294,11 @@
 // classic and records that the modern list web part does not render under the
 // capture browser, so this is a live constraint rather than a hypothetical.
 // control-ui-modern-renders-below-threshold reads the same instrument on a
-// library under the threshold and every rendered row depends on it.
+// library under the threshold and every rendered row depends on it. Run 2,
+// 2026-09-09: that control was pasted on the site's EMPTY Documents library,
+// which holds 0 items, and read DOES NOT RENDER off 1 element with role="row".
+// An empty library has no file row to render, so the control needs a POPULATED
+// under-threshold library and now refuses one holding no file at all.
 // finding: modern-view-a-fixture-write-can-break-its-owners-resume-read - both
 // large-library fixture probes resume from the newest file name read with
 // `$orderby=Id desc&$top=1` and fail closed on a name their pattern does not
@@ -296,7 +315,19 @@
 // instrument here reports what it found in both directions, the experience
 // verdict requires the ASP.NET WebForms markers to be ABSENT rather than a
 // modern automation id to be present, and the row count is taken from the
-// fixture's own file-name stem, which no UI update can rename.
+// fixture's own file-name stem, which no UI update can rename. Run 2,
+// 2026-09-09, taught the same lesson about the group instrument: a leaf whose
+// text IS the label matched a PChoice CELL in a file row, and the digits beside
+// it were read out of the file name as the group count "Alpha=00004". The
+// header on the page reads "PChoice: Alpha (100+)", one element, so the label
+// is now looked for with a parenthesised count after it and the bare-label hits
+// are reported apart from the verdict.
+// finding: modern-view-a-modern-grouped-page-materialises-one-group - run 2,
+// 2026-09-09, STATE 3: the page showed the first group expanded with 29 file
+// rows under it and the other three group headers were not in the DOM at all.
+// Requiring two of the four labels therefore fails on a page that is grouping
+// correctly, so one header carrying a count is what the row is read from and
+// how many of the four were found is reported beside it.
 // finding: modern-view-the-url-is-recorded-and-never-a-verdict - a modern list
 // page rewrites its own URL, and a view parameter says what was asked for
 // rather than what rendered. Page identity is taken from the page's JavaScript
@@ -326,8 +357,9 @@
   //   0  SETUP. REST only. Checks the fixture, creates the two views, verifies
   //      the fixture is still readable, prints the URL for every state below.
   //      Needs CONFIRMED and ALLOW_WRITES. This is the only state that writes.
-  //   1  CONTROL. Paste on a rendered library page holding FEWER than 5,000
-  //      items. Establishes that this browser renders a modern library at all.
+  //   1  CONTROL. Paste on a rendered library page holding AT LEAST ONE file
+  //      and fewer than 5,000. Establishes that this browser renders a modern
+  //      library at all. An empty library cannot: it has no row to render.
   //   2  The default view at the root of the fixture library.
   //   3  'UI By PChoice', the grouped view on the INDEXED column.
   //   4  'UI By PNumber', the grouped view on the unindexed column.
@@ -349,6 +381,10 @@
   const CHOICES = ['Alpha', 'Beta', 'Gamma', 'Delta'];
   const TARGET_FILES = 5100;
   const THRESHOLD = 5000;
+  // The capture control needs a library that has something to render. An empty
+  // one shows a header row and nothing else, which is the same picture as a
+  // browser that renders no modern list at all. See the blank-grid finding.
+  const CONTROL_FLOOR = 1;
   // More than the documented 5,000, so every page below is opened past it.
   const FLOOR = 5001;
   const FILE_NUMBER = /dbmlsp-pre-(\d+)\.txt$/;
@@ -555,10 +591,17 @@
       textSource: seen.source, textLength: seen.text.length };
   };
 
-  // A group header is looked for as a LEAF element whose trimmed text IS one of
-  // the labels, and the enclosing row is quoted so a reader can see whether a
-  // count sits beside it. `labels` is null where the column's values are bare
-  // integers and no text scan can tell one from any other number on the page.
+  // A group HEADER is one leaf element reading "<column>: <label> (<count>)".
+  // A leaf whose text IS the bare label is a column CELL in a file row, which
+  // is what run 2 matched, so the two are read apart: the header shape is the
+  // verdict and the bare-label hits are reported beside it. `labels` is null
+  // where the column's values are bare integers and no text scan can tell one
+  // from any other number on the page.
+  const escapeRe = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // The count is captured as SHOWN, digits and any trailing "+", because
+  // "(100+)" is a group limit reached rather than a group size.
+  const headerRe = (label) =>
+    new RegExp(`(?:^|[^A-Za-z0-9])${escapeRe(label)}\\s*\\((\\d[\\d,]*\\+?)\\)\\s*$`);
   const groupScan = (labels) => {
     const expanders = [];
     for (const node of document.querySelectorAll('[aria-expanded]')) {
@@ -568,41 +611,37 @@
     }
     const expanderCount = countOf('[aria-expanded]');
     if (labels === null) {
-      return { labels: null, found: [], missing: [], rows: [], counted: [],
+      return { labels: null, headers: [], headerTexts: [], counted: [], cells: [],
         expanderCount, expanders,
         detail: 'the label test is NOT run for this column: its values are integers and a text '
           + 'scan cannot tell a group label from any other number on the page' };
     }
-    const found = [];
-    const rows = [];
+    const headers = [];
+    const headerTexts = [];
     const counted = [];
-    for (const label of labels) {
-      let hit = null;
-      for (const node of document.querySelectorAll('*')) {
-        if (node.children.length) continue;
-        if (String(node.textContent || '').trim() !== label) continue;
-        hit = node;
-        break;
-      }
-      if (hit === null) continue;
-      found.push(label);
-      let holder = hit;
-      for (let up = 0; up < 5 && holder.parentElement; up += 1) {
-        holder = holder.parentElement;
-        if (holder.getAttribute && holder.getAttribute('role') === 'row') break;
-      }
-      const text = clip(String(holder.textContent || '').trim(), 120);
-      rows.push(`${label}: ${text}`);
-      // A count beside the label, quoted rather than parsed into a number: what
-      // the header shows is the observation, and reading it as an integer would
-      // discard the form it was shown in.
-      const digits = text.replace(label, '').match(/\d[\d,]*/);
-      if (digits) counted.push(`${label}=${digits[0]}`);
+    const cells = [];
+    const leaves = [];
+    for (const node of document.querySelectorAll('*')) {
+      if (node.children.length) continue;
+      leaves.push(clip(String(node.textContent || '').trim(), 120));
     }
-    const missing = labels.filter((l) => !found.includes(l));
-    return { labels, found, missing, rows, counted, expanderCount, expanders,
-      detail: `labels found ${JSON.stringify(found)}, missing ${JSON.stringify(missing)}; `
-        + `enclosing rows ${JSON.stringify(rows)}; counts beside the labels ${JSON.stringify(counted)}` };
+    for (const label of labels) {
+      const pattern = headerRe(label);
+      const header = leaves.find((text) => pattern.test(text));
+      if (header !== undefined) {
+        headers.push(label);
+        headerTexts.push(header);
+        counted.push(`${label}=${header.match(pattern)[1]}`);
+      }
+      if (leaves.includes(label)) cells.push(label);
+    }
+    return { labels, headers, headerTexts, counted, cells, expanderCount, expanders,
+      detail: `group header(s) found for ${JSON.stringify(headers)} of `
+        + `${JSON.stringify(labels)}, reading ${JSON.stringify(headerTexts)}, so the count as `
+        + `SHOWN is ${JSON.stringify(counted)}. A modern grouped page materialises the groups `
+        + 'near the viewport and expands the first, so a label absent here is not a group absent '
+        + `from the view. Reported and NOT the verdict: ${JSON.stringify(cells)} appear as a bare `
+        + 'label on some leaf element, which is what a column cell in a file row looks like' };
   };
 
   // Which list the PAGE says it is showing, taken from its own JavaScript
@@ -903,8 +942,9 @@
 
     log('INFO', '');
     log('INFO', 'THE RUN PLAN. One paste per page. Let each page finish rendering first.');
-    log('INFO', `  STATE = 1  a document library on this site holding FEWER than ${THRESHOLD} items.`);
-    log('INFO', '             This is the capture control and it comes first on purpose.');
+    log('INFO', `  STATE = 1  a document library on this site holding AT LEAST ${CONTROL_FLOOR} file and`);
+    log('INFO', `             fewer than ${THRESHOLD}. An empty one cannot answer it. This is the`);
+    log('INFO', '             capture control and it comes first on purpose.');
     log('INFO', `  STATE = 2  ${window.location.origin}${(defaultAfter && defaultAfter.ServerRelativeUrl) || '(the default view URL did not read back)'}`);
     log('INFO', `  STATE = 3  ${window.location.origin}${urls[VIEW_CHOICE] || '(not created)'}`);
     log('INFO', `  STATE = 4  ${window.location.origin}${urls[VIEW_NUMBER] || '(not created)'}`);
@@ -944,16 +984,19 @@
     const small = listId === null ? null : await spGet(`web/lists(guid'${listId}')`);
     const smallOk = small !== null && !readFailed(small);
     const items = smallOk ? Number(small.body.ItemCount) : NaN;
-    const usable = smallOk && !onFixture && Number.isFinite(items) && items < THRESHOLD;
+    const usable = smallOk && !onFixture && Number.isFinite(items)
+      && items >= CONTROL_FLOOR && items < THRESHOLD;
     const rendered = experience.verdict === 'MODERN' && rows.roleRows > 1;
     record('library.large-list.control-ui-modern-renders-below-threshold',
            'CONTROL: does this browser render a modern document library page at all, on a library UNDER the threshold',
            !usable ? 'NOT ESTABLISHED' : rendered ? 'RENDERS' : 'DOES NOT RENDER',
            (!usable
-             ? `this page is not a library under the threshold: list id ${show(listId)}, `
+             ? `this page is not a populated library under the threshold: list id ${show(listId)}, `
                + `ItemCount ${show(smallOk ? small.body.ItemCount : null)}, is the fixture library `
-               + `${show(onFixture)}. Open a document library on this site holding fewer than `
-               + `${THRESHOLD} items and paste again.`
+               + `${show(onFixture)}. Open a document library on this site holding at least `
+               + `${CONTROL_FLOOR} file and fewer than ${THRESHOLD}, and paste again. An EMPTY `
+               + 'library renders no file row however well this browser works, so it reads the '
+               + 'same as a browser that renders nothing and cannot answer this control.'
              : `'${show(small.body.Title)}' holds ${items} item(s), under the ${THRESHOLD} threshold. `)
            + `experience ${experience.verdict}: ${experience.detail}. `
            + `rows: ${rows.roleRows} element(s) with role="row", ${rows.roleGrids} with role="grid", `
@@ -1056,7 +1099,10 @@
   if (STATE === 3) {
     const groups = groupScan(CHOICES);
     const hint = viewHint(VIEW_CHOICE);
-    const rendered = groups.found.length >= 2;
+    // ONE header carrying a count is the reading. A modern grouped page
+    // materialises the groups near the viewport, so demanding two of the four
+    // fails on a page that is grouping correctly: see the one-group finding.
+    const rendered = groups.headers.length >= 1;
     const maybe = !rendered && groups.expanderCount >= 2;
     record('library.large-list.ui-group-by-indexed-column-renders',
            `THE CRUX: does the grouped view on the indexed ${CHOICE} render group headers at ${TARGET_FILES} files, and are group counts visible`,
@@ -1067,7 +1113,7 @@
            !readable ? voidWhy
              : `${groups.detail}. ${groups.expanderCount} element(s) carry aria-expanded, showing `
                + `${JSON.stringify(groups.expanders)}. ${rows.fileNames} fixture file name(s) rendered `
-               + `(a collapsed group shows none, so zero here is expected). banner phrases `
+               + `(a collapsed group shows none, so zero here is not a failure). banner phrases `
                + `${JSON.stringify(banner.matched)}; UI culture ${show(banner.culture)}. the view title `
                + `appears in page text ${show(hint.inText)} and in document.title ${show(hint.inTitle)}, `
                + 'which is reported and is not part of the verdict because a view title is display text. '
@@ -1081,9 +1127,9 @@
                      + 'is a UI-experience feature and it is the REST callers, meaning API flows, Power BI '
                      + 'and automation, that need a filtered view instead. Report the screenshot with it.'
                    : maybe
-                     ? 'Collapsible regions are on the page but none of the four labels was found as an '
-                       + 'element of its own, so what rendered is not established from the DOM. Read the '
-                       + 'screenshot and report which it is.'
+                     ? 'Collapsible regions are on the page but no leaf element read as a group header, '
+                       + 'meaning a label followed by a parenthesised count, so what rendered is not '
+                       + 'established from the DOM. Read the screenshot and report which it is.'
                      : 'Neither group labels nor a banner. Read this beside STATE 1 and the screenshot '
                        + 'rather than as a threshold result.'),
            readable ? undefined : 'void');
