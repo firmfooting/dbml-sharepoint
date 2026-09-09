@@ -272,7 +272,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-preindex-fixture-probe.js`,
 `library-large-list-preindex-group-view-probe.js`,
 `library-large-list-modern-view-probe.js`,
-`library-large-list-foldered-fixture-probe.js`
+`library-large-list-foldered-fixture-probe.js`,
+`library-large-list-foldered-group-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -482,6 +483,39 @@ control somewhere it can succeed. Its rows take
 library-creation id, because one probe cannot record the same id twice, which is
 the precedent `library-large-list-fixture-probe.js` set with
 `fixture-target-list-seeded` for its own second container.
+
+`library-large-list-foldered-group-view-probe.js` measures against those two
+libraries and separates the two candidate causes every earlier large-list run
+had tangled together. Folder scope holds the query shape constant and changes
+the row set the query is given: the same single-level `<GroupBy>` on the same
+indexed column, sent once at the library root and once with
+`FolderServerRelativeUrl` naming one folder, paired inside the same attempt so
+the folder is the only variable. Level depth holds the size constant and changes
+the shape: one, two and three levels on the 240-file library where nothing is
+near the threshold. It reuses
+`ui-group-by-indexed-column-folder-scoped` rather than minting a foldered
+variant, because that is exactly the question
+`library-large-list-modern-view-probe.js` registered and recorded open for want
+of this fixture, and one question takes one id however many probes answer it.
+The REST lane takes `foldered-group-by-folder-scoped` instead of the `ui-` stem,
+which belongs to the rendered page. Six fixture rows and two rendered controls
+are reused for the same reason, and the six `foldered-` REST controls are new
+because a third independently built library re-proves its own instruments.
+`foldered-group-by-root-scoped`, both `multilevel-group-by-` rows and the crux
+are SUBJECTS rather than controls: #481 measured a three-level `<GroupBy>`
+refused even `Id`-narrowed, so a refusal at 240 files is a result about shape
+rather than a broken instrument, and spelling any of them as a control would
+make the finding indistinguishable from one. What the depth rows do depend on is
+`control-multilevel-single-level-honoured`, one level on the same small library.
+`control-foldered-folder-path-narrows` is the row nothing else can stand in for:
+`library-view-interaction-probe.js` measured that a folder read can answer HTTP
+200 for a folder that could not have been there, and a parameter SharePoint
+ignores returns the same rows as one it never received, so a wrong path would
+read as a folder scope that failed to narrow, which is one of the two answers
+the crux exists to tell apart. The predicted 438 files per folder per Choice
+value is derived in-probe from the fixture's own wrap formulas and lives in
+`foldered-group-by-folder-scoped-counts` as corroboration, never as the crux
+row's pass condition.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
