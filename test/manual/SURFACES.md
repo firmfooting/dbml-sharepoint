@@ -271,7 +271,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-multilevel-group-view-probe.js`,
 `library-large-list-preindex-fixture-probe.js`,
 `library-large-list-preindex-group-view-probe.js`,
-`library-large-list-modern-view-probe.js`
+`library-large-list-modern-view-probe.js`,
+`library-large-list-foldered-fixture-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -449,10 +450,38 @@ depending on it, because the unindexed column holds a thousand distinct values
 over 5,100 files and a refusal there is not attributable to the missing index
 alone. `ui-group-by-indexed-column-folder-scoped` is registered and recorded
 open: it needs a folder holding fewer than 5,000 files inside a library holding
-more than 5,000, and neither permanent fixture has one. Adding a folder to
-either would break the `$orderby=Id desc&$top=1` resume read both fixture
-probes fail closed on, so answering it needs a large library built with
-folders, which is a fixture probe rather than a change to this one.
+more than 5,000, and neither of the two flat permanent fixtures has one. Adding
+a folder to either would break the `$orderby=Id desc&$top=1` resume read both of
+those fixture probes fail closed on, so answering it needs a large library built
+with folders, which is a fixture probe rather than a change to this one.
+`library-large-list-foldered-fixture-probe.js` is that builder, and the row
+stays open until an operator has built the library it specifies.
+
+`library-large-list-foldered-fixture-probe.js` builds the two libraries that
+row and the three-level group-by pair need, and it mints its own ids for the
+reason the pre-index builder does: a different library is a different question.
+`dbmlsp Probe Foldered` holds 5,256 files in three root folders of 1,752 each,
+so the library is past the threshold while every folder is well under it, and
+its Choice column is indexed at 4,900 files by the same sandwich the pre-index
+builder uses, with the moment stamped into the column's `Description`. Its rows
+carry the `foldered-` stem, and the one id it reuses is
+`library.doc-lib.fixture-library-created`. `fixture-foldered-files-in-folders`
+is the row nothing else can stand in for: an upload that silently landed at the
+root would leave a library with the right file count, the right column values
+and no folder scoping at all, so every sampled file's `FileDirRef` is read back
+against the folder its own number names. `fixture-foldered-folder-counts` is
+computed over the file numbering rather than read from each folder's
+`ItemCount`, which comes from the same timer-job cache the list figure does and
+is recorded beside the row as an observation. The second library,
+`dbmlsp Probe MultiLevel`, is 240 files at the root with three columns wrapping
+at 4, 3 and 5, deliberately far under the threshold: the three-level `<GroupBy>`
+control was refused even `Id`-narrowed on the flat library, so its two dependent
+rows went void, and a small library carrying the same kinds of column gives that
+control somewhere it can succeed. Its rows take
+`library.large-list.fixture-multilevel-library-created` rather than the shared
+library-creation id, because one probe cannot record the same id twice, which is
+the precedent `library-large-list-fixture-probe.js` set with
+`fixture-target-list-seeded` for its own second container.
 
 `search` holds one probe. That is the map doing its job, not a flaw to tidy away
 by merging it into something larger: a surface holding one probe is the statement
@@ -531,6 +560,7 @@ surface boundary, and are listed for the same reason:
 | `library-view-interaction-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-large-list-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-large-list-preindex-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-large-list-foldered-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 
 `list-description-probe.js` is the instructive one. Its header today carries
 `// finding: group-description-512-ceiling`, a finding about a group description
