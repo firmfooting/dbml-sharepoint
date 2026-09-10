@@ -33,6 +33,12 @@ def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_ty
 
 Load the mapping YAML and the referenced configs into a single bundle.
 
+### `REPORTING_SECTIONS`
+
+```python
+REPORTING_SECTIONS = frozenset({'derived_columns', 'reporting'})
+```
+
 ### `PREFIX_PLACEHOLDER`
 
 ```python

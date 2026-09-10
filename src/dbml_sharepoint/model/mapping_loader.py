@@ -77,7 +77,7 @@ KNOWN_SECTIONS = frozenset({
     "prefix", "prefix_owner", "prefix_registry", "entities",
     "cross_site_reference_columns", "versioning",
     "enum_sources", "watched_lists", "polymorphic_patterns",
-    "retention_policies_source",
+    "retention_policies_source", "reporting_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
     "reporting",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
@@ -225,7 +225,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity_proj[column] = list(targets)
         lookup_projections[entity] = entity_proj
 
-    derived_columns = _parse_derived_columns(raw.get("derived_columns"))
+    reporting_block, derived_block = _reporting_sections(base_dir, raw)
+    derived_columns = _parse_derived_columns(derived_block)
 
     versioning = _require_mapping(raw.get("versioning"), "versioning")
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
@@ -414,7 +415,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ).items()
         },
         display_name_mode=_parse_display_name_mode(raw),
-        reporting=_parse_reporting(raw.get("reporting")),
+        reporting=_parse_reporting(reporting_block),
         display_name_overrides={
             entity: {
                 col: str(name)
@@ -618,6 +619,52 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
         )
     return "auto"
 
+
+
+#: The sections `reporting_source:` may carry, and the only keys its file
+#: may hold. Deliberately the two the REPORTING PACK reads and nothing
+#: else: the deploy reads neither, so the split follows what consumes a
+#: section rather than how long it is.
+REPORTING_SECTIONS: frozenset[str] = frozenset({"reporting", "derived_columns"})
+
+
+def _reporting_sections(
+    base_dir: Path, raw: dict[str, Any],
+) -> tuple[Any, Any]:
+    """The `reporting` and `derived_columns` blocks, from wherever they live.
+
+    A mapping may keep them inline or point `reporting_source:` at a file
+    beside it. The pointed-at file may hold NOTHING ELSE, and a mapping that
+    points at one may not also declare either section inline.
+
+    REFUSED RATHER THAN MERGED. Two declarations of one section is a
+    question with no right answer: whichever one this picked, the other
+    would be edited by somebody who could not see it being ignored. The
+    same reason `enum_sources` names one file per vocabulary instead of
+    layering them.
+    """
+    source = raw.get("reporting_source")
+    if source is None:
+        return raw.get("reporting"), raw.get("derived_columns")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError(
+            f"reporting_source must be a path relative to the mapping, "
+            f"got {source!r}",
+        )
+    inline = sorted(REPORTING_SECTIONS & set(raw))
+    if inline:
+        raise ValueError(
+            f"reporting_source points at {source!r}, so "
+            f"{', '.join(inline)} may not also be declared in the mapping. "
+            f"Move the section into that file, or drop reporting_source.",
+        )
+    path = (base_dir / source).resolve()
+    if not path.is_file():
+        raise ValueError(f"reporting_source: cannot read {source!r} at {path}")
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    block = _require_mapping(loaded, f"{source}")
+    _reject_unknown_keys(block, REPORTING_SECTIONS, f"{source}")
+    return block.get("reporting"), block.get("derived_columns")
 
 
 def _parse_reporting(block: Any) -> ReportingOptions:
