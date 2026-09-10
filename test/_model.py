@@ -35,6 +35,7 @@ from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     CrossSiteRef,
     DemoItem,
+    DerivedColumn,
     EntityMapping,
     EntitySection,
     FormFormatting,
@@ -215,6 +216,7 @@ class MappingSections(TypedDict, total=False):
     previous_prefixes: tuple[str, ...]
     calculated_formulas: dict[str, dict[str, str]]
     lookup_projections: dict[str, dict[str, list[str]]]
+    derived_columns: dict[str, list[DerivedColumn]]
     form_visibility: dict[str, EntitySection[FormVisibility]]
     column_validation: dict[str, EntitySection[ColumnValidation]]
     views: dict[str, list[ViewDef]]

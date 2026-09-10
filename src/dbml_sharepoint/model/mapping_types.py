@@ -534,6 +534,60 @@ class ReportingOptions:
     users_table: bool = False
 
 
+@dataclass(frozen=True)
+class DerivedColumn:
+    """One reporting-only column computed in the generated Power Query.
+
+    Three kinds, and the fields each one uses:
+
+    ``expr``   ``name``, ``type``, ``m`` (row-level M over this list's own
+               columns and any derived column declared above it).
+    ``lookup`` ``from_entity``, ``via``, ``pick`` -- join to another list on
+               the pack's own key columns and take columns off the match.
+    ``count``  ``from_entity``, ``via``, ``name``, ``aggregate``, optionally
+               ``column`` and ``where`` -- a grouped aggregate over a CHILD
+               list, joined back on the same keys.
+
+    NAMES ARE ALWAYS INTERNAL. An author writes the column names the schema
+    declares, here and inside ``m`` and ``where``, and the generator
+    translates a picked column to whatever the target query calls it after
+    its own rename. Writing model-facing names instead would put the
+    display-name map in two places and let them disagree in silence.
+    """
+
+    kind: str
+    name: str = ""
+    type: str = ""
+    m: str = ""
+    # Entity, never a list title or a query name: the generator derives the
+    # key columns from the schema's own ref, so a key spelled here could
+    # disagree with the key the query actually carries.
+    from_entity: str = ""
+    # The lookup column joining the two. On a `lookup` it is a column of
+    # THIS entity; on a `count` it is the column of the CHILD entity that
+    # points back at this one.
+    via: str = ""
+    # `lookup` only, and the alternative to `via`: join on a key column this
+    # query already carries rather than one derived from a ref. The chained
+    # case, where a lookup picked a key off one list and a second lookup
+    # follows it into another. There is no ref to derive from, because the
+    # key was computed rather than declared.
+    key: str = ""
+    # {new column: column on the target}, `lookup` only.
+    pick: dict[str, str] = field(default_factory=dict)
+    # {new column: declared type}, `lookup` only, one entry per `pick`.
+    types: dict[str, str] = field(default_factory=dict)
+    aggregate: str = ""
+    column: str = ""
+    where: str = ""
+    hidden: bool = False
+    description: str = ""
+    # `expr` only: overwrite a column the query already produces rather than
+    # adding one. The fallback shape, where a calculated column the site
+    # does not populate is computed model-side instead.
+    replace: bool = False
+
+
 @dataclass
 class Mapping:
     """The full schema/sharepoint-mapping.yaml structure."""
@@ -569,6 +623,12 @@ class Mapping:
     # are join-free, and test/manual/projected-lookup-probe.js for the
     # createfieldasxml shape that proves the linkage is scriptable.
     lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    # {entity: [DerivedColumn]} (reporting-only columns computed in the
+    # generated Power Query). NOT SharePoint columns: nothing here is
+    # deployed, provisioned or read back, and a list carries no trace of it.
+    # See `analysis/derived.py` for the shared derivation both the emitter
+    # and the validator ask.
+    derived_columns: dict[str, list["DerivedColumn"]] = field(default_factory=dict)
     # {entity: EntitySection[FormVisibility]} (declared form behaviour).
     form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)
     # {entity: EntitySection[ColumnValidation]} (per-column save rules).
@@ -666,6 +726,14 @@ class Mapping:
             (xref.entity, xref.column)
             for xref in self.cross_site_reference_columns
         }
+
+    def derived_for(self, entity_name: str) -> list["DerivedColumn"]:
+        """This entity's derived columns, in declaration order.
+
+        Order is the contract: an `expr` may read a column an entry above it
+        produced, which is how a lookup's picked column reaches a flag.
+        """
+        return list(self.derived_columns.get(entity_name, ()))
 
     def projections_for(self, entity_name: str, column_name: str) -> list[str]:
         """Projected target columns for a lookup column, empty when none.

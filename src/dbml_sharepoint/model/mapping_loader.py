@@ -35,6 +35,7 @@ from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
     DemoItem,
+    DerivedColumn,
     EntityKind,
     EntityMapping,
     EntitySection,
@@ -81,7 +82,7 @@ KNOWN_SECTIONS = frozenset({
     "reporting",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
     "retired_columns", "field_sets",
-    "lookup_projections",
+    "lookup_projections", "derived_columns",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "attachments",
     "demo_items",
@@ -223,6 +224,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
                 )
             entity_proj[column] = list(targets)
         lookup_projections[entity] = entity_proj
+
+    derived_columns = _parse_derived_columns(raw.get("derived_columns"))
 
     versioning = _require_mapping(raw.get("versioning"), "versioning")
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
@@ -372,6 +375,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         watched_lists=watched,
         polymorphic_patterns=polymorphic,
         lookup_projections=lookup_projections,
+        derived_columns=derived_columns,
         retention_policies_source=retention_path,
         extension=extension,
         permissions=permissions_config,
@@ -1183,6 +1187,185 @@ def previous_object_names(
                 continue
             out.append(name)
     return tuple(out)
+
+
+#: The M type token each declared type maps to, and so the vocabulary a
+#: `derived_columns` entry may name. Deliberately small: every one of these
+#: has an unambiguous M literal type, and a kind whose M shape nobody has
+#: decided must not resolve to `type any` and load as an Error value in
+#: every populated cell.
+DERIVED_TYPES: dict[str, str] = {
+    "logical": "type logical",
+    "text": "type text",
+    "number": "type number",
+    "Int64": "Int64.Type",
+    "date": "type date",
+    "datetime": "type datetime",
+    "datetimezone": "type datetimezone",
+}
+
+#: What a `count` may ask of the child rows. `count` needs no column;
+#: the other three name one.
+DERIVED_AGGREGATES: frozenset[str] = frozenset(
+    {"count", "min", "max", "names"},
+)
+
+_DERIVED_KEYS: dict[str, frozenset[str]] = {
+    "expr": frozenset({
+        "kind", "name", "type", "m", "hidden", "description", "replace",
+    }),
+    "lookup": frozenset({
+        "kind", "from", "via", "key", "pick", "types", "hidden",
+        "description",
+    }),
+    "count": frozenset({
+        "kind", "from", "via", "name", "aggregate", "column", "where",
+        "type", "hidden", "description",
+    }),
+}
+
+
+def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
+    value = item.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"{where}: {key} must be a non-empty string, got {value!r}",
+        )
+    return value
+
+
+def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
+    """One `derived_columns` entry, refused rather than defaulted.
+
+    SHAPE ONLY. Whether the entity exists, whether `via` really is a lookup
+    and whether an `m` expression names a column the query produces are
+    SEMANTIC questions, and they belong to the validator, which can say them
+    all at once with locations rather than aborting on the first.
+    """
+    item = _require_mapping(item, where)
+    kind = item.get("kind")
+    if kind not in _DERIVED_KEYS:
+        raise ValueError(
+            f"{where}: kind must be one of "
+            f"{', '.join(sorted(_DERIVED_KEYS))}, got {kind!r}. `filter` is "
+            f"deliberately absent: a reporting column may not drop rows, "
+            f"because every audit and count beside it assumes the query "
+            f"carries the list.",
+        )
+    _reject_unknown_keys(item, _DERIVED_KEYS[kind], where)
+    hidden = bool(item.get("hidden", False))
+    description = str(item.get("description", ""))
+    if kind == "expr":
+        declared_type = _derived_text(item, "type", where)
+        if declared_type not in DERIVED_TYPES:
+            raise ValueError(
+                f"{where}: type must be one of "
+                f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
+            )
+        return DerivedColumn(
+            kind="expr",
+            name=_derived_text(item, "name", where),
+            type=declared_type,
+            m=_derived_text(item, "m", where),
+            hidden=hidden,
+            description=description,
+            replace=bool(item.get("replace", False)),
+        )
+    if kind == "lookup":
+        via = str(item.get("via", ""))
+        join_key = str(item.get("key", ""))
+        if bool(via) == bool(join_key):
+            raise ValueError(
+                f"{where}: a lookup joins EITHER on `via`, a lookup column "
+                f"whose key the generator derives, OR on `key`, a key "
+                f"column this query already carries. Exactly one, and "
+                f"{'both were given' if via else 'neither was'}.",
+            )
+        pick = _require_mapping(item.get("pick"), f"{where}.pick")
+        types = _require_mapping(item.get("types"), f"{where}.types")
+        if not pick:
+            raise ValueError(f"{where}: pick must name at least one column")
+        for new_name, source in pick.items():
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError(
+                    f"{where}.pick.{new_name} must be a non-empty string, "
+                    f"got {source!r}",
+                )
+            declared = types.get(new_name)
+            if declared not in DERIVED_TYPES:
+                # Every picked column is typed, so none can reach the query
+                # as `type any` and load as an Error in every populated cell.
+                raise ValueError(
+                    f"{where}.types.{new_name} must be one of "
+                    f"{', '.join(sorted(DERIVED_TYPES))}, got {declared!r}",
+                )
+        unknown = set(types) - set(pick)
+        if unknown:
+            raise ValueError(
+                f"{where}.types names {', '.join(sorted(unknown))}, which "
+                f"pick does not produce",
+            )
+        return DerivedColumn(
+            kind="lookup",
+            from_entity=_derived_text(item, "from", where),
+            via=via,
+            key=join_key,
+            pick={str(k): str(v) for k, v in pick.items()},
+            types={str(k): str(v) for k, v in types.items()},
+            hidden=hidden,
+            description=description,
+        )
+    aggregate = _derived_text(item, "aggregate", where)
+    if aggregate not in DERIVED_AGGREGATES:
+        raise ValueError(
+            f"{where}: aggregate must be one of "
+            f"{', '.join(sorted(DERIVED_AGGREGATES))}, got {aggregate!r}",
+        )
+    declared_type = _derived_text(item, "type", where)
+    if declared_type not in DERIVED_TYPES:
+        raise ValueError(
+            f"{where}: type must be one of "
+            f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
+        )
+    column = str(item.get("column", ""))
+    if aggregate != "count" and not column:
+        raise ValueError(
+            f"{where}: aggregate {aggregate!r} reads a column of the child "
+            f"rows, so `column` is required. Only `count` needs none.",
+        )
+    if aggregate == "count" and column:
+        raise ValueError(
+            f"{where}: aggregate `count` counts rows and reads no column, "
+            f"so `column` must be absent, got {column!r}",
+        )
+    return DerivedColumn(
+        kind="count",
+        from_entity=_derived_text(item, "from", where),
+        via=_derived_text(item, "via", where),
+        name=_derived_text(item, "name", where),
+        aggregate=aggregate,
+        column=column,
+        where=str(item.get("where", "")),
+        type=declared_type,
+        hidden=hidden,
+        description=description,
+    )
+
+
+def _parse_derived_columns(raw: Any) -> dict[str, list[DerivedColumn]]:
+    """The `derived_columns` section: {entity: [column, ...]}."""
+    out: dict[str, list[DerivedColumn]] = {}
+    for entity, items in _require_mapping(raw, "derived_columns").items():
+        if not isinstance(items, list):
+            raise ValueError(
+                f"derived_columns.{entity} must be a list of columns, "
+                f"got {items!r}",
+            )
+        out[entity] = [
+            _parse_derived_column(item, f"derived_columns.{entity}[{i}]")
+            for i, item in enumerate(items)
+        ]
+    return out
 
 
 def _parse_permissions(

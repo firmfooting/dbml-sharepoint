@@ -477,6 +477,46 @@ The `reporting:` section: what the reporting pack adds beyond the
 schema's own columns. Everything defaults off, so a pack regenerated
 from an unchanged mapping keeps its shape.
 
+### `DerivedColumn`
+
+```python
+@dataclass(frozen=True)
+class DerivedColumn:
+    kind: str
+    name: str = ''
+    type: str = ''
+    m: str = ''
+    from_entity: str = ''
+    via: str = ''
+    key: str = ''
+    pick: dict[str, str] = field(default_factory=dict)
+    types: dict[str, str] = field(default_factory=dict)
+    aggregate: str = ''
+    column: str = ''
+    where: str = ''
+    hidden: bool = False
+    description: str = ''
+    replace: bool = False
+```
+
+One reporting-only column computed in the generated Power Query.
+
+Three kinds, and the fields each one uses:
+
+``expr``   ``name``, ``type``, ``m`` (row-level M over this list's own
+           columns and any derived column declared above it).
+``lookup`` ``from_entity``, ``via``, ``pick`` -- join to another list on
+           the pack's own key columns and take columns off the match.
+``count``  ``from_entity``, ``via``, ``name``, ``aggregate``, optionally
+           ``column`` and ``where`` -- a grouped aggregate over a CHILD
+           list, joined back on the same keys.
+
+NAMES ARE ALWAYS INTERNAL. An author writes the column names the schema
+declares, here and inside ``m`` and ``where``, and the generator
+translates a picked column to whatever the target query calls it after
+its own rename. Writing model-facing names instead would put the
+display-name map in two places and let them disagree in silence.
+
 ### `Mapping`
 
 ```python
@@ -498,6 +538,7 @@ class Mapping:
     previous_prefixes: tuple[str, ...] = ()
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    derived_columns: dict[str, list['DerivedColumn']] = field(default_factory=dict)
     form_visibility: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.FormVisibility]] = field(default_factory=dict)
     column_validation: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.ColumnValidation]] = field(default_factory=dict)
     views: dict[str, list[dbml_sharepoint.model.mapping_types.ViewDef]] = field(default_factory=dict)
@@ -551,6 +592,17 @@ Asked by the enterprise-reader rule in `checks/_permissions.py`, which
 needs the mapping-wide answer rather than a per-entity one: it sees a
 grant as a (level, origin) pair with no entity attached, because an
 override's assignments are keyed by entity while the default's are not.
+
+#### `Mapping.derived_for`
+
+```python
+def derived_for(self, entity_name: str) -> list['DerivedColumn']
+```
+
+This entity's derived columns, in declaration order.
+
+Order is the contract: an `expr` may read a column an entry above it
+produced, which is how a lookup's picked column reaches a flag.
 
 #### `Mapping.display_name_for`
 
