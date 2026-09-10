@@ -32,11 +32,14 @@ make every regeneration churn. `test_site_zone` fails once the end is within
 ten years of today, which is the prompt to move it.
 """
 
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from difflib import get_close_matches
 from functools import cache
 from zoneinfo import ZoneInfo, available_timezones
+
+import tzlocal
 
 #: The first instant a transition can be reported at. Nothing this tool
 #: reports on predates SharePoint Online, so nothing earlier is needed.
@@ -149,6 +152,31 @@ def suggest_zones(name: str, *, limit: int = 3) -> tuple[str, ...]:
         if zone not in found:
             found.append(zone)
     return tuple(found[:limit])
+
+
+def local_zone_name() -> str | None:
+    """The IANA name of the zone THIS MACHINE is set to, or None.
+
+    The build machine's zone, not the site's: the two agree often enough
+    to be worth offering and disagree often enough that the wizard must say
+    which one this is and ask. `tzlocal` reads TZ and /etc/localtime on
+    POSIX and the registry on Windows, where it maps the Windows zone id to
+    an IANA name.
+
+    None whenever the answer would be a guess. `tzlocal` itself warns and
+    answers UTC when it finds no configuration at all, so warnings are
+    raised here and caught with the rest: an offer of UTC on a machine
+    that never said so is exactly the wrong default to confirm by reflex.
+    A name the database here does not declare is refused the same way,
+    since nothing downstream could derive a table from it.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            name = tzlocal.get_localzone_name()
+    except (LookupError, OSError, ValueError, Warning):
+        return None
+    return name if is_known_zone(name) else None
 
 
 def unknown_zone_message(name: str) -> str:

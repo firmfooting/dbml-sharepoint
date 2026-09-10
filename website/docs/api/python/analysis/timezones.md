@@ -104,6 +104,27 @@ zone), then the nearest spellings. An operator who is refused with
 nothing to try next reaches for a guess, and a guess is what the build
 exists to refuse.
 
+### `local_zone_name`
+
+```python
+def local_zone_name() -> str | None
+```
+
+The IANA name of the zone THIS MACHINE is set to, or None.
+
+The build machine's zone, not the site's: the two agree often enough
+to be worth offering and disagree often enough that the wizard must say
+which one this is and ask. `tzlocal` reads TZ and /etc/localtime on
+POSIX and the registry on Windows, where it maps the Windows zone id to
+an IANA name.
+
+None whenever the answer would be a guess. `tzlocal` itself warns and
+answers UTC when it finds no configuration at all, so warnings are
+raised here and caught with the rest: an offer of UTC on a machine
+that never said so is exactly the wrong default to confirm by reflex.
+A name the database here does not declare is refused the same way,
+since nothing downstream could derive a table from it.
+
 ### `unknown_zone_message`
 
 ```python

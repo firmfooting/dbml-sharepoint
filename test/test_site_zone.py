@@ -12,12 +12,15 @@ and `test/manual/site-zone-transitions-probe.js` asks the platform itself.
 
 import datetime as dt
 import re
+import warnings
+import zoneinfo
 from dataclasses import replace
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 import typer
+import tzlocal
 from _builders import ID_PK
 from _builders import table as dbml_table
 from _findings import none_of
@@ -36,6 +39,7 @@ from dbml_sharepoint.analysis.timezones import (
     WINDOW_END,
     WINDOW_START,
     is_known_zone,
+    local_zone_name,
     suggest_zones,
     transitions,
     unknown_zone_message,
@@ -311,6 +315,67 @@ def test_nothing_is_suggested_for_nothing() -> None:
     assert suggest_zones("") == ()
     assert suggest_zones("   ") == ()
     assert "Did you mean" not in unknown_zone_message("Mars/Olympus")
+
+
+# ------------------------------------------------------------ the machine
+
+
+def _machine_reports(monkeypatch: pytest.MonkeyPatch, answer: object) -> None:
+    """Stand in for `tzlocal.get_localzone_name`: a name, or an exception
+    class to raise, or a callable for anything else."""
+    def read() -> str:
+        if isinstance(answer, type) and issubclass(answer, BaseException):
+            raise answer("no zone")
+        if callable(answer):
+            result = answer()
+            assert isinstance(result, str)
+            return result
+        assert isinstance(answer, str)
+        return answer
+    monkeypatch.setattr(tzlocal, "get_localzone_name", read)
+
+
+def test_the_machines_zone_is_read_through_tzlocal(monkeypatch: pytest.MonkeyPatch) -> None:
+    _machine_reports(monkeypatch, "Australia/Sydney")
+    assert local_zone_name() == "Australia/Sydney"
+
+
+@pytest.mark.parametrize(
+    "failure", [zoneinfo.ZoneInfoNotFoundError, LookupError, OSError, ValueError],
+)
+def test_detection_that_fails_offers_nothing(
+    monkeypatch: pytest.MonkeyPatch, failure: type[BaseException],
+) -> None:
+    """None rather than a guess: the wizard then offers nothing and says
+    what to type. `ZoneInfoNotFoundError` is what tzlocal raises on both
+    platforms; the rest are what its readers can let through."""
+    _machine_reports(monkeypatch, failure)
+    assert local_zone_name() is None
+
+
+def test_tzlocals_own_utc_guess_is_not_offered(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no configuration at all, tzlocal warns and answers UTC. That is
+    a guess, and offering it to be confirmed by reflex is the wrong default
+    exactly where nothing is known."""
+    def guess() -> str:
+        warnings.warn("Can not find any timezone configuration, defaulting to UTC.",
+                      stacklevel=1)
+        return "UTC"
+    _machine_reports(monkeypatch, guess)
+    assert local_zone_name() is None
+
+
+def test_a_name_the_database_does_not_declare_is_not_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _machine_reports(monkeypatch, "Mars/Olympus")
+    assert local_zone_name() is None
+
+
+def test_the_real_read_answers_nothing_or_a_known_zone() -> None:
+    """The one unpatched call: whatever this host is, the contract holds."""
+    answer = local_zone_name()
+    assert answer is None or is_known_zone(answer)
 
 
 # ------------------------------------------------------------------- the rule

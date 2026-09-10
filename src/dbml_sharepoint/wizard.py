@@ -53,6 +53,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
+from dbml_sharepoint.analysis.timezones import local_zone_name
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -73,6 +74,7 @@ from dbml_sharepoint.catalogue import (
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
     ENV_FILENAME,
+    TIME_ZONE_KEY,
     EnvFileError,
     read_env_file,
 )
@@ -533,27 +535,81 @@ def _ask_site_url(console: Console) -> str:
         return cleaned
 
 
-def _ask_time_zone(console: Console) -> str:
-    """The site's IANA zone, prompted until it passes the CLI's own validator.
+def _ask_time_zone(
+    console: Console, *, file_zone: str | None, machine_zone: str | None,
+) -> str:
+    """The site's IANA zone, offered from what is known and confirmed.
 
     Calls `validate_time_zone` rather than restating its rule, for the same
     reason `_ask_site_url` does: the wizard must not come to disagree with
     `--time-zone` about what a usable zone is, and the refusal it prints is
     the one the flag prints, spelling suggestions included.
+
+    The offer, in order: the zone `dbml-sharepoint.env` names (`file_zone`,
+    already validated by the caller), because the operator wrote it for
+    this project on purpose; else the zone THIS MACHINE is set to
+    (`machine_zone`, from `local_zone_name`); else nothing, and the answer
+    must be typed. Enter accepts the offer, which is the one place in this
+    wizard a `default=` is what is wanted: the value on offer is a real
+    answer, unlike the reader prompt, where a blank means nobody.
+
+    THE MACHINE'S ZONE IS NOT THE SITE'S, and the guidance says so plainly
+    rather than presenting the offer as detected fact. A build machine in
+    Sydney building for a site set to Melbourne is right by coincidence
+    (the two share every transition); one in Hobart is wrong for a few
+    weeks a year and right the rest of it, which is the defect nothing on
+    the site would show. What does show it is the pack itself: every list
+    query reads the site's own offsets at refresh and reports
+    `DateZoneResolved` false on every row where they disagree with the
+    zone the pack was built for, and the guidance names that so the
+    operator knows what protects a wrong answer from being silent.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_time_zone  # noqa: PLC0415
 
-    _guidance(
-        console,
-        "The zone the site is set to (Site settings > Regional settings > "
-        "Time zone), as an IANA name such as Europe/London. The reporting "
-        "pack converts every timestamp by it.",
+    caught = (
+        "Every list query in the reporting pack checks the site's own "
+        "offsets against this zone at each refresh and reports "
+        "DateZoneResolved false on every row where they disagree, so a "
+        "wrong answer is caught rather than silent."
     )
+    if file_zone is not None:
+        offered: str | None = file_zone
+        _guidance(
+            console,
+            f"{ENV_FILENAME} names {file_zone} as the site's zone. Press "
+            f"Enter to build for it, or type the site's zone as an IANA name "
+            f"(Site settings > Regional settings > Time zone names the "
+            f"city). {caught}",
+        )
+    elif machine_zone is not None:
+        offered = machine_zone
+        _guidance(
+            console,
+            f"This computer reports {machine_zone}. That is the zone of the "
+            f"machine running this wizard, not necessarily the site's: press "
+            f"Enter only if the site is set to the same zone, and otherwise "
+            f"type the site's zone as an IANA name (Site settings > Regional "
+            f"settings > Time zone names the city). {caught}",
+        )
+    else:
+        offered = None
+        _guidance(
+            console,
+            "This computer's time zone could not be read, so nothing is "
+            "offered. Type the site's zone as an IANA name such as "
+            "Europe/London (Site settings > Regional settings > Time zone "
+            f"names the city). {caught}",
+        )
     while True:
-        answer = Prompt.ask("[bold]Site time zone[/bold]", console=console).strip()
+        if offered is None:
+            answer = Prompt.ask("[bold]Site time zone[/bold]", console=console)
+        else:
+            answer = Prompt.ask(
+                "[bold]Site time zone[/bold]", default=offered, console=console,
+            )
         try:
-            return validate_time_zone(answer)
+            return validate_time_zone(answer.strip())
         except typer.BadParameter as exc:
             console.print(f"[red]{exc.message}[/red]")
 
@@ -584,31 +640,44 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
     return Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
 
-def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
-    """The `dbml-sharepoint.env` consulted for a suggested UPN, and what it
-    suggested: `(path, upn)`, with `upn` None when it offered nothing usable.
-    None only when there was no file at all.
+@dataclass(frozen=True)
+class _EnvSuggestions:
+    """What `dbml-sharepoint.env` offers the prompts: the file that was read,
+    and per key a value the CLI's own validator accepted, or None."""
+
+    path: Path
+    reader: str | None
+    time_zone: str | None
+
+
+def _consult_env_file(console: Console) -> _EnvSuggestions | None:
+    """The `dbml-sharepoint.env` consulted for suggestions, and what it
+    suggested. None only when there was no file at all.
 
     Read relative to the CURRENT directory, the location `build` defaults
     to, not the destination about to be written: `_ask_destination` refuses a
     non-empty destination and `_scaffold` copies the template in afterwards,
     so only the CWD can already hold the file.
 
-    The path comes back even when the key is absent or its value invalid,
+    The path comes back even when a key is absent or its value invalid,
     because the file was read and every provenance artefact must say so.
 
     A file that fails to PARSE is fatal and raises `WizardError`, carrying
     `EnvFileError`'s message, which already names the path, line and text.
-    `_run` catches it before anything is written. Warning and proceeding
-    would let the manifest and index.md claim no file was ever there.
+    `_run` catches it before anything is asked or written. Warning and
+    proceeding would let the manifest and index.md claim no file was ever
+    there.
 
     An invalid VALUE in a file that parses is not fatal: it is reported, the
     suggestion is withdrawn, and the path still threads through. Unlike
-    `build`, the value here is only ever a suggestion the operator must
-    retype, so whatever they answer is validated at the prompt regardless.
+    `build`, a value here is only ever a suggestion, so whatever the
+    operator answers is validated at the prompt regardless.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
-    from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
+    from dbml_sharepoint.cli import (  # noqa: PLC0415
+        validate_enterprise_reader,
+        validate_time_zone,
+    )
 
     path = Path(ENV_FILENAME)
     if not path.exists():
@@ -623,26 +692,35 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
     except EnvFileError as exc:
         raise WizardError(str(exc)) from exc
     reader = file_settings.get(ENTERPRISE_READER_KEY)
-    if reader is None:
-        return path, None
-    try:
-        validate_enterprise_reader(reader)
-    except typer.BadParameter as exc:
-        console.print(
-            f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
-            f"{exc.message}[/red]",
-        )
-        return path, None
-    return path, reader
+    if reader is not None:
+        try:
+            validate_enterprise_reader(reader)
+        except typer.BadParameter as exc:
+            console.print(
+                f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
+                f"{exc.message}[/red]",
+            )
+            reader = None
+    time_zone = file_settings.get(TIME_ZONE_KEY)
+    if time_zone is not None:
+        try:
+            validate_time_zone(time_zone)
+        except typer.BadParameter as exc:
+            console.print(
+                f"[red]{ENV_FILENAME} suggests a time zone that is not valid: "
+                f"{exc.message}[/red]",
+            )
+            time_zone = None
+    return _EnvSuggestions(path=path, reader=reader, time_zone=time_zone)
 
 
 def _ask_enterprise_reader(
     console: Console,
-    consulted: tuple[Path, str | None] | None,
+    consulted: _EnvSuggestions | None,
 ) -> str:
     """Prompt until the answer is blank or passes the CLI's own validator.
 
-    `consulted` is `_reader_from_env_file`'s result, read by the caller so
+    `consulted` is `_consult_env_file`'s result, read by the caller so
     the file is still consulted where this prompt is never offered.
 
     Validating at the prompt keeps a refusal recoverable. The answer used to
@@ -672,7 +750,7 @@ def _ask_enterprise_reader(
         "A service account enrolled read-only across every list this "
         "template creates, so it can report on them. Blank for none.",
     )
-    suggestion = consulted[1] if consulted is not None else None
+    suggestion = consulted.reader if consulted is not None else None
     label = "[bold]Reporting account (UPN)[/bold]"
     if suggestion is not None:
         label += (
@@ -996,20 +1074,28 @@ def _is_setting_line(line: str, key: str) -> bool:
     return stripped.partition("=")[0].strip() == key
 
 
-def _env_text_for_answer(text: str, reader: str | None) -> str:
-    """`text` with its reader line set to the answer actually given.
+def _env_text_for_answers(text: str, reader: str | None, time_zone: str) -> str:
+    """`text` with its reader and zone lines set to the answers actually
+    given.
 
-    None means the question was never asked, so the file passes through
-    unchanged and the build's own guard still decides. Blank means the
-    operator was asked and said nobody, so the line is dropped rather than
-    left to enrol somebody on the next build.
+    Reader: None means the question was never asked, so the line passes
+    through unchanged and the build's own guard still decides. Blank means
+    the operator was asked and said nobody, so the line is dropped rather
+    than left to enrol somebody on the next build.
+
+    Zone: always asked, always confirmed, so the copy always names the
+    answer. A file naming another zone would otherwise win the next rebuild
+    run from inside the project without the flag, and the pack would change
+    zone between two builds nobody edited anything for.
     """
-    if reader is None:
-        return text
-    kept = [line for line in text.splitlines() if not _is_setting_line(line, ENTERPRISE_READER_KEY)]
-    if reader:
-        kept.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
-    return "\n".join(kept) + "\n" if kept else ""
+    lines = text.splitlines()
+    if reader is not None:
+        lines = [line for line in lines if not _is_setting_line(line, ENTERPRISE_READER_KEY)]
+        if reader:
+            lines.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
+    lines = [line for line in lines if not _is_setting_line(line, TIME_ZONE_KEY)]
+    lines.append(f"{TIME_ZONE_KEY}={_env_value_literal(time_zone)}")
+    return "\n".join(lines) + "\n"
 
 
 def _env_value_literal(value: str) -> str:
@@ -1026,7 +1112,7 @@ def _env_value_literal(value: str) -> str:
 
 def _preserve_env_file(answers: Answers) -> None:
     """Copy the consulted `dbml-sharepoint.env` into the project, with the
-    reader line rewritten to the answer given.
+    reader and zone lines rewritten to the answers given.
 
     A documented rebuild runs from inside the project, so without a copy it
     drops the reader the first build enrolled. Copying it verbatim is worse:
@@ -1041,14 +1127,14 @@ def _preserve_env_file(answers: Answers) -> None:
     destination = answers.destination / ENV_FILENAME
     if destination.exists() or not source.is_file():
         return
-    text = _env_text_for_answer(source.read_text(encoding="utf-8"), answers.reader)
-    if not text:
-        return
+    text = _env_text_for_answers(
+        source.read_text(encoding="utf-8"), answers.reader, answers.time_zone,
+    )
     write_artifact(destination, text)
-    _verify_preserved_env_file(destination, answers.reader)
+    _verify_preserved_env_file(destination, answers.reader, answers.time_zone)
 
 
-def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
+def _verify_preserved_env_file(destination: Path, reader: str | None, time_zone: str) -> None:
     """Read the copy back and confirm it says what the operator answered.
 
     `AGENTS.md` requires anything that writes to read back and verify, and
@@ -1065,6 +1151,11 @@ def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
         raise WizardError(
             f"{destination} reads back as {settings.get(ENTERPRISE_READER_KEY, '')!r}, "
             f"not the {reader!r} that was answered.",
+        )
+    if settings.get(TIME_ZONE_KEY) != time_zone:
+        raise WizardError(
+            f"{destination} reads back {TIME_ZONE_KEY} as "
+            f"{settings.get(TIME_ZONE_KEY)!r}, not the {time_zone!r} that was answered.",
         )
 
 
@@ -1338,6 +1429,12 @@ def _run(console: Console) -> int:
     try:
         facts = _read_facts(solution)
         roles = _site_roles([facts])
+        # Consulted here, before the first question it feeds (the zone), and
+        # even where no prompt will be offered, so a mapping with no reader
+        # group still reaches the armed guard. A file that will not parse
+        # refuses the run here, before anything is asked or written, the
+        # same refusal `build` gives it.
+        consulted = _consult_env_file(console)
     except WizardError as exc:
         # Before anything is written. This used to happen after the copy and
         # outside any guard, so a template the loader rejected produced a
@@ -1353,7 +1450,11 @@ def _run(console: Console) -> int:
     console.rule("Site")
     destination = _ask_destination(console, solution)
     site_url = _ask_site_url(console)
-    time_zone = _ask_time_zone(console)
+    time_zone = _ask_time_zone(
+        console,
+        file_zone=consulted.time_zone if consulted is not None else None,
+        machine_zone=local_zone_name(),
+    )
     site_role = _ask_site_role(console, roles)
 
     console.rule("Build")
@@ -1364,25 +1465,16 @@ def _run(console: Console) -> int:
     env_file = None
     seed = False
     if build:
-        # Consulted even where the prompt is not offered, so a mapping with
-        # no reader group still reaches the armed guard.
-        try:
-            consulted = _reader_from_env_file(console)
-            env_file = consulted[0] if consulted is not None else None
-            # The prompt is offered only where a group exists to enrol into.
-            # Blank is its default and means nobody, so it must never reach
-            # `validate_enterprise_reader`, which refuses an empty string.
-            if facts.reader_group:
-                reader = _ask_enterprise_reader(console, consulted)
-            if facts.demo_items:
-                seed = _ask_seed(console)
-        except WizardError as exc:
-            # Before anything is written, same as the `_read_facts`/
-            # `_site_roles` guard above: `dbml-sharepoint.env` could not be
-            # parsed, and `_reader_from_env_file` raised rather than warning
-            # and letting the run proceed as though no file were there.
-            console.print(f"[red]{escape(str(exc))}[/red]")
-            return 1
+        # The file threads into the build, and into the copy `_scaffold`
+        # makes for the rebuild a build implies, only when there is a build.
+        env_file = consulted.path if consulted is not None else None
+        # The prompt is offered only where a group exists to enrol into.
+        # Blank is its default and means nobody, so it must never reach
+        # `validate_enterprise_reader`, which refuses an empty string.
+        if facts.reader_group:
+            reader = _ask_enterprise_reader(console, consulted)
+        if facts.demo_items:
+            seed = _ask_seed(console)
 
     answers = Answers(
         destination=destination,
