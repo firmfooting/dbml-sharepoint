@@ -16,7 +16,11 @@ from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
-from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
+from dbml_sharepoint.analysis.reporting.plan import (
+    ListPlan,
+    build_plans,
+    is_expand_queryable,
+)
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
 from dbml_sharepoint.generators import report_sql
 from dbml_sharepoint.generators.report_m import (
@@ -1274,7 +1278,14 @@ def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> Non
     )
     for site_role in sorted({e.site_role for e in plain.mapping.entities.values()}):
         for plan in build_plans(schema, plain, site_role):
-            assert set(plan.output_columns) == _plan_typed_columns(plan), plan.entity
+            # A projection SharePoint will not fetch through the expand is
+            # produced by a join instead of by the typing step, so it is in
+            # `output_columns`, which the rename reads, and not in
+            # `m_types`, which types the OData response.
+            produced = _plan_typed_columns(plan) | {
+                out for _via, _t, _tc, out, _m in plan.key_joined
+            }
+            assert set(plan.output_columns) == produced, plan.entity
             # A duplicate would rename one column twice, so the list and the
             # set have to be the same size.
             assert len(plan.output_columns) == len(set(plan.output_columns))
@@ -2790,3 +2801,105 @@ def test_the_dictionary_says_what_a_blank_required_column_means() -> None:
     assert "NEW items only" in md
     assert "ItemURLResolved" in md
     assert "DateZoneResolved" in md
+
+
+# ------------------------------- what a lookup's $expand may actually fetch
+
+
+def _projecting_type(target_type: str) -> tuple[Schema, MappingBundle]:
+    """Risk -> Decision, projecting one column of the given type."""
+    schema = make_schema(
+        make_table("Decision", column("Title"), column("Extra", target_type)),
+        make_table("Risk", column("Title"), make_ref("Decision", "Decision.Id")),
+    )
+    bundle = make_bundle(
+        entities=["Risk", "Decision"],
+        lookup_projections={"Risk": {"Decision": ["Extra"]}},
+    )
+    return schema, bundle
+
+
+@pytest.mark.parametrize("target_type", ["nvarchar", "date", "calculated_text"])
+def test_a_queryable_projection_still_rides_the_expand(target_type: str) -> None:
+    """The types MEASURED as accepted keep the cheap path: one request, no
+    join. Text, DateTime and a calculated column with text output."""
+    schema, bundle = _projecting_type(target_type)
+    query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
+    assert "Decision/Extra" in query
+    assert "DecisionExtra" in query
+
+
+@pytest.mark.parametrize("target_type", [
+    "richtext", "calculated_number", "calculated_date", "int",
+])
+def test_a_projection_the_expand_refuses_is_carried_by_a_join(
+    target_type: str,
+) -> None:
+    """THE defect this closes. `$select=Lookup/Column` naming one of these
+    is refused with HTTP 400 and takes the WHOLE query with it, so the list
+    does not load at all. Measured on a live tenant 2026-09-10.
+
+    The declaration is still honoured. The column is carried by joining the
+    target's own query on the key the row already has, under the same name
+    and the same type, because which mechanism fetches it is the
+    generator's business and not the author's.
+    """
+    schema, bundle = _projecting_type(target_type)
+    query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
+    select = query.split("?$select=")[1].split('"')[0]
+    assert "Decision/Extra" not in select, "the refused path is still emitted"
+    assert '"DecisionExtra"' in query, "the declared column vanished"
+    assert "Table.NestedJoin(" in query
+    assert '{"Decision Key", "Extra"}' in query
+
+
+def test_a_choice_projection_is_carried_by_a_join() -> None:
+    """The case a consumer actually hit. Both columns the original report
+    asked for were Choice, and both took their query down."""
+    schema = make_schema(
+        make_table("Workstream", column("Title"), column("Phase", "app_phase")),
+        make_table("Action", column("Title"), make_ref("Workstream", "Workstream.Id")),
+        enums=[make_enum("app_phase", "Open", "Closed")],
+    )
+    bundle = make_bundle(
+        entities=["Action", "Workstream"],
+        lookup_projections={"Action": {"Workstream": ["Phase"]}},
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Action.pq"]
+    assert "Workstream/Phase" not in query
+    assert '{"Workstream Key", "Phase"}' in query
+    assert '{"WorkstreamPhase"}' in query
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> None:
+    """THE sweep that would have caught this before it shipped. Every
+    `Lookup/Column` path in every generated `$select`, for every family,
+    against the measured list of types SharePoint will fetch that way.
+
+    A single refused path returns HTTP 400 for the whole request, so this
+    is not a missing column, it is a list that does not load.
+    """
+    root = SOLUTION_TEMPLATES / family
+    schema = parse_dbml(root / "10-design/schema.dbml")
+    bundle = load_mapping(root / "20-configure/mapping.yaml")
+    enums = {e.name for e in schema.enums}
+    by_table = {t.name: {c.name: c for c in t.columns} for t in schema.tables}
+    checked = 0
+    for name, text in generate_powerquery(schema, bundle, "default").items():
+        entity = name[:-3].removeprefix(bundle.mapping.prefix)
+        for select in re.findall(r"\?\$select=([^\"]+)", text):
+            for path in [p for p in select.split(",") if "/" in p]:
+                lookup, target_column = path.split("/", 1)
+                col = by_table.get(entity, {}).get(lookup)
+                if col is None or col.ref is None:
+                    continue  # a person expand, whose Title is always there
+                target = by_table.get(col.ref.target_table, {}).get(target_column)
+                if target is None:
+                    continue  # the built-in Title, which is Text
+                checked += 1
+                assert is_expand_queryable(map_column(target, enums)), (
+                    f"{family}/{name} selects {path!r}, which SharePoint "
+                    f"refuses with HTTP 400, failing the whole query"
+                )
+    assert checked or family, family

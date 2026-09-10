@@ -78,6 +78,7 @@ class ListPlan:
     users_table: bool = False
     zone: dbml_sharepoint.analysis.timezones.ZoneTable | None = None
     derived: list[dbml_sharepoint.analysis.reporting.plan.DerivedStep] = field(default_factory=list)
+    key_joined: list[tuple[str, str, str, str, str]] = field(default_factory=list)
 ```
 
 Everything the renderers need for one list, in DBML column order.
@@ -126,6 +127,50 @@ started shipping the lossy bundle; the deletion was reverted with a test
 when it goes again. The knowledge is not duplicated -- both this and the
 validator ask `analysis/exports.ambiguous_members`, which is the one
 place the rule is written.
+
+### `is_expand_queryable`
+
+```python
+def is_expand_queryable(sp: dbml_sharepoint.analysis.typemap.SPField) -> bool
+```
+
+Whether `$select=Lookup/<this column>` is a request SharePoint accepts.
+
+A DIFFERENT QUESTION from `is_projectable`, and conflating the two is
+what broke the pack. That one asks whether the plan can give a projected
+column a type. This asks whether the column can be FETCHED at all, and
+the answer is neither the field's type nor the type of its value.
+
+MEASURED on a live tenant, 2026-09-10, one request per column of the
+form `items?$select=Id,<Lookup>/<Column>&$expand=<Lookup>`:
+
+    Text                             `Title`                  accepted
+    DateTime                         `LastReviewedDate`       accepted
+    Calculated, text output          `ResidualRiskRating`     accepted
+    Choice                           `Status`                 REFUSED
+    Note (rich text)                 `Detail`                 REFUSED
+    Calculated, number output        `RiskScore`              REFUSED
+    Calculated, date output          `NextReviewDue`          REFUSED
+    User                             `RiskOwner`              REFUSED
+
+Every refusal answered HTTP 400 `The query to field '<Lookup>/<Column>'
+is not valid`, so the column exists and the PROJECTION is what is
+unsupported. SharePoint reports `TypeAsString: Calculated` for all three
+calculated columns while only one is queryable, and a real `DateTime` is
+queryable while a calculated one is not, so there is no rule to derive
+here. The list is the authority.
+
+Plain Number and Boolean have no column in the family that was measured,
+so they are REFUSED rather than assumed. Guessing this once already
+turned a missing column into a query SharePoint would not answer at all.
+
+The same run established two things that close the alternatives. The
+dependent field is not addressable: `WorkstreamPhase` is in the list's
+field collection (`TypeAsString: Lookup`, `ReadOnlyField: true`) yet
+`$select=WorkstreamPhase` answers "does not exist", with or without an
+expand. And naming the full path in the expand, which is the form
+Microsoft Learn's own example uses, fails identically. The primary
+lookup's expand is the only path there is.
 
 ### `is_projectable`
 

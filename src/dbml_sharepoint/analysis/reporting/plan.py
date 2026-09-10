@@ -158,6 +158,13 @@ class ListPlan:
     # Reporting-only columns, in declaration order. Resolved after every
     # plan exists; see `DerivedStep`.
     derived: list[DerivedStep] = field(default_factory=list)
+    # Projections the `$expand` cannot fetch, carried by joining the
+    # target's own query instead. (lookup column, target entity, target
+    # column, column produced here, M type). Turned into `DerivedStep`s in
+    # the same post-pass, because they need the target's rename map too.
+    key_joined: list[tuple[str, str, str, str, str]] = field(
+        default_factory=list,
+    )
 
 
 def tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> list[Table]:
@@ -261,6 +268,62 @@ def _datetime_types(*, date_only: bool) -> tuple[str, str]:
     return ("type datetimezone", "DATETIMEOFFSET")
 
 
+#: Calculated columns are ONE SharePoint type with three output types, and
+#: only one of the three is queryable through a lookup. `2` is Text; `9` is
+#: Number and `4` is DateTime (`typemap.CALCULATED_OUTPUT_TYPES`).
+_CALCULATED_TEXT_OUTPUT = 2
+
+
+def is_expand_queryable(sp: SPField) -> bool:
+    """Whether `$select=Lookup/<this column>` is a request SharePoint accepts.
+
+    A DIFFERENT QUESTION from `is_projectable`, and conflating the two is
+    what broke the pack. That one asks whether the plan can give a projected
+    column a type. This asks whether the column can be FETCHED at all, and
+    the answer is neither the field's type nor the type of its value.
+
+    MEASURED on a live tenant, 2026-09-10, one request per column of the
+    form `items?$select=Id,<Lookup>/<Column>&$expand=<Lookup>`:
+
+        Text                             `Title`                  accepted
+        DateTime                         `LastReviewedDate`       accepted
+        Calculated, text output          `ResidualRiskRating`     accepted
+        Choice                           `Status`                 REFUSED
+        Note (rich text)                 `Detail`                 REFUSED
+        Calculated, number output        `RiskScore`              REFUSED
+        Calculated, date output          `NextReviewDue`          REFUSED
+        User                             `RiskOwner`              REFUSED
+
+    Every refusal answered HTTP 400 `The query to field '<Lookup>/<Column>'
+    is not valid`, so the column exists and the PROJECTION is what is
+    unsupported. SharePoint reports `TypeAsString: Calculated` for all three
+    calculated columns while only one is queryable, and a real `DateTime` is
+    queryable while a calculated one is not, so there is no rule to derive
+    here. The list is the authority.
+
+    Plain Number and Boolean have no column in the family that was measured,
+    so they are REFUSED rather than assumed. Guessing this once already
+    turned a missing column into a query SharePoint would not answer at all.
+
+    The same run established two things that close the alternatives. The
+    dependent field is not addressable: `WorkstreamPhase` is in the list's
+    field collection (`TypeAsString: Lookup`, `ReadOnlyField: true`) yet
+    `$select=WorkstreamPhase` answers "does not exist", with or without an
+    expand. And naming the full path in the expand, which is the form
+    Microsoft Learn's own example uses, fails identically. The primary
+    lookup's expand is the only path there is.
+    """
+    if sp.kind in {"Text", "Note"}:
+        # Note is a Text kind to `map_column` but a `Note` field to
+        # SharePoint, and only the single-line one is queryable.
+        return sp.kind == "Text"
+    if sp.kind == "DateTime":
+        return True
+    if sp.kind == "Calculated":
+        return sp.output_type == _CALCULATED_TEXT_OUTPUT
+    return False
+
+
 def is_projectable(sp: SPField) -> bool:
     """Whether a projection of this field can reach the report at all.
 
@@ -307,6 +370,28 @@ def _scalar_types(sp: SPField) -> tuple[str, str] | None:
             return ("type text", "NVARCHAR(255)")
         case _:
             return None
+
+
+def _target_field(
+    tables_by_name: dict[str, Table],
+    target_entity: str,
+    target_column: str,
+    enum_names: set[str],
+) -> SPField | None:
+    """The target's own field for a projected column, or None where the
+    column is not declared. `Title` is the one undeclared column SharePoint
+    gives every list, and it is Text, which is queryable."""
+    table = tables_by_name.get(target_entity)
+    col = (
+        next((c for c in table.columns if c.name == target_column), None)
+        if table is not None else None
+    )
+    if col is None:
+        return None
+    try:
+        return map_column(col, enum_names)
+    except ValueError:
+        return None
 
 
 def _projection_types(
@@ -391,6 +476,29 @@ def _resolve_derived(
     """
     by_entity = {plan.entity: plan for plan in plans}
     for plan in plans:
+        # The projections the `$expand` could not fetch go FIRST, so a
+        # declared `expr` may read one exactly as it could when the column
+        # arrived through the expand. Their names and order are what the
+        # author declared; only the mechanism differs.
+        for via, target, target_column, out, m_type in plan.key_joined:
+            other = by_entity[target]
+            plan.derived.append(DerivedStep(
+                kind="lookup",
+                source_query=prefix + target,
+                source_entity=target,
+                own_key=fk_key_column(f"{via}Id"),
+                other_key=f"{target}{REPORT_KEY_SUFFIX}",
+                picks=((
+                    dict(other.renames).get(target_column, target_column),
+                    out,
+                    m_type,
+                ),),
+                description=(
+                    f"{target_column} read from the matching {target} row. "
+                    f"SharePoint will not project a column of this type "
+                    f"through a lookup, so the report joins for it."
+                ),
+            ))
         for entry in bundle.mapping.derived_for(plan.entity):
             step = _derived_step(entry, plan, by_entity, prefix)
             if step is not None:
@@ -581,6 +689,29 @@ def build_plans(
                             tables_by_name, target, target_column, enum_names,
                             source=f"{table.name}.{col.name}",
                         )
+                        # MEASURED 2026-09-10: the `$expand` fetches only
+                        # some target types, and a request naming any other
+                        # is refused with HTTP 400, taking the WHOLE query
+                        # with it. See `is_expand_queryable`. What the
+                        # author declared is still true, so the column is
+                        # carried by joining the target's own query on the
+                        # key this row already has, which yields the same
+                        # column under the same name. Choosing the
+                        # mechanism is this generator's business.
+                        target_sp = _target_field(
+                            tables_by_name, target, target_column, enum_names,
+                        )
+                        if target_sp is not None and not is_expand_queryable(
+                            target_sp,
+                        ):
+                            if target in emitted:
+                                plan.key_joined.append(
+                                    (sp.name, target, target_column, out, m_type),
+                                )
+                            # Where the target has no query at this site there
+                            # is nothing to join, so the column is dropped and
+                            # `checks/_structure` warns naming it.
+                            continue
                         plan.selects.append(f"{sp.name}/{target_column}")
                         plan.record_expands.append(
                             (sp.name, target_column, out, m_type),
