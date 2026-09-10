@@ -8514,6 +8514,62 @@
           ]
         }
       ]
+    },
+    {
+      "file": "site-zone-transitions-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "the site's regional time zone set to the IANA zone ZONE names"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.control-utctolocaltime-answers",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.shipped-offsets-match-site-biases",
+              "depends_on": [
+                "field.date.control-site-time-zone"
+              ]
+            },
+            {
+              "id": "field.date.shipped-transition-offset-before",
+              "depends_on": [
+                "field.date.control-site-time-zone",
+                "field.date.control-utctolocaltime-answers"
+              ]
+            },
+            {
+              "id": "field.date.shipped-transition-offset-after",
+              "depends_on": [
+                "field.date.control-site-time-zone",
+                "field.date.control-utctolocaltime-answers"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.date.control-site-time-zone",
+            "field.date.control-utctolocaltime-answers"
+          ],
+          "depends_on": [],
+          "surface": "field"
+        }
+      ]
     }
   ]
 }

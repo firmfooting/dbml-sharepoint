@@ -1,0 +1,196 @@
+{# test/manual/templates/site-zone-transitions-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE (READ-ONLY): DOES SHAREPOINT AGREE WITH THE SHIPPED
+ * TRANSITION TABLE
+ *
+ * QUESTION: the reporting pack ships a declared IANA zone's daylight-saving
+ * transitions, generated from Python's zoneinfo, and converts UTC timestamps
+ * by them (reporting.time_zone; analysis/timezones.py). On a site set to that
+ * zone, does SharePoint's own conversion, utctolocaltime, apply the offset
+ * the table names one minute before each sampled transition, and the new
+ * offset at the transition itself? And are the two offsets the site reports
+ * as biases exactly the offsets the table uses, which is what the emitted
+ * Zone[resolved] check requires?
+ *
+ * WHY: Power Query has no time zone database and the site's TimeZone object
+ * carries Bias, StandardBias and DaylightBias only, so nothing in a refresh
+ * can check the table. The only place it can be checked against the
+ * platform's own answer is here, where utctolocaltime is one request away.
+ *
+ * WHAT IT PRINTS (offsets and instants only; no titles, no names)
+ *   Z   the site's regional time zone and its three biases
+ *   U   whether utctolocaltime answers a parseable wall clock at all
+ *   B   whether the declared zone's offsets equal the site's two candidates
+ *   T1  for each sampled transition, the offset SharePoint applies one
+ *       minute BEFORE it, beside the offset the table says was in force
+ *   T2  the same AT the transition instant, beside the table's new offset
+ *   Each T row also prints this browser's own answer for the zone through
+ *   Intl, a third database, so a disagreement can be placed.
+ *
+ * HOW TO READ IT: SharePoint answers with a wall clock carrying no zone, so
+ * the offset is that wall clock minus the instant sent, in minutes. A T row
+ * PASSES when every sampled instant comes back with the table's offset.
+ *
+ * HOW TO RUN: set ZONE to the IANA name the mapping declares; it must be a
+ * key of SAMPLES below and the zone the site is set to. F12 -> Console,
+ * paste, Enter; set CONFIRMED = true and paste again. Copy the RESULTS
+ * block back.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  // Operator-set: the IANA zone the mapping declares. Must be one of the
+  // keys of SAMPLES, and the zone the site's regional settings name.
+  const ZONE = 'Australia/Melbourne';
+
+  // Three transitions per zone, each as the pack's own SiteTransitions row
+  // (the UTC instant the offset changes, and the minutes east of UTC from
+  // then on) beside the offset in force before it. COPIED from what
+  // analysis/timezones.py derives, and test_site_zone pins every row here
+  // against that derivation, so the probe cannot drift from what ships.
+  const SAMPLES = {
+    'Australia/Melbourne': [
+      { at: '2025-10-04T16:00:00Z', before: 600, after: 660 },
+      { at: '2026-04-04T16:00:00Z', before: 660, after: 600 },
+      { at: '2026-10-03T16:00:00Z', before: 600, after: 660 },
+    ],
+    'Australia/Lord_Howe': [
+      { at: '2025-10-04T15:30:00Z', before: 630, after: 660 },
+      { at: '2026-04-04T15:00:00Z', before: 660, after: 630 },
+      { at: '2026-10-03T15:30:00Z', before: 630, after: 660 },
+    ],
+    'Europe/London': [
+      { at: '2025-10-26T01:00:00Z', before: 60, after: 0 },
+      { at: '2026-03-29T01:00:00Z', before: 0, after: 60 },
+      { at: '2026-10-25T01:00:00Z', before: 60, after: 0 },
+    ],
+    'America/New_York': [
+      { at: '2025-11-02T06:00:00Z', before: -240, after: -300 },
+      { at: '2026-03-08T07:00:00Z', before: -300, after: -240 },
+      { at: '2026-11-01T06:00:00Z', before: -240, after: -300 },
+    ],
+  };
+  const rows = SAMPLES[ZONE] || [];
+
+  expect('field.date.control-site-time-zone', 'the site zone and its biases');
+  expect('field.date.control-utctolocaltime-answers', 'utctolocaltime answers a parseable wall clock');
+  expect('field.date.shipped-offsets-match-site-biases', `the offsets ${ZONE} uses equal the site's two candidates`);
+  expect('field.date.shipped-transition-offset-before', `SharePoint's offset one minute before each sampled ${ZONE} transition`);
+  expect('field.date.shipped-transition-offset-after', `SharePoint's offset at each sampled ${ZONE} transition`);
+
+  if (!CONFIRMED) {
+    log('INFO', `Would read the site zone on ${WEB} and ask utctolocaltime for ${rows.length * 2 + 1} instants around ${ZONE}'s transitions.`);
+    log('INFO', 'Nothing is written by this probe. Set CONFIRMED = true and paste again.');
+    return;
+  }
+  if (!rows.length) {
+    log('FAIL', `ZONE '${ZONE}' is not a key of SAMPLES; nothing to compare against.`);
+    return report();
+  }
+
+  const tz = await spGet('web/RegionalSettings/TimeZone');
+  const info = (tz.ok && tz.body && tz.body.Information) || null;
+  record('field.date.control-site-time-zone', 'the site zone and its biases', info ? 'PASS' : 'FAIL',
+    info
+      ? `site zone "${tz.body.Description}" bias=${info.Bias} standard=${info.StandardBias} daylight=${info.DaylightBias}; declared ${ZONE}`
+      : `could not read the site zone: HTTP ${tz.status}`);
+
+  // Ask SharePoint to render a known UTC instant in the site's own zone. The
+  // reply is a WALL CLOCK carrying no zone, so it is read through Date.UTC
+  // to keep it one; parsing the string directly would apply this browser's
+  // offset and answer a different question. Same two URL shapes as
+  // datetime-sentinel-probe.js, which measured both on a live tenant.
+  const siteLocalOffsetMin = async (whenUtc) => {
+    const stamp = encodeURIComponent(whenUtc.toISOString());
+    for (const path of [
+      `web/RegionalSettings/TimeZone/utctolocaltime('${stamp}')`,
+      `web/RegionalSettings/TimeZone/utctolocaltime(@d)?@d='${stamp}'`,
+    ]) {
+      const r = await spGet(path);
+      if (readFailed(r)) continue;
+      const value = typeof r.body === 'string' ? r.body
+        : r.body.value !== undefined ? r.body.value : r.body.UTCToLocalTime;
+      const parts = typeof value === 'string'
+        && value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (!parts) continue;
+      const wall = Date.UTC(+parts[1], +parts[2] - 1, +parts[3], +parts[4], +parts[5], +parts[6]);
+      return { offsetMin: Math.round((wall - whenUtc.getTime()) / 60000), value };
+    }
+    return null;
+  };
+
+  // This browser's own zone database, as a third opinion beside the table
+  // and SharePoint. Evidence only: nothing here passes or fails on it.
+  const intlOffsetMin = (whenUtc) => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: ZONE, hourCycle: 'h23', year: 'numeric', month: 'numeric',
+        day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
+      }).formatToParts(whenUtc);
+      const get = (type) => +parts.find((p) => p.type === type).value;
+      const wall = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+      return Math.round((wall - whenUtc.getTime()) / 60000);
+    } catch {
+      return null;
+    }
+  };
+
+  const control = await siteLocalOffsetMin(new Date('2026-01-15T00:00:00Z'));
+  record('field.date.control-utctolocaltime-answers', 'utctolocaltime answers a parseable wall clock',
+    control ? 'PASS' : 'FAIL',
+    control
+      ? `2026-01-15T00:00:00Z -> "${control.value}", offset ${control.offsetMin} min`
+      : 'neither utctolocaltime URL shape answered a parseable datetime');
+
+  // The check the emitted query makes: the site's two candidates, as the
+  // query builds them (minutes EAST of UTC, so the Win32 sign is flipped),
+  // must be exactly the distinct offsets the shipped table uses.
+  const distinctSorted = (values) => [...new Set(values)].sort((a, b) => a - b);
+  const declared = distinctSorted(rows.flatMap((r) => [r.before, r.after]));
+  if (info) {
+    const site = distinctSorted([-(info.Bias + info.StandardBias), -(info.Bias + info.DaylightBias)]);
+    const agree = site.length === declared.length && site.every((v, i) => v === declared[i]);
+    record('field.date.shipped-offsets-match-site-biases', `the offsets ${ZONE} uses equal the site's two candidates`,
+      agree ? 'PASS' : 'FAIL',
+      `site candidates {${site.join(', ')}}; ${ZONE} uses {${declared.join(', ')}}`);
+  } else {
+    record('field.date.shipped-offsets-match-site-biases', `the offsets ${ZONE} uses equal the site's two candidates`,
+      'NOT ESTABLISHED', 'the site zone was not read, so there are no candidates to compare', 'void');
+  }
+
+  if (!control) {
+    for (const id of ['field.date.shipped-transition-offset-before', 'field.date.shipped-transition-offset-after']) {
+      record(id, `SharePoint's offset around each sampled ${ZONE} transition`,
+        'NOT ESTABLISHED', 'utctolocaltime did not answer, so no offset was observed', 'void');
+    }
+    return report();
+  }
+
+  // One request per instant, so a throttled or refused call reads as a
+  // missing observation for THAT instant rather than as a disagreement.
+  const before = [];
+  const after = [];
+  for (const row of rows) {
+    const at = new Date(row.at);
+    const minuteBefore = new Date(at.getTime() - 60000);
+    const spBefore = await siteLocalOffsetMin(minuteBefore);
+    const spAt = await siteLocalOffsetMin(at);
+    before.push({
+      row, observed: spBefore, expected: row.before, intl: intlOffsetMin(minuteBefore),
+    });
+    after.push({ row, observed: spAt, expected: row.after, intl: intlOffsetMin(at) });
+  }
+  const verdict = (checks) => {
+    if (checks.some((c) => c.observed === null)) return 'NOT ESTABLISHED';
+    return checks.every((c) => c.observed.offsetMin === c.expected) ? 'PASS' : 'FAIL';
+  };
+  const describe = (checks, when) => checks.map((c) =>
+    `${c.row.at} ${when}: SharePoint ${c.observed ? c.observed.offsetMin : 'no answer'}, table ${c.expected}, browser Intl ${c.intl === null ? 'unavailable' : c.intl}`).join(' | ');
+  record('field.date.shipped-transition-offset-before',
+    `SharePoint's offset one minute before each sampled ${ZONE} transition`,
+    verdict(before), describe(before, '-1 min'));
+  record('field.date.shipped-transition-offset-after',
+    `SharePoint's offset at each sampled ${ZONE} transition`,
+    verdict(after), describe(after, 'at'));
+  return report();
+})();
