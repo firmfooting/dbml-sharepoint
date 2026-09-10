@@ -74,7 +74,7 @@ from dbml_sharepoint.model.mapping_types import (
 # worse than no allow-list, because it makes a section that deploys nothing
 # look supported while the build reports success.
 KNOWN_SECTIONS = frozenset({
-    "prefix", "prefix_owner", "prefix_registry", "entities",
+    "prefix", "prefix_owner", "entities",
     "cross_site_reference_columns", "versioning",
     "enum_sources", "watched_lists", "polymorphic_patterns",
     "retention_policies_source", "reporting_source",
@@ -365,7 +365,6 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         prefix=raw["prefix"],
         previous_prefixes=previous_prefixes,
         prefix_owner=raw.get("prefix_owner", ""),
-        prefix_registry=raw.get("prefix_registry", ""),
         entities=entities,
         cross_site_reference_columns=cross_site,
         versioning_default=versioning_default,

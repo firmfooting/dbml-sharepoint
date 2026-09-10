@@ -23,13 +23,15 @@ syntax, deployment behaviour or a consumer's computation lives here.
 ```yaml
 prefix: "APP_"
 prefix_owner: "Team name"
-prefix_registry: "docs/list-prefix-registry.md"
 extension: null            # or an extension name (entry-point resolved)
 ```
 
-Every deployed list is named `<prefix><EntityName>`. The owner and
-registry fields document who claims the prefix. They are provenance,
-stamped into the manifest.
+Every deployed list is named `<prefix><EntityName>`. `prefix_owner`
+documents who claims the prefix. It is provenance: the reporting pack
+prints it beside the prefix in its model metadata, and the deploy does not
+read it. A `prefix_registry` key once sat beside it and was removed because
+nothing ever read it; a mapping still carrying it fails to load with a
+message saying so.
 
 Group and permission-level names take the same prefix through a
 placeholder: `{prefix}` at the start of a name expands to the prefix

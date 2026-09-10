@@ -42,6 +42,16 @@ def test_mapping_indexes_are_a_removed_section(tmp_path: Path) -> None:
         load_mapping(tmp_path / "m.yaml")
 
 
+def test_prefix_registry_is_a_removed_key(tmp_path: Path) -> None:
+    """Nothing ever read it, so a mapping carrying it built clean while the
+    reference doc promised a manifest stamp that never happened."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        prefix_registry: docs/list-prefix-registry.md
+    """))
+    with pytest.raises(ValueError, match=r"'prefix_registry' has been replaced by nothing"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> None:
     write_mapping(tmp_path, blocks(entities("Risk"), """
         column_formatting:

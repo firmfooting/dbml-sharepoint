@@ -5,7 +5,6 @@
 # than from a hand-built plan.
 prefix: "APP_"
 prefix_owner: "Test"
-prefix_registry: "test/registry.md"
 
 entities:
   Party:  { kind: List, base_template: 100, site_role: default }

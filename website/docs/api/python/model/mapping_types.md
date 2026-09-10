@@ -525,7 +525,6 @@ display-name map in two places and let them disagree in silence.
 class Mapping:
     prefix: str
     prefix_owner: str
-    prefix_registry: str
     entities: dict[str, dbml_sharepoint.model.mapping_types.EntityMapping]
     cross_site_reference_columns: list[dbml_sharepoint.model.mapping_types.CrossSiteRef]
     versioning_default: Versioning

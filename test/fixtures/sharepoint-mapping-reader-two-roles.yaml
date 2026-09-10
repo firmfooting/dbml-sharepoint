@@ -11,7 +11,6 @@
 # account that can read none of that site's lists.
 prefix: "APP_"
 prefix_owner: "Test"
-prefix_registry: "test/registry.md"
 
 entities:
   Project:           { kind: List, base_template: 100, site_role: hq }
