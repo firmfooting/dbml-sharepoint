@@ -59,6 +59,7 @@ from dbml_sharepoint.model.mapping_types import (
     WatchedList,
 )
 from dbml_sharepoint.model.parser import (
+    Column,
     EnumDef,
     Schema,
     TableIndex,
@@ -2910,3 +2911,59 @@ def test_the_budget_reserves_room_for_the_marker_to_grow_into() -> None:
     assert len(f"{accepted} {grown}") <= DESCRIPTION_LIMIT, (
         "a note the rule accepted must survive the marker growing by the reserve"
     )
+
+
+@pytest.mark.parametrize(("kind", "column"), [
+    ("User", make_column("Owner", "person")),
+    ("URL", make_column("Link", "hyperlink")),
+])
+def test_a_projection_of_a_kind_the_report_cannot_type_is_an_error(
+    kind: str, column: Column,
+) -> None:
+    """THE gap this rule closes. The planner refused these already, but only
+    at generation time: `validate` reported the mapping clean and `build`
+    then died with an unhandled traceback from inside the reporting plan,
+    after every other phase had passed.
+
+    A person, a URL, a multi-value column or another lookup arrives through
+    the lookup's `$expand` as a record or a collection whose shape nobody
+    has measured. The DEPLOY would create the dependent field happily, which
+    is why the message says the reporting pack cannot carry it rather than
+    that SharePoint refuses it.
+    """
+    findings = validate_against_mapping(
+        make_schema(
+            make_table("Person", make_column("Title"), column),
+            make_table("Risk", make_ref("Steward", "Person.Id")),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            lookup_projections={"Risk": {"Steward": [column.name]}},
+        ),
+    )
+    finding = only(findings, FindingCode.PROJECTION_TARGET_KIND_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert kind in finding.message
+
+
+def test_a_projection_of_a_scalar_column_is_still_accepted() -> None:
+    """The rule must not refuse what the report does carry, which is every
+    scalar kind. `Title` needs no declaration and is text either way."""
+    findings = validate_against_mapping(
+        make_schema(
+            make_table(
+                "Person",
+                make_column("Title"),
+                make_column("Grade", "int"),
+                make_column("Active", "boolean"),
+            ),
+            make_table("Risk", make_ref("Steward", "Person.Id")),
+        ),
+        make_bundle(
+            entities=["Risk", "Person"],
+            lookup_projections={
+                "Risk": {"Steward": ["Title", "Grade", "Active"]},
+            },
+        ),
+    )
+    none_of(findings, FindingCode.PROJECTION_TARGET_KIND_UNSUPPORTED)

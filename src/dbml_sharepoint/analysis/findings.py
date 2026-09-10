@@ -172,6 +172,9 @@ class FindingCode(StrEnum):
     PROJECTION_ON_CROSS_SITE_REF = "projection_on_cross_site_ref", "error"
     PROJECTION_UNKNOWN_COLUMN = "projection_unknown_column", "error"
     PROJECTION_UNKNOWN_TARGET_COLUMN = "projection_unknown_target_column", "error"
+    PROJECTION_TARGET_KIND_UNSUPPORTED = (
+        "projection_target_kind_unsupported", "error",
+    )
     DERIVED_UNKNOWN_ENTITY = "derived_unknown_entity", "error"
     DERIVED_NAME_COLLIDES = "derived_name_collides", "error"
     DERIVED_UNKNOWN_REFERENCE = "derived_unknown_reference", "error"

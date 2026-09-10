@@ -402,6 +402,16 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `lookup_projections:` entry names a column the entity's table "
         "does not declare."
     ),
+    FindingCode.PROJECTION_TARGET_KIND_UNSUPPORTED: (
+        "A `lookup_projections:` entry projects a column whose field "
+        "kind the reporting pack cannot carry. A projection is read "
+        "through the lookup's `$expand`, and a person, a URL, a "
+        "multi-value column or another lookup arrives there as a "
+        "record or a collection whose shape has not been measured. "
+        "The deploy would create the dependent field; the report "
+        "could not type it. Project a scalar column, or carry this "
+        "one by joining the target table in the model."
+    ),
     FindingCode.PROJECTION_UNKNOWN_TARGET_COLUMN: (
         "A `lookup_projections:` entry projects a column the lookup target "
         "does not declare."
