@@ -2012,7 +2012,10 @@ def _added_column_expression(query: str, column_name: str) -> str:
             continue
         expression: list[str] = []
         for rest in lines[i + 1:]:
-            if rest.strip() == "type text":
+            # Any ascribed type closes the step, not `type text` alone: the
+            # two fail-soft flags are `type logical` and stopping only on
+            # text swept the whole rest of the query into the expression.
+            if re.fullmatch(r"type \w+", rest.strip()):
                 # The step's own trailing comma is punctuation, not part of
                 # the expression -- and it differs between the last step of a
                 # query and every other, which would make two otherwise
@@ -2028,7 +2031,7 @@ def test_the_added_column_reader_finds_the_expression_and_not_a_blank() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert _added_column_expression(task, "ItemURL").startswith(
-        "each ItemUrlBase &",
+        "each ItemUrl[base] &",
     )
     with pytest.raises(AssertionError, match="Absent Key"):
         _added_column_expression(task, "Absent Key")
@@ -2384,10 +2387,11 @@ def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
     assert "[ServerRelativeUrl]" in query
     # Read once per refresh, not once per row: the link is a column over the
     # item id, and the base is a binding above it.
-    assert "each ItemUrlBase & Number.ToText([Id])" in query
-    # The declared path survives only as the fallback.
-    body = query.split("ItemUrlBase =")[1].split("\n    Source =")[0]
-    assert 'otherwise SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
+    assert "each ItemUrl[base] & Number.ToText([Id])" in query
+    # The declared path survives only as the fallback, and the fallback says
+    # so on every row: see test_a_guessed_item_url_says_so_on_every_row.
+    body = query.split("    ItemUrl =")[1].split("\n    Zone =")[0]
+    assert 'base = SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
 
 
 def test_a_document_library_link_points_at_its_forms_folder() -> None:
@@ -2408,7 +2412,7 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
     )
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '& "/Forms/DispForm.aspx?ID="' in query, query
-    assert 'otherwise SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
+    assert 'base = SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
 
 
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
@@ -2418,7 +2422,7 @@ def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
     schema, bundle = _simple()
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "    SiteOrigin =" in query
-    assert "SiteOrigin\n" in query.split("ItemUrlBase =")[1]
+    assert "SiteOrigin\n" in query.split("    ItemUrl =")[1]
     assert "if afterScheme < 0 or slash < 0 then SiteRoot" in query
 
 
@@ -2604,3 +2608,20 @@ def test_the_data_dictionary_and_the_query_agree_on_the_projected_name() -> None
     query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
     assert "| StakeholderStatus |" in md
     assert '"StakeholderStatus"' in query
+
+
+# --------------------------------------------- the two fail-soft reads, seen
+
+
+def test_a_guessed_item_url_says_so_on_every_row() -> None:
+    """The folder read fails soft, and its fallback is exactly the URL shape
+    a renamed list reports as broken: the refresh succeeds and every link
+    404s. So the branch that ran rides beside the URL."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert '"ItemURLResolved"' in query
+    assert _added_column_expression(query, "ItemURLResolved") == (
+        "each ItemUrl[resolved]"
+    )
+    assert "resolved = true," in query
+    assert "resolved = false," in query

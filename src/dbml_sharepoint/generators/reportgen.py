@@ -39,6 +39,7 @@ from dbml_sharepoint.analysis.lookups import (
 from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
     ITEM_URL_COLUMN,
+    ITEM_URL_RESOLVED_COLUMN,
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
@@ -554,7 +555,8 @@ def _build_plans(
             # columns are absent from it by construction: they are not
             # declared fields, and the loop below gives them SharePoint's own
             # titles.
-            for out_name in [*plan.output_columns, ITEM_URL_COLUMN]:
+            pack_columns = [ITEM_URL_COLUMN, ITEM_URL_RESOLVED_COLUMN]
+            for out_name in [*plan.output_columns, *pack_columns]:
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
@@ -815,22 +817,38 @@ def _item_url_base_m(plan: _ListPlan) -> list[str]:
     Same single-entity ``OData.Feed`` read as the site name above, evaluated
     once per refresh rather than once per row, and it fails soft the same way
     and for the same reason: a link is a convenience, the rows are the data.
+
+    THE FALLBACK CARRIES A FLAG, because failing soft here restores exactly
+    the defect the folder read exists to fix. A permission that grants items
+    but not the folder, a throttled call or a transient 503 all end in a URL
+    built from the declared title, which on a renamed list is a dead link on
+    every row while the refresh reports success. Fails soft AND visibly: the
+    branch that ran rides beside the URL, so a report can suppress the link
+    rather than ship a 404.
     """
     endpoint = (
         f"/_api/web/lists/getbytitle('{plan.list_title}')"
         "/RootFolder?$select=ServerRelativeUrl"
     )
     return [
-        "    ItemUrlBase =",
+        "    ItemUrl =",
         "        try",
-        "            SiteOrigin",
-        "                & OData.Feed(",
-        f'                    SiteRoot & "{endpoint}",',
-        "                    null,",
-        '                    [Implementation = "2.0"]',
-        "                )[ServerRelativeUrl]",
-        f'                & "{plan.item_url_suffix}"',
-        f'        otherwise SiteRoot & "{plan.item_url_path}",',
+        "            [",
+        "                resolved = true,",
+        "                base =",
+        "                    SiteOrigin",
+        "                        & OData.Feed(",
+        f'                            SiteRoot & "{endpoint}",',
+        "                            null,",
+        '                            [Implementation = "2.0"]',
+        "                        )[ServerRelativeUrl]",
+        f'                        & "{plan.item_url_suffix}"',
+        "            ]",
+        "        otherwise",
+        "            [",
+        "                resolved = false,",
+        f'                base = SiteRoot & "{plan.item_url_path}"',
+        "            ],",
     ]
 
 
@@ -1082,14 +1100,24 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # `_item_url_base_m`. Bound above, so it is one read per refresh.
         "    WithItemURL = Table.AddColumn(",
         f'        Declared, "{ITEM_URL_COLUMN}",',
-        "        each ItemUrlBase & Number.ToText([Id]),",
+        "        each ItemUrl[base] & Number.ToText([Id]),",
         "        type text",
+        "    ),",
+        # Whether the URL beside it was read from the list or guessed from
+        # the declared title. False means every link in this table may 404,
+        # which is worth suppressing a link over and impossible to see
+        # otherwise: the refresh succeeds either way.
+        "    WithItemURLResolved = Table.AddColumn(",
+        f'        WithItemURL, "{ITEM_URL_RESOLVED_COLUMN}",',
+        "        each ItemUrl[resolved],",
+        "        type logical",
         "    ),",
         # Where the row came from. One build covers one site, but a report
         # routinely appends several deployments of the same template, and
         # without these two columns there is nothing to slice by.
         "    WithSiteUrl = Table.AddColumn(",
-        f'        WithItemURL, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
+        (f'        WithItemURLResolved, "{REPORT_FIXED_COLUMNS[0]}", '
+         "each SiteRoot, type text"),
         "    ),",
         "    WithSiteName = Table.AddColumn(",
         f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
@@ -1663,6 +1691,14 @@ def generate_reporting_md(
          "list. `data-dictionary.md` documents every list and column plus "
          "the deployment metadata behind this generation."),
         "",
+        (f"The Power Query carries **{ITEM_URL_RESOLVED_COLUMN}** beside it, "
+         "because that folder read fails soft: a permission that grants "
+         "items but not the folder, a throttled call or a transient 503 all "
+         "leave the refresh reporting success while every link in the table "
+         "points at the declared title. Where the links matter, hide them on "
+         f"the rows where {ITEM_URL_RESOLVED_COLUMN} is false rather than "
+         "shipping a 404."),
+        "",
         "## Data dictionary page (in-report)",
         "",
         ("The dictionary also ships as loadable data so every report can "
@@ -2114,6 +2150,10 @@ def generate_data_dictionary(
         ("| ItemURL | The list's own folder, read at refresh, + item id "
          "(the SQL views use the declared list path instead) | Direct link "
          "from any report row back to the SharePoint item (display form) |"),
+        (f"| {ITEM_URL_RESOLVED_COLUMN} | Whether that folder read succeeded "
+         "| False means every ItemURL in the table was built from the "
+         "declared title, which is a dead link on a list that has been "
+         "renamed. Suppress the link rather than ship a 404 |"),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",

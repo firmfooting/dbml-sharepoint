@@ -50,6 +50,13 @@ USERS_KEY_LIST = "_Users"
 #: the query itself, so no declared column stands behind it.
 ITEM_URL_COLUMN = "ItemURL"
 
+#: Whether `ITEM_URL_COLUMN` was built from the list's own folder, read at
+#: refresh, or from the declared title after that read failed. The fallback
+#: is a dead link on any list that has been renamed, which is the defect the
+#: folder read exists to fix, so a report that cannot see which branch ran
+#: ships dead links with nothing able to notice.
+ITEM_URL_RESOLVED_COLUMN = "ItemURLResolved"
+
 
 def projection_output_name(column: str, target: str) -> str:
     """The report column one lookup projection contributes.

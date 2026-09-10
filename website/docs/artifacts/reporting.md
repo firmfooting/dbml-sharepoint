@@ -112,6 +112,20 @@ loaded the second as `ID 2` in every list table. Every query now selects
 exactly its declared columns after the typing step, so anything
 SharePoint adds unasked stops there. `_Users.pq` does the same.
 
+## Item links say whether they were resolved
+
+Each query reads its own list's folder at refresh time, because a list
+renamed in place keeps the URL slug it was created under and the slug
+cannot be derived at build time. That read fails soft, since a link is a
+convenience and the rows are the data.
+
+Its fallback builds the path from the declared title, which is exactly the
+shape that is wrong on a renamed list, so every table carries
+**`ItemURLResolved`** beside `ItemURL`. False means a permission, a
+throttled call or a transient failure sent the query down that branch and
+the links in that table may 404. Hide the link on those rows rather than
+shipping a dead one.
+
 ## Dependent lookups load
 
 A lookup can project columns of its target onto the source list as
