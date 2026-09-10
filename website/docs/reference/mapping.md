@@ -1461,6 +1461,83 @@ linkage (`IsDependentLookup`) is read-only in REST and CSOM, so the field is
 created with `createfieldasxml` + `FieldRef`; that mechanism is live-verified
 by `test/manual/projected-lookup-probe.js`.
 
+## `derived_columns`
+
+```yaml
+derived_columns:
+  Risk:
+    - kind: lookup                  # read columns off a related list
+      from: Decision
+      via: ToleranceDecision        # the lookup column; keys come from its ref
+      pick:
+        ToleranceDecisionStatus: Status
+      types:
+        ToleranceDecisionStatus: text
+      hidden: true
+    - kind: count                   # aggregate a child list
+      from: Action
+      via: RelatedRisk              # the CHILD column pointing back here
+      name: OpenActionCount
+      aggregate: count              # count, min, max or names
+      type: Int64
+      where: '[Status] = "Open"'    # filters the child rows
+    - kind: expr                    # row-level M over this list
+      name: HasAuthority
+      type: logical
+      m: '[ToleranceDecisionStatus] = "Approved"'
+```
+
+Reporting-only columns, computed in the generated Power Query and nowhere
+else. **Nothing here is deployed.** No SharePoint field is created, no list
+carries one, and a site shows no trace of them. They exist so a report is
+built from the pack rather than from a second layer maintained beside it.
+
+Names are the **internal** ones the schema declares, here and inside every
+expression. A column read out of another list is translated by the generator
+to whatever that list's query renames it to, so an author never writes a
+display title. Declaration order is the contract: an entry may read a column
+an entry above it produced, and may not read one below it.
+
+`from` names an **entity**, not a list title or a query name, so the
+generator derives the key columns from the schema's own `ref:` and a key
+spelled here cannot disagree with the key the query carries. A `lookup` may
+instead give `key:`, a key column an entry above it produced, for a chained
+join that follows a key picked off one list into another. `from: _Users`
+reads the users dimension and takes a person column as its `via`; it needs
+[`reporting.users_table`](#reporting).
+
+`types:` is required on every picked column, and `type:` on every `expr` and
+`count`, from `logical`, `text`, `number`, `Int64`, `date`, `datetime` and
+`datetimezone`. A column reaching the query as `type any` loads as an error
+value in every populated cell while the refresh reports success, so there is
+no default.
+
+`replace: true` on an `expr` computes over a column the query already
+produces rather than adding one, which is the shape a model-side fallback
+takes when a calculated column the site does not populate has to be computed
+in the report instead.
+
+There is deliberately no `filter` kind. A reporting column may not drop rows:
+every audit and count beside it assumes the query carries the list.
+
+The validator refuses a declaration naming a column its source query does not
+produce. That rule is the reason this section is checked at all. Nothing
+between the build and Power BI reads these strings, so an unresolved name is
+not a build failure but a refresh failure, after the model is published, and
+it takes every query queued behind it.
+
+Derived columns are Power Query only. The SQL views carry the lists' own
+columns and the lookup joins, because a row-level expression written in M has
+no SQL to translate to.
+
+:::warning Load each query under the name of its file
+A query that reads another list names it, so `GOV_Risk.pq` must be loaded as
+`GOV_Risk`. A model appending several sites needs the same care: a duplicated
+query still reads the original copy of whatever it joins. Every key carries
+its site, so nothing matches, and a `count` reports blank rather than zero
+where that happens.
+:::
+
 ## Structure and behaviour
 
 ```yaml
@@ -1478,6 +1555,7 @@ enum_sources:            # shared enum vocabularies loaded from YAML
 
 cross_site_reference_columns: []   # Choice + URL pattern for cross-site links
 lookup_projections: {}             # dependent fields projected from lookups
+derived_columns: {}                # reporting-only columns (Power Query)
 polymorphic_patterns: []           # discriminator-typed reference columns
 watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)

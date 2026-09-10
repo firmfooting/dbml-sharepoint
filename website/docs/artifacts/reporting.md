@@ -139,6 +139,28 @@ Each list with a date-only column carries **`DateZoneResolved`**. False
 means that read failed and those columns were truncated in UTC, which the
 refresh reports as success either way.
 
+## Reporting-only columns
+
+A mapping can declare columns that exist in the report and nowhere else:
+flags computed per row, aggregates over a child list, and columns read off a
+related list through the pack's own keys. They are declared beside the
+schema, in
+[`derived_columns`](../reference/mapping.md#derived_columns), so the lists
+and the report are generated from one description rather than two.
+
+No SharePoint field stands behind one. `data-dictionary.md` marks each as
+**Reporting only**, because a reader looking for it on the site will not find
+it. The SQL views carry none of them: a row-level expression written in M has
+no SQL to translate to.
+
+The rule that makes this safe is the reference check. A derived column names
+its inputs in a string, and nothing between the build and Power BI reads that
+string, so an unresolved name is a refresh failure after the model is
+published rather than a build failure. It happened: release 3.1.0 renamed
+each list's Title, six derived lookups in a consumer's model went on asking
+for the old name, and thirteen queries were blocked behind the failure. The
+build now refuses the declaration instead.
+
 ## Item links say whether they were resolved
 
 Each query reads its own list's folder at refresh time, because a list
