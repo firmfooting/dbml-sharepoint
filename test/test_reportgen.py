@@ -962,6 +962,35 @@ def test_reporting_md_documents_user_added_column_audit() -> None:
     assert "vw_APP_UserAddedColumns" in md
 
 
+def test_emit_reporting_writes_exactly_what_render_reporting_renders(
+    tmp_path: Path,
+) -> None:
+    """`emit_reporting` is `render_reporting` plus a write policy, so what
+    lands on disk is the rendered pack under `reporting/`, byte for byte, in
+    the same order, and nothing else."""
+    from dbml_sharepoint.generators.reportgen import emit_reporting, render_reporting
+    schema, bundle = _simple()
+
+    pack = render_reporting(
+        schema, bundle, "default",
+        release=None, generated_at="2026-05-04T00:00:00Z",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        site_url=_BAKED,
+    )
+    relpaths = emit_reporting(
+        tmp_path, schema, bundle, "default",
+        release=None, generated_at="2026-05-04T00:00:00Z",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        site_url=_BAKED,
+    )
+
+    assert relpaths == [f"reporting/{relpath}" for relpath in pack]
+    for relpath, content in pack.items():
+        written = (tmp_path / "reporting" / relpath).read_text(encoding="utf-8")
+        assert written == content, relpath
+    assert len(pack) == sum(1 for p in tmp_path.rglob("*") if p.is_file())
+
+
 def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> None:
     """Both CLIs ship reporting through this one helper, so the artifact
     set cannot drift between them. It returns the exact relpaths written,

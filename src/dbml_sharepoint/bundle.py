@@ -83,6 +83,10 @@ REPORT_DIR = "reporting"
 REPORT_GUIDE = "guide.md"
 REPORT_DICTIONARY = "data-dictionary.md"
 REPORT_VIEWS_SQL = "views.sql"
+# The two directories inside the pack. `report` clears them by name and
+# `render_reporting` keys its artifacts under them, so both read one spelling.
+REPORT_POWERQUERY_DIR = "powerquery"
+REPORT_SQL_DIR = "sql"
 
 GENERATED_FILES: tuple[str, ...] = (
     DEPLOY_SCRIPT,

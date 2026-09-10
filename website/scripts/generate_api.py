@@ -84,7 +84,7 @@ MODULES: list[tuple[str, str]] = [
     ("generators.report_m", "the Power Query side of the reporting pack"),
     ("generators.report_sql", "the T-SQL side of the reporting pack"),
     ("generators.report_md", "the reporting pack's guide and data dictionary pages"),
-    ("generators.reportgen", "Power Query / SQL reporting pack"),
+    ("generators.reportgen", "the reporting pack: one composition and one write policy"),
     ("bundle", "Packaging: the one emission sequence"),
     ("templating", "Packaging: the shared Jinja environment"),
     ("extension", "Packaging: the extension protocol"),

@@ -5,31 +5,50 @@ sidebar_position: 42
 
 # `dbml_sharepoint.generators.reportgen`
 
-*Power Query / SQL reporting pack*
+*the reporting pack: one composition and one write policy*
 
-Report-query generator: Power Query (M) and T-SQL views from the schema.
+The reporting pack: one composition and one write policy.
 
-The same DBML + mapping that provisions the lists also describes how to
-report on them. This module emits:
+The pack is six artifacts from three renderers: the per-list and loadable
+Power Query files from ``report_m``, the SQL views script from
+``report_sql``, and the guide and data dictionary from ``report_md``. What
+each one carries is decided in ``analysis/reporting``. This module decides
+only which files exist, what they are called and in what order they are
+written.
 
-- one Power Query (M) query per list, ``OData.Feed`` against the list's
-  REST endpoint, with lookup and person columns expanded to a join key plus
-  display column, and column types applied from the deployer's own typemap.
-  ``build`` knows the site (``--site-url``) and bakes it into every query,
-  so a shipped bundle has nothing to configure; the standalone ``report``
-  command knows no site and falls back to a ``SiteUrl`` text parameter;
-- a single T-SQL script of ``CREATE OR ALTER VIEW`` statements (SQLCMD
-  variables for the landing/report schemas): a typed view per list plus an
-  ``_Enriched`` view joining each lookup to its display column, for lists
-  landed in a warehouse by any extract process;
-- guide.md with usage instructions and the Power BI relationship table
-  derived from the DBML refs.
+:func:`render_reporting` is the composition, and it returns text rather
+than writing it. ``build`` (through :func:`emit_reporting`) and the
+standalone ``report`` command both take the pack from it, so the two
+cannot drift in what they ship, and both write only after every artifact
+has rendered, so a generator refusal cannot leave a half-written set
+behind with the stale files outliving the error on the terminal. The
+``report`` command used to be a second copy of this composition with its
+own write policy (#171).
 
-Cross-site reference columns are extension-expanded at deploy time into
-shapes the core cannot know; they are skipped here and listed in
-guide.md. Person columns land differently per extract tool, so the SQL
-views carry them as display-name text while the M queries expand both the
-site-user id and display name.
+### `render_reporting`
+
+```python
+def render_reporting(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None) -> dict[str, str]
+```
+
+The whole reporting pack as {relative path: content}, nothing written.
+
+Paths are POSIX and relative to the pack's root: ``powerquery/&lt;name>.pq``
+for every list query, the users dimension and the three loadable
+tables, then ``sql/views.sql``, ``guide.md`` and ``data-dictionary.md``.
+That order is the order :func:`emit_reporting` writes and reports them
+in, which ``checksums.txt`` sorts anyway.
+
+``site_url`` is the deployment target, which ``build`` always has.
+Passing it bakes the site into every query, the SQL script and the
+guide, so the pack loads with nothing configured. It is optional only
+because ``report`` runs without a site at all.
+
+Raises ``ValueError`` where a renderer refuses the schema: an unhandled
+field kind, a multi-value member the export cannot split back, a
+projection the schema lacks, a zone the database does not declare.
+Nothing has been written when it does, which is the point of returning
+text.
 
 ### `emit_reporting`
 
@@ -37,16 +56,11 @@ site-user id and display name.
 def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None) -> list[str]
 ```
 
-Write the reporting bundle under ``out/reporting/`` and return the
-POSIX relpaths written (for checksums.txt).
+Write the reporting pack under ``out/reporting/`` and return the
+POSIX relpaths written, for checksums.txt.
 
-Shared by the core and extension CLIs so the shipped reporting
-artifact set cannot drift between them: per-list Power Query (M)
-plus the dictionary/model/audit queries, the SQL views script,
-the reporting guide and the data dictionary.
-
-``site_url`` is the deployment target, which ``build`` always has.
-Passing it bakes the site into every query, the SQL script and the
-guide, so the pack loads with nothing configured. It is optional only
-because ``report`` runs without a site at all.
+Shared by the core and extension CLIs so the shipped reporting artifact
+set cannot drift between them. :func:`render_reporting` is the
+composition; this is the write policy, and it writes nothing until
+every artifact has rendered.
 
