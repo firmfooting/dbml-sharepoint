@@ -77,15 +77,11 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: back. Of `bundle.py`'s five, only the `reportgen` one is: that module
 #: imports `bundle` back. The other four are deliberate lazy loading so
 #: `bundle.py` stays importable for its packaging helpers, which its own
-#: comment states. `model/sections/_reporting.py`'s one is a cycle:
-#: `DERIVED_TYPES` and `DERIVED_AGGREGATES` still live in `mapping_loader`,
-#: which imports the sections package to build its registry. The entry comes
-#: out when the two constants move to `analysis/derived.py`.
+#: comment states.
 DEFERRED_IMPORTS: dict[str, int] = {
     "bundle.py": 7,
     "wizard.py": 4,
     "extract/wizard.py": 2,
-    "model/sections/_reporting.py": 1,
 }
 
 #: How a deferred import is declared, since PLC0415 is enforced in `src/`.

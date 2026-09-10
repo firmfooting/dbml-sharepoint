@@ -28,27 +28,6 @@ from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, Mapp
 from dbml_sharepoint.model.reading import load_yaml
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
 
-#: The M type token each declared type maps to, and so the vocabulary a
-#: `derived_columns` entry may name. Deliberately small: every one of these
-#: has an unambiguous M literal type, and a kind whose M shape nobody has
-#: decided must not resolve to `type any` and load as an Error value in
-#: every populated cell.
-DERIVED_TYPES: dict[str, str] = {
-    "logical": "type logical",
-    "text": "type text",
-    "number": "type number",
-    "Int64": "Int64.Type",
-    "date": "type date",
-    "datetime": "type datetime",
-    "datetimezone": "type datetimezone",
-}
-
-#: What a `count` may ask of the child rows. `count` needs no column;
-#: the other three name one.
-DERIVED_AGGREGATES: frozenset[str] = frozenset(
-    {"count", "min", "max", "names"},
-)
-
 # The families produce `Mapping` fields and, for the three that load a file
 # beside the mapping, `MappingBundle` fields. The two dataclasses share no
 # field name, so this is the whole rule for which is which.

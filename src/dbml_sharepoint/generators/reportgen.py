@@ -34,6 +34,7 @@ from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.derived import (
     DERIVED_REFERENCE,
+    DERIVED_TYPES,
     derived_output_names,
     is_users_source,
     lookup_key_columns,
@@ -79,7 +80,6 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.generators._indexes import deployable_index_columns
-from dbml_sharepoint.model.mapping_loader import DERIVED_TYPES
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release

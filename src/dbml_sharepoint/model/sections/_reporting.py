@@ -8,6 +8,7 @@ consumes a section rather than how long it is.
 
 from typing import Any
 
+from dbml_sharepoint.analysis.derived import DERIVED_AGGREGATES, DERIVED_TYPES
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.mapping_types import DerivedColumn, ReportingOptions
 from dbml_sharepoint.model.sections.context import SectionContext
@@ -61,21 +62,6 @@ def _parse_reporting(block: Any) -> ReportingOptions:
     return ReportingOptions(**values, time_zone=time_zone)
 
 
-def _vocabulary() -> tuple[dict[str, str], frozenset[str]]:
-    """The M types and aggregates a derived column may name.
-
-    Both live in `mapping_loader`, which builds its registry from this
-    package, so they are fetched when a column is parsed rather than when
-    the module is imported.
-    """
-    from dbml_sharepoint.model.mapping_loader import (  # noqa: PLC0415
-        DERIVED_AGGREGATES,
-        DERIVED_TYPES,
-    )
-
-    return DERIVED_TYPES, DERIVED_AGGREGATES
-
-
 def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -93,7 +79,6 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     SEMANTIC questions, and they belong to the validator, which can say them
     all at once with locations rather than aborting on the first.
     """
-    derived_types, derived_aggregates = _vocabulary()
     item = _require_mapping(item, where)
     kind = item.get("kind")
     if kind not in _DERIVED_KEYS:
@@ -109,10 +94,10 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     description = str(item.get("description", ""))
     if kind == "expr":
         declared_type = _derived_text(item, "type", where)
-        if declared_type not in derived_types:
+        if declared_type not in DERIVED_TYPES:
             raise ValueError(
                 f"{where}: type must be one of "
-                f"{', '.join(sorted(derived_types))}, got {declared_type!r}",
+                f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
             )
         return DerivedColumn(
             kind="expr",
@@ -144,12 +129,12 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
                     f"got {source!r}",
                 )
             declared = types.get(new_name)
-            if declared not in derived_types:
+            if declared not in DERIVED_TYPES:
                 # Every picked column is typed, so none can reach the query
                 # as `type any` and load as an Error in every populated cell.
                 raise ValueError(
                     f"{where}.types.{new_name} must be one of "
-                    f"{', '.join(sorted(derived_types))}, got {declared!r}",
+                    f"{', '.join(sorted(DERIVED_TYPES))}, got {declared!r}",
                 )
         unknown = set(types) - set(pick)
         if unknown:
@@ -168,16 +153,16 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             description=description,
         )
     aggregate = _derived_text(item, "aggregate", where)
-    if aggregate not in derived_aggregates:
+    if aggregate not in DERIVED_AGGREGATES:
         raise ValueError(
             f"{where}: aggregate must be one of "
-            f"{', '.join(sorted(derived_aggregates))}, got {aggregate!r}",
+            f"{', '.join(sorted(DERIVED_AGGREGATES))}, got {aggregate!r}",
         )
     declared_type = _derived_text(item, "type", where)
-    if declared_type not in derived_types:
+    if declared_type not in DERIVED_TYPES:
         raise ValueError(
             f"{where}: type must be one of "
-            f"{', '.join(sorted(derived_types))}, got {declared_type!r}",
+            f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
         )
     column = str(item.get("column", ""))
     if aggregate != "count" and not column:

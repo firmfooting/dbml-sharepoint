@@ -48,6 +48,28 @@ from dbml_sharepoint.analysis.typemap import is_person, map_column
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 
+#: The M type token each declared type maps to, and so the vocabulary a
+#: `derived_columns` entry may name. Deliberately small: every one of these
+#: has an unambiguous M literal type, and a kind whose M shape nobody has
+#: decided must not resolve to `type any` and load as an Error value in
+#: every populated cell. The loader refuses a type outside it and the
+#: generator reads the token off it, so the two cannot disagree.
+DERIVED_TYPES: dict[str, str] = {
+    "logical": "type logical",
+    "text": "type text",
+    "number": "type number",
+    "Int64": "Int64.Type",
+    "date": "type date",
+    "datetime": "type datetime",
+    "datetimezone": "type datetimezone",
+}
+
+#: What a `count` may ask of the child rows. `count` needs no column;
+#: the other three name one.
+DERIVED_AGGREGATES: frozenset[str] = frozenset(
+    {"count", "min", "max", "names"},
+)
+
 #: A `[Column]` reference inside an `m` or a `where`. Column names may carry
 #: spaces, because the pack's own added columns do (`Site Url`, `Risk Key`).
 #: M has no other bracketed form at row level, and a literal `[` inside a
