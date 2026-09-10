@@ -532,6 +532,12 @@ class ReportingOptions:
     # A `_Users.pq` dimension over the site's user information list, and a
     # `... Key` on every person column that joins it.
     users_table: bool = False
+    # The site's IANA time zone, such as `Australia/Melbourne`. Declared, every
+    # list query carries that zone's daylight-saving transitions and the
+    # `AsSiteDateTime` and `AsSiteDate` helpers a derived column can call, and
+    # `DateZoneResolved` also says whether the site's zone agrees with it. The
+    # loader checks the shape; `checks/_sources` checks the name is a zone.
+    time_zone: str | None = None
 
 
 @dataclass(frozen=True)

@@ -274,6 +274,7 @@ dbml-sharepoint explain unknown_column_type
 | `unknown_retention_policy` | error | A retention `list_defaults` entry names a policy that is not defined. |
 | `unknown_site_role` | error | `list_permissions.default.site_role` names a role no entity declares. |
 | `unknown_table` | error | A `list_permissions.overrides` key is not a DBML table name. Use the unprefixed name. |
+| `unknown_time_zone` | error | `reporting.time_zone` is not a name the IANA time zone database declares. The reporting pack derives the site's daylight-saving transitions from that database, so the name must be one of its zone names, such as `Australia/Melbourne` or `Europe/London`. |
 | `unmapped_schema_table` | error | A DBML table has no `entities:` entry, so it would be dropped from the deploy plan without an error. |
 | `unresolvable_associated_group_alias` | error | An assignment names a built-in associated-group alias that cannot be resolved by name at deploy time; real sites name it '<SiteTitle> ...'. |
 | `unsupported_base_template` | error | An entity's `base_template` is not 100. The create call sends `BaseTemplate` and never sends `kind`, so any other number provisions a list the rest of the build does not model. |
