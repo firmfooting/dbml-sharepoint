@@ -2420,3 +2420,187 @@ def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
     assert "    SiteOrigin =" in query
     assert "SiteOrigin\n" in query.split("ItemUrlBase =")[1]
     assert "if afterScheme < 0 or slash < 0 then SiteRoot" in query
+
+
+# ---------------------------------------------- projected dependent lookups
+#
+# A lookup's `lookup_projections` entries are created by the deploy as
+# read-only dependent fields, are columns of the list as far as SharePoint is
+# concerned, and were already in the data dictionary. They reached NEITHER
+# generated query: the projection was planned from the lookup's display
+# column alone, so anything else was absent rather than blank, and the
+# dictionary promised a column no refresh would produce.
+
+
+def _projecting(
+    *,
+    projections: list[str],
+    display_column: str | None = None,
+    target_columns: tuple[Column, ...] = (),
+) -> tuple[Schema, MappingBundle]:
+    """Involvement -> Stakeholder, projecting whatever the test needs."""
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(
+        make_table(
+            "Stakeholder",
+            column("Title"),
+            column("Status"),
+            *target_columns,
+        ),
+        make_table(
+            "Involvement",
+            column("Title"),
+            make_ref("Stakeholder", "Stakeholder.Id"),
+        ),
+    )
+    entities = {
+        "Involvement": EntityMapping(
+            name="Involvement", kind="List", base_template=100,
+            site_role="default",
+        ),
+        "Stakeholder": EntityMapping(
+            name="Stakeholder", kind="List", base_template=100,
+            site_role="default", display_column=display_column,
+        ),
+    }
+    bundle = make_bundle(
+        entities=entities,
+        lookup_projections={"Involvement": {"Stakeholder": projections}},
+    )
+    return schema, bundle
+
+
+def test_a_projected_column_reaches_the_power_query() -> None:
+    """The reported defect: `Stakeholder/Status` appeared in the data
+    dictionary, in the views and on the list, and nowhere in the `.pq`."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "Stakeholder/Status" in query
+    # Landed under the name the deploy gives the dependent field, which is
+    # the name the dictionary documents.
+    assert '"StakeholderStatus"' in query
+    # Not merely selected: typed, kept by the Declared step, and so present
+    # in the model rather than dropped one step later.
+    assert '{"StakeholderStatus", type text}' in query
+    declared = query.split("Declared = Table.SelectColumns(")[1]
+    assert '"StakeholderStatus"' in declared.split("),")[0]
+
+
+def test_a_projection_and_its_display_column_share_one_expand_step() -> None:
+    """`Table.ExpandRecordColumn` CONSUMES the record, so a second step
+    against the same lookup fails with "The column 'Stakeholder' of the table
+    wasn't found" -- a broken query, not a missing column."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert (
+        'Table.ExpandRecordColumn(Source, "Stakeholder", '
+        '{"Title", "Status"}, {"StakeholderTitle", "StakeholderStatus"})'
+    ) in query
+    # One step, so the record is expanded once.
+    assert query.count('"Stakeholder", {') == 1
+
+
+def test_an_empty_list_still_produces_every_projected_column() -> None:
+    """The zero-row guard has to cover the projections too: a list with no
+    items answers without the record column at all."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    fallback = query.split("else\n            List.Accumulate(")[1]
+    assert '[Name = "StakeholderTitle", Kind = type text]' in fallback
+    assert '[Name = "StakeholderStatus", Kind = type text]' in fallback
+
+
+def test_a_projected_column_takes_the_targets_type_not_the_lookups() -> None:
+    """A projection arrives through the lookup's expand but holds the
+    TARGET's value, so `type text` off the lookup would put a number in a
+    text column and a date in neither."""
+    schema, bundle = _projecting(
+        projections=["Weighting", "Reviewed"],
+        target_columns=(column("Weighting", "int"), column("Reviewed", "date")),
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert '{"StakeholderWeighting", type number}' in query
+    # A projected date-only column rides the same tolerant conversion a
+    # declared one does, rather than being truncated in UTC.
+    assert '{"StakeholderReviewed", each AsDate(_), type date}' in query
+    assert '{"StakeholderReviewed", type date}' not in query
+
+
+def test_a_projection_of_the_display_column_is_not_carried_twice() -> None:
+    """Both would land as one column name, and `ExpandRecordColumn` refuses
+    the duplicate rather than picking one."""
+    schema, bundle = _projecting(projections=["Title"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert query.count("Stakeholder/Title") == 1
+    assert (
+        'Table.ExpandRecordColumn(Source, "Stakeholder", '
+        '{"Title"}, {"StakeholderTitle"})'
+    ) in query
+
+
+def test_a_projection_beside_a_calculated_display_column_carries_both() -> None:
+    """The shape the reporter's six 'working' columns actually had. The
+    picker shows a calculated live title that blanks once the target is
+    closed; the projection exists so the row still reads by name, so the two
+    are different columns and both belong in the model."""
+    schema, bundle = _projecting(
+        projections=["Title"],
+        display_column="LiveTitle",
+        target_columns=(column("LiveTitle", "calculated_text"),),
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "Stakeholder/LiveTitle" in query
+    assert "Stakeholder/Title" in query
+    assert '"StakeholderLiveTitle"' in query
+    assert '"StakeholderTitle"' in query
+
+
+def test_a_projection_of_a_person_column_fails_the_build() -> None:
+    """A person arrives through the expand as a RECORD, and `type text` over
+    a record puts an Error value in every populated cell while the query
+    still loads. Refused, naming the column, rather than guessed."""
+    schema, bundle = _projecting(
+        projections=["Owner"], target_columns=(person("Owner"),),
+    )
+    with pytest.raises(ValueError, match="no plan for a projection"):
+        generate_powerquery(schema, bundle, "default")
+
+
+def test_a_projected_column_reaches_the_sql_enriched_view() -> None:
+    """Off the join the display column already uses, so it costs nothing."""
+    schema, bundle = _projecting(projections=["Status"])
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "j1.[Status] AS [StakeholderStatus]" in sql
+
+
+def test_the_sql_views_omit_a_projection_their_target_view_lacks() -> None:
+    """SQL selects a projection from the TARGET's view, so it can only carry
+    what that view has. `Title` is SharePoint's own column and need not be
+    declared, so a schema that leaves it out has it in the Power Query (read
+    through the expand) and not in SQL, rather than a view naming a column
+    that does not exist."""
+    schema, bundle = _projecting(
+        projections=["Title"],
+        display_column="LiveTitle",
+        target_columns=(column("LiveTitle", "calculated_text"),),
+    )
+    # The target declares no Title of its own, so its view has no such
+    # column to select. Rebuilt without one rather than adjusting the
+    # helper, which every other test here wants a Title from.
+    stakeholder = next(t for t in schema.tables if t.name == "Stakeholder")
+    stakeholder.columns = [c for c in stakeholder.columns if c.name != "Title"]
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "vw_APP_Stakeholder" in sql
+    assert "AS [StakeholderTitle]" not in sql
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert '"StakeholderTitle"' in query
+
+
+def test_the_data_dictionary_and_the_query_agree_on_the_projected_name() -> None:
+    """The whole defect was these two disagreeing in silence."""
+    schema, bundle = _projecting(projections=["Status"])
+    md = generate_data_dictionary(schema, bundle, "default")
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "| StakeholderStatus |" in md
+    assert '"StakeholderStatus"' in query

@@ -152,6 +152,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 )
                 for out_name in report_output_names(
                     sp, lookup_display=lookup_display,
+                    projections=tuple(bundle.mapping.projections_for(
+                        table.name, col.name,
+                    )),
                 ):
                     display_title = bundle.mapping.display_name_for(
                         table.name, out_name,

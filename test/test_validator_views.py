@@ -8,6 +8,7 @@ from _findings import by_severity, codes, messages, none_of, only
 from _model import bundle as make_bundle
 from _model import column, person
 from _model import enum as make_enum
+from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import write_dbml
@@ -1356,3 +1357,33 @@ def test_a_date_column_against_an_offset_today_does_not_warn() -> None:
         column_validation={"Event": EntitySection(columns={"Due": rule})},
     )
     none_of(findings, FindingCode.CONDITION_READS_THE_FORMULA_CLOCK)
+
+
+def test_a_projected_column_is_checked_for_a_report_collision() -> None:
+    """A lookup projection reaches the query as `<Column><Target>` and is
+    renamed in the same step as every declared column, so it can land on one
+    of the pack's own names and fail the refresh after publication.
+
+    The rule read only the declared columns, so it could not see a
+    projection at all. Under `display_name_mode: auto` the projection here
+    splits to `List Title`, which is a column the pack adds to every table.
+    """
+    schema = make_schema(
+        make_table("Register", column("Title", required=True)),
+        make_table(
+            "Entry",
+            column("Title", required=True),
+            make_ref("List", "Register.Id"),
+        ),
+    )
+    bundle = make_bundle(
+        entities=["Entry", "Register"], display_name_mode="auto",
+        lookup_projections={"Entry": {"List": ["Title"]}},
+    )
+    errors = [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error"
+    ]
+    assert "'List Title'" in only(
+        errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    ).message

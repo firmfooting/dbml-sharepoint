@@ -112,6 +112,22 @@ loaded the second as `ID 2` in every list table. Every query now selects
 exactly its declared columns after the typing step, so anything
 SharePoint adds unasked stops there. `_Users.pq` does the same.
 
+## Dependent lookups load
+
+A lookup can project columns of its target onto the source list as
+read-only dependent fields, declared under
+[`lookup_projections`](../reference/mapping.md#lookup_projections). Those
+are columns of the list, the deploy creates them and the data dictionary
+documents them, so each one is read through the same `$expand` the
+lookup's display column uses and lands under the same name the list gives
+it.
+
+This matters most where a lookup's display column is calculated. A picker
+that shows a live title so a closed record cannot be selected shows
+nothing once the record closes, and the projection of the target's real
+`Title` is what keeps the row readable. The two are different columns and
+the pack carries both.
+
 ## Where the site URL comes from
 
 `build` is already told the target with `--site-url`, so it writes that
