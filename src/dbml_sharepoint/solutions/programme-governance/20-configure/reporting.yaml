@@ -278,13 +278,13 @@ derived_columns:
       name: CreatedDate
       type: date
       m: 'AsSiteDate([Created])'
-      description: 'The date part of Created in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
+      description: 'The date part of Created in the site''s time zone, converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
     # The date part of Modified in the site's zone (the build's --time-zone), converted through the daylight-saving transitions the pack carries rather than truncated in UTC.
     - kind: expr
       name: ModifiedDate
       type: date
       m: 'AsSiteDate([Modified])'
-      description: 'The date part of Modified in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
+      description: 'The date part of Modified in the site''s time zone, converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
     - kind: count
       from: Action
       via: RelatedServiceRequest
@@ -453,7 +453,7 @@ derived_columns:
       name: ModifiedDate
       type: date
       m: 'AsSiteDate([Modified])'
-      description: 'The date part of Modified in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
+      description: 'The date part of Modified in the site''s time zone, converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
     - kind: lookup
       from: Stakeholder
       via: AccountableForum

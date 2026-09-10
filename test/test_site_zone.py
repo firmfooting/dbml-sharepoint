@@ -600,6 +600,9 @@ def test_the_guide_and_the_dictionary_say_what_the_flag_now_means() -> None:
     guide = generate_reporting_md(schema, bundle, "default", time_zone=MELBOURNE)
     assert "Every list carries **DateZoneResolved**" in guide
     assert "does not agree with it" in guide
+    # The guide names where the zone came from, and it is not the mapping.
+    assert "built for the site's zone `Australia/Melbourne` (the build's `--time-zone`)" in guide
+    assert "mapping declares the site's zone" not in guide
     assert "100 rows" in guide
     assert "`AsSiteDate`" in guide
     dictionary = generate_data_dictionary(schema, bundle, "default", time_zone=MELBOURNE)
@@ -667,6 +670,8 @@ def test_the_family_declares_no_zone_and_dates_its_timestamps_by_the_sites() -> 
     for _, entry in dated:
         assert entry.m == f"AsSiteDate([{entry.name.removesuffix('Date')}])"
         assert "truncated in UTC" not in entry.description
+        assert MELBOURNE not in entry.description
+    assert "Australia/Melbourne" not in reporting
     findings = validate_against_mapping(schema, bundle)
     none_of(findings, FindingCode.DERIVED_UNKNOWN_REFERENCE)
     queries = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)
