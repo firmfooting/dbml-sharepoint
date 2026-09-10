@@ -74,6 +74,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.timezones", "a declared site zone's daylight-saving transitions, as data"),
     ("analysis.derived", "derived reporting columns: what each contributes and reads"),
     ("analysis.reporting.plan", "the reporting plan: what each list's queries carry, as data"),
+    ("analysis.reporting.dictionary", "the data dictionary's rows as plain text, before escaping"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),

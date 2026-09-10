@@ -14,6 +14,7 @@ from _model import table as make_table
 from _packs import pack
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
@@ -1304,7 +1305,7 @@ def _kind_swapped(
         return sp
 
     monkeypatch.setattr(reporting_plan, "map_column", fake)
-    monkeypatch.setattr(reportgen, "map_column", fake)
+    monkeypatch.setattr(reporting_dictionary, "map_column", fake)
 
 
 def test_build_plans_refuses_a_field_kind_it_does_not_handle(

@@ -1,6 +1,6 @@
 ---
 title: jsgen
-sidebar_position: 32
+sidebar_position: 33
 ---
 
 # `dbml_sharepoint.generators.jsgen`
