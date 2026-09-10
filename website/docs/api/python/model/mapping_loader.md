@@ -22,7 +22,7 @@ the mapping's own `extension:` key).
 ### `KNOWN_SECTIONS`
 
 ```python
-KNOWN_SECTIONS = frozenset({'attachments', 'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'exte…
+KNOWN_SECTIONS = frozenset({'attachments', 'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'derived_columns', 'display_names', 'entities', 'enum_sources',…
 ```
 
 ### `load_mapping`
@@ -70,4 +70,16 @@ Each base name (the current one and every `renamed_from`) is expanded
 under the current stem and then under every previous stem; a literal base
 with no placeholder is taken once. The current name is never a candidate
 and nothing is listed twice.
+
+### `DERIVED_TYPES`
+
+```python
+DERIVED_TYPES = {'logical': 'type logical', 'text': 'type text', 'number': 'type number', 'Int64': 'Int64.Type', 'date': 'type date', 'datetime': 'type datetime', 'datetimezone': 'type datetimezone'}
+```
+
+### `DERIVED_AGGREGATES`
+
+```python
+DERIVED_AGGREGATES = frozenset({'count', 'max', 'min', 'names'})
+```
 

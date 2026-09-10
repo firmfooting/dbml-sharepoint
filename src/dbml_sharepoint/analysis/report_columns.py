@@ -46,6 +46,28 @@ SYSTEM_DISPLAY_TITLES: dict[str, str] = {"Author": "Created By", "Editor": "Modi
 #: like the query's own name, so no list title can produce the same key.
 USERS_KEY_LIST = "_Users"
 
+#: The key column `_Users` publishes, and so the one a person column's
+#: `... Key` joins against.
+USERS_ROW_KEY = f"User{REPORT_KEY_SUFFIX}"
+
+#: The users dimension's columns, internal name to the model-facing name it
+#: always takes. Shared because a derived `lookup` into `_Users` names its
+#: source column the way the SITE spells it and the generator translates,
+#: exactly as it does for a list; the validator needs the same two facts.
+#: `_Users` renames unconditionally: there is no schema whose internal names
+#: a report author would recognise here.
+USERS_DISPLAY_TITLES: dict[str, str] = {
+    "Id": "Id",
+    "Title": "Name",
+    "EMail": "Email",
+    "UserName": "Account",
+    "Department": "Department",
+    "JobTitle": "Job Title",
+    "Office": "Office",
+    "Deleted": "Deleted",
+    "Principal Kind": "Principal Kind",
+}
+
 #: The helper column linking each row back to its SharePoint item. Added by
 #: the query itself, so no declared column stands behind it.
 ITEM_URL_COLUMN = "ItemURL"
