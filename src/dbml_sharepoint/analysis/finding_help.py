@@ -406,6 +406,33 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `lookup_projections:` entry projects a column the lookup target "
         "does not declare."
     ),
+    FindingCode.DERIVED_UNKNOWN_ENTITY: (
+        "A `derived_columns:` entry names an entity the schema does not "
+        "declare."
+    ),
+    FindingCode.DERIVED_NAME_COLLIDES: (
+        "A derived reporting column takes a name the list's report query "
+        "already produces. The column is added rather than overwritten, so "
+        "the refresh fails; `replace: true` is how a column already there "
+        "is computed over."
+    ),
+    FindingCode.DERIVED_UNKNOWN_REFERENCE: (
+        "A derived reporting column reads a column that its source query "
+        "does not produce. Nothing between the build and Power BI reads "
+        "these names, so an unresolved one is a refresh failure after "
+        "publication rather than a build failure. Names are the internal "
+        "ones the schema declares, not the display titles the model shows."
+    ),
+    FindingCode.DERIVED_LOOKUP_BAD_TARGET: (
+        "A derived `lookup` names a `via` column that is not a lookup, one "
+        "that points at a different entity than `from`, or a target that is "
+        "not reported beside this list so no key into it exists."
+    ),
+    FindingCode.DERIVED_COUNT_BAD_SOURCE: (
+        "A derived `count` names a child entity that is not in the schema, "
+        "or a `via` column on that child which does not point back at the "
+        "entity being counted for."
+    ),
     FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER: (
         "A column's default is not a member of the enum it is typed as."
     ),
