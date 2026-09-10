@@ -69,6 +69,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.save_rules", "which date rules move from a column to the list rule"),
     ("analysis.clock_cells", "every clock cell, with its evidence or its refusal"),
     ("analysis.clock_usage", "which clock cells a pack uses, and where"),
+    ("analysis.timezones", "a declared site zone's daylight-saving transitions, as data"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),
