@@ -9,73 +9,21 @@ sidebar_position: 2
 
 Loader for schema/sharepoint-mapping.yaml plus its referenced config YAMLs.
 
-Generic core loader. Resolves relative config paths
-(enum_sources values, retention_policies_source) relative to the mapping
-YAML's own directory, so the deployer can be invoked from any working
-directory. Project-specific config lives under `extensions: {<name>: {...}}`
-and is passed through untyped as `MappingBundle.extension_configs`. This
-module knows nothing about what any particular extension's block means, and
-selection by name is deferred to `MappingBundle.extension_config_for` so it
-honors the RESOLVED extension (a CLI `--extension` override may differ from
-the mapping's own `extension:` key).
+Generic core loader. Every top-level section is read by one family module
+under `model/sections/`, through the ordered registry there; this module
+runs the registry. It reads the document, refuses a section no family
+declares, hands each family only the blocks it declared, and assembles the
+typed bundle from what the families produce.
 
-### `KNOWN_SECTIONS`
-
-```python
-KNOWN_SECTIONS = frozenset({'attachments', 'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'derived_columns', 'display_names', 'entities', 'enum_sources',…
-```
-
-### `load_mapping`
-
-```python
-def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_types.MappingBundle
-```
-
-Load the mapping YAML and the referenced configs into a single bundle.
-
-### `REPORTING_SECTIONS`
-
-```python
-REPORTING_SECTIONS = frozenset({'derived_columns', 'reporting'})
-```
-
-### `PREFIX_PLACEHOLDER`
-
-```python
-PREFIX_PLACEHOLDER = '{prefix}'
-```
-
-### `prefix_stem`
-
-```python
-def prefix_stem(prefix: str) -> str
-```
-
-`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem.
-
-### `expand_prefix`
-
-```python
-def expand_prefix(value: str, prefix: str, context: str) -> str
-```
-
-Replace a leading `{prefix}` with the stem; drop it and its space when empty.
-
-Refused anywhere but the start: the stem is a namespace and a namespace
-goes first, which is also what the fleet's own naming test checks.
-
-### `previous_object_names`
-
-```python
-def previous_object_names(raw_name: str, raw_previous: collections.abc.Sequence[str], prefix: str, previous_prefixes: collections.abc.Sequence[str], context: str) -> tuple[str, ...]
-```
-
-Every name a group or level may be found under on an unmigrated site.
-
-Each base name (the current one and every `renamed_from`) is expanded
-under the current stem and then under every previous stem; a literal base
-with no placeholder is taken once. The current name is never a candidate
-and nothing is listed twice.
+Relative config paths (enum_sources values, retention_policies_source, the
+section pointers) resolve relative to the mapping YAML's own directory, so
+the deployer can be invoked from any working directory. Project-specific
+config lives under `extensions: {<name>: {...}}` and is passed through
+untyped as `MappingBundle.extension_configs`. This module knows nothing
+about what any particular extension's block means, and selection by name is
+deferred to `MappingBundle.extension_config_for` so it honors the RESOLVED
+extension (a CLI `--extension` override may differ from the mapping's own
+`extension:` key).
 
 ### `DERIVED_TYPES`
 
@@ -88,4 +36,12 @@ DERIVED_TYPES = {'logical': 'type logical', 'text': 'type text', 'number': 'type
 ```python
 DERIVED_AGGREGATES = frozenset({'count', 'max', 'min', 'names'})
 ```
+
+### `load_mapping`
+
+```python
+def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_types.MappingBundle
+```
+
+Load the mapping YAML and the referenced configs into a single bundle.
 

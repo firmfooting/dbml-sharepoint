@@ -156,7 +156,7 @@ class Versioning:
     # the loader reads these attributes rather than restating the values.
     #
     # `enable_versioning` defaults ON, which is NOT SharePoint's own default.
-    # It is this tool's: `_strict_bool` has always treated an absent flag as
+    # It is this tool's: `strict_bool` has always treated an absent flag as
     # true, and every shipped mapping declares versioning on. Changing it is
     # a behaviour change to every mapping that omits the key, not a tidy-up.
     enable_versioning: bool = True

@@ -1,6 +1,6 @@
 ---
 title: reportgen
-sidebar_position: 34
+sidebar_position: 36
 ---
 
 # `dbml_sharepoint.generators.reportgen`

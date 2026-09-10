@@ -1,13 +1,15 @@
 # test/test_mapping_loader.py
-import ast
-import inspect
+from collections import Counter
+from collections.abc import Iterator, Mapping
+from dataclasses import fields, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _packs import blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES
 
-from dbml_sharepoint.model import mapping_loader, mapping_types
+from dbml_sharepoint.model import mapping_types
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
@@ -16,6 +18,13 @@ from dbml_sharepoint.model.mapping_types import (
     RetiredColumn,
     Versioning,
 )
+from dbml_sharepoint.model.sections import (
+    KNOWN_SECTIONS,
+    SECTION_FAMILIES,
+    Section,
+    section_context,
+)
+from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
@@ -1367,76 +1376,116 @@ def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: P
     assert "retention_policies" in str(err.value)
 
 
-# Every function that reads a top-level key off `raw`. `_parse_permissions`
-# takes the three permissions sections and `_reporting_sections` the two the
-# reporting pack reads plus the pointer that can move them.
-_TOP_LEVEL_READERS = (
-    "load_mapping", "_parse_permissions", "_reporting_sections",
-)
+# The registry is the allow-list. KNOWN_SECTIONS is derived from
+# SECTION_FAMILIES, so a key is admitted only by the family that reads it.
+# What the registry cannot see on its own is a family that declares a key
+# and then never asks for it, which is the same dead-key failure in a new
+# place, so each family is run against a recording view of its blocks.
 
 
-def _sections_read_by_the_loader() -> set[str]:
-    """Every top-level mapping key the loader actually reads, derived from
-    the loader's own source.
+class _RecordingBlocks(Mapping[str, Any]):
+    """A blocks mapping that remembers every key a family asked for."""
 
-    Derived rather than restated, because restating it is how two dead keys
-    got whitelisted: KNOWN_SECTIONS was populated by reading the reference
-    docs, and neither `permissions:` nor `retention_policies:` has ever had
-    a reader.
-    """
-    tree = ast.parse(inspect.getsource(mapping_loader))
-    keys: set[str] = set(mapping_types._REMOVED_SECTIONS)
-    for func in ast.walk(tree):
-        if not isinstance(func, ast.FunctionDef) or func.name not in _TOP_LEVEL_READERS:
-            continue
-        for node in ast.walk(func):
-            # raw["key"]
-            if (
-                isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "raw"
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)
-            ):
-                keys.add(node.slice.value)
-            if not isinstance(node, ast.Call):
-                continue
-            called = node.func
-            # raw.get("key")
-            if (
-                isinstance(called, ast.Attribute)
-                and isinstance(called.value, ast.Name)
-                and called.value.id == "raw"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                keys.add(node.args[0].value)
-            # helper(raw, "key", ...), _optional_bool and friends
-            if (
-                len(node.args) >= 2
-                and isinstance(node.args[0], ast.Name)
-                and node.args[0].id == "raw"
-                and isinstance(node.args[1], ast.Constant)
-                and isinstance(node.args[1].value, str)
-            ):
-                keys.add(node.args[1].value)
-    return keys
+    def __init__(self, blocks: Mapping[str, Any]) -> None:
+        self._blocks = blocks
+        self.asked: set[str] = set()
+
+    def __getitem__(self, key: str) -> Any:
+        self.asked.add(key)
+        return self._blocks[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._blocks)
+
+    def __len__(self) -> int:
+        return len(self._blocks)
 
 
-def test_every_allow_listed_section_has_a_reader() -> None:
+_MINIMAL_DOCUMENT: dict[str, Any] = {
+    "prefix": "T_",
+    "entities": {"Risk": {"kind": "List", "base_template": 100, "site_role": "default"}},
+}
+
+
+def _run_families(
+    base_dir: Path, raw: dict[str, Any],
+) -> list[tuple[Section, set[str], dict[str, Any]]]:
+    """Run the registry the way `load_mapping` does, recording what each
+    family asked for and what it produced."""
+    loaded: dict[str, Any] = {}
+    runs: list[tuple[Section, set[str], dict[str, Any]]] = []
+    for family in SECTION_FAMILIES:
+        sc = section_context(family, raw, base_dir, loaded)
+        blocks = _RecordingBlocks(sc.blocks)
+        produced = family.read(replace(sc, blocks=blocks))
+        loaded.update(produced)
+        runs.append((family, blocks.asked, produced))
+    return runs
+
+
+def test_every_family_reads_exactly_the_sections_it_declares(tmp_path: Path) -> None:
     """KNOWN_SECTIONS is an admission gate, so an entry with no reader is
     worse than no gate: it makes a section that deploys nothing look
     supported. `permissions:` and `retention_policies:` were both
-    allow-listed from the reference docs and read by nothing."""
-    read = _sections_read_by_the_loader()
-    # Sanity: the derivation must actually find the loader's readers.
-    assert {"prefix", "entities", "form_visibility", "list_permissions"} <= read
-    orphans = mapping_loader.KNOWN_SECTIONS - read
-    assert not orphans, (
-        f"allow-listed with no reader: {sorted(orphans)}, either wire a reader "
-        f"or drop the entry; an allow-listed key that nothing reads deploys nothing"
+    allow-listed from the reference docs and read by nothing. The set is
+    now derived from the registry, so the residual way to admit a dead key
+    is a family that declares it and never reads it. Every family reads
+    every key on every load, absent or not, so an empty document is enough
+    to see each one asked for."""
+    for family, asked, _ in _run_families(tmp_path, _MINIMAL_DOCUMENT):
+        assert asked == set(family.keys), (
+            f"family reading {family.keys} asked for {sorted(asked)}; a declared key "
+            f"nobody reads deploys nothing, and an undeclared one is not admitted"
+        )
+    # Sanity: the derivation must actually reach the loader's readers.
+    assert {"prefix", "entities", "form_visibility", "list_permissions"} <= KNOWN_SECTIONS
+
+
+def test_no_section_belongs_to_two_families() -> None:
+    """Two families reading one key would each parse it their own way, and
+    the pointer check would see only one of them."""
+    names = [key for family in SECTION_FAMILIES for key in family.keys]
+    names += [family.source for family in SECTION_FAMILIES if family.source is not None]
+    assert sorted(names) == sorted(set(names))
+
+
+def test_the_families_produce_every_field_exactly_once(tmp_path: Path) -> None:
+    """`Mapping(**loaded)` refuses a misnamed field on every load, but a field
+    produced by two families would let the later one win in silence."""
+    produced = Counter(
+        name for _, _, fields_ in _run_families(tmp_path, _MINIMAL_DOCUMENT) for name in fields_
     )
+    # `retirement_strips` is filled by the retirement fold after the
+    # families run; `source_paths` is assembled by the runner from two of
+    # the fields below.
+    expected = (
+        {f.name for f in fields(mapping_types.Mapping)} - {"retirement_strips"}
+    ) | (
+        {f.name for f in fields(mapping_types.MappingBundle)} - {"mapping", "source_paths"}
+    )
+    assert set(produced) == expected
+    assert [name for name, count in produced.items() if count > 1] == []
+
+
+def test_a_family_cannot_read_a_section_it_did_not_declare() -> None:
+    """The other direction of the same guarantee: a reader reaching past its
+    declared keys would be reading a section the allow-list never admitted.
+    A LookupError rather than a KeyError, because this is a defect in the
+    package and the CLI must keep the traceback."""
+    sc = SectionContext(base_dir=Path(), keys=("views",), blocks={"views": {}}, loaded={})
+    with pytest.raises(LookupError, match="not a section this family declared"):
+        sc.block("entities")
+    with pytest.raises(LookupError, match="not a section this family declared"):
+        sc.required("entities")
+
+
+def test_identity_runs_before_permissions() -> None:
+    """Permissions expand `{prefix}` through `sc.loaded`, so the registry
+    order is part of the contract rather than a convenience."""
+    order = [family.keys for family in SECTION_FAMILIES]
+    identity = next(i for i, keys in enumerate(order) if "prefix" in keys)
+    permissions = next(i for i, keys in enumerate(order) if "groups" in keys)
+    assert identity < permissions
 
 
 def test_hardening_flags_parsed(tmp_path: Path) -> None:

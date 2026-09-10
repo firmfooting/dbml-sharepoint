@@ -146,7 +146,7 @@ def test_builders_and_loader_agree_on_every_column_attribute(tmp_path: Path) -> 
 def test_a_built_mapping_is_one_the_loader_could_have_produced(tmp_path: Path) -> None:
     """Whole-`Mapping` equality, called out separately because of `permissions`.
 
-    `load_mapping` always runs `_parse_permissions`, so a loaded mapping's
+    `load_mapping` always runs the permissions family, so a loaded mapping's
     `permissions` is an EMPTY `PermissionsConfig` and never `None` -- while the
     dataclass default is `None`, and `checks/_permissions.py` skips its entire
     module on `is None`. A builder that took the dataclass default would hand
