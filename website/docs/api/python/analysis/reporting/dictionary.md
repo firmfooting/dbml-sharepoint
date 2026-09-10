@@ -19,6 +19,24 @@ The users dimension's column vocabulary lives here for the same reason: the
 query that reads the list and the rows that describe it come from one
 table.
 
+### `DictionaryRow`
+
+One column's dictionary entry, as plain text.
+
+THE row shape every dictionary renderer takes its order from. Ten cells
+of one type, so a transposition of two was invisible to `mypy --strict`
+and to every test, and would have shipped three internally consistent,
+wrong artifacts with nothing in the build able to see it (#255). Built
+by keyword at every site, so a swap is a type error now, and read by
+name on the markdown page; the loadable tables iterate it in field
+order and name their columns off `LOADABLE_COLUMNS`.
+
+### `LOADABLE_COLUMNS`
+
+```python
+LOADABLE_COLUMNS = ('Column', 'Type', 'Required', 'Unique', 'Default', 'Retired', 'SupersededBy', 'PopulatedWhen', 'SaveRule', 'Description')
+```
+
 ### `USERS_COLUMNS`
 
 ```python
@@ -34,12 +52,10 @@ PRINCIPAL_KINDS = (('0x010A', 'Person'), ('0x010B', 'SharePoint group'), ('0x010
 ### `column_rows_for_table`
 
 ```python
-def column_rows_for_table(table: dbml_sharepoint.model.parser.Table, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, enum_names: set[str], enum_members: dict[str, list[str]], cross_site_keys: set[tuple[str, str]]) -> list[tuple[str, str, str, str, str, str, str, str, str, str]]
+def column_rows_for_table(table: dbml_sharepoint.model.parser.Table, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, enum_names: set[str], enum_members: dict[str, list[str]], cross_site_keys: set[tuple[str, str]]) -> list[dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]
 ```
 
-Plain-text dictionary rows for one table: (column, type, required,
-unique, default, retired, superseded by, populated when, save rule,
-description).
+Plain-text dictionary rows for one table.
 
 Retired columns are still listed, and the generated list queries still
 select them: history is the entire point of retiring rather than
@@ -57,17 +73,16 @@ shared by the data-dictionary.md header and the _ModelInfo report table.
 ### `dictionary_rows`
 
 ```python
-def dictionary_rows(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> list[tuple[str, str, str, str, str, str, str, str, str, str, str]]
+def dictionary_rows(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> list[tuple[str, dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]]
 ```
 
-(list, column, type, required, unique, default, retired, superseded
-by, populated when, save rule, description) for every column in the site
-role, in schema order.
+(list title, row) for every column in the site role, in schema
+order, the users dimension's last.
 
 ### `users_dictionary_rows`
 
 ```python
-def users_dictionary_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]
+def users_dictionary_rows() -> list[dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]
 ```
 
 Dictionary rows for the `_Users` dimension, in its column order.

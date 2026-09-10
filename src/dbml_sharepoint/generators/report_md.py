@@ -462,17 +462,14 @@ def generate_data_dictionary(
              "Retired | Superseded by | Populated when | Save rule | Description |"),
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
-        for (
-            name, type_cell, required, unique, default,
-            retired, superseded_by, populated, rule, description,
-        ) in column_rows_for_table(
+        for row in column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
         ):
             lines.append(
-                f"| {name} | {_md_cell(type_cell)} | {required} | {unique} | "
-                f"{_md_cell(default)} | {retired} | {superseded_by} | "
-                f"{_md_cell(populated)} | {_md_cell(rule)} | "
-                f"{_md_cell(description)} |",
+                f"| {row.column} | {_md_cell(row.type)} | {row.required} | "
+                f"{row.unique} | {_md_cell(row.default)} | {row.retired} | "
+                f"{row.superseded_by} | {_md_cell(row.populated_when)} | "
+                f"{_md_cell(row.save_rule)} | {_md_cell(row.description)} |",
             )
         details: list[str] = []
         # The declared indexes PLUS the one a lookup target gets for free. A
@@ -518,9 +515,9 @@ def generate_data_dictionary(
             "| Column | SharePoint type | Description |",
             "|---|---|---|",
             *(
-                f"| {name} | {_md_cell(type_cell)} | {_md_cell(description)} |"
-                for name, type_cell, _r, _u, _d, _re, _s, _p, _ru, description
-                in users_dictionary_rows()
+                f"| {row.column} | {_md_cell(row.type)} | "
+                f"{_md_cell(row.description)} |"
+                for row in users_dictionary_rows()
             ),
         ]
     lines += [

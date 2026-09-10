@@ -12,6 +12,8 @@ query that reads the list and the rows that describe it come from one
 table.
 """
 
+from typing import NamedTuple
+
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.derived import derived_output_names
@@ -30,6 +32,39 @@ from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
+
+
+class DictionaryRow(NamedTuple):
+    """One column's dictionary entry, as plain text.
+
+    THE row shape every dictionary renderer takes its order from. Ten cells
+    of one type, so a transposition of two was invisible to `mypy --strict`
+    and to every test, and would have shipped three internally consistent,
+    wrong artifacts with nothing in the build able to see it (#255). Built
+    by keyword at every site, so a swap is a type error now, and read by
+    name on the markdown page; the loadable tables iterate it in field
+    order and name their columns off `LOADABLE_COLUMNS`.
+    """
+
+    column: str
+    type: str
+    required: str
+    unique: str
+    default: str
+    retired: str
+    superseded_by: str
+    populated_when: str
+    save_rule: str
+    description: str
+
+
+#: The loadable tables' column names for the ten cells, in `DictionaryRow`
+#: order, so `_DataDictionary.pq` and `vw_<prefix>DataDictionary` cannot
+#: restate it: `superseded_by` becomes `SupersededBy`.
+LOADABLE_COLUMNS: tuple[str, ...] = tuple(
+    "".join(part.capitalize() for part in name.split("_"))
+    for name in DictionaryRow._fields
+)
 
 #: (internal name, M type, model-facing name) for the users dimension. The
 #: internal names are the user information list's own, MEASURED 2026-09-02.
@@ -206,10 +241,8 @@ def column_rows_for_table(
     enum_names: set[str],
     enum_members: dict[str, list[str]],
     cross_site_keys: set[tuple[str, str]],
-) -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
-    """Plain-text dictionary rows for one table: (column, type, required,
-    unique, default, retired, superseded by, populated when, save rule,
-    description).
+) -> list[DictionaryRow]:
+    """Plain-text dictionary rows for one table.
 
     Retired columns are still listed, and the generated list queries still
     select them: history is the entire point of retiring rather than
@@ -217,7 +250,7 @@ def column_rows_for_table(
     """
     formulas = bundle.mapping.calculated_formulas.get(table.name, {})
     retired = bundle.mapping.retired_columns.get(table.name, {})
-    rows: list[tuple[str, str, str, str, str, str, str, str, str, str]] = []
+    rows: list[DictionaryRow] = []
     for col in table.columns:
         populated, rule = _form_behaviour_cells(table.name, col.name, bundle)
         spec = retired.get(col.name)
@@ -226,36 +259,42 @@ def column_rows_for_table(
         retired_cell = (spec.retired or "yes") if spec is not None else "-"
         superseded_cell = (spec.superseded_by or "-") if spec is not None else "-"
         if (table.name, col.name) in cross_site_keys:
-            rows.append((
-                col.name,
-                "Cross-site reference (extension-expanded at deploy time)",
-                "-", "-", "-",
-                retired_cell, superseded_cell, populated, rule,
-                col.note or "-",
+            rows.append(DictionaryRow(
+                column=col.name,
+                type="Cross-site reference (extension-expanded at deploy time)",
+                required="-",
+                unique="-",
+                default="-",
+                retired=retired_cell,
+                superseded_by=superseded_cell,
+                populated_when=populated,
+                save_rule=rule,
+                description=col.note or "-",
             ))
             continue
         sp = map_column(col, enum_names)
         name = "Id" if sp.kind == "Skip" else sp.name
-        rows.append((
-            name,
-            _sp_type_cell(sp, enum_members, formulas.get(col.name), bundle.mapping.prefix),
-            "yes" if sp.required else "-",
-            "yes" if sp.unique else "-",
-            str(sp.default) if sp.default is not None else "-",
-            retired_cell,
-            superseded_cell,
-            populated,
-            rule,
-            sp.description or (
+        rows.append(DictionaryRow(
+            column=name,
+            type=_sp_type_cell(
+                sp, enum_members, formulas.get(col.name), bundle.mapping.prefix,
+            ),
+            required="yes" if sp.required else "-",
+            unique="yes" if sp.unique else "-",
+            default=str(sp.default) if sp.default is not None else "-",
+            retired=retired_cell,
+            superseded_by=superseded_cell,
+            populated_when=populated,
+            save_rule=rule,
+            description=sp.description or (
                 "SharePoint item identifier." if sp.kind == "Skip" else "-"
             ),
         ))
     for column, targets in bundle.mapping.lookup_projections.get(table.name, {}).items():
         for target in targets:
-            rows.append((
+            rows.append(_fixed_row(
                 f"{column}{target}",
                 "Lookup (read-only dependent)",
-                "-", "-", "-", "-", "-", "Always", "-",
                 f"Read-only dependent of {column}, showing the target's {target}.",
             ))
     # Reporting-only, and said so in the type cell: a reader looking for one
@@ -263,15 +302,33 @@ def column_rows_for_table(
     # they would look.
     for entry in bundle.mapping.derived_for(table.name):
         for name in derived_output_names(entry):
-            rows.append((
+            rows.append(_fixed_row(
                 name,
                 _derived_type_cell(entry),
-                "-", "-", "-", "-", "-", "Always", "-",
                 entry.description or _derived_default_description(entry, name),
             ))
     if bundle.mapping.reporting.system_columns:
         rows += _system_column_rows()
     return rows
+
+
+def _fixed_row(column: str, type_cell: str, description: str) -> DictionaryRow:
+    """A row for a column nobody declares and nothing constrains: no
+    required, unique, default or retirement cell, always populated, no
+    save rule. Projections, derived columns, system columns and the users
+    dimension all take this shape."""
+    return DictionaryRow(
+        column=column,
+        type=type_cell,
+        required="-",
+        unique="-",
+        default="-",
+        retired="-",
+        superseded_by="-",
+        populated_when="Always",
+        save_rule="-",
+        description=description,
+    )
 
 
 def _derived_type_cell(entry: DerivedColumn) -> str:
@@ -305,7 +362,7 @@ def _derived_default_description(entry: DerivedColumn, name: str) -> str:
     return "Computed in the report query; no SharePoint column behind it."
 
 
-def _system_column_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
+def _system_column_rows() -> list[DictionaryRow]:
     """Dictionary rows for the system columns, in the query's order. They
     exist on every list, so they belong beside the list's own columns rather
     than in the query-layer helper table."""
@@ -316,7 +373,7 @@ def _system_column_rows() -> list[tuple[str, str, str, str, str, str, str, str, 
         "Modified": ("Date and time (system)", "When the item was last modified."),
     }
     return [
-        (name, described[name][0], "-", "-", "-", "-", "-", "Always", "-", described[name][1])
+        _fixed_row(name, described[name][0], described[name][1])
         for name in REPORT_SYSTEM_COLUMNS
     ]
 
@@ -362,26 +419,25 @@ def metadata_rows(
 
 def dictionary_rows(
     schema: Schema, bundle: MappingBundle, site_role: str,
-) -> list[tuple[str, str, str, str, str, str, str, str, str, str, str]]:
-    """(list, column, type, required, unique, default, retired, superseded
-    by, populated when, save rule, description) for every column in the site
-    role, in schema order."""
+) -> list[tuple[str, DictionaryRow]]:
+    """(list title, row) for every column in the site role, in schema
+    order, the users dimension's last."""
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = bundle.mapping.cross_site_keys()
     prefix = bundle.mapping.prefix
-    rows: list[tuple[str, str, str, str, str, str, str, str, str, str, str]] = []
+    rows: list[tuple[str, DictionaryRow]] = []
     for table in tables_for_role(schema, bundle, site_role):
         for row in column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
         ):
-            rows.append((prefix + table.name, *row))
+            rows.append((prefix + table.name, row))
     if bundle.mapping.reporting.users_table:
-        rows += [(USERS_KEY_LIST, *row) for row in users_dictionary_rows()]
+        rows += [(USERS_KEY_LIST, row) for row in users_dictionary_rows()]
     return rows
 
 
-def users_dictionary_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
+def users_dictionary_rows() -> list[DictionaryRow]:
     """Dictionary rows for the `_Users` dimension, in its column order."""
     described = [
         ("Id", "Counter (site user id)",
@@ -402,6 +458,6 @@ def users_dictionary_rows() -> list[tuple[str, str, str, str, str, str, str, str
          "The join target for every `... Key` a person column carries."),
     ]
     return [
-        (name, type_cell, "-", "-", "-", "-", "-", "Always", "-", description)
+        _fixed_row(name, type_cell, description)
         for name, type_cell, description in described
     ]

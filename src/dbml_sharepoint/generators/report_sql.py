@@ -17,6 +17,7 @@ row-level M expression has no SQL to translate to.
 
 from dbml_sharepoint.analysis.report_columns import projection_output_name
 from dbml_sharepoint.analysis.reporting.dictionary import (
+    LOADABLE_COLUMNS,
     dictionary_rows,
     metadata_rows,
 )
@@ -206,8 +207,12 @@ def generate_dictionary_sql(
     dictionary page."""
     prefix = bundle.mapping.prefix
     dd_rows = [
-        ", ".join([str(i)] + [_sql_string(cell) for cell in row])
-        for i, row in enumerate(dictionary_rows(schema, bundle, site_role), start=1)
+        ", ".join([
+            str(i), _sql_string(list_title), *(_sql_string(cell) for cell in row),
+        ])
+        for i, (list_title, row) in enumerate(
+            dictionary_rows(schema, bundle, site_role), start=1,
+        )
     ]
     tables = tables_for_role(schema, bundle, site_role)
     mi_rows = [
@@ -223,9 +228,7 @@ def generate_dictionary_sql(
     return (
         _render_sql_values_view(
             f"vw_{prefix}DataDictionary",
-            ["SortOrder", "List", "Column", "Type",
-             "Required", "Unique", "Default", "Retired", "SupersededBy",
-             "PopulatedWhen", "SaveRule", "Description"],
+            ["SortOrder", "List", *LOADABLE_COLUMNS],
             dd_rows,
         )
         + "\n"

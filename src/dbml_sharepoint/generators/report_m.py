@@ -29,6 +29,7 @@ from dbml_sharepoint.analysis.report_columns import (
     person_key_column,
 )
 from dbml_sharepoint.analysis.reporting.dictionary import (
+    LOADABLE_COLUMNS,
     PRINCIPAL_KINDS,
     USERS_COLUMNS,
     dictionary_rows,
@@ -1380,8 +1381,12 @@ def generate_dictionary_powerquery(
     bundle needs the ``SiteUrl`` parameter everywhere or nowhere.
     """
     dd_rows = [
-        "{" + ", ".join([str(i)] + [_m_string(cell) for cell in row]) + "}"
-        for i, row in enumerate(dictionary_rows(schema, bundle, site_role), start=1)
+        "{" + ", ".join([
+            str(i), _m_string(list_title), *(_m_string(cell) for cell in row),
+        ]) + "}"
+        for i, (list_title, row) in enumerate(
+            dictionary_rows(schema, bundle, site_role), start=1,
+        )
     ]
     tables = tables_for_role(schema, bundle, site_role)
     mi_rows = [
@@ -1396,10 +1401,8 @@ def generate_dictionary_powerquery(
             "_DataDictionary",
             "Load and add a report page with a table visual over this query "
             "(sorted by SortOrder) to surface the data dictionary in the report.",
-            "SortOrder = Int64.Type, List = text, Column = text, Type = text, "
-            "Required = text, Unique = text, Default = text, "
-            "Retired = text, SupersededBy = text, "
-            "PopulatedWhen = text, SaveRule = text, Description = text",
+            "SortOrder = Int64.Type, List = text, "
+            + ", ".join(f"{name} = text" for name in LOADABLE_COLUMNS),
             dd_rows,
         ),
         "_ModelInfo.pq": _render_m_table(

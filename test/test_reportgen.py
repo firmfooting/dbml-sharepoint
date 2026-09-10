@@ -1382,6 +1382,20 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
     assert "_sp_type_cell" in str(err.value)
 
 
+def test_the_loadable_dictionary_columns_follow_the_row_type() -> None:
+    """`_DataDictionary.pq` and `vw_<prefix>DataDictionary` name their
+    columns off `DictionaryRow`, so a field renamed or reordered there
+    renames or reorders a loadable column. This is the spelling a report
+    built on either table depends on."""
+    assert reporting_dictionary.LOADABLE_COLUMNS == (
+        "Column", "Type", "Required", "Unique", "Default", "Retired",
+        "SupersededBy", "PopulatedWhen", "SaveRule", "Description",
+    )
+    assert len(reporting_dictionary.DictionaryRow._fields) == len(
+        reporting_dictionary.LOADABLE_COLUMNS,
+    )
+
+
 # --- Multi-value columns ----------------------------------------------------
 
 
