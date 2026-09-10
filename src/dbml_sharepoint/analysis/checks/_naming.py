@@ -37,8 +37,8 @@ def _report_column_collisions(
     plan = vc.report_plan(table.name)
     if plan is None:
         # The planner refused this table's role: an unresolvable column
-        # type, a member holding the export separator, a projection the
-        # schema lacks or an unknown zone. Each is a finding of its own
+        # type, a member holding the export separator or a projection the
+        # schema lacks. Each is a finding of its own
         # elsewhere, and this rule has nothing to say about a query that
         # will not be built. The same skip the display-title loop below
         # makes for a column that does not map, and for the same reason.

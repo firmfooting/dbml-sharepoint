@@ -248,11 +248,11 @@ _SITE_ORIGIN_M: list[str] = [
 # believed. Zero is among them, which is what a calculated column arriving as
 # a bare local date needs, and it is tried first so the precedence is fixed.
 #
-# A DECLARED ZONE (`reporting.time_zone`) adds a second use of the same read.
-# The pack then ships that zone's transitions (see `_site_zone_m`), which is
-# only right if the site is set to that zone, and nothing else in the pack can
-# tell. So `resolved` also requires the site's two candidates to be exactly
-# the offsets the declared zone uses under its CURRENT rule, and a mapping
+# A DECLARED ZONE (the build's `--time-zone`) adds a second use of the same
+# read. The pack then ships that zone's transitions (see `_site_zone_m`), which
+# is only right if the site is set to that zone, and nothing else in the pack
+# can tell. So `resolved` also requires the site's two candidates to be exactly
+# the offsets the declared zone uses under its CURRENT rule, and a build
 # declaring Melbourne against a site set to London reads false on every row
 # rather than converting by the wrong table.
 #
@@ -1110,6 +1110,7 @@ def generate_powerquery(
     schema: Schema, bundle: MappingBundle, site_role: str,
     *,
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> dict[str, str]:
     """One M query per list for the site role: {filename: query text}.
 
@@ -1123,10 +1124,14 @@ def generate_powerquery(
     the pack works with nothing to configure. Omitted (the standalone
     ``report`` command has no site to name), the queries read a ``SiteUrl``
     text parameter instead, and are otherwise identical.
+
+    ``time_zone`` is the site's IANA zone, which both commands supply: each
+    query then carries its transitions and the site-date helpers. See
+    `build_plans` for why it is optional here.
     """
     queries = {
         f"{plan.list_title}.pq": _render_m(plan, site_url=site_url)
-        for plan in build_plans(schema, bundle, site_role)
+        for plan in build_plans(schema, bundle, site_role, time_zone=time_zone)
     }
     if bundle.mapping.reporting.users_table:
         queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(site_url=site_url)
@@ -1370,6 +1375,7 @@ def generate_dictionary_powerquery(
     source_schema: str = "",
     source_mapping: str = "",
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> dict[str, str]:
     """The data dictionary as report-loadable M queries, so any report can
     surface it as a page: _DataDictionary (one row per column), _ModelInfo
@@ -1413,6 +1419,6 @@ def generate_dictionary_powerquery(
             mi_rows,
         ),
         "_UserAddedColumns.pq": _render_user_added_columns_m(
-            build_plans(schema, bundle, site_role), site_url=site_url,
+            build_plans(schema, bundle, site_role, time_zone=time_zone), site_url=site_url,
         ),
     }

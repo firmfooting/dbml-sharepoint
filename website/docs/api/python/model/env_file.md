@@ -101,6 +101,18 @@ CHANGE_LOG_LIST_KEY = 'DBMLSP_CHANGE_LOG_LIST'
 CHANGE_LOG_LIST_PARAMETER = 'change_log_list'
 ```
 
+### `TIME_ZONE_KEY`
+
+```python
+TIME_ZONE_KEY = 'DBMLSP_TIME_ZONE'
+```
+
+### `TIME_ZONE_PARAMETER`
+
+```python
+TIME_ZONE_PARAMETER = 'time_zone'
+```
+
 ### `ENV_SETTINGS`
 
 ```python

@@ -1,10 +1,14 @@
 # src/dbml_sharepoint/analysis/checks/_sources.py
-"""Retention policies, enum sources and the reporting time zone: every name
-the mapping resolves against a catalogue it does not own."""
+"""Retention policies and enum sources: every name the mapping resolves
+against a catalogue it does not own.
+
+The site's time zone was checked here while the mapping declared it. It is a
+build input now (`--time-zone`), refused at the CLI boundary by
+`cli.validate_time_zone`, because a validator that reads only the schema and
+the mapping has nothing to check a build input against."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.timezones import is_known_zone
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -80,20 +84,5 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"DBML: {dbml_enum.members!r}; YAML: {choices!r}",
                 location=at_enum,
             ))
-
-    # The pack ships the declared zone's transitions, generated from the IANA
-    # database, so a name that database does not declare has nothing to
-    # generate from. `report` does not validate and fails closed on the same
-    # name in `analysis/timezones.py`; this is the message `build` gives it.
-    time_zone = bundle.mapping.reporting.time_zone
-    if time_zone is not None and not is_known_zone(time_zone):
-        findings.append(Finding(
-            FindingCode.UNKNOWN_TIME_ZONE,
-            f"reporting.time_zone: {time_zone!r} is not an IANA time zone "
-            f"name. The reporting pack derives the site's daylight-saving "
-            f"transitions from the IANA database, so the name must be one it "
-            f"declares, such as Australia/Melbourne or Europe/London.",
-            location=Location(Section.REPORTING, sub="time_zone"),
-        ))
 
     return findings

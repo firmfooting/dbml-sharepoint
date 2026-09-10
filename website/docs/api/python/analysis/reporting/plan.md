@@ -186,11 +186,23 @@ other. Without this the planner's `ValueError` was the only thing that
 knew, and it fires during `build`, after validation has already
 reported the mapping clean, as an unhandled traceback.
 
+### `VALIDATION_TIME_ZONE`
+
+```python
+VALIDATION_TIME_ZONE = 'UTC'
+```
+
 ### `build_plans`
 
 ```python
-def build_plans(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> list[dbml_sharepoint.analysis.reporting.plan.ListPlan]
+def build_plans(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, time_zone: str | None = None) -> list[dbml_sharepoint.analysis.reporting.plan.ListPlan]
 ```
+
+One plan per list the role deploys.
+
+``time_zone`` is the site's IANA zone, which `build` and `report` always
+supply. It is optional only so the derivation stays callable without one
+from a library caller; the pack the CLI emits is always zoned.
 
 ### `TOLERANT_DATE_TYPES`
 

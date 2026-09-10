@@ -51,6 +51,7 @@ def _answers(
     reader: str | None = "", confirm: str = "y", prefix: str | None = "RR_",
     template: str = "risk-register",
     site_url: str = "https://contoso.sharepoint.com/sites/x",
+    time_zone: str = "Europe/London",
 ) -> list[str]:
     """The happy-path script, in the order the wizard now asks.
 
@@ -59,9 +60,10 @@ def _answers(
     confirming a write and then being asked three more questions.
 
     The order is: template, [prefix gate, [prefix value]], directory, site
-    URL, [site role], build?, [reporting], [demo rows], confirm. The prefix
-    question sits with the template because it is a property of the
-    template; the directory, site URL and site role describe the site.
+    URL, time zone, [site role], build?, [reporting], [demo rows], confirm.
+    The prefix question sits with the template because it is a property of
+    the template; the directory, site URL, time zone and site role describe
+    the site.
 
     `prefix` answers the two-part prefix question, and its shape carries the
     branch: `""` answers the gate `n` (one scripted answer, and the value
@@ -113,7 +115,7 @@ def _answers(
         if seed is not None:
             tail.append(seed)
     return [
-        template, *prefix_answers, str(destination), site_url, *tail, confirm,
+        template, *prefix_answers, str(destination), site_url, time_zone, *tail, confirm,
     ]
 
 
@@ -190,6 +192,7 @@ def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.A
     return wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=choices,
         build=False,
@@ -414,6 +417,7 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
         str(occupied),      # refused
         str(destination),   # accepted
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -543,6 +547,7 @@ def test_each_template_repoints_only_its_own_documentation(
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=(risk, audit),
         build=False,
@@ -665,6 +670,7 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
         str(destination),
         "http://insecure.example.com/sites/x",       # refused
         "https://contoso.sharepoint.com/sites/x",    # accepted
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -718,6 +724,7 @@ def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -791,6 +798,7 @@ def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> No
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -822,6 +830,7 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
         "AU_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1026,6 +1035,7 @@ def test_the_dropped_previous_prefix_is_reported_not_silent(
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=(choice,),
         build=False,
@@ -1098,6 +1108,7 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
         str(occupied),      # refused
         str(destination),   # accepted
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1140,7 +1151,7 @@ def test_pressing_enter_at_the_prefix_gate_means_no_prefix(
     destination = tmp_path / "out"
     console = ScriptedConsole(
         ["risk-register", "", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     code = wizard.run_wizard(console)
     shown = _collapsed(console)
@@ -1265,7 +1276,7 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
     # this fails loudly rather than quietly proving nothing.
     console = ScriptedConsole(
         [solution.id, str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     # Substantive checks BEFORE the exit code, and the exit code checked
     # last: a wizard that asks either question consumes the directory
@@ -1311,6 +1322,7 @@ def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1333,7 +1345,7 @@ def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
     destination = tmp_path / "out"
     console = ScriptedConsole(
         ["risk-register", "y", "AC ME_", "RR_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
     assert "cannot be empty or contain whitespace" in _collapsed(console)
@@ -1380,6 +1392,7 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1669,6 +1682,7 @@ def test_the_review_names_every_answer(tmp_path: Path) -> None:
         "Lists RR_Risk",
         f"Directory {destination}",
         "Site https://contoso.sharepoint.com/sites/x",
+        "Time zone Europe/London",
         "Build yes, site role default",
         "Reporting svc.reporting@contoso.com",
         "Demo rows yes",
@@ -1736,7 +1750,7 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
     destination = tmp_path / "proj"
     console = ScriptedConsole(
         [solution.id, "y", "NEW_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "y", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "y", "y"],
         width=400,
     )
     assert wizard.run_wizard(console) == 0
@@ -1817,7 +1831,7 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
     destination = tmp_path / "out"
     console = ScriptedConsole(
         [solution.id, "y", "NEW_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "branch", "n", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "branch", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
     assert "--site-role branch" in _collapsed(console)
@@ -1966,6 +1980,7 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
         "NEW_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "default",    # site role -- NOT roles[0], see the docstring
         "y",          # build
         "y",          # confirm
@@ -2015,6 +2030,7 @@ def test_a_mapping_with_no_role_called_default_is_offered_no_default(
         "NEW_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "",      # Enter -- must not be taken as an answer at all
         "hq",
         "y",     # build
@@ -2205,6 +2221,7 @@ def test_a_bad_reader_address_is_refused_and_reprompted(
             "RR_",
             str(tmp_path / "proj"),
             "https://contoso.sharepoint.com/sites/x",
+            "Europe/London",
             "y",                            # build
             "svc.reporting",                # refused: no '@'
             "svc-reporting@example.org",    # re-asked, accepted
@@ -3048,6 +3065,7 @@ def test_the_site_url_prompt_has_no_default_answer(tmp_path: Path) -> None:
         str(destination),
         "",    # Enter: no longer an answer
         "https://contoso.sharepoint.com/sites/ops",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])

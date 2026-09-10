@@ -72,6 +72,16 @@ RETIRED_FINDINGS: dict[str, str] = {
         "were never sent by that probe and are still refused, now by "
         "`entity_note_whitespace_unmeasured`."
     ),
+    "unknown_time_zone": (
+        "Retired 2026-09-10. It checked the mapping's `reporting.time_zone` "
+        "against the IANA database. That key is gone: a time zone is a fact "
+        "about the site a pack is built for, not about the solution, so it "
+        "is the `--time-zone` build input now (or `DBMLSP_TIME_ZONE` in "
+        "dbml-sharepoint.env), and a name the database does not declare is "
+        "refused at the command line rather than reported as a finding. A "
+        "mapping still carrying the key fails to load with a message naming "
+        "the flag."
+    ),
 }
 
 
@@ -1321,12 +1331,6 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.UNKNOWN_SITE_ROLE: (
         "`list_permissions.default.site_role` names a role no entity "
         "declares."
-    ),
-    FindingCode.UNKNOWN_TIME_ZONE: (
-        "`reporting.time_zone` is not a name the IANA time zone database "
-        "declares. The reporting pack derives the site's daylight-saving "
-        "transitions from that database, so the name must be one of its "
-        "zone names, such as `Australia/Melbourne` or `Europe/London`."
     ),
     FindingCode.UNKNOWN_TABLE: (
         "A `list_permissions.overrides` key is not a DBML table name. "

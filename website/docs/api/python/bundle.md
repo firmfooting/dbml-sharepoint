@@ -219,7 +219,7 @@ parameter would break every one of them.
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False) -> str
+def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False) -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.
@@ -238,5 +238,7 @@ to ``generate_deploy_js`` so the deploy render context carries it.
 ``env_provenance`` defaults to ``NO_ENV_FILE`` and is passed through to
 ``generate_deploy_js`` (the console transcript) and ``write_index``: this
 is a documented composition point extension CLIs call directly, and a
-required parameter would break every one of them.
+required parameter would break every one of them. ``time_zone`` is
+optional for the same reason; ``execute_build`` always supplies it, and
+only the reporting pack reads it.
 

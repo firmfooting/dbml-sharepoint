@@ -108,6 +108,7 @@ gain the operator can see.
 class Answers:
     destination: Path
     site_url: str
+    time_zone: str
     site_role: str
     templates: tuple[dbml_sharepoint.wizard.TemplateChoice, ...]
     build: bool

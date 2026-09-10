@@ -99,6 +99,7 @@ dbml-sharepoint build \
   --mapping examples/project-tracker/mapping.yaml \
   --release examples/project-tracker/release.yaml \
   --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --time-zone Region/City \
   --site-role default \
   --out ./build
 ```

@@ -62,6 +62,7 @@ from dbml_sharepoint.bundle import (
 from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
+    PLACEHOLDER_TIME_ZONE,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
     Journey,
@@ -174,6 +175,9 @@ class Answers:
 
     destination: Path
     site_url: str
+    #: The site's IANA zone, validated at the prompt by the CLI's own rule.
+    #: A build input beside `site_url`, never a mapping fact.
+    time_zone: str
     site_role: str
     templates: tuple[TemplateChoice, ...]
     build: bool
@@ -529,6 +533,31 @@ def _ask_site_url(console: Console) -> str:
         return cleaned
 
 
+def _ask_time_zone(console: Console) -> str:
+    """The site's IANA zone, prompted until it passes the CLI's own validator.
+
+    Calls `validate_time_zone` rather than restating its rule, for the same
+    reason `_ask_site_url` does: the wizard must not come to disagree with
+    `--time-zone` about what a usable zone is, and the refusal it prints is
+    the one the flag prints, spelling suggestions included.
+    """
+    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    from dbml_sharepoint.cli import validate_time_zone  # noqa: PLC0415
+
+    _guidance(
+        console,
+        "The zone the site is set to (Site settings > Regional settings > "
+        "Time zone), as an IANA name such as Europe/London. The reporting "
+        "pack converts every timestamp by it.",
+    )
+    while True:
+        answer = Prompt.ask("[bold]Site time zone[/bold]", console=console).strip()
+        try:
+            return validate_time_zone(answer)
+        except typer.BadParameter as exc:
+            console.print(f"[red]{exc.message}[/red]")
+
+
 def _ask_site_role(console: Console, roles: list[str]) -> str:
     """Which site role to build under. Not asked when there is only one.
 
@@ -861,6 +890,10 @@ def _repoint_docs(
       them to build against `yourtenant.sharepoint.com/sites/your-site` --
       the one instruction in the folder guaranteed not to work, and the one
       they come back to on every schema change.
+    * the **time zone** beside it, for the same reason: `--time-zone` is
+      required, and the placeholder the templates spell it with is refused
+      by the build on purpose, so a copied command without this rewrite
+      stops at the flag.
 
     The wizard sends the operator to these files, so documentation that
     disagrees with what was built is the failure this project exists to
@@ -946,6 +979,7 @@ def _scaffold(
             (
                 _Substitution("prefix", choice.solution.prefix, choice.prefix),
                 _Substitution("site URL", PLACEHOLDER_SITE_URL, answers.site_url),
+                _Substitution("time zone", PLACEHOLDER_TIME_ZONE, answers.time_zone),
             ),
         )
         changed.extend(template_changed)
@@ -1158,6 +1192,7 @@ def _review_panel(answers: Answers) -> Panel:
         )
     rows.append(_review_row("Directory", str(answers.destination)))
     rows.append(_review_row("Site", answers.site_url))
+    rows.append(_review_row("Time zone", answers.time_zone))
     if not answers.build:
         rows.append(_review_row("Build", "no, copy the files only"))
     else:
@@ -1194,6 +1229,7 @@ def _rebuild_command(answers: Answers) -> str:
         f"    --mapping {inside}{MAPPING_RELPATH.as_posix()} \\\n"
         f"    --release {inside}{RELEASE_RELPATH.as_posix()} \\\n"
         f"    --site-url {escape(answers.site_url)} \\\n"
+        f"    --time-zone {escape(answers.time_zone)} \\\n"
         f"    --site-role {answers.site_role} \\\n"
         f"    --out ./{inside}build[/bold]"
     )
@@ -1317,6 +1353,7 @@ def _run(console: Console) -> int:
     console.rule("Site")
     destination = _ask_destination(console, solution)
     site_url = _ask_site_url(console)
+    time_zone = _ask_time_zone(console)
     site_role = _ask_site_role(console, roles)
 
     console.rule("Build")
@@ -1350,6 +1387,7 @@ def _run(console: Console) -> int:
     answers = Answers(
         destination=destination,
         site_url=site_url,
+        time_zone=time_zone,
         site_role=site_role,
         templates=(choice,),
         build=build,
@@ -1417,6 +1455,7 @@ def _run(console: Console) -> int:
                 mapping=root / MAPPING_RELPATH,
                 release=root / RELEASE_RELPATH,
                 site_url=answers.site_url,
+                time_zone=answers.time_zone,
                 site_role=answers.site_role,
                 out=root / "build",
                 seed=answers.seed,

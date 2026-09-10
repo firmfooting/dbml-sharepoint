@@ -21,6 +21,7 @@ pack reads a clock, and demo-data.js.txt with `--seed`).
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
 | `--release PATH` | `20-configure/release.yaml` | Path to release.yaml |
 | `--site-url URL` | required | Target SharePoint site URL |
+| `--time-zone ZONE` | required, or `DBMLSP_TIME_ZONE` | The site's time zone as an IANA name, such as `Australia/Melbourne` or `Europe/London`; see below |
 | `--site-role ROLE` | `default` | Which entities deploy here; must match a `site_role` declared by the mapping's entities |
 | `--out PATH` | `./build` | Output directory |
 | `--dry-run` | off | Validate only; no JS output |
@@ -34,7 +35,9 @@ The three input paths default to the layout every shipped template uses and
 `dbml-sharepoint new` creates, so a rebuild from the project root is one flag:
 
 ```bash
-dbml-sharepoint build --site-url https://yourtenant.sharepoint.com/sites/your-site
+dbml-sharepoint build \
+  --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --time-zone Region/City
 ```
 
 An explicit flag always wins. Outside a project directory, a missing input
@@ -45,11 +48,50 @@ file path fails loudly on the next line; a wrong target produces a bundle
 armed for somebody else's tenant, with only the script's wrong-site guard
 between that and a mispaste.
 
+### The site's time zone
+
+`--time-zone` names the zone the target site is set to (**Site settings >
+Regional settings > Time zone**), as an IANA name. It is a fact about the
+site a pack is built for, the same kind of fact as `--site-url`, which is
+why it is a build input and not a mapping key: a template anyone can adopt
+must not carry one adopter's locale, and a mapping declares the solution,
+not the site (see the [philosophy](../development/philosophy.md), rule 10).
+
+It is required. A build that is told nothing about the zone refuses (exit
+2) and says so, because the reporting pack converts every timestamp by it:
+each list query carries that zone's daylight-saving transitions from 2000
+to 2050, generated from the IANA database when the pack is built, and the
+`AsSiteDate` and `AsSiteDateTime` helpers a
+[derived column](mapping.md#derived_columns) can call. The
+[reporting pack](../artifacts/reporting.md#timestamps-convert-by-the-declared-zone)
+page has the detail.
+
+The name must be one the IANA database declares. SharePoint's regional
+settings name a city, so `Melbourne` or `australia/melbourne` is refused
+with the spelling it probably meant (`Australia/Melbourne`); anything else
+is refused with what to pass. The placeholder every shipped template's
+deploy guide spells the flag with, `Region/City`, is deliberately not a
+zone, so a copied command fails closed at the flag rather than building
+for a guessed zone; the wizard substitutes the zone it asked for.
+
+A wrong zone is caught rather than silent. Every list query reads the
+site's own offsets at refresh and compares them against the zone the pack
+was built for, and `DateZoneResolved` is false on every row where they
+disagree. Two zones that share the same offsets under the same rule
+(Melbourne and Sydney today) agree, so a pack built for one is right on a
+site set to the other for as long as their rules stay identical; Hobart
+shares Melbourne's offsets but not its transition dates, so a pack built
+for the wrong one of those two reads false for a few weeks a year and
+right the rest of it, which is exactly what the flag exists to show.
+
+`dbml-sharepoint.env` may supply the zone as `DBMLSP_TIME_ZONE`, under the
+same precedence as every other key there: the flag wins, then the file.
+
 ### Defaults from dbml-sharepoint.env
 
 `build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
 defaults for flags an operator would otherwise retype on every
-invocation. There are five keys today:
+invocation. There are six keys today:
 
 | Key | Flag it supplies | Meaning |
 | --- | --- | --- |
@@ -58,6 +100,7 @@ invocation. There are five keys today:
 | `DBMLSP_DEPLOY_CHANGES` | `--deployment-changes` | Title of the central change log to write type-2 change rows into, beside the deployment log above |
 | `DBMLSP_DEPLOY_LOG_SITE` | `--deployment-log-site` | Title of the central logging site the deployment log list lives on |
 | `DBMLSP_CHANGE_LOG_LIST` | `--change-log-list` | Title of the hidden per-site change log the deploy writes type-2 rows into |
+| `DBMLSP_TIME_ZONE` | `--time-zone` | The site's time zone as an IANA name; a build needs one from the flag or from here |
 
 Every key carries the `DBMLSP_` prefix; a key without it, or one this
 table does not list, is refused rather than silently skipped.
@@ -279,7 +322,9 @@ Emit the reporting pack only (no site URL required): `powerquery/`,
 `sql/views.sql`, `guide.md`, `data-dictionary.md`. The pack's shape
 follows the mapping's [`reporting`](mapping.md#reporting) section: the
 system columns and the `_Users` dimension are there only when it asks
-for them.
+for them. The site's time zone is still required, because the queries
+carry its transitions; unlike `build`, this command reads no
+`dbml-sharepoint.env`, so the flag is the only way to pass it.
 
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
@@ -298,12 +343,14 @@ that no longer exists.
 | --- | --- | --- |
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
+| `--time-zone ZONE` | required | The site's time zone as an IANA name, as for `build` |
 | `--site-role ROLE` | `default` | Which entities to include |
 | `--out PATH` | `./reports` | Output directory |
 | `--release PATH` | `20-configure/release.yaml` when present | Stamp release provenance into the outputs |
 
 Inside a project directory that makes the whole command `dbml-sharepoint
-report`. `--release` stays genuinely optional: an unstamped dictionary is
+report --time-zone Region/City`. `--release` stays genuinely optional: an
+unstamped dictionary is
 a supported result, so unlike the other two a missing release.yaml is not
 a refusal; it is simply picked up when it is there.
 

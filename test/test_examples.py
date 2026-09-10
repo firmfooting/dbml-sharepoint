@@ -35,6 +35,7 @@ def test_shipped_example_builds_end_to_end(
         "--mapping", str(example / "mapping.yaml"),
         "--release", str(example / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/ci",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])

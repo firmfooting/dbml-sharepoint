@@ -14,11 +14,17 @@ into every list query as a literal table. `zoneinfo` resolves real rules: a
 30-minute shift (Australia/Lord_Howe), southern-hemisphere dates
 (America/Santiago), a rule change inside the window (Australia/Melbourne,
 2008) and a zone that abolished daylight saving (Asia/Tehran, nothing after
-2022). That is why the mapping declares a zone NAME rather than a rule.
+2022). That is why the build takes a zone NAME rather than a rule.
 
-SHARED because two sides read it: `generators/reportgen` emits the table and
-the offsets it compares the site's biases against, and `checks/_sources`
-refuses a name the database does not declare. Neither may import the other.
+The zone is a BUILD INPUT (`--time-zone`, or `DBMLSP_TIME_ZONE` in the env
+file), never a mapping key: it is a fact about the site a pack is built for,
+the same as `--site-url`, and a mapping is the solution's to write, not the
+site's.
+
+SHARED because three sides read it: `generators/reportgen` emits the table and
+the offsets it compares the site's biases against, `cli.validate_time_zone`
+refuses a name the database does not declare, and the wizard offers a name
+before asking for one. None of them may import another for this.
 
 The window is FIXED. The repository commits generated artifacts and pins
 them with currency tests, so a window derived from the build date would
@@ -28,6 +34,7 @@ ten years of today, which is the prompt to move it.
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from difflib import get_close_matches
 from functools import cache
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -120,6 +127,43 @@ def is_known_zone(name: str) -> bool:
     return name in known_zones()
 
 
+def suggest_zones(name: str, *, limit: int = 3) -> tuple[str, ...]:
+    """Known zones a mistyped name probably meant, best first.
+
+    Three readings, in order: the same name in another case
+    (`australia/melbourne`), a bare city that is the last segment of a zone
+    (`Melbourne`, which is how SharePoint's own regional settings name a
+    zone), then the nearest spellings. An operator who is refused with
+    nothing to try next reaches for a guess, and a guess is what the build
+    exists to refuse.
+    """
+    wanted = name.strip()
+    if not wanted:
+        return ()
+    lowered = wanted.lower()
+    found: list[str] = []
+    for zone in sorted(known_zones()):
+        if zone.lower() == lowered or zone.rsplit("/", 1)[-1].lower() == lowered:
+            found.append(zone)
+    for zone in get_close_matches(wanted, sorted(known_zones()), n=limit, cutoff=0.6):
+        if zone not in found:
+            found.append(zone)
+    return tuple(found[:limit])
+
+
+def unknown_zone_message(name: str) -> str:
+    """Why a name was refused, with what to try next. One sentence shared by
+    the CLI refusal and the derivation's own, so the two cannot disagree."""
+    near = suggest_zones(name)
+    suggestion = f" Did you mean: {', '.join(near)}?" if near else ""
+    return (
+        f"{name!r} is not an IANA time zone name. The reporting pack derives "
+        f"the site's daylight-saving transitions from the IANA database, so "
+        f"the name must be one it declares, such as Australia/Melbourne or "
+        f"Europe/London.{suggestion}"
+    )
+
+
 def _offset_minutes(zone: ZoneInfo, at: datetime) -> int:
     offset = at.astimezone(zone).utcoffset()
     assert offset is not None  # noqa: S101  (a ZoneInfo always has one)
@@ -132,16 +176,12 @@ def zone_table(name: str) -> ZoneTable:
     minute.
 
     Raises `ValueError` naming the zone when the database does not declare
-    it, so the `report` command, which does not validate, refuses rather
-    than emitting a query with no table behind it.
+    it. The CLI refuses the same name earlier, at `validate_time_zone`; this
+    is the derivation failing closed for any caller that did not go through
+    it, rather than emitting a query with no table behind it.
     """
     if not is_known_zone(name):
-        raise ValueError(
-            f"reporting.time_zone: {name!r} is not an IANA time zone name. "
-            f"The reporting pack derives the site's daylight-saving "
-            f"transitions from the IANA database, so the name must be one "
-            f"it declares, such as Australia/Melbourne or Europe/London.",
-        )
+        raise ValueError(unknown_zone_message(name))
     zone = ZoneInfo(name)
     start = _offset_minutes(zone, WINDOW_START)
     transitions: list[tuple[datetime, int]] = []

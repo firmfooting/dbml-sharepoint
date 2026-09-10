@@ -17,29 +17,38 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import typer
 from _builders import ID_PK
 from _builders import table as dbml_table
-from _findings import none_of, only
+from _findings import none_of
 from _packs import entities, write_dbml, write_mapping
 from _paths import FIXTURES, MANUAL, SOLUTION_TEMPLATES
 from typer.testing import CliRunner
 
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode
-from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_names
+from dbml_sharepoint.analysis.reporting.plan import (
+    VALIDATION_TIME_ZONE,
+    build_plans,
+    report_column_names,
+)
 from dbml_sharepoint.analysis.timezones import (
     WINDOW_END,
     WINDOW_START,
     is_known_zone,
+    suggest_zones,
     transitions,
+    unknown_zone_message,
     zone_table,
 )
 from dbml_sharepoint.analysis.validator import validate_against_mapping
-from dbml_sharepoint.cli import app
+from dbml_sharepoint.cli import app, validate_time_zone
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.report_md import (
     generate_data_dictionary,
     generate_reporting_md,
 )
+from dbml_sharepoint.model.env_file import ENV_FILENAME, TIME_ZONE_KEY
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DerivedColumn,
@@ -47,6 +56,7 @@ from dbml_sharepoint.model.mapping_types import (
     ReportingOptions,
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.sections._reporting import REMOVED_TIME_ZONE_KEY_MESSAGE
 
 MELBOURNE = "Australia/Melbourne"
 _UTC = dt.UTC
@@ -59,14 +69,10 @@ def _simple() -> tuple[Schema, MappingBundle]:
     )
 
 
-def _zoned(
-    bundle: MappingBundle, zone: str | None = MELBOURNE, **reporting: bool,
-) -> MappingBundle:
+def _with_reporting(bundle: MappingBundle, **reporting: bool) -> MappingBundle:
     return replace(
         bundle,
-        mapping=replace(
-            bundle.mapping, reporting=ReportingOptions(time_zone=zone, **reporting),
-        ),
+        mapping=replace(bundle.mapping, reporting=ReportingOptions(**reporting)),
     )
 
 
@@ -167,7 +173,7 @@ def test_the_window_ends_at_least_ten_years_from_today() -> None:
     assert dt.datetime.now(dt.UTC) + dt.timedelta(days=10 * 366) <= WINDOW_END
 
 
-# ----------------------------------------------------------- the declaration
+# ----------------------------------------------------------- the build input
 
 
 _MINIMAL = (
@@ -183,41 +189,156 @@ def _load(tmp_path: Path, reporting: str) -> MappingBundle:
     return load_mapping(path)
 
 
-def test_time_zone_is_parsed_and_defaults_off(tmp_path: Path) -> None:
-    assert _load(tmp_path, "").mapping.reporting.time_zone is None
-    loaded = _load(tmp_path, "reporting:\n  time_zone: Australia/Melbourne\n")
-    assert loaded.mapping.reporting == ReportingOptions(time_zone=MELBOURNE)
+def test_the_mapping_has_no_zone_to_declare(tmp_path: Path) -> None:
+    """The zone is a fact about the site a pack is built for, not about the
+    solution, so it is a build input beside `--site-url` and the mapping
+    cannot carry one at all."""
+    assert "time_zone" not in ReportingOptions.__dataclass_fields__
+    loaded = _load(tmp_path, "reporting:\n  users_table: true\n")
+    assert loaded.mapping.reporting == ReportingOptions(users_table=True)
 
 
-@pytest.mark.parametrize("value", ["''", "3", "[Australia/Melbourne]"])
-def test_the_loader_checks_the_shape_only(tmp_path: Path, value: str) -> None:
-    """A name the IANA database does not declare is the validator's finding,
-    with a location beside every other; the loader refuses only what is not
-    a name at all, the same split as `lookup_projections`."""
-    with pytest.raises(ValueError, match=r"reporting\.time_zone"):
-        _load(tmp_path, f"reporting:\n  time_zone: {value}\n")
-    unknown = _load(tmp_path, "reporting:\n  time_zone: Mars/Olympus\n")
-    assert unknown.mapping.reporting.time_zone == "Mars/Olympus"
+def test_the_removed_mapping_key_is_refused_by_name(tmp_path: Path) -> None:
+    """Hard load error naming the replacement, the same precedent as the
+    removed `indexed_columns` section: no compatibility mode, and no
+    generic unknown-key message that reads as a typo."""
+    with pytest.raises(ValueError, match=r"reporting\.time_zone has been replaced") as err:
+        _load(tmp_path, f"reporting:\n  time_zone: {MELBOURNE}\n")
+    message = str(err.value)
+    assert message == REMOVED_TIME_ZONE_KEY_MESSAGE
+    assert "--time-zone" in message
+    assert TIME_ZONE_KEY in message
+
+
+def _build_args(tmp_path: Path, *extra: str) -> list[str]:
+    mapping = write_mapping(tmp_path, entities("Risk"))
+    schema = write_dbml(tmp_path, dbml_table("Risk", ID_PK))
+    return [
+        "build", "--schema", str(schema), "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"), *extra,
+    ]
+
+
+def test_build_refuses_without_a_zone(tmp_path: Path) -> None:
+    """Mandatory, from the flag or the env file. A refusal is a usage error
+    (exit 2) and writes nothing: `--out` is routinely the directory holding
+    the bundle mid-paste."""
+    result = CliRunner().invoke(app, _build_args(tmp_path))
+    assert result.exit_code == 2, result.output
+    assert "--time-zone is required" in result.output
+    assert TIME_ZONE_KEY in result.output
+    assert "Regional settings" in result.output
+    assert not (tmp_path / "build").exists()
+
+
+def test_the_env_file_supplies_the_zone(tmp_path: Path) -> None:
+    env = tmp_path / ENV_FILENAME
+    env.write_text(f"{TIME_ZONE_KEY}={MELBOURNE}\n", encoding="utf-8", newline="\n")
+    result = CliRunner().invoke(app, _build_args(tmp_path, "--env-file", str(env)))
+    assert result.exit_code == 0, result.output
+    assert f"{TIME_ZONE_KEY} = {MELBOURNE} (from the file)" in result.output
+    query = (tmp_path / "build" / "reporting" / "powerquery" / "APP_Risk.pq").read_text(
+        encoding="utf-8",
+    )
+    assert "{#datetime(2000, 3, 25, 16, 0, 0), 600}," in query
+
+
+def test_the_flag_beats_the_env_file(tmp_path: Path) -> None:
+    env = tmp_path / ENV_FILENAME
+    env.write_text(f"{TIME_ZONE_KEY}={MELBOURNE}\n", encoding="utf-8", newline="\n")
+    result = CliRunner().invoke(
+        app, _build_args(tmp_path, "--env-file", str(env), "--time-zone", "Asia/Tokyo"),
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        f"{TIME_ZONE_KEY} = {MELBOURNE} (from the file; overridden, using Asia/Tokyo)"
+        in result.output
+    )
+    query = (tmp_path / "build" / "reporting" / "powerquery" / "APP_Risk.pq").read_text(
+        encoding="utf-8",
+    )
+    assert "DeclaredOffsets = {540}" in query
+
+
+@pytest.mark.parametrize("source", ["flag", "file"])
+def test_an_unknown_zone_is_refused_wherever_it_came_from(tmp_path: Path, source: str) -> None:
+    """The check runs on the resolved value, so the file gets the refusal a
+    flag does rather than a pack built for a zone the database has never
+    heard of."""
+    if source == "flag":
+        args = _build_args(tmp_path, "--time-zone", "Mars/Olympus")
+    else:
+        env = tmp_path / ENV_FILENAME
+        env.write_text(f"{TIME_ZONE_KEY}=Mars/Olympus\n", encoding="utf-8", newline="\n")
+        args = _build_args(tmp_path, "--env-file", str(env))
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 2, result.output
+    assert "'Mars/Olympus' is not an IANA time zone name" in result.output
+    assert "Traceback" not in result.output
+    assert not (tmp_path / "build").exists()
+
+
+def test_validate_time_zone_returns_a_known_name_unchanged() -> None:
+    for zone in (MELBOURNE, "UTC", "Europe/London", "Australia/Lord_Howe"):
+        assert validate_time_zone(zone) == zone
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("melbourne", MELBOURNE),
+        ("Melbourne", MELBOURNE),
+        ("australia/melbourne", MELBOURNE),
+        ("Europe/Lodnon", "Europe/London"),
+        ("London", "Europe/London"),
+    ],
+)
+def test_a_near_miss_is_refused_with_the_spelling_it_meant(given: str, expected: str) -> None:
+    """SharePoint's regional settings name a city, so a bare city is the
+    likeliest wrong answer; the refusal names the zone rather than leaving
+    the operator to guess a second time."""
+    assert expected in suggest_zones(given)
+    with pytest.raises(typer.BadParameter) as err:
+        validate_time_zone(given)
+    assert f"Did you mean: {expected}" in err.value.message or expected in err.value.message
+    assert "Regional settings" in err.value.message
+    assert unknown_zone_message(given) in err.value.message
+
+
+def test_nothing_is_suggested_for_nothing() -> None:
+    assert suggest_zones("") == ()
+    assert suggest_zones("   ") == ()
+    assert "Did you mean" not in unknown_zone_message("Mars/Olympus")
 
 
 # ------------------------------------------------------------------- the rule
 
 
-def test_an_unknown_zone_is_refused_by_the_validator() -> None:
-    """The pack ships the declared zone's transitions, so a name the
-    database does not declare has nothing to generate from."""
-    schema, bundle = _simple()
-    findings = validate_against_mapping(schema, _zoned(bundle, "Mars/Olympus"))
-    finding = only(findings, FindingCode.UNKNOWN_TIME_ZONE)
-    assert finding.severity == "error"
-    assert "'Mars/Olympus'" in finding.message
-    assert finding.location is not None
-    assert finding.location.path == "reporting.time_zone"
-
-
-def test_a_known_zone_passes() -> None:
-    schema, bundle = _simple()
-    none_of(validate_against_mapping(schema, _zoned(bundle)), FindingCode.UNKNOWN_TIME_ZONE)
+def test_the_validator_builds_its_plans_as_a_zoned_build_would(tmp_path: Path) -> None:
+    """Every build supplies a zone, so every emitted query carries
+    `DateZoneResolved`, on a list with no date-only column too. The
+    validator has no zone and needs none: it reads names off plans built
+    with a stand-in, so a derived column reading the flag on such a list is
+    accepted here exactly as the build produces it, and the collision rule
+    sees the same names the queries will have."""
+    mapping = write_mapping(
+        tmp_path,
+        entities("Risk")
+        + "derived_columns:\n  Risk:\n"
+        + "    - {kind: expr, name: ZoneOk, type: logical, m: '[DateZoneResolved]'}\n",
+    )
+    schema = parse_dbml(write_dbml(tmp_path, dbml_table("Risk", ID_PK)))
+    bundle = load_mapping(mapping)
+    plan = ValidationContext.build(schema, bundle).report_plan("Risk")
+    assert plan is not None
+    assert plan.zone is not None and plan.zone.zone == VALIDATION_TIME_ZONE
+    assert "DateZoneResolved" in report_column_names(plan)
+    none_of(validate_against_mapping(schema, bundle), FindingCode.DERIVED_UNKNOWN_REFERENCE)
+    # And the build's own plan for the same list names the same columns.
+    built = build_plans(schema, bundle, "default", time_zone=MELBOURNE)[0]
+    assert report_column_names(built) == report_column_names(plan)
 
 
 def _with_created_date(bundle: MappingBundle) -> MappingBundle:
@@ -225,7 +346,7 @@ def _with_created_date(bundle: MappingBundle) -> MappingBundle:
         bundle,
         mapping=replace(
             bundle.mapping,
-            reporting=ReportingOptions(system_columns=True, time_zone=MELBOURNE),
+            reporting=ReportingOptions(system_columns=True),
             derived_columns={"Task": [DerivedColumn(
                 kind="expr", name="CreatedDate", type="date",
                 m="AsSiteDate([Created])",
@@ -241,7 +362,7 @@ def test_a_derived_column_may_call_the_helpers() -> None:
     schema, bundle = _simple()
     zoned = _with_created_date(bundle)
     none_of(validate_against_mapping(schema, zoned), FindingCode.DERIVED_UNKNOWN_REFERENCE)
-    query = generate_powerquery(schema, zoned, "default")["APP_Task.pq"]
+    query = generate_powerquery(schema, zoned, "default", time_zone=MELBOURNE)["APP_Task.pq"]
     assert "each AsSiteDate([Created])," in query
     assert query.index("AsSiteDate = (v as any)") < query.index("each AsSiteDate([Created])")
 
@@ -255,12 +376,12 @@ def _zone_binding(query: str) -> str:
 
 
 def test_every_list_query_carries_the_table_and_the_helpers() -> None:
-    """Unconditionally, once a zone is declared: predictable output beats an
-    emission rule that can be got wrong, and the rows are the derivation's
+    """Unconditionally, once the build names a zone: predictable output beats
+    an emission rule that can be got wrong, and the rows are the derivation's
     rows, not a literal restated here."""
     schema, bundle = _simple()
     table = zone_table(MELBOURNE)
-    queries = generate_powerquery(schema, _zoned(bundle), "default")
+    queries = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)
     assert len(queries) == 3
     for name, query in queries.items():
         assert query.count("#datetime(") == len(table.transitions) == 100, name
@@ -280,9 +401,11 @@ def test_every_list_query_carries_the_table_and_the_helpers() -> None:
             assert query.count(opener) == query.count(closer), (name, opener)
 
 
-def test_nothing_is_emitted_without_a_declaration() -> None:
+def test_nothing_is_emitted_without_a_zone() -> None:
+    """A library caller that names no zone gets the pre-zone query. Not a
+    pack the CLI can emit any more, since both commands require the zone,
+    but the derivation stays callable without one."""
     schema, bundle = _simple()
-    assert bundle.mapping.reporting.time_zone is None
     for name, query in generate_powerquery(schema, bundle, "default").items():
         for token in (
             "SiteTransitions", "SiteOffsetAt", "AsSiteDateTime", "AsSiteDate",
@@ -300,10 +423,10 @@ def test_resolved_requires_agreement_with_the_sites_biases() -> None:
     declared zone, and nothing else in the pack can tell, so the flag the
     lists already carry takes the check: the two candidates the site
     answers with must be exactly the offsets the declared zone uses. A
-    mapping declaring Melbourne against a site set to London reads false
+    build declaring Melbourne against a site set to London reads false
     on every row rather than converting by the wrong table."""
     schema, bundle = _simple()
-    query = generate_powerquery(schema, _zoned(bundle), "default")["APP_Task.pq"]
+    query = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)["APP_Task.pq"]
     zone_binding = _zone_binding(query)
     assert "resolved = true," not in zone_binding
     assert "{- (Bias + Standard), - (Bias + Daylight)}" in zone_binding
@@ -319,7 +442,7 @@ def test_resolved_requires_agreement_with_the_sites_biases() -> None:
     # The date-only candidates are untouched: AsDate still tries all three.
     assert "{0, - (Bias + Standard), - (Bias + Daylight)}" in zone_binding
     # A zone with one offset compares against one, and ships no rows.
-    tokyo = generate_powerquery(schema, _zoned(bundle, "Asia/Tokyo"), "default")
+    tokyo = generate_powerquery(schema, bundle, "default", time_zone="Asia/Tokyo")
     assert "DeclaredOffsets = {540}" in tokyo["APP_Task.pq"]
     assert "SiteTransitions = List.Buffer({\n    })," in tokyo["APP_Task.pq"]
     assert "if List.IsEmpty(Before) then 540" in tokyo["APP_Task.pq"]
@@ -353,7 +476,7 @@ def test_a_zone_that_changed_its_rule_compares_by_the_current_one(
     assert table.offsets == historic
     assert table.current_offsets == current
     schema, bundle = _simple()
-    query = generate_powerquery(schema, _zoned(bundle, zone), "default")["APP_Task.pq"]
+    query = generate_powerquery(schema, bundle, "default", time_zone=zone)["APP_Task.pq"]
     literal = "{" + ", ".join(str(o) for o in current) + "}"
     assert f"DeclaredOffsets = {literal}" in _zone_binding(query)
     # A site reporting equal biases (no daylight bias) agrees...
@@ -377,17 +500,19 @@ def test_the_current_rule_reads_both_offsets_of_a_zone_that_still_shifts() -> No
     assert not _agrees((0, 60), melbourne)  # London
 
 
-def test_the_flag_rides_every_list_once_a_zone_is_declared() -> None:
+def test_the_flag_rides_every_list_once_a_zone_is_given() -> None:
     """The agreement check has nowhere else to surface, so a list with no
     date-only column carries the flag too, and the shared column derivation
     the validator reads says the same."""
     schema, bundle = _simple()
-    zoned = _zoned(bundle)
     plain = generate_powerquery(schema, bundle, "default")
     plain_flagged = {n for n, q in plain.items() if '"DateZoneResolved"' in q}
-    assert plain_flagged and plain_flagged != set(plain)  # the declaration widens it
-    queries = generate_powerquery(schema, zoned, "default")
-    plans = {plan.entity: plan for plan in build_plans(schema, zoned, "default")}
+    assert plain_flagged and plain_flagged != set(plain)  # the zone widens it
+    queries = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)
+    plans = {
+        plan.entity: plan
+        for plan in build_plans(schema, bundle, "default", time_zone=MELBOURNE)
+    }
     for table in schema.tables:
         query = queries[f"APP_{table.name}.pq"]
         assert '"DateZoneResolved"' in query, table.name
@@ -399,18 +524,20 @@ def test_the_users_dimension_carries_no_table() -> None:
     """No derived column can target `_Users`, so nothing there could call
     the helpers, and a table with no reader is weight."""
     schema, bundle = _simple()
-    queries = generate_powerquery(schema, _zoned(bundle, users_table=True), "default")
+    queries = generate_powerquery(
+        schema, _with_reporting(bundle, users_table=True), "default", time_zone=MELBOURNE,
+    )
     assert "SiteTransitions" not in queries["_Users.pq"]
 
 
 def test_the_guide_and_the_dictionary_say_what_the_flag_now_means() -> None:
     schema, bundle = _simple()
-    guide = generate_reporting_md(schema, _zoned(bundle), "default")
+    guide = generate_reporting_md(schema, bundle, "default", time_zone=MELBOURNE)
     assert "Every list carries **DateZoneResolved**" in guide
     assert "does not agree with it" in guide
     assert "100 rows" in guide
     assert "`AsSiteDate`" in guide
-    dictionary = generate_data_dictionary(schema, _zoned(bundle), "default")
+    dictionary = generate_data_dictionary(schema, bundle, "default", time_zone=MELBOURNE)
     assert "agrees with the declared `Australia/Melbourne`" in dictionary
     plain_guide = generate_reporting_md(schema, bundle, "default")
     assert "A list with a date-only column also carries **DateZoneResolved**" in plain_guide
@@ -418,20 +545,32 @@ def test_the_guide_and_the_dictionary_say_what_the_flag_now_means() -> None:
 
 
 def test_report_refuses_an_unknown_zone_by_name(tmp_path: Path) -> None:
-    """`report` does not validate, so the derivation's own refusal is the
-    only thing between a typo and a query with no table behind it."""
-    mapping = write_mapping(
-        tmp_path, entities("Risk") + "reporting:\n  time_zone: Mars/Olympus\n",
-    )
+    """`report` does not validate; the flag's own check is the only thing
+    between a typo and a query with no table behind it, and it runs before
+    any file is read or touched."""
+    mapping = write_mapping(tmp_path, entities("Risk"))
+    schema = write_dbml(tmp_path, dbml_table("Risk", ID_PK))
+    result = CliRunner().invoke(app, [
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--time-zone", "Mars/Olympus",
+        "--out", str(tmp_path / "reports"),
+    ])
+    assert result.exit_code == 2, result.output
+    assert "Mars/Olympus" in result.output
+    assert "Traceback" not in result.output
+    assert not (tmp_path / "reports").exists()
+
+
+def test_report_requires_the_zone(tmp_path: Path) -> None:
+    mapping = write_mapping(tmp_path, entities("Risk"))
     schema = write_dbml(tmp_path, dbml_table("Risk", ID_PK))
     result = CliRunner().invoke(app, [
         "report", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(tmp_path / "reports"),
     ])
-    assert result.exit_code == 1, result.output
-    assert "Mars/Olympus" in result.output
-    assert "Traceback" not in result.output
-    assert not list((tmp_path / "reports").rglob("*.pq"))
+    assert result.exit_code == 2, result.output
+    assert "--time-zone" in result.output
+    assert not (tmp_path / "reports").exists()
 
 
 # ----------------------------------------------------------------- the family
@@ -440,12 +579,15 @@ def test_report_refuses_an_unknown_zone_by_name(tmp_path: Path) -> None:
 _FAMILY = SOLUTION_TEMPLATES / "programme-governance"
 
 
-def test_the_family_declares_its_zone_and_dates_its_timestamps_by_it() -> None:
+def test_the_family_declares_no_zone_and_dates_its_timestamps_by_the_sites() -> None:
     """The three derived date columns used to truncate in UTC and said so
-    in their descriptions; now they convert by the site's zone."""
+    in their descriptions; now they convert by the site's zone, and the
+    family says nothing about which zone that is. A template anyone can
+    adopt must not carry one adopter's locale."""
     schema = parse_dbml(_FAMILY / "10-design" / "schema.dbml")
     bundle = load_mapping(_FAMILY / "20-configure" / "mapping.yaml")
-    assert bundle.mapping.reporting.time_zone == MELBOURNE
+    reporting = (_FAMILY / "20-configure" / "reporting.yaml").read_text(encoding="utf-8")
+    assert not re.search(r"^\s*time_zone:", reporting, re.MULTILINE)
     dated = [
         (entity, entry)
         for entity, entries in bundle.mapping.derived_columns.items()
@@ -460,20 +602,13 @@ def test_the_family_declares_its_zone_and_dates_its_timestamps_by_it() -> None:
     for _, entry in dated:
         assert entry.m == f"AsSiteDate([{entry.name.removesuffix('Date')}])"
         assert "truncated in UTC" not in entry.description
-        assert MELBOURNE in entry.description
     findings = validate_against_mapping(schema, bundle)
-    none_of(findings, FindingCode.UNKNOWN_TIME_ZONE)
     none_of(findings, FindingCode.DERIVED_UNKNOWN_REFERENCE)
-    queries = generate_powerquery(schema, bundle, "default")
+    queries = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)
     prefix = bundle.mapping.prefix
     assert "each AsSiteDate([Created])," in queries[f"{prefix}ServiceRequest.pq"]
     assert "each AsSiteDate([Modified])," in queries[f"{prefix}ServiceRequest.pq"]
-    assert "each AsSiteDate([Modified])," in queries[f"{prefix}Activity.pq"]
-    for name, query in queries.items():
-        assert "Date.From([Created])" not in query, name
-        assert "Date.From([Modified])" not in query, name
-        if name != "_Users.pq":
-            assert "SiteTransitions = List.Buffer({" in query, name
+
 
 
 # ------------------------------------------------------------------ the probe

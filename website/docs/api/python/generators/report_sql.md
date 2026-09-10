@@ -25,18 +25,20 @@ row-level M expression has no SQL to translate to.
 ### `generate_sql_views`
 
 ```python
-def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> str
+def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None) -> str
 ```
 
 A single SQLCMD script: typed view per list + _Enriched join views.
 
 ``site_url``, when known, is written into the ``:setvar SiteUrl`` line
 so the script needs no editing; otherwise a placeholder is left there.
+``time_zone`` is the site's zone the queries beside this were built
+with; the plans are built with it so the two describe the same columns.
 
 ### `generate_dictionary_sql`
 
 ```python
-def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
+def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', time_zone: str | None = None) -> str
 ```
 
 The data dictionary as SQL views built from embedded VALUES rows (no

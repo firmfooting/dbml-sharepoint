@@ -73,6 +73,26 @@ rather than making the operator edit it. But a silent rewrite of what
 somebody typed is its own defect, so the caller is expected to compare
 and say so; see `_site_url_notice`.
 
+### `validate_time_zone`
+
+```python
+def validate_time_zone(time_zone: str) -> str
+```
+
+Refuse a ``--time-zone`` the IANA database does not declare.
+
+The reporting pack derives the site's daylight-saving transitions from
+the name, so a name the database does not declare has nothing to derive
+from, and a name that is merely close (`Melbourne`, `australia/melbourne`)
+is refused with the spelling it probably meant rather than guessed at.
+Shared by `build`, `report` and the wizard, so the three cannot come to
+disagree about what a usable zone is. Raises ``typer.BadParameter``
+(exit 2) on failure, the same contract as `validate_site_url`.
+
+Returned unchanged when it passes: nothing about a zone name needs
+cleaning, and a silent rewrite of what somebody typed is the defect
+`_site_url_notice` exists to report.
+
 ### `EnterpriseReaderDeclined`
 
 ```python
@@ -114,7 +134,7 @@ parsing claims, and no legitimate UPN contains one.
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
+def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -142,7 +162,7 @@ while quietly discarding what the file asked for.
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False) -> None
 ```
 
 The `build` pipeline, callable without going through typer.
@@ -166,6 +186,12 @@ supplies a value for a setting that is still unset, that value is used;
 an explicit `enterprise_reader` -- a flag or the declined sentinel --
 always wins over the file, because both mean the operator already
 decided.
+
+`time_zone` is the site's IANA zone, a fact about the site the way
+`site_url` is, and it is REQUIRED: ``None`` here is only "no flag was
+given", and a build refuses once the env file has also had its say and
+still named none. It defaults to ``None`` rather than being a required
+keyword so the file can supply it, the same shape as `enterprise_reader`.
 
 ### `validate`
 
@@ -225,7 +251,7 @@ the two cannot disagree.
 ### `report`
 
 ```python
-def report(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., site_role: str = ..., out: pathlib.Path = ..., release: pathlib.Path | None = ...) -> None
+def report(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., time_zone: str = ..., site_role: str = ..., out: pathlib.Path = ..., release: pathlib.Path | None = ...) -> None
 ```
 
 Generate reporting queries (Power Query M + SQL views) from the schema.
@@ -234,6 +260,13 @@ Emits one .pq file per list, a SQLCMD views script, guide.md with
 usage instructions and the Power BI relationship table, and a
 data-dictionary.md companion. Assumes a schema that `build` accepts;
 run `build --dry-run` first if unsure.
+
+`--time-zone` is a required option here rather than one the env file
+may supply: this command reads no `dbml-sharepoint.env`, and inventing
+that discovery for one key would give `report` half of `build`'s
+precedence rules. It needs no site URL, because the pack it writes
+reads a `SiteUrl` parameter instead, but the zone shapes the queries
+themselves and has no parameter to fall back on.
 
 ### `extract_script`
 

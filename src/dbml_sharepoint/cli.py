@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.sidecars import (
     EXTERNAL_LOG_DEFAULT,
     run_log_title,
 )
+from dbml_sharepoint.analysis.timezones import is_known_zone, unknown_zone_message
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
@@ -92,6 +93,8 @@ from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
     NO_ENV_FILE,
+    TIME_ZONE_KEY,
+    TIME_ZONE_PARAMETER,
     EnvFileError,
     EnvProvenance,
     EnvValue,
@@ -499,6 +502,56 @@ def _site_url_notice(given: str, used: str) -> str:
     )
 
 
+#: Where an operator finds the site's zone, and how to spell it. Shared by
+#: the two refusals below so they send people to the same place.
+_HOW_TO_FIND_THE_ZONE = (
+    "The site's zone is under Site settings > Regional settings > Time zone, "
+    "which names a city; pass that city's IANA name, such as "
+    "Australia/Melbourne or Europe/London. Python lists every name with "
+    "`python -c \"import zoneinfo; print(sorted(zoneinfo.available_timezones()))\"`."
+)
+
+
+def validate_time_zone(time_zone: str) -> str:
+    """Refuse a ``--time-zone`` the IANA database does not declare.
+
+    The reporting pack derives the site's daylight-saving transitions from
+    the name, so a name the database does not declare has nothing to derive
+    from, and a name that is merely close (`Melbourne`, `australia/melbourne`)
+    is refused with the spelling it probably meant rather than guessed at.
+    Shared by `build`, `report` and the wizard, so the three cannot come to
+    disagree about what a usable zone is. Raises ``typer.BadParameter``
+    (exit 2) on failure, the same contract as `validate_site_url`.
+
+    Returned unchanged when it passes: nothing about a zone name needs
+    cleaning, and a silent rewrite of what somebody typed is the defect
+    `_site_url_notice` exists to report.
+    """
+    if is_known_zone(time_zone):
+        return time_zone
+    raise typer.BadParameter(
+        f"--time-zone: {unknown_zone_message(time_zone)} {_HOW_TO_FIND_THE_ZONE}",
+    )
+
+
+def _missing_time_zone() -> typer.BadParameter:
+    """The refusal for a build that named no zone anywhere.
+
+    Not a typer-level required option, because `dbml-sharepoint.env` may
+    supply it (`DBMLSP_TIME_ZONE`), so "required" here means "required
+    after the file has been read". A build that reached this far has been
+    told nothing about the site's zone, and the pack cannot convert a
+    timestamp by a zone it was never given.
+    """
+    return typer.BadParameter(
+        f"--time-zone is required: the reporting pack converts every "
+        f"timestamp by the site's time zone, and a zone is a fact about the "
+        f"site rather than the mapping, so the build has to be told. Pass "
+        f"--time-zone, or set {TIME_ZONE_KEY} in {ENV_FILENAME}. "
+        f"{_HOW_TO_FIND_THE_ZONE}",
+    )
+
+
 @dataclass(frozen=True)
 class EnterpriseReaderDeclined:
     """Sentinel: the operator was asked and chose nobody.
@@ -592,6 +645,15 @@ def build(
         None, help=f"Path to release.yaml. Default: {RELEASE_RELPATH}",
     ),
     site_url: str = typer.Option(..., help="Target SharePoint site URL."),
+    time_zone: str | None = typer.Option(
+        None,
+        "--time-zone",
+        help="The site's time zone as an IANA name, such as Australia/Melbourne "
+        "or Europe/London (Site settings > Regional settings > Time zone). "
+        "The reporting pack converts every timestamp by it and checks the "
+        f"site agrees at each refresh. Required, from this flag or from "
+        f"{ENV_FILENAME}'s {TIME_ZONE_KEY}.",
+    ),
     site_role: str = typer.Option(
         "default", help="Site role; must match a site_role declared by the mapping's entities.",
     ),
@@ -705,6 +767,7 @@ def build(
             release, RELEASE_RELPATH, "--release", from_the_project=from_the_project,
         ),
         site_url=site_url,
+        time_zone=time_zone,
         site_role=site_role,
         out=out,
         dry_run=dry_run,
@@ -811,9 +874,10 @@ def _resolve_env_settings(
     deployment_log_change_list: str | None,
     deployment_log_site: str | None,
     change_log_list: str | None,
+    time_zone: str | None,
 ) -> tuple[
     str | EnterpriseReaderDeclined | None,
-    str | None, str | None, str | None, str | None,
+    str | None, str | None, str | None, str | None, str | None,
     EnvProvenance,
 ]:
     """Apply a resolved dbml-sharepoint.env file, honouring anything already
@@ -832,12 +896,13 @@ def _resolve_env_settings(
     nor the file supplied anything (so the template can distinguish "the
     operator turned the external log off" from "nothing was said"): the
     build's own flags carry defaults, so in practice a plain build always
-    names its defaults here.
+    names its defaults here. The time zone has no default at all: ``None``
+    after this is a build that must refuse, see `_missing_time_zone`.
     """
     if env_file is None:
         return (
             enterprise_reader, deployment_log_list, deployment_log_change_list,
-            deployment_log_site, change_log_list, NO_ENV_FILE,
+            deployment_log_site, change_log_list, time_zone, NO_ENV_FILE,
         )
 
     try:
@@ -848,15 +913,16 @@ def _resolve_env_settings(
         # passing it again here just printed it twice.
         _config_error("env file", None, exc)
 
-    # Declared as a STR-typed mapping for the four list-name settings and a
-    # separate variable for the reader, because the reader carries the
-    # declined sentinel and the names do not. One precedence loop, one
-    # shapes-problem avoided.
+    # Declared as a STR-typed mapping for the four list-name settings and
+    # the zone, and a separate variable for the reader, because the reader
+    # carries the declined sentinel and the others do not. One precedence
+    # loop, one shapes-problem avoided.
     resolved: dict[str, str | None] = {
         DEPLOYMENT_LOG_LIST_PARAMETER: deployment_log_list,
         DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER: deployment_log_change_list,
         DEPLOYMENT_LOG_SITE_PARAMETER: deployment_log_site,
         CHANGE_LOG_LIST_PARAMETER: change_log_list,
+        TIME_ZONE_PARAMETER: time_zone,
     }
     resolved_reader = enterprise_reader
     values: list[EnvValue] = []
@@ -900,6 +966,7 @@ def _resolve_env_settings(
         resolved[DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER],
         resolved[DEPLOYMENT_LOG_SITE_PARAMETER],
         resolved[CHANGE_LOG_LIST_PARAMETER],
+        resolved[TIME_ZONE_PARAMETER],
         provenance,
     )
 
@@ -932,6 +999,7 @@ def execute_build(
     out: Path = Path("./build"),
     dry_run: bool = False,
     seed: bool = False,
+    time_zone: str | None = None,
     extension: str | None = None,
     enterprise_reader: str | EnterpriseReaderDeclined | None = None,
     env_file: Path | None = None,
@@ -962,6 +1030,12 @@ def execute_build(
     an explicit `enterprise_reader` -- a flag or the declined sentinel --
     always wins over the file, because both mean the operator already
     decided.
+
+    `time_zone` is the site's IANA zone, a fact about the site the way
+    `site_url` is, and it is REQUIRED: ``None`` here is only "no flag was
+    given", and a build refuses once the env file has also had its say and
+    still named none. It defaults to ``None`` rather than being a required
+    keyword so the file can supply it, the same shape as `enterprise_reader`.
     """
     # Reassigned, not merely checked: everything below -- SiteContext, the
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
@@ -989,12 +1063,19 @@ def execute_build(
 
     (
         enterprise_reader, resolved_external, resolved_external_change,
-        resolved_site, resolved_change, env_provenance,
+        resolved_site, resolved_change, resolved_zone, env_provenance,
     ) = _resolve_env_settings(
         env_file, enterprise_reader, deployment_log_list,
         deployment_log_change_list, deployment_log_site, change_log_list,
+        time_zone,
     )
     _echo_env_provenance(env_provenance)
+    # The zone is validated on the resolved value, wherever it came from, so
+    # the file gets the same refusal a flag does rather than a pack built
+    # for a zone the database has never heard of.
+    if resolved_zone is None:
+        raise _missing_time_zone()
+    time_zone = validate_time_zone(resolved_zone)
     # Post-resolution defaults, and the three states the external log name
     # carries. Nothing said anywhere -- no flag, no file -- means the
     # built-in sidecar names, applied AFTER precedence so a file naming
@@ -1223,6 +1304,7 @@ def execute_build(
             source_mtime=source_mtime,
             generated_at=generated_at,
             seed=seed,
+            time_zone=time_zone,
             extension=ext,
             site_context=site_context,
             enterprise_reader=resolved_enterprise_reader,
@@ -1374,6 +1456,13 @@ def report(
     mapping: Path | None = typer.Option(
         None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
     ),
+    time_zone: str = typer.Option(
+        ...,
+        "--time-zone",
+        help="The site's time zone as an IANA name, such as Australia/Melbourne "
+        "or Europe/London (Site settings > Regional settings > Time zone). "
+        "Every list query carries its daylight-saving transitions.",
+    ),
     site_role: str = typer.Option(
         "default", help="Site role; must match a site_role declared by the mapping's entities.",
     ),
@@ -1390,7 +1479,17 @@ def report(
     usage instructions and the Power BI relationship table, and a
     data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
+
+    `--time-zone` is a required option here rather than one the env file
+    may supply: this command reads no `dbml-sharepoint.env`, and inventing
+    that discovery for one key would give `report` half of `build`'s
+    precedence rules. It needs no site URL, because the pack it writes
+    reads a `SiteUrl` parameter instead, but the zone shapes the queries
+    themselves and has no parameter to fall back on.
     """
+    # Refused first, before any file is read: a zone the database does not
+    # declare has nothing to derive from, and nothing in `out` is touched.
+    time_zone = validate_time_zone(time_zone)
     # Whether this run is reporting on the project in the working directory,
     # or on files somebody named explicitly. It decides the release default
     # below, so it has to be read BEFORE the paths are resolved.
@@ -1436,6 +1535,7 @@ def report(
             parsed_schema, bundle, site_role,
             release=release_obj, generated_at=generated_at,
             source_schema=schema.name, source_mapping=mapping.name,
+            time_zone=time_zone,
         )
     except ValueError as exc:
         # The schema was read and refused, so whatever is in `out` describes

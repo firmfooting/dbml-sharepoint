@@ -98,6 +98,7 @@ dbml-sharepoint build \
   --mapping examples/project-tracker/mapping.yaml \
   --release examples/project-tracker/release.yaml \
   --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --time-zone Region/City \
   --site-role default \
   --out ./build
 ```
@@ -106,7 +107,9 @@ Inside a project directory (one the wizard created, or any folder using the
 same layout) the three input paths are the defaults, so a rebuild is:
 
 ```bash
-dbml-sharepoint build --site-url https://yourtenant.sharepoint.com/sites/your-site
+dbml-sharepoint build \
+  --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --time-zone Region/City
 ```
 
 Add `--seed` to also emit [`demo-data.js.txt`](artifacts/demo-data.md) from

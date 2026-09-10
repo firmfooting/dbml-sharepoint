@@ -56,6 +56,12 @@ DEPLOYMENT_LOG_SITE_PARAMETER: Final = "deployment_log_site"
 CHANGE_LOG_LIST_KEY: Final = "DBMLSP_CHANGE_LOG_LIST"
 CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
 
+# The site's IANA zone, which the reporting pack converts every timestamp by.
+# A fact about the site a pack is built for, like `--site-url`, so it lives
+# here beside the other deployment facts and never in the mapping.
+TIME_ZONE_KEY: Final = "DBMLSP_TIME_ZONE"
+TIME_ZONE_PARAMETER: Final = "time_zone"
+
 # No `validate` field: `execute_build` already validates what it consumes, and
 # importing `cli.py`'s validators here would cycle and drag typer into `model/`.
 # Documented by hand in website/docs/reference/cli.md; add a key there too.
@@ -100,6 +106,15 @@ ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
         help=(
             "Title of the hidden change log the deploy writes type-2 rows "
             "into. Default: the tool's own dbml_Changes sidecar."
+        ),
+    ),
+    EnvSetting(
+        key=TIME_ZONE_KEY,
+        parameter=TIME_ZONE_PARAMETER,
+        help=(
+            "The site's time zone as an IANA name, such as Australia/Melbourne "
+            "or Europe/London. What --time-zone would pass; a build needs one "
+            "from either."
         ),
     ),
 )

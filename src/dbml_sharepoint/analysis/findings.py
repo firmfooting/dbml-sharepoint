@@ -278,7 +278,6 @@ class FindingCode(StrEnum):
     UNKNOWN_ENTITY = "unknown_entity", "error"
     UNKNOWN_FIELD_SET_REFERENCE = "unknown_field_set_reference", "error"
     UNKNOWN_RETENTION_POLICY = "unknown_retention_policy", "error"
-    UNKNOWN_TIME_ZONE = "unknown_time_zone", "error"
     UNMAPPED_SCHEMA_TABLE = "unmapped_schema_table", "error"
     UNSUPPORTED_BASE_TEMPLATE = "unsupported_base_template", "error"
     # Warning severity: #267 already protects the emitted filter, so an

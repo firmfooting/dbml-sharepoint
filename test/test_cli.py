@@ -382,6 +382,7 @@ def test_build_writes_deploy_js_and_manifest(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -400,6 +401,7 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -437,6 +439,7 @@ def test_a_built_reporting_pack_needs_no_parameter(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", site,
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -465,6 +468,7 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -514,6 +518,7 @@ def test_a_windows_built_bundle_verifies_with_raw_byte_hashing(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -542,6 +547,7 @@ def test_no_emitted_artifact_carries_a_carriage_return(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -571,6 +577,7 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--enterprise-reader", "svc-reporting@example.org",
@@ -600,6 +607,7 @@ def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
         "--mapping", str(FIXTURES / "sharepoint-mapping-reader-two-roles.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "branch",
         "--out", str(out),
         "--enterprise-reader", "svc-reporting@example.org",
@@ -631,6 +639,7 @@ def test_the_reader_flag_is_accepted_for_the_role_that_does_grant_it(
         "--mapping", str(FIXTURES / "sharepoint-mapping-reader-two-roles.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "hq",
         "--out", str(out),
         "--enterprise-reader", "svc-reporting@example.org",
@@ -675,6 +684,7 @@ def test_a_malformed_reader_address_is_refused(
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--enterprise-reader", bad,
@@ -721,6 +731,7 @@ def test_no_reader_flag_emits_no_enrolment(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -761,6 +772,7 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--enterprise-reader", address,
@@ -786,6 +798,7 @@ def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> Non
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--enterprise-reader", address,
@@ -842,6 +855,7 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
         mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
         release=FIXTURES / "release.yaml",
         site_url="https://example.sharepoint.com/sites/test",
+        time_zone="UTC",
         site_role="default",
         out=out,
         enterprise_reader=ENTERPRISE_READER_DECLINED,
@@ -880,6 +894,7 @@ def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> Non
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
         "--env-file", str(missing),
     ])
@@ -909,6 +924,7 @@ def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) 
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
         "--env-file", str(env_path),
     ])
@@ -935,6 +951,7 @@ def test_no_env_file_at_the_default_location_is_not_an_error(tmp_path: Path) -> 
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
@@ -951,6 +968,7 @@ def test_env_file_at_the_default_location_is_used(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
@@ -981,6 +999,7 @@ def test_an_env_file_value_reaches_execute_build(
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
         "--env-file", str(env_path),
     ])
@@ -1005,6 +1024,7 @@ def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
         "--env-file", str(env_path),
         "--enterprise-reader", flag_address,
@@ -1047,6 +1067,7 @@ def test_the_declined_sentinel_beats_the_env_file(
         mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
         release=FIXTURES / "release.yaml",
         site_url="https://example.sharepoint.com/sites/test",
+        time_zone="UTC",
         site_role="default",
         out=out,
         enterprise_reader=ENTERPRISE_READER_DECLINED,
@@ -1075,6 +1096,7 @@ def test_an_env_file_value_that_fails_validation_is_refused_like_a_bad_flag(
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
         "--env-file", str(env_path),
     ])
@@ -1097,6 +1119,7 @@ def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),  # no such group
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ]
 
     out_without = tmp_path / "without-file"
@@ -1149,6 +1172,7 @@ def test_an_unwired_env_setting_refuses_instead_of_discarding(
             mapping=FIXTURES / "sharepoint-mapping.yaml",
             release=FIXTURES / "release.yaml",
             site_url="https://example.sharepoint.com/sites/test",
+            time_zone="UTC",
             site_role="default",
             out=tmp_path / "build",
             env_file=env_path,
@@ -1172,6 +1196,7 @@ def test_the_manifest_and_index_both_say_so_when_no_env_file_was_read(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
@@ -1192,6 +1217,7 @@ def test_the_manifest_and_index_both_report_the_env_file_that_was_read(
         "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
         "--env-file", str(env_path),
     ])
@@ -1284,6 +1310,7 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1317,6 +1344,7 @@ def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) 
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1346,6 +1374,7 @@ def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) 
             "--mapping": str(FIXTURES / "sharepoint-mapping.yaml"),
             "--release": str(FIXTURES / "release.yaml"),
             "--site-url": "https://example.sharepoint.com/sites/test",
+            "--time-zone": "UTC",
             "--site-role": "default",
             "--out": str(out),
             **overrides,
@@ -1373,6 +1402,7 @@ def test_build_rejects_invalid_site_role(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "commitee",
         "--out", str(out),
     ])
@@ -1416,6 +1446,7 @@ def test_build_rejects_extension_that_requires_project_cli(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--extension", "project_only",
@@ -1445,6 +1476,7 @@ def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "http://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1485,6 +1517,7 @@ def test_a_query_or_fragment_never_reaches_the_generated_bundle(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", given,
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1517,6 +1550,7 @@ def test_a_clean_site_url_is_passed_through_and_not_announced(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1546,6 +1580,7 @@ def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> Non
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -1571,6 +1606,7 @@ def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
         "--dry-run",
@@ -1631,6 +1667,7 @@ def test_a_wrong_mapping_key_is_a_message_not_a_traceback(tmp_path: Path) -> Non
         "--mapping", str(mapping),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -1656,6 +1693,7 @@ def test_a_malformed_release_file_is_a_message_not_a_traceback(tmp_path: Path) -
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(tmp_path / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -1675,6 +1713,7 @@ def test_a_missing_mapping_file_is_a_message_not_a_traceback(tmp_path: Path) -> 
         "--mapping", str(tmp_path / "nope.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -1704,6 +1743,7 @@ def test_malformed_dbml_is_a_message_not_a_traceback(tmp_path: Path) -> None:
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -1730,6 +1770,7 @@ def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) 
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -1763,6 +1804,7 @@ def test_an_unknown_extension_is_a_message_not_a_traceback(
         args += [
             "--release", str(FIXTURES / "release.yaml"),
             "--site-url", "https://example.sharepoint.com/sites/test",
+            "--time-zone", "UTC",
             "--out", str(tmp_path / "build"),
         ]
     result = _cli(*args)
@@ -1823,7 +1865,7 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
         )
         out = tmp_path / f"reports-{filename}"
         result = _cli(
-            "report",
+            "report", "--time-zone", "UTC",
             "--schema", str(schema),
             "--mapping", str(mapping),
             "--out", str(out),
@@ -1849,7 +1891,7 @@ def test_report_writes_the_pack_render_reporting_renders(tmp_path: Path) -> None
 
     out = tmp_path / "reports"
     result = runner.invoke(app, [
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--out", str(out),
@@ -1861,6 +1903,7 @@ def test_report_writes_the_pack_render_reporting_renders(tmp_path: Path) -> None
         "default",
         release=None, generated_at="STAMP",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        time_zone="UTC",
     )
     written = {
         path.relative_to(out).as_posix(): path.read_text(encoding="utf-8")
@@ -1879,7 +1922,7 @@ def test_report_replaces_owned_outputs_and_preserves_operator_files(
     schema = write_dbml(tmp_path, blocks(table("Risk", ID_PK), table("Legacy", ID_PK)))
     out = tmp_path / "reports"
     first = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
     assert first.returncode == 0, first.stderr
@@ -1888,7 +1931,7 @@ def test_report_replaces_owned_outputs_and_preserves_operator_files(
 
     schema = write_dbml(tmp_path, table("Risk", ID_PK))
     second = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
 
@@ -1927,7 +1970,7 @@ def test_report_refuses_a_member_the_export_cannot_split_back(
     out = tmp_path / "reports"
 
     result = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
 
@@ -1961,7 +2004,7 @@ def test_report_success_message_names_only_files_it_wrote(tmp_path: Path) -> Non
     out = tmp_path / "reports"
 
     result = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
     assert result.returncode == 0, result.stderr
@@ -1980,7 +2023,7 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))
     out = tmp_path / "reports"
     first = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
     assert first.returncode == 0, first.stderr
@@ -1988,7 +2031,7 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
 
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     failed = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "report", "--time-zone", "UTC", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
     )
 
@@ -2022,14 +2065,14 @@ def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -
     owned = {"001_migration.sql", "MyReport.pq"}
 
     missing = _cli(
-        "report", "--schema", str(tmp_path / "nope.dbml"),
+        "report", "--time-zone", "UTC", "--schema", str(tmp_path / "nope.dbml"),
         "--mapping", str(mapping), "--out", str(out),
     )
     assert missing.returncode == 1, missing.stderr
     assert surviving() == owned
 
     bad_role = _cli(
-        "report", "--schema", str(FIXTURES / "simple.dbml"),
+        "report", "--time-zone", "UTC", "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(mapping), "--site-role", "nosuchrole", "--out", str(out),
     )
     assert bad_role.returncode == 2, bad_role.stderr
@@ -2044,7 +2087,8 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))
     out = tmp_path / "shared"
     first = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
     )
     assert first.returncode == 0, first.stderr
     (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
@@ -2053,7 +2097,8 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     # A refusal clears what this command wrote, and stops there.
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     refused = _cli(
-        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
     )
 
     assert refused.returncode == 1
@@ -2075,7 +2120,7 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     (out / "powerquery" / "stale.pq").write_text("stale", encoding="utf-8")
     (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
     result = _cli(
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(mapping),
         "--out", str(out),
@@ -2101,6 +2146,7 @@ def _fixture_build(out: Path, schema: Path, mapping: Path | None = None) -> Resu
         "--mapping", str(mapping or FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--site-role", "default",
         "--out", str(out),
     ])
@@ -2238,6 +2284,7 @@ def test_build_defaults_its_inputs_to_the_project_layout(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
 
     assert result.exit_code == 0, result.output
@@ -2261,6 +2308,7 @@ def test_sidecar_lists_are_ensured_by_default_and_the_external_log_is_probed(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
     assert result.exit_code == 0, result.output
 
@@ -2288,6 +2336,7 @@ def test_no_sidecars_suppresses_the_site_lists_and_nothing_else(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--no-sidecars",
     ])
     assert result.exit_code == 0, result.output
@@ -2321,6 +2370,7 @@ def test_no_sidecars_with_no_central_log_emits_no_logging_phase_at_all(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--no-sidecars", "--deployment-log-site", "",
     ])
     assert result.exit_code == 0, result.output
@@ -2348,6 +2398,7 @@ def test_an_empty_deployment_log_list_disables_the_external_probe(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-list", "",
     ])
     assert result.exit_code == 0, result.output
@@ -2358,6 +2409,7 @@ def test_an_empty_deployment_log_list_disables_the_external_probe(
 
     padded = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-list", " ",
     ])
     assert padded.exit_code == 2
@@ -2386,6 +2438,7 @@ def test_an_env_file_can_supply_both_log_lists_and_a_flag_wins(
 
     from_file = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
     assert from_file.exit_code == 0, from_file.output
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
@@ -2396,6 +2449,7 @@ def test_an_env_file_can_supply_both_log_lists_and_a_flag_wins(
 
     by_flag = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-list", "dbml-deployment-log",
     ])
     assert by_flag.exit_code == 0, by_flag.output
@@ -2425,6 +2479,7 @@ def test_an_empty_deployment_changes_disables_only_the_change_feed(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-changes", "",
     ])
     assert result.exit_code == 0, result.output
@@ -2436,6 +2491,7 @@ def test_an_empty_deployment_changes_disables_only_the_change_feed(
 
     padded = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-changes", " ",
     ])
     assert padded.exit_code == 2
@@ -2460,6 +2516,7 @@ def test_deployment_log_list_and_deployment_changes_cannot_name_the_same_list(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-list", "Shared_List",
         "--deployment-changes", "Shared_List",
     ])
@@ -2472,6 +2529,7 @@ def test_deployment_log_list_and_deployment_changes_cannot_name_the_same_list(
     # refusal: '' equals '' but names no list at all.
     both_empty = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-list", "",
         "--deployment-changes", "",
     ])
@@ -2493,6 +2551,7 @@ def test_an_env_file_can_supply_deployment_changes_and_a_flag_wins(
 
     from_file = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
     assert from_file.exit_code == 0, from_file.output
     js = (Path("build") / "deploy.js.txt").read_text(encoding="utf-8")
@@ -2501,6 +2560,7 @@ def test_an_env_file_can_supply_deployment_changes_and_a_flag_wins(
 
     by_flag = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-changes", "OtherOrg_Changes",
     ])
     assert by_flag.exit_code == 0, by_flag.output
@@ -2640,6 +2700,7 @@ def test_the_deployment_log_site_flag_reaches_the_emitted_script(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-site", "clientB-logging",
     ])
     assert result.exit_code == 0, result.output
@@ -2665,6 +2726,7 @@ def test_an_empty_deployment_log_site_disables_the_external_stamps(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-site", "",
     ])
     assert result.exit_code == 0, result.output
@@ -2676,6 +2738,7 @@ def test_an_empty_deployment_log_site_disables_the_external_stamps(
 
     padded = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-site", " ",
     ])
     assert padded.exit_code == 2
@@ -2683,6 +2746,7 @@ def test_an_empty_deployment_log_site_disables_the_external_stamps(
 
     spaced = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--deployment-log-site", "client B logging",
     ])
     assert spaced.exit_code == 2
@@ -2699,6 +2763,7 @@ def test_an_explicit_path_beats_the_project_default(
     result = runner.invoke(app, [
         "build", "--schema", str(missing),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
 
     # A path that does not exist is the unambiguous probe: the project
@@ -2731,6 +2796,7 @@ def test_a_missing_input_names_the_standard_path_it_looked_for(
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
     ])
 
     assert result.exit_code == 2
@@ -2747,7 +2813,7 @@ def test_report_defaults_its_inputs_to_the_project_layout(
     """`report` is the other command driven from a project directory."""
     monkeypatch.chdir(_project(tmp_path))
 
-    result = runner.invoke(app, ["report"])
+    result = runner.invoke(app, ["report", "--time-zone", "UTC"])
 
     assert result.exit_code == 0, result.output
     assert (Path("reports") / "guide.md").is_file()
@@ -2772,7 +2838,7 @@ def test_report_does_not_borrow_a_release_from_the_working_project(
 
     out = tmp_path / "reports"
     result = runner.invoke(app, [
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--out", str(out),
@@ -2830,6 +2896,7 @@ def test_build_does_not_borrow_a_release_from_the_working_project(
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     ])
 
@@ -2861,7 +2928,7 @@ def test_report_stamps_the_project_release_it_discovered(
     )
     monkeypatch.chdir(project)
 
-    result = runner.invoke(app, ["report"])
+    result = runner.invoke(app, ["report", "--time-zone", "UTC"])
 
     assert result.exit_code == 0, result.output
     dictionary = (Path("reports") / "data-dictionary.md").read_text(encoding="utf-8")
@@ -2882,7 +2949,7 @@ def test_report_succeeds_in_a_project_with_no_release_file(
     (project / RELEASE_RELPATH).unlink()
     monkeypatch.chdir(project)
 
-    result = runner.invoke(app, ["report"])
+    result = runner.invoke(app, ["report", "--time-zone", "UTC"])
 
     assert result.exit_code == 0, result.output
     assert (Path("reports") / "data-dictionary.md").is_file()
@@ -3035,6 +3102,7 @@ def test_a_wrong_section_shape_is_a_message_not_a_traceback(tmp_path: Path) -> N
         "--mapping", str(mapping),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
@@ -3066,6 +3134,7 @@ def test_a_directory_at_the_default_env_path_is_refused(
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
         "--out", str(out),
     ])
     assert result.exit_code != 0

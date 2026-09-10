@@ -115,6 +115,13 @@ reporting columns are in the mapping and have no DBML footprint at all,
 because nothing is deployed for them and an ERD showing fields no list has
 would be a lie.
 
+The boundary has a third side. A fact about the *site* a bundle is built
+for lives in neither file: `--site-url` is a build input, and so is
+`--time-zone`. The mapping declares a derived column as
+`AsSiteDate([Created])`, which says "the date this shows on the site", and
+the build says which site. Putting the zone in the mapping baked one
+adopter's locale into a template anyone can use.
+
 DBML gained custom key-value metadata in July 2026, so "the schema cannot
 carry it" is no longer why. The reasons that hold are that the file must stay
 readable by tools that know only standard DBML, and that a reader has to be

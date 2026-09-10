@@ -14,7 +14,11 @@ tested one at a time.
 from dataclasses import dataclass, field
 
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
-from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
+from dbml_sharepoint.analysis.reporting.plan import (
+    VALIDATION_TIME_ZONE,
+    ListPlan,
+    build_plans,
+)
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
@@ -140,7 +144,7 @@ class ValidationContext:
         report_plans_by_role: dict[str, dict[str, ListPlan] | None] = {}
         for role in sorted({e.site_role for e in bundle.mapping.entities.values()}):
             try:
-                plans = build_plans(schema, bundle, role)
+                plans = build_plans(schema, bundle, role, time_zone=VALIDATION_TIME_ZONE)
             except ValueError:
                 report_plans_by_role[role] = None
             else:

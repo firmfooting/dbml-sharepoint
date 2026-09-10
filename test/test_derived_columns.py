@@ -380,26 +380,6 @@ def test_a_declaration_on_an_entity_with_no_query_is_left_to_the_structure_rule(
     assert FindingCode.DERIVED_UNKNOWN_REFERENCE not in codes
 
 
-def test_a_planner_refusal_leaves_the_validator_standing() -> None:
-    """The columns a reference is checked against are read off the same plan
-    the queries are rendered from, and the planner refuses a zone the
-    database does not declare. The validator must report that refusal as
-    the finding it is, not raise on it.
-
-    The derived rule has nothing to check against until the zone is fixed,
-    so its finding follows on the next run. That is one more cycle on a
-    mapping the build already refuses, and the first finding names the
-    exact fix.
-    """
-    bundle = _bundle(
-        [DerivedColumn(kind="expr", name="X", type="text", m="[Nonsense]")],
-        reporting=ReportingOptions(time_zone="Nowhere/Nowhere"),
-    )
-    codes = _all_codes(_schema(), bundle)
-    assert FindingCode.UNKNOWN_TIME_ZONE in codes
-    assert FindingCode.DERIVED_UNKNOWN_REFERENCE not in codes
-
-
 # ------------------------------------------------------------- the shape
 
 

@@ -22,11 +22,17 @@ into every list query as a literal table. `zoneinfo` resolves real rules: a
 30-minute shift (Australia/Lord_Howe), southern-hemisphere dates
 (America/Santiago), a rule change inside the window (Australia/Melbourne,
 2008) and a zone that abolished daylight saving (Asia/Tehran, nothing after
-2022). That is why the mapping declares a zone NAME rather than a rule.
+2022). That is why the build takes a zone NAME rather than a rule.
 
-SHARED because two sides read it: `generators/reportgen` emits the table and
-the offsets it compares the site's biases against, and `checks/_sources`
-refuses a name the database does not declare. Neither may import the other.
+The zone is a BUILD INPUT (`--time-zone`, or `DBMLSP_TIME_ZONE` in the env
+file), never a mapping key: it is a fact about the site a pack is built for,
+the same as `--site-url`, and a mapping is the solution's to write, not the
+site's.
+
+SHARED because three sides read it: `generators/reportgen` emits the table and
+the offsets it compares the site's biases against, `cli.validate_time_zone`
+refuses a name the database does not declare, and the wizard offers a name
+before asking for one. None of them may import another for this.
 
 The window is FIXED. The repository commits generated artifacts and pins
 them with currency tests, so a window derived from the build date would
@@ -83,6 +89,30 @@ database where there is one and from the `tzdata` package otherwise.
 def is_known_zone(name: str) -> bool
 ```
 
+### `suggest_zones`
+
+```python
+def suggest_zones(name: str, *, limit: int = 3) -> tuple[str, ...]
+```
+
+Known zones a mistyped name probably meant, best first.
+
+Three readings, in order: the same name in another case
+(`australia/melbourne`), a bare city that is the last segment of a zone
+(`Melbourne`, which is how SharePoint's own regional settings name a
+zone), then the nearest spellings. An operator who is refused with
+nothing to try next reaches for a guess, and a guess is what the build
+exists to refuse.
+
+### `unknown_zone_message`
+
+```python
+def unknown_zone_message(name: str) -> str
+```
+
+Why a name was refused, with what to try next. One sentence shared by
+the CLI refusal and the derivation's own, so the two cannot disagree.
+
 ### `zone_table`
 
 ```python
@@ -93,8 +123,9 @@ The transitions of one IANA zone across the window, bisected to the
 minute.
 
 Raises `ValueError` naming the zone when the database does not declare
-it, so the `report` command, which does not validate, refuses rather
-than emitting a query with no table behind it.
+it. The CLI refuses the same name earlier, at `validate_time_zone`; this
+is the derivation failing closed for any caller that did not go through
+it, rather than emitting a query with no table behind it.
 
 ### `transitions`
 

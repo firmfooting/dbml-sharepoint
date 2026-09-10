@@ -71,8 +71,10 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: Files still deferring an import into a function body. A RATCHET: entries
 #: come out, and one going in needs a reason in the pull request.
 #:
-#: Not all of these are cycles. `wizard.py`'s four are, with `cli.py`, tracked
-#: by #171, and `extract/wizard.py`'s two are the same cycle in the same
+#: Not all of these are cycles. `wizard.py`'s five are, with `cli.py`, tracked
+#: by #171 (the fifth is `_ask_time_zone` borrowing `validate_time_zone`,
+#: the same way `_ask_site_url` borrows `validate_site_url`), and
+#: `extract/wizard.py`'s two are the same cycle in the same
 #: direction: `cli` imports both wizards at its top, so both defer their way
 #: back. Of `bundle.py`'s five, only the `reportgen` one is: that module
 #: imports `bundle` back. The other four are deliberate lazy loading so
@@ -80,7 +82,7 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: comment states.
 DEFERRED_IMPORTS: dict[str, int] = {
     "bundle.py": 7,
-    "wizard.py": 4,
+    "wizard.py": 5,
     "extract/wizard.py": 2,
 }
 

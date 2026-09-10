@@ -45,6 +45,14 @@ RELEASE_RELPATH = Path("20-configure") / "release.yaml"
 #: pays the matching cost of a literal by keeping the templates uniform.
 PLACEHOLDER_SITE_URL = "https://yourtenant.sharepoint.com/sites/your-site"
 
+#: The `--time-zone` value every shipped deploy.md spells its build command
+#: with, for the same literal substitution. Deliberately NOT a real zone:
+#: `validate_time_zone` refuses it, so a command copied without editing
+#: fails closed and names what to pass, where the URL placeholder above
+#: passes `validate_site_url` and had to be kept out of the wizard's
+#: defaults for exactly that reason.
+PLACEHOLDER_TIME_ZONE = "Region/City"
+
 #: Files at the top of `solutions/` that document the collection rather than
 #: being one of its members.
 _NOT_A_SOLUTION = {"README.md"}

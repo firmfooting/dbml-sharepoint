@@ -151,9 +151,10 @@ class ListPlan:
     # no mapping.
     person_columns: list[str] = field(default_factory=list)
     users_table: bool = False
-    # The declared site zone's transitions (`reporting.time_zone`), or None.
-    # Carried on the plan so the renderer and the column list cannot answer
-    # "does this query carry the zone table" differently.
+    # The site zone's transitions (the build's `--time-zone`), or None for a
+    # library caller that gave none. Carried on the plan so the renderer and
+    # the column list cannot answer "does this query carry the zone table"
+    # differently.
     zone: ZoneTable | None = None
     # Reporting-only columns, in declaration order. Resolved after every
     # plan exists; see `DerivedStep`.
@@ -585,9 +586,25 @@ def _derived_step(
     )
 
 
+#: What the validator builds plans with. It asks the plans for column NAMES,
+#: and every build supplies a zone, so every emitted query carries
+#: `DateZoneResolved` whatever the zone is; the names are the same for any
+#: zone the database declares. UTC has no transitions to derive, and the
+#: table is never rendered from these plans.
+VALIDATION_TIME_ZONE = "UTC"
+
+
 def build_plans(
     schema: Schema, bundle: MappingBundle, site_role: str,
+    *,
+    time_zone: str | None = None,
 ) -> list[ListPlan]:
+    """One plan per list the role deploys.
+
+    ``time_zone`` is the site's IANA zone, which `build` and `report` always
+    supply. It is optional only so the derivation stays callable without one
+    from a library caller; the pack the CLI emits is always zoned.
+    """
     tables = tables_for_role(schema, bundle, site_role)
     emitted = {t.name for t in tables}
     # EVERY table, not the role-filtered set: a projection reads its type off
@@ -598,8 +615,7 @@ def build_plans(
     cross_site_keys = bundle.mapping.cross_site_keys()
     prefix = bundle.mapping.prefix
     # Derived once per build, and fail-closed on a name the database does
-    # not declare: `report` does not validate, so this raise is what it has.
-    time_zone = bundle.mapping.reporting.time_zone
+    # not declare, behind the CLI's own refusal of the same name.
     zone = zone_table(time_zone) if time_zone is not None else None
 
     plans: list[ListPlan] = []

@@ -1416,10 +1416,14 @@ def test_a_column_named_like_one_the_pack_adds_is_refused(name: str) -> None:
     assert f"Risk.{name}" in finding.message
 
 
-def test_a_list_with_no_date_column_may_still_name_a_column_after_the_zone_flag() -> None:
-    """`DateZoneResolved` is added only where a query converts a date-only
-    column, so a list with none is not in conflict. A reserved list would
-    have refused this; asking the derivation does not."""
+def test_a_list_with_no_date_column_still_collides_with_the_zone_flag() -> None:
+    """`DateZoneResolved` used to be added only where a query converted a
+    date-only column, so a list with none was not in conflict. Every build
+    now names the site's zone (`--time-zone` is required), and a zoned
+    query carries the flag on every list, so the collision is real here
+    too. Still asked of the derivation rather than of a reserved list: the
+    validator builds its plans as a zoned build would and reads the names
+    off them."""
     schema = make_schema(
         make_table(
             "Note",
@@ -1427,7 +1431,8 @@ def test_a_list_with_no_date_column_may_still_name_a_column_after_the_zone_flag(
             column("DateZoneResolved", "nvarchar"),
         ),
     )
-    none_of(
+    finding = only(
         validate_against_mapping(schema, make_bundle(entities=["Note"])),
         FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN,
     )
+    assert "Note.DateZoneResolved" in finding.message
