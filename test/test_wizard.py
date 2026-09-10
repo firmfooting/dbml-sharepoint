@@ -77,11 +77,13 @@ def _answers(
     the sequence: the operator reviews the whole decision once instead of
     confirming a write and then being asked three more questions.
 
-    The order is: template, [prefix gate, [prefix value]], directory, site
+    The order is: template, directory, [prefix gate, [prefix value]], site
     URL, time zone, [site role], build?, [reporting], [demo rows], confirm.
-    The prefix question sits with the template because it is a property of
-    the template; the directory, site URL, time zone and site role describe
-    the site.
+    The sections run from the inside of philosophy rule 10's boundary to
+    the outside: what is deployed, then what the project on disk declares
+    (its directory, and the prefix written into its mapping), then the
+    deployment facts that live outside the mapping (site URL, time zone,
+    site role), then the build. `_run` states the rule beside the code.
 
     `prefix` answers the two-part prefix question, and its shape carries the
     branch: `""` answers the gate `n` (one scripted answer, and the value
@@ -133,7 +135,7 @@ def _answers(
         if seed is not None:
             tail.append(seed)
     return [
-        template, *prefix_answers, str(destination), site_url, time_zone, *tail, confirm,
+        template, str(destination), *prefix_answers, site_url, time_zone, *tail, confirm,
     ]
 
 
@@ -430,10 +432,10 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
 
     console = ScriptedConsole([
         "risk-register",
-        "y",   # prefix gate
-        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
+        "y",   # prefix gate
+        "RR_",
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -683,9 +685,9 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "http://insecure.example.com/sites/x",       # refused
         "https://contoso.sharepoint.com/sites/x",    # accepted
         "Europe/London",
@@ -737,10 +739,10 @@ def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "has a space",   # refused
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -812,9 +814,9 @@ def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> No
         "all",
         "no-such-template",
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -844,9 +846,9 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
     console = ScriptedConsole([
         "",   # Enter -- must not be taken as an answer at all
         "audit-actions",
+        str(destination),
         "y",   # prefix gate
         "AU_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -1121,10 +1123,10 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
 
     console = ScriptedConsole([
         "risk-register",
-        "y",   # prefix gate
-        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
+        "y",   # prefix gate
+        "RR_",
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -1168,7 +1170,7 @@ def test_pressing_enter_at_the_prefix_gate_means_no_prefix(
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        ["risk-register", "", str(destination),
+        ["risk-register", str(destination), "",
          "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     code = wizard.run_wizard(console)
@@ -1335,10 +1337,10 @@ def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
     destination = tmp_path / "out"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",       # prefix gate
         "   ",     # refused: strips to empty
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -1362,7 +1364,7 @@ def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        ["risk-register", "y", "AC ME_", "RR_", str(destination),
+        ["risk-register", str(destination), "y", "AC ME_", "RR_",
          "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
@@ -1406,9 +1408,9 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
         "0",     # refused
         "999",   # refused
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -1767,7 +1769,7 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
-        [solution.id, "y", "NEW_", str(destination),
+        [solution.id, str(destination), "y", "NEW_",
          "https://contoso.sharepoint.com/sites/x", "Europe/London", "y", "y"],
         width=400,
     )
@@ -1848,7 +1850,7 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        [solution.id, "y", "NEW_", str(destination),
+        [solution.id, str(destination), "y", "NEW_",
          "https://contoso.sharepoint.com/sites/x", "Europe/London", "branch", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
@@ -1994,9 +1996,9 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        str(destination),
         "y",   # prefix gate
         "NEW_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "default",    # site role -- NOT roles[0], see the docstring
@@ -2044,9 +2046,9 @@ def test_a_mapping_with_no_role_called_default_is_offered_no_default(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        str(destination),
         "y",   # prefix gate
         "NEW_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "",      # Enter -- must not be taken as an answer at all
@@ -2235,9 +2237,9 @@ def test_a_bad_reader_address_is_refused_and_reprompted(
     console = ScriptedConsole(
         [
             "risk-register",
+            str(tmp_path / "proj"),
             "y",                            # prefix gate
             "RR_",
-            str(tmp_path / "proj"),
             "https://contoso.sharepoint.com/sites/x",
             "Europe/London",
             "y",                            # build
@@ -2682,13 +2684,13 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     _offer_only(monkeypatch, solution)
 
     destination = tmp_path / "out"
-    # Three answers only -- the template and the two-part prefix question
-    # (gate, then value). The guard runs straight after the prefix, so a
-    # fourth scripted answer would never be consumed, and a spare answer at
-    # the end of a script is invisible, which is exactly how a test comes to
-    # assert less than it looks like it does. Under-scripting is the honest
-    # failure mode here: it surfaces as EOFError and exit 130, not silence.
-    console = ScriptedConsole([solution.id, "y", "NEW_"])
+    # One answer only -- the template. The guard runs straight after it, so
+    # a second scripted answer would never be consumed, and a spare answer
+    # at the end of a script is invisible, which is exactly how a test comes
+    # to assert less than it looks like it does. Under-scripting is the
+    # honest failure mode here: it surfaces as EOFError and exit 130, not
+    # silence.
+    console = ScriptedConsole([solution.id])
     assert wizard.run_wizard(console) == 1
     assert not destination.exists()
     assert "fake-template" in _collapsed(console)
@@ -3055,9 +3057,9 @@ def test_no_detected_zone_offers_nothing_and_says_what_to_type(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "",    # Enter: nothing is offered, so nothing is accepted
         "Europe/London",
@@ -3085,9 +3087,9 @@ def test_a_near_miss_is_refused_with_the_spelling_it_meant(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
         "Melbourne",             # refused
         "Australia/Melbourne",   # accepted
@@ -3172,16 +3174,17 @@ def test_the_preserved_env_file_carries_the_confirmed_zone(
 def test_an_unparsable_env_file_refuses_before_the_first_question(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The file feeds the zone prompt now, so it is read with the template's
-    own facts, and a file that will not parse refuses the run before the
-    site is asked about, whether or not a build was going to be asked for.
-    The script stops at the prefix so a wizard that read the file later
+    """The file feeds the zone prompt, so it is read with the template's own
+    facts, the moment the template is chosen, and a file that will not
+    parse refuses the run before the operator has answered anything for
+    the project, whether or not a build was going to be asked for. The
+    script stops at the template so a wizard that read the file later
     would run out of answers (130) rather than refuse (1)."""
     (tmp_path / ENV_FILENAME).write_text(
         "not a key-value line\n", encoding="utf-8", newline="\n",
     )
     captured = _capture_build(monkeypatch)
-    console = ScriptedConsole(["risk-register", "y", "RR_"], width=400)
+    console = ScriptedConsole(["risk-register"], width=400)
 
     code = wizard.run_wizard(console)
     shown = _collapsed(console)
@@ -3304,9 +3307,9 @@ def test_the_site_url_prompt_has_no_default_answer(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "",    # Enter: no longer an answer
         "https://contoso.sharepoint.com/sites/ops",
         "Europe/London",

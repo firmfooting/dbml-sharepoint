@@ -84,8 +84,8 @@ dbml-sharepoint
 ```
 
 The wizard copies the template you choose into a project directory of your
-own, sets your list-name prefix and site URL, and offers to build it. It
-changes identity only. The schema and the mapping structure are the tested
+own, sets your list-name prefix, site URL and time zone, and offers to build
+it. It changes identity only. The schema and the mapping structure are the tested
 artifacts and are copied as they ship. Everything it does is also available
 as flags; it prompts only at a terminal, and prints help in CI or a pipe.
 

@@ -1415,16 +1415,29 @@ def _run(console: Console) -> int:
     # are not. VERIFIED against rich 15.0.0 on 2026-08-12, which is why no
     # `characters=` argument is passed. The section TITLES are literals in
     # this module and must stay ASCII regardless.
+    # THE ORDER OF THE QUESTIONS, and the rule behind it.
+    #
+    # The sections run from the inside of philosophy rule 10's boundary to
+    # the outside. First what is deployed: the template. Then what the
+    # project on disk will declare: its directory, and the list prefix the
+    # mapping inside it carries. Then the deployment facts that live outside
+    # the schema and the mapping: the site URL, the site's time zone, the
+    # role built for it. Then whether to run the build now, and the build's
+    # own inputs. Each section is one thing the operator has decided before
+    # sitting down, in the order they decided it, and a fact sits beside the
+    # other facts of its kind, which is why the zone is asked beside the URL
+    # and the prefix beside the directory it is written into rather than
+    # before it.
+    #
+    # Anything that can refuse is checked as soon as it is known and before
+    # the first question it feeds, so a refused run costs the fewest
+    # answers: the template's mapping and the env file are read the moment
+    # the template is chosen, and nothing is written until the single
+    # confirmation after the Review panel.
     console.rule("Template")
     picked = _pick_journey(console, journeys, solutions)
     solution = picked if isinstance(picked, Solution) else _pick_solution(console, picked)
     _describe(console, solution)
-    # A template declaring no prefix has one possible answer to this
-    # question, and a question with one possible answer is not a question --
-    # the same gate `_run` applies to the reporting and demo-rows prompts
-    # below. `_describe` above is then the only place the operator learns
-    # what their lists will be called before the Review panel names them.
-    prefix = _ask_prefix(console, solution) if solution.prefix else ""
 
     try:
         facts = _read_facts(solution)
@@ -1436,19 +1449,27 @@ def _run(console: Console) -> int:
         # same refusal `build` gives it.
         consulted = _consult_env_file(console)
     except WizardError as exc:
-        # Before anything is written. This used to happen after the copy and
-        # outside any guard, so a template the loader rejected produced a
-        # traceback on top of a project directory that already existed.
+        # Before anything is asked about the project, and before anything is
+        # written. This used to happen after the copy and outside any guard,
+        # so a template the loader rejected produced a traceback on top of a
+        # project directory that already existed.
         console.print(f"[red]{escape(str(exc))}[/red]")
         return 1
 
-    # Built here, not beside the prefix answer, because it carries the
-    # entity/site-role pairs `_read_facts` has just loaded -- that is what
-    # lets `list_titles` report the lists this site role actually creates.
+    console.rule("Project")
+    destination = _ask_destination(console, solution)
+    # A template declaring no prefix has one possible answer to this
+    # question, and a question with one possible answer is not a question --
+    # the same gate `_run` applies to the reporting and demo-rows prompts
+    # below. `_describe` above is then the only place the operator learns
+    # what their lists will be called before the Review panel names them.
+    prefix = _ask_prefix(console, solution) if solution.prefix else ""
+    # Carries the entity/site-role pairs `_read_facts` loaded above, which is
+    # what lets `list_titles` report the lists this site role actually
+    # creates.
     choice = TemplateChoice(solution, prefix, facts.entity_roles)
 
     console.rule("Site")
-    destination = _ask_destination(console, solution)
     site_url = _ask_site_url(console)
     time_zone = _ask_time_zone(
         console,

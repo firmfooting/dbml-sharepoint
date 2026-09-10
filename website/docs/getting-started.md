@@ -39,8 +39,8 @@ dbml-sharepoint
 ```
 
 It lists the shipped templates, copies the one you pick into a project
-directory of your own, sets your list-name prefix and site URL, and offers
-to build straight away. You get the whole family: the schema, the mapping,
+directory of your own, sets your list-name prefix, site URL and time zone,
+and offers to build straight away. You get the whole family: the schema, the mapping,
 and the `deploy.md`, `staff-guide.md` and `governance.md` written for that
 template.
 
