@@ -1625,7 +1625,7 @@ lookup_projections: {}             # dependent fields projected from lookups
 derived_columns: {}                # reporting-only columns (Power Query)
 reporting_source: null             # move reporting + derived_columns to a file
 polymorphic_patterns: []           # discriminator-typed reference columns
-watched_lists: []                  # lists to flag in the manifest for watching
+watched_lists: []                  # columns external flows bind, build-checked
 retention_policies_source: null    # documented retention posture (manifest)
 ```
 
@@ -1633,6 +1633,15 @@ Indexes are not configured in this file. Declare them in the table-level
 [`indexes` block in `schema.dbml`](./dbml.md#indexes). The removed
 `indexed_columns` key is a hard load error; there is no compatibility or
 dual-source mode.
+
+`watched_lists` names the `(entity, column)` pairs an external consumer,
+such as a Power Automate flow, binds by internal name. The deploy does not
+read the section; the validator does. A pair naming an entity the schema
+lacks is `unknown_entity`, and one naming a column the deploy would not
+create is `watched_column_not_rendered`, both errors, so a column a flow
+depends on cannot be renamed in the DBML or deleted from it without failing
+the build. Change what people see through `display_names.overrides`, which
+leaves the internal name alone.
 
 ## Protection
 

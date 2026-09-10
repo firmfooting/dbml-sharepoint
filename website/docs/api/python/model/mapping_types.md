@@ -176,7 +176,11 @@ class WatchedList:
     column: str
 ```
 
-A (entity, column) pair watched by W10 status capture.
+A column an external consumer, such as a flow, binds by internal name.
+
+The deploy does not read these. The validator refuses a pair naming a
+column the deploy would not create, so the column cannot be renamed in
+the DBML or deleted from it without failing the build.
 
 ### `FormVisibility`
 
