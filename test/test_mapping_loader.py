@@ -1357,7 +1357,12 @@ def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: P
     assert "retention_policies" in str(err.value)
 
 
-_TOP_LEVEL_READERS = ("load_mapping", "_parse_permissions")
+# Every function that reads a top-level key off `raw`. `_parse_permissions`
+# takes the three permissions sections and `_reporting_sections` the two the
+# reporting pack reads plus the pointer that can move them.
+_TOP_LEVEL_READERS = (
+    "load_mapping", "_parse_permissions", "_reporting_sections",
+)
 
 
 def _sections_read_by_the_loader() -> set[str]:
@@ -2816,3 +2821,89 @@ def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
     ))
     with pytest.raises(ValueError, match=r"item_security: unknown key"):
         load_mapping(path)
+
+
+# --------------------------------------------- reporting_source
+
+
+def _reporting_file(tmp_path: Path, body: str) -> None:
+    (tmp_path / "reporting.yaml").write_text(body, encoding="utf-8")
+
+
+def test_reporting_source_carries_both_reporting_sections(tmp_path: Path) -> None:
+    """The two sections the REPORTING PACK reads may live beside the mapping
+    rather than inside it. The deploy reads neither, so the seam is what
+    consumes a section rather than how long the section is."""
+    _reporting_file(tmp_path, """
+reporting:
+  users_table: true
+  time_zone: Australia/Melbourne
+derived_columns:
+  Risk:
+    - kind: expr
+      name: IsOpen
+      type: logical
+      m: '[Status] = "Open"'
+""")
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.reporting.users_table is True
+    assert bundle.mapping.reporting.time_zone == "Australia/Melbourne"
+    assert [c.name for c in bundle.mapping.derived_for("Risk")] == ["IsOpen"]
+
+
+@pytest.mark.parametrize("section", ["reporting", "derived_columns"])
+def test_a_section_declared_twice_is_refused(tmp_path: Path, section: str) -> None:
+    """Two declarations of one section is a question with no right answer.
+    Whichever this picked, the other would be edited by somebody who could
+    not see it being ignored, which is the failure the split exists to
+    avoid rather than one to introduce."""
+    _reporting_file(tmp_path, "reporting:\n  users_table: true\n")
+    inline = (
+        "reporting:\n  system_columns: true" if section == "reporting"
+        else "derived_columns: {}"
+    )
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "reporting_source: reporting.yaml", inline),
+    )
+    with pytest.raises(ValueError, match="may not also be declared") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert section in str(err.value)
+
+
+def test_the_reporting_file_may_hold_nothing_else(tmp_path: Path) -> None:
+    """A file that accepted any section would be a second mapping, and which
+    of the two won would depend on where a reader happened to look."""
+    _reporting_file(tmp_path, "reporting:\n  users_table: true\nviews: {}\n")
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+    )
+    with pytest.raises(ValueError, match="unknown key") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "views" in str(err.value)
+
+
+def test_an_unreadable_reporting_source_names_the_path(tmp_path: Path) -> None:
+    """Silently loading no reporting configuration would turn a typo into a
+    pack with no derived columns and no declared zone, which generates and
+    refreshes and is simply missing everything."""
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "reporting_source: nope.yaml"),
+    )
+    with pytest.raises(ValueError, match=r"cannot read 'nope\.yaml'"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_reporting_stays_optional_without_the_pointer(tmp_path: Path) -> None:
+    """Every family that declares neither section must load unchanged: the
+    pointer is a way to move them, not a new requirement."""
+    write_mapping(tmp_path, blocks(entities("Risk")))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.reporting.users_table is False
+    assert bundle.mapping.derived_columns == {}

@@ -1503,6 +1503,29 @@ linkage (`IsDependentLookup`) is read-only in REST and CSOM, so the field is
 created with `createfieldasxml` + `FieldRef`; that mechanism is live-verified
 by `test/manual/projected-lookup-probe.js`.
 
+## `reporting_source`
+
+```yaml
+reporting_source: reporting.yaml   # holds `reporting:` and `derived_columns:`
+```
+
+Moves the two sections the reporting pack reads into their own file beside
+the mapping. Optional: a family that declares them inline is unchanged.
+
+The seam is what CONSUMES a section, not how long the section is. The
+generated deploy, rollback, assess and verify scripts read neither
+`reporting` nor `derived_columns`, so the reporting pack's configuration is
+the one part of a mapping that can move without splitting a reader in two.
+Splitting by size instead would put two halves of the deploy's own
+configuration in two files with no rule saying which half holds what.
+
+The file may hold those two sections and nothing else, and a mapping that
+points at one may not also declare either inline. Both are refused at load
+rather than merged: two declarations of one section is a question with no
+right answer, and whichever won, the other would be edited by somebody who
+could not see it being ignored. The path resolves relative to the mapping,
+the same rule as `enum_sources` and the formatter files.
+
 ## `derived_columns`
 
 ```yaml
@@ -1598,6 +1621,7 @@ enum_sources:            # shared enum vocabularies loaded from YAML
 cross_site_reference_columns: []   # Choice + URL pattern for cross-site links
 lookup_projections: {}             # dependent fields projected from lookups
 derived_columns: {}                # reporting-only columns (Power Query)
+reporting_source: null             # move reporting + derived_columns to a file
 polymorphic_patterns: []           # discriminator-typed reference columns
 watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)
