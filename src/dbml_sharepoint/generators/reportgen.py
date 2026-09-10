@@ -2309,6 +2309,22 @@ def generate_data_dictionary(
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",
+        "## Blank in a column marked required",
+        "",
+        ("A column's Required cell says what SharePoint enforces on SAVE, "
+         "which is not the same as what every row holds. SharePoint applies "
+         "a column default to NEW items only, so a required column with a "
+         "default reads blank on every row created before that column was "
+         "added to the list, and stays blank until somebody edits the row "
+         "or bulk-edits the column. The generated queries pass those blanks "
+         "through unchanged."),
+        "",
+        ("A blank in such a column therefore means either that the row "
+         "predates the column or that somebody cleared it, and nothing in "
+         "the feed separates the two. Where that distinction matters, "
+         "compare the row's Created against the release that added the "
+         "column rather than reading the blank as a data quality problem."),
+        "",
     ]
     return "\n".join(lines)
 

@@ -2726,3 +2726,16 @@ def test_only_a_list_with_a_date_column_carries_the_zone_flag() -> None:
         assert ('"DateZoneResolved"' in query) == (name in with_dates), name
         # The zone read has no other reader, so it goes with it.
         assert ("RegionalSettings/TimeZone" in query) == (name in with_dates)
+
+
+def test_the_dictionary_says_what_a_blank_required_column_means() -> None:
+    """SharePoint applies a default to NEW items only, so a required column
+    added to a live list reads blank on every row that predates it. The
+    Required cell alone says the opposite, and the pack passes the blanks
+    through, so a report cannot tell one from a cleared value."""
+    schema, bundle = _simple()
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "Blank in a column marked required" in md
+    assert "NEW items only" in md
+    assert "ItemURLResolved" in md
+    assert "DateZoneResolved" in md
