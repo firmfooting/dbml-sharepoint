@@ -23,13 +23,13 @@ from dbml_sharepoint.generators.report_m import (
     generate_dictionary_powerquery,
     generate_powerquery,
 )
+from dbml_sharepoint.generators.report_md import (
+    generate_data_dictionary,
+    generate_reporting_md,
+)
 from dbml_sharepoint.generators.report_sql import (
     generate_dictionary_sql,
     generate_sql_views,
-)
-from dbml_sharepoint.generators.reportgen import (
-    generate_data_dictionary,
-    generate_reporting_md,
 )
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping

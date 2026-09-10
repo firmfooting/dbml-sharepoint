@@ -36,7 +36,7 @@ from dbml_sharepoint.analysis.timezones import (
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.generators.report_m import generate_powerquery
-from dbml_sharepoint.generators.reportgen import (
+from dbml_sharepoint.generators.report_md import (
     generate_data_dictionary,
     generate_reporting_md,
 )

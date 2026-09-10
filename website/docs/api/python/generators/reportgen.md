@@ -1,6 +1,6 @@
 ---
 title: reportgen
-sidebar_position: 41
+sidebar_position: 42
 ---
 
 # `dbml_sharepoint.generators.reportgen`
@@ -30,29 +30,6 @@ shapes the core cannot know; they are skipped here and listed in
 guide.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
-
-### `generate_reporting_md`
-
-```python
-def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> str
-```
-
-Usage instructions + the Power BI relationship table.
-
-``site_url`` must be passed whenever the queries beside this guide were
-built with it: the setup step it documents is the difference between
-"create a parameter" and "there is nothing to create", and a guide that
-is wrong about that costs the operator the whole first hour.
-
-### `generate_data_dictionary`
-
-```python
-def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
-```
-
-Companion data dictionary: deployment/schema metadata + every list and
-column as deployed, including choices, lookup targets, calculated
-formulas, indexing, versioning and the query-layer helper columns.
 
 ### `emit_reporting`
 
