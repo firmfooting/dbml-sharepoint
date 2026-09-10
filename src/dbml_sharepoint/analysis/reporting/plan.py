@@ -41,7 +41,7 @@ from dbml_sharepoint.analysis.report_columns import (
     report_output_names,
 )
 from dbml_sharepoint.analysis.timezones import ZoneTable, zone_table
-from dbml_sharepoint.analysis.typemap import is_person, map_column
+from dbml_sharepoint.analysis.typemap import SPField, is_person, map_column
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 
@@ -239,6 +239,54 @@ def _item_url_suffix(bundle: MappingBundle, entity_name: str) -> str:
     return "/DispForm.aspx?ID="
 
 
+def _datetime_types(*, date_only: bool) -> tuple[str, str]:
+    """The (M type token, SQL type) a date-time column reports as.
+
+    Asked through `_scalar_types` for a declared column and directly for
+    the system columns Created and Modified, which have no `SPField`, so
+    the pair is spelled once for both.
+    """
+    if date_only:
+        return ("type date", "DATE")
+    return ("type datetimezone", "DATETIMEOFFSET")
+
+
+def _scalar_types(sp: SPField) -> tuple[str, str] | None:
+    """The (M type token, SQL type) a scalar field reports as, or None.
+
+    THE ONE kind-to-type table. `build_plans` reads it for a declared column
+    and `_projection_types` for a projected one, so a projection cannot land
+    a target's number in a text column while the target's own query types it
+    as a number. It used to be spelled in both places.
+
+    None for a kind that is not scalar: a record, a collection or a lookup.
+    The two callers treat that answer differently and on purpose. A direct
+    column of such a kind has its own arm in `build_plans`, because the plan
+    knows how each one arrives; a projection of one is refused, because the
+    shape it takes through the `$expand` has not been measured.
+    """
+    match sp.kind:
+        case "Text" | "Choice":
+            return ("type text", "NVARCHAR(255)")
+        case "Note":
+            return ("type text", "NVARCHAR(MAX)")
+        case "Number":
+            return ("type number", "DECIMAL(18,4)")
+        case "Boolean":
+            return ("type logical", "BIT")
+        case "DateTime":
+            return _datetime_types(date_only=sp.date_only)
+        case "Calculated":
+            # A calculated column is number, date or text and nothing else.
+            if sp.output_type == 9:
+                return ("type number", "DECIMAL(18,4)")
+            if sp.output_type == 4:
+                return ("type date", "DATE")
+            return ("type text", "NVARCHAR(255)")
+        case _:
+            return None
+
+
 def _projection_types(
     tables_by_name: dict[str, Table],
     target_entity: str,
@@ -278,38 +326,18 @@ def _projection_types(
             f"{target_entity}.{target_column} is not in the schema.",
         )
     sp = map_column(col, enum_names)
-    match sp.kind:
-        case "Text" | "Choice":
-            return ("type text", "NVARCHAR(255)")
-        case "Note":
-            return ("type text", "NVARCHAR(MAX)")
-        case "Number":
-            return ("type number", "DECIMAL(18,4)")
-        case "Boolean":
-            return ("type logical", "BIT")
-        case "DateTime":
-            if sp.date_only:
-                return ("type date", "DATE")
-            return ("type datetimezone", "DATETIMEOFFSET")
-        case "Calculated":
-            # Same three output types the direct Calculated arm resolves,
-            # and for the same reason: a calculated column is number, date
-            # or text and nothing else.
-            if sp.output_type == 9:
-                return ("type number", "DECIMAL(18,4)")
-            if sp.output_type == 4:
-                return ("type date", "DATE")
-            return ("type text", "NVARCHAR(255)")
-        case _:
-            raise ValueError(
-                f"{source}: reporting has no plan for a projection of "
-                f"{target_entity}.{target_column}, which is SharePoint field "
-                f"kind {sp.kind!r}. A projection is read through the lookup's "
-                f"$expand, and the shape a {sp.kind!r} takes on that path has "
-                f"not been measured, so it is refused rather than guessed. "
-                f"Project a scalar column, or carry this one by joining the "
-                f"target table in the model.",
-            )
+    scalar = _scalar_types(sp)
+    if scalar is not None:
+        return scalar
+    raise ValueError(
+        f"{source}: reporting has no plan for a projection of "
+        f"{target_entity}.{target_column}, which is SharePoint field "
+        f"kind {sp.kind!r}. A projection is read through the lookup's "
+        f"$expand, and the shape a {sp.kind!r} takes on that path has "
+        f"not been measured, so it is refused rather than guessed. "
+        f"Project a scalar column, or carry this one by joining the "
+        f"target table in the model.",
+    )
 
 
 def _translate_refs(text: str, renames: dict[str, str]) -> str:
@@ -467,29 +495,17 @@ def build_plans(
             # answers Title for a target with no mapping entry, which is why
             # this needs no None branch.
             lookup_display = _display_column(bundle, sp.target_list or "")
+            scalar = _scalar_types(sp)
             match sp.kind:
                 case "Skip":
                     plan.selects.append("Id")
                     plan.m_types.append(("Id", "Int64.Type"))
                     plan.sql_columns.append(("Id", "INT"))
-                case "Text" | "Choice":
-                    plan.selects.append(sp.name)
-                    plan.m_types.append((sp.name, "type text"))
-                    plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
-                case "Note":
-                    plan.selects.append(sp.name)
-                    plan.m_types.append((sp.name, "type text"))
-                    plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
-                case "Number":
-                    plan.selects.append(sp.name)
-                    plan.m_types.append((sp.name, "type number"))
-                    plan.sql_columns.append((sp.name, "DECIMAL(18,4)"))
-                case "DateTime":
-                    _plan_datetime(plan, sp.name, date_only=sp.date_only)
-                case "Boolean":
-                    plan.selects.append(sp.name)
-                    plan.m_types.append((sp.name, "type logical"))
-                    plan.sql_columns.append((sp.name, "BIT"))
+                case _ if scalar is not None:
+                    # Every scalar kind: one `$select` and one typed column
+                    # on each side. Which kinds are scalar, and what each
+                    # types as, is `_scalar_types`'s to say.
+                    _plan_scalar(plan, sp.name, scalar)
                 case "URL":
                     # SP.FieldUrlValue arrives as a record; keep the Url part.
                     plan.selects.append(sp.name)
@@ -610,17 +626,6 @@ def build_plans(
                     plan.selects.append(f"{sp.name}Id")
                     plan.multi_value_joins.append((f"{sp.name}Id", False))
                     plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
-                case "Calculated":
-                    plan.selects.append(sp.name)
-                    if sp.output_type == 9:
-                        plan.m_types.append((sp.name, "type number"))
-                        plan.sql_columns.append((sp.name, "DECIMAL(18,4)"))
-                    elif sp.output_type == 4:
-                        plan.m_types.append((sp.name, "type date"))
-                        plan.sql_columns.append((sp.name, "DATE"))
-                    else:
-                        plan.m_types.append((sp.name, "type text"))
-                        plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
                 case _:
                     # WITHOUT THIS THE TWO DRIFT AUDITS CONTRADICT EACH OTHER,
                     # and neither of them can say so.
@@ -645,10 +650,11 @@ def build_plans(
                     raise ValueError(
                         f"{table.name}.{col.name}: reporting has no plan for "
                         f"SharePoint field kind {sp.kind!r}. Add a case to "
-                        f"reporting.plan.build_plans giving it a $select, a Power "
-                        f"Query type and a SQL column type -- and a matching "
-                        f"arm in _sp_type_cell -- rather than letting it fall "
-                        f"out of every generated query.",
+                        f"reporting.plan.build_plans (or, for a scalar kind, "
+                        f"an arm to _scalar_types) giving it a $select, a "
+                        f"Power Query type and a SQL column type -- and a "
+                        f"matching arm in _sp_type_cell -- rather than letting "
+                        f"it fall out of every generated query.",
                     )
             # After the arms, so an unhandled kind is refused by the `case _`
             # above with the entity and the column in the message rather than
@@ -672,7 +678,7 @@ def build_plans(
                     _plan_person(plan, name)
                     system_outputs.update((f"{name}Id", f"{name}Title"))
                 elif kind == "datetime":
-                    _plan_datetime(plan, name, date_only=False)
+                    _plan_scalar(plan, name, _datetime_types(date_only=False))
                     system_outputs.add(name)
                 else:
                     raise ValueError(
@@ -752,14 +758,12 @@ def _plan_person(plan: ListPlan, name: str) -> None:
     plan.person_columns.append(name)
 
 
-def _plan_datetime(plan: ListPlan, name: str, *, date_only: bool) -> None:
+def _plan_scalar(plan: ListPlan, name: str, types: tuple[str, str]) -> None:
+    """A scalar column: selected as is, typed on each side as `types` says."""
+    m_type, sql_type = types
     plan.selects.append(name)
-    if date_only:
-        plan.m_types.append((name, "type date"))
-        plan.sql_columns.append((name, "DATE"))
-    else:
-        plan.m_types.append((name, "type datetimezone"))
-        plan.sql_columns.append((name, "DATETIMEOFFSET"))
+    plan.m_types.append((name, m_type))
+    plan.sql_columns.append((name, sql_type))
 
 
 # The two M type tokens `AsDate` covers, and so the two that must be kept out
