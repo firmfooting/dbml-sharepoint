@@ -10,6 +10,13 @@ same file renders as an ERD on dbdiagram.io. The deployer consumes the
 subset below; the validator rejects anything outside it with a named
 finding rather than guessing.
 
+What belongs here and what belongs in
+[`mapping.yaml`](./mapping.md) follows one rule, which is written down in
+[the development philosophy](../development/philosophy.md): the schema
+declares the logical model in standard DBML, and everything that is
+SharePoint syntax, deployment behaviour or a consumer's computation lives
+in the mapping. Every column here becomes a field.
+
 ## The table note is required
 
 Every `Table` must carry a table-level `Note:`. A table without one fails

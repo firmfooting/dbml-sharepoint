@@ -98,7 +98,33 @@ internal names plus overrides; style JSON derives from tokens; the API
 docs derive from the source. Where a fact appears in two places, one of
 them is generated from the other, never maintained in parallel.
 
-## 10. Byte-golden discipline
+## 10. The schema declares the model, the mapping declares everything else
+
+`schema.dbml` declares the logical model using only constructs standard DBML
+already has: tables, columns and their types, notes, refs, enums and indexes.
+The same file renders as an ERD on dbdiagram.io, and every column in it
+becomes a SharePoint field. Everything that is SharePoint syntax, deployment
+behaviour or a consumer's computation lives in `mapping.yaml`.
+
+The rule decides the cases that look borderline. Indexes are declared in the
+DBML because DBML has indexes. A calculated column's existence and return
+type are in the DBML, by its `calculated_*` type, while its formula is in the
+mapping, because a formula is SharePoint syntax. Retirement is in the mapping
+because it is a lifecycle fact and the column stays declared. Derived
+reporting columns are in the mapping and have no DBML footprint at all,
+because nothing is deployed for them and an ERD showing fields no list has
+would be a lie.
+
+DBML gained custom key-value metadata in July 2026, so "the schema cannot
+carry it" is no longer why. The reasons that hold are that the file must stay
+readable by tools that know only standard DBML, and that a reader has to be
+able to trust that every column in it is a field.
+
+Computed columns themselves are not standard DBML. They have been requested
+since 2020 and are neither implemented nor refused, so the type vocabulary
+above is the most the schema can say about one.
+
+## 11. Byte-golden discipline
 
 deploy.js.txt generation is pinned by a byte-exact golden fixture. Any
 template change fails the golden test until the fixture is regenerated
@@ -106,7 +132,7 @@ template change fails the golden test until the fixture is regenerated
 accident. Checksums hash LF-normalised content so the discipline holds
 across platforms.
 
-## 11. Scale honesty
+## 12. Scale honesty
 
 Anything bounded says so: paging loops have safety stops, truncation is
 logged, "not assessable" is printed rather than implied as covered, and

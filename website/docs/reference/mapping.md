@@ -13,6 +13,11 @@ Relative paths inside it (formatter files, `enum_sources`,
 `retention_policies_source`) resolve against the mapping file's own
 directory, so builds work from any working directory.
 
+Why a fact is here rather than in the schema follows one rule, written down in
+[the development philosophy](../development/philosophy.md): the schema
+declares the logical model in standard DBML, and everything that is SharePoint
+syntax, deployment behaviour or a consumer's computation lives here.
+
 ## Identity
 
 ```yaml
