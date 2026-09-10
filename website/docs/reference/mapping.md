@@ -1521,6 +1521,11 @@ the one part of a mapping that can move without splitting a reader in two.
 Splitting by size instead would put two halves of the deploy's own
 configuration in two files with no rule saying which half holds what.
 
+The rule is about sections, not identity fields. `prefix_owner` is also
+read only by the reporting pack, and it stays in the mapping: it is a
+scalar qualifying the `prefix` beside it, not a section with a consumer of
+its own.
+
 The file may hold those two sections and nothing else, and a mapping that
 points at one may not also declare either inline. Both are refused at load
 rather than merged: two declarations of one section is a question with no
