@@ -73,6 +73,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.clock_usage", "which clock cells a pack uses, and where"),
     ("analysis.timezones", "a declared site zone's daylight-saving transitions, as data"),
     ("analysis.derived", "derived reporting columns: what each contributes and reads"),
+    ("analysis.reporting.plan", "the reporting plan: what each list's queries carry, as data"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),
@@ -93,6 +94,13 @@ LAYERS: dict[str, str] = {
     "model": "model: inputs to typed objects",
     "analysis": "analysis: rules and projections",
     "generators": "generators: one artifact family each",
+}
+
+# Packages nested inside a layer, with their sidebar label. Each sits after
+# the layer's own pages, which is where a reader who has met the layer
+# looks for the part that grew its own package.
+SUBPACKAGES: dict[str, str] = {
+    "analysis.reporting": "reporting: the plan and its rows, as data",
 }
 
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
@@ -325,6 +333,13 @@ def generate_python_pages() -> None:
         write_page(
             out_dir / layer / "_category_.json",
             f'{{\n  "label": "{label}",\n  "position": {layer_position}\n}}\n',
+        )
+    for offset, (subpackage, label) in enumerate(SUBPACKAGES.items(), start=1):
+        directory = out_dir / subpackage.replace(".", "/")
+        directory.mkdir()
+        write_page(
+            directory / "_category_.json",
+            f'{{\n  "label": "{label}",\n  "position": {len(MODULES) + offset}\n}}\n',
         )
     for position, (module_name, role) in enumerate(MODULES, start=1):
         module = importlib.import_module(f"dbml_sharepoint.{module_name}")
