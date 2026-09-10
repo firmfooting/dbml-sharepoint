@@ -139,6 +139,57 @@ Each list with a date-only column carries **`DateZoneResolved`**. False
 means that read failed and those columns were truncated in UTC, which the
 refresh reports as success either way.
 
+## Timestamps convert by the declared zone
+
+A date-only value anchors its own offset, because it is local midnight. A
+timestamp such as `Created` does not: it is an instant, and turning it into
+the date or the time the site showed needs the offset that was in force at
+that instant, which changes twice a year in most zones.
+
+Power Query cannot answer that on its own. M has no time zone database:
+`DateTimeZone.SwitchZone` shifts by a fixed offset, and
+`DateTimeZone.ToLocal` uses the zone of the machine running the refresh,
+which in the Power BI Service is UTC. SharePoint does not fill the gap. The
+`TimeZone` object the query already reads carries the two biases and no
+transition dates; those exist only in the page context a browser sees,
+which Power Query cannot reach.
+
+So the pack ships the transitions. With
+[`reporting.time_zone`](../reference/mapping.md#time_zone) declared as an
+IANA name, every list query carries that zone's transitions from 2000 to
+2050 as a `SiteTransitions` list, generated from the IANA database
+(Python's `zoneinfo`) when the pack is built, and two helpers over them:
+`AsSiteDateTime` gives the site-local date and time of a UTC timestamp
+and `AsSiteDate` its site-local date, so a derived column can be written
+as `AsSiteDate([Created])`. The table is derived from the zone's real
+rules, which is why the mapping declares a name rather than a rule: a
+30-minute shift, southern-hemisphere dates, a rule change part way through
+the window and a zone that has abolished daylight saving all come out
+right. About a hundred rows ride in each query.
+
+Two consequences follow. **The pack must be regenerated when the zone's
+rules change**, because the rows are data fixed at build time; a
+timestamp past the last row takes that row's offset, which is right until
+the rules move. And **`DateZoneResolved` gains a second meaning**: on
+every list, not only those with a date-only column, it is true when the
+site's zone was read and the offsets it reports are exactly the offsets
+the declared zone uses under its current rule, the one the IANA database
+projects to the end of the window. A pack built for one zone and
+refreshed against a site set to another reads false on every row rather
+than converting by the wrong table. The comparison is against the current
+rule and not the zone's history, because the site's biases describe only
+the current rule: a zone that abolished daylight saving, such as
+`America/Sao_Paulo` in 2019 or `Asia/Tehran` in 2022, compares as the one
+offset it uses now, so a site correctly set to it does not read false for
+ever.
+
+The date-only conversion is unchanged and stays the default for date-only
+columns. The transition table is additive, for timestamps.
+`test/manual/site-zone-transitions-probe.js` reads a live site's zone and
+asks SharePoint's own `utctolocaltime` for the offset a minute before and
+at a few of the shipped transitions, so the table can be checked against
+the platform rather than believed.
+
 ## Reporting-only columns
 
 A mapping can declare columns that exist in the report and nowhere else:
