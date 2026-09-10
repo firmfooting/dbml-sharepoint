@@ -57,6 +57,10 @@ cross_site_reference_columns: []
 reporting:
   system_columns: true
   users_table: true
+  # The site's IANA zone. Every list query then carries this zone's
+  # daylight-saving transitions, so a derived column can convert a UTC
+  # timestamp to the site's date with AsSiteDate rather than truncate it.
+  time_zone: Australia/Melbourne
 
 # 200 on the three accountability lists because version history is this
 # family's audit for self-service confirmation: anyone named Responsible or
@@ -468,18 +472,18 @@ derived_columns:
       hidden: true
       description: 'The issue owner''s sign-in name, derived the same way as Person[Sign-in Name], for the Raise an action flow to set Assigned To.'
   ServiceRequest:
-    # The date part of Created, truncated in UTC.
+    # The date part of Created in the site's zone (reporting.time_zone), converted through the daylight-saving transitions the pack carries rather than truncated in UTC.
     - kind: expr
       name: CreatedDate
       type: date
-      m: 'Date.From([Created])'
-      description: 'The date part of Created, truncated in UTC.'
-    # The date part of Modified, truncated in UTC.
+      m: 'AsSiteDate([Created])'
+      description: 'The date part of Created in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
+    # The date part of Modified in the site's zone (reporting.time_zone), converted through the daylight-saving transitions the pack carries rather than truncated in UTC.
     - kind: expr
       name: ModifiedDate
       type: date
-      m: 'Date.From([Modified])'
-      description: 'The date part of Modified, truncated in UTC.'
+      m: 'AsSiteDate([Modified])'
+      description: 'The date part of Modified in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
     - kind: count
       from: Action
       via: RelatedServiceRequest
@@ -643,12 +647,12 @@ derived_columns:
       m: '"Decide"'
       description: 'A constant link label (''Decide''): in a table it opens the SharePoint edit form for the row so the register can be updated from the report.'
   Activity:
-    # The date part of Modified, truncated in UTC.
+    # The date part of Modified in the site's zone (reporting.time_zone), converted through the daylight-saving transitions the pack carries rather than truncated in UTC.
     - kind: expr
       name: ModifiedDate
       type: date
-      m: 'Date.From([Modified])'
-      description: 'The date part of Modified, truncated in UTC.'
+      m: 'AsSiteDate([Modified])'
+      description: 'The date part of Modified in the site''s time zone (Australia/Melbourne), converted through the daylight-saving transitions the pack carries. DateZoneResolved is false on every row where the site is set to another zone.'
     - kind: lookup
       from: Stakeholder
       via: AccountableForum
