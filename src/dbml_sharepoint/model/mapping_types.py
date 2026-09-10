@@ -617,8 +617,20 @@ class Mapping:
     # each group and level. Never the current prefix, never repeated.
     previous_prefixes: tuple[str, ...] = ()
     # {entity: {column: formula}} for calculated_text/calculated_number
-    # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
-    # attribute to carry them); the validator enforces the pairing.
+    # columns (SP.FieldCalculated).
+    #
+    # The COLUMN is declared in the DBML, by its calculated_* type; only the
+    # formula is here, because a formula is SharePoint syntax and the schema
+    # carries none. See the boundary rule in `development/philosophy.md`.
+    #
+    # This used to say DBML could not carry a formula at all. That stopped
+    # being true: DBML gained custom key-value metadata in July 2026 and
+    # pydbml reads it under `allow_properties=True`, which the parser does
+    # not pass. Deliberately, and not only for the reason above: the flag
+    # also turns a misspelled `not null` or `default` into silent metadata
+    # rather than the parse error it is today.
+    #
+    # The validator enforces the pairing both ways.
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     # {entity: {column: (target columns)}} for a lookup column's additional
     # projected (dependent) fields. Each target column is projected onto the
