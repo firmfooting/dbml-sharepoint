@@ -1306,6 +1306,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`list_permissions.default.site_role` names a role no entity "
         "declares."
     ),
+    FindingCode.UNKNOWN_TIME_ZONE: (
+        "`reporting.time_zone` is not a name the IANA time zone database "
+        "declares. The reporting pack derives the site's daylight-saving "
+        "transitions from that database, so the name must be one of its "
+        "zone names, such as `Australia/Melbourne` or `Europe/London`."
+    ),
     FindingCode.UNKNOWN_TABLE: (
         "A `list_permissions.overrides` key is not a DBML table name. "
         "Use the unprefixed name."

@@ -36,6 +36,12 @@ dependencies = [
   "jinja2>=3.1.3",
   "typer>=0.12.0",
   "rich>=15.0.0",
+  # `analysis/timezones.py` derives a declared zone's daylight-saving
+  # transitions through `zoneinfo`, which reads the operating system's
+  # database and finds none on Windows, where this project is developed.
+  # This package supplies one there; where the system has its own,
+  # `zoneinfo` prefers that copy.
+  "tzdata>=2026.3",
 ]
 
 [project.urls]

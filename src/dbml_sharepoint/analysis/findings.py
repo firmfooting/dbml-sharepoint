@@ -50,6 +50,8 @@ class Section(StrEnum):
     # rather than as a dotted path. The section is real even where the message
     # never spelled it.
     RETENTION = "retention"
+    # The `reporting:` switches, which are not keyed by entity.
+    REPORTING = "reporting"
     RETIRED_COLUMNS = "retired_columns"
     SCHEMA = "schema"
     VERSIONING = "versioning"
@@ -270,6 +272,7 @@ class FindingCode(StrEnum):
     UNKNOWN_ENTITY = "unknown_entity", "error"
     UNKNOWN_FIELD_SET_REFERENCE = "unknown_field_set_reference", "error"
     UNKNOWN_RETENTION_POLICY = "unknown_retention_policy", "error"
+    UNKNOWN_TIME_ZONE = "unknown_time_zone", "error"
     UNMAPPED_SCHEMA_TABLE = "unmapped_schema_table", "error"
     UNSUPPORTED_BASE_TEMPLATE = "unsupported_base_template", "error"
     # Warning severity: #267 already protects the emitted filter, so an

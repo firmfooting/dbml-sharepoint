@@ -197,7 +197,18 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
 `lookup-showfield-probe.js`, `boolean-field-probe.js`,
-`title-rename-probe.js`, `title-seal-probe.js`
+`title-rename-probe.js`, `title-seal-probe.js`,
+`site-zone-transitions-probe.js`
+
+`site-zone-transitions-probe.js` files under `date` because its subject is
+the relation between a stored UTC instant and the site-local clock, which is
+where `date-storage-probe.js` measured a date-only value landing on local
+midnight. It reuses `control-site-time-zone` from that probe, the same
+question by the same method. Its `shipped-` rows compare the daylight-saving
+transitions the reporting pack generates from the IANA database
+(`analysis/timezones.py`) with what `utctolocaltime` applies one minute
+before and at each sampled transition, and its offsets row is the check the
+emitted `Zone[resolved]` makes, asked of the platform directly.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 

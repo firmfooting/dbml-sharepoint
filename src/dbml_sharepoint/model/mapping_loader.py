@@ -623,7 +623,7 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
 def _parse_reporting(block: Any) -> ReportingOptions:
     section = _require_mapping(block, "reporting")
     switches = ("system_columns", "users_table")
-    _reject_unknown_keys(section, set(switches), "reporting")
+    _reject_unknown_keys(section, {*switches, "time_zone"}, "reporting")
     values: dict[str, bool] = {}
     for name in switches:
         value = section.get(name, False)
@@ -634,7 +634,18 @@ def _parse_reporting(block: Any) -> ReportingOptions:
                 f"reporting.{name}: expected true or false, got {value!r}",
             )
         values[name] = value
-    return ReportingOptions(**values)
+    # Shape only. Whether the name is a zone the IANA database declares is
+    # the validator's question (`UNKNOWN_TIME_ZONE`), the same split as
+    # `lookup_projections`.
+    time_zone = section.get("time_zone")
+    if time_zone is not None and (
+        not isinstance(time_zone, str) or not time_zone.strip()
+    ):
+        raise ValueError(
+            f"reporting.time_zone: expected an IANA zone name such as "
+            f"Australia/Melbourne, got {time_zone!r}",
+        )
+    return ReportingOptions(**values, time_zone=time_zone)
 
 
 def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:

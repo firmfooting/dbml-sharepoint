@@ -175,7 +175,12 @@ def report_column_names(
     names += [ITEM_URL_COLUMN, ITEM_URL_RESOLVED_COLUMN]
     names += list(REPORT_FIXED_COLUMNS)
     names.append(f"{table.name}{REPORT_KEY_SUFFIX}")
-    if _has_date_column(table, enum_names, cross_site_keys):
+    # A declared zone puts the flag on every list: the query reads the site's
+    # zone to check it against the declaration whether or not a column here
+    # needs converting, and the flag is where that answer surfaces.
+    if mapping.reporting.time_zone is not None or _has_date_column(
+        table, enum_names, cross_site_keys,
+    ):
         names.append(DATE_ZONE_RESOLVED_COLUMN)
     names += fk_keys
     if mapping.reporting.users_table:

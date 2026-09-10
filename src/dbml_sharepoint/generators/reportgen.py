@@ -25,6 +25,7 @@ site-user id and display name.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,12 @@ from dbml_sharepoint.analysis.report_columns import (
     person_key_column,
     projection_output_name,
     report_output_names,
+)
+from dbml_sharepoint.analysis.timezones import (
+    WINDOW_END,
+    WINDOW_START,
+    ZoneTable,
+    zone_table,
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
@@ -173,6 +180,10 @@ class _ListPlan:
     # no mapping.
     person_columns: list[str] = field(default_factory=list)
     users_table: bool = False
+    # The declared site zone's transitions (`reporting.time_zone`), or None.
+    # Carried on the plan so the renderer and the column list cannot answer
+    # "does this query carry the zone table" differently.
+    zone: ZoneTable | None = None
     # Reporting-only columns, in declaration order. Resolved after every
     # plan exists; see `_DerivedStep`.
     derived: list[_DerivedStep] = field(default_factory=list)
@@ -467,6 +478,10 @@ def _build_plans(
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = bundle.mapping.cross_site_keys()
     prefix = bundle.mapping.prefix
+    # Derived once per build, and fail-closed on a name the database does
+    # not declare: `report` does not validate, so this raise is what it has.
+    time_zone = bundle.mapping.reporting.time_zone
+    zone = zone_table(time_zone) if time_zone is not None else None
 
     plans: list[_ListPlan] = []
     for table in tables:
@@ -476,6 +491,7 @@ def _build_plans(
             item_url_path=_item_url_path(bundle, table.name, prefix + table.name),
             item_url_suffix=_item_url_suffix(bundle, table.name),
             users_table=bundle.mapping.reporting.users_table,
+            zone=zone,
         )
         for col in table.columns:
             if (table.name, col.name) in cross_site_keys:
@@ -985,41 +1001,89 @@ _SITE_ORIGIN_M: list[str] = [
 # wrong candidate does not land on midnight and is discarded rather than
 # believed. Zero is among them, which is what a calculated column arriving as
 # a bare local date needs, and it is tried first so the precedence is fixed.
+#
+# A DECLARED ZONE (`reporting.time_zone`) adds a second use of the same read.
+# The pack then ships that zone's transitions (see `_site_zone_m`), which is
+# only right if the site is set to that zone, and nothing else in the pack can
+# tell. So `resolved` also requires the site's two candidates to be exactly
+# the offsets the declared zone uses under its CURRENT rule, and a mapping
+# declaring Melbourne against a site set to London reads false on every row
+# rather than converting by the wrong table.
+#
+# Current rule, not the window's history: the three biases describe the rule
+# the site's zone is under today, so a zone that abolished daylight saving
+# inside the window (Brazil 2019, Iran 2022) reports one offset, and a check
+# against both of its historical offsets would read false on every row of
+# every table for ever, with nothing wrong. A standing false is what destroys
+# a flag whose meaning is "false is worth investigating".
+#
+# Symmetric, and written with `List.Difference` in both directions rather
+# than list equality: a site set to Brisbane, which has one offset, against a
+# declared Melbourne must still read false, and nothing here can execute M,
+# so the check leans on nothing whose behaviour could be in question.
 
 
-#: The `Zone` binding: the site's zone, read once per refresh, and whether
-#: the read `resolved`.
-_ZONE_M: list[str] = [
-    "    // The site's time zone, read once per refresh; see AsDate below for",
-    "    // what is done with it and why both biases are candidates.",
-    "    Zone =",
-    "        try",
-    "            let",
-    "                Info = OData.Feed(",
-    '                    SiteRoot & "/_api/web/RegionalSettings/TimeZone",',
-    "                    null,",
-    '                    [Implementation = "2.0"]',
-    "                )[Information],",
-    '                Bias = Number.From(Record.FieldOrDefault(Info, "Bias", 0)),',
-    "                Standard =",
-    '                    Number.From(Record.FieldOrDefault(Info, "StandardBias", 0)),',
-    "                Daylight =",
-    '                    Number.From(Record.FieldOrDefault(Info, "DaylightBias", 0))',
-    "            in",
-    "                [",
-    "                    resolved = true,",
-    "                    // Minutes EAST of UTC. A Win32 bias is the number of",
-    "                    // minutes to ADD to local time to reach UTC, so the",
-    "                    // sign is flipped. If that convention is ever wrong,",
-    "                    // neither candidate lands on midnight and the value",
-    "                    // falls through rather than shifting by 20 hours.",
-    "                    offsets =",
-    "                        List.Distinct(",
-    "                            {0, - (Bias + Standard), - (Bias + Daylight)}",
-    "                        )",
-    "                ]",
-    "        otherwise [resolved = false, offsets = {0}],",
-]
+def _zone_m(zone: ZoneTable | None) -> list[str]:
+    """The `Zone` binding: the site's zone, read once per refresh, and
+    whether the read `resolved`, which with a declared zone also means it
+    agreed with the declaration."""
+    if zone is None:
+        resolved = ["                    resolved = true,"]
+    else:
+        declared = "{" + ", ".join(str(o) for o in zone.current_offsets) + "}"
+        resolved = [
+            "                    // Read, AND agreeing with the declared zone",
+            f"                    // ({zone.zone}): the offsets the site",
+            "                    // answers with must be exactly the ones that",
+            "                    // zone uses under its current rule, or every",
+            "                    // conversion through the shipped table is by",
+            "                    // the wrong rule.",
+            "                    resolved =",
+            "                        let",
+            "                            SiteOffsets =",
+            "                                List.Distinct(",
+            "                                    {- (Bias + Standard), - (Bias + Daylight)}",
+            "                                ),",
+            f"                            DeclaredOffsets = {declared}",
+            "                        in",
+            "                            List.IsEmpty(",
+            "                                List.Difference(SiteOffsets, DeclaredOffsets)",
+            "                            )",
+            "                            and List.IsEmpty(",
+            "                                List.Difference(DeclaredOffsets, SiteOffsets)",
+            "                            ),",
+        ]
+    return [
+        "    // The site's time zone, read once per refresh; see AsDate below for",
+        "    // what is done with it and why both biases are candidates.",
+        "    Zone =",
+        "        try",
+        "            let",
+        "                Info = OData.Feed(",
+        '                    SiteRoot & "/_api/web/RegionalSettings/TimeZone",',
+        "                    null,",
+        '                    [Implementation = "2.0"]',
+        "                )[Information],",
+        '                Bias = Number.From(Record.FieldOrDefault(Info, "Bias", 0)),',
+        "                Standard =",
+        '                    Number.From(Record.FieldOrDefault(Info, "StandardBias", 0)),',
+        "                Daylight =",
+        '                    Number.From(Record.FieldOrDefault(Info, "DaylightBias", 0))',
+        "            in",
+        "                [",
+        *resolved,
+        "                    // Minutes EAST of UTC. A Win32 bias is the number of",
+        "                    // minutes to ADD to local time to reach UTC, so the",
+        "                    // sign is flipped. If that convention is ever wrong,",
+        "                    // neither candidate lands on midnight and the value",
+        "                    // falls through rather than shifting by 20 hours.",
+        "                    offsets =",
+        "                        List.Distinct(",
+        "                            {0, - (Bias + Standard), - (Bias + Daylight)}",
+        "                        )",
+        "                ]",
+        "        otherwise [resolved = false, offsets = {0}],",
+    ]
 
 # `Date.From` handles date, datetime and datetimezone directly. The text
 # branch uses `DateTimeZone.From`, which parses ISO 8601 including the `Z`
@@ -1028,6 +1092,11 @@ _ZONE_M: list[str] = [
 # already the UTC wall clock, and text carrying no zone at all is already
 # local, so converting would move the second kind by the REPORT MACHINE's
 # offset, which has nothing to do with the site's.
+#
+# `AsStamp` is its own block because two converters read it: `AsDate` below,
+# and the declared-zone helpers in `_site_zone_m`, which a query can carry
+# with no date-only column at all. Emitted once, before whichever of the two
+# the query needs.
 _AS_STAMP_M: list[str] = [
     "    // The wall clock behind whichever shape the value arrived in.",
     "    AsStamp = (v as any) as nullable datetime =>",
@@ -1075,6 +1144,72 @@ _AS_DATE_M: list[str] = [
 # of `Table.TransformColumnTypes`. Only `type date` today: a calculated column
 # is number, date or text, so `type datetimezone` always arrives typed.
 _TOLERANT_DATE_TYPES = frozenset({"type date"})
+
+
+def _m_datetime_literal(stamp: datetime) -> str:
+    """A `#datetime(...)` literal for a UTC instant, to the second."""
+    return (
+        f"#datetime({stamp.year}, {stamp.month}, {stamp.day}, "
+        f"{stamp.hour}, {stamp.minute}, {stamp.second})"
+    )
+
+
+def _site_zone_m(zone: ZoneTable) -> list[str]:
+    """The declared zone's transition table and the helpers that read it.
+
+    Emitted whenever a zone is declared, whether or not anything in the
+    query calls them: a derived column may, and predictable output beats
+    an emission rule that can be got wrong. About 100 rows for the window.
+
+    `SiteOffsetAt` takes the last transition at or before the instant, which
+    is `ZoneTable.offset_at` in M, so a test can pin the two together. The
+    date-only conversion is NOT this: `AsDate` resolves the offset from the
+    value itself and needs no declaration, so it stays the default for a
+    date-only column. These helpers are for TIMESTAMPS.
+    """
+    rows = [
+        f"        {{{_m_datetime_literal(at)}, {offset}}},"
+        for at, offset in zone.transitions
+    ]
+    if rows:
+        # M list literals do not allow a trailing comma.
+        rows[-1] = rows[-1].rstrip(",")
+    window = f"{WINDOW_START:%Y-%m-%d} to {WINDOW_END:%Y-%m-%d}"
+    return [
+        "    // The declared zone's daylight-saving transitions, generated from",
+        f"    // the IANA database at build time ({zone.zone}, {window}):",
+        "    // {UTC instant of the change, minutes east of UTC from then on}.",
+        "    // M has no zone database and SharePoint serves no transition",
+        "    // dates, so they ship here. Regenerate the pack when the zone's",
+        "    // rules change; a timestamp past the last row takes that row's",
+        "    // offset.",
+        "    SiteTransitions = List.Buffer({",
+        *rows,
+        "    }),",
+        "    // The offset in force at a UTC instant: the last transition at or",
+        "    // before it, or the offset the window opened with.",
+        "    SiteOffsetAt = (stamp as datetime) as number =>",
+        "        let",
+        "            Before = List.Select(SiteTransitions, each _{0} <= stamp)",
+        "        in",
+        f"            if List.IsEmpty(Before) then {zone.start_offset}",
+        "            else List.Last(Before){1},",
+        "    // The site-local wall clock behind a UTC timestamp, whichever shape",
+        "    // it arrived in; see AsStamp above.",
+        "    AsSiteDateTime = (v as any) as nullable datetime =>",
+        "        let",
+        "            Stamp = AsStamp(v)",
+        "        in",
+        "            if Stamp = null then null",
+        "            else Stamp + #duration(0, 0, SiteOffsetAt(Stamp), 0),",
+        "    // The site-local date of a UTC timestamp. Not for a date-only",
+        "    // column, which AsDate resolves from the value itself.",
+        "    AsSiteDate = (v as any) as nullable date =>",
+        "        let",
+        "            Local = AsSiteDateTime(v)",
+        "        in",
+        "            if Local = null then null else DateTime.Date(Local),",
+    ]
 
 
 def _item_url_base_m(plan: _ListPlan) -> list[str]:
@@ -1404,11 +1539,12 @@ def _tolerant_date_columns(plan: _ListPlan) -> list[str]:
 
 def _reads_zone(plan: _ListPlan) -> bool:
     """Whether the query reads the site's zone, and so carries
-    `DateZoneResolved`: for a date-only column. Asked by the planner and by
-    the renderer; `analysis/derived.py` answers the same for the column
-    list, and the family sweep in `test_derived_columns` holds the two
-    together."""
-    return bool(_tolerant_date_columns(plan))
+    `DateZoneResolved`: for a date-only column, or for a declared zone,
+    whose agreement check has nowhere else to surface. Asked by the planner
+    and by the renderer; `analysis/derived.py` answers the same for the
+    column list, and the family sweep in `test_derived_columns` holds the
+    two together."""
+    return plan.zone is not None or bool(_tolerant_date_columns(plan))
 
 
 def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
@@ -1458,9 +1594,10 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         *_SITE_ORIGIN_M,
         *_item_url_base_m(plan),
         *site_lines,
-        *(_ZONE_M if reads_zone else []),
+        *(_zone_m(plan.zone) if reads_zone else []),
         *(_AS_STAMP_M if reads_zone else []),
         *(_AS_DATE_M if dates else []),
+        *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = OData.Feed(",
         f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
         f'            & "{query_string}"',
@@ -1671,7 +1808,8 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # zone every date-only column silently truncates in UTC, which is a
         # day early east of UTC, and the refresh succeeds. A report that
         # cannot see which branch ran cannot tell a correct date from one
-        # the zone read failed to correct.
+        # the zone read failed to correct. With a declared zone the same
+        # flag says whether the site agreed with it; see `_zone_m`.
         lines[-1] += ","
         lines += [
             "    WithDateZoneResolved = Table.AddColumn(",
@@ -2031,6 +2169,48 @@ def generate_sql_views(
 # ------------------------------------------------------------ reporting guide
 
 
+def _date_zone_guide_paragraphs(time_zone: str | None) -> list[str]:
+    """What the guide says about `DateZoneResolved`, and about the declared
+    zone's helpers where there is one."""
+    if time_zone is None:
+        return [
+            (f"A list with a date-only column also carries "
+             f"**{DATE_ZONE_RESOLVED_COLUMN}**, for the same reason. A "
+             "date-only value is site-local midnight served as a UTC "
+             "instant, so the query reads the site's time zone to turn it "
+             "back into the date the list shows. That read fails soft too, "
+             "and without it those columns truncate in UTC and read a day "
+             "early east of UTC."),
+        ]
+    table = zone_table(time_zone)
+    return [
+        (f"Every list carries **{DATE_ZONE_RESOLVED_COLUMN}**, for the same "
+         "reason. A date-only value is site-local midnight served as a UTC "
+         "instant, so the query reads the site's time zone to turn it back "
+         "into the date the list shows. That read fails soft too, and "
+         "without it those columns truncate in UTC and read a day early "
+         "east of UTC. The mapping declares the site's zone as "
+         f"`{time_zone}`, so the flag is also false when the zone the site "
+         "reports does not agree with it, which means the offsets the site "
+         "reports are not exactly the ones that zone uses under its current "
+         "rule: a pack built for one zone and refreshed against a site set "
+         "to another says so on every row rather than converting timestamps "
+         "by the wrong rule."),
+        "",
+        (f"Each list query also carries `{time_zone}`'s daylight-saving "
+         f"transitions ({len(table.transitions)} rows, "
+         f"{WINDOW_START:%Y-%m-%d} to {WINDOW_END:%Y-%m-%d}), generated from "
+         "the IANA database when the pack was built, and two helpers over "
+         "them: `AsSiteDateTime` turns a UTC timestamp such as `Created` "
+         "into the site's local date and time, and `AsSiteDate` into its "
+         "local date. Power Query has no time zone database of its own and "
+         "SharePoint does not serve the transition dates, which is why they "
+         "ship in the query. Regenerate the pack when the zone's rules "
+         "change. A date-only column needs neither: its value is local "
+         "midnight already, and the query resolves the offset from that."),
+    ]
+
+
 def _users_guide_paragraphs() -> list[str]:
     """What the guide says about `_Users` and the person keys, once."""
     return [
@@ -2273,13 +2453,7 @@ def generate_reporting_md(
          "than zero, which is why the blank is worth checking."),
         ":::",
         "",
-        (f"A list with a date-only column also carries "
-         f"**{DATE_ZONE_RESOLVED_COLUMN}**, for the same reason. A "
-         "date-only value is site-local midnight served as a UTC "
-         "instant, so the query reads the site's time zone to turn it "
-         "back into the date the list shows. That read fails soft too, "
-         "and without it those columns truncate in UTC and read a day "
-         "early east of UTC."),
+        *_date_zone_guide_paragraphs(bundle.mapping.reporting.time_zone),
         "",
         "## Data dictionary page (in-report)",
         "",
@@ -2334,6 +2508,25 @@ def generate_reporting_md(
 def _md_cell(text: str) -> str:
     """Make free text safe inside a markdown table cell."""
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _date_zone_dictionary_row(time_zone: str | None) -> str:
+    """The helper-column row for `DateZoneResolved`, which means one thing
+    more once the mapping declares the site's zone."""
+    if time_zone is None:
+        return (
+            f"| {DATE_ZONE_RESOLVED_COLUMN} | Whether the site's time zone was "
+            "read at refresh (only on lists that have a date-only column) "
+            "| False means date-only columns were truncated in UTC and may be "
+            "a day early east of UTC |"
+        )
+    return (
+        f"| {DATE_ZONE_RESOLVED_COLUMN} | Whether the site's time zone was "
+        f"read at refresh and agrees with the declared `{time_zone}` "
+        "| False means date-only columns were truncated in UTC and may be a "
+        "day early east of UTC, or the site is set to a zone other than the "
+        "one the pack's timestamp conversions were built for |"
+    )
 
 
 def _sp_type_cell(
@@ -2778,10 +2971,7 @@ def generate_data_dictionary(
          "| False means every ItemURL in the table was built from the "
          "declared title, which is a dead link on a list that has been "
          "renamed. Suppress the link rather than ship a 404 |"),
-        (f"| {DATE_ZONE_RESOLVED_COLUMN} | Whether the site's time zone was "
-         "read at refresh (only on lists that have a date-only column) "
-         "| False means date-only columns were truncated in UTC and may be "
-         "a day early east of UTC |"),
+        _date_zone_dictionary_row(mapping.reporting.time_zone),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",
