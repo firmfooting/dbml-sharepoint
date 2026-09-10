@@ -18,16 +18,18 @@ from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionar
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
-from dbml_sharepoint.generators import reportgen
+from dbml_sharepoint.generators import report_sql
 from dbml_sharepoint.generators.report_m import (
     generate_dictionary_powerquery,
     generate_powerquery,
 )
+from dbml_sharepoint.generators.report_sql import (
+    generate_dictionary_sql,
+    generate_sql_views,
+)
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
-    generate_dictionary_sql,
     generate_reporting_md,
-    generate_sql_views,
 )
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -573,7 +575,7 @@ def test_the_sql_script_carries_the_site_url_when_the_build_knows_it() -> None:
     schema, bundle = _simple()
     known = generate_sql_views(schema, bundle, "default", site_url=_BAKED)
     unknown = generate_sql_views(schema, bundle, "default")
-    placeholder = reportgen._SQL_SITE_URL_PLACEHOLDER
+    placeholder = report_sql._SQL_SITE_URL_PLACEHOLDER
     assert f":setvar SiteUrl {_BAKED}" in known.splitlines()
     assert placeholder not in known
     assert f":setvar SiteUrl {placeholder}" in unknown.splitlines()

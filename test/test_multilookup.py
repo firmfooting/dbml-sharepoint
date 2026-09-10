@@ -22,10 +22,8 @@ from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.generators.demogen import generate_demo_js
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.generators.report_m import generate_powerquery
-from dbml_sharepoint.generators.reportgen import (
-    generate_data_dictionary,
-    generate_sql_views,
-)
+from dbml_sharepoint.generators.report_sql import generate_sql_views
+from dbml_sharepoint.generators.reportgen import generate_data_dictionary
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml

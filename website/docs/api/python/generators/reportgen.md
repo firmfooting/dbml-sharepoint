@@ -1,6 +1,6 @@
 ---
 title: reportgen
-sidebar_position: 40
+sidebar_position: 41
 ---
 
 # `dbml_sharepoint.generators.reportgen`
@@ -31,17 +31,6 @@ guide.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
 
-### `generate_sql_views`
-
-```python
-def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> str
-```
-
-A single SQLCMD script: typed view per list + _Enriched join views.
-
-``site_url``, when known, is written into the ``:setvar SiteUrl`` line
-so the script needs no editing; otherwise a placeholder is left there.
-
 ### `generate_reporting_md`
 
 ```python
@@ -64,16 +53,6 @@ def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle
 Companion data dictionary: deployment/schema metadata + every list and
 column as deployed, including choices, lookup targets, calculated
 formulas, indexing, versioning and the query-layer helper columns.
-
-### `generate_dictionary_sql`
-
-```python
-def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
-```
-
-The data dictionary as SQL views built from embedded VALUES rows (no
-landing table needed), so warehouse-driven reports can surface the same
-dictionary page.
 
 ### `emit_reporting`
 

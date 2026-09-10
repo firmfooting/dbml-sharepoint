@@ -84,11 +84,13 @@ from dbml_sharepoint.generators.report_m import (
     generate_dictionary_powerquery,
     generate_powerquery,
 )
+from dbml_sharepoint.generators.report_sql import (
+    generate_dictionary_sql,
+    generate_sql_views,
+)
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
-    generate_dictionary_sql,
     generate_reporting_md,
-    generate_sql_views,
 )
 from dbml_sharepoint.model.env_file import (
     CHANGE_LOG_LIST_PARAMETER,
