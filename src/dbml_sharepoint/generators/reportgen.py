@@ -31,6 +31,12 @@ from typing import Any
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.condition_description import describe
+from dbml_sharepoint.analysis.derived import (
+    DERIVED_REFERENCE,
+    derived_output_names,
+    is_users_source,
+    lookup_key_columns,
+)
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import (
     display_column_for,
@@ -45,6 +51,7 @@ from dbml_sharepoint.analysis.report_columns import (
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
     SYSTEM_DISPLAY_TITLES,
+    USERS_DISPLAY_TITLES,
     USERS_KEY_LIST,
     fk_key_column,
     person_key_column,
@@ -65,9 +72,41 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.generators._indexes import deployable_index_columns
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_loader import DERIVED_TYPES
+from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
+
+
+@dataclass
+class _DerivedStep:
+    """One derived column, with every name already resolved.
+
+    Built in a POST-PASS over the plans, because a join has to translate the
+    columns it reads through the TARGET query's own rename map, and that map
+    only exists once the target's plan does. Reading the map rather than
+    re-deriving the display title is the point: it is the rename the target
+    query actually performs, so the two cannot disagree.
+    """
+
+    kind: str
+    name: str = ""
+    m_type: str = ""
+    m: str = ""
+    replace: bool = False
+    hidden: bool = False
+    description: str = ""
+    # The other query this step reads, by the name its file carries.
+    source_query: str = ""
+    source_entity: str = ""
+    own_key: str = ""
+    other_key: str = ""
+    # (column on the target, column produced here, M type token)
+    picks: tuple[tuple[str, str, str], ...] = ()
+    aggregate: str = ""
+    # Already translated to the names the source query ends with.
+    column: str = ""
+    where: str = ""
 
 
 @dataclass
@@ -134,6 +173,9 @@ class _ListPlan:
     # no mapping.
     person_columns: list[str] = field(default_factory=list)
     users_table: bool = False
+    # Reporting-only columns, in declaration order. Resolved after every
+    # plan exists; see `_DerivedStep`.
+    derived: list[_DerivedStep] = field(default_factory=list)
 
 
 def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> list[Table]:
@@ -296,6 +338,121 @@ def _projection_types(
                 f"Project a scalar column, or carry this one by joining the "
                 f"target table in the model.",
             )
+
+
+def _translate_refs(text: str, renames: dict[str, str]) -> str:
+    """Rewrite every `[Column]` through one query's own rename map.
+
+    An author writes internal names everywhere. A `where` and an aggregate's
+    `column` read the CHILD query's rows, and that query renamed its columns
+    in its last step, so the names have to be the ones it ends with. Taken
+    from the plan's own rename list rather than re-derived, because that list
+    IS the rename the query performs.
+    """
+    if not renames:
+        return text
+    return DERIVED_REFERENCE.sub(
+        lambda match: f"[{renames.get(match.group(1), match.group(1))}]",
+        text,
+    )
+
+
+def _resolve_derived(
+    plans: list[_ListPlan], bundle: MappingBundle, prefix: str,
+) -> None:
+    """Turn each entity's `derived_columns` into fully resolved steps.
+
+    A post-pass, so a join can read the target plan's rename map. Entries
+    naming an entity that is not reported at this site are DROPPED rather
+    than emitted against a query that will not exist: the validator has
+    already refused the declaration, and `report` does not validate.
+    """
+    by_entity = {plan.entity: plan for plan in plans}
+    for plan in plans:
+        for entry in bundle.mapping.derived_for(plan.entity):
+            step = _derived_step(entry, plan, by_entity, prefix)
+            if step is not None:
+                plan.derived.append(step)
+
+
+def _derived_step(
+    entry: DerivedColumn,
+    plan: _ListPlan,
+    by_entity: dict[str, _ListPlan],
+    prefix: str,
+) -> _DerivedStep | None:
+    hidden = entry.hidden
+    description = entry.description
+    if entry.kind == "expr":
+        # No translation: an `expr` reads THIS query, and at the point it
+        # runs this query still carries its internal names.
+        return _DerivedStep(
+            kind="expr",
+            name=entry.name,
+            m_type=DERIVED_TYPES[entry.type],
+            m=entry.m,
+            replace=entry.replace,
+            hidden=hidden,
+            description=description,
+        )
+    if is_users_source(entry):
+        # `_Users` renames unconditionally and has no plan, so its map is
+        # the shared one rather than a plan's.
+        own_key, other_key = lookup_key_columns(entry, plan.entity)
+        return _DerivedStep(
+            kind="lookup",
+            source_query=USERS_KEY_LIST,
+            source_entity=USERS_KEY_LIST,
+            own_key=own_key,
+            other_key=other_key,
+            picks=tuple(
+                (
+                    USERS_DISPLAY_TITLES.get(source, source),
+                    new_name,
+                    DERIVED_TYPES[entry.types[new_name]],
+                )
+                for new_name, source in entry.pick.items()
+            ),
+            hidden=hidden,
+            description=description,
+        )
+    target = by_entity.get(entry.from_entity)
+    if target is None:
+        return None
+    renames = dict(target.renames)
+    own_key, other_key = lookup_key_columns(entry, plan.entity)
+    if entry.kind == "lookup":
+        return _DerivedStep(
+            kind="lookup",
+            source_query=prefix + entry.from_entity,
+            source_entity=entry.from_entity,
+            own_key=own_key,
+            other_key=other_key,
+            picks=tuple(
+                (
+                    renames.get(source, source),
+                    new_name,
+                    DERIVED_TYPES[entry.types[new_name]],
+                )
+                for new_name, source in entry.pick.items()
+            ),
+            hidden=hidden,
+            description=description,
+        )
+    return _DerivedStep(
+        kind="count",
+        name=entry.name,
+        m_type=DERIVED_TYPES[entry.type],
+        source_query=prefix + entry.from_entity,
+        source_entity=entry.from_entity,
+        own_key=own_key,
+        other_key=other_key,
+        aggregate=entry.aggregate,
+        column=renames.get(entry.column, entry.column),
+        where=_translate_refs(entry.where, renames),
+        hidden=hidden,
+        description=description,
+    )
 
 
 def _build_plans(
@@ -559,7 +716,17 @@ def _build_plans(
             pack_columns = [ITEM_URL_COLUMN, ITEM_URL_RESOLVED_COLUMN]
             if _reads_zone(plan):
                 pack_columns.append(DATE_ZONE_RESOLVED_COLUMN)
-            for out_name in [*plan.output_columns, *pack_columns]:
+            # A derived column is renamed with the rest: it is a column of
+            # the model like any other, and leaving it out would be the one
+            # place a report author meets an internal name.
+            derived_names = [
+                name
+                for entry in bundle.mapping.derived_for(table.name)
+                for name in derived_output_names(entry)
+            ]
+            for out_name in [
+                *plan.output_columns, *pack_columns, *derived_names,
+            ]:
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
@@ -591,6 +758,7 @@ def _build_plans(
             )
             for fk_column, target_title, display, projections in plan.joins
         ]
+    _resolve_derived(plans, bundle, prefix)
     return plans
 
 
@@ -1002,6 +1170,227 @@ def _ensured_m(prev: str, columns: list[str]) -> list[str]:
     ]
 
 
+#: How each aggregate reads the child rows. `_` is the group's sub-table, so
+#: `_[Column]` is that column as a list. A `names` cell is for READING: it is
+#: sorted and de-duplicated, and unlike a multi-value column nothing
+#: guarantees a member does not itself contain the separator, so it must not
+#: be split back apart.
+_DERIVED_AGGREGATE_M: dict[str, str] = {
+    "count": "each Table.RowCount(_)",
+    "min": "each List.Min(_[{column}])",
+    "max": "each List.Max(_[{column}])",
+    "names": (
+        "each Text.Combine("
+        "List.Sort(List.Distinct(List.RemoveNulls(_[{column}]))), "
+        f'"{MULTI_VALUE_JOIN}")'
+    ),
+}
+
+
+def _query_ref(name: str) -> str:
+    """One query named as M identifier syntax, always quoted.
+
+    `#"..."` is valid for ANY name, and a bare identifier is not: `_Users`
+    leads with an underscore and a family whose prefix carries a space or a
+    dash would not be an identifier at all. Quoting unconditionally means
+    the emitted reference never depends on what a prefix happens to contain.
+
+    THE QUERY MUST CARRY THIS NAME. A cross-query reference resolves by
+    name, so a derived join works only where each `.pq` was loaded under the
+    name its file has; guide.md says so beside the instruction to paste them.
+    """
+    return f'#"{name}"'
+
+
+def _derived_site_bindings(plan: _ListPlan) -> tuple[list[str], dict[str, str]]:
+    """One binding per query a `count` reads, and the name each got.
+
+    WHY A COUNT ASKS WHICH SITE ITS CHILD QUERY IS ON. A derived join reads
+    the other query as it stands in the model. The pack's guide tells an
+    operator building a multi-site report to duplicate each query per site,
+    and a duplicate pointed at another site would still read THIS copy of the
+    child. Every key carries its site, so nothing matches, and a count then
+    reads as a confident ZERO where the truth is not zero. That is a wrong
+    number with nothing able to notice it.
+
+    So a count coalesces its blank to zero only where the child query is on
+    the same site, and to null otherwise. An EMPTY child list still reads
+    zero: it names no site, there are no rows to miss, and zero is the right
+    answer.
+    """
+    lines: list[str] = []
+    named: dict[str, str] = {}
+    for step in plan.derived:
+        if step.kind != "count" or step.source_query in named:
+            continue
+        binding = f"DerivedSite{len(named) + 1}"
+        named[step.source_query] = binding
+        lines += [
+            f"    // Which site {step.source_query} reads; see the count",
+            "    // steps below for why a blank there is not always a zero.",
+            f"    {binding} =",
+            "        try",
+            "            List.First(",
+            (f"                Table.Column({_query_ref(step.source_query)}, "
+             f'"{REPORT_FIXED_COLUMNS[0]}"),'),
+            "                null",
+            "            )",
+            "        otherwise null,",
+        ]
+    return lines, named
+
+
+def _derived_m(plan: _ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[str], str]:
+    """The derived-column steps for one list, and the step they end on."""
+    lines: list[str] = []
+    index = 0
+
+    def step_name() -> str:
+        nonlocal index
+        index += 1
+        return f"Derived{index}"
+
+    for entry in plan.derived:
+        if entry.description:
+            lines.append(f"    // {entry.description}")
+        if entry.kind == "expr":
+            name = step_name()
+            if entry.replace:
+                # `Table.ReplaceValue` with `each` over the row, so the
+                # expression can read the column it is replacing (which is
+                # the whole point of a fallback) and the column keeps its
+                # position. `Table.TransformColumns` would hand it the value
+                # alone and no other column of the row.
+                lines += [
+                    f"    {name} = Table.ReplaceValue(",
+                    f"        {prev},",
+                    f"        each [{entry.name}],",
+                    f"        each {entry.m},",
+                    "        Replacer.ReplaceValue,",
+                    f'        {{"{entry.name}"}}',
+                    "    ),",
+                ]
+                prev = name
+                name = step_name()
+                lines += [
+                    f"    {name} = Table.TransformColumnTypes(",
+                    f"        {prev},",
+                    f'        {{{{"{entry.name}", {entry.m_type}}}}}',
+                    "    ),",
+                ]
+            else:
+                lines += [
+                    f"    {name} = Table.AddColumn(",
+                    f'        {prev}, "{entry.name}",',
+                    f"        each {entry.m},",
+                    f"        {entry.m_type}",
+                    "    ),",
+                ]
+            prev = name
+            continue
+        lines.append(
+            f"    // Reads the {entry.source_query} query. Both are keyed by "
+            "site,",
+        )
+        lines.append(
+            "    // so a copy of this query pointed at another site matches "
+            "nothing.",
+        )
+        if entry.kind == "lookup":
+            picks = [source for source, _out, _t in entry.picks]
+            outs = [out for _source, out, _t in entry.picks]
+            name = step_name()
+            lines += [
+                f"    {name} = Table.NestedJoin(",
+                f'        {prev}, {{"{entry.own_key}"}},',
+                "        Table.SelectColumns(",
+                f"            {_query_ref(entry.source_query)},",
+                "            {" + ", ".join(
+                    f'"{c}"' for c in [entry.other_key, *picks]
+                ) + "}",
+                "        ),",
+                (f'        {{"{entry.other_key}"}}, "_derived{index}", '
+                 "JoinKind.LeftOuter"),
+                "    ),",
+            ]
+            prev = name
+            expanded = step_name()
+            lines += [
+                f"    {expanded} = Table.ExpandTableColumn(",
+                f'        {prev}, "_derived{index - 1}",',
+                "        {" + ", ".join(f'"{c}"' for c in picks) + "},",
+                "        {" + ", ".join(f'"{c}"' for c in outs) + "}",
+                "    ),",
+            ]
+            prev = expanded
+            typed = step_name()
+            lines += [
+                f"    {typed} = Table.TransformColumnTypes(",
+                f"        {prev},",
+                "        {" + ", ".join(
+                    f'{{"{out}", {m_type}}}'
+                    for _source, out, m_type in entry.picks
+                ) + "}",
+                "    ),",
+            ]
+            prev = typed
+            continue
+        child = _query_ref(entry.source_query)
+        if entry.where:
+            child = f"Table.SelectRows({child}, each {entry.where})"
+        aggregate = _DERIVED_AGGREGATE_M[entry.aggregate].format(
+            column=entry.column,
+        )
+        name = step_name()
+        lines += [
+            f"    {name} = Table.NestedJoin(",
+            f'        {prev}, {{"{entry.own_key}"}},',
+            "        Table.Group(",
+            f"            {child},",
+            f'            {{"{entry.other_key}"}},',
+            f'            {{{{"{entry.name}", {aggregate}, type any}}}}',
+            "        ),",
+            (f'        {{"{entry.other_key}"}}, "_derived{index}", '
+             "JoinKind.LeftOuter"),
+            "    ),",
+        ]
+        prev = name
+        expanded = step_name()
+        lines += [
+            f"    {expanded} = Table.ExpandTableColumn(",
+            f'        {prev}, "_derived{index - 1}",',
+            f'        {{"{entry.name}"}}, {{"{entry.name}"}}',
+            "    ),",
+        ]
+        prev = expanded
+        typed = step_name()
+        if entry.aggregate == "count":
+            binding = sites[entry.source_query]
+            blank = (
+                f"if {binding} = null or {binding} = SiteRoot "
+                "then 0 else null"
+            )
+            lines += [
+                f"    {typed} = Table.TransformColumns(",
+                f"        {prev},",
+                "        {",
+                f'            {{"{entry.name}",',
+                f"                each if _ = null then ({blank}) else _,",
+                f"                {entry.m_type}}}",
+                "        }",
+                "    ),",
+            ]
+        else:
+            lines += [
+                f"    {typed} = Table.TransformColumnTypes(",
+                f"        {prev},",
+                f'        {{{{"{entry.name}", {entry.m_type}}}}}',
+                "    ),",
+            ]
+        prev = typed
+    return lines, prev
+
+
 def _tolerant_date_columns(plan: _ListPlan) -> list[str]:
     """The columns `AsDate` converts, and so whether the query reads the
     site's time zone at all. Asked by the planner (which decides whether
@@ -1016,7 +1405,9 @@ def _tolerant_date_columns(plan: _ListPlan) -> list[str]:
 def _reads_zone(plan: _ListPlan) -> bool:
     """Whether the query reads the site's zone, and so carries
     `DateZoneResolved`: for a date-only column. Asked by the planner and by
-    the renderer."""
+    the renderer; `analysis/derived.py` answers the same for the column
+    list, and the family sweep in `test_derived_columns` holds the two
+    together."""
     return bool(_tolerant_date_columns(plan))
 
 
@@ -1032,6 +1423,10 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     )
     dates = _tolerant_date_columns(plan)
     reads_zone = _reads_zone(plan)
+    # Bound once: the step lines and the names the count steps read must
+    # come from ONE call, or a rename here would leave the counts reading a
+    # binding that is not there.
+    site_lines, site_bindings = _derived_site_bindings(plan)
     header = [] if site_url is not None else [
         "// Requires a text parameter named SiteUrl holding the site URL,",
         "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
@@ -1062,6 +1457,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         *_SITE_NAME_M,
         *_SITE_ORIGIN_M,
         *_item_url_base_m(plan),
+        *site_lines,
         *(_ZONE_M if reads_zone else []),
         *(_AS_STAMP_M if reads_zone else []),
         *(_AS_DATE_M if dates else []),
@@ -1323,6 +1719,20 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
                 "    )",
             ]
             prev = step
+    if plan.derived:
+        lines[-1] += ","
+        lines += [
+            "    // Reporting-only columns, declared under `derived_columns`.",
+            "    // No SharePoint field stands behind any of these: they are",
+            "    // computed here and exist nowhere else. After the keys,",
+            "    // because a join reads them; before the rename, so a",
+            "    // derived column takes a display title like any other.",
+        ]
+        derived_lines, prev = _derived_m(plan, prev, site_bindings)
+        lines += derived_lines
+        # The steps above each close with their own comma; the chain has to
+        # end without one for whatever follows to attach.
+        lines[-1] = lines[-1].rstrip(",")
     if plan.renames:
         lines[-1] += ","
         lines += [
@@ -1382,15 +1792,22 @@ def generate_powerquery(
 
 #: (internal name, M type, model-facing name) for the users dimension. The
 #: internal names are the user information list's own, MEASURED 2026-09-02.
-_USERS_COLUMNS: tuple[tuple[str, str, str], ...] = (
-    ("Id", "Int64.Type", "Id"),
-    ("Title", "type text", "Name"),
-    ("EMail", "type text", "Email"),
-    ("UserName", "type text", "Account"),
-    ("Department", "type text", "Department"),
-    ("JobTitle", "type text", "Job Title"),
-    ("Office", "type text", "Office"),
-    ("Deleted", "type logical", "Deleted"),
+#: (internal name, M type, model-facing name). The third is read off
+#: `USERS_DISPLAY_TITLES` rather than restated, because a derived `lookup`
+#: into `_Users` translates its picked columns through that map and the two
+#: spellings must be one.
+_USERS_COLUMNS: tuple[tuple[str, str, str], ...] = tuple(
+    (name, m_type, USERS_DISPLAY_TITLES[name])
+    for name, m_type in (
+        ("Id", "Int64.Type"),
+        ("Title", "type text"),
+        ("EMail", "type text"),
+        ("UserName", "type text"),
+        ("Department", "type text"),
+        ("JobTitle", "type text"),
+        ("Office", "type text"),
+        ("Deleted", "type logical"),
+    )
 )
 
 #: ContentTypeId prefixes on the user information list, MEASURED 2026-09-02.
@@ -1839,6 +2256,23 @@ def generate_reporting_md(
          f"the rows where {ITEM_URL_RESOLVED_COLUMN} is false rather than "
          "shipping a 404."),
         "",
+        ("Where the mapping declares them, each query also carries "
+         "**reporting-only columns**: flags, aggregates over a child list, "
+         "and columns read from a related list, computed in the query and "
+         "backed by no SharePoint field. `data-dictionary.md` marks each "
+         "one, and the SQL views do not carry them."),
+        "",
+        ":::warning Load each query under the name of its file",
+        ("A query that reads another list names it, so `GOV_Risk.pq` must "
+         "be loaded as `GOV_Risk` for a query that reads it to resolve. "
+         "Renaming a query breaks every derived column that reads it, at "
+         "refresh. Appending several sites needs the same care: a "
+         "duplicated query still reads the ORIGINAL copy of whatever it "
+         "joins, so point each duplicate at its own copies. A count that "
+         "finds itself reading another site's rows reports blank rather "
+         "than zero, which is why the blank is worth checking."),
+        ":::",
+        "",
         (f"A list with a date-only column also carries "
          f"**{DATE_ZONE_RESOLVED_COLUMN}**, for the same reason. A "
          "date-only value is site-local midnight served as a UTC "
@@ -2101,9 +2535,51 @@ def _column_rows_for_table(
                 "-", "-", "-", "-", "-", "Always", "-",
                 f"Read-only dependent of {column}, showing the target's {target}.",
             ))
+    # Reporting-only, and said so in the type cell: a reader looking for one
+    # of these on the list will not find it, and the dictionary is where
+    # they would look.
+    for entry in bundle.mapping.derived_for(table.name):
+        for name in derived_output_names(entry):
+            rows.append((
+                name,
+                _derived_type_cell(entry),
+                "-", "-", "-", "-", "-", "Always", "-",
+                entry.description or _derived_default_description(entry, name),
+            ))
     if bundle.mapping.reporting.system_columns:
         rows += _system_column_rows()
     return rows
+
+
+def _derived_type_cell(entry: DerivedColumn) -> str:
+    """The dictionary's type cell for a derived column, which has to say the
+    column exists only in the report before it says what type it is."""
+    kind = {
+        "expr": "computed per row",
+        "lookup": "read from another list",
+        "count": "aggregated from a child list",
+    }[entry.kind]
+    return f"Reporting only ({kind})"
+
+
+def _derived_default_description(entry: DerivedColumn, name: str) -> str:
+    """What a derived column does, where its author wrote no description."""
+    if entry.kind == "lookup":
+        source = entry.pick[name]
+        return (
+            f"{source} read from the matching {entry.from_entity} row, "
+            f"through the report's own keys."
+        )
+    if entry.kind == "count":
+        subject = (
+            "rows" if entry.aggregate == "count"
+            else f"{entry.column} over the rows"
+        )
+        return (
+            f"The {entry.aggregate} of {subject} of {entry.from_entity} "
+            f"pointing at this one through {entry.via}."
+        )
+    return "Computed in the report query; no SharePoint column behind it."
 
 
 def _system_column_rows() -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
@@ -2308,6 +2784,19 @@ def generate_data_dictionary(
          "a day early east of UTC |"),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
+        "",
+        "## Reporting-only columns",
+        "",
+        ("Columns marked **Reporting only** above are computed in the "
+         "generated Power Query and exist nowhere else. No SharePoint field "
+         "stands behind one, no list carries it, and a site search will not "
+         "find it. They are declared in the mapping beside the schema, so "
+         "the report and the lists are generated from one description "
+         "rather than two."),
+        "",
+        ("They are Power Query only. The SQL views carry the lists' own "
+         "columns and the lookup joins, and none of these, because a "
+         "row-level expression written in M has no SQL to translate to."),
         "",
         "## Blank in a column marked required",
         "",
