@@ -2012,7 +2012,10 @@ def _added_column_expression(query: str, column_name: str) -> str:
             continue
         expression: list[str] = []
         for rest in lines[i + 1:]:
-            if rest.strip() == "type text":
+            # Any ascribed type closes the step, not `type text` alone: the
+            # two fail-soft flags are `type logical` and stopping only on
+            # text swept the whole rest of the query into the expression.
+            if re.fullmatch(r"type \w+", rest.strip()):
                 # The step's own trailing comma is punctuation, not part of
                 # the expression -- and it differs between the last step of a
                 # query and every other, which would make two otherwise
@@ -2028,7 +2031,7 @@ def test_the_added_column_reader_finds_the_expression_and_not_a_blank() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert _added_column_expression(task, "ItemURL").startswith(
-        "each ItemUrlBase &",
+        "each ItemUrl[base] &",
     )
     with pytest.raises(AssertionError, match="Absent Key"):
         _added_column_expression(task, "Absent Key")
@@ -2384,10 +2387,11 @@ def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
     assert "[ServerRelativeUrl]" in query
     # Read once per refresh, not once per row: the link is a column over the
     # item id, and the base is a binding above it.
-    assert "each ItemUrlBase & Number.ToText([Id])" in query
-    # The declared path survives only as the fallback.
-    body = query.split("ItemUrlBase =")[1].split("\n    Source =")[0]
-    assert 'otherwise SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
+    assert "each ItemUrl[base] & Number.ToText([Id])" in query
+    # The declared path survives only as the fallback, and the fallback says
+    # so on every row: see test_a_guessed_item_url_says_so_on_every_row.
+    body = query.split("    ItemUrl =")[1].split("\n    Zone =")[0]
+    assert 'base = SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
 
 
 def test_a_document_library_link_points_at_its_forms_folder() -> None:
@@ -2408,7 +2412,7 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
     )
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '& "/Forms/DispForm.aspx?ID="' in query, query
-    assert 'otherwise SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
+    assert 'base = SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
 
 
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
@@ -2418,5 +2422,320 @@ def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
     schema, bundle = _simple()
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "    SiteOrigin =" in query
-    assert "SiteOrigin\n" in query.split("ItemUrlBase =")[1]
+    assert "SiteOrigin\n" in query.split("    ItemUrl =")[1]
     assert "if afterScheme < 0 or slash < 0 then SiteRoot" in query
+
+
+# ---------------------------------------------- projected dependent lookups
+#
+# A lookup's `lookup_projections` entries are created by the deploy as
+# read-only dependent fields, are columns of the list as far as SharePoint is
+# concerned, and were already in the data dictionary. They reached NEITHER
+# generated query: the projection was planned from the lookup's display
+# column alone, so anything else was absent rather than blank, and the
+# dictionary promised a column no refresh would produce.
+
+
+def _projecting(
+    *,
+    projections: list[str],
+    display_column: str | None = None,
+    target_columns: tuple[Column, ...] = (),
+) -> tuple[Schema, MappingBundle]:
+    """Involvement -> Stakeholder, projecting whatever the test needs."""
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema = make_schema(
+        make_table(
+            "Stakeholder",
+            column("Title"),
+            column("Status"),
+            *target_columns,
+        ),
+        make_table(
+            "Involvement",
+            column("Title"),
+            make_ref("Stakeholder", "Stakeholder.Id"),
+        ),
+    )
+    entities = {
+        "Involvement": EntityMapping(
+            name="Involvement", kind="List", base_template=100,
+            site_role="default",
+        ),
+        "Stakeholder": EntityMapping(
+            name="Stakeholder", kind="List", base_template=100,
+            site_role="default", display_column=display_column,
+        ),
+    }
+    bundle = make_bundle(
+        entities=entities,
+        lookup_projections={"Involvement": {"Stakeholder": projections}},
+    )
+    return schema, bundle
+
+
+def test_a_projected_column_reaches_the_power_query() -> None:
+    """The reported defect: `Stakeholder/Status` appeared in the data
+    dictionary, in the views and on the list, and nowhere in the `.pq`."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "Stakeholder/Status" in query
+    # Landed under the name the deploy gives the dependent field, which is
+    # the name the dictionary documents.
+    assert '"StakeholderStatus"' in query
+    # Not merely selected: typed, kept by the Declared step, and so present
+    # in the model rather than dropped one step later.
+    assert '{"StakeholderStatus", type text}' in query
+    declared = query.split("Declared = Table.SelectColumns(")[1]
+    assert '"StakeholderStatus"' in declared.split("),")[0]
+
+
+def test_a_projection_and_its_display_column_share_one_expand_step() -> None:
+    """`Table.ExpandRecordColumn` CONSUMES the record, so a second step
+    against the same lookup fails with "The column 'Stakeholder' of the table
+    wasn't found" -- a broken query, not a missing column."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert (
+        'Table.ExpandRecordColumn(Source, "Stakeholder", '
+        '{"Title", "Status"}, {"StakeholderTitle", "StakeholderStatus"})'
+    ) in query
+    # One step, so the record is expanded once.
+    assert query.count('"Stakeholder", {') == 1
+
+
+def test_an_empty_list_still_produces_every_projected_column() -> None:
+    """The zero-row guard has to cover the projections too: a list with no
+    items answers without the record column at all."""
+    schema, bundle = _projecting(projections=["Status"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    fallback = query.split("else\n            List.Accumulate(")[1]
+    assert '[Name = "StakeholderTitle", Kind = type text]' in fallback
+    assert '[Name = "StakeholderStatus", Kind = type text]' in fallback
+
+
+def test_a_projected_column_takes_the_targets_type_not_the_lookups() -> None:
+    """A projection arrives through the lookup's expand but holds the
+    TARGET's value, so `type text` off the lookup would put a number in a
+    text column and a date in neither."""
+    schema, bundle = _projecting(
+        projections=["Weighting", "Reviewed"],
+        target_columns=(column("Weighting", "int"), column("Reviewed", "date")),
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert '{"StakeholderWeighting", type number}' in query
+    # A projected date-only column rides the same tolerant conversion a
+    # declared one does, rather than being truncated in UTC.
+    assert '{"StakeholderReviewed", each AsDate(_), type date}' in query
+    assert '{"StakeholderReviewed", type date}' not in query
+
+
+def test_a_projection_of_the_display_column_is_not_carried_twice() -> None:
+    """Both would land as one column name, and `ExpandRecordColumn` refuses
+    the duplicate rather than picking one."""
+    schema, bundle = _projecting(projections=["Title"])
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert query.count("Stakeholder/Title") == 1
+    assert (
+        'Table.ExpandRecordColumn(Source, "Stakeholder", '
+        '{"Title"}, {"StakeholderTitle"})'
+    ) in query
+
+
+def test_a_projection_beside_a_calculated_display_column_carries_both() -> None:
+    """The shape the reporter's six 'working' columns actually had. The
+    picker shows a calculated live title that blanks once the target is
+    closed; the projection exists so the row still reads by name, so the two
+    are different columns and both belong in the model."""
+    schema, bundle = _projecting(
+        projections=["Title"],
+        display_column="LiveTitle",
+        target_columns=(column("LiveTitle", "calculated_text"),),
+    )
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "Stakeholder/LiveTitle" in query
+    assert "Stakeholder/Title" in query
+    assert '"StakeholderLiveTitle"' in query
+    assert '"StakeholderTitle"' in query
+
+
+def test_a_projection_of_a_person_column_fails_the_build() -> None:
+    """A person arrives through the expand as a RECORD, and `type text` over
+    a record puts an Error value in every populated cell while the query
+    still loads. Refused, naming the column, rather than guessed."""
+    schema, bundle = _projecting(
+        projections=["Owner"], target_columns=(person("Owner"),),
+    )
+    with pytest.raises(ValueError, match="no plan for a projection"):
+        generate_powerquery(schema, bundle, "default")
+
+
+def test_a_projected_column_reaches_the_sql_enriched_view() -> None:
+    """Off the join the display column already uses, so it costs nothing."""
+    schema, bundle = _projecting(projections=["Status"])
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "j1.[Status] AS [StakeholderStatus]" in sql
+
+
+def test_the_sql_views_omit_a_projection_their_target_view_lacks() -> None:
+    """SQL selects a projection from the TARGET's view, so it can only carry
+    what that view has. `Title` is SharePoint's own column and need not be
+    declared, so a schema that leaves it out has it in the Power Query (read
+    through the expand) and not in SQL, rather than a view naming a column
+    that does not exist."""
+    schema, bundle = _projecting(
+        projections=["Title"],
+        display_column="LiveTitle",
+        target_columns=(column("LiveTitle", "calculated_text"),),
+    )
+    # The target declares no Title of its own, so its view has no such
+    # column to select. Rebuilt without one rather than adjusting the
+    # helper, which every other test here wants a Title from.
+    stakeholder = next(t for t in schema.tables if t.name == "Stakeholder")
+    stakeholder.columns = [c for c in stakeholder.columns if c.name != "Title"]
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "vw_APP_Stakeholder" in sql
+    assert "AS [StakeholderTitle]" not in sql
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert '"StakeholderTitle"' in query
+
+
+def test_the_data_dictionary_and_the_query_agree_on_the_projected_name() -> None:
+    """The whole defect was these two disagreeing in silence."""
+    schema, bundle = _projecting(projections=["Status"])
+    md = generate_data_dictionary(schema, bundle, "default")
+    query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
+    assert "| StakeholderStatus |" in md
+    assert '"StakeholderStatus"' in query
+
+
+# ------------------------------------- date-only columns and the site's zone
+
+
+def test_a_date_only_column_reads_the_sites_time_zone() -> None:
+    """A date-only value is site-local midnight served as the UTC instant of
+    it, so truncating in UTC is a day early east of UTC. Reported twice by a
+    consumer on a UTC+10 site, where 2026-09-03T14:00:00Z is the 4th."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "/_api/web/RegionalSettings/TimeZone" in query
+    assert '"Bias"' in query
+    assert '"StandardBias"' in query
+    assert '"DaylightBias"' in query
+
+
+def test_both_biases_are_candidates_rather_than_one_being_chosen() -> None:
+    """`SP.TimeZoneInformation` carries three STATIC properties of the zone
+    and no transition dates, so reading it at refresh does not say whether
+    daylight saving is in force. Reading it more often does not help; the
+    value itself is what resolves it, so both have to be offered.
+    """
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    # The whole literal, so the SIGN is pinned and not just the names. The
+    # Windows convention is UTC = local + Bias + (Standard|Daylight)Bias, so
+    # the offset east of UTC is the negation of the two, which is how
+    # `datetime-sentinel-probe.js` and `library-large-list-fixture-probe.js`
+    # build the same pair against a live site. Zero leads, so a value that
+    # already arrived as a bare local date resolves first.
+    assert "{0, - (Bias + Standard), - (Bias + Daylight)}" in query
+
+
+def test_the_offset_is_identified_by_landing_on_midnight() -> None:
+    """THE test that keeps this correct across a DST transition, and the one
+    a 'simplification' to a single offset would remove. A date-only value is
+    local midnight by construction, so the candidate that lands it on
+    midnight is the offset that was in force for THAT value: rows either
+    side of a transition each pick their own.
+
+    It also makes the conversion independent of the units and the sign the
+    API answers in, because a wrong candidate does not land and is dropped.
+    """
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "each DateTime.Time(_) = #time(0, 0, 0)" in query
+    assert "each Stamp + #duration(0, 0, _, 0)" in query
+    assert "List.Select(" in query.split("Landed =")[1]
+
+
+def test_a_date_that_lands_on_no_offset_still_produces_a_value() -> None:
+    """Every branch ends in a value: a shape nobody anticipated blanks one
+    column rather than failing the batch, which is what the zero-row and
+    text-date guards before it were also for."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    tail = query.split("if not List.IsEmpty(Landed) then")[1]
+    assert "try Date.From(Stamp)" in tail
+    assert "otherwise try Date.From(v)" in tail
+    assert "otherwise null" in tail
+
+
+def test_the_text_branch_does_not_convert_a_zoneless_stamp() -> None:
+    """Text carrying `Z` is already the UTC wall clock and text carrying no
+    zone is already local, so a `ToUtc` on this path would move the second
+    kind by the REPORT MACHINE's offset, which has nothing to do with the
+    site's. The typed branch is the one that needs it."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    text_branch = query.split("        else\n            try DateTimeZone")[1]
+    assert "ToUtc" not in text_branch.split("otherwise null,")[0]
+    assert "DateTimeZone.RemoveZone(DateTimeZone.ToUtc(v))" in query
+
+
+# --------------------------------------------- the two fail-soft reads, seen
+
+
+def test_a_guessed_item_url_says_so_on_every_row() -> None:
+    """The folder read fails soft, and its fallback is exactly the URL shape
+    a renamed list reports as broken: the refresh succeeds and every link
+    404s. So the branch that ran rides beside the URL."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert '"ItemURLResolved"' in query
+    assert _added_column_expression(query, "ItemURLResolved") == (
+        "each ItemUrl[resolved]"
+    )
+    assert "resolved = true," in query
+    assert "resolved = false," in query
+
+
+def test_an_unread_time_zone_says_so_on_every_row() -> None:
+    """Same argument as the item URL above: without the zone every date-only
+    column truncates in UTC and reads a day early east of UTC, and the
+    refresh reports success either way."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert _added_column_expression(query, "DateZoneResolved") == (
+        "each Zone[resolved]"
+    )
+    assert "otherwise [resolved = false, offsets = {0}]," in query
+
+
+def test_only_a_list_with_a_date_column_carries_the_zone_flag() -> None:
+    """A column that says nothing about this list would erode what it means
+    on the lists where it does."""
+    schema, bundle = _simple()
+    queries = generate_powerquery(schema, bundle, "default")
+    with_dates = [
+        name for name, query in queries.items()
+        if "each AsDate(_)" in query
+    ]
+    assert with_dates, queries.keys()
+    for name, query in queries.items():
+        assert ('"DateZoneResolved"' in query) == (name in with_dates), name
+        # The zone read has no other reader, so it goes with it.
+        assert ("RegionalSettings/TimeZone" in query) == (name in with_dates)
+
+
+def test_the_dictionary_says_what_a_blank_required_column_means() -> None:
+    """SharePoint applies a default to NEW items only, so a required column
+    added to a live list reads blank on every row that predates it. The
+    Required cell alone says the opposite, and the pack passes the blanks
+    through, so a report cannot tell one from a cleared value."""
+    schema, bundle = _simple()
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "Blank in a column marked required" in md
+    assert "NEW items only" in md
+    assert "ItemURLResolved" in md
+    assert "DateZoneResolved" in md

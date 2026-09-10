@@ -38,7 +38,9 @@ from dbml_sharepoint.analysis.lookups import (
 )
 from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
+    DATE_ZONE_RESOLVED_COLUMN,
     ITEM_URL_COLUMN,
+    ITEM_URL_RESOLVED_COLUMN,
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
@@ -46,6 +48,7 @@ from dbml_sharepoint.analysis.report_columns import (
     USERS_KEY_LIST,
     fk_key_column,
     person_key_column,
+    projection_output_name,
     report_output_names,
 )
 from dbml_sharepoint.analysis.typemap import (
@@ -101,8 +104,14 @@ class _ListPlan:
     output_columns: list[str] = field(default_factory=list)
     # (landed column, SQL type)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
-    # (fk column, target list title, target display column)
-    joins: list[tuple[str, str, str]] = field(default_factory=list)
+    # (fk column, target list title, target display column, projected target
+    # columns). The projections ride the JOIN rather than the base view
+    # because the SQL side reads a landed table and cannot know whether the
+    # extract carried a dependent lookup across; the target's own view always
+    # has the column, and the join is already there for the display column.
+    joins: list[tuple[str, str, str, tuple[str, ...]]] = field(
+        default_factory=list,
+    )
     skipped: list[str] = field(default_factory=list)
     # Site-relative path of the item display form, ending in "?ID=", built
     # from the DECLARED title. The fallback when the list's own folder cannot
@@ -216,11 +225,87 @@ def _item_url_suffix(bundle: MappingBundle, entity_name: str) -> str:
     return "/DispForm.aspx?ID="
 
 
+def _projection_types(
+    tables_by_name: dict[str, Table],
+    target_entity: str,
+    target_column: str,
+    enum_names: set[str],
+    *,
+    source: str,
+) -> tuple[str, str]:
+    """The (Power Query, SQL) types one projected column reports as.
+
+    The TARGET's column decides, not the lookup's: a projection is read
+    through the same ``$expand`` the display column uses, so what arrives is
+    whatever the target list holds. Reusing the lookup's own `type text`
+    would put a number in a text column and truncate a Note at 255, which is
+    the silently-wrong export this generator exists to avoid.
+
+    Only the scalar kinds are answered. A projection of a person, a URL, a
+    multi-value or another lookup arrives through the expand as a record or a
+    collection whose shape has NOT been measured here, and guessing `type
+    text` over a record is what puts an Error value in every populated cell
+    while the query still loads. Those fail the build instead, naming the
+    column, the way an unhandled field kind does in `_build_plans`.
+    """
+    table = tables_by_name.get(target_entity)
+    col = (
+        next((c for c in table.columns if c.name == target_column), None)
+        if table is not None else None
+    )
+    if col is None:
+        # SharePoint gives every list its own `Title`, so a projection may
+        # name it without the DBML declaring it. The validator allows the
+        # same one exception (`_structure._lookup_projections`).
+        if target_column == "Title":
+            return ("type text", "NVARCHAR(255)")
+        raise ValueError(
+            f"{source}: projected column "
+            f"{target_entity}.{target_column} is not in the schema.",
+        )
+    sp = map_column(col, enum_names)
+    match sp.kind:
+        case "Text" | "Choice":
+            return ("type text", "NVARCHAR(255)")
+        case "Note":
+            return ("type text", "NVARCHAR(MAX)")
+        case "Number":
+            return ("type number", "DECIMAL(18,4)")
+        case "Boolean":
+            return ("type logical", "BIT")
+        case "DateTime":
+            if sp.date_only:
+                return ("type date", "DATE")
+            return ("type datetimezone", "DATETIMEOFFSET")
+        case "Calculated":
+            # Same three output types the direct Calculated arm resolves,
+            # and for the same reason: a calculated column is number, date
+            # or text and nothing else.
+            if sp.output_type == 9:
+                return ("type number", "DECIMAL(18,4)")
+            if sp.output_type == 4:
+                return ("type date", "DATE")
+            return ("type text", "NVARCHAR(255)")
+        case _:
+            raise ValueError(
+                f"{source}: reporting has no plan for a projection of "
+                f"{target_entity}.{target_column}, which is SharePoint field "
+                f"kind {sp.kind!r}. A projection is read through the lookup's "
+                f"$expand, and the shape a {sp.kind!r} takes on that path has "
+                f"not been measured, so it is refused rather than guessed. "
+                f"Project a scalar column, or carry this one by joining the "
+                f"target table in the model.",
+            )
+
+
 def _build_plans(
     schema: Schema, bundle: MappingBundle, site_role: str,
 ) -> list[_ListPlan]:
     tables = _tables_for_role(schema, bundle, site_role)
     emitted = {t.name for t in tables}
+    # EVERY table, not the role-filtered set: a projection reads its type off
+    # the lookup target, which the mapping may well deploy to another site.
+    tables_by_name = {t.name: t for t in schema.tables}
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = bundle.mapping.cross_site_keys()
@@ -293,9 +378,45 @@ def _build_plans(
                     plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
                     plan.m_types.append((f"{sp.name}{display}", "type text"))
                     plan.sql_columns.append((f"{sp.name}Id", "INT"))
+                    # A dependent lookup is a column of THIS list as far as
+                    # SharePoint, the deploy and the data dictionary are
+                    # concerned, and it reached neither generated query: the
+                    # projection was planned from the lookup's DISPLAY column
+                    # alone, so a projection of anything else was absent
+                    # rather than blank, and a consumer had the dictionary
+                    # and the release notes both promising a column their
+                    # refresh would not produce.
+                    #
+                    # Read through the SAME $expand the display column uses,
+                    # rather than as a scalar field of this list: that path
+                    # is already measured to work, it answers with the
+                    # target's own value (which is what the dependent field
+                    # shows), and it needs no second request.
+                    #
+                    # The display column is dropped where a projection names
+                    # it, because both would land as one column name and
+                    # `Table.ExpandRecordColumn` refuses the duplicate.
+                    projected = tuple(
+                        target_column
+                        for target_column in bundle.mapping.projections_for(
+                            table.name, col.name,
+                        )
+                        if target_column != display
+                    )
+                    for target_column in projected:
+                        out = projection_output_name(sp.name, target_column)
+                        m_type, _sql_type = _projection_types(
+                            tables_by_name, target, target_column, enum_names,
+                            source=f"{table.name}.{col.name}",
+                        )
+                        plan.selects.append(f"{sp.name}/{target_column}")
+                        plan.record_expands.append(
+                            (sp.name, target_column, out, m_type),
+                        )
+                        plan.m_types.append((out, m_type))
                     if target in emitted:
                         plan.joins.append(
-                            (f"{sp.name}Id", prefix + target, display),
+                            (f"{sp.name}Id", prefix + target, display, projected),
                         )
                 case "MultiChoice":
                     # MEASURED 2026-08-10 on a live tenant: the item value
@@ -400,6 +521,9 @@ def _build_plans(
             # by the shared derivation's `assert_never`, which knows neither.
             plan.output_columns += report_output_names(
                 sp, lookup_display=lookup_display,
+                projections=tuple(bundle.mapping.projections_for(
+                    table.name, col.name,
+                )),
             )
         # After the schema's own columns, so they sit at the end of every
         # query and view. MEASURED 2026-09-02 on a live tenant: /items answers
@@ -432,7 +556,10 @@ def _build_plans(
             # columns are absent from it by construction: they are not
             # declared fields, and the loop below gives them SharePoint's own
             # titles.
-            for out_name in [*plan.output_columns, ITEM_URL_COLUMN]:
+            pack_columns = [ITEM_URL_COLUMN, ITEM_URL_RESOLVED_COLUMN]
+            if _reads_zone(plan):
+                pack_columns.append(DATE_ZONE_RESOLVED_COLUMN)
+            for out_name in [*plan.output_columns, *pack_columns]:
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
@@ -445,6 +572,25 @@ def _build_plans(
                     plan.renames.append((f"{name}Id", f"{title} Id"))
                     plan.renames.append((f"{name}Title", f"{title} Title"))
         plans.append(plan)
+    # The SQL side selects a projection from the TARGET's view, so it can
+    # only carry the ones that view actually has. The Power Query has no
+    # such limit: it reads the target through the expand, so a projection of
+    # a column the SQL views cannot reach is still in the M query.
+    landed = {
+        plan.list_title: {name for name, _ in plan.sql_columns}
+        for plan in plans
+    }
+    for plan in plans:
+        plan.joins = [
+            (
+                fk_column, target_title, display,
+                tuple(
+                    target_column for target_column in projections
+                    if target_column in landed.get(target_title, set())
+                ),
+            )
+            for fk_column, target_title, display, projections in plan.joins
+        ]
     return plans
 
 
@@ -632,25 +778,129 @@ _SITE_ORIGIN_M: list[str] = [
 # kind of column it holds. Every branch ends in a value: a shape nobody
 # anticipated blanks one column, as today, rather than failing the batch.
 #
-# `Date.From` handles date, datetime and datetimezone directly. The second
-# branch is for text, where `DateTimeZone.From` parses ISO 8601 including the
-# `Z` without depending on the machine's culture, which `Date.From` over text
-# would.
+# MEASURED again, and reported by a consumer 2026-09-09: a DATE-ONLY column
+# holds site-local midnight and is served as the UTC instant of it, so on a
+# UTC+10 site `LastReviewedDate` reads 2026-09-03T14:00:00Z where the list
+# shows 4 September. Truncating that in UTC gives the 3rd, and every
+# date-only column in the pack was a day early east of UTC (#467).
 #
-# The site's own time zone is NOT applied here yet: a date-only value is site
-# -local midnight served in UTC, so truncating gives the previous day east of
-# UTC. That needs `RegionalSettings/TimeZone` measured first; issue #467.
+# WHY THE OFFSET IS IDENTIFIED RATHER THAN APPLIED. `web/RegionalSettings/
+# TimeZone` answers with an `Information` record carrying `Bias`,
+# `StandardBias` and `DaylightBias` and nothing else. MEASURED on a live
+# tenant 2026-09-02 by `test/manual/datetime-sentinel-probe.js`, which had to
+# call `utctolocaltime` to find out which of the two was in force and
+# recorded the ambiguity as closing its gate on nine rows;
+# `library-large-list-fixture-probe.js` builds the same two candidates and
+# says the same thing. Learn agrees (SP.TimeZoneInformation, three
+# properties).
+#
+# So the three values are static properties of the ZONE, not the offset in
+# force on a day. Reading them every refresh, which is what a refresh does,
+# still does not say whether daylight saving is on: none of the three
+# changes when it starts. That is the obvious reading of a refresh-time read
+# and it is the wrong one.
+#
+# `utctolocaltime` resolves it for ONE instant, at one request. That is fine
+# in a probe and not here: per distinct value it is a request per value, and
+# once per refresh it dates every row by today's rule, which is wrong for
+# exactly the rows a transition just moved.
+#
+# What resolves it for free is the value itself. A date-only value is local
+# midnight by construction (`date-storage-probe.js`: a date picked as the 2nd
+# stores as `...-01T14:00:00Z` on a UTC+10 site), so of the candidate offsets
+# exactly one lands it back on midnight, and that one was in force when the
+# value was written. Rows either side of a transition each pick their own and
+# no transition date is needed anywhere.
+#
+# The candidates are therefore TRIED, not chosen, which also makes this
+# independent of the units and the sign convention the API answers in: a
+# wrong candidate does not land on midnight and is discarded rather than
+# believed. Zero is among them, which is what a calculated column arriving as
+# a bare local date needs, and it is tried first so the precedence is fixed.
+
+
+#: The `Zone` binding: the site's zone, read once per refresh, and whether
+#: the read `resolved`.
+_ZONE_M: list[str] = [
+    "    // The site's time zone, read once per refresh; see AsDate below for",
+    "    // what is done with it and why both biases are candidates.",
+    "    Zone =",
+    "        try",
+    "            let",
+    "                Info = OData.Feed(",
+    '                    SiteRoot & "/_api/web/RegionalSettings/TimeZone",',
+    "                    null,",
+    '                    [Implementation = "2.0"]',
+    "                )[Information],",
+    '                Bias = Number.From(Record.FieldOrDefault(Info, "Bias", 0)),',
+    "                Standard =",
+    '                    Number.From(Record.FieldOrDefault(Info, "StandardBias", 0)),',
+    "                Daylight =",
+    '                    Number.From(Record.FieldOrDefault(Info, "DaylightBias", 0))',
+    "            in",
+    "                [",
+    "                    resolved = true,",
+    "                    // Minutes EAST of UTC. A Win32 bias is the number of",
+    "                    // minutes to ADD to local time to reach UTC, so the",
+    "                    // sign is flipped. If that convention is ever wrong,",
+    "                    // neither candidate lands on midnight and the value",
+    "                    // falls through rather than shifting by 20 hours.",
+    "                    offsets =",
+    "                        List.Distinct(",
+    "                            {0, - (Bias + Standard), - (Bias + Daylight)}",
+    "                        )",
+    "                ]",
+    "        otherwise [resolved = false, offsets = {0}],",
+]
+
+# `Date.From` handles date, datetime and datetimezone directly. The text
+# branch uses `DateTimeZone.From`, which parses ISO 8601 including the `Z`
+# without depending on the machine's culture, which `Date.From` over text
+# would. `RemoveZone` and no `ToUtc`, deliberately: text carrying `Z` is
+# already the UTC wall clock, and text carrying no zone at all is already
+# local, so converting would move the second kind by the REPORT MACHINE's
+# offset, which has nothing to do with the site's.
+_AS_STAMP_M: list[str] = [
+    "    // The wall clock behind whichever shape the value arrived in.",
+    "    AsStamp = (v as any) as nullable datetime =>",
+    "        if v is datetimezone then",
+    "            DateTimeZone.RemoveZone(DateTimeZone.ToUtc(v))",
+    "        else if v is datetime then v",
+    "        else if v is date then DateTime.From(v)",
+    "        else",
+    "            try DateTimeZone.RemoveZone(DateTimeZone.From(Text.From(v)))",
+    "            otherwise null,",
+]
+
 _AS_DATE_M: list[str] = [
     "    AsDate = (v as any) as nullable date =>",
     "        if v = null then null",
-    "        else try Date.From(v)",
-    "             otherwise",
-    "                 try Date.From(",
-    "                     DateTimeZone.RemoveZone(",
-    "                         DateTimeZone.From(Text.From(v))",
-    "                     )",
-    "                 )",
-    "                 otherwise null,",
+    "        else",
+    "            let",
+    "                Stamp = AsStamp(v),",
+    "                // The candidate offsets that land this value on local",
+    "                // midnight, which is what a date-only value is.",
+    "                Landed =",
+    "                    if Stamp = null then {}",
+    "                    else",
+    "                        List.Select(",
+    "                            List.Transform(",
+    "                                Zone[offsets],",
+    "                                each Stamp + #duration(0, 0, _, 0)",
+    "                            ),",
+    "                            each DateTime.Time(_) = #time(0, 0, 0)",
+    "                        )",
+    "            in",
+    "                if not List.IsEmpty(Landed) then",
+    "                    DateTime.Date(List.First(Landed))",
+    "                // Nothing landed: not a date-only value, or the zone",
+    "                // read failed. Truncate, which is what this did before",
+    "                // the zone was read at all, and say so in",
+    f"                // {DATE_ZONE_RESOLVED_COLUMN}.",
+    "                else",
+    "                    try Date.From(Stamp)",
+    "                    otherwise try Date.From(v)",
+    "                    otherwise null,",
 ]
 
 # The two M type tokens `AsDate` covers, and so the two that must be kept out
@@ -674,23 +924,54 @@ def _item_url_base_m(plan: _ListPlan) -> list[str]:
     Same single-entity ``OData.Feed`` read as the site name above, evaluated
     once per refresh rather than once per row, and it fails soft the same way
     and for the same reason: a link is a convenience, the rows are the data.
+
+    THE FALLBACK CARRIES A FLAG, because failing soft here restores exactly
+    the defect the folder read exists to fix. A permission that grants items
+    but not the folder, a throttled call or a transient 503 all end in a URL
+    built from the declared title, which on a renamed list is a dead link on
+    every row while the refresh reports success. Fails soft AND visibly: the
+    branch that ran rides beside the URL, so a report can suppress the link
+    rather than ship a 404.
     """
     endpoint = (
         f"/_api/web/lists/getbytitle('{plan.list_title}')"
         "/RootFolder?$select=ServerRelativeUrl"
     )
     return [
-        "    ItemUrlBase =",
+        "    ItemUrl =",
         "        try",
-        "            SiteOrigin",
-        "                & OData.Feed(",
-        f'                    SiteRoot & "{endpoint}",',
-        "                    null,",
-        '                    [Implementation = "2.0"]',
-        "                )[ServerRelativeUrl]",
-        f'                & "{plan.item_url_suffix}"',
-        f'        otherwise SiteRoot & "{plan.item_url_path}",',
+        "            [",
+        "                resolved = true,",
+        "                base =",
+        "                    SiteOrigin",
+        "                        & OData.Feed(",
+        f'                            SiteRoot & "{endpoint}",',
+        "                            null,",
+        '                            [Implementation = "2.0"]',
+        "                        )[ServerRelativeUrl]",
+        f'                        & "{plan.item_url_suffix}"',
+        "            ]",
+        "        otherwise",
+        "            [",
+        "                resolved = false,",
+        f'                base = SiteRoot & "{plan.item_url_path}"',
+        "            ],",
     ]
+
+
+def _grouped_record_expands(
+    plan: _ListPlan,
+) -> list[tuple[str, list[tuple[str, str, str]]]]:
+    """`record_expands` gathered by source record column, first appearance
+    first. See `_render_m` for why one step per record is not optional."""
+    grouped: list[tuple[str, list[tuple[str, str, str]]]] = []
+    at: dict[str, int] = {}
+    for record_col, inner, out, m_type in plan.record_expands:
+        if record_col not in at:
+            at[record_col] = len(grouped)
+            grouped.append((record_col, []))
+        grouped[at[record_col]][1].append((inner, out, m_type))
+    return grouped
 
 
 def _ensured_m(prev: str, columns: list[str]) -> list[str]:
@@ -721,6 +1002,24 @@ def _ensured_m(prev: str, columns: list[str]) -> list[str]:
     ]
 
 
+def _tolerant_date_columns(plan: _ListPlan) -> list[str]:
+    """The columns `AsDate` converts, and so whether the query reads the
+    site's time zone at all. Asked by the planner (which decides whether
+    `DateZoneResolved` is one of this list's columns) and by the renderer
+    (which writes the steps), so it cannot be answered differently twice."""
+    return [
+        name for name, m_type in plan.m_types
+        if m_type in _TOLERANT_DATE_TYPES
+    ]
+
+
+def _reads_zone(plan: _ListPlan) -> bool:
+    """Whether the query reads the site's zone, and so carries
+    `DateZoneResolved`: for a date-only column. Asked by the planner and by
+    the renderer."""
+    return bool(_tolerant_date_columns(plan))
+
+
 def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     query_string = "?$select=" + ",".join(plan.selects)
     # Every column a step below names. `multi_value_joins` is the one output
@@ -731,10 +1030,8 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         [name for name, _ in plan.m_types]
         + [name for name, _ in plan.multi_value_joins]
     )
-    dates = [
-        name for name, m_type in plan.m_types
-        if m_type in _TOLERANT_DATE_TYPES
-    ]
+    dates = _tolerant_date_columns(plan)
+    reads_zone = _reads_zone(plan)
     header = [] if site_url is not None else [
         "// Requires a text parameter named SiteUrl holding the site URL,",
         "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
@@ -765,6 +1062,8 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         *_SITE_NAME_M,
         *_SITE_ORIGIN_M,
         *_item_url_base_m(plan),
+        *(_ZONE_M if reads_zone else []),
+        *(_AS_STAMP_M if reads_zone else []),
         *(_AS_DATE_M if dates else []),
         "    Source = OData.Feed(",
         f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
@@ -795,17 +1094,50 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
             "    // columns. So the column is always produced, expanded when the",
             "    // record is there and nulls of the same type when it is not.",
         ]
-    for i, (record_col, inner, out, m_type) in enumerate(
-        plan.record_expands, start=1,
+    # GROUPED BY SOURCE RECORD, because a lookup that also projects columns
+    # takes more than one field out of the same record and the record is
+    # CONSUMED by the first expand. Two steps against it would fail the
+    # second with "The column 'Stakeholder' of the table wasn't found", which
+    # reads as a broken query. Order of first appearance, so a query with no
+    # projections renders exactly as it did.
+    for i, (record_col, fields) in enumerate(
+        _grouped_record_expands(plan), start=1,
     ):
         step = f"Expand{i}"
+        inners = ", ".join(f'"{inner}"' for inner, _, _ in fields)
+        outs = ", ".join(f'"{out}"' for _, out, _ in fields)
         lines += [
             f"    {step} =",
             f'        if List.Contains(Table.ColumnNames({prev}), "{record_col}")',
             (f'        then Table.ExpandRecordColumn({prev}, "{record_col}", '
-             f'{{"{inner}"}}, {{"{out}"}})'),
-            f'        else Table.AddColumn({prev}, "{out}", each null, {m_type}),',
+             f"{{{inners}}}, {{{outs}}})"),
         ]
+        if len(fields) == 1:
+            _inner, out, m_type = fields[0]
+            lines.append(
+                f'        else Table.AddColumn({prev}, "{out}", each null, '
+                f"{m_type}),",
+            )
+        else:
+            # One accumulator rather than nested AddColumn calls, so the
+            # shape does not change with the number of projected columns.
+            lines += [
+                "        else",
+                "            List.Accumulate(",
+                "                {",
+            ]
+            lines += [
+                f'                    [Name = "{out}", Kind = {m_type}],'
+                for _inner, out, m_type in fields
+            ]
+            lines[-1] = lines[-1].rstrip(",")
+            lines += [
+                "                },",
+                f"                {prev},",
+                "                (t, c) =>",
+                "                    Table.AddColumn(t, c[Name], each null, c[Kind])",
+                "            ),",
+            ]
         prev = step
     lines += _ensured_m(prev, declared)
     prev = "Ensured"
@@ -893,14 +1225,24 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # `_item_url_base_m`. Bound above, so it is one read per refresh.
         "    WithItemURL = Table.AddColumn(",
         f'        Declared, "{ITEM_URL_COLUMN}",',
-        "        each ItemUrlBase & Number.ToText([Id]),",
+        "        each ItemUrl[base] & Number.ToText([Id]),",
         "        type text",
+        "    ),",
+        # Whether the URL beside it was read from the list or guessed from
+        # the declared title. False means every link in this table may 404,
+        # which is worth suppressing a link over and impossible to see
+        # otherwise: the refresh succeeds either way.
+        "    WithItemURLResolved = Table.AddColumn(",
+        f'        WithItemURL, "{ITEM_URL_RESOLVED_COLUMN}",',
+        "        each ItemUrl[resolved],",
+        "        type logical",
         "    ),",
         # Where the row came from. One build covers one site, but a report
         # routinely appends several deployments of the same template, and
         # without these two columns there is nothing to slice by.
         "    WithSiteUrl = Table.AddColumn(",
-        f'        WithItemURL, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
+        (f'        WithItemURLResolved, "{REPORT_FIXED_COLUMNS[0]}", '
+         "each SiteRoot, type text"),
         "    ),",
         "    WithSiteName = Table.AddColumn(",
         f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
@@ -928,7 +1270,24 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "    )",
     ]
     prev = "WithRowKey"
-    for i, (fk_col, target_title, _display) in enumerate(plan.joins, start=1):
+    if reads_zone:
+        # The same argument as ItemURLResolved above: without the site's
+        # zone every date-only column silently truncates in UTC, which is a
+        # day early east of UTC, and the refresh succeeds. A report that
+        # cannot see which branch ran cannot tell a correct date from one
+        # the zone read failed to correct.
+        lines[-1] += ","
+        lines += [
+            "    WithDateZoneResolved = Table.AddColumn(",
+            f'        {prev}, "{DATE_ZONE_RESOLVED_COLUMN}",',
+            "        each Zone[resolved],",
+            "        type logical",
+            "    )",
+        ]
+        prev = "WithDateZoneResolved"
+    for i, (fk_col, target_title, _display, _proj) in enumerate(
+        plan.joins, start=1,
+    ):
         step = f"WithFkKey{i}"
         lines[-1] += ","
         lines += [
@@ -1205,10 +1564,23 @@ def _render_sql_view(plan: _ListPlan) -> str:
 def _render_sql_enriched(plan: _ListPlan) -> str:
     select_lines = ["    t.*"]
     join_lines = []
-    for i, (fk_col, target_title, display) in enumerate(plan.joins, start=1):
+    for i, (fk_col, target_title, display, projections) in enumerate(
+        plan.joins, start=1,
+    ):
         alias = f"j{i}"
-        out_col = fk_col.removesuffix("Id") + display
-        select_lines.append(f"    {alias}.[{display}] AS [{out_col}]")
+        base = fk_col.removesuffix("Id")
+        select_lines.append(f"    {alias}.[{display}] AS [{base}{display}]")
+        # The dependent lookups this column projects, off the SAME join the
+        # display column already uses. Selected from the target's view rather
+        # than from this list's landed table, because no extract is required
+        # to have carried a read-only field across and the target's own view
+        # has the column either way. `_build_plans` has already dropped any
+        # the target does not carry.
+        select_lines += [
+            f"    {alias}.[{target_column}] AS "
+            f"[{projection_output_name(base, target_column)}]"
+            for target_column in projections
+        ]
         join_lines.append(
             f"LEFT JOIN [$(ReportSchema)].[vw_{target_title}] AS {alias}\n"
             f"    ON t.[{fk_col}] = {alias}.[Id]",
@@ -1385,7 +1757,7 @@ def generate_reporting_md(
         "|---|---|---|---|",
     ]
     for plan in plans:
-        for fk_col, target_title, _display in plan.joins:
+        for fk_col, target_title, _display, _proj in plan.joins:
             target_entity = next(
                 (p.entity for p in plans if p.list_title == target_title),
                 target_title,
@@ -1458,6 +1830,22 @@ def generate_reporting_md(
          "path from the declared title, which is a dead link for such a "
          "list. `data-dictionary.md` documents every list and column plus "
          "the deployment metadata behind this generation."),
+        "",
+        (f"The Power Query carries **{ITEM_URL_RESOLVED_COLUMN}** beside it, "
+         "because that folder read fails soft: a permission that grants "
+         "items but not the folder, a throttled call or a transient 503 all "
+         "leave the refresh reporting success while every link in the table "
+         "points at the declared title. Where the links matter, hide them on "
+         f"the rows where {ITEM_URL_RESOLVED_COLUMN} is false rather than "
+         "shipping a 404."),
+        "",
+        (f"A list with a date-only column also carries "
+         f"**{DATE_ZONE_RESOLVED_COLUMN}**, for the same reason. A "
+         "date-only value is site-local midnight served as a UTC "
+         "instant, so the query reads the site's time zone to turn it "
+         "back into the date the list shows. That read fails soft too, "
+         "and without it those columns truncate in UTC and read a day "
+         "early east of UTC."),
         "",
         "## Data dictionary page (in-report)",
         "",
@@ -1910,8 +2298,32 @@ def generate_data_dictionary(
         ("| ItemURL | The list's own folder, read at refresh, + item id "
          "(the SQL views use the declared list path instead) | Direct link "
          "from any report row back to the SharePoint item (display form) |"),
+        (f"| {ITEM_URL_RESOLVED_COLUMN} | Whether that folder read succeeded "
+         "| False means every ItemURL in the table was built from the "
+         "declared title, which is a dead link on a list that has been "
+         "renamed. Suppress the link rather than ship a 404 |"),
+        (f"| {DATE_ZONE_RESOLVED_COLUMN} | Whether the site's time zone was "
+         "read at refresh (only on lists that have a date-only column) "
+         "| False means date-only columns were truncated in UTC and may be "
+         "a day early east of UTC |"),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
+        "",
+        "## Blank in a column marked required",
+        "",
+        ("A column's Required cell says what SharePoint enforces on SAVE, "
+         "which is not the same as what every row holds. SharePoint applies "
+         "a column default to NEW items only, so a required column with a "
+         "default reads blank on every row created before that column was "
+         "added to the list, and stays blank until somebody edits the row "
+         "or bulk-edits the column. The generated queries pass those blanks "
+         "through unchanged."),
+        "",
+        ("A blank in such a column therefore means either that the row "
+         "predates the column or that somebody cleared it, and nothing in "
+         "the feed separates the two. Where that distinction matters, "
+         "compare the row's Created against the release that added the "
+         "column rather than reading the blank as a data quality problem."),
         "",
     ]
     return "\n".join(lines)

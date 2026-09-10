@@ -112,6 +112,63 @@ loaded the second as `ID 2` in every list table. Every query now selects
 exactly its declared columns after the typing step, so anything
 SharePoint adds unasked stops there. `_Users.pq` does the same.
 
+## Date-only columns carry the site's date
+
+A date-only column holds site-local midnight and SharePoint serves the UTC
+instant of it. On a site at UTC+10 a date the list shows as 4 September
+arrives as `2026-09-03T14:00:00Z`, so truncating in UTC returns the 3rd,
+and every date-only column in the pack read a day early east of UTC.
+
+The site's time zone is read once per refresh, from
+`_api/web/RegionalSettings/TimeZone`. That object carries `Bias`,
+`StandardBias` and `DaylightBias`, which are three static properties of
+the zone rather than the offset in force on a given day, and it carries no
+transition dates. Reading it more often does not resolve which of the two
+applies, because none of the three values changes when daylight saving
+starts.
+
+The value itself resolves it. A date-only value is local midnight by
+construction, so of the candidate offsets exactly one lands it back on
+midnight, and that one was in force when the value was written. Rows on
+either side of a daylight saving transition each pick their own, with no
+transition date needed anywhere. A value that lands on none of them, such
+as a calculated column arriving as a bare local date, is truncated as
+before.
+
+Each list with a date-only column carries **`DateZoneResolved`**. False
+means that read failed and those columns were truncated in UTC, which the
+refresh reports as success either way.
+
+## Item links say whether they were resolved
+
+Each query reads its own list's folder at refresh time, because a list
+renamed in place keeps the URL slug it was created under and the slug
+cannot be derived at build time. That read fails soft, since a link is a
+convenience and the rows are the data.
+
+Its fallback builds the path from the declared title, which is exactly the
+shape that is wrong on a renamed list, so every table carries
+**`ItemURLResolved`** beside `ItemURL`. False means a permission, a
+throttled call or a transient failure sent the query down that branch and
+the links in that table may 404. Hide the link on those rows rather than
+shipping a dead one.
+
+## Dependent lookups load
+
+A lookup can project columns of its target onto the source list as
+read-only dependent fields, declared under
+[`lookup_projections`](../reference/mapping.md#lookup_projections). Those
+are columns of the list, the deploy creates them and the data dictionary
+documents them, so each one is read through the same `$expand` the
+lookup's display column uses and lands under the same name the list gives
+it.
+
+This matters most where a lookup's display column is calculated. A picker
+that shows a live title so a closed record cannot be selected shows
+nothing once the record closes, and the projection of the target's real
+`Title` is what keeps the row readable. The two are different columns and
+the pack carries both.
+
 ## Where the site URL comes from
 
 `build` is already told the target with `--site-url`, so it writes that

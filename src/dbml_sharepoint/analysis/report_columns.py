@@ -50,8 +50,33 @@ USERS_KEY_LIST = "_Users"
 #: the query itself, so no declared column stands behind it.
 ITEM_URL_COLUMN = "ItemURL"
 
+#: Whether `ITEM_URL_COLUMN` was built from the list's own folder, read at
+#: refresh, or from the declared title after that read failed. The fallback
+#: is a dead link on any list that has been renamed, which is the defect the
+#: folder read exists to fix, so a report that cannot see which branch ran
+#: ships dead links with nothing able to notice.
+ITEM_URL_RESOLVED_COLUMN = "ItemURLResolved"
 
-def report_output_names(sp: SPField, *, lookup_display: str) -> tuple[str, ...]:
+#: Whether the site's time zone was read at refresh, which is what turns a
+#: date-only column's UTC instant back into the date the list shows. The
+#: fallback truncates in UTC and is a day early east of UTC, silently, which
+#: is the same shape of defect as `ITEM_URL_RESOLVED_COLUMN` guards.
+DATE_ZONE_RESOLVED_COLUMN = "DateZoneResolved"
+
+
+def projection_output_name(column: str, target: str) -> str:
+    """The report column one lookup projection contributes.
+
+    The SAME name the deploy gives the dependent field it creates (`jsgen`
+    composes it identically), so the column a report carries is the column
+    the list carries and the data dictionary names.
+    """
+    return f"{column}{target}"
+
+
+def report_output_names(
+    sp: SPField, *, lookup_display: str, projections: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     """The report columns one declared field contributes, in query order.
 
     THE NAMES `Table.RenameColumns` ACTUALLY SEES, which for a record-valued
@@ -66,6 +91,13 @@ def report_output_names(sp: SPField, *, lookup_display: str) -> tuple[str, ...]:
 
     `lookup_display` is the column a lookup into the target shows, from
     `analysis.lookups.display_column_for`. Every other kind ignores it.
+
+    `projections` are the target columns a lookup ALSO projects onto this
+    list, from `mapping.projections_for`. SharePoint and the data dictionary
+    both carry them as columns of the list, so a report that omits them
+    contradicts both, and it does so by leaving the column out rather than
+    blank. The display column is dropped from them where the two coincide,
+    because one expand path cannot land twice under one name.
 
     A fourteenth `FieldKind` fails `uv run mypy` on the `assert_never` below,
     which is the point: a kind whose report columns nobody has decided must
@@ -83,7 +115,12 @@ def report_output_names(sp: SPField, *, lookup_display: str) -> tuple[str, ...]:
         case "User":
             return (f"{sp.name}Id", f"{sp.name}Title")
         case "Lookup":
-            return (f"{sp.name}Id", f"{sp.name}{lookup_display}")
+            projected = tuple(
+                projection_output_name(sp.name, target)
+                for target in projections
+                if target != lookup_display
+            )
+            return (f"{sp.name}Id", f"{sp.name}{lookup_display}", *projected)
         case "LookupMulti":
             # No expand, so no display column: expanding a collection yields a
             # nested table per row and the query carries the ids alone.
