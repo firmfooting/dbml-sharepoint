@@ -2882,18 +2882,38 @@ def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
         load_mapping(path)
 
 
-# --------------------------------------------- reporting_source
+# --------------------------------------------- section pointers
+
+#: Each pointer with one of the sections it carries and a declaration of
+#: that section. The declaration serves as the pointed file's body and, for
+#: the double-declaration test, as the inline copy.
+_POINTED = [
+    pytest.param(
+        "reporting_source", "reporting", "reporting:\n  users_table: true\n",
+        id="reporting_source-reporting",
+    ),
+    pytest.param(
+        "reporting_source", "derived_columns", "derived_columns: {}\n",
+        id="reporting_source-derived_columns",
+    ),
+    pytest.param(
+        "demo_source", "demo_items",
+        "demo_items:\n  Risk:\n    - key: r1\n      values: { Title: '[DEMO] one' }\n",
+        id="demo_source-demo_items",
+    ),
+]
+_POINTERS = ["reporting_source", "demo_source"]
 
 
-def _reporting_file(tmp_path: Path, body: str) -> None:
-    (tmp_path / "reporting.yaml").write_text(body, encoding="utf-8")
+def _side_file(tmp_path: Path, body: str) -> None:
+    (tmp_path / "side.yaml").write_text(body, encoding="utf-8")
 
 
 def test_reporting_source_carries_both_reporting_sections(tmp_path: Path) -> None:
     """The two sections the REPORTING PACK reads may live beside the mapping
     rather than inside it. The deploy reads neither, so the seam is what
     consumes a section rather than how long the section is."""
-    _reporting_file(tmp_path, """
+    _side_file(tmp_path, """
 reporting:
   users_table: true
   time_zone: Australia/Melbourne
@@ -2906,7 +2926,7 @@ derived_columns:
 """)
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+        blocks(entities("Risk"), "reporting_source: side.yaml"),
     )
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.reporting.users_table is True
@@ -2914,55 +2934,81 @@ derived_columns:
     assert [c.name for c in bundle.mapping.derived_for("Risk")] == ["IsOpen"]
 
 
-@pytest.mark.parametrize("section", ["reporting", "derived_columns"])
-def test_a_section_declared_twice_is_refused(tmp_path: Path, section: str) -> None:
+def test_demo_source_carries_the_demo_rows(tmp_path: Path) -> None:
+    """The demo rows are consumed by one generator, into demo-data.js.txt,
+    and only when a build passes --seed. No deploy, rollback, assess or
+    verify script reads them, so they move on the rule the reporting split
+    set: the seam is what consumes a section, not how long it is."""
+    _side_file(tmp_path, """
+demo_items:
+  Risk:
+    - key: r1
+      values: { Title: "[DEMO] one" }
+    - key: r2
+      values: { Title: "[DEMO] two" }
+""")
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "demo_source: side.yaml"),
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert [row.key for row in bundle.mapping.demo_items["Risk"]] == ["r1", "r2"]
+
+
+@pytest.mark.parametrize(("pointer", "section", "body"), _POINTED)
+def test_a_section_declared_twice_is_refused(
+    tmp_path: Path, pointer: str, section: str, body: str,
+) -> None:
     """Two declarations of one section is a question with no right answer.
     Whichever this picked, the other would be edited by somebody who could
     not see it being ignored, which is the failure the split exists to
     avoid rather than one to introduce."""
-    _reporting_file(tmp_path, "reporting:\n  users_table: true\n")
-    inline = (
-        "reporting:\n  system_columns: true" if section == "reporting"
-        else "derived_columns: {}"
-    )
+    _side_file(tmp_path, body)
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml", inline),
+        blocks(entities("Risk"), f"{pointer}: side.yaml", body),
     )
     with pytest.raises(ValueError, match="may not also be declared") as err:
         load_mapping(tmp_path / "m.yaml")
     assert section in str(err.value)
+    assert pointer in str(err.value)
 
 
-def test_the_reporting_file_may_hold_nothing_else(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("pointer", "section", "body"), _POINTED)
+def test_the_pointed_file_may_hold_nothing_else(
+    tmp_path: Path, pointer: str, section: str, body: str,
+) -> None:
     """A file that accepted any section would be a second mapping, and which
     of the two won would depend on where a reader happened to look."""
-    _reporting_file(tmp_path, "reporting:\n  users_table: true\nviews: {}\n")
+    _side_file(tmp_path, body + "views: {}\n")
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+        blocks(entities("Risk"), f"{pointer}: side.yaml"),
     )
     with pytest.raises(ValueError, match="unknown key") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "views" in str(err.value)
+    assert section in str(err.value)
 
 
-def test_an_unreadable_reporting_source_names_the_path(tmp_path: Path) -> None:
-    """Silently loading no reporting configuration would turn a typo into a
-    pack with no derived columns and no declared zone, which generates and
-    refreshes and is simply missing everything."""
+@pytest.mark.parametrize("pointer", _POINTERS)
+def test_an_unreadable_pointer_names_the_path(tmp_path: Path, pointer: str) -> None:
+    """Silently loading nothing would turn a typo into a pack with no derived
+    columns and no declared zone, or a --seed build with no rows, which
+    generates and refreshes and is simply missing everything."""
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: nope.yaml"),
+        blocks(entities("Risk"), f"{pointer}: nope.yaml"),
     )
-    with pytest.raises(ValueError, match=r"cannot read 'nope\.yaml'"):
+    with pytest.raises(ValueError, match=rf"{pointer}: cannot read 'nope\.yaml'"):
         load_mapping(tmp_path / "m.yaml")
 
 
-def test_reporting_stays_optional_without_the_pointer(tmp_path: Path) -> None:
-    """Every family that declares neither section must load unchanged: the
-    pointer is a way to move them, not a new requirement."""
+def test_pointed_sections_stay_optional_without_the_pointer(tmp_path: Path) -> None:
+    """Every family that declares none of these sections must load
+    unchanged: a pointer is a way to move a section, not a new requirement."""
     write_mapping(tmp_path, blocks(entities("Risk")))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.reporting.users_table is False
     assert bundle.mapping.derived_columns == {}
+    assert bundle.mapping.demo_items == {}

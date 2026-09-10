@@ -23,8 +23,8 @@ set that once admitted two sections nothing read.
 
 A family may carry a pointer, ``source``: an optional key whose value names
 a file beside the mapping holding the family's sections and nothing else.
-``reporting_source`` was the first. The resolution is generic, so the next
-one is a registry entry rather than a second copy.
+``reporting_source`` was the first and ``demo_source`` the second. The
+resolution is generic, so each is a registry entry rather than a copy.
 """
 
 from collections.abc import Callable, Mapping
@@ -89,7 +89,7 @@ SECTION_FAMILIES: tuple[Section, ...] = (
     Section(("field_sets", "views"), _views.read),
     Section(("form_visibility", "column_validation", "list_validation"), _forms.read),
     Section(("display_names",), _display_names.read),
-    Section(("demo_items",), _demo.read),
+    Section(("demo_items",), _demo.read, source="demo_source"),
     Section(("retired_columns",), _retired.read),
 )
 

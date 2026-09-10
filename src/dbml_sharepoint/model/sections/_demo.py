@@ -1,9 +1,12 @@
 # src/dbml_sharepoint/model/sections/_demo.py
 """`demo_items`: the sample rows `build --seed` writes into demo-data.js.txt.
 
-Nothing in the deploy, rollback, assess or verify scripts reads them. The
-loader checks each row's shape; the title marker, the value grammar and the
-column semantics are the validator's, checked against the schema.
+Nothing in the deploy, rollback, assess or verify scripts reads them, which
+is why `demo_source` may move the section to a file beside the mapping, on
+the rule the reporting split set: the seam is what consumes a section rather
+than how long it is. The loader checks each row's shape; the title marker,
+the value grammar and the column semantics are the validator's, checked
+against the schema.
 """
 
 from typing import Any

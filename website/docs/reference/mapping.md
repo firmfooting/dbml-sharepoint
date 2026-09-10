@@ -1533,6 +1533,24 @@ right answer, and whichever won, the other would be edited by somebody who
 could not see it being ignored. The path resolves relative to the mapping,
 the same rule as `enum_sources` and the formatter files.
 
+## `demo_source`
+
+```yaml
+demo_source: demo.yaml   # holds `demo_items:`
+```
+
+Moves the [`demo_items`](#demo_items) section into its own file beside the
+mapping, on the same rule as `reporting_source`. Optional: a family that
+declares the rows inline is unchanged, and so is its `--seed` build.
+
+The seam is again what consumes a section. The demo rows are read by one
+generator, into `demo-data.js.txt`, and only when a build passes `--seed`;
+the deploy, rollback, assess and verify scripts never see them. The file may
+hold `demo_items` and nothing else, and a mapping that points at one may not
+also declare the section inline. Both are refused at load rather than
+merged, for the reason given under `reporting_source`. The path resolves
+relative to the mapping.
+
 ## `derived_columns`
 
 ```yaml
@@ -2205,7 +2223,8 @@ field is the only route to that read-back anybody has measured.
 Every Title must start with `[DEMO]` followed by one space (validated), keeping
 sample data visible in every view and form. The prefix is not deletion
 authority; rollback confirms every target list separately. Only emitted with
-`build --seed`. See [demo data](../artifacts/demo-data.md).
+`build --seed`. See [demo data](../artifacts/demo-data.md). The section may
+live in a file beside the mapping; see [`demo_source`](#demo_source).
 
 ## `extensions`
 
