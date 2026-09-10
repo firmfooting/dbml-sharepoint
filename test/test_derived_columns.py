@@ -23,9 +23,9 @@ from _paths import FIXTURES, SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.derived import report_column_names
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
-    generate_powerquery,
     generate_sql_views,
 )
 from dbml_sharepoint.model.mapping_loader import load_mapping

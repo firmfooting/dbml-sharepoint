@@ -19,11 +19,13 @@ from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
 from dbml_sharepoint.generators import reportgen
+from dbml_sharepoint.generators.report_m import (
+    generate_dictionary_powerquery,
+    generate_powerquery,
+)
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
-    generate_dictionary_powerquery,
     generate_dictionary_sql,
-    generate_powerquery,
     generate_reporting_md,
     generate_sql_views,
 )

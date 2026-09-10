@@ -145,7 +145,7 @@ def grouped_record_expands(plan: dbml_sharepoint.analysis.reporting.plan.ListPla
 ```
 
 `record_expands` gathered by source record column, first appearance
-first. See `_render_m` for why one step per record is not optional.
+first. See `report_m._render_m` for why one step per record is not optional.
 
 ### `tolerant_date_columns`
 

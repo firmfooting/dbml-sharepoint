@@ -1,7 +1,7 @@
 """The column-history family's key contract, pinned to its two authorities.
 
 `_row_key_m` is THE definition of the reporting row key
-(`generators/reportgen.py`, "THE ONE definition of the key format"); the
+(`generators/report_m.py`, "THE ONE definition of the key format"); the
 family's deploy.md and governance.md document it for flow authors, and the
 demo rows hand-type it. The whole Power BI value of the family rests on
 those three staying byte-identical. `_row_key_m` has already changed format
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from dbml_sharepoint.generators.reportgen import _row_key_m
+from dbml_sharepoint.generators.report_m import _row_key_m
 
 _FAMILY = (
     Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ def _row_key_literal() -> str:
     return _row_key_m("RR_Risk", "[Id]")
 
 
-def test_the_reportgen_key_shape() -> None:
+def test_the_report_m_key_shape() -> None:
     # Guard the guard: if this fails, `_row_key_m` changed shape and every
     # assertion below is testing the OLD format against NEW docs.
     key = _row_key_literal()

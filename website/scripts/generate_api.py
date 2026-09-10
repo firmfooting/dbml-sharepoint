@@ -81,6 +81,7 @@ MODULES: list[tuple[str, str]] = [
     ("generators.verifygen", "verify.js: each clock cell a pack uses, on a scratch list"),
     ("generators.demogen", "demo-data.js"),
     ("generators.manifestgen", "deploy-manifest.md"),
+    ("generators.report_m", "the Power Query side of the reporting pack"),
     ("generators.reportgen", "Power Query / SQL reporting pack"),
     ("bundle", "Packaging: the one emission sequence"),
     ("templating", "Packaging: the shared Jinja environment"),

@@ -88,7 +88,7 @@ class ListPlan:
     # (record column, inner field, expanded output column, M type token)
     #
     # The type is carried here rather than looked up in `m_types` because the
-    # expand is emitted GUARDED (see `_render_m`): when the source record
+    # expand is emitted GUARDED (see `report_m._render_m`): when the source record
     # column is absent (which is what an EMPTY list gives you), the output
     # column is added as nulls instead, and that fallback has to ascribe a
     # type at the point it is written.
@@ -772,7 +772,7 @@ def grouped_record_expands(
     plan: ListPlan,
 ) -> list[tuple[str, list[tuple[str, str, str]]]]:
     """`record_expands` gathered by source record column, first appearance
-    first. See `_render_m` for why one step per record is not optional."""
+    first. See `report_m._render_m` for why one step per record is not optional."""
     grouped: list[tuple[str, list[tuple[str, str, str]]]] = []
     at: dict[str, int] = {}
     for record_col, inner, out, m_type in plan.record_expands:
