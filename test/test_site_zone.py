@@ -23,6 +23,7 @@ import typer
 import tzlocal
 from _builders import ID_PK
 from _builders import table as dbml_table
+from _console import plain
 from _findings import none_of
 from _packs import entities, write_dbml, write_mapping
 from _paths import FIXTURES, MANUAL, SOLUTION_TEMPLATES
@@ -231,9 +232,10 @@ def test_build_refuses_without_a_zone(tmp_path: Path) -> None:
     the bundle mid-paste."""
     result = CliRunner().invoke(app, _build_args(tmp_path))
     assert result.exit_code == 2, result.output
-    assert "--time-zone is required" in result.output
-    assert TIME_ZONE_KEY in result.output
-    assert "Regional settings" in result.output
+    out = plain(result.output)
+    assert "--time-zone is required" in out
+    assert TIME_ZONE_KEY in out
+    assert "Regional settings" in out
     assert not (tmp_path / "build").exists()
 
 
@@ -242,7 +244,7 @@ def test_the_env_file_supplies_the_zone(tmp_path: Path) -> None:
     env.write_text(f"{TIME_ZONE_KEY}={MELBOURNE}\n", encoding="utf-8", newline="\n")
     result = CliRunner().invoke(app, _build_args(tmp_path, "--env-file", str(env)))
     assert result.exit_code == 0, result.output
-    assert f"{TIME_ZONE_KEY} = {MELBOURNE} (from the file)" in result.output
+    assert f"{TIME_ZONE_KEY} = {MELBOURNE} (from the file)" in plain(result.output)
     query = (tmp_path / "build" / "reporting" / "powerquery" / "APP_Risk.pq").read_text(
         encoding="utf-8",
     )
@@ -258,7 +260,7 @@ def test_the_flag_beats_the_env_file(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (
         f"{TIME_ZONE_KEY} = {MELBOURNE} (from the file; overridden, using Asia/Tokyo)"
-        in result.output
+        in plain(result.output)
     )
     query = (tmp_path / "build" / "reporting" / "powerquery" / "APP_Risk.pq").read_text(
         encoding="utf-8",
@@ -279,8 +281,9 @@ def test_an_unknown_zone_is_refused_wherever_it_came_from(tmp_path: Path, source
         args = _build_args(tmp_path, "--env-file", str(env))
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 2, result.output
-    assert "'Mars/Olympus' is not an IANA time zone name" in result.output
-    assert "Traceback" not in result.output
+    out = plain(result.output)
+    assert "'Mars/Olympus' is not an IANA time zone name" in out
+    assert "Traceback" not in out
     assert not (tmp_path / "build").exists()
 
 
@@ -624,8 +627,9 @@ def test_report_refuses_an_unknown_zone_by_name(tmp_path: Path) -> None:
         "--out", str(tmp_path / "reports"),
     ])
     assert result.exit_code == 2, result.output
-    assert "Mars/Olympus" in result.output
-    assert "Traceback" not in result.output
+    out = plain(result.output)
+    assert "Mars/Olympus" in out
+    assert "Traceback" not in out
     assert not (tmp_path / "reports").exists()
 
 
@@ -637,7 +641,7 @@ def test_report_requires_the_zone(tmp_path: Path) -> None:
         "--out", str(tmp_path / "reports"),
     ])
     assert result.exit_code == 2, result.output
-    assert "--time-zone" in result.output
+    assert "--time-zone" in plain(result.output)
     assert not (tmp_path / "reports").exists()
 
 
