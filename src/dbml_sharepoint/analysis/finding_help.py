@@ -580,6 +580,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A view title yields an empty URL slug; it needs at least one "
         "letter or digit."
     ),
+    FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN: (
+        "A declared column reaches the report under a name the pack "
+        "itself adds, such as `ItemURL`. The query then selects the "
+        "column and adds its own of the same name, which fails the "
+        "refresh rather than the build. Rename the schema column."
+    ),
     FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN: (
         "A column's resolved display title is one of the columns the "
         "reporting pack adds to the same list: `Site Url`, `Site Name`, "

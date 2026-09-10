@@ -1387,3 +1387,47 @@ def test_a_projected_column_is_checked_for_a_report_collision() -> None:
     assert "'List Title'" in only(
         errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
     ).message
+
+
+@pytest.mark.parametrize("name", ["ItemURL", "ItemURLResolved", "DateZoneResolved"])
+def test_a_column_named_like_one_the_pack_adds_is_refused(name: str) -> None:
+    """THE defect this rule closes. The pack adds these three to every query.
+    A schema declaring one is selected by the `Declared` step and then added
+    again by `Table.AddColumn`, which Power Query refuses. The build reported
+    no error at all, so the failure arrived at refresh, after the model was
+    published.
+
+    Found by DUPLICATE rather than by a reserved list, because the pack added
+    two of these three in one release and nobody extended a list.
+    """
+    schema = make_schema(
+        make_table(
+            "Risk",
+            column("Title", required=True),
+            column(name, "nvarchar"),
+            column("ReviewDate", "date"),
+        ),
+    )
+    bundle = make_bundle(entities=["Risk"])
+    finding = only(
+        [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"],
+        FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN,
+    )
+    assert f"Risk.{name}" in finding.message
+
+
+def test_a_list_with_no_date_column_may_still_name_a_column_after_the_zone_flag() -> None:
+    """`DateZoneResolved` is added only where a query converts a date-only
+    column, so a list with none is not in conflict. A reserved list would
+    have refused this; asking the derivation does not."""
+    schema = make_schema(
+        make_table(
+            "Note",
+            column("Title", required=True),
+            column("DateZoneResolved", "nvarchar"),
+        ),
+    )
+    none_of(
+        validate_against_mapping(schema, make_bundle(entities=["Note"])),
+        FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN,
+    )

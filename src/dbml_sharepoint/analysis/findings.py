@@ -182,6 +182,9 @@ class FindingCode(StrEnum):
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"
     DOCUMENT_LIBRARY_UNSUPPORTED = "document_library_unsupported", "error"
     DUPLICATE_DISPLAY_TITLE = "duplicate_display_title", "error"
+    COLUMN_COLLIDES_WITH_REPORT_COLUMN = (
+        "column_collides_with_report_column", "error",
+    )
     DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN = (
         "display_title_collides_with_report_column", "error",
     )
