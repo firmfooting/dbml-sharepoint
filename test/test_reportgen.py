@@ -2610,6 +2610,79 @@ def test_the_data_dictionary_and_the_query_agree_on_the_projected_name() -> None
     assert '"StakeholderStatus"' in query
 
 
+# ------------------------------------- date-only columns and the site's zone
+
+
+def test_a_date_only_column_reads_the_sites_time_zone() -> None:
+    """A date-only value is site-local midnight served as the UTC instant of
+    it, so truncating in UTC is a day early east of UTC. Reported twice by a
+    consumer on a UTC+10 site, where 2026-09-03T14:00:00Z is the 4th."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "/_api/web/RegionalSettings/TimeZone" in query
+    assert '"Bias"' in query
+    assert '"StandardBias"' in query
+    assert '"DaylightBias"' in query
+
+
+def test_both_biases_are_candidates_rather_than_one_being_chosen() -> None:
+    """`SP.TimeZoneInformation` carries three STATIC properties of the zone
+    and no transition dates, so reading it at refresh does not say whether
+    daylight saving is in force. Reading it more often does not help; the
+    value itself is what resolves it, so both have to be offered.
+    """
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    # The whole literal, so the SIGN is pinned and not just the names. The
+    # Windows convention is UTC = local + Bias + (Standard|Daylight)Bias, so
+    # the offset east of UTC is the negation of the two, which is how
+    # `datetime-sentinel-probe.js` and `library-large-list-fixture-probe.js`
+    # build the same pair against a live site. Zero leads, so a value that
+    # already arrived as a bare local date resolves first.
+    assert "{0, - (Bias + Standard), - (Bias + Daylight)}" in query
+
+
+def test_the_offset_is_identified_by_landing_on_midnight() -> None:
+    """THE test that keeps this correct across a DST transition, and the one
+    a 'simplification' to a single offset would remove. A date-only value is
+    local midnight by construction, so the candidate that lands it on
+    midnight is the offset that was in force for THAT value: rows either
+    side of a transition each pick their own.
+
+    It also makes the conversion independent of the units and the sign the
+    API answers in, because a wrong candidate does not land and is dropped.
+    """
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "each DateTime.Time(_) = #time(0, 0, 0)" in query
+    assert "each Stamp + #duration(0, 0, _, 0)" in query
+    assert "List.Select(" in query.split("Landed =")[1]
+
+
+def test_a_date_that_lands_on_no_offset_still_produces_a_value() -> None:
+    """Every branch ends in a value: a shape nobody anticipated blanks one
+    column rather than failing the batch, which is what the zero-row and
+    text-date guards before it were also for."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    tail = query.split("if not List.IsEmpty(Landed) then")[1]
+    assert "try Date.From(Stamp)" in tail
+    assert "otherwise try Date.From(v)" in tail
+    assert "otherwise null" in tail
+
+
+def test_the_text_branch_does_not_convert_a_zoneless_stamp() -> None:
+    """Text carrying `Z` is already the UTC wall clock and text carrying no
+    zone is already local, so a `ToUtc` on this path would move the second
+    kind by the REPORT MACHINE's offset, which has nothing to do with the
+    site's. The typed branch is the one that needs it."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    text_branch = query.split("        else\n            try DateTimeZone")[1]
+    assert "ToUtc" not in text_branch.split("otherwise null,")[0]
+    assert "DateTimeZone.RemoveZone(DateTimeZone.ToUtc(v))" in query
+
+
 # --------------------------------------------- the two fail-soft reads, seen
 
 
@@ -2625,3 +2698,31 @@ def test_a_guessed_item_url_says_so_on_every_row() -> None:
     )
     assert "resolved = true," in query
     assert "resolved = false," in query
+
+
+def test_an_unread_time_zone_says_so_on_every_row() -> None:
+    """Same argument as the item URL above: without the zone every date-only
+    column truncates in UTC and reads a day early east of UTC, and the
+    refresh reports success either way."""
+    schema, bundle = _simple()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert _added_column_expression(query, "DateZoneResolved") == (
+        "each Zone[resolved]"
+    )
+    assert "otherwise [resolved = false, offsets = {0}]," in query
+
+
+def test_only_a_list_with_a_date_column_carries_the_zone_flag() -> None:
+    """A column that says nothing about this list would erode what it means
+    on the lists where it does."""
+    schema, bundle = _simple()
+    queries = generate_powerquery(schema, bundle, "default")
+    with_dates = [
+        name for name, query in queries.items()
+        if "each AsDate(_)" in query
+    ]
+    assert with_dates, queries.keys()
+    for name, query in queries.items():
+        assert ('"DateZoneResolved"' in query) == (name in with_dates), name
+        # The zone read has no other reader, so it goes with it.
+        assert ("RegionalSettings/TimeZone" in query) == (name in with_dates)

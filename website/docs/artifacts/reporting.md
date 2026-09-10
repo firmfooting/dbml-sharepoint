@@ -112,6 +112,33 @@ loaded the second as `ID 2` in every list table. Every query now selects
 exactly its declared columns after the typing step, so anything
 SharePoint adds unasked stops there. `_Users.pq` does the same.
 
+## Date-only columns carry the site's date
+
+A date-only column holds site-local midnight and SharePoint serves the UTC
+instant of it. On a site at UTC+10 a date the list shows as 4 September
+arrives as `2026-09-03T14:00:00Z`, so truncating in UTC returns the 3rd,
+and every date-only column in the pack read a day early east of UTC.
+
+The site's time zone is read once per refresh, from
+`_api/web/RegionalSettings/TimeZone`. That object carries `Bias`,
+`StandardBias` and `DaylightBias`, which are three static properties of
+the zone rather than the offset in force on a given day, and it carries no
+transition dates. Reading it more often does not resolve which of the two
+applies, because none of the three values changes when daylight saving
+starts.
+
+The value itself resolves it. A date-only value is local midnight by
+construction, so of the candidate offsets exactly one lands it back on
+midnight, and that one was in force when the value was written. Rows on
+either side of a daylight saving transition each pick their own, with no
+transition date needed anywhere. A value that lands on none of them, such
+as a calculated column arriving as a bare local date, is truncated as
+before.
+
+Each list with a date-only column carries **`DateZoneResolved`**. False
+means that read failed and those columns were truncated in UTC, which the
+refresh reports as success either way.
+
 ## Item links say whether they were resolved
 
 Each query reads its own list's folder at refresh time, because a list

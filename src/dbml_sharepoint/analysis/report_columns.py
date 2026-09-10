@@ -57,6 +57,12 @@ ITEM_URL_COLUMN = "ItemURL"
 #: ships dead links with nothing able to notice.
 ITEM_URL_RESOLVED_COLUMN = "ItemURLResolved"
 
+#: Whether the site's time zone was read at refresh, which is what turns a
+#: date-only column's UTC instant back into the date the list shows. The
+#: fallback truncates in UTC and is a day early east of UTC, silently, which
+#: is the same shape of defect as `ITEM_URL_RESOLVED_COLUMN` guards.
+DATE_ZONE_RESOLVED_COLUMN = "DateZoneResolved"
+
 
 def projection_output_name(column: str, target: str) -> str:
     """The report column one lookup projection contributes.
