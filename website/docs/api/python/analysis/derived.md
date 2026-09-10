@@ -14,11 +14,12 @@ deployed: no SharePoint field is created, nothing is read back, and a list
 carries no trace of one. They exist in the generated Power Query and nowhere
 else.
 
-SHARED because two sides need the same facts and must not drift. `reportgen`
-emits the steps; `checks/_derived` refuses a declaration that names a column
-the query does not produce. `AGENTS.md` is explicit that such a fact lives in
-a shared module, and that a generator must never import from
-`analysis/checks/`.
+SHARED because two sides need the same facts and must not drift.
+`reporting/plan` resolves each entry into a step and `generators/report_m`
+emits it; `checks/_derived` refuses a declaration that names a column the
+query does not produce, reading `plan.report_column_names` for what it does
+produce. `AGENTS.md` is explicit that such a fact lives in a shared module,
+and that a generator must never import from `analysis/checks/`.
 
 WHY THE REFERENCE CHECK IS THE RULE THAT MATTERS. A derived column names its
 inputs in a string. Nothing downstream reads that string until Power BI does:
@@ -108,28 +109,4 @@ def users_column_names() -> frozenset[str]
 ```
 
 The internal names a `lookup` into `_Users` may pick.
-
-### `report_column_names`
-
-```python
-def report_column_names(table: dbml_sharepoint.model.parser.Table, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, enum_names: collections.abc.Iterable[str], *, include_derived: bool = True) -> tuple[str, ...]
-```
-
-Every column the report query for one entity produces, in query order.
-
-INTERNAL names, which is what the query carries until its last step: the
-model-facing rename runs after everything here, so an author writing an
-`m` expression is writing against these.
-
-`test_reportgen` pins this against the columns a generated query really
-declares, for every shipped family, so the two cannot drift.
-
-### `child_column_names`
-
-```python
-def child_column_names(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, entity: str) -> tuple[str, ...]
-```
-
-The columns another entity's query produces, for a `where` or a
-`column` that reads the CHILD rows rather than this list's.
 

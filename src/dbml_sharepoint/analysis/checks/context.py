@@ -14,6 +14,7 @@ tested one at a time.
 from dataclasses import dataclass, field
 
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
@@ -61,6 +62,18 @@ class ValidationContext:
     # than leave an author counting twenty and finding no explanation.
     display_index_by_entity: dict[str, str] = field(default_factory=dict)
     effective_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # {site_role: {entity: plan}}, or None for a role the planner refused.
+    # Two families read the report query's columns off this rather than
+    # deriving them again: `_naming` for a declared column landing on a name
+    # the pack adds, `_derived` for what an expression may reference. Every
+    # condition the planner refuses (an unmapped column type, a multi-value
+    # member holding the export separator, a projection the schema lacks, an
+    # unknown zone) is a finding of its own elsewhere, so a refused role
+    # reads as "nothing to say here" rather than as an error of this
+    # object's.
+    report_plans_by_role: dict[str, dict[str, ListPlan] | None] = field(
+        default_factory=dict,
+    )
 
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
@@ -124,6 +137,14 @@ class ValidationContext:
         display_columns = lookup_display_columns(
             schema, bundle.mapping.entities, calculated_by_entity, cross_site_pairs,
         )
+        report_plans_by_role: dict[str, dict[str, ListPlan] | None] = {}
+        for role in sorted({e.site_role for e in bundle.mapping.entities.values()}):
+            try:
+                plans = build_plans(schema, bundle, role)
+            except ValueError:
+                report_plans_by_role[role] = None
+            else:
+                report_plans_by_role[role] = {plan.entity: plan for plan in plans}
         return cls(
             schema=schema,
             bundle=bundle,
@@ -140,6 +161,7 @@ class ValidationContext:
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
             display_index_by_entity=display_columns,
+            report_plans_by_role=report_plans_by_role,
             effective_indexes_by_entity={
                 table.name: (
                     explicit_indexes_by_entity[table.name]
@@ -162,3 +184,16 @@ class ValidationContext:
     def effective_indexes(self, entity_name: str) -> set[str]:
         """Declared and implicit SharePoint indexes for one entity."""
         return self.effective_indexes_by_entity.get(entity_name, set())
+
+    def report_plan(self, entity_name: str) -> ListPlan | None:
+        """One entity's reporting plan, or None where no query exists for it.
+
+        None for an entity the mapping does not declare (`_structure` reports
+        that) and for one whose site role the planner refused (see
+        `report_plans_by_role`).
+        """
+        entity = self.bundle.mapping.entities.get(entity_name)
+        if entity is None:
+            return None
+        plans = self.report_plans_by_role.get(entity.site_role)
+        return None if plans is None else plans.get(entity_name)

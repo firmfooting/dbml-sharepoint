@@ -66,6 +66,7 @@ class ListPlan:
     m_types: list[tuple[str, str]] = field(default_factory=list)
     multi_value_joins: list[tuple[str, bool]] = field(default_factory=list)
     output_columns: list[str] = field(default_factory=list)
+    system_outputs: list[str] = field(default_factory=list)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
     joins: list[tuple[str, str, str, tuple[str, ...]]] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
@@ -166,8 +167,33 @@ def reads_zone(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan) -> bool
 
 Whether the query reads the site's zone, and so carries
 `DateZoneResolved`: for a date-only column, or for a declared zone,
-whose agreement check has nowhere else to surface. Asked by the planner
-and by the renderer; `analysis/derived.py` answers the same for the
-column list, and the family sweep in `test_derived_columns` holds the
-two together.
+whose agreement check has nowhere else to surface. Asked by the planner,
+by the renderer and by `report_column_names`, so the flag cannot be
+planned, written and listed by three different answers.
+
+### `report_column_names`
+
+```python
+def report_column_names(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan, *, include_derived: bool = True) -> tuple[str, ...]
+```
+
+Every column one list's report query produces, in query order.
+
+INTERNAL names, which is what the query carries until its last step:
+the model-facing rename runs after everything here, so an author
+writing an `m` expression is writing against these.
+
+A VIEW over the plan, not a second derivation. `checks/_derived` reads
+it for what an expression may reference and `checks/_naming` for a
+declared column landing on a name the pack adds. Until this was a view,
+`analysis/derived.py` re-derived the same list from the schema and a
+regular-expression sweep over the emitted M held the two in step; that
+sweep, in `test_derived_columns`, now pins the renderer to this one
+answer instead.
+
+`include_derived=False` stops before the reporting-only columns, for a
+check that walks the declarations in order and adds each one's outputs
+as it goes. A derived entry the planner dropped, because its target is
+not reported at this site, contributes nothing here, which is what the
+query does; the validator reports the entry itself.
 

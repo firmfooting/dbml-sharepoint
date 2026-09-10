@@ -33,10 +33,14 @@ from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
     ITEM_URL_COLUMN,
     ITEM_URL_RESOLVED_COLUMN,
+    REPORT_FIXED_COLUMNS,
+    REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
     SYSTEM_DISPLAY_TITLES,
     USERS_DISPLAY_TITLES,
     USERS_KEY_LIST,
+    fk_key_column,
+    person_key_column,
     projection_output_name,
     report_output_names,
 )
@@ -109,6 +113,12 @@ class ListPlan:
     # one `checks/_naming` reads too, so a rule about the report's names
     # cannot compare a different set from the one the query produces.
     output_columns: list[str] = field(default_factory=list)
+    # The report columns the SYSTEM columns contribute, in query order, when
+    # `reporting.system_columns` is on: `AuthorId`, `AuthorTitle`, `Created`
+    # and so on. Kept apart from `output_columns` because they are not
+    # declared fields: the rename step gives them SharePoint's own titles
+    # rather than the mapping's.
+    system_outputs: list[str] = field(default_factory=list)
     # (landed column, SQL type)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
     # (fk column, target list title, target display column, projected target
@@ -670,16 +680,15 @@ def build_plans(
         # $select=Created,Modified,AuthorId,Author/Title,EditorId,Editor/Title
         # with $expand=Author,Editor in the same shape as a declared person
         # or date-time column, which is why they ride the same two helpers.
-        system_outputs: set[str] = set()
         if bundle.mapping.reporting.system_columns:
             for name in REPORT_SYSTEM_COLUMNS:
                 kind = SYSTEM_COLUMN_TYPES[name]
                 if is_person(kind):
                     _plan_person(plan, name)
-                    system_outputs.update((f"{name}Id", f"{name}Title"))
+                    plan.system_outputs += [f"{name}Id", f"{name}Title"]
                 elif kind == "datetime":
                     _plan_scalar(plan, name, _datetime_types(date_only=False))
-                    system_outputs.add(name)
+                    plan.system_outputs.append(name)
                 else:
                     raise ValueError(
                         f"reporting has no plan for system column {name!r} "
@@ -718,7 +727,7 @@ def build_plans(
             # "<Display> Id" / "<Display> Title" shape as a declared person
             # column, so they sit consistently beside one.
             for name, title in SYSTEM_DISPLAY_TITLES.items():
-                if f"{name}Id" in system_outputs:
+                if f"{name}Id" in plan.system_outputs:
                     plan.renames.append((f"{name}Id", f"{title} Id"))
                     plan.renames.append((f"{name}Title", f"{title} Title"))
         plans.append(plan)
@@ -801,8 +810,60 @@ def tolerant_date_columns(plan: ListPlan) -> list[str]:
 def reads_zone(plan: ListPlan) -> bool:
     """Whether the query reads the site's zone, and so carries
     `DateZoneResolved`: for a date-only column, or for a declared zone,
-    whose agreement check has nowhere else to surface. Asked by the planner
-    and by the renderer; `analysis/derived.py` answers the same for the
-    column list, and the family sweep in `test_derived_columns` holds the
-    two together."""
+    whose agreement check has nowhere else to surface. Asked by the planner,
+    by the renderer and by `report_column_names`, so the flag cannot be
+    planned, written and listed by three different answers."""
     return plan.zone is not None or bool(tolerant_date_columns(plan))
+
+
+def _step_outputs(step: DerivedStep) -> tuple[str, ...]:
+    """The columns one resolved derived step ADDS to the query."""
+    if step.kind == "expr":
+        return () if step.replace else (step.name,)
+    if step.kind == "lookup":
+        return tuple(out for _source, out, _m_type in step.picks)
+    return (step.name,)
+
+
+def report_column_names(
+    plan: ListPlan, *, include_derived: bool = True,
+) -> tuple[str, ...]:
+    """Every column one list's report query produces, in query order.
+
+    INTERNAL names, which is what the query carries until its last step:
+    the model-facing rename runs after everything here, so an author
+    writing an `m` expression is writing against these.
+
+    A VIEW over the plan, not a second derivation. `checks/_derived` reads
+    it for what an expression may reference and `checks/_naming` for a
+    declared column landing on a name the pack adds. Until this was a view,
+    `analysis/derived.py` re-derived the same list from the schema and a
+    regular-expression sweep over the emitted M held the two in step; that
+    sweep, in `test_derived_columns`, now pins the renderer to this one
+    answer instead.
+
+    `include_derived=False` stops before the reporting-only columns, for a
+    check that walks the declarations in order and adds each one's outputs
+    as it goes. A derived entry the planner dropped, because its target is
+    not reported at this site, contributes nothing here, which is what the
+    query does; the validator reports the entry itself.
+    """
+    names = [
+        *plan.output_columns,
+        *plan.system_outputs,
+        ITEM_URL_COLUMN,
+        ITEM_URL_RESOLVED_COLUMN,
+        *REPORT_FIXED_COLUMNS,
+        f"{plan.entity}{REPORT_KEY_SUFFIX}",
+    ]
+    if reads_zone(plan):
+        names.append(DATE_ZONE_RESOLVED_COLUMN)
+    names += [
+        fk_key_column(fk_column)
+        for fk_column, _title, _display, _projected in plan.joins
+    ]
+    if plan.users_table:
+        names += [person_key_column(name) for name in plan.person_columns]
+    if include_derived:
+        names += [name for step in plan.derived for name in _step_outputs(step)]
+    return tuple(names)

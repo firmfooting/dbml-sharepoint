@@ -14,16 +14,15 @@ asking for `Title`, and thirteen queries were blocked behind the failure.
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.derived import (
-    child_column_names,
     derived_output_names,
     derived_references,
     is_users_source,
     lookup_key_columns,
-    report_column_names,
     users_column_names,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.report_columns import USERS_KEY_LIST
+from dbml_sharepoint.analysis.reporting.plan import report_column_names
 from dbml_sharepoint.analysis.typemap import is_person
 from dbml_sharepoint.model.mapping_types import DerivedColumn
 from dbml_sharepoint.model.parser import Table
@@ -47,10 +46,16 @@ def _lookup_target(table: Table, via: str) -> str | None:
     return col.ref.target_table
 
 
+def _produced(vc: ValidationContext, entity: str) -> set[str] | None:
+    """Every column `entity`'s report query produces, or None where no query
+    exists for it at any site."""
+    plan = vc.report_plan(entity)
+    return None if plan is None else set(report_column_names(plan))
+
+
 def _derived_columns(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     bundle = vc.bundle
-    enum_names = set(vc.enum_by_name)
     for entity, entries in bundle.mapping.derived_columns.items():
         if entity not in vc.table_names:
             findings.append(Finding(
@@ -60,14 +65,18 @@ def _derived_columns(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         table = vc.tables_by_name[entity]
+        plan = vc.report_plan(entity)
+        if plan is None:
+            # No query for this entity at any site (`_structure` reports the
+            # missing mapping entry), or a role the planner refused, whose
+            # causes each have a rule of their own. Nothing to check against.
+            continue
         # The columns the query carries WITHOUT any derived one, so each
         # entry below is checked against what exists at the point it runs
         # rather than against the finished table. Declaration order is the
         # contract: an entry may read what an entry above it produced and
         # must not read what one below it will.
-        available = set(report_column_names(
-            table, bundle, enum_names, include_derived=False,
-        ))
+        available = set(report_column_names(plan, include_derived=False))
         for index, entry in enumerate(entries):
             findings += _one(vc, entity, table, entry, index, available)
             available.update(derived_output_names(entry))
@@ -193,7 +202,9 @@ def _picks(
     target: str,
 ) -> list[Finding]:
     """Every column a `lookup` takes must be one the target query produces."""
-    target_columns = set(child_column_names(vc.schema, vc.bundle, target))
+    target_columns = _produced(vc, target)
+    if target_columns is None:
+        return [_unreported_target(entity, where, target)]
     return [
         Finding(
             FindingCode.DERIVED_UNKNOWN_REFERENCE,
@@ -281,7 +292,9 @@ def _count(
             f"is the child's column that points back here.",
             location=_at(entity, entry.via),
         )]
-    child_columns = set(child_column_names(vc.schema, vc.bundle, entry.from_entity))
+    child_columns = _produced(vc, entry.from_entity)
+    if child_columns is None:
+        return [_unreported_target(entity, where, entry.from_entity)]
     _own_key, child_key = lookup_key_columns(entry, entity)
     if child_key not in child_columns:
         return [_unreported_target(entity, where, entry.from_entity)]
