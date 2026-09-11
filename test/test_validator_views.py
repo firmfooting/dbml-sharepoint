@@ -194,6 +194,59 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
     assert "selectivity does" in finding.message
     assert "filter order" not in finding.message
 
+@pytest.mark.parametrize(("filter_type", "expected", "refused"), [
+    # A scalar the build would accept an index on: the advice stands.
+    ("date", "Add a bare DBML index", "No index is possible here"),
+    # A column SharePoint cannot index at all: the advice would be refused.
+    ("longtext", "No index is possible here", "Add a bare DBML index"),
+])
+def test_a_comparison_filter_is_told_a_remedy_the_build_accepts(
+    filter_type: str, expected: str, refused: str,
+) -> None:
+    """THE defect #257 reported and nobody had reproduced.
+
+    REPRODUCED 2026-09-11 on the version before this fix: filtering a Note
+    column on a comparison drew "Add a bare DBML index to a selective filter
+    column", and following that advice raised INDEX_COLUMN_TYPE_UNINDEXABLE,
+    an ERROR. The warning's only stated remedy did not build, so the author
+    had nowhere to go.
+
+    `indexable` was already computed correctly and already consulted, but
+    only on the presence branch. A comparison filter took an unconditional
+    string. Parametrised over both column kinds because the fix is a SPLIT:
+    asserting only the new half would pass just as well on a version that
+    had lost the old one.
+    """
+    schema, bundle = _project_inputs(
+        views={
+            "Project": [
+                ViewDef(
+                    title="Compared",
+                    fields=["Title", "Probe"],
+                    where=Group("all_of", (
+                        Leaf(field="Probe", op="neq", value="x"),
+                    )),
+                ),
+            ],
+        },
+    )
+    schema = make_schema(
+        make_table(
+            "Project",
+            ID_PK,
+            TITLE,
+            column("Probe", filter_type),
+            note="The standard fixture project list.",
+        ),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
+    assert expected in finding.message
+    assert refused not in finding.message
+
+
 def _multi_value_platform() -> Schema:
     """One entity whose only interesting column holds many enum members."""
     return make_schema(
