@@ -10,6 +10,7 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.checks._structure import _formula_operands
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.analysis.validator import (
@@ -329,6 +330,36 @@ def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str)
         FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
     )
 
+def test_formula_operands_only_reports_rendered_refs() -> None:
+    """`_formula_operands` used to rely on its one caller to intersect
+    `refs` with the rendered column set before calling it, with a comment
+    inside the function explaining why the caller's intersection made the
+    lookup branch unreachable for a logical ref. That intersection is now
+    the function's own responsibility, so this pins it directly rather
+    than through the one caller that happened to do it correctly.
+    """
+    project = make_table(
+        "Project",
+        make_column("Title", required=True),
+        make_ref("Unit", "Unit.Id"),
+        make_column("UnitLabel", "calculated_text"),
+    )
+    calc_col = next(c for c in project.columns if c.name == "UnitLabel")
+    columns_by_name = {c.name: c for c in project.columns}
+
+    # A ref outside `rendered` is ignored, as if it were never passed.
+    assert _formula_operands(project, calc_col, {"Unit"}, set(), columns_by_name) == []
+
+    # The positive control: the same ref, now inside `rendered`, resolves
+    # through `columns_by_name` to the lookup `Unit` declares and is
+    # refused. This proves the first call returned [] because of the
+    # intersection, not because `Unit` is somehow an acceptable operand.
+    f = only(
+        _formula_operands(project, calc_col, {"Unit"}, {"Unit"}, columns_by_name),
+        FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
+    )
+    assert f.severity == "error"
+
 def test_calculated_formula_cross_site_text_companion_is_allowed() -> None:
     schema = make_schema(
         make_table("Unit", make_column("Title", required=True)),
@@ -348,6 +379,33 @@ def test_calculated_formula_cross_site_text_companion_is_allowed() -> None:
         validate_against_mapping(schema, bundle),
         FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
     )
+
+def test_calculated_formula_referencing_the_logical_cross_site_column_is_one_mistake() -> None:
+    """The other half of the cross-site case above: a formula naming the
+    LOGICAL column `Unit` rather than its rendered companion
+    `UnitAbbreviation` is one mistake, and must produce one finding.
+    `Unit` is not a rendered column, so CALCULATED_FORMULA_UNKNOWN_COLUMN
+    already reports it; `_formula_operands` must not also resolve it
+    through `columns_by_name` and fire
+    CALCULATED_FORMULA_UNSUPPORTED_OPERAND for the lookup it declares.
+    """
+    schema = make_schema(
+        make_table("Unit", make_column("Title", required=True)),
+        make_table(
+            "Project",
+            make_column("Title", required=True),
+            make_ref("Unit", "Unit.Id"),
+            make_column("UnitLabel", "calculated_text"),
+        ),
+    )
+    bundle = make_bundle(
+        entities=["Unit", "Project"],
+        calculated_formulas={"Project": {"UnitLabel": "=[Unit]"}},
+        cross_site_reference_columns=[CrossSiteRef(entity="Project", column="Unit")],
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN)
+    none_of(findings, FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND)
 
 def test_calculated_formula_circular_references_are_error() -> None:
     schema, bundle = _calc_inputs()

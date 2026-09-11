@@ -278,6 +278,9 @@ def check(vc: ValidationContext) -> list[Finding]:
     # rule enforces is the budget the emitter actually has.
     family = family_for(vc.schema)
 
+    # cli.py prints findings in list order with no sort, so this order is
+    # what an operator sees. Pinned by
+    # test_structure_findings_are_reported_in_section_order.
     return [
         *_entities(vc, lookup_targets, family),
         *_mapping_and_schema_agree(vc),
@@ -1348,7 +1351,7 @@ def _calculated_formula(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
         ))
-    findings += _formula_operands(table, col, refs & rendered, columns_by_name)
+    findings += _formula_operands(table, col, refs, rendered, columns_by_name)
     # A DEFERRED lookup exists by the end of the deploy but not when
     # this field is created. jsgen orders calculated fields only
     # within fields_phase1 and never consults phase2_lookups, so the
@@ -1376,19 +1379,25 @@ def _formula_operands(
     table: Table,
     col: Column,
     refs: AbstractSet[str],
+    rendered: AbstractSet[str],
     columns_by_name: dict[str, Column],
 ) -> list[Finding]:
-    """Refuse an operand type SharePoint will not accept in a formula."""
+    """Refuse an operand type SharePoint will not accept in a formula.
+
+    Operands outside `rendered` are ignored: the caller already reports
+    them as CALCULATED_FORMULA_UNKNOWN_COLUMN, so this function
+    intersects with `rendered` itself rather than trusting a caller to
+    have done so.
+    """
     findings: list[Finding] = []
-    for ref in sorted(refs):
+    for ref in sorted(refs & rendered):
         operand = columns_by_name.get(ref)
         # No Column object means a generated cross-site companion
         # (<ref>Abbreviation or <ref>SiteUrl, both plain Text/Hyperlink
         # fields and both fine in a formula). The LOGICAL ref they
-        # replace cannot reach here at all: `refs` is intersected with the
-        # rendered columns, which drop it, so it is already reported
-        # above as not a rendered column. Do not add an `in xcols`
-        # test here expecting it to fire. It cannot.
+        # replace cannot reach here: intersecting with `rendered` above
+        # drops it before this loop runs, so it never reaches the lookup
+        # branch below. Its unknown-column finding belongs to the caller.
         if operand is None:
             continue
         if is_multi_value(operand.type):

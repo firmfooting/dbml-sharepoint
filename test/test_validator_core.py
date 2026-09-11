@@ -549,6 +549,61 @@ def test_every_mapping_finding_carries_a_location() -> None:
     )
 
 
+def test_structure_findings_are_reported_in_section_order() -> None:
+    """`_structure.check` returns seven sections concatenated in a fixed
+    order, and `cli.py` prints findings in that list order with no sort of
+    its own. So the order is what an operator reads on screen, not an
+    implementation detail, and reversing all seven entries passes the rest
+    of the suite unnoticed. This builds one schema and one mapping that
+    trips a finding from every section and pins their relative order, so a
+    reorder of the list in `check()` becomes a deliberate, reviewed change
+    instead of a silent one.
+    """
+    schema = make_schema(
+        make_table(
+            "Risk",
+            make_column("Title", required=True),
+            make_column("Region"),
+            make_column("Score", "calculated_number"),
+            indexes=["Region", "Region"],
+            note="The risk list.",
+        ),
+        make_table("NoNote", make_column("Title", required=True)),
+    )
+    bundle = make_bundle(
+        entities=["Risk", "NoNote", "Ghost"],
+        cross_site_reference_columns=[CrossSiteRef(entity="Risk", column="Region")],
+        lookup_projections={"Risk": {"NopeColumn": ["Title"]}},
+        watched_lists=[WatchedList(entity="Risk", column="NopeWatched")],
+    )
+
+    findings = validate_against_mapping(schema, bundle)
+
+    # One cheap, deterministic code per section, in the order `check()`
+    # lists the sections. "Ghost" has no table (_mapping_and_schema_agree),
+    # "NoNote" has no Note: (_entities), Risk.Region has no ref
+    # (_cross_site_references) and is indexed twice (_indexes), the
+    # projection and watched-list entries name columns Risk does not have
+    # (_lookup_projections, _entity_keyed_sections), and Risk.Score is
+    # calculated with no formula (_calculated_columns).
+    expected_order = [
+        FindingCode.ENTITY_HAS_NO_NOTE,
+        FindingCode.ENTITY_NOT_IN_SCHEMA,
+        FindingCode.CROSS_SITE_COLUMN_HAS_NO_REF,
+        FindingCode.PROJECTION_UNKNOWN_COLUMN,
+        FindingCode.DUPLICATE_INDEX_TARGET,
+        FindingCode.WATCHED_COLUMN_NOT_RENDERED,
+        FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA,
+    ]
+    chosen = set(expected_order)
+    observed: list[FindingCode] = []
+    for code in [f.code for f in findings if f.code in chosen]:
+        if code not in observed:
+            observed.append(code)
+
+    assert observed == expected_order, observed
+
+
 def test_a_duplicate_table_name_is_an_error() -> None:
     findings = validate(make_schema(make_table("Risk"), make_table("Risk")))
 
