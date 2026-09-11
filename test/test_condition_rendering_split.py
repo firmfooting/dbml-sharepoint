@@ -279,7 +279,8 @@ def test_conditions_has_no_renderer_compatibility_reexports() -> None:
 
 def test_production_consumers_import_renderers_directly() -> None:
     expected = {
-        "analysis/forms.py": {"EXPRESSION", "to_expression"},
+        "analysis/forms.py": {"EXPRESSION"},
+        "analysis/form_rendering.py": {"to_expression"},
         "analysis/checks/_formatting.py": {"VALIDATION", "to_validation"},
         "analysis/checks/_retirement.py": {"VALIDATION", "to_validation"},
         "analysis/checks/_views.py": {"CAML", "normalise"},

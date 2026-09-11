@@ -22,7 +22,7 @@ from dbml_sharepoint.analysis.condition_rendering import (
     to_expression,
     to_validation,
 )
-from dbml_sharepoint.analysis.forms import compose_visibility
+from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.styles import TOKENS, expand_style
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition, parse_condition

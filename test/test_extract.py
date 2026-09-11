@@ -35,7 +35,7 @@ from _paths import FIXTURES
 from typer.testing import CliRunner, Result
 
 from dbml_sharepoint.analysis.condition_rendering import to_validation
-from dbml_sharepoint.analysis.forms import compose_visibility
+from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extract.decode import (
