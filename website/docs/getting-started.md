@@ -7,19 +7,25 @@ sidebar_position: 2
 
 ## Install
 
-**Not on PyPI yet.** Install from the repository:
-
 ```bash
-uv tool install git+https://github.com/firmfooting/dbml-sharepoint
+uv tool install dbml-sharepoint
 # or, into an existing environment:
-pip install git+https://github.com/firmfooting/dbml-sharepoint
+pip install dbml-sharepoint
 ```
 
 Either puts the `dbml-sharepoint` command on your path. Check it with
-`dbml-sharepoint version`.
+`dbml-sharepoint version`. To run it once without installing anything, use
+`uvx dbml-sharepoint`.
 
 The solution templates are part of the package, so an install is all you
 need to use them, no clone required.
+
+These pages document `main`. `--time-zone` below arrived after 0.4.0, so if
+the released version refuses a flag you see here, take `main` directly:
+
+```bash
+uv tool install git+https://github.com/firmfooting/dbml-sharepoint
+```
 
 Working from a clone instead, if you are contributing:
 

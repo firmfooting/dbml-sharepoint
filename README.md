@@ -56,15 +56,21 @@ philosophy.
 
 ## Install
 
-**Not published to PyPI yet.** Install from the repository:
-
 ```bash
-uv tool install git+https://github.com/firmfooting/dbml-sharepoint
-# or: pip install git+https://github.com/firmfooting/dbml-sharepoint
+uv tool install dbml-sharepoint
+# or: pip install dbml-sharepoint
+# or, without installing anything: uvx dbml-sharepoint
 ```
 
 The solution templates are part of the package, so an install is all you
 need to use them, no clone required.
+
+This page documents `main`. `--time-zone` below arrived after 0.4.0, so if
+the released version refuses a flag you see here, take `main` directly:
+
+```bash
+uv tool install git+https://github.com/firmfooting/dbml-sharepoint
+```
 
 Or work from a clone, if you are contributing:
 
