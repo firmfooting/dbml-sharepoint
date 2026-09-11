@@ -89,9 +89,26 @@ let
     Items =
         try Feed(
             "/_api/web/lists/getbytitle('" & ListTitle & "')/items"
-                & "?$select=" & Selected & Expanded & "&$top=1"
+                & "?$select=" & Selected & Expanded & "&$top=50"
         ),
-    FirstRow = try Table.First(Items[Value]),
+    // A ROW WHERE THE LOOKUP IS SET, not simply the first row. An optional
+    // lookup is blank on most rows, and reading a field off the null record
+    // errors, which this probe reported as the expand not working. It could
+    // not tell "no related item" from "the mechanism is broken", which sent
+    // a real investigation down the wrong path once.
+    Populated =
+        if LookupColumn = "" then Items
+        else
+            try Table.SelectRows(
+                Items[Value], each Record.Field(_, LookupColumn) <> null
+            )
+            otherwise Items,
+    Rows = try (if LookupColumn = "" then Items[Value] else Populated[Value]),
+    FirstRow =
+        try (if Table.RowCount(Rows[Value]) = 0
+             then Table.First(Items[Value])
+             else Table.First(Rows[Value])),
+    LookupRows = try Table.RowCount(Rows[Value]) otherwise 0,
     DateRaw = try Record.Field(FirstRow[Value], DateOnlyColumn),
     CalcRaw =
         if CalculatedDateColumn = "" then null
@@ -219,12 +236,22 @@ let
                 else Ymd(AsDate(CalcRaw[Value]))
             },
             {
+                "feed.projection.rows-with-the-lookup-set",
+                "How many of the rows read carry the lookup at all. Zero "
+                    & "means the two rows below tested nothing, which is not "
+                    & "the same as the expand failing",
+                "(observation)",
+                if LookupColumn = "" then "(not configured)"
+                else Text.From(LookupRows)
+            },
+            {
                 "feed.projection.expand-returns-the-target-column",
                 "`$select=Lookup/Column` with `$expand=Lookup` must return the "
                     & "target's column. This is the path the dependent-lookup "
                     & "fix reads every projection through",
                 "true",
                 if LookupColumn = "" then "(not configured)"
+                else if LookupRows = 0 then "(no row carries this lookup)"
                 else Yn(not Projected[HasError])
             },
             {
