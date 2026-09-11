@@ -12,6 +12,7 @@ tested one at a time.
 """
 
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.reporting.plan import (
@@ -22,6 +23,15 @@ from dbml_sharepoint.analysis.reporting.plan import (
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
+
+
+class IndexTarget(NamedTuple):
+    """One representable `indexes { }` entry: where it is declared and what it names."""
+
+    # Position in Table.indexes counting every entry, composite ones included,
+    # because that is the number `indexes[n]` renders in a finding's location.
+    position: int
+    column: str
 
 
 @dataclass(frozen=True)
@@ -55,10 +65,15 @@ class ValidationContext:
     # but they are not DBML columns. Kept here so the view renderability check
     # and the projection declaration check agree on the generated name.
     projected_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # The one derivation of which columns the schema indexes, in declaration
+    # order. Every rule that reports on an `indexes { }` entry reads this, so
+    # a rule and the ceiling below can never disagree about what counts.
+    index_targets_by_entity: dict[str, list[IndexTarget]] = field(default_factory=dict)
     # Effective SharePoint indexes declared by the schema: bare DBML
     # indexes plus the implicit index SharePoint creates for a supported
-    # [unique] column. Kept here because both the per-list index ceiling and
-    # filtered-view safety checks must use exactly the same accounting.
+    # [unique] column. The set form of `index_targets_by_entity` above. Kept
+    # here because both the per-list index ceiling and filtered-view safety
+    # checks must use exactly the same accounting.
     explicit_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
     unique_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
     # {entity: the display column folded into effective_indexes below}. Kept
@@ -87,13 +102,17 @@ class ValidationContext:
             cross_site_by_entity.setdefault(xref.entity, set()).add(xref.column)
             cross_site_pairs.add((xref.entity, xref.column))
         enum_names = {e.name for e in schema.enums}
-        explicit_indexes_by_entity = {
-            table.name: {
-                index.columns[0]
-                for index in table.indexes
+        index_targets_by_entity = {
+            table.name: [
+                IndexTarget(position, index.columns[0])
+                for position, index in enumerate(table.indexes)
                 if len(index.columns) == 1
-            }
+            ]
             for table in schema.tables
+        }
+        explicit_indexes_by_entity = {
+            name: {target.column for target in targets}
+            for name, targets in index_targets_by_entity.items()
         }
         unique_indexes_by_entity = {
             table.name: {
@@ -162,6 +181,7 @@ class ValidationContext:
             cross_site_pairs=cross_site_pairs,
             calculated_by_entity=calculated_by_entity,
             projected_by_entity=projected_by_entity,
+            index_targets_by_entity=index_targets_by_entity,
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
             display_index_by_entity=display_columns,
@@ -188,6 +208,10 @@ class ValidationContext:
     def effective_indexes(self, entity_name: str) -> set[str]:
         """Declared and implicit SharePoint indexes for one entity."""
         return self.effective_indexes_by_entity.get(entity_name, set())
+
+    def index_targets(self, entity_name: str) -> list[IndexTarget]:
+        """Every representable index one entity declares, in declaration order."""
+        return self.index_targets_by_entity.get(entity_name, [])
 
     def report_plan(self, entity_name: str) -> ListPlan | None:
         """One entity's reporting plan, or None where no query exists for it.
