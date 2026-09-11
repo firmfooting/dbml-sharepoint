@@ -814,12 +814,30 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 "60 rows with HTTP 200 and no error."
                             )
                             if null_only else
-                            "Add a bare DBML index to a selective filter column, "
-                            "or accept the risk for a list that will stay small. "
-                            "One indexed condition is enough and its position in "
-                            "the filter does not matter, but selectivity does: "
-                            "an index over a value most rows share will not save "
-                            "the query."
+                            # Same split as the presence branch above, and for
+                            # the same reason. REPRODUCED 2026-09-11: a view
+                            # filtering a Note column on a comparison drew "Add
+                            # a bare DBML index to a selective filter column",
+                            # and following it raised
+                            # INDEX_COLUMN_TYPE_UNINDEXABLE, an ERROR. The
+                            # remedy was refused by this same validator, so the
+                            # author was left with a warning whose only stated
+                            # fix does not build.
+                            (
+                                "Add a bare DBML index to a selective filter column, "
+                                "or accept the risk for a list that will stay small. "
+                                "One indexed condition is enough and its position in "
+                                "the filter does not matter, but selectivity does: "
+                                "an index over a value most rows share will not save "
+                                "the query."
+                                if indexable else
+                                "No index is possible here: every filtered column "
+                                "is a Multiple lines of text, Hyperlink or "
+                                "Calculated column, and SharePoint cannot index "
+                                "any of those, so the only remedies are a "
+                                "different filter column or a list that will stay "
+                                "small."
+                            )
                         )
                         findings.append(Finding(
                             FindingCode.UNINDEXED_FILTER_COLUMNS,
