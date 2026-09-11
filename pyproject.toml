@@ -135,14 +135,23 @@ ban-relative-imports = "all"
 # NOT_YET_REACHED: set ABOVE today's worst so it blocks nothing now, and
 # lowered as the offenders are split. Never raised to make a build pass.
 #
-# 66 leaves five points above today's worst, `_views.py::check` at 61.
-# `_structure.py::check` fell from 72 to 1 after its helpers were extracted (#254).
-# `_formatting.py::check` is 49 and `_retirement.py::check` is 40.
+# ON the worst function, not above it. Ruff fires on `> max`, so a ceiling
+# equal to the worst allows zero growth and a ceiling above it allows exactly
+# the difference, silently -- which is what #308 found after `_structure.py`'s
+# helpers were extracted (#254) and the ceiling moved down by six rather than
+# down to the new worst.
 #
-# Deliberately NOT the default of 10. That flags 25 functions at once, which
+# The three it is holding, each ASSERTED by test/test_complexity_ratchet.py,
+# which measures them with this same ruff rather than restating them:
+#   `_views.py::check` at 61
+#   `_formatting.py::check` at 57
+#   `jsgen.py::build_schema_json` at 40
+# They were prose once, and three of the four numbers had rotted (#311).
+#
+# Deliberately NOT the default of 10. That flags 33 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
-max-complexity = 66
+max-complexity = 61
 
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,
