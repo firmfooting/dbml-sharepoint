@@ -47,6 +47,21 @@ def test_view_on_unknown_entity_is_error() -> None:
     finding = only(errors, FindingCode.UNKNOWN_ENTITY)
     assert finding.location == Location(Section.VIEWS, entity="Widget")
 
+def test_view_previous_title_cannot_be_blank() -> None:
+    errors = _project_errors(
+        views={
+            "Project": [
+                ViewDef(title="Open", fields=["Title"], renamed_from=["   "]),
+            ],
+        },
+    )
+    finding = only(errors, FindingCode.EMPTY_PREVIOUS_TITLE)
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.VIEWS, entity="Project", view="Open", sub="renamed_from",
+    )
+    assert "cannot be empty" in finding.message
+
 def test_view_previous_titles_cannot_collide_or_claim_all_items() -> None:
     errors = _project_errors(
         views={

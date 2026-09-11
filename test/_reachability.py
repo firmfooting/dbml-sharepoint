@@ -4,9 +4,9 @@
 it proves each `FindingCode` appears in a construction site somewhere in `src`,
 and its own docstring says it does not prove any test reaches that site.
 
-Total-coverage floors cannot close that gap either. Measured on this branch:
-the suite sits at 95.25% against a 95 floor while 21 declared codes are never
-constructed by any test. One rule's firing branch is a handful of lines out of
+Total-coverage floors cannot close that gap either. Measured when this gate
+was introduced: the suite sat at 95.25% against a 95 floor while 21 declared
+codes were never constructed by any test. One rule's firing branch is a handful of lines out of
 ~6,000, so it disappears into the rounding and unrelated coverage gains offset
 it indefinitely. An aggregate number cannot enforce a per-rule invariant.
 
@@ -33,17 +33,9 @@ from __future__ import annotations
 # was later renamed or deleted fails the gate rather than silently disarming the
 # guard for a rule that still exists.
 NOT_YET_REACHED = frozenset({
-    "COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS",
     # Diagnosis reports an unknown operator before normalisation can try to
     # negate it, so this renderer refusal has no current Finding path.
     "CONDITION_OPERATOR_NOT_NEGATABLE",
-    "DEMO_OBJECT_VALUE_INVALID",
-    "DEMO_PERSON_VALUE_UNSUPPORTED",
-    "DEMO_VALUE_ON_CALCULATED_COLUMN",
-    "EMPTY_PREVIOUS_TITLE",
-    "STYLE_ON_BOOLEAN_MATCHES_NOTHING",
-    "TOTAL_ON_LOOKUP_COLUMN",
-    "TOTAL_ON_NON_ARITHMETIC_COLUMN",
 })
 
 

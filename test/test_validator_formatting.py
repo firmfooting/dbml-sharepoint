@@ -105,6 +105,38 @@ def test_misspelled_column_under_a_pill_style_reports_only_the_misspelling(
     none_of(findings, FindingCode.STYLE_REQUIRES_CALCULATED)
     none_of(findings, FindingCode.STYLE_CALCULATED_TYPE_MISMATCH)
 
+def test_a_severity_style_on_a_boolean_column_matches_nothing(
+    tmp_path: Path,
+) -> None:
+    """`severity` and `pill` compare @currentField against quoted strings; a
+    Yes/No column is a boolean, so every branch of the generated =if chain
+    is false and the cell renders unstyled. Found by the stakeholder-contacts
+    uplift, which wanted a chip on a boolean column and got nothing."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Contact {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              IsActive boolean
+            }
+        """,
+        mapping=blocks(entities("Contact"), """
+            column_formatting:
+              Contact:
+                IsActive: { style: severity, map: { "True": good, "False": severe } }
+        """),
+    )
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Contact", column="IsActive",
+    )
+    assert "Yes/No" in finding.message
+
 def test_severity_on_a_calculated_text_column_still_requires_decoding(
     tmp_path: Path,
 ) -> None:
