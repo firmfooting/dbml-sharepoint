@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.lookups import (
 )
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.reporting.plan import is_projectable
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
     CALCULATED_TYPES,
@@ -35,6 +36,7 @@ from dbml_sharepoint.analysis.typemap import (
     element_type,
     is_multi_value,
     is_multi_value_lookup,
+    map_column,
     unsupported_index_reason,
 )
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityMapping
@@ -735,6 +737,45 @@ def _cross_site_generated_names(xref: CrossSiteRef, table: Table) -> list[Findin
     return findings
 
 
+def _projection_kind(
+    vc: ValidationContext,
+    entity_name: str,
+    column: str,
+    target_table: Table,
+    target: str,
+) -> list[Finding]:
+    """Refuse a projection of a column the report cannot type."""
+    col = next((c for c in target_table.columns if c.name == target), None)
+    if col is None:
+        # `Title` is SharePoint's own and need not be declared. The rule
+        # above already allows it, and text is always reportable.
+        return []
+    try:
+        sp = map_column(col, set(vc.enum_by_name))
+    except ValueError:
+        # An unresolvable type, reported by `validate_column` as its own
+        # finding. This rule has nothing to add to a column that does not
+        # map yet.
+        return []
+    if is_projectable(sp):
+        return []
+    return [Finding(
+        FindingCode.PROJECTION_TARGET_KIND_UNSUPPORTED,
+        f"lookup_projections {entity_name}.{column}: target "
+        f"{target_table.name}.{target} is SharePoint field kind "
+        f"{sp.kind!r}, which the reporting pack cannot carry. A projection "
+        f"is read through the lookup's $expand, where a record or a "
+        f"collection arrives in a shape nobody has measured, so it is "
+        f"refused rather than guessed. The deploy would create the "
+        f"dependent field; the report could not type it. Project a scalar "
+        f"column, or carry this one by joining the target in the model.",
+        location=Location(
+            Section.LOOKUP_PROJECTIONS,
+            entity=entity_name, column=column, sub=target,
+        ),
+    )]
+
+
 def _lookup_projections(vc: ValidationContext) -> list[Finding]:
     """Every lookup projection must name a real lookup column that is not a
     cross-site reference, project columns that render on the target, and
@@ -818,6 +859,22 @@ def _lookup_projections(vc: ValidationContext) -> list[Finding]:
                             entity=entity_name, column=column, sub=target,
                         ),
                     ))
+                # The kind, once the column is known to exist. A person, a
+                # URL, a multi-value column or another lookup arrives through
+                # the `$expand` as a record or a collection whose shape
+                # nobody has measured, so the report refuses it. The DEPLOY
+                # would happily create the dependent field, which is why this
+                # says the reporting pack cannot carry it rather than that
+                # SharePoint will not have it.
+                #
+                # Asked of `is_projectable`, the same answer the planner
+                # acts on. Before this rule the planner's refusal was the
+                # only thing that knew, and it fires during `build`, after
+                # validation has reported the mapping clean, as a traceback.
+                if target_table is not None and target in target_rendered:
+                    findings += _projection_kind(
+                        vc, entity_name, column, target_table, target,
+                    )
                 if (
                     generated in generated_here
                     or any(c.name == generated for c in table.columns)

@@ -127,6 +127,20 @@ when it goes again. The knowledge is not duplicated -- both this and the
 validator ask `analysis/exports.ambiguous_members`, which is the one
 place the rule is written.
 
+### `is_projectable`
+
+```python
+def is_projectable(sp: dbml_sharepoint.analysis.typemap.SPField) -> bool
+```
+
+Whether a projection of this field can reach the report at all.
+
+THE VALIDATOR'S HALF of the refusal `_projection_types` makes. Both ask
+`_scalar_types`, so a kind cannot be reportable to one and not the
+other. Without this the planner's `ValueError` was the only thing that
+knew, and it fires during `build`, after validation has already
+reported the mapping clean, as an unhandled traceback.
+
 ### `build_plans`
 
 ```python
