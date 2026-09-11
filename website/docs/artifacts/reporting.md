@@ -154,18 +154,22 @@ which in the Power BI Service is UTC. SharePoint does not fill the gap. The
 transition dates; those exist only in the page context a browser sees,
 which Power Query cannot reach.
 
-So the pack ships the transitions. With
-[`reporting.time_zone`](../reference/mapping.md#time_zone) declared as an
-IANA name, every list query carries that zone's transitions from 2000 to
-2050 as a `SiteTransitions` list, generated from the IANA database
-(Python's `zoneinfo`) when the pack is built, and two helpers over them:
+So the pack ships the transitions. The site's zone is given to the build
+as an IANA name ([`--time-zone`](../reference/cli.md#the-sites-time-zone),
+or `DBMLSP_TIME_ZONE` in `dbml-sharepoint.env`; it is required), and every
+list query then carries that zone's transitions from 2000 to 2050 as a
+`SiteTransitions` list, generated from the IANA database (Python's
+`zoneinfo`) when the pack is built, and two helpers over them:
 `AsSiteDateTime` gives the site-local date and time of a UTC timestamp
 and `AsSiteDate` its site-local date, so a derived column can be written
-as `AsSiteDate([Created])`. The table is derived from the zone's real
-rules, which is why the mapping declares a name rather than a rule: a
-30-minute shift, southern-hemisphere dates, a rule change part way through
-the window and a zone that has abolished daylight saving all come out
-right. About a hundred rows ride in each query.
+as `AsSiteDate([Created])`. The zone is a build input and not a mapping
+key because it is a fact about the site the pack is built for, not about
+the solution: the mapping says to use the site's date, and the build says
+which site. The table is derived from the zone's real rules, which is why
+the build takes a name rather than a rule: a 30-minute shift,
+southern-hemisphere dates, a rule change part way through the window and a
+zone that has abolished daylight saving all come out right. About a
+hundred rows ride in each query.
 
 Two consequences follow. **The pack must be regenerated when the zone's
 rules change**, because the rows are data fixed at build time; a

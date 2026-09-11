@@ -56,6 +56,7 @@ def render_reporting(
     source_schema: str,
     source_mapping: str,
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> dict[str, str]:
     """The whole reporting pack as {relative path: content}, nothing written.
 
@@ -70,39 +71,50 @@ def render_reporting(
     guide, so the pack loads with nothing configured. It is optional only
     because ``report`` runs without a site at all.
 
+    ``time_zone`` is the site's IANA zone, which both commands require:
+    every list query then carries its daylight-saving transitions and the
+    site-date helpers, and the guide and dictionary describe them. Optional
+    here only so the composition stays callable from a library without one.
+
     Raises ``ValueError`` where a renderer refuses the schema: an unhandled
     field kind, a multi-value member the export cannot split back, a
     projection the schema lacks, a zone the database does not declare.
     Nothing has been written when it does, which is the point of returning
     text.
     """
-    queries = generate_powerquery(schema, bundle, site_role, site_url=site_url)
+    queries = generate_powerquery(
+        schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
+    )
     queries.update(generate_dictionary_powerquery(
         schema, bundle, site_role,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
-        site_url=site_url,
+        site_url=site_url, time_zone=time_zone,
     ))
     pack = {
         f"{REPORT_POWERQUERY_DIR}/{filename}": content
         for filename, content in queries.items()
     }
     pack[f"{REPORT_SQL_DIR}/{REPORT_VIEWS_SQL}"] = (
-        generate_sql_views(schema, bundle, site_role, site_url=site_url)
+        generate_sql_views(
+            schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
+        )
         + "\n"
         + generate_dictionary_sql(
             schema, bundle, site_role,
             release=release, generated_at=generated_at,
             source_schema=source_schema, source_mapping=source_mapping,
+            time_zone=time_zone,
         )
     )
     pack[REPORT_GUIDE] = generate_reporting_md(
-        schema, bundle, site_role, site_url=site_url,
+        schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
     )
     pack[REPORT_DICTIONARY] = generate_data_dictionary(
         schema, bundle, site_role,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
+        time_zone=time_zone,
     )
     return pack
 
@@ -118,6 +130,7 @@ def emit_reporting(
     source_schema: str,
     source_mapping: str,
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> list[str]:
     """Write the reporting pack under ``out/reporting/`` and return the
     POSIX relpaths written, for checksums.txt.
@@ -131,7 +144,7 @@ def emit_reporting(
         schema, bundle, site_role,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
-        site_url=site_url,
+        site_url=site_url, time_zone=time_zone,
     )
     relpaths: list[str] = []
     for relpath, content in pack.items():

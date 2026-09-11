@@ -2916,7 +2916,6 @@ def test_reporting_source_carries_both_reporting_sections(tmp_path: Path) -> Non
     _side_file(tmp_path, """
 reporting:
   users_table: true
-  time_zone: Australia/Melbourne
 derived_columns:
   Risk:
     - kind: expr
@@ -2930,7 +2929,6 @@ derived_columns:
     )
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.reporting.users_table is True
-    assert bundle.mapping.reporting.time_zone == "Australia/Melbourne"
     assert [c.name for c in bundle.mapping.derived_for("Risk")] == ["IsOpen"]
 
 

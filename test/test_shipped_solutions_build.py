@@ -29,6 +29,7 @@ def test_every_shipped_solution_builds_the_way_ci_builds_it(family: str, tmp_pat
         mapping=root / "20-configure" / "mapping.yaml",
         release=root / "20-configure" / "release.yaml",
         site_url="https://example.sharepoint.com/sites/ci",
+        time_zone="UTC",
         site_role="default",
         out=tmp_path / family,
     )

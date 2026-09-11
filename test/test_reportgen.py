@@ -803,7 +803,7 @@ def test_cli_report_writes_queries_and_docs(tmp_path: Path) -> None:
 
     out = tmp_path / "reports"
     result = CliRunner().invoke(app, [
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
@@ -834,7 +834,7 @@ def test_cli_report_works_without_release(tmp_path: Path) -> None:
 
     out = tmp_path / "reports"
     result = CliRunner().invoke(app, [
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--site-role", "default",
@@ -850,7 +850,7 @@ def test_cli_report_rejects_unknown_site_role(tmp_path: Path) -> None:
     from dbml_sharepoint.cli import app
 
     result = CliRunner().invoke(app, [
-        "report",
+        "report", "--time-zone", "UTC",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
         "--site-role", "no-such-role",

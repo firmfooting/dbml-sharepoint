@@ -49,7 +49,7 @@ from dbml_sharepoint.analysis.list_description import (
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
-from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
@@ -1883,6 +1883,34 @@ def test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way() -> None
     assert not offenders, (
         "a --site-url line does not use PLACEHOLDER_SITE_URL, so the wizard "
         "will leave it pointing at a site the operator never chose:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_every_deploy_doc_spells_the_time_zone_placeholder_the_same_way() -> None:
+    """The zone is a required build input, so every documented build command
+    has to carry it, and the wizard substitutes the one placeholder it
+    knows. A deploy.md that omits the flag hands the operator a command
+    that stops at the flag; one that spells a real zone hands them a
+    command that builds for somebody else's site.
+    """
+    offenders = []
+    for template in _all_templates():
+        deploy_md = SOLUTION_TEMPLATES / template / "30-deploy" / "deploy.md"
+        if not deploy_md.is_file():
+            continue
+        lines = deploy_md.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, start=1):
+            if "--time-zone" in line and PLACEHOLDER_TIME_ZONE not in line:
+                offenders.append(f"{template}/30-deploy/deploy.md:{number}: {line.strip()}")
+            if "--site-url" in line and "--time-zone" not in lines[number]:
+                offenders.append(
+                    f"{template}/30-deploy/deploy.md:{number}: --site-url is not "
+                    "followed by a --time-zone line",
+                )
+    assert not offenders, (
+        "a build command does not spell --time-zone with PLACEHOLDER_TIME_ZONE "
+        "on the line after --site-url, so the wizard will not repoint it:\n"
         + "\n".join(offenders)
     )
 

@@ -52,6 +52,12 @@ RELEASE_RELPATH = Path("20-configure/release.yaml")
 PLACEHOLDER_SITE_URL = 'https://yourtenant.sharepoint.com/sites/your-site'
 ```
 
+### `PLACEHOLDER_TIME_ZONE`
+
+```python
+PLACEHOLDER_TIME_ZONE = 'Region/City'
+```
+
 ### `JOURNEYS_DIRNAME`
 
 ```python

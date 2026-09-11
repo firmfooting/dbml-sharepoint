@@ -325,6 +325,7 @@ def emit_bundle(
     source_mtime: str,
     generated_at: str,
     seed: bool,
+    time_zone: str | None = None,
     extension: "DeploymentExtension | None" = None,
     site_context: "SiteContext | None" = None,
     enterprise_reader: str | None = None,
@@ -351,7 +352,9 @@ def emit_bundle(
     ``env_provenance`` defaults to ``NO_ENV_FILE`` and is passed through to
     ``generate_deploy_js`` (the console transcript) and ``write_index``: this
     is a documented composition point extension CLIs call directly, and a
-    required parameter would break every one of them.
+    required parameter would break every one of them. ``time_zone`` is
+    optional for the same reason; ``execute_build`` always supplies it, and
+    only the reporting pack reads it.
     """
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
@@ -462,8 +465,10 @@ def emit_bundle(
         source_schema=schema_name, source_mapping=mapping_name,
         # The build knows where this is going, so the reporting pack does
         # not have to ask. Only `report`, which has no site, falls back to
-        # the SiteUrl parameter.
+        # the SiteUrl parameter. The zone is the same kind of fact and
+        # travels the same way.
         site_url=site_url,
+        time_zone=time_zone,
     )
     write_index(out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance)
     relpaths.append("index.md")

@@ -42,9 +42,13 @@ jobs:
         # over the floor, while the reachability gate names the rule).
         run: uv run pytest --cov --check-finding-reachability
       - name: Build both examples end-to-end
+        # --time-zone is required, and the value is a zone that observes
+        # daylight saving on purpose: the pack ships a transition table per
+        # zone, and UTC produces an empty one, so a UTC build would exercise
+        # none of the conversion this smoke test is here to cover.
         run: |
-          uv run dbml-sharepoint build --schema examples/minimal/schema.dbml --mapping examples/minimal/mapping.yaml --release examples/minimal/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --out examples/minimal/build
-          uv run dbml-sharepoint build --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --out examples/project-tracker/build
+          uv run dbml-sharepoint build --schema examples/minimal/schema.dbml --mapping examples/minimal/mapping.yaml --release examples/minimal/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --time-zone Australia/Melbourne --out examples/minimal/build
+          uv run dbml-sharepoint build --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --time-zone Australia/Melbourne --out examples/project-tracker/build
       - name: Syntax-check the generated scripts
         shell: bash
         # `node --check <file>` cannot read these: the scripts ship as
@@ -66,7 +70,7 @@ jobs:
           # which is precisely how a rename like this ships broken.
           test "$found" -gt 0
       - name: Generate reporting queries end-to-end
-        run: uv run dbml-sharepoint report --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-role default --out examples/project-tracker/reports
+        run: uv run dbml-sharepoint report --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-role default --time-zone Australia/Melbourne --out examples/project-tracker/reports
       - name: Build every solution template end-to-end
         shell: bash
         # Discovered, never listed. A hardcoded roster fails open: a new
@@ -90,6 +94,7 @@ jobs:
               --release "$sol/$t/20-configure/release.yaml" \
               --site-url https://example.sharepoint.com/sites/ci \
               --site-role default \
+              --time-zone Australia/Melbourne \
               --out "build/$t"
             echo "::endgroup::"
           done
@@ -126,6 +131,7 @@ jobs:
               --release "$sol/$t/20-configure/release.yaml" \
               --site-url https://example.sharepoint.com/sites/ci \
               --site-role default \
+              --time-zone Australia/Melbourne \
               --seed \
               --out "build/$t-seed"
             node --check --input-type=commonjs < "build/$t-seed/demo-data.js.txt"

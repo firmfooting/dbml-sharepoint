@@ -47,7 +47,7 @@ def test_env_settings_has_exactly_the_registered_fields() -> None:
         "parameter",
         "help",
     }
-    assert len(ENV_SETTINGS) == 5
+    assert len(ENV_SETTINGS) == 6
     assert ENV_SETTINGS[0].key == "DBMLSP_ENTERPRISE_READER"
     assert ENV_SETTINGS[0].parameter == "enterprise_reader"
     assert ENV_SETTINGS[1].key == "DBMLSP_DEPLOY_LOG_LIST"
@@ -58,6 +58,8 @@ def test_env_settings_has_exactly_the_registered_fields() -> None:
     assert ENV_SETTINGS[3].parameter == "deployment_log_site"
     assert ENV_SETTINGS[4].key == "DBMLSP_CHANGE_LOG_LIST"
     assert ENV_SETTINGS[4].parameter == "change_log_list"
+    assert ENV_SETTINGS[5].key == "DBMLSP_TIME_ZONE"
+    assert ENV_SETTINGS[5].parameter == "time_zone"
 
 
 def test_cli_reference_documents_exactly_the_registered_keys() -> None:

@@ -254,6 +254,18 @@ def test_explain_keeps_the_retired_generic_condition_code_answerable() -> None:
     assert RETIRED_FINDINGS["invalid_condition"] in " ".join(result.output.split())
 
 
+def test_explain_keeps_the_retired_time_zone_code_answerable() -> None:
+    """The rule went with the mapping key it checked; a build log printed
+    before that still names the code, and the answer has to say where the
+    zone went."""
+    result = runner.invoke(app, ["explain", "unknown_time_zone"])
+
+    assert result.exit_code == 0, result.output
+    shown = " ".join(result.output.split())
+    assert RETIRED_FINDINGS["unknown_time_zone"] in shown
+    assert "--time-zone" in shown
+
+
 def test_explain_names_the_severity() -> None:
     result = runner.invoke(app, ["explain", "unknown_column_type"])
 

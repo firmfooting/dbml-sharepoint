@@ -38,7 +38,7 @@ def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     """Every test in this module runs with an empty current directory.
 
     `_ask_enterprise_reader` now reads a CWD-relative `dbml-sharepoint.env`
-    (`wizard._reader_from_env_file`), so without this a contributor's own
+    (`wizard._consult_env_file`), so without this a contributor's own
     file sitting at the repository root would change what these tests
     observe. `tmp_path` is unique per test and guaranteed not to contain
     one; a test that wants the file present writes it there explicitly.
@@ -46,11 +46,30 @@ def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.chdir(tmp_path)
 
 
+#: What every test's build machine reports as its zone. Pinned so the offer
+#: the zone prompt makes does not depend on the host running the suite.
+MACHINE_ZONE = "Australia/Sydney"
+
+
+@pytest.fixture(autouse=True)
+def _machine_zone_is_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_ask_time_zone` offers `local_zone_name()`'s answer as its default.
+
+    A real read would make the scripted answers depend on the developer's
+    machine and on CI's, which reports UTC, and a test that types the zone
+    would pass everywhere while one that presses Enter would capture a
+    different zone on every host. A test about detection failing patches
+    this to None itself.
+    """
+    monkeypatch.setattr(wizard, "local_zone_name", lambda: MACHINE_ZONE)
+
+
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
     reader: str | None = "", confirm: str = "y", prefix: str | None = "RR_",
     template: str = "risk-register",
     site_url: str = "https://contoso.sharepoint.com/sites/x",
+    time_zone: str = "Europe/London",
 ) -> list[str]:
     """The happy-path script, in the order the wizard now asks.
 
@@ -58,10 +77,13 @@ def _answers(
     the sequence: the operator reviews the whole decision once instead of
     confirming a write and then being asked three more questions.
 
-    The order is: template, [prefix gate, [prefix value]], directory, site
-    URL, [site role], build?, [reporting], [demo rows], confirm. The prefix
-    question sits with the template because it is a property of the
-    template; the directory, site URL and site role describe the site.
+    The order is: template, directory, [prefix gate, [prefix value]], site
+    URL, time zone, [site role], build?, [reporting], [demo rows], confirm.
+    The sections run from the inside of philosophy rule 10's boundary to
+    the outside: what is deployed, then what the project on disk declares
+    (its directory, and the prefix written into its mapping), then the
+    deployment facts that live outside the mapping (site URL, time zone,
+    site role), then the build. `_run` states the rule beside the code.
 
     `prefix` answers the two-part prefix question, and its shape carries the
     branch: `""` answers the gate `n` (one scripted answer, and the value
@@ -113,7 +135,7 @@ def _answers(
         if seed is not None:
             tail.append(seed)
     return [
-        template, *prefix_answers, str(destination), site_url, *tail, confirm,
+        template, str(destination), *prefix_answers, site_url, time_zone, *tail, confirm,
     ]
 
 
@@ -190,6 +212,7 @@ def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.A
     return wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=choices,
         build=False,
@@ -409,11 +432,12 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
 
     console = ScriptedConsole([
         "risk-register",
-        "y",   # prefix gate
-        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
+        "y",   # prefix gate
+        "RR_",
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -543,6 +567,7 @@ def test_each_template_repoints_only_its_own_documentation(
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=(risk, audit),
         build=False,
@@ -660,11 +685,12 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "http://insecure.example.com/sites/x",       # refused
         "https://contoso.sharepoint.com/sites/x",    # accepted
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -713,11 +739,12 @@ def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "has a space",   # refused
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -787,10 +814,11 @@ def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> No
         "all",
         "no-such-template",
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -818,10 +846,11 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
     console = ScriptedConsole([
         "",   # Enter -- must not be taken as an answer at all
         "audit-actions",
+        str(destination),
         "y",   # prefix gate
         "AU_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1026,6 +1055,7 @@ def test_the_dropped_previous_prefix_is_reported_not_silent(
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        time_zone="Europe/London",
         site_role="default",
         templates=(choice,),
         build=False,
@@ -1093,11 +1123,12 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
 
     console = ScriptedConsole([
         "risk-register",
-        "y",   # prefix gate
-        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
+        "y",   # prefix gate
+        "RR_",
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1139,8 +1170,8 @@ def test_pressing_enter_at_the_prefix_gate_means_no_prefix(
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        ["risk-register", "", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+        ["risk-register", str(destination), "",
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     code = wizard.run_wizard(console)
     shown = _collapsed(console)
@@ -1265,7 +1296,7 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
     # this fails loudly rather than quietly proving nothing.
     console = ScriptedConsole(
         [solution.id, str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     # Substantive checks BEFORE the exit code, and the exit code checked
     # last: a wizard that asks either question consumes the directory
@@ -1306,11 +1337,12 @@ def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
     destination = tmp_path / "out"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",       # prefix gate
         "   ",     # refused: strips to empty
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1332,8 +1364,8 @@ def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        ["risk-register", "y", "AC ME_", "RR_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+        ["risk-register", str(destination), "y", "AC ME_", "RR_",
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
     assert "cannot be empty or contain whitespace" in _collapsed(console)
@@ -1376,10 +1408,11 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
         "0",     # refused
         "999",   # refused
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])
@@ -1669,6 +1702,7 @@ def test_the_review_names_every_answer(tmp_path: Path) -> None:
         "Lists RR_Risk",
         f"Directory {destination}",
         "Site https://contoso.sharepoint.com/sites/x",
+        "Time zone Europe/London",
         "Build yes, site role default",
         "Reporting svc.reporting@contoso.com",
         "Demo rows yes",
@@ -1735,8 +1769,8 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
-        [solution.id, "y", "NEW_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "y", "y"],
+        [solution.id, str(destination), "y", "NEW_",
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "y", "y"],
         width=400,
     )
     assert wizard.run_wizard(console) == 0
@@ -1816,8 +1850,8 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        [solution.id, "y", "NEW_", str(destination),
-         "https://contoso.sharepoint.com/sites/x", "branch", "n", "y"],
+        [solution.id, str(destination), "y", "NEW_",
+         "https://contoso.sharepoint.com/sites/x", "Europe/London", "branch", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
     assert "--site-role branch" in _collapsed(console)
@@ -1962,10 +1996,11 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        str(destination),
         "y",   # prefix gate
         "NEW_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "default",    # site role -- NOT roles[0], see the docstring
         "y",          # build
         "y",          # confirm
@@ -2011,10 +2046,11 @@ def test_a_mapping_with_no_role_called_default_is_offered_no_default(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        str(destination),
         "y",   # prefix gate
         "NEW_",
-        str(destination),
         "https://contoso.sharepoint.com/sites/x",
+        "Europe/London",
         "",      # Enter -- must not be taken as an answer at all
         "hq",
         "y",     # build
@@ -2201,10 +2237,11 @@ def test_a_bad_reader_address_is_refused_and_reprompted(
     console = ScriptedConsole(
         [
             "risk-register",
+            str(tmp_path / "proj"),
             "y",                            # prefix gate
             "RR_",
-            str(tmp_path / "proj"),
             "https://contoso.sharepoint.com/sites/x",
+            "Europe/London",
             "y",                            # build
             "svc.reporting",                # refused: no '@'
             "svc-reporting@example.org",    # re-asked, accepted
@@ -2647,13 +2684,13 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     _offer_only(monkeypatch, solution)
 
     destination = tmp_path / "out"
-    # Three answers only -- the template and the two-part prefix question
-    # (gate, then value). The guard runs straight after the prefix, so a
-    # fourth scripted answer would never be consumed, and a spare answer at
-    # the end of a script is invisible, which is exactly how a test comes to
-    # assert less than it looks like it does. Under-scripting is the honest
-    # failure mode here: it surfaces as EOFError and exit 130, not silence.
-    console = ScriptedConsole([solution.id, "y", "NEW_"])
+    # One answer only -- the template. The guard runs straight after it, so
+    # a second scripted answer would never be consumed, and a spare answer
+    # at the end of a script is invisible, which is exactly how a test comes
+    # to assert less than it looks like it does. Under-scripting is the
+    # honest failure mode here: it surfaces as EOFError and exit 130, not
+    # silence.
+    console = ScriptedConsole([solution.id])
     assert wizard.run_wizard(console) == 1
     assert not destination.exists()
     assert "fake-template" in _collapsed(console)
@@ -2914,10 +2951,30 @@ def test_preserving_the_env_file_keeps_lines_it_does_not_own() -> None:
     """Only the reader assignment is rewritten; comments and blank lines
     survive, so a file that later carries a second key is not truncated."""
     source = "# defaults\n\nDBMLSP_ENTERPRISE_READER=svc-old@example.org\n"
-    rewritten = wizard._env_text_for_answer(source, "svc-new@example.org")
+    rewritten = wizard._env_text_for_answers(source, "svc-new@example.org", "Europe/London")
     assert "# defaults" in rewritten
     assert "svc-old@example.org" not in rewritten
     assert "DBMLSP_ENTERPRISE_READER=svc-new@example.org" in rewritten
+    assert "DBMLSP_TIME_ZONE=Europe/London" in rewritten
+
+
+def test_preserving_the_env_file_sets_the_zone_to_the_confirmed_one() -> None:
+    """The zone is always asked and always confirmed, so the copy always
+    names the answer: a file naming another zone would otherwise win the
+    next rebuild run without the flag, and the pack would change zone
+    between two builds nobody edited anything for. A reader never asked
+    (None) passes through untouched either way."""
+    source = "DBMLSP_TIME_ZONE=Australia/Melbourne\nDBMLSP_ENTERPRISE_READER=svc@example.org\n"
+    rewritten = wizard._env_text_for_answers(source, None, "Europe/London")
+    assert rewritten.count("DBMLSP_TIME_ZONE=") == 1
+    assert "DBMLSP_TIME_ZONE=Europe/London" in rewritten
+    assert "Australia/Melbourne" not in rewritten
+    assert "DBMLSP_ENTERPRISE_READER=svc@example.org" in rewritten
+    # A file with no zone line gains one, so the rebuild inside the project
+    # can run without the flag and still build for the zone confirmed here.
+    assert wizard._env_text_for_answers("# defaults\n", None, "Europe/London") == (
+        "# defaults\nDBMLSP_TIME_ZONE=Europe/London\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -2937,12 +2994,219 @@ def test_a_preserved_reader_round_trips_through_the_parser(reader: str) -> None:
     breakage only appeared later, when the documented rebuild tried to
     parse the file the wizard had written.
     """
-    text = wizard._env_text_for_answer("# defaults\n", reader)
+    text = wizard._env_text_for_answers("# defaults\n", reader, "Europe/London")
     path = Path(tempfile.mkdtemp()) / ENV_FILENAME
     path.write_text(text, encoding="utf-8", newline="\n")
 
     settings, _digest = read_env_file(path)
     assert settings["DBMLSP_ENTERPRISE_READER"] == reader
+
+
+# ------------------------------------------------------------ the time zone
+
+
+def test_enter_confirms_the_machines_zone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The offer is the build machine's own zone, and Enter confirms it.
+
+    The guidance has to say what the offer IS: the zone of the computer
+    running the wizard, not a fact about the site. This host builds for a
+    site in another zone that happens to share every transition; a host in
+    Hobart would be wrong for a few weeks a year. It also names what
+    catches a wrong answer, so the operator knows the pack checks rather
+    than trusts.
+    """
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", time_zone=""), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == MACHINE_ZONE
+    shown = _collapsed(console)
+    assert f"This computer reports {MACHINE_ZONE}" in shown
+    assert "not necessarily the site's" in shown
+    assert "DateZoneResolved false" in shown
+    assert f"Time zone {MACHINE_ZONE}" in shown
+
+
+def test_a_typed_zone_beats_the_offer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", time_zone="Europe/London"),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == "Europe/London"
+
+
+def test_no_detected_zone_offers_nothing_and_says_what_to_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Detection failing must not become a guess. With nothing on offer,
+    Enter is refused like any other empty answer and the prompt re-asks;
+    the script presses Enter FIRST so a wizard that quietly offered
+    something anyway would capture it with the typed zone left unread.
+    """
+    monkeypatch.setattr(wizard, "local_zone_name", lambda: None)
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "risk-register",
+        str(destination),
+        "y",   # prefix gate
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x",
+        "",    # Enter: nothing is offered, so nothing is accepted
+        "Europe/London",
+        "y",   # build
+        "",    # reporting account: nobody
+        "n",   # demo rows
+        "y",   # confirm
+    ], width=400)
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == "Europe/London"
+    shown = _collapsed(console)
+    assert "could not be read, so nothing is offered" in shown
+    assert MACHINE_ZONE not in shown
+    assert "is not an IANA time zone name" in shown
+
+
+def test_a_near_miss_is_refused_with_the_spelling_it_meant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The prompt refuses with the CLI's own message, suggestions included,
+    so `Melbourne` (which is how the site's regional settings name it) is
+    answered with `Australia/Melbourne` rather than a bare no."""
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "risk-register",
+        str(destination),
+        "y",   # prefix gate
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x",
+        "Melbourne",             # refused
+        "Australia/Melbourne",   # accepted
+        "y",   # build
+        "",    # reporting account: nobody
+        "n",   # demo rows
+        "y",   # confirm
+    ], width=400)
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == "Australia/Melbourne"
+    assert "Did you mean: Australia/Melbourne" in _collapsed(console)
+
+
+def test_the_env_files_zone_is_offered_over_the_machines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zone the project's own file names was written for this project on
+    purpose, so it is the better offer, and the guidance says which file it
+    came from. Enter confirms it, and the build is told the answer
+    explicitly rather than left to resolve the file again."""
+    (tmp_path / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Australia/Melbourne\n", encoding="utf-8", newline="\n",
+    )
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", time_zone=""), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == "Australia/Melbourne"
+    assert captured["env_file"] == Path(ENV_FILENAME)
+    shown = _collapsed(console)
+    assert f"{ENV_FILENAME} names Australia/Melbourne" in shown
+    assert f"This computer reports {MACHINE_ZONE}" not in shown
+
+
+def test_an_invalid_env_file_zone_is_reported_and_the_machines_offered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same shape as an invalid reader in the file: a warning, the
+    suggestion withdrawn, the path still threaded through. The machine's
+    zone is then the offer, and the build never sees the bad value because
+    the wizard passes its own answer explicitly."""
+    (tmp_path / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Mars/Olympus\n", encoding="utf-8", newline="\n",
+    )
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", time_zone=""), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["time_zone"] == MACHINE_ZONE
+    assert captured["env_file"] == Path(ENV_FILENAME)
+    shown = _collapsed(console)
+    assert "suggests a time zone that is not valid" in shown
+    assert "Mars/Olympus" in shown
+    assert f"This computer reports {MACHINE_ZONE}" in shown
+
+
+def test_the_preserved_env_file_carries_the_confirmed_zone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy made for the rebuild names the zone that was confirmed, not
+    the one the source file suggested, so a rebuild without the flag builds
+    for the same site the first build did."""
+    (tmp_path / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Australia/Melbourne\n", encoding="utf-8", newline="\n",
+    )
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", time_zone="Europe/London"), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    settings, _digest = read_env_file(destination / ENV_FILENAME)
+    assert settings == {"DBMLSP_TIME_ZONE": "Europe/London"}
+
+
+def test_an_unparsable_env_file_refuses_before_the_first_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The file feeds the zone prompt, so it is read with the template's own
+    facts, the moment the template is chosen, and a file that will not
+    parse refuses the run before the operator has answered anything for
+    the project, whether or not a build was going to be asked for. The
+    script stops at the template so a wizard that read the file later
+    would run out of answers (130) rather than refuse (1)."""
+    (tmp_path / ENV_FILENAME).write_text(
+        "not a key-value line\n", encoding="utf-8", newline="\n",
+    )
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(["risk-register"], width=400)
+
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert code == 1
+    assert "expected KEY=value" in shown
+    assert "Project directory" not in shown
+    assert captured == {}
+
+
+def test_the_declined_build_prints_a_command_carrying_the_time_zone(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="n", time_zone="Europe/London"), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert "--time-zone Europe/London" in _collapsed(console)
+    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
+    assert "--time-zone Europe/London" in deploy_md
+    assert "Region/City" not in deploy_md
 
 
 def _asked_and_defaulted(source: str) -> tuple[frozenset[str], frozenset[str]]:
@@ -3043,11 +3307,12 @@ def test_the_site_url_prompt_has_no_default_answer(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        str(destination),
         "y",   # prefix gate
         "RR_",
-        str(destination),
         "",    # Enter: no longer an answer
         "https://contoso.sharepoint.com/sites/ops",
+        "Europe/London",
         "n",   # build
         "y",   # confirm
     ])

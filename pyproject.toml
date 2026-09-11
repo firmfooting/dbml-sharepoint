@@ -42,6 +42,12 @@ dependencies = [
   # This package supplies one there; where the system has its own,
   # `zoneinfo` prefers that copy.
   "tzdata>=2026.3",
+  # The wizard offers the build machine's own zone as the answer to
+  # `--time-zone`, for the operator to confirm. On Linux that is the
+  # /etc/localtime symlink; on Windows, where this project is developed,
+  # there is no such symlink and the registry names zones in its own
+  # vocabulary, which this package maps to IANA names.
+  "tzlocal>=5.4.4",
 ]
 
 [project.urls]

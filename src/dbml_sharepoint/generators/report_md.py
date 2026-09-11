@@ -39,8 +39,8 @@ from dbml_sharepoint.model.release import Release
 
 
 def _date_zone_guide_paragraphs(time_zone: str | None) -> list[str]:
-    """What the guide says about `DateZoneResolved`, and about the declared
-    zone's helpers where there is one."""
+    """What the guide says about `DateZoneResolved`, and about the site
+    zone's helpers where the build named one."""
     if time_zone is None:
         return [
             (f"A list with a date-only column also carries "
@@ -58,8 +58,9 @@ def _date_zone_guide_paragraphs(time_zone: str | None) -> list[str]:
          "instant, so the query reads the site's time zone to turn it back "
          "into the date the list shows. That read fails soft too, and "
          "without it those columns truncate in UTC and read a day early "
-         "east of UTC. The mapping declares the site's zone as "
-         f"`{time_zone}`, so the flag is also false when the zone the site "
+         "east of UTC. The pack was built for the site's zone "
+         f"`{time_zone}` (the build's `--time-zone`), so the flag is also "
+         "false when the zone the site "
          "reports does not agree with it, which means the offsets the site "
          "reports are not exactly the ones that zone uses under its current "
          "rule: a pack built for one zone and refreshed against a site set "
@@ -115,15 +116,19 @@ def generate_reporting_md(
     schema: Schema, bundle: MappingBundle, site_role: str,
     *,
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> str:
     """Usage instructions + the Power BI relationship table.
 
     ``site_url`` must be passed whenever the queries beside this guide were
     built with it: the setup step it documents is the difference between
     "create a parameter" and "there is nothing to create", and a guide that
-    is wrong about that costs the operator the whole first hour.
+    is wrong about that costs the operator the whole first hour. The same
+    holds for ``time_zone``: the guide describes the transitions and helpers
+    the queries carry, and it can only do so for the zone they were built
+    with.
     """
-    plans = build_plans(schema, bundle, site_role)
+    plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
     system_columns = bundle.mapping.reporting.system_columns
     users_table = bundle.mapping.reporting.users_table
     setup_step = (
@@ -322,7 +327,7 @@ def generate_reporting_md(
          "than zero, which is why the blank is worth checking."),
         ":::",
         "",
-        *_date_zone_guide_paragraphs(bundle.mapping.reporting.time_zone),
+        *_date_zone_guide_paragraphs(time_zone),
         "",
         "## Data dictionary page (in-report)",
         "",
@@ -381,7 +386,7 @@ def _md_cell(text: str) -> str:
 
 def _date_zone_dictionary_row(time_zone: str | None) -> str:
     """The helper-column row for `DateZoneResolved`, which means one thing
-    more once the mapping declares the site's zone."""
+    more once the build names the site's zone."""
     if time_zone is None:
         return (
             f"| {DATE_ZONE_RESOLVED_COLUMN} | Whether the site's time zone was "
@@ -407,10 +412,13 @@ def generate_data_dictionary(
     generated_at: str = "",
     source_schema: str = "",
     source_mapping: str = "",
+    time_zone: str | None = None,
 ) -> str:
     """Companion data dictionary: deployment/schema metadata + every list and
     column as deployed, including choices, lookup targets, calculated
-    formulas, indexing, versioning and the query-layer helper columns."""
+    formulas, indexing, versioning and the query-layer helper columns.
+    ``time_zone`` is the site's zone the pack was built with, named in the
+    `DateZoneResolved` row."""
     tables = tables_for_role(schema, bundle, site_role)
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
@@ -536,7 +544,7 @@ def generate_data_dictionary(
          "| False means every ItemURL in the table was built from the "
          "declared title, which is a dead link on a list that has been "
          "renamed. Suppress the link rather than ship a 404 |"),
-        _date_zone_dictionary_row(mapping.reporting.time_zone),
+        _date_zone_dictionary_row(time_zone),
         ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",

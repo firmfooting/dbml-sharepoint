@@ -771,7 +771,6 @@ the next re-paste detects it, reverts it and reports having done so.
 reporting:
   system_columns: true
   users_table: true
-  time_zone: Australia/Melbourne
 ```
 
 Settings for the generated reporting pack: the `reporting/` directory of
@@ -833,41 +832,20 @@ selected field exists on it. A reporting reader account has not been
 measured; a 403 on refreshing `_Users` means it needs read access to
 that list.
 
-### `time_zone`
+### The site's time zone is not declared here
 
-The site's time zone as an IANA name, such as `Australia/Melbourne` or
-`Europe/London`. The build refuses a name the IANA database does not
-declare (`unknown_time_zone`), and `report` fails with the same message.
-Declared, every list query carries:
-
-- **The zone's daylight-saving transitions**, generated from the IANA
-  database when the pack is built, as a `SiteTransitions` list covering
-  2000 to 2050. Power Query has no time zone database of its own and
-  SharePoint does not serve the transition dates, so this is the only way
-  a refresh in the Power BI Service can convert a UTC timestamp to the
-  site's local time correctly on both sides of a transition. Regenerate
-  the pack when the zone's rules change; a timestamp past the last row
-  takes that row's offset.
-- **`AsSiteDateTime` and `AsSiteDate`**, helpers a
-  [`derived_columns`](#derived_columns) `expr` can call: `AsSiteDate([Created])`
-  is the date `Created` shows on the site, and `AsSiteDateTime([Modified])`
-  the local date and time. `SiteOffsetAt` gives the offset in minutes east
-  of UTC for a UTC instant, by the last transition at or before it.
-- **`DateZoneResolved` on every list**, meaning the site's zone was read
-  and agrees with the declaration: the offsets the site reports must be
-  exactly the offsets the declared zone uses under its current rule, the
-  one the IANA database projects to the end of the window. A pack built
-  for Melbourne and refreshed against a site set to London, or to
-  Brisbane, reads false on every row rather than converting by the wrong
-  table. A zone that has abolished daylight saving, such as
-  `America/Sao_Paulo` or `Asia/Tehran`, compares as the one offset it uses
-  now, not the two it used before.
-
-A date-only column needs none of this and is unchanged: its value is
-local midnight already, and the query resolves the offset from that
-without a declaration. The helpers are for timestamps, which have no such
-anchor. `test/manual/site-zone-transitions-probe.js` checks the shipped
-rows against SharePoint's own `utctolocaltime` on a live site.
+The zone a pack converts timestamps by is a fact about the **site** it is
+built for, not about the solution, so it is a build input:
+[`--time-zone`](cli.md#the-sites-time-zone) on `build` and `report`, or
+`DBMLSP_TIME_ZONE` in `dbml-sharepoint.env`. A mapping says *use the
+site's date* (a [`derived_columns`](#derived_columns) `expr` calling
+`AsSiteDate([Created])`), and the build says which site. The removed
+`reporting.time_zone` key is a hard load error naming the flag; there is
+no compatibility mode. What the zone gives every list query (the
+daylight-saving transitions, the `AsSiteDate` and `AsSiteDateTime`
+helpers, and `DateZoneResolved`'s check that the site agrees) is
+described on the [reporting pack](../artifacts/reporting.md#timestamps-convert-by-the-declared-zone)
+page.
 
 ## `column_formatting`
 

@@ -125,13 +125,16 @@ def generate_sql_views(
     schema: Schema, bundle: MappingBundle, site_role: str,
     *,
     site_url: str | None = None,
+    time_zone: str | None = None,
 ) -> str:
     """A single SQLCMD script: typed view per list + _Enriched join views.
 
     ``site_url``, when known, is written into the ``:setvar SiteUrl`` line
     so the script needs no editing; otherwise a placeholder is left there.
+    ``time_zone`` is the site's zone the queries beside this were built
+    with; the plans are built with it so the two describe the same columns.
     """
-    plans = build_plans(schema, bundle, site_role)
+    plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
     parts = [_sql_header(site_url)]
     parts += [_render_sql_view(plan) for plan in plans]
     parts += [_render_sql_enriched(plan) for plan in plans if plan.joins]
@@ -201,6 +204,7 @@ def generate_dictionary_sql(
     generated_at: str = "",
     source_schema: str = "",
     source_mapping: str = "",
+    time_zone: str | None = None,
 ) -> str:
     """The data dictionary as SQL views built from embedded VALUES rows (no
     landing table needed), so warehouse-driven reports can surface the same
@@ -223,7 +227,7 @@ def generate_dictionary_sql(
         )
     ]
     audit_view = _render_user_added_columns_sql(
-        build_plans(schema, bundle, site_role), prefix,
+        build_plans(schema, bundle, site_role, time_zone=time_zone), prefix,
     )
     return (
         _render_sql_values_view(

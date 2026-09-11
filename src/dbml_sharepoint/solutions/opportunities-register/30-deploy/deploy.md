@@ -38,6 +38,7 @@ dbml-sharepoint build \
   --mapping 20-configure/mapping.yaml \
   --release 20-configure/release.yaml \
   --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --time-zone Region/City \
   --site-role default \
   --out ./build
 ```

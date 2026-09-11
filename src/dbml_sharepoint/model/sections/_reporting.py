@@ -34,10 +34,27 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {"reporting": reporting, "derived_columns": derived_columns}
 
 
+#: The message a mapping still carrying `reporting.time_zone` gets. Named
+#: so the test that pins the wording reads the same string the loader
+#: raises, rather than a copy that can drift from it.
+REMOVED_TIME_ZONE_KEY_MESSAGE = (
+    "reporting.time_zone has been replaced by the --time-zone build input: "
+    "pass --time-zone to `build` and `report`, or set DBMLSP_TIME_ZONE in "
+    "dbml-sharepoint.env. A time zone is a fact about the site a pack is "
+    "built for, not about the solution, so it does not belong in a mapping. "
+    "Remove the key; the AsSiteDate and AsSiteDateTime helpers and the "
+    "derived columns that call them are unchanged."
+)
+
+
 def _parse_reporting(block: Any) -> ReportingOptions:
     section = _require_mapping(block, "reporting")
+    # Refused by name, before the generic unknown-key check can call it a
+    # typo: the key existed, and the author needs to know where it went.
+    if "time_zone" in section:
+        raise ValueError(REMOVED_TIME_ZONE_KEY_MESSAGE)
     switches = ("system_columns", "users_table")
-    _reject_unknown_keys(section, {*switches, "time_zone"}, "reporting")
+    _reject_unknown_keys(section, set(switches), "reporting")
     values: dict[str, bool] = {}
     for name in switches:
         value = section.get(name, False)
@@ -48,18 +65,7 @@ def _parse_reporting(block: Any) -> ReportingOptions:
                 f"reporting.{name}: expected true or false, got {value!r}",
             )
         values[name] = value
-    # Shape only. Whether the name is a zone the IANA database declares is
-    # the validator's question (`UNKNOWN_TIME_ZONE`), the same split as
-    # `lookup_projections`.
-    time_zone = section.get("time_zone")
-    if time_zone is not None and (
-        not isinstance(time_zone, str) or not time_zone.strip()
-    ):
-        raise ValueError(
-            f"reporting.time_zone: expected an IANA zone name such as "
-            f"Australia/Melbourne, got {time_zone!r}",
-        )
-    return ReportingOptions(**values, time_zone=time_zone)
+    return ReportingOptions(**values)
 
 
 def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
