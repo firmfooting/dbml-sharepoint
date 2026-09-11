@@ -5,10 +5,13 @@ holding a consumer to that declaration, and three failure modes followed: a
 literal that bypasses it, prose that restates the value, and a constant whose
 value changes nothing observable.
 
-`_structure.py` (the internal-name limit check, now at `_structure.py:586` and
-`:672`) was all three at once. It compared against a bare 32 and
-wrote "SP internal-name limit is 32." in its message, while `MAX_INTERNAL_NAME`
-was read only by `validator.py`. Setting the constant to 33 made the two
+`_structure.py` (the internal-name limit check, in
+`_cross_site_generated_names` and `_lookup_projections`) was all three at once.
+It compared against a bare 32 and wrote "SP internal-name limit is 32." in its
+message, while `MAX_INTERNAL_NAME` was read only by `validator.py`. Cited by
+FUNCTION rather than by line: this docstring has already been wrong twice, at
+`:507` before the split and at `:586`/`:672` after it (#311), because a line
+number is invalidated by any edit above it. Setting the constant to 33 made the two
 enforcement sites disagree and no test saw it, which is the surviving mutant
 recorded in the `limits.py` docstring.
 
