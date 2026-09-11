@@ -1,6 +1,6 @@
 ---
 title: report_m
-sidebar_position: 39
+sidebar_position: 40
 ---
 
 # `dbml_sharepoint.generators.report_m`

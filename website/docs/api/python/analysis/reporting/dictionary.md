@@ -1,6 +1,6 @@
 ---
 title: dictionary
-sidebar_position: 32
+sidebar_position: 33
 ---
 
 # `dbml_sharepoint.analysis.reporting.dictionary`
