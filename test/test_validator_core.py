@@ -859,6 +859,12 @@ def test_indexed_column_cross_site_logical_name_is_error() -> None:
     )
     assert finding.severity == "error"
     assert "Project" in finding.message
+    # The one declaration is at fault, so the location names the entry that
+    # declared it (`indexes[0]`, the only entry Task declares) rather than a
+    # `Task.Project` column path, because that column never exists.
+    assert finding.location == Location(Section.SCHEMA, entity="Task", sub="indexes[0]")
+    assert finding.location is not None
+    assert finding.location.path == "schema[Task].indexes[0]"
 
 def test_dbml_indexes_reject_unsupported_field_types() -> None:
     schema = make_schema(make_table(
@@ -867,9 +873,8 @@ def test_dbml_indexes_reject_unsupported_field_types() -> None:
         make_column("Url", "hyperlink"),
         indexes=["Notes", "Url"],
     ))
-    errors = by_severity(
-        validate_against_mapping(schema, make_bundle(entities=["Task"])), "error",
-    )
+    findings = validate_against_mapping(schema, make_bundle(entities=["Task"]))
+    errors = by_severity(findings, "error")
     # The SharePoint type name is the value: it is what tells the author why
     # this column cannot carry an index. ("Note" was previously asserted
     # alongside "Notes", which contains it. The check could not fail.)
@@ -877,6 +882,16 @@ def test_dbml_indexes_reject_unsupported_field_types() -> None:
     assert len(refused) == 2, refused
     assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
     assert any("Url" in m and "Hyperlink" in m for m in refused)
+    # Each declaration is at fault on its own, so the location is the
+    # declaration itself, `indexes[0]` for Notes and `indexes[1]` for Url,
+    # in the order `indexes { }` declared them.
+    unindexable = [f for f in findings if f.code == FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE]
+    notes_finding = next(f for f in unindexable if "Notes" in f.message)
+    url_finding = next(f for f in unindexable if "Url" in f.message)
+    assert notes_finding.location is not None
+    assert url_finding.location is not None
+    assert notes_finding.location.path == "schema[Task].indexes[0]"
+    assert url_finding.location.path == "schema[Task].indexes[1]"
 
 def test_dbml_indexes_reject_a_multi_value_column() -> None:
     """A denylist keyed by type NAME cannot hold `audit_event[]`.
@@ -904,6 +919,10 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
     # no source list to index, so saying it here would name a route that does
     # not exist for this kind.
     assert "does not carry into the lookup" not in finding.message
+    # The one declaration is at fault, so the location is the declaration
+    # itself: `indexes[0]`, the only entry Task declares.
+    assert finding.location is not None
+    assert finding.location.path == "schema[Task].indexes[0]"
     # Its own code, and only its own: the generic rule names an unindexable
     # TYPE and its remedy is "pick a different column", while this one has a
     # second remedy the generic rule cannot offer -- the same enum without the
@@ -1025,6 +1044,10 @@ def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:
     duplicate = only(findings, FindingCode.DUPLICATE_INDEX_TARGET)
     assert duplicate.severity == "error"
     assert "Col0" in duplicate.message
+    # Two declarations share the blame (Col0 appears at both position 0 and
+    # the appended duplicate), so the location names the indexes block
+    # rather than either declaration alone.
+    assert duplicate.location == Location(Section.SCHEMA, entity="Wide", sub="indexes")
     over_budget = only(findings, FindingCode.INDEX_LIMIT_EXCEEDED)
     assert over_budget.severity == "error"
     assert "21 effective indexes exceed SharePoint's limit of 20" in over_budget.message
@@ -1039,8 +1062,16 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry() -> None
     assert "21 effective indexes exceed SharePoint's limit of 20" in finding.message
 
 def test_dbml_index_must_not_repeat_a_unique_column() -> None:
+    """A single declaration is at fault, so the location names it directly.
+
+    The composite entry ahead of it proves the position is counted over
+    EVERY entry in `indexes { }`, not just the representable ones: AssetTag
+    is the second entry, so it is `indexes[1]` even though the composite
+    entry contributes nothing to `index_targets`.
+    """
     schema = make_schema(make_table(
-        "Asset", make_column("AssetTag", unique=True), indexes=["AssetTag"],
+        "Asset", make_column("A"), make_column("AssetTag", unique=True),
+        indexes=[TableIndex(("A", "B")), "AssetTag"],
     ))
     finding = only(
         validate_against_mapping(schema, make_bundle(entities=["Asset"])),
@@ -1048,6 +1079,23 @@ def test_dbml_index_must_not_repeat_a_unique_column() -> None:
     )
     assert finding.severity == "error"
     assert "AssetTag" in finding.message
+    assert finding.location == Location(Section.SCHEMA, entity="Asset", sub="indexes[1]")
+    assert finding.location is not None
+    assert finding.location.path == "schema[Asset].indexes[1]"
+
+
+def test_dbml_index_duplicating_a_unique_column_twice_points_at_the_block() -> None:
+    """Two declarations share the blame, so both codes point at the indexes
+    block rather than naming either declaration alone."""
+    schema = make_schema(make_table(
+        "Asset", make_column("AssetTag", unique=True),
+        indexes=["AssetTag", "AssetTag"],
+    ))
+    findings = validate_against_mapping(schema, make_bundle(entities=["Asset"]))
+    duplicate = only(findings, FindingCode.DUPLICATE_INDEX_TARGET)
+    unique_duplicate = only(findings, FindingCode.INDEX_DUPLICATES_UNIQUE_COLUMN)
+    assert duplicate.location == Location(Section.SCHEMA, entity="Asset", sub="indexes")
+    assert unique_duplicate.location == Location(Section.SCHEMA, entity="Asset", sub="indexes")
 
 def _big_with_indexes(count: int) -> Schema:
     """`Big` with `count` nvarchar columns, every one of them indexed.

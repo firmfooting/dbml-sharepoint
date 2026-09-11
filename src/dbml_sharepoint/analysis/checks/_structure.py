@@ -4,7 +4,7 @@
 import re
 from collections.abc import Set as AbstractSet
 
-from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import IndexTarget, ValidationContext
 from dbml_sharepoint.analysis.column_refs import formula_column_refs
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
@@ -909,17 +909,12 @@ def _indexes(vc: ValidationContext) -> list[Finding]:
         table = vc.tables_by_name.get(entity_name)
         if table is None:
             continue
-        indexed = _index_targets(table)
+        targets = vc.index_targets(entity_name)
         findings += _index_declarations(entity_name, table)
-        findings += _duplicate_indexes(vc, entity_name, indexed)
+        findings += _duplicate_indexes(vc, entity_name, targets)
         findings += _index_ceiling(vc, entity_name)
-        findings += _indexable_columns(vc, entity_name, table, indexed)
+        findings += _indexable_columns(vc, entity_name, table, targets)
     return findings
-
-
-def _index_targets(table: Table) -> list[str]:
-    """The column each representable index names, in declaration order."""
-    return [index.columns[0] for index in table.indexes if len(index.columns) == 1]
 
 
 def _index_declarations(entity_name: str, table: Table) -> list[Finding]:
@@ -961,29 +956,35 @@ def _index_declarations(entity_name: str, table: Table) -> list[Finding]:
 
 
 def _duplicate_indexes(
-    vc: ValidationContext, entity_name: str, indexed: list[str],
+    vc: ValidationContext, entity_name: str, targets: list[IndexTarget],
 ) -> list[Finding]:
-    """One column indexed twice, by two entries or by an entry and [unique]."""
+    """One column indexed twice, by two entries or by an entry and [unique].
+
+    DUPLICATE_INDEX_TARGET always points at the indexes block, because two or
+    more declarations share the blame. INDEX_DUPLICATES_UNIQUE_COLUMN points
+    at the one declaration when only one names the column, and at the block
+    when more than one does; either way the location names the declaration(s)
+    actually at fault rather than a column path that does not exist.
+    """
     findings: list[Finding] = []
-    for duplicate in sorted({name for name in indexed if indexed.count(name) > 1}):
+    names = [target.column for target in targets]
+    for duplicate in sorted({name for name in names if names.count(name) > 1}):
         findings.append(Finding(
             FindingCode.DUPLICATE_INDEX_TARGET,
             f"{entity_name}.indexes: duplicate index target {duplicate!r}.",
-            location=Location(
-                Section.SCHEMA, entity=entity_name, column=duplicate, sub="index",
-            ),
+            location=Location(Section.SCHEMA, entity=entity_name, sub="indexes"),
         ))
     # Unique fields carry an implicit SharePoint index and count toward
     # the same per-list ceiling as explicit declarations.
     unique_indexes = vc.unique_indexes_by_entity.get(entity_name, set())
-    for duplicate in sorted(set(indexed) & unique_indexes):
+    for duplicate in sorted(set(names) & unique_indexes):
+        positions = [target.position for target in targets if target.column == duplicate]
+        sub = f"indexes[{positions[0]}]" if len(positions) == 1 else "indexes"
         findings.append(Finding(
             FindingCode.INDEX_DUPLICATES_UNIQUE_COLUMN,
             f"{entity_name}.indexes: {duplicate!r} is already indexed by "
             "its column [unique] setting; remove the redundant indexes entry.",
-            location=Location(
-                Section.SCHEMA, entity=entity_name, column=duplicate, sub="index",
-            ),
+            location=Location(Section.SCHEMA, entity=entity_name, sub=sub),
         ))
     return findings
 
@@ -1043,14 +1044,19 @@ def _index_ceiling(vc: ValidationContext, entity_name: str) -> list[Finding]:
 
 
 def _indexable_columns(
-    vc: ValidationContext, entity_name: str, table: Table, indexed: list[str],
+    vc: ValidationContext, entity_name: str, table: Table, targets: list[IndexTarget],
 ) -> list[Finding]:
-    """Refuse an index on a column the deploy never creates or cannot index."""
+    """Refuse an index on a column the deploy never creates or cannot index.
+
+    Each finding points at the declaration that named the column,
+    `indexes[n]`, rather than a column-shaped path that does not exist.
+    """
     findings: list[Finding] = []
     xcols = vc.cross_site_columns(entity_name)
     rendered = rendered_columns(table, xcols)
     columns_by_name = {col.name: col for col in table.columns}
-    for col_name in indexed:
+    for target in targets:
+        col_name = target.column
         if col_name not in rendered:
             hint = (
                 " (cross-site logical columns are replaced by generated "
@@ -1063,7 +1069,8 @@ def _indexable_columns(
                 f"{entity_name}.indexes: {col_name!r} is not a "
                 f"rendered column of {entity_name}{hint}.",
                 location=Location(
-                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                    Section.SCHEMA, entity=entity_name,
+                    sub=f"indexes[{target.position}]",
                 ),
             ))
             continue
@@ -1131,7 +1138,8 @@ def _indexable_columns(
                 f"{unindexable} column.{never} Remove it from "
                 f"indexes {{ }}, or {remedy}.",
                 location=Location(
-                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                    Section.SCHEMA, entity=entity_name,
+                    sub=f"indexes[{target.position}]",
                 ),
             ))
         elif unindexable is not None:
@@ -1141,7 +1149,8 @@ def _indexable_columns(
                 f"{unindexable} column, which SharePoint "
                 f"cannot index.",
                 location=Location(
-                    Section.SCHEMA, entity=entity_name, column=col_name, sub="index",
+                    Section.SCHEMA, entity=entity_name,
+                    sub=f"indexes[{target.position}]",
                 ),
             ))
     return findings
@@ -1530,8 +1539,9 @@ def _calculated_column_indexes(vc: ValidationContext) -> list[Finding]:
     class belongs in one place.
 
     THE SINGLE-COLUMN GUARD IS NOT AN ESCAPE. A composite index naming a
-    calculated column skips this rule and is refused by
-    COMPOSITE_INDEX_UNSUPPORTED instead, and `[unique]` on a calculated
+    calculated column skips this rule (`index_targets` keeps only the
+    single-column entries) and is refused by COMPOSITE_INDEX_UNSUPPORTED
+    instead, and `[unique]` on a calculated
     column is refused by UNIQUE_UNSUPPORTED_FOR_TYPE, which is the other
     route to an `Indexed=true` write. Both are pinned in
     test/test_validator_calculated.py.
@@ -1539,10 +1549,8 @@ def _calculated_column_indexes(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     for table in vc.schema.tables:
         calc_names = vc.calculated_by_entity.get(table.name, set())
-        for index in table.indexes:
-            if len(index.columns) != 1:
-                continue
-            col_name = index.columns[0]
+        for target in vc.index_targets(table.name):
+            col_name = target.column
             if col_name in calc_names:
                 findings.append(Finding(
                     FindingCode.INDEX_ON_CALCULATED_COLUMN,
@@ -1551,7 +1559,7 @@ def _calculated_column_indexes(vc: ValidationContext) -> list[Finding]:
                     f"columns.",
                     location=Location(
                         Section.SCHEMA,
-                        entity=table.name, column=col_name, sub="index",
+                        entity=table.name, sub=f"indexes[{target.position}]",
                     ),
                 ))
     return findings
