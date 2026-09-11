@@ -418,13 +418,19 @@ def test_calculated_formula_circular_references_are_error() -> None:
     assert "RiskBand" in f.message and "RiskScore" in f.message
 
 def test_indexed_calculated_column_is_error() -> None:
+    """The one declaration is at fault, so the location names the entry
+    that declared it: the fixture's Risk table declares no `indexes { }`
+    block, so the appended entry is position 0."""
     schema, bundle = _calc_inputs()
-    next(table for table in schema.tables if table.name == "Risk").indexes.append(
-        TableIndex(("RiskScore",)),
-    )
+    risk = next(table for table in schema.tables if table.name == "Risk")
+    position = len(risk.indexes)
+    risk.indexes.append(TableIndex(("RiskScore",)))
     f = only(validate_against_mapping(schema, bundle), FindingCode.INDEX_ON_CALCULATED_COLUMN)
     assert f.severity == "error"
     assert "'RiskScore'" in f.message
+    assert f.location == Location(Section.SCHEMA, entity="Risk", sub=f"indexes[{position}]")
+    assert f.location is not None
+    assert f.location.path == f"schema[Risk].indexes[{position}]"
 
 def test_a_composite_index_over_a_calculated_column_is_still_refused() -> None:
     """The single-column guard in the rule is not an escape from the ban.
