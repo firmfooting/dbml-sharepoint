@@ -12,11 +12,13 @@ readable role; nothing is hidden behind frameworks.
 schema.dbml ──▶ model/parser ─┐
 mapping.yaml ─▶ model/mapping_loader ─┼─▶ analysis/  validator,
 release.yaml ─▶ model/release ────────┘   ordering, typemap, phases,
-                                          permissions, styles
+                                          permissions, styles,
+                                          reporting/ (the pack's plan)
                      ┌────────────────────────┘
                      ▼
-        generators/  jsgen · rollbackgen · assessgen ·
-        demogen · manifestgen · reportgen   (one artifact family each)
+        generators/  jsgen · rollbackgen · assessgen · demogen ·
+        manifestgen · report_m · report_sql · report_md
+        (one artifact family each) · reportgen (composes the pack)
                      │
                      ▼
         bundle.emit_bundle()  - the ONE emission sequence:
@@ -31,8 +33,8 @@ pipeline; the packaging spine sits at the package root:
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
 | `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
-| `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
-| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
+| `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` · `reporting/` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections, and the reporting pack's plan and dictionary rows as data |
+| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `report_m` · `report_sql` · `report_md` · `reportgen` | Each renders one artifact family from model + analysis; the three `report_*` renderers are split by escaping function and `reportgen` composes them into the pack |
 | root | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
 
 Data flows downward (analysis knows nothing of generators) and the root

@@ -24,8 +24,8 @@ from _packs import entities, write_dbml, write_mapping
 from _paths import FIXTURES, MANUAL, SOLUTION_TEMPLATES
 from typer.testing import CliRunner
 
-from dbml_sharepoint.analysis.derived import report_column_names
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_names
 from dbml_sharepoint.analysis.timezones import (
     WINDOW_END,
     WINDOW_START,
@@ -35,9 +35,9 @@ from dbml_sharepoint.analysis.timezones import (
 )
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.cli import app
-from dbml_sharepoint.generators.reportgen import (
+from dbml_sharepoint.generators.report_m import generate_powerquery
+from dbml_sharepoint.generators.report_md import (
     generate_data_dictionary,
-    generate_powerquery,
     generate_reporting_md,
 )
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -387,12 +387,12 @@ def test_the_flag_rides_every_list_once_a_zone_is_declared() -> None:
     plain_flagged = {n for n, q in plain.items() if '"DateZoneResolved"' in q}
     assert plain_flagged and plain_flagged != set(plain)  # the declaration widens it
     queries = generate_powerquery(schema, zoned, "default")
-    enums = {e.name for e in schema.enums}
+    plans = {plan.entity: plan for plan in build_plans(schema, zoned, "default")}
     for table in schema.tables:
         query = queries[f"APP_{table.name}.pq"]
         assert '"DateZoneResolved"' in query, table.name
         assert "RegionalSettings/TimeZone" in query, table.name
-        assert "DateZoneResolved" in report_column_names(table, zoned, enums), table.name
+        assert "DateZoneResolved" in report_column_names(plans[table.name]), table.name
 
 
 def test_the_users_dimension_carries_no_table() -> None:

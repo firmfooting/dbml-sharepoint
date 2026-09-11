@@ -648,8 +648,9 @@ class Mapping:
     # {entity: [DerivedColumn]} (reporting-only columns computed in the
     # generated Power Query). NOT SharePoint columns: nothing here is
     # deployed, provisioned or read back, and a list carries no trace of it.
-    # See `analysis/derived.py` for the shared derivation both the emitter
-    # and the validator ask.
+    # See `analysis/derived.py` for what each entry contributes and reads,
+    # and `analysis/reporting/plan.py` for the query columns the validator
+    # checks a reference against, which the emitter writes from too.
     derived_columns: dict[str, list["DerivedColumn"]] = field(default_factory=dict)
     # {entity: EntitySection[FormVisibility]} (declared form behaviour).
     form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)

@@ -20,17 +20,16 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
-from dbml_sharepoint.analysis.derived import report_column_names
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_names
 from dbml_sharepoint.analysis.validator import validate_against_mapping
-from dbml_sharepoint.generators.reportgen import (
-    generate_data_dictionary,
-    generate_powerquery,
-    generate_sql_views,
-)
+from dbml_sharepoint.generators.report_m import generate_powerquery
+from dbml_sharepoint.generators.report_md import generate_data_dictionary
+from dbml_sharepoint.generators.report_sql import generate_sql_views
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DerivedColumn,
+    EntityMapping,
     MappingBundle,
     ReportingOptions,
 )
@@ -88,6 +87,20 @@ def _errors(schema: Schema, bundle: MappingBundle) -> list[Finding]:
 
 def _codes(schema: Schema, bundle: MappingBundle) -> set[FindingCode]:
     return {f.code for f in _errors(schema, bundle)}
+
+
+def _all_codes(schema: Schema, bundle: MappingBundle) -> set[FindingCode]:
+    return {f.code for f in validate_against_mapping(schema, bundle)}
+
+
+def _mapped(*names: str) -> dict[str, EntityMapping]:
+    """Only these entities declared, so the rest have no query anywhere."""
+    return {
+        name: EntityMapping(
+            name=name, kind="List", base_template=100, site_role="default",
+        )
+        for name in names
+    }
 
 
 def _risk_query(bundle: MappingBundle) -> str:
@@ -306,6 +319,85 @@ def test_a_users_lookup_on_a_column_that_is_not_a_person_is_refused() -> None:
         reporting=ReportingOptions(users_table=True),
     )
     assert FindingCode.DERIVED_LOOKUP_BAD_TARGET in _codes(_schema(), bundle)
+
+
+def test_a_count_over_an_entity_with_no_query_anywhere_is_refused() -> None:
+    """The child rows come from the child's own report query, and an entity
+    the mapping does not declare has none at any site. `_structure` reports
+    the missing entry; this rule says the join has nothing to read rather
+    than checking the filter against columns no query carries."""
+    bundle = make_bundle(
+        entities=_mapped("Risk", "Decision"),
+        derived_columns={"Risk": [
+            DerivedColumn(
+                kind="count", from_entity="Action", via="RelatedRisk",
+                name="N", aggregate="count", type="Int64",
+            ),
+        ]},
+    )
+    finding = next(
+        f for f in _errors(_schema(), bundle)
+        if f.code is FindingCode.DERIVED_LOOKUP_BAD_TARGET
+    )
+    assert "Action is not reported beside Risk" in finding.message
+    assert FindingCode.UNMAPPED_SCHEMA_TABLE in _all_codes(_schema(), bundle)
+
+
+def test_a_keyed_lookup_into_an_entity_with_no_query_anywhere_is_refused() -> None:
+    """A `key` join names its own key rather than deriving one from a ref, so
+    the rule that catches an unreported target through the missing key
+    cannot fire. The target's query still has to exist to be read."""
+    bundle = make_bundle(
+        entities=_mapped("Risk", "Action"),
+        derived_columns={"Risk": [
+            DerivedColumn(
+                kind="lookup", from_entity="Decision", key="Title",
+                pick={"D": "Status"}, types={"D": "text"},
+            ),
+        ]},
+    )
+    finding = next(
+        f for f in _errors(_schema(), bundle)
+        if f.code is FindingCode.DERIVED_LOOKUP_BAD_TARGET
+    )
+    assert "Decision is not reported beside Risk" in finding.message
+
+
+def test_a_declaration_on_an_entity_with_no_query_is_left_to_the_structure_rule() -> None:
+    """No query means no columns to check a reference against, and the
+    missing mapping entry is already an error of its own. One finding
+    naming the cause, rather than a second one about its consequence."""
+    bundle = make_bundle(
+        entities=_mapped("Risk", "Decision"),
+        derived_columns={"Action": [
+            DerivedColumn(
+                kind="expr", name="X", type="text", m="[Nonsense]",
+            ),
+        ]},
+    )
+    codes = _all_codes(_schema(), bundle)
+    assert FindingCode.UNMAPPED_SCHEMA_TABLE in codes
+    assert FindingCode.DERIVED_UNKNOWN_REFERENCE not in codes
+
+
+def test_a_planner_refusal_leaves_the_validator_standing() -> None:
+    """The columns a reference is checked against are read off the same plan
+    the queries are rendered from, and the planner refuses a zone the
+    database does not declare. The validator must report that refusal as
+    the finding it is, not raise on it.
+
+    The derived rule has nothing to check against until the zone is fixed,
+    so its finding follows on the next run. That is one more cycle on a
+    mapping the build already refuses, and the first finding names the
+    exact fix.
+    """
+    bundle = _bundle(
+        [DerivedColumn(kind="expr", name="X", type="text", m="[Nonsense]")],
+        reporting=ReportingOptions(time_zone="Nowhere/Nowhere"),
+    )
+    codes = _all_codes(_schema(), bundle)
+    assert FindingCode.UNKNOWN_TIME_ZONE in codes
+    assert FindingCode.DERIVED_UNKNOWN_REFERENCE not in codes
 
 
 # ------------------------------------------------------------- the shape
@@ -589,13 +681,16 @@ def test_the_shared_column_set_matches_what_the_query_declares(
     A drift between them makes the rule either refuse a valid name or, far
     worse, pass one that fails at refresh.
 
-    Compared against the REAL generated query for every shipped family, so
-    the pin cannot be satisfied by two copies of the same mistake.
+    The names are a view over the plan the renderer writes from, so this no
+    longer holds two derivations in step. It pins the RENDERER to the plan,
+    over the real generated query for every shipped family: a step that
+    adds or drops a column without the plan saying so is caught here rather
+    than at refresh.
     """
     root = SOLUTION_TEMPLATES / family
     schema = parse_dbml(root / "10-design/schema.dbml")
     bundle = load_mapping(root / "20-configure/mapping.yaml")
-    enums = {e.name for e in schema.enums}
+    plans = {plan.entity: plan for plan in build_plans(schema, bundle, "default")}
     queries = generate_powerquery(schema, bundle, "default")
     checked = 0
     for table in schema.tables:
@@ -621,7 +716,7 @@ def test_the_shared_column_set_matches_what_the_query_declares(
         # MEMBERSHIP, not order: the query lists its multi-value columns
         # after the rest, and nothing downstream depends on the sequence.
         assert set(columns) == set(
-            report_column_names(table, bundle, enums),
+            report_column_names(plans[table.name]),
         ), f"{family}.{table.name}"
         checked += 1
     assert checked, family

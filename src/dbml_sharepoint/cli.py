@@ -32,6 +32,8 @@ from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_GUIDE,
+    REPORT_POWERQUERY_DIR,
+    REPORT_SQL_DIR,
     REPORT_VIEWS_SQL,
     SeedRequiresDemoItemsError,
     clear_generated,
@@ -80,14 +82,7 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_protection_js,
 )
 from dbml_sharepoint.generators.manifestgen import generate_manifest
-from dbml_sharepoint.generators.reportgen import (
-    generate_data_dictionary,
-    generate_dictionary_powerquery,
-    generate_dictionary_sql,
-    generate_powerquery,
-    generate_reporting_md,
-    generate_sql_views,
-)
+from dbml_sharepoint.generators.reportgen import render_reporting
 from dbml_sharepoint.model.env_file import (
     CHANGE_LOG_LIST_PARAMETER,
     DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
@@ -193,7 +188,10 @@ _REPORT_FILES = (
     "DATA-DICTIONARY.md",
 )
 # (subdirectory, glob) pairs naming everything `report` writes below `out`.
-_REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", REPORT_VIEWS_SQL))
+_REPORT_DIRECTORY_CONTENTS = (
+    (REPORT_POWERQUERY_DIR, "*.pq"),
+    (REPORT_SQL_DIR, REPORT_VIEWS_SQL),
+)
 
 
 def _clear_report_output(out: Path) -> None:
@@ -1421,12 +1419,6 @@ def report(
     _require_known_site_role(bundle, site_role)
 
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    dictionary_kwargs: dict[str, Any] = dict(
-        release=release_obj,
-        generated_at=generated_at,
-        source_schema=schema.name,
-        source_mapping=mapping.name,
-    )
 
     # Render everything before writing anything. This command does not
     # validate, documenting the contract as "assumes a schema that `build`
@@ -1434,26 +1426,16 @@ def report(
     # mistake, and they signal one by raising: an unmapped column type, a
     # composite DBML index. Unhandled, that printed a traceback for a typo
     # in a file the operator hand-edited, which is exactly what
-    # `_config_error` exists to prevent on the loading side. Generating up
+    # `_config_error` exists to prevent on the loading side. Rendering up
     # front also keeps a failure from leaving a half-written report set
     # behind, where the stale files outlive the error on the terminal.
+    # `render_reporting` is the same composition `build` ships, so the two
+    # commands cannot drift in what they write.
     try:
-        queries = generate_powerquery(parsed_schema, bundle, site_role)
-        queries.update(
-            generate_dictionary_powerquery(
-                parsed_schema, bundle, site_role, **dictionary_kwargs,
-            ),
-        )
-        views_sql = (
-            generate_sql_views(parsed_schema, bundle, site_role)
-            + "\n"
-            + generate_dictionary_sql(
-                parsed_schema, bundle, site_role, **dictionary_kwargs,
-            )
-        )
-        reporting_md = generate_reporting_md(parsed_schema, bundle, site_role)
-        dictionary_md = generate_data_dictionary(
-            parsed_schema, bundle, site_role, **dictionary_kwargs,
+        pack = render_reporting(
+            parsed_schema, bundle, site_role,
+            release=release_obj, generated_at=generated_at,
+            source_schema=schema.name, source_mapping=mapping.name,
         )
     except ValueError as exc:
         # The schema was read and refused, so whatever is in `out` describes
@@ -1474,17 +1456,12 @@ def report(
     # its .pq file behind, outliving the schema that justified it.
     _clear_report_output(out)
 
-    pq_dir = out / "powerquery"
-    sql_dir = out / "sql"
-    pq_dir.mkdir(parents=True, exist_ok=True)
-    sql_dir.mkdir(parents=True, exist_ok=True)
-    for filename, content in queries.items():
-        write_artifact(pq_dir / filename, content)
-    write_artifact(sql_dir / REPORT_VIEWS_SQL, views_sql)
-    write_artifact(out / REPORT_GUIDE, reporting_md)
-    write_artifact(out / REPORT_DICTIONARY, dictionary_md)
+    for relpath, content in pack.items():
+        write_artifact(out / relpath, content)
+    queries = [p for p in pack if p.startswith(f"{REPORT_POWERQUERY_DIR}/")]
     typer.echo(
-        f"Generated {len(queries)} Power Query file(s), sql/{REPORT_VIEWS_SQL}, "
+        f"Generated {len(queries)} Power Query file(s), "
+        f"{REPORT_SQL_DIR}/{REPORT_VIEWS_SQL}, "
         f"{REPORT_GUIDE} and {REPORT_DICTIONARY} in {out}.",
     )
 

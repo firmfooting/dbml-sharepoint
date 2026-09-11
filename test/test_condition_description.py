@@ -127,9 +127,9 @@ def test_description_import_closure_is_dependency_light() -> None:
     assert forbidden == set()
 
 
-def test_reporting_generators_use_the_dependency_light_module() -> None:
+def test_the_reporting_callers_use_the_dependency_light_module() -> None:
     """The new seam matters only while both intended callers import it directly."""
-    for relative in ("generators/manifestgen.py", "generators/reportgen.py"):
+    for relative in ("generators/manifestgen.py", "analysis/reporting/dictionary.py"):
         imports = [
             node
             for node in ast.walk(ast.parse((PACKAGE / relative).read_text(encoding="utf-8")))

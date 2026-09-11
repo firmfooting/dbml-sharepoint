@@ -1,6 +1,6 @@
 ---
 title: wizard
-sidebar_position: 42
+sidebar_position: 48
 ---
 
 # `dbml_sharepoint.wizard`

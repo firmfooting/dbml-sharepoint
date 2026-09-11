@@ -1,6 +1,6 @@
 ---
 title: rollbackgen
-sidebar_position: 31
+sidebar_position: 34
 ---
 
 # `dbml_sharepoint.generators.rollbackgen`

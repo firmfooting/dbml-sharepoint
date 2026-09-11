@@ -16,7 +16,7 @@ import re
 import pytest
 from _paths import MANUAL
 
-from dbml_sharepoint.generators import reportgen
+from dbml_sharepoint.generators import report_m
 
 PROBES = MANUAL / "powerquery"
 
@@ -60,7 +60,7 @@ def test_the_date_probe_measures_the_expression_the_generator_emits(
     than on the block verbatim, because the probe takes its candidate
     offsets as a parameter and the emitted version reads them off `Zone`.
     """
-    emitted = _normalised("\n".join(reportgen._AS_DATE_M))
+    emitted = _normalised("\n".join(report_m._AS_DATE_M))
     assert _normalised(fragment) in emitted, "the generator no longer emits it"
     assert _normalised(fragment) in _normalised(_probe("m-runtime-probe.pq"))
 
@@ -69,7 +69,7 @@ def test_the_feed_probe_normalises_a_value_the_way_the_generator_does() -> None:
     """The shape tests in `AsStamp` decide which branch a value takes, and
     their ORDER is the part that matters: a zoned value must be recognised
     before the naive test, or it never reaches `ToUtc`."""
-    emitted = _normalised("\n".join(reportgen._AS_STAMP_M))
+    emitted = _normalised("\n".join(report_m._AS_STAMP_M))
     probe = _normalised(_probe("sharepoint-feed-probe.pq"))
     for fragment in (
         "if v is datetimezone then",
@@ -107,7 +107,7 @@ def test_the_cross_query_probe_is_read_by_the_name_the_generator_emits() -> None
     quoted because a bare identifier is not valid for every query name. The
     probe asks whether that resolves, so it has to use the same form."""
     assert '#"_ProbeOther"' in _probe("m-runtime-probe.pq")
-    assert reportgen._query_ref("_ProbeOther") == '#"_ProbeOther"'
+    assert report_m._query_ref("_ProbeOther") == '#"_ProbeOther"'
 
 
 def test_the_readme_says_to_run_both_hosts() -> None:

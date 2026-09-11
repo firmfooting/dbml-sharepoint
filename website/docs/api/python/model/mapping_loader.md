@@ -25,18 +25,6 @@ deferred to `MappingBundle.extension_config_for` so it honors the RESOLVED
 extension (a CLI `--extension` override may differ from the mapping's own
 `extension:` key).
 
-### `DERIVED_TYPES`
-
-```python
-DERIVED_TYPES = {'logical': 'type logical', 'text': 'type text', 'number': 'type number', 'Int64': 'Int64.Type', 'date': 'type date', 'datetime': 'type datetime', 'datetimezone': 'type datetimezone'}
-```
-
-### `DERIVED_AGGREGATES`
-
-```python
-DERIVED_AGGREGATES = frozenset({'count', 'max', 'min', 'names'})
-```
-
 ### `load_mapping`
 
 ```python

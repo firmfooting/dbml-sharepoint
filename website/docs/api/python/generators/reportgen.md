@@ -1,113 +1,54 @@
 ---
 title: reportgen
-sidebar_position: 36
+sidebar_position: 42
 ---
 
 # `dbml_sharepoint.generators.reportgen`
 
-*Power Query / SQL reporting pack*
+*the reporting pack: one composition and one write policy*
 
-Report-query generator: Power Query (M) and T-SQL views from the schema.
+The reporting pack: one composition and one write policy.
 
-The same DBML + mapping that provisions the lists also describes how to
-report on them. This module emits:
+The pack is six artifacts from three renderers: the per-list and loadable
+Power Query files from ``report_m``, the SQL views script from
+``report_sql``, and the guide and data dictionary from ``report_md``. What
+each one carries is decided in ``analysis/reporting``. This module decides
+only which files exist, what they are called and in what order they are
+written.
 
-- one Power Query (M) query per list, ``OData.Feed`` against the list's
-  REST endpoint, with lookup and person columns expanded to a join key plus
-  display column, and column types applied from the deployer's own typemap.
-  ``build`` knows the site (``--site-url``) and bakes it into every query,
-  so a shipped bundle has nothing to configure; the standalone ``report``
-  command knows no site and falls back to a ``SiteUrl`` text parameter;
-- a single T-SQL script of ``CREATE OR ALTER VIEW`` statements (SQLCMD
-  variables for the landing/report schemas): a typed view per list plus an
-  ``_Enriched`` view joining each lookup to its display column, for lists
-  landed in a warehouse by any extract process;
-- guide.md with usage instructions and the Power BI relationship table
-  derived from the DBML refs.
+:func:`render_reporting` is the composition, and it returns text rather
+than writing it. ``build`` (through :func:`emit_reporting`) and the
+standalone ``report`` command both take the pack from it, so the two
+cannot drift in what they ship, and both write only after every artifact
+has rendered, so a generator refusal cannot leave a half-written set
+behind with the stale files outliving the error on the terminal. The
+``report`` command used to be a second copy of this composition with its
+own write policy (#171).
 
-Cross-site reference columns are extension-expanded at deploy time into
-shapes the core cannot know; they are skipped here and listed in
-guide.md. Person columns land differently per extract tool, so the SQL
-views carry them as display-name text while the M queries expand both the
-site-user id and display name.
-
-### `generate_powerquery`
+### `render_reporting`
 
 ```python
-def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> dict[str, str]
+def render_reporting(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None) -> dict[str, str]
 ```
 
-One M query per list for the site role: {filename: query text}.
+The whole reporting pack as {relative path: content}, nothing written.
 
-Each query is self-contained, including its site-name lookup. That is
-what makes a multi-site report possible: duplicate a query, point the
-copy at another site's URL, and the name follows the rows. A shared
-lookup query would bind to one URL and stamp that site's name onto
-every copy.
+Paths are POSIX and relative to the pack's root: ``powerquery/&lt;name>.pq``
+for every list query, the users dimension and the three loadable
+tables, then ``sql/views.sql``, ``guide.md`` and ``data-dictionary.md``.
+That order is the order :func:`emit_reporting` writes and reports them
+in, which ``checksums.txt`` sorts anyway.
 
-``site_url``, when given, is bound as the first step of each query so
-the pack works with nothing to configure. Omitted (the standalone
-``report`` command has no site to name), the queries read a ``SiteUrl``
-text parameter instead, and are otherwise identical.
+``site_url`` is the deployment target, which ``build`` always has.
+Passing it bakes the site into every query, the SQL script and the
+guide, so the pack loads with nothing configured. It is optional only
+because ``report`` runs without a site at all.
 
-### `generate_sql_views`
-
-```python
-def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> str
-```
-
-A single SQLCMD script: typed view per list + _Enriched join views.
-
-``site_url``, when known, is written into the ``:setvar SiteUrl`` line
-so the script needs no editing; otherwise a placeholder is left there.
-
-### `generate_reporting_md`
-
-```python
-def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None) -> str
-```
-
-Usage instructions + the Power BI relationship table.
-
-``site_url`` must be passed whenever the queries beside this guide were
-built with it: the setup step it documents is the difference between
-"create a parameter" and "there is nothing to create", and a guide that
-is wrong about that costs the operator the whole first hour.
-
-### `generate_data_dictionary`
-
-```python
-def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
-```
-
-Companion data dictionary: deployment/schema metadata + every list and
-column as deployed, including choices, lookup targets, calculated
-formulas, indexing, versioning and the query-layer helper columns.
-
-### `generate_dictionary_powerquery`
-
-```python
-def generate_dictionary_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', site_url: str | None = None) -> dict[str, str]
-```
-
-The data dictionary as report-loadable M queries, so any report can
-surface it as a page: _DataDictionary (one row per column), _ModelInfo
-(deployment/schema metadata as field/value rows) and _UserAddedColumns
-(live drift audit, undeclared columns on the deployed lists).
-
-``site_url`` reaches only _UserAddedColumns, the one query here that
-talks to the site; it takes the same binding as the list queries, so a
-bundle needs the ``SiteUrl`` parameter everywhere or nowhere.
-
-### `generate_dictionary_sql`
-
-```python
-def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
-```
-
-The data dictionary as SQL views built from embedded VALUES rows (no
-landing table needed), so warehouse-driven reports can surface the same
-dictionary page.
+Raises ``ValueError`` where a renderer refuses the schema: an unhandled
+field kind, a multi-value member the export cannot split back, a
+projection the schema lacks, a zone the database does not declare.
+Nothing has been written when it does, which is the point of returning
+text.
 
 ### `emit_reporting`
 
@@ -115,16 +56,11 @@ dictionary page.
 def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None) -> list[str]
 ```
 
-Write the reporting bundle under ``out/reporting/`` and return the
-POSIX relpaths written (for checksums.txt).
+Write the reporting pack under ``out/reporting/`` and return the
+POSIX relpaths written, for checksums.txt.
 
-Shared by the core and extension CLIs so the shipped reporting
-artifact set cannot drift between them: per-list Power Query (M)
-plus the dictionary/model/audit queries, the SQL views script,
-the reporting guide and the data dictionary.
-
-``site_url`` is the deployment target, which ``build`` always has.
-Passing it bakes the site into every query, the SQL script and the
-guide, so the pack loads with nothing configured. It is optional only
-because ``report`` runs without a site at all.
+Shared by the core and extension CLIs so the shipped reporting artifact
+set cannot drift between them. :func:`render_reporting` is the
+composition; this is the write policy, and it writes nothing until
+every artifact has rendered.
 

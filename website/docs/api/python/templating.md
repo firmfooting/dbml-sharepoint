@@ -1,6 +1,6 @@
 ---
 title: templating
-sidebar_position: 38
+sidebar_position: 44
 ---
 
 # `dbml_sharepoint.templating`

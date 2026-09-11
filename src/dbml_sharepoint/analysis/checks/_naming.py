@@ -2,7 +2,6 @@
 """Display-name overrides and the lookup display-column guard."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
-from dbml_sharepoint.analysis.derived import report_column_names
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.lookups import display_column_for
@@ -12,6 +11,7 @@ from dbml_sharepoint.analysis.report_columns import (
     report_output_names,
     system_person_columns,
 )
+from dbml_sharepoint.analysis.reporting.plan import report_column_names
 from dbml_sharepoint.analysis.typemap import is_person, map_column
 from dbml_sharepoint.model.parser import Table
 
@@ -34,16 +34,16 @@ def _report_column_collisions(
     derivation, and the pack has added three such columns in one release
     without anybody extending it, which is how this defect arrived.
     """
-    try:
-        produced = report_column_names(
-            table, vc.bundle, set(vc.enum_by_name), include_derived=False,
-        )
-    except ValueError:
-        # An unresolvable column type. `validate_column` reports each of
-        # those as its own finding, and this rule has nothing to say about a
-        # table whose columns do not map yet. The same skip the display-title
-        # loop below makes, and for the same reason.
+    plan = vc.report_plan(table.name)
+    if plan is None:
+        # The planner refused this table's role: an unresolvable column
+        # type, a member holding the export separator, a projection the
+        # schema lacks or an unknown zone. Each is a finding of its own
+        # elsewhere, and this rule has nothing to say about a query that
+        # will not be built. The same skip the display-title loop below
+        # makes for a column that does not map, and for the same reason.
         return []
+    produced = report_column_names(plan, include_derived=False)
     seen: dict[str, None] = {}
     collided: list[str] = []
     for name in produced:

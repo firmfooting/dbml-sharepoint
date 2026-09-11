@@ -1,6 +1,6 @@
 ---
 title: bundle
-sidebar_position: 37
+sidebar_position: 43
 ---
 
 # `dbml_sharepoint.bundle`
@@ -100,6 +100,18 @@ REPORT_DICTIONARY = 'data-dictionary.md'
 
 ```python
 REPORT_VIEWS_SQL = 'views.sql'
+```
+
+### `REPORT_POWERQUERY_DIR`
+
+```python
+REPORT_POWERQUERY_DIR = 'powerquery'
+```
+
+### `REPORT_SQL_DIR`
+
+```python
+REPORT_SQL_DIR = 'sql'
 ```
 
 ### `GENERATED_FILES`

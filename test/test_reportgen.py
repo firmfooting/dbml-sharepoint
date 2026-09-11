@@ -14,14 +14,21 @@ from _model import table as make_table
 from _packs import pack
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
+from dbml_sharepoint.analysis.reporting import plan as reporting_plan
+from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
-from dbml_sharepoint.generators import reportgen
-from dbml_sharepoint.generators.reportgen import (
-    generate_data_dictionary,
+from dbml_sharepoint.generators import report_sql
+from dbml_sharepoint.generators.report_m import (
     generate_dictionary_powerquery,
-    generate_dictionary_sql,
     generate_powerquery,
+)
+from dbml_sharepoint.generators.report_md import (
+    generate_data_dictionary,
     generate_reporting_md,
+)
+from dbml_sharepoint.generators.report_sql import (
+    generate_dictionary_sql,
     generate_sql_views,
 )
 from dbml_sharepoint.model.conditions import Group, Leaf
@@ -568,7 +575,7 @@ def test_the_sql_script_carries_the_site_url_when_the_build_knows_it() -> None:
     schema, bundle = _simple()
     known = generate_sql_views(schema, bundle, "default", site_url=_BAKED)
     unknown = generate_sql_views(schema, bundle, "default")
-    placeholder = reportgen._SQL_SITE_URL_PLACEHOLDER
+    placeholder = report_sql._SQL_SITE_URL_PLACEHOLDER
     assert f":setvar SiteUrl {_BAKED}" in known.splitlines()
     assert placeholder not in known
     assert f":setvar SiteUrl {placeholder}" in unknown.splitlines()
@@ -955,6 +962,35 @@ def test_reporting_md_documents_user_added_column_audit() -> None:
     assert "vw_APP_UserAddedColumns" in md
 
 
+def test_emit_reporting_writes_exactly_what_render_reporting_renders(
+    tmp_path: Path,
+) -> None:
+    """`emit_reporting` is `render_reporting` plus a write policy, so what
+    lands on disk is the rendered pack under `reporting/`, byte for byte, in
+    the same order, and nothing else."""
+    from dbml_sharepoint.generators.reportgen import emit_reporting, render_reporting
+    schema, bundle = _simple()
+
+    pack = render_reporting(
+        schema, bundle, "default",
+        release=None, generated_at="2026-05-04T00:00:00Z",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        site_url=_BAKED,
+    )
+    relpaths = emit_reporting(
+        tmp_path, schema, bundle, "default",
+        release=None, generated_at="2026-05-04T00:00:00Z",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        site_url=_BAKED,
+    )
+
+    assert relpaths == [f"reporting/{relpath}" for relpath in pack]
+    for relpath, content in pack.items():
+        written = (tmp_path / "reporting" / relpath).read_text(encoding="utf-8")
+        assert written == content, relpath
+    assert len(pack) == sum(1 for p in tmp_path.rglob("*") if p.is_file())
+
+
 def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> None:
     """Both CLIs ship reporting through this one helper, so the artifact
     set cannot drift between them. It returns the exact relpaths written,
@@ -1205,7 +1241,7 @@ entities:
 """
 
 
-def _plan_typed_columns(plan: reportgen._ListPlan) -> set[str]:
+def _plan_typed_columns(plan: ListPlan) -> set[str]:
     """Every column the emitted query carries, however it got its type.
 
     `Table.TransformColumnTypes` types the `m_types` ones and the join step
@@ -1222,7 +1258,7 @@ def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> Non
     """`output_columns` must be the columns the declared fields produce.
 
     The two are derived independently and must not drift: the match arms in
-    `_build_plans` build `m_types` and `multi_value_joins` per kind, while
+    `build_plans` build `m_types` and `multi_value_joins` per kind, while
     `report_columns.report_output_names` answers the same question for
     `checks/_naming`, which refuses a display title that would collide with a
     reporting column. A rule comparing a different set from the one the query
@@ -1237,7 +1273,7 @@ def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> Non
         mapping=replace(bundle.mapping, reporting=ReportingOptions()),
     )
     for site_role in sorted({e.site_role for e in plain.mapping.entities.values()}):
-        for plan in reportgen._build_plans(schema, plain, site_role):
+        for plan in build_plans(schema, plain, site_role):
             assert set(plan.output_columns) == _plan_typed_columns(plan), plan.entity
             # A duplicate would rename one column twice, so the list and the
             # set have to be the same size.
@@ -1279,7 +1315,7 @@ def test_system_columns_contribute_no_declared_output(tmp_path: Path) -> None:
         mapping=_EVERY_KIND_MAPPING + "reporting:\n  system_columns: true\n",
         notes=False,
     )
-    plans = {p.entity: p for p in reportgen._build_plans(schema, bundle, "default")}
+    plans = {p.entity: p for p in build_plans(schema, bundle, "default")}
     outputs = plans["Everything"].output_columns
     assert "AuthorId" in _plan_typed_columns(plans["Everything"])  # not vacuous
     assert not {"AuthorId", "AuthorTitle", "Created", "EditorId", "EditorTitle",
@@ -1289,7 +1325,7 @@ def test_system_columns_contribute_no_declared_output(tmp_path: Path) -> None:
 def _kind_swapped(
     monkeypatch: pytest.MonkeyPatch, column_name: str, kind: str,
 ) -> None:
-    """Make `_build_plans` see one column as a field kind it does not handle.
+    """Make `build_plans` see one column as a field kind it does not handle.
 
     Monkeypatched rather than schema-driven on purpose: the guard has to hold
     for the NEXT kind somebody adds to `typemap.FieldKind`, and a kind that
@@ -1301,7 +1337,8 @@ def _kind_swapped(
             return replace(sp, kind=cast("FieldKind", kind))
         return sp
 
-    monkeypatch.setattr(reportgen, "map_column", fake)
+    monkeypatch.setattr(reporting_plan, "map_column", fake)
+    monkeypatch.setattr(reporting_dictionary, "map_column", fake)
 
 
 def test_build_plans_refuses_a_field_kind_it_does_not_handle(
@@ -1350,7 +1387,7 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`generate_data_dictionary` is the ONE entry point that never calls
-    `_build_plans`, so the guard there cannot cover it.
+    `build_plans`, so the guard there cannot cover it.
 
     `_sp_type_cell` ended `return sp.kind`, which put the raw internal token
     -- `MultiChoice` -- in the "SharePoint type" column of
@@ -1361,7 +1398,7 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
 
     The loadable dictionary tables were already covered, incidentally:
     `generate_dictionary_powerquery` and `generate_dictionary_sql` both build
-    `_UserAddedColumns` and so go through `_build_plans` before they return.
+    `_UserAddedColumns` and so go through `build_plans` before they return.
     The markdown page is the only entry point in this module that does not,
     which is exactly why the leak survived there.
     """
@@ -1372,6 +1409,20 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
         generate_data_dictionary(schema, bundle, "default")
 
     assert "_sp_type_cell" in str(err.value)
+
+
+def test_the_loadable_dictionary_columns_follow_the_row_type() -> None:
+    """`_DataDictionary.pq` and `vw_<prefix>DataDictionary` name their
+    columns off `DictionaryRow`, so a field renamed or reordered there
+    renames or reorders a loadable column. This is the spelling a report
+    built on either table depends on."""
+    assert reporting_dictionary.LOADABLE_COLUMNS == (
+        "Column", "Type", "Required", "Unique", "Default", "Retired",
+        "SupersededBy", "PopulatedWhen", "SaveRule", "Description",
+    )
+    assert len(reporting_dictionary.DictionaryRow._fields) == len(
+        reporting_dictionary.LOADABLE_COLUMNS,
+    )
 
 
 # --- Multi-value columns ----------------------------------------------------
@@ -1604,7 +1655,7 @@ _FALLBACK = re.compile(
 
 
 def _expanding() -> tuple[Schema, MappingBundle]:
-    """A schema reaching ALL THREE places `_build_plans` appends an expand.
+    """A schema reaching ALL THREE places `build_plans` appends an expand.
 
     `record_expands` is fed from three separate arms -- person, lookup and
     hyperlink -- so a fixture carrying only a lookup would leave two of them
@@ -1646,7 +1697,7 @@ def _unguarded_expands(query: str) -> list[str]:
 def test_every_record_expand_survives_the_source_column_being_absent() -> None:
     """The regression worth pinning, written as an invariant.
 
-    Not "the Owner expand is guarded" -- `_build_plans` appends to
+    Not "the Owner expand is guarded" -- `build_plans` appends to
     `record_expands` from three different arms, and a fourth (or a change to
     one of these) is exactly how an unguarded expand gets back in. So: NO
     generated query, anywhere in the pack, may expand a record column
@@ -1666,7 +1717,7 @@ def test_every_record_expand_survives_the_source_column_being_absent() -> None:
 def test_the_guard_check_sees_all_three_kinds_of_expand() -> None:
     """The invariant above is worthless over a query with no expands in it.
 
-    Person, lookup and hyperlink are three separate arms of `_build_plans`,
+    Person, lookup and hyperlink are three separate arms of `build_plans`,
     and this is what says the fixture actually reaches all three -- so
     "every expand is guarded" is a statement about three of them.
     """

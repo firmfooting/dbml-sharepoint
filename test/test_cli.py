@@ -1837,6 +1837,41 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
         assert not out.exists(), sorted(p.name for p in out.iterdir())
 
 
+def test_report_writes_the_pack_render_reporting_renders(tmp_path: Path) -> None:
+    """`report` was a second copy of the composition with its own write
+    policy (#171). It now writes `render_reporting`'s pack, the same one
+    `build` ships, so the two commands cannot drift in what they write.
+    Only the generation timestamp differs, because the command stamps the
+    clock and the comparison here pins it."""
+    from dbml_sharepoint.generators.reportgen import render_reporting
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    out = tmp_path / "reports"
+    result = runner.invoke(app, [
+        "report",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    pack = render_reporting(
+        parse_dbml(FIXTURES / "simple.dbml"),
+        load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        "default",
+        release=None, generated_at="STAMP",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+    )
+    written = {
+        path.relative_to(out).as_posix(): path.read_text(encoding="utf-8")
+        for path in out.rglob("*") if path.is_file()
+    }
+    assert set(written) == set(pack)
+    stamp = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
+    for relpath, content in pack.items():
+        assert stamp.sub("STAMP", written[relpath]) == content, relpath
+
+
 def test_report_replaces_owned_outputs_and_preserves_operator_files(
     tmp_path: Path,
 ) -> None:
