@@ -176,7 +176,11 @@ class WatchedList:
     column: str
 ```
 
-A (entity, column) pair watched by W10 status capture.
+A column an external consumer, such as a flow, binds by internal name.
+
+The deploy does not read these. The validator refuses a pair naming a
+column the deploy would not create, so the column cannot be renamed in
+the DBML or deleted from it without failing the build.
 
 ### `FormVisibility`
 
@@ -525,7 +529,6 @@ display-name map in two places and let them disagree in silence.
 class Mapping:
     prefix: str
     prefix_owner: str
-    prefix_registry: str
     entities: dict[str, dbml_sharepoint.model.mapping_types.EntityMapping]
     cross_site_reference_columns: list[dbml_sharepoint.model.mapping_types.CrossSiteRef]
     versioning_default: Versioning

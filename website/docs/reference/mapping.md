@@ -23,13 +23,15 @@ syntax, deployment behaviour or a consumer's computation lives here.
 ```yaml
 prefix: "APP_"
 prefix_owner: "Team name"
-prefix_registry: "docs/list-prefix-registry.md"
 extension: null            # or an extension name (entry-point resolved)
 ```
 
-Every deployed list is named `<prefix><EntityName>`. The owner and
-registry fields document who claims the prefix. They are provenance,
-stamped into the manifest.
+Every deployed list is named `<prefix><EntityName>`. `prefix_owner`
+documents who claims the prefix. It is provenance: the reporting pack
+prints it beside the prefix in its model metadata, and the deploy does not
+read it. A `prefix_registry` key once sat beside it and was removed because
+nothing ever read it; a mapping still carrying it fails to load with a
+message saying so.
 
 Group and permission-level names take the same prefix through a
 placeholder: `{prefix}` at the start of a name expands to the prefix
@@ -1519,6 +1521,11 @@ the one part of a mapping that can move without splitting a reader in two.
 Splitting by size instead would put two halves of the deploy's own
 configuration in two files with no rule saying which half holds what.
 
+The rule is about sections, not identity fields. `prefix_owner` is also
+read only by the reporting pack, and it stays in the mapping: it is a
+scalar qualifying the `prefix` beside it, not a section with a consumer of
+its own.
+
 The file may hold those two sections and nothing else, and a mapping that
 points at one may not also declare either inline. Both are refused at load
 rather than merged: two declarations of one section is a question with no
@@ -1623,7 +1630,7 @@ lookup_projections: {}             # dependent fields projected from lookups
 derived_columns: {}                # reporting-only columns (Power Query)
 reporting_source: null             # move reporting + derived_columns to a file
 polymorphic_patterns: []           # discriminator-typed reference columns
-watched_lists: []                  # lists to flag in the manifest for watching
+watched_lists: []                  # columns external flows bind, build-checked
 retention_policies_source: null    # documented retention posture (manifest)
 ```
 
@@ -1631,6 +1638,15 @@ Indexes are not configured in this file. Declare them in the table-level
 [`indexes` block in `schema.dbml`](./dbml.md#indexes). The removed
 `indexed_columns` key is a hard load error; there is no compatibility or
 dual-source mode.
+
+`watched_lists` names the `(entity, column)` pairs an external consumer,
+such as a Power Automate flow, binds by internal name. The deploy does not
+read the section; the validator does. A pair naming an entity the schema
+lacks is `unknown_entity`, and one naming a column the deploy would not
+create is `watched_column_not_rendered`, both errors, so a column a flow
+depends on cannot be renamed in the DBML or deleted from it without failing
+the build. Change what people see through `display_names.overrides`, which
+leaves the internal name alone.
 
 ## Protection
 

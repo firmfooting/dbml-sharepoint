@@ -231,7 +231,12 @@ ITEM_SECURITY_SCOPES: frozenset[str] = frozenset({"all", "own"})
 
 @dataclass(frozen=True)
 class WatchedList:
-    """A (entity, column) pair watched by W10 status capture."""
+    """A column an external consumer, such as a flow, binds by internal name.
+
+    The deploy does not read these. The validator refuses a pair naming a
+    column the deploy would not create, so the column cannot be renamed in
+    the DBML or deleted from it without failing the build.
+    """
 
     entity: str
     column: str
@@ -600,7 +605,6 @@ class Mapping:
 
     prefix: str
     prefix_owner: str
-    prefix_registry: str
     entities: dict[str, EntityMapping]
     cross_site_reference_columns: list[CrossSiteRef]
     versioning_default: Versioning
@@ -940,5 +944,12 @@ _REMOVED_SECTIONS: dict[str, str] = {
         "      <Entity>:\n"
         "        columns:\n"
         "          <Column>: hidden\n"
+    ),
+    "prefix_registry": (
+        "nothing. No generator, template or check ever read it, so the value "
+        "recorded an intention the build could not honour. `prefix_owner` is "
+        "still read: the reporting pack prints it beside the prefix. Record "
+        "where the prefix registry lives in the family's governance notes if "
+        "you need it kept."
     ),
 }

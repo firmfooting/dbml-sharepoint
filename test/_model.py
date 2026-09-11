@@ -201,7 +201,6 @@ class MappingSections(TypedDict, total=False):
     """
 
     prefix_owner: str
-    prefix_registry: str
     cross_site_reference_columns: list[CrossSiteRef]
     versioning_default: Versioning
     versioning_overrides: dict[str, dict[str, Any]]
@@ -260,7 +259,6 @@ def _loader_defaults() -> MappingSections:
     """
     return {
         "prefix_owner": "",
-        "prefix_registry": "",
         "cross_site_reference_columns": [],
         "versioning_default": Versioning(),
         "versioning_overrides": {},
