@@ -791,6 +791,16 @@ def _ask_seed(console: Console) -> bool:
     runs before the destination has been written, and the operator is told
     where the project is by the Review panel a moment later.
 
+    It is named as a file the project WILL carry, and tied to the paste
+    rather than to this answer, because `_scaffold` does not write it until
+    after this question and the final confirmation. Telling the operator to
+    read it "before seeding" pointed at a path that is absent from a normal
+    working directory at the one moment they were asked to act on it. The
+    honest framing is the one the build already implements: answering yes
+    generates `demo-data.js.txt` and writes nothing to any site, so the
+    decision that needs the guide is the paste, and the guide is in the
+    project by then.
+
     That path assumes ONE template, which is what the picker collects: the
     fragment is spelled literally here while `_next_panel` computes it as
     `f"{inside}30-deploy/deploy.md"`. The two diverge the day several
@@ -816,8 +826,10 @@ def _ask_seed(console: Console) -> bool:
         "visible as sample data in every view. Rollback requires per-list "
         "confirmation before every delete. Some families seed deliberately "
         "alarming data so a view "
-        f"renders at all -- read {guide} before seeding a site that already "
-        "holds real data.",
+        "renders at all. Answering yes only GENERATES the script; nothing "
+        f"reaches a site until you paste it, and the project carries {guide} "
+        "by then. Read it before pasting into a site that already holds real "
+        "data.",
     )
     return Confirm.ask("Add the demo rows?", default=False, console=console)
 
@@ -1175,10 +1187,17 @@ class _TemplateFacts:
     #: answers "which lists does one role create", which is what the Review
     #: panel has to report to be true.
     entity_roles: tuple[tuple[str, str], ...]
-    #: `--seed` against a mapping with no `demo_items` raises
-    #: `SeedRequiresDemoItemsError` and the build exits non-zero. Offering
-    #: the question there would be offering a dead end.
-    demo_items: bool
+    #: The site roles that actually deploy an entity carrying demo rows.
+    #:
+    #: A set rather than a bool because `generate_demo_js` filters through
+    #: `site_tables_in_order(..., site_role)`. A mapping with demo rows for
+    #: ONE role would otherwise offer seeding to every role, and the build
+    #: would succeed with an empty demo plan while the closing panel told the
+    #: operator to paste a script that does nothing. `--seed` against a
+    #: mapping with no `demo_items` at all raises
+    #: `SeedRequiresDemoItemsError` and exits non-zero; this is the narrower
+    #: dead end, which exits zero and says nothing.
+    demo_roles: frozenset[str]
     #: `execute_build` refuses `--enterprise-reader` outright against a
     #: mapping declaring no `enroll_enterprise_reader` group. Same reason.
     reader_group: bool
@@ -1205,7 +1224,11 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
         entity_roles=tuple(
             (name, e.site_role) for name, e in bundle.mapping.entities.items()
         ),
-        demo_items=any(bundle.mapping.demo_items.values()),
+        demo_roles=frozenset(
+            bundle.mapping.entities[name].site_role
+            for name, rows in bundle.mapping.demo_items.items()
+            if rows and name in bundle.mapping.entities
+        ),
         reader_group=any(
             g.enroll_enterprise_reader
             for g in (permissions.groups if permissions else [])
@@ -1494,7 +1517,7 @@ def _run(console: Console) -> int:
         # `validate_enterprise_reader`, which refuses an empty string.
         if facts.reader_group:
             reader = _ask_enterprise_reader(console, consulted)
-        if facts.demo_items:
+        if site_role in facts.demo_roles:
             seed = _ask_seed(console)
 
     answers = Answers(

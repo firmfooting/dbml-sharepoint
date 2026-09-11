@@ -2619,8 +2619,16 @@ def test_the_seed_question_carries_its_caution_first(
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
     question = shown.index("Add the demo rows?")
-    assert shown.index("before seeding") < question, (
+    assert shown.index("Read it before pasting") < question, (
         "the caution must precede the question"
+    )
+    # #205's third defect. The instruction used to read "before seeding",
+    # which is this answer, and `_scaffold` does not write the guide until
+    # after it. Answering yes only generates the script, so the moment that
+    # needs the guide is the paste, by which time the project carries it.
+    assert "before seeding" not in shown, (
+        "the caution must not tell the operator to read a file that "
+        "_scaffold has not written yet"
     )
     assert shown.index("30-deploy/deploy.md") < question, (
         "the guide's path must precede the question, not only follow it in "
@@ -2696,6 +2704,51 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     assert "fake-template" in _collapsed(console)
 
 
+def test_seeding_is_offered_only_to_a_role_that_has_demo_rows() -> None:
+    """#205's second defect, at the fold that decides it.
+
+    `generate_demo_js` filters through `site_tables_in_order(..., site_role)`,
+    so demo rows declared on an entity ANOTHER role deploys produce an empty
+    demo plan for this one. The old check was `any(...)` over the whole
+    mapping, so the wizard offered the question, the build succeeded, and the
+    closing panel told the operator to paste a script that does nothing.
+
+    Asserted on the facts rather than through a scripted run because the
+    distinction is the fold: a run can only exercise one role at a time, and
+    it is the disagreement between two that this closes.
+    """
+    facts = wizard._TemplateFacts(
+        roles=frozenset({"hq", "branch"}),
+        entity_roles=(("Risk", "hq"), ("Note", "branch")),
+        demo_roles=frozenset({"hq"}),
+        reader_group=False,
+    )
+    assert "hq" in facts.demo_roles
+    assert "branch" not in facts.demo_roles
+
+
+def test_a_role_with_no_demo_rows_is_never_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same defect from the operator's side: the question is absent, not
+    merely answered no. A run that asks it and is told no still builds
+    without `--seed`, so only the question's ABSENCE distinguishes the fix."""
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y"), width=400)
+    monkeypatch.setattr(
+        wizard, "_read_facts",
+        lambda solution: wizard._TemplateFacts(
+            roles=frozenset({"default"}),
+            entity_roles=(("Risk", "default"),),
+            demo_roles=frozenset({"other"}),
+            reader_group=False,
+        ),
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "Add the demo rows?" not in _collapsed(console)
+
+
 def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
     """A role you deploy one site under must be one every template knows.
 
@@ -2703,10 +2756,11 @@ def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
     here. `_site_roles` is a pure fold; testing it directly is honest.
     """
     both = wizard._TemplateFacts(
-        roles=frozenset({"hq", "branch"}), entity_roles=(), demo_items=False, reader_group=False,
+        roles=frozenset({"hq", "branch"}), entity_roles=(),
+        demo_roles=frozenset(), reader_group=False,
     )
     one = wizard._TemplateFacts(
-        roles=frozenset({"branch"}), entity_roles=(), demo_items=False, reader_group=False,
+        roles=frozenset({"branch"}), entity_roles=(), demo_roles=frozenset(), reader_group=False,
     )
     assert wizard._site_roles([both]) == ["branch", "hq"]
     assert wizard._site_roles([both, one]) == ["branch"]
@@ -2715,10 +2769,10 @@ def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
 def test_templates_that_share_no_site_role_are_refused(tmp_path: Path) -> None:
     """Rather than picking one and letting `execute_build` refuse it later."""
     hq = wizard._TemplateFacts(
-        roles=frozenset({"hq"}), entity_roles=(), demo_items=False, reader_group=False,
+        roles=frozenset({"hq"}), entity_roles=(), demo_roles=frozenset(), reader_group=False,
     )
     branch = wizard._TemplateFacts(
-        roles=frozenset({"branch"}), entity_roles=(), demo_items=False, reader_group=False,
+        roles=frozenset({"branch"}), entity_roles=(), demo_roles=frozenset(), reader_group=False,
     )
     with pytest.raises(wizard.WizardError, match="no site role"):
         wizard._site_roles([hq, branch])
