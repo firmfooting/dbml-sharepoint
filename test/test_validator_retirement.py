@@ -51,6 +51,8 @@ from dbml_sharepoint.analysis.findings import (
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
+from dbml_sharepoint.model.conditions import Leaf
+from dbml_sharepoint.model.mapping_types import ColumnValidation, EntitySection
 
 #: The severity enum these fixtures retire columns from.
 _RAG = """
@@ -119,6 +121,36 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out() -> None:
     assert f.severity == "error"
     assert f.location == Location(Section.CALCULATED_FORMULAS, entity="Board")
     assert "'BoardDate'" in f.message
+
+def test_column_validation_cannot_reference_another_column() -> None:
+    """A column-validation formula runs in the context of the one column
+    being validated; a rule naming a second column belongs in
+    `list_validation` instead. Built as objects: the rule this proves is in
+    `checks/_retirement.py`, not in the load-time fold this module is about."""
+    schema = make_schema(make_table(
+        "Board", make_column("Title"), make_column("Owner"), make_column("Status"),
+        note="Board fixture.",
+    ))
+    bundle = make_bundle(
+        entities=["Board"],
+        column_validation={
+            "Board": EntitySection(columns={
+                "Status": ColumnValidation(
+                    when=Leaf(field="Owner", op="is_not_null"),
+                    message="Needs an owner.",
+                ),
+            }),
+        },
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(
+        Section.COLUMN_VALIDATION, entity="Board", column="Status",
+    )
+    assert "['Owner']" in f.message
 
 def test_retired_columns_errors(tmp_path: Path) -> None:
     """Fail closed where a retirement mistake would break the list. The

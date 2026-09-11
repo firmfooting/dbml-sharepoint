@@ -6,7 +6,7 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _validator_helpers import _project_errors
 
-from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_types import (
@@ -70,6 +70,50 @@ def test_summing_a_numeric_column_is_allowed() -> None:
         views=_totals_view(["Title", "SortOrder"], {"SortOrder": "sum"}),
     )
     _no_totals_refusal(errors)
+
+def test_summing_a_lookup_column_is_refused_and_points_at_count() -> None:
+    """A lookup's DBML type is `int`, but its stored value is a row id, not
+    a quantity. SharePoint offers only Count on a lookup."""
+    schema = make_schema(
+        make_table("Team", column("Title", required=True)),
+        make_table(
+            "Project",
+            column("Title", required=True),
+            column("Owner", "int", ref="Team.Id"),
+        ),
+    )
+    bundle = make_bundle(
+        entities=["Team", "Project"],
+        views=_totals_view(["Title", "Owner"], {"Owner": "sum"}),
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.TOTAL_ON_LOOKUP_COLUMN,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.VIEWS, entity="Project", view="V")
+    assert "totals[Owner]" in f.message
+    assert "'sum'" in f.message
+
+def test_summing_a_hyperlink_column_is_refused_outright() -> None:
+    """Distinct from `TOTAL_NEEDS_NUMERIC_COLUMN`: a hyperlink cannot be
+    computed at all, so the message says so rather than naming a type
+    SharePoint would accept."""
+    schema = make_schema(make_table(
+        "Doc", column("Title", required=True), column("Link", "hyperlink"),
+    ))
+    bundle = make_bundle(
+        entities=["Doc"],
+        views={"Doc": [ViewDef(title="V", fields=["Title", "Link"], totals={"Link": "sum"})]},
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.TOTAL_ON_NON_ARITHMETIC_COLUMN,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.VIEWS, entity="Doc", view="V")
+    assert "totals[Link]" in f.message
+    assert "hyperlink" in f.message
 
 def test_a_total_on_a_calculated_number_is_allowed() -> None:
     """Three of the columns this feature exists for are calculated
