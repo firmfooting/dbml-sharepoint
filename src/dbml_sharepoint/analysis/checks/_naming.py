@@ -2,6 +2,7 @@
 """Display-name overrides and the lookup display-column guard."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.derived import report_column_names
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.lookups import display_column_for
@@ -12,6 +13,55 @@ from dbml_sharepoint.analysis.report_columns import (
     system_person_columns,
 )
 from dbml_sharepoint.analysis.typemap import is_person, map_column
+from dbml_sharepoint.model.parser import Table
+
+
+def _report_column_collisions(
+    vc: ValidationContext, table: Table,
+) -> list[Finding]:
+    """A declared column may not reach the report under a name the pack adds.
+
+    The DISPLAY-title rule below asks whether a column's model-facing name
+    lands on one the pack adds. This asks the question one step earlier, of
+    the INTERNAL names, and it is a different failure. A column declared
+    `ItemURL` is selected by the `Declared` step and then `Table.AddColumn`
+    is called for the pack's own `ItemURL` over a table that already has
+    one, which fails the refresh outright rather than on the rename.
+
+    FOUND BY DUPLICATE, not by a list. `report_column_names` already
+    derives every name a query produces, so a name appearing twice IS the
+    collision. A second list of reserved names would be a copy of that
+    derivation, and the pack has added three such columns in one release
+    without anybody extending it, which is how this defect arrived.
+    """
+    try:
+        produced = report_column_names(
+            table, vc.bundle, set(vc.enum_by_name), include_derived=False,
+        )
+    except ValueError:
+        # An unresolvable column type. `validate_column` reports each of
+        # those as its own finding, and this rule has nothing to say about a
+        # table whose columns do not map yet. The same skip the display-title
+        # loop below makes, and for the same reason.
+        return []
+    seen: dict[str, None] = {}
+    collided: list[str] = []
+    for name in produced:
+        if name in seen and name not in collided:
+            collided.append(name)
+        seen.setdefault(name, None)
+    return [
+        Finding(
+            FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN,
+            f"{table.name}.{name}: the reporting pack adds a column called "
+            f"{name!r} to every query, so a declared column reaching the "
+            f"report under that name is selected and then added again. "
+            f"Power Query refuses the duplicate and the refresh fails, "
+            f"after the model is published. Rename the schema column.",
+            location=Location(Section.SCHEMA, entity=table.name, column=name),
+        )
+        for name in collided
+    ]
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -186,6 +236,14 @@ def check(vc: ValidationContext) -> list[Finding]:
     # to declare display_column so person/roster references show a name.
     # Cross-site reference columns are expanded to Choice+URL, not lookups, so
     # they are excluded.
+    # NOT under the display_names gate above. That rule asks whether a
+    # column's MODEL-FACING name lands on one the pack adds; this asks it of
+    # the internal names, and the query carries those whether or not a
+    # family renames anything.
+    for table in schema.tables:
+        if table.name in bundle.mapping.entities:
+            findings += _report_column_collisions(vc, table)
+
     cross_site_pairs = bundle.mapping.cross_site_keys()
     for table in schema.tables:
         for col in table.columns:
