@@ -108,12 +108,23 @@ def generate_manifest(
         g.name for g in (_perms.groups if _perms else []) if g.enroll_enterprise_reader
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
+    # The granted half is passed too, not just discarded: when every deployed
+    # list excludes the group, the excluded half is every list, and a template
+    # that only ever sees "excluded" has no way to say "nothing" instead of
+    # "everything except everything".
+    _reader_split = [
+        lists_granting_group(bundle.mapping, name, _deployed_entities)
+        for name in _reader_groups
+    ]
+    reader_granted_lists = sorted({
+        f"{bundle.mapping.prefix}{entity}"
+        for granted, _ in _reader_split
+        for entity in granted
+    })
     reader_excluded_lists = sorted({
         f"{bundle.mapping.prefix}{entity}"
-        for name in _reader_groups
-        for entity in lists_granting_group(
-            bundle.mapping, name, _deployed_entities,
-        )[1]
+        for _, excluded in _reader_split
+        for entity in excluded
     })
 
     # Every field the deploy actually writes, per list. Iterating
@@ -321,6 +332,7 @@ def generate_manifest(
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
+        reader_granted_lists=reader_granted_lists,
         reader_excluded_lists=reader_excluded_lists,
         env_file_line=describe_env_provenance(env_provenance),
         # The sidecar lists the logging phase keeps, named here so the

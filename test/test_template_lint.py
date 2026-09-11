@@ -57,6 +57,7 @@ KNOWN_CONTEXT = {
     "enterprise_reader_advisory_bits",
     "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",
+    "reader_granted_lists",
     "reader_excluded_lists",
     # The marker distinguishing "clear this value" from "not managed here".
     # Passed in rather than hard-coded on both sides so the two can never
