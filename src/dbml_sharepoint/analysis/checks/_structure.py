@@ -2,6 +2,7 @@
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
 import re
+from collections import Counter
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.checks.context import IndexTarget, ValidationContext
@@ -18,14 +19,10 @@ from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
     NAME_BUDGET,
-    family_for,
     marker_for,
     note_budget,
 )
-from dbml_sharepoint.analysis.lookups import (
-    display_column_for,
-    lookup_target_entities,
-)
+from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.reporting.plan import is_projectable
@@ -265,24 +262,11 @@ def _note_fits_beside_marker(
 
 
 def check(vc: ValidationContext) -> list[Finding]:
-    # Shared with `lookup_display_columns`, which decides which lists get the
-    # picker's index. A second copy of this comprehension is how the
-    # display-column warning comes to fire for a list the deployer never
-    # indexes, or stay silent for one it does, and it did: a list reached only
-    # by a CROSS-SITE ref has no picker at all, so it was told its picker would
-    # stop working.
-    lookup_targets = lookup_target_entities(vc.schema, vc.cross_site_pairs)
-
-    # The family the emitter will stamp into every list Description. Resolved
-    # once, from the same helper `generators.jsgen` uses, so the budget this
-    # rule enforces is the budget the emitter actually has.
-    family = family_for(vc.schema)
-
     # cli.py prints findings in list order with no sort, so this order is
     # what an operator sees. Pinned by
     # test_structure_findings_are_reported_in_section_order.
     return [
-        *_entities(vc, lookup_targets, family),
+        *_entities(vc, vc.lookup_targets, vc.family),
         *_mapping_and_schema_agree(vc),
         *_cross_site_references(vc),
         *_lookup_projections(vc),
@@ -305,7 +289,7 @@ def _entities(
         findings += _note_is_present(table, entity_name, family)
         findings += _note_whitespace_is_measured(table, entity_name)
         findings += _note_fits_beside_marker(table, entity_name, family)
-        findings += _display_column(vc, entity_name, entity, lookup_targets)
+        findings += _display_column(vc, entity_name, entity, table, lookup_targets)
     return findings
 
 
@@ -499,6 +483,7 @@ def _display_column(
     vc: ValidationContext,
     entity_name: str,
     entity: EntityMapping,
+    table: Table | None,
     lookup_targets: set[str],
 ) -> list[Finding]:
     """Refuse or warn about a display column a lookup picker cannot enumerate.
@@ -556,19 +541,22 @@ def _display_column(
                 sub="accept_unindexable_display_column",
             ),
         ))
-    return findings + _display_column_index(
-        vc, entity_name, display, is_calculated, lookup_targets,
-    )
+    if entity_name in lookup_targets and not is_calculated and table is not None:
+        findings += _display_column_index(vc, entity_name, table, display)
+    return findings
 
 
 def _display_column_index(
     vc: ValidationContext,
     entity_name: str,
+    table: Table,
     display: str,
-    is_calculated: bool,
-    lookup_targets: set[str],
 ) -> list[Finding]:
-    """Guard the index a lookup target's display column gets automatically.
+    """The index a lookup target's display column gets automatically.
+
+    Called only once `_display_column` has confirmed one applies to this
+    entity: it is a lookup target, its display column is not calculated,
+    and its table exists.
 
     The display column's index is IMPLICIT: it is appended in
     generators/jsgen.py rather than declared in `indexes { }`, so neither of
@@ -582,9 +570,6 @@ def _display_column_index(
     Errors, not warnings: no acceptance can make a Note column indexable,
     which is what separates these from the calculated case above.
     """
-    table = vc.tables_by_name.get(entity_name)
-    if entity_name not in lookup_targets or is_calculated or table is None:
-        return []
     findings: list[Finding] = []
     display_xcols = vc.cross_site_columns(entity_name)
     declared_names = {col.name: col for col in table.columns}
@@ -910,9 +895,10 @@ def _indexes(vc: ValidationContext) -> list[Finding]:
         if table is None:
             continue
         targets = vc.index_targets(entity_name)
+        unique_indexes = vc.unique_indexes_by_entity.get(entity_name, set())
         findings += _index_declarations(entity_name, table)
-        findings += _duplicate_indexes(vc, entity_name, targets)
-        findings += _index_ceiling(vc, entity_name)
+        findings += _duplicate_indexes(entity_name, targets, unique_indexes)
+        findings += _index_ceiling(vc, entity_name, unique_indexes)
         findings += _indexable_columns(vc, entity_name, table, targets)
     return findings
 
@@ -956,7 +942,7 @@ def _index_declarations(entity_name: str, table: Table) -> list[Finding]:
 
 
 def _duplicate_indexes(
-    vc: ValidationContext, entity_name: str, targets: list[IndexTarget],
+    entity_name: str, targets: list[IndexTarget], unique_indexes: set[str],
 ) -> list[Finding]:
     """One column indexed twice, by two entries or by an entry and [unique].
 
@@ -968,7 +954,8 @@ def _duplicate_indexes(
     """
     findings: list[Finding] = []
     names = [target.column for target in targets]
-    for duplicate in sorted({name for name in names if names.count(name) > 1}):
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+    for duplicate in duplicates:
         findings.append(Finding(
             FindingCode.DUPLICATE_INDEX_TARGET,
             f"{entity_name}.indexes: duplicate index target {duplicate!r}.",
@@ -976,7 +963,6 @@ def _duplicate_indexes(
         ))
     # Unique fields carry an implicit SharePoint index and count toward
     # the same per-list ceiling as explicit declarations.
-    unique_indexes = vc.unique_indexes_by_entity.get(entity_name, set())
     for duplicate in sorted(set(names) & unique_indexes):
         positions = [target.position for target in targets if target.column == duplicate]
         sub = f"indexes[{positions[0]}]" if len(positions) == 1 else "indexes"
@@ -989,10 +975,11 @@ def _duplicate_indexes(
     return findings
 
 
-def _index_ceiling(vc: ValidationContext, entity_name: str) -> list[Finding]:
+def _index_ceiling(
+    vc: ValidationContext, entity_name: str, unique_indexes: set[str],
+) -> list[Finding]:
     """The per-list index ceiling, counting the implicit indexes too."""
     effective_indexes = vc.effective_indexes(entity_name)
-    unique_indexes = vc.unique_indexes_by_entity.get(entity_name, set())
     if len(effective_indexes) > MAX_LIST_INDEXES:
         # Name the implicit contributors. The old message said only
         # "(including unique columns)", which on the case this rule exists
@@ -1287,24 +1274,24 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
                 continue
+            formula = vc.bundle.mapping.calculated_formulas.get(
+                table.name, {},
+            ).get(col.name)
             findings += _calculated_formula(
-                vc, table, col, rendered, columns_by_name, deferred,
+                table, col, formula, rendered, columns_by_name, deferred,
             )
     return findings
 
 
 def _calculated_formula(
-    vc: ValidationContext,
     table: Table,
     col: Column,
+    formula: str | None,
     rendered: set[str],
     columns_by_name: dict[str, Column],
     deferred: dict[str, set[str]],
 ) -> list[Finding]:
     """One calculated column's formula: its presence, shape and references."""
-    formula = vc.bundle.mapping.calculated_formulas.get(
-        table.name, {},
-    ).get(col.name)
     if formula is None:
         return [Finding(
             FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA,

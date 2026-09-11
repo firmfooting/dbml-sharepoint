@@ -12,7 +12,6 @@ from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
     MAX_ROLE_DEFINITION_DESCRIPTION,
 )
-from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.permissions import (
     ASSIGNABLE_BUILT_IN_LEVELS,
     ASSOCIATED_GROUP_ALIASES,
@@ -126,7 +125,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # site: the second create fails on a name collision, mid-deploy,
         # after the first has already been made.
         seen_level_names: dict[str, str] = {}
-        family = family_for(vc.schema)
+        family = vc.family
         for lvl in perms.levels:
             key = lvl.name.casefold()
             # ALL eleven built-ins are reserved, including the three that are
