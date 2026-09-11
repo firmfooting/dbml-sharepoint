@@ -5,9 +5,19 @@
 # Flow: conventional commits land on main -> release-please maintains a
 # release PR -> merging it makes release-please (in that push's run) create
 # the vX.Y.Z tag + GitHub release and set release_created=true -> the build
-# and publish jobs run in the SAME workflow run. They must: releases created
-# with the default GITHUB_TOKEN cannot trigger other workflows, so a separate
-# on:release publish workflow would never fire.
+# and publish jobs run in the SAME workflow run.
+#
+# RELEASE-PLEASE AUTHENTICATES AS A GITHUB APP rather than as GITHUB_TOKEN.
+# A pull request opened with the default token triggers no workflows, so the
+# release PR reported no checks at all and sat BLOCKED against the required
+# ones with nothing able to clear them; 0.5.0 waited eight days that way
+# (opened 2026-09-04, still blocked 2026-09-12). An installation token is a
+# real actor, so ci.yml and zizmor.yml run on the release PR like any other.
+#
+# The build and publish jobs stay in this run either way. An app-created
+# release CAN trigger an on:release workflow, unlike a GITHUB_TOKEN one, but
+# the trusted-publisher binding above keeps publish here regardless, and one
+# run is easier to follow than two.
 #
 # First-release bootstrap (v0.1.0): the manifest already records 0.1.0, so
 # release-please only manages releases AFTER it. Create the first tag and
@@ -26,16 +36,50 @@ permissions: {}
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write        # create the release tag + GitHub release
-      pull-requests: write   # maintain the release PR
+    # Nothing is taken from GITHUB_TOKEN. The app token minted below does
+    # every write, and being a different actor is the whole point.
+    permissions: {}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Fail closed before release-please runs. A missing secret would
+      # otherwise surface as an opaque token-exchange error inside the action,
+      # and the recovery is to add the secret either way.
+      - name: Require the release app secrets
+        env:
+          APP_CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_CLIENT_ID}" ]; then
+            echo "RELEASE_APP_CLIENT_ID is not set; refusing to release." >&2
+            exit 1
+          fi
+          if [ -z "${APP_PRIVATE_KEY}" ]; then
+            echo "RELEASE_APP_PRIVATE_KEY is not set; refusing to release." >&2
+            exit 1
+          fi
+
+      # Short-lived, scoped to this repository's installation, masked in the
+      # log and revoked when the job ends. The same GitHub-owned action the
+      # findings bridge uses, so there is one app-token pattern to review.
+      # The two permissions are the ones this job used to take from
+      # GITHUB_TOKEN: the tag and the release need contents, the release PR
+      # and its `autorelease:` label need pull-requests.
+      - name: Mint an installation token for this repository
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
