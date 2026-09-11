@@ -1,6 +1,6 @@
 ---
 title: column_projection
-sidebar_position: 10
+sidebar_position: 12
 ---
 
 # `dbml_sharepoint.analysis.column_projection`

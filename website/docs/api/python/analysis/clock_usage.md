@@ -1,6 +1,6 @@
 ---
 title: clock_usage
-sidebar_position: 26
+sidebar_position: 28
 ---
 
 # `dbml_sharepoint.analysis.clock_usage`

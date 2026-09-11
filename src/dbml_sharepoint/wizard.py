@@ -730,7 +730,7 @@ def _drop_chosen_from_previous_prefixes(
 
     DROPPING THE ENTRY LOSES NO MIGRATION PATH. Both consumers build their
     candidate stems as `[prefix, *previous_prefixes]` -- `previous_titles`
-    in `mapping_types` and `previous_object_names` in `mapping_loader` --
+    in `mapping_types` and `previous_object_names` in `model.prefix` --
     and both skip a candidate equal to the current name or already listed,
     so an entry repeating the current prefix could only ever produce
     duplicates of what the first stem already tried. The rename search the

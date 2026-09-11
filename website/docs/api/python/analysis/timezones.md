@@ -1,6 +1,6 @@
 ---
 title: timezones
-sidebar_position: 27
+sidebar_position: 29
 ---
 
 # `dbml_sharepoint.analysis.timezones`

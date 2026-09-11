@@ -29,9 +29,10 @@ from dbml_sharepoint.analysis.sidecars import (
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
 )
-from dbml_sharepoint.model.mapping_loader import expand_prefix, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import PermissionsConfig
 from dbml_sharepoint.model.parser import Table, parse_dbml
+from dbml_sharepoint.model.prefix import expand_prefix
 
 FAMILY = SOLUTION_TEMPLATES / "deployment-log"
 LOGGING_TEMPLATE = JINJA_TEMPLATES / "deploy" / "_logging.js.j2"

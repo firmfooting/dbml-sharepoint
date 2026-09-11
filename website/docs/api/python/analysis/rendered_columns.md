@@ -1,6 +1,6 @@
 ---
 title: rendered_columns
-sidebar_position: 9
+sidebar_position: 11
 ---
 
 # `dbml_sharepoint.analysis.rendered_columns`

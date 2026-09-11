@@ -239,7 +239,7 @@ def _loader_defaults() -> MappingSections:
     """What `load_mapping` leaves on a mapping that declares nothing.
 
     Not the same as the dataclass defaults, and the difference is not cosmetic.
-    `load_mapping` runs `_parse_permissions` unconditionally, so a loaded
+    `load_mapping` runs the permissions family unconditionally, so a loaded
     mapping's `permissions` is an EMPTY `PermissionsConfig` -- never `None`.
     `checks/_permissions.py` opens with `if bundle.mapping.permissions is not
     None`, so a builder taking the dataclass default of `None` would skip that

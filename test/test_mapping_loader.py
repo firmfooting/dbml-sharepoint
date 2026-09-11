@@ -1,13 +1,15 @@
 # test/test_mapping_loader.py
-import ast
-import inspect
+from collections import Counter
+from collections.abc import Iterator, Mapping
+from dataclasses import fields, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _packs import blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES
 
-from dbml_sharepoint.model import mapping_loader, mapping_types
+from dbml_sharepoint.model import mapping_types
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
@@ -16,6 +18,13 @@ from dbml_sharepoint.model.mapping_types import (
     RetiredColumn,
     Versioning,
 )
+from dbml_sharepoint.model.sections import (
+    KNOWN_SECTIONS,
+    SECTION_FAMILIES,
+    Section,
+    section_context,
+)
+from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
@@ -1367,76 +1376,116 @@ def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: P
     assert "retention_policies" in str(err.value)
 
 
-# Every function that reads a top-level key off `raw`. `_parse_permissions`
-# takes the three permissions sections and `_reporting_sections` the two the
-# reporting pack reads plus the pointer that can move them.
-_TOP_LEVEL_READERS = (
-    "load_mapping", "_parse_permissions", "_reporting_sections",
-)
+# The registry is the allow-list. KNOWN_SECTIONS is derived from
+# SECTION_FAMILIES, so a key is admitted only by the family that reads it.
+# What the registry cannot see on its own is a family that declares a key
+# and then never asks for it, which is the same dead-key failure in a new
+# place, so each family is run against a recording view of its blocks.
 
 
-def _sections_read_by_the_loader() -> set[str]:
-    """Every top-level mapping key the loader actually reads, derived from
-    the loader's own source.
+class _RecordingBlocks(Mapping[str, Any]):
+    """A blocks mapping that remembers every key a family asked for."""
 
-    Derived rather than restated, because restating it is how two dead keys
-    got whitelisted: KNOWN_SECTIONS was populated by reading the reference
-    docs, and neither `permissions:` nor `retention_policies:` has ever had
-    a reader.
-    """
-    tree = ast.parse(inspect.getsource(mapping_loader))
-    keys: set[str] = set(mapping_types._REMOVED_SECTIONS)
-    for func in ast.walk(tree):
-        if not isinstance(func, ast.FunctionDef) or func.name not in _TOP_LEVEL_READERS:
-            continue
-        for node in ast.walk(func):
-            # raw["key"]
-            if (
-                isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "raw"
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)
-            ):
-                keys.add(node.slice.value)
-            if not isinstance(node, ast.Call):
-                continue
-            called = node.func
-            # raw.get("key")
-            if (
-                isinstance(called, ast.Attribute)
-                and isinstance(called.value, ast.Name)
-                and called.value.id == "raw"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                keys.add(node.args[0].value)
-            # helper(raw, "key", ...), _optional_bool and friends
-            if (
-                len(node.args) >= 2
-                and isinstance(node.args[0], ast.Name)
-                and node.args[0].id == "raw"
-                and isinstance(node.args[1], ast.Constant)
-                and isinstance(node.args[1].value, str)
-            ):
-                keys.add(node.args[1].value)
-    return keys
+    def __init__(self, blocks: Mapping[str, Any]) -> None:
+        self._blocks = blocks
+        self.asked: set[str] = set()
+
+    def __getitem__(self, key: str) -> Any:
+        self.asked.add(key)
+        return self._blocks[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._blocks)
+
+    def __len__(self) -> int:
+        return len(self._blocks)
 
 
-def test_every_allow_listed_section_has_a_reader() -> None:
+_MINIMAL_DOCUMENT: dict[str, Any] = {
+    "prefix": "T_",
+    "entities": {"Risk": {"kind": "List", "base_template": 100, "site_role": "default"}},
+}
+
+
+def _run_families(
+    base_dir: Path, raw: dict[str, Any],
+) -> list[tuple[Section, set[str], dict[str, Any]]]:
+    """Run the registry the way `load_mapping` does, recording what each
+    family asked for and what it produced."""
+    loaded: dict[str, Any] = {}
+    runs: list[tuple[Section, set[str], dict[str, Any]]] = []
+    for family in SECTION_FAMILIES:
+        sc = section_context(family, raw, base_dir, loaded)
+        blocks = _RecordingBlocks(sc.blocks)
+        produced = family.read(replace(sc, blocks=blocks))
+        loaded.update(produced)
+        runs.append((family, blocks.asked, produced))
+    return runs
+
+
+def test_every_family_reads_exactly_the_sections_it_declares(tmp_path: Path) -> None:
     """KNOWN_SECTIONS is an admission gate, so an entry with no reader is
     worse than no gate: it makes a section that deploys nothing look
     supported. `permissions:` and `retention_policies:` were both
-    allow-listed from the reference docs and read by nothing."""
-    read = _sections_read_by_the_loader()
-    # Sanity: the derivation must actually find the loader's readers.
-    assert {"prefix", "entities", "form_visibility", "list_permissions"} <= read
-    orphans = mapping_loader.KNOWN_SECTIONS - read
-    assert not orphans, (
-        f"allow-listed with no reader: {sorted(orphans)}, either wire a reader "
-        f"or drop the entry; an allow-listed key that nothing reads deploys nothing"
+    allow-listed from the reference docs and read by nothing. The set is
+    now derived from the registry, so the residual way to admit a dead key
+    is a family that declares it and never reads it. Every family reads
+    every key on every load, absent or not, so an empty document is enough
+    to see each one asked for."""
+    for family, asked, _ in _run_families(tmp_path, _MINIMAL_DOCUMENT):
+        assert asked == set(family.keys), (
+            f"family reading {family.keys} asked for {sorted(asked)}; a declared key "
+            f"nobody reads deploys nothing, and an undeclared one is not admitted"
+        )
+    # Sanity: the derivation must actually reach the loader's readers.
+    assert {"prefix", "entities", "form_visibility", "list_permissions"} <= KNOWN_SECTIONS
+
+
+def test_no_section_belongs_to_two_families() -> None:
+    """Two families reading one key would each parse it their own way, and
+    the pointer check would see only one of them."""
+    names = [key for family in SECTION_FAMILIES for key in family.keys]
+    names += [family.source for family in SECTION_FAMILIES if family.source is not None]
+    assert sorted(names) == sorted(set(names))
+
+
+def test_the_families_produce_every_field_exactly_once(tmp_path: Path) -> None:
+    """`Mapping(**loaded)` refuses a misnamed field on every load, but a field
+    produced by two families would let the later one win in silence."""
+    produced = Counter(
+        name for _, _, fields_ in _run_families(tmp_path, _MINIMAL_DOCUMENT) for name in fields_
     )
+    # `retirement_strips` is filled by the retirement fold after the
+    # families run; `source_paths` is assembled by the runner from two of
+    # the fields below.
+    expected = (
+        {f.name for f in fields(mapping_types.Mapping)} - {"retirement_strips"}
+    ) | (
+        {f.name for f in fields(mapping_types.MappingBundle)} - {"mapping", "source_paths"}
+    )
+    assert set(produced) == expected
+    assert [name for name, count in produced.items() if count > 1] == []
+
+
+def test_a_family_cannot_read_a_section_it_did_not_declare() -> None:
+    """The other direction of the same guarantee: a reader reaching past its
+    declared keys would be reading a section the allow-list never admitted.
+    A LookupError rather than a KeyError, because this is a defect in the
+    package and the CLI must keep the traceback."""
+    sc = SectionContext(base_dir=Path(), keys=("views",), blocks={"views": {}}, loaded={})
+    with pytest.raises(LookupError, match="not a section this family declared"):
+        sc.block("entities")
+    with pytest.raises(LookupError, match="not a section this family declared"):
+        sc.required("entities")
+
+
+def test_identity_runs_before_permissions() -> None:
+    """Permissions expand `{prefix}` through `sc.loaded`, so the registry
+    order is part of the contract rather than a convenience."""
+    order = [family.keys for family in SECTION_FAMILIES]
+    identity = next(i for i, keys in enumerate(order) if "prefix" in keys)
+    permissions = next(i for i, keys in enumerate(order) if "groups" in keys)
+    assert identity < permissions
 
 
 def test_hardening_flags_parsed(tmp_path: Path) -> None:
@@ -2833,18 +2882,38 @@ def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
         load_mapping(path)
 
 
-# --------------------------------------------- reporting_source
+# --------------------------------------------- section pointers
+
+#: Each pointer with one of the sections it carries and a declaration of
+#: that section. The declaration serves as the pointed file's body and, for
+#: the double-declaration test, as the inline copy.
+_POINTED = [
+    pytest.param(
+        "reporting_source", "reporting", "reporting:\n  users_table: true\n",
+        id="reporting_source-reporting",
+    ),
+    pytest.param(
+        "reporting_source", "derived_columns", "derived_columns: {}\n",
+        id="reporting_source-derived_columns",
+    ),
+    pytest.param(
+        "demo_source", "demo_items",
+        "demo_items:\n  Risk:\n    - key: r1\n      values: { Title: '[DEMO] one' }\n",
+        id="demo_source-demo_items",
+    ),
+]
+_POINTERS = ["reporting_source", "demo_source"]
 
 
-def _reporting_file(tmp_path: Path, body: str) -> None:
-    (tmp_path / "reporting.yaml").write_text(body, encoding="utf-8")
+def _side_file(tmp_path: Path, body: str) -> None:
+    (tmp_path / "side.yaml").write_text(body, encoding="utf-8")
 
 
 def test_reporting_source_carries_both_reporting_sections(tmp_path: Path) -> None:
     """The two sections the REPORTING PACK reads may live beside the mapping
     rather than inside it. The deploy reads neither, so the seam is what
     consumes a section rather than how long the section is."""
-    _reporting_file(tmp_path, """
+    _side_file(tmp_path, """
 reporting:
   users_table: true
   time_zone: Australia/Melbourne
@@ -2857,7 +2926,7 @@ derived_columns:
 """)
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+        blocks(entities("Risk"), "reporting_source: side.yaml"),
     )
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.reporting.users_table is True
@@ -2865,55 +2934,81 @@ derived_columns:
     assert [c.name for c in bundle.mapping.derived_for("Risk")] == ["IsOpen"]
 
 
-@pytest.mark.parametrize("section", ["reporting", "derived_columns"])
-def test_a_section_declared_twice_is_refused(tmp_path: Path, section: str) -> None:
+def test_demo_source_carries_the_demo_rows(tmp_path: Path) -> None:
+    """The demo rows are consumed by one generator, into demo-data.js.txt,
+    and only when a build passes --seed. No deploy, rollback, assess or
+    verify script reads them, so they move on the rule the reporting split
+    set: the seam is what consumes a section, not how long it is."""
+    _side_file(tmp_path, """
+demo_items:
+  Risk:
+    - key: r1
+      values: { Title: "[DEMO] one" }
+    - key: r2
+      values: { Title: "[DEMO] two" }
+""")
+    write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), "demo_source: side.yaml"),
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert [row.key for row in bundle.mapping.demo_items["Risk"]] == ["r1", "r2"]
+
+
+@pytest.mark.parametrize(("pointer", "section", "body"), _POINTED)
+def test_a_section_declared_twice_is_refused(
+    tmp_path: Path, pointer: str, section: str, body: str,
+) -> None:
     """Two declarations of one section is a question with no right answer.
     Whichever this picked, the other would be edited by somebody who could
     not see it being ignored, which is the failure the split exists to
     avoid rather than one to introduce."""
-    _reporting_file(tmp_path, "reporting:\n  users_table: true\n")
-    inline = (
-        "reporting:\n  system_columns: true" if section == "reporting"
-        else "derived_columns: {}"
-    )
+    _side_file(tmp_path, body)
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml", inline),
+        blocks(entities("Risk"), f"{pointer}: side.yaml", body),
     )
     with pytest.raises(ValueError, match="may not also be declared") as err:
         load_mapping(tmp_path / "m.yaml")
     assert section in str(err.value)
+    assert pointer in str(err.value)
 
 
-def test_the_reporting_file_may_hold_nothing_else(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("pointer", "section", "body"), _POINTED)
+def test_the_pointed_file_may_hold_nothing_else(
+    tmp_path: Path, pointer: str, section: str, body: str,
+) -> None:
     """A file that accepted any section would be a second mapping, and which
     of the two won would depend on where a reader happened to look."""
-    _reporting_file(tmp_path, "reporting:\n  users_table: true\nviews: {}\n")
+    _side_file(tmp_path, body + "views: {}\n")
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: reporting.yaml"),
+        blocks(entities("Risk"), f"{pointer}: side.yaml"),
     )
     with pytest.raises(ValueError, match="unknown key") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "views" in str(err.value)
+    assert section in str(err.value)
 
 
-def test_an_unreadable_reporting_source_names_the_path(tmp_path: Path) -> None:
-    """Silently loading no reporting configuration would turn a typo into a
-    pack with no derived columns and no declared zone, which generates and
-    refreshes and is simply missing everything."""
+@pytest.mark.parametrize("pointer", _POINTERS)
+def test_an_unreadable_pointer_names_the_path(tmp_path: Path, pointer: str) -> None:
+    """Silently loading nothing would turn a typo into a pack with no derived
+    columns and no declared zone, or a --seed build with no rows, which
+    generates and refreshes and is simply missing everything."""
     write_mapping(
         tmp_path,
-        blocks(entities("Risk"), "reporting_source: nope.yaml"),
+        blocks(entities("Risk"), f"{pointer}: nope.yaml"),
     )
-    with pytest.raises(ValueError, match=r"cannot read 'nope\.yaml'"):
+    with pytest.raises(ValueError, match=rf"{pointer}: cannot read 'nope\.yaml'"):
         load_mapping(tmp_path / "m.yaml")
 
 
-def test_reporting_stays_optional_without_the_pointer(tmp_path: Path) -> None:
-    """Every family that declares neither section must load unchanged: the
-    pointer is a way to move them, not a new requirement."""
+def test_pointed_sections_stay_optional_without_the_pointer(tmp_path: Path) -> None:
+    """Every family that declares none of these sections must load
+    unchanged: a pointer is a way to move a section, not a new requirement."""
     write_mapping(tmp_path, blocks(entities("Risk")))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.reporting.users_table is False
     assert bundle.mapping.derived_columns == {}
+    assert bundle.mapping.demo_items == {}

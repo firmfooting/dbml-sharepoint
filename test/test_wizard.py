@@ -29,7 +29,8 @@ from dbml_sharepoint.catalogue import (
 )
 from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
-from dbml_sharepoint.model.mapping_loader import load_mapping, previous_object_names
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.prefix import previous_object_names
 
 
 @pytest.fixture(autouse=True)

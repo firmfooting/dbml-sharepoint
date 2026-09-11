@@ -112,7 +112,11 @@ jobs:
           done
           found=0
           for mapping in "$sol"/*/20-configure/mapping.yaml; do
-            grep -q '^demo_items:' "$mapping" || continue
+            # Either spelling: demo_source moves the items to a file
+            # beside the mapping, and a family that took the pointer still
+            # ships demo data. Matching the inline key alone counted one
+            # family out and failed this step on the count.
+            grep -qE '^(demo_items|demo_source):' "$mapping" || continue
             t="$(basename "$(dirname "$(dirname "$mapping")")")"
             found=$((found + 1))
             echo "::group::$t"
@@ -128,12 +132,13 @@ jobs:
             echo "::endgroup::"
           done
           echo "Seeded $found of $expected template(s)."
-          # Every template ships demo_items. It is part of the family
-          # standard, not a feature some of them happen to use, so the
-          # honest assertion is equality, not a floor. A floor written when
-          # two templates seeded stays green while twenty-seven stop, which
-          # is the same open failure a hardcoded roster gives you, spelled
-          # as a number instead of a list.
+          # Every template ships demo data, inline or through demo_source.
+          # It is part of the family standard, not a feature some of them
+          # happen to use, so the honest assertion is equality, not a
+          # floor. A floor written when two templates seeded stays green
+          # while twenty-seven stop, which is the same open failure a
+          # hardcoded roster gives you, spelled as a number instead of a
+          # list.
           test "$found" -eq "$expected"
 
   mutate-limits:

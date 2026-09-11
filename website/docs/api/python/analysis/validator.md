@@ -1,6 +1,6 @@
 ---
 title: validator
-sidebar_position: 8
+sidebar_position: 10
 ---
 
 # `dbml_sharepoint.analysis.validator`
