@@ -1,4 +1,5 @@
 # test/test_manifestgen.py
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Unpack
@@ -25,6 +26,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormFormatting,
     FormVisibility,
     ListValidation,
+    MappingBundle,
     ViewDef,
     ViewSort,
 )
@@ -231,6 +233,45 @@ def _reader_manifest(enterprise_reader: str | None) -> str:
     )
 
 
+def _bundle_with_reader_dropped_from(entity_names: Iterable[str]) -> MappingBundle:
+    """The reader fixture with the reader group's assignment dropped from
+    each of `entity_names`'s permission block, so only those lists exclude
+    it. Mutates a freshly loaded bundle, never the shared fixture text."""
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    reader_group = next(g.name for g in perms.groups if g.enroll_enterprise_reader)
+    default = perms.default_policy
+    assert default is not None
+    without_reader = replace(
+        default,
+        assignments=[
+            a for a in default.assignments
+            if not (a.principal.kind == "group" and a.principal.name == reader_group)
+        ],
+    )
+    for entity_name in entity_names:
+        perms.overrides[entity_name] = without_reader
+    return bundle
+
+
+def _manifest_for_bundle(bundle: MappingBundle, enterprise_reader: str | None) -> str:
+    """Render `bundle`'s manifest, built with or without the reader flag."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    return generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=enterprise_reader,
+    )
+
+
 def test_the_manifest_names_a_list_the_reader_group_is_not_granted_on() -> None:
     """The unconditional "reads every list" promise was not verified.
 
@@ -245,35 +286,12 @@ def test_the_manifest_names_a_list_the_reader_group_is_not_granted_on() -> None:
     Built by taking the reader fixture and dropping the reader from ONE
     list's override, so the only thing that changed is the fact under test.
     """
-    schema = parse_dbml(FIXTURES / "simple.dbml")
-    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
-    perms = bundle.mapping.permissions
-    assert perms is not None
-    reader_group = next(g.name for g in perms.groups if g.enroll_enterprise_reader)
+    entity = next(iter(
+        load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping.entities
+    ))
+    bundle = _bundle_with_reader_dropped_from([entity])
 
-    entity = next(iter(bundle.mapping.entities))
-    default = perms.default_policy
-    assert default is not None
-    perms.overrides[entity] = replace(
-        default,
-        assignments=[
-            a for a in default.assignments
-            if not (a.principal.kind == "group" and a.principal.name == reader_group)
-        ],
-    )
-
-    manifest = generate_manifest(
-        schema_json=build_schema_json(schema, bundle, "default"),
-        findings=[],
-        bundle=bundle,
-        release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
-        site_role="default",
-        source_dbml="simple.dbml",
-        source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=None,
-    )
+    manifest = _manifest_for_bundle(bundle, None)
     excluded = f"{bundle.mapping.prefix}{entity}"
     assert excluded in manifest, manifest
     assert "EXCEPT" in manifest, manifest
@@ -292,6 +310,68 @@ def test_the_manifest_claims_every_list_when_every_block_grants_the_reader(
     manifest = " ".join(_reader_manifest(None).split())
     assert "read every list this bundle provisions" in manifest, manifest
     assert "EXCEPT" not in manifest
+
+
+def test_the_manifest_says_no_list_when_every_deployed_list_excludes_the_reader(
+) -> None:
+    """Before the third arm existed, a mapping where every deployed list
+    excludes the reader rendered "every list this bundle provisions EXCEPT
+    [every list]", a self-contradiction: the sentence claims universal access
+    in the same breath it names every list as an exception to it.
+
+    Built by dropping the reader from every entity the mapping deploys, the
+    valid case a default-policy grant plus a matching override on every
+    entity produces.
+    """
+    all_entities = list(
+        load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping.entities
+    )
+    bundle = _bundle_with_reader_dropped_from(all_entities)
+
+    manifest = " ".join(_manifest_for_bundle(bundle, None).split())
+    assert "no list this bundle provisions" in manifest, manifest
+    assert "EXCEPT" not in manifest
+    assert "all but" not in manifest
+
+
+def test_the_with_flag_manifest_says_no_list_when_every_deployed_list_excludes_the_reader(
+) -> None:
+    """Same all-excluded bundle, but with `--enterprise-reader` given: the
+    "second holder of Read" paragraph has its own copy of the same arm and
+    needs its own pin."""
+    all_entities = list(
+        load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping.entities
+    )
+    bundle = _bundle_with_reader_dropped_from(all_entities)
+
+    manifest = " ".join(_manifest_for_bundle(bundle, "svc-reporting@example.org").split())
+    assert "Read** on no list this bundle provisions" in manifest, manifest
+    assert "all but" not in manifest
+
+
+def test_the_with_flag_manifest_names_the_list_the_reader_group_is_not_granted_on(
+) -> None:
+    """The with-flag arm had no test at all: every existing reader test built
+    without `--enterprise-reader`, so a wrong or missing exclusion in the
+    "second holder of Read" paragraph could ship unnoticed."""
+    entity = next(iter(
+        load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping.entities
+    ))
+    bundle = _bundle_with_reader_dropped_from([entity])
+
+    manifest = " ".join(_manifest_for_bundle(bundle, "svc-reporting@example.org").split())
+    excluded = f"{bundle.mapping.prefix}{entity}"
+    assert f"all but {excluded}" in manifest, manifest
+    assert "EXCEPT" not in manifest
+
+
+def test_the_with_flag_manifest_claims_every_list_when_every_block_grants_the_reader(
+) -> None:
+    """The with-flag complement, so the with-flag arm's qualification cannot
+    fire for everything either."""
+    manifest = " ".join(_reader_manifest("svc-reporting@example.org").split())
+    assert "Read** on every list here" in manifest, manifest
+    assert "all but" not in manifest
 
 
 def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:

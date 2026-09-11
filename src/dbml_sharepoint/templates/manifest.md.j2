@@ -113,11 +113,15 @@ needs access.
 
 **Check that group's membership before you paste.** Phase {{ phase_num['reader_enrolment'] }} enrols nobody and
 **aborts the whole run** if **{{ reader_group_names }}** already holds any principal
-other than `{{ enterprise_reader }}`; it names each one and removes none, because a
-second holder of **Read** on
-{% if reader_excluded_lists %}all but {{ reader_excluded_lists | join(", ") }}
-{% else %}every list here{% endif %} is your decision, not the script's.
-If that stops you: remove them in **Site permissions -> Groups** and paste again,
+other than `{{ enterprise_reader }}`; it names each one and removes none, because
+{% if not reader_granted_lists %}who else belongs to that group is your decision,
+not the script's. Note that this build grants the group **Read** on no list this
+bundle provisions: every list's resolved permissions leave the group out.
+{% elif reader_excluded_lists %}a second holder of **Read** on all but
+{{ reader_excluded_lists | join(", ") }} is your decision, not the script's.
+{% else %}a second holder of **Read** on every list here is your decision, not
+the script's.
+{% endif %}If that stops you: remove them in **Site permissions -> Groups** and paste again,
 or rebuild without `--enterprise-reader`, which leaves the membership untouched
 and still deploys the group and its grant. `{{ enterprise_reader }}` already being a
 member is fine; a repeat paste of this bundle is a no-op there.
@@ -134,7 +138,10 @@ its membership is left exactly as it is. That is a statement about this bundle,
 not about the site: an earlier build **with** the flag may have enrolled an
 account, and nothing here checks or reports who is currently a member. The group
 holds the built-in **Read**, so anyone in it can read
-{% if reader_excluded_lists %}every list this bundle provisions EXCEPT
+{% if not reader_granted_lists %}no list this bundle provisions: every list's
+resolved permissions leave the group out. An override may do that deliberately,
+so this is reported rather than refused{% elif reader_excluded_lists %}every list
+this bundle provisions EXCEPT
 {{ reader_excluded_lists | join(", ") }}, which
 {{ "does" if reader_excluded_lists | length == 1 else "do" }} not grant it;
 an override may leave the group out deliberately, so this is reported rather
