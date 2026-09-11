@@ -13,8 +13,13 @@ examples; the emitted structures mirror those samples).
 """
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
+
+# The finding codes the registry names; `findings` imports only the standard
+# library, so there is no cycle.
+from dbml_sharepoint.analysis.findings import FindingCode
 
 # The unknown-key guard, imported rather than reimplemented.
 #
@@ -159,10 +164,15 @@ def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
     return f"{ref} == '{escaped}'"
 
 
+#: The nested key sets, named so the registry publishes the same objects the
+#: expanders enforce and the two cannot drift apart.
+_COLOR_BY_KEYS = frozenset({"field", "map", "calculated"})
+_GUARD_KEYS = frozenset({"field", "not"})
+
+
 def _severity(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "map", "calculated", "icons"}, context)
     value_map = _validated_map(spec, context)
     calculated = _bool(spec, "calculated", context, default=False)
     icons = _bool(spec, "icons", context, default=True)
@@ -202,7 +212,6 @@ def _severity(
 def _pill(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "map"}, context)
     value_map = _validated_map(spec, context)
     for token_name in value_map.values():
         if theme and token_name in theme:
@@ -234,7 +243,6 @@ def _pill(
 def _data_bar(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "max", "calculated", "color_by"}, context)
     maximum = spec.get("max")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
@@ -257,9 +265,7 @@ def _data_bar(
             context,
             "color_by requires 'field' (a column internal name)",
         )
-        _reject_unknown_keys(
-            color_by, {"field", "map", "calculated"}, f"{context}.color_by",
-        )
+        _reject_unknown_keys(color_by, _COLOR_BY_KEYS, f"{context}.color_by")
         value_map = _validated_map(color_by, context)
         source_calculated = _bool(
             color_by, "calculated", f"{context}.color_by", default=False,
@@ -296,8 +302,11 @@ def _data_bar(
     }
 
 
-def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "against"}, context)
+def _trend(
+    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
+) -> dict[str, Any]:
+    # `theme` is unread: a trend arrow wears the native sp-field-trending
+    # classes, which no token overrides. The parameter keeps one expander shape.
     against = spec.get("against")
     wanted = "trend requires 'against' (a column internal name or a number)"
     # A column name becomes a reference; a number stays a bare literal. Anything
@@ -333,7 +342,6 @@ def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
 def _overdue_date(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "calculated", "guard"}, context)
     calculated = _bool(spec, "calculated", context, default=False)
     value = _calculated_scalar("Date") if calculated else "@currentField"
     guard = spec.get("guard")
@@ -341,7 +349,7 @@ def _overdue_date(
     if guard is not None:
         if not isinstance(guard, dict):
             raise _fail(context, "overdue-date guard must be a mapping")
-        _reject_unknown_keys(guard, {"field", "not"}, f"{context}.guard")
+        _reject_unknown_keys(guard, _GUARD_KEYS, f"{context}.guard")
         field_name = _internal_name(
             guard.get("field"),
             context,
@@ -381,7 +389,98 @@ def _overdue_date(
     }
 
 
-_STYLES = ("severity", "pill", "data-bar", "trend", "overdue-date")
+type Expander = Callable[
+    [dict[str, Any], str, dict[str, StyleToken] | None], dict[str, Any],
+]
+
+
+@dataclass(frozen=True)
+class ValueMapRule:
+    """A `map:` of column value to token, and the column whose enum its keys must belong to."""
+
+    at: tuple[str, ...]      # () for the spec's own map, ("color_by",) for a nested one
+    source_key: str | None   # None: the styled column. Otherwise the key naming the source column.
+    code: FindingCode
+    label: str               # "map key" or "color_by map key", as the message spells it
+
+
+@dataclass(frozen=True)
+class ColumnRefRule:
+    """A spec value that must name a rendered column of the same list."""
+
+    at: tuple[str, ...]      # () or ("guard",)
+    key: str                 # "against" or "field"
+    code: FindingCode
+    message: str             # str.format template over {name!r} and {entity}
+
+
+@dataclass(frozen=True)
+class StyleSpec:
+    """Everything the validator needs to know about one style, beside its expander."""
+
+    expand: Expander
+    keys: frozenset[str]
+    nested_keys: dict[tuple[str, ...], frozenset[str]] = field(default_factory=dict)
+    calculated_type: str | None = None
+    literal_match: bool = False   # compares @currentField against quoted literals
+    value_maps: tuple[ValueMapRule, ...] = ()
+    column_refs: tuple[ColumnRefRule, ...] = ()
+
+
+#: severity and pill share one rule: the styled column's own map keys.
+_SEVERITY_MAP = ValueMapRule((), None, FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM, "map key")
+
+#: Every style there is. Insertion order is the order `expand_style` lists in
+#: its unknown-style message, so a style added here is offered to the author.
+STYLES: dict[str, StyleSpec] = {
+    "severity": StyleSpec(
+        expand=_severity,
+        keys=frozenset({"style", "map", "calculated", "icons"}),
+        calculated_type="calculated_text",
+        literal_match=True,
+        value_maps=(_SEVERITY_MAP,),
+    ),
+    "pill": StyleSpec(
+        expand=_pill,
+        keys=frozenset({"style", "map"}),
+        literal_match=True,
+        value_maps=(_SEVERITY_MAP,),
+    ),
+    "data-bar": StyleSpec(
+        expand=_data_bar,
+        keys=frozenset({"style", "max", "calculated", "color_by"}),
+        nested_keys={("color_by",): _COLOR_BY_KEYS},
+        calculated_type="calculated_number",
+        value_maps=(
+            ValueMapRule(
+                ("color_by",), "field", FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
+                "color_by map key",
+            ),
+        ),
+    ),
+    "trend": StyleSpec(
+        expand=_trend,
+        keys=frozenset({"style", "against"}),
+        column_refs=(
+            ColumnRefRule(
+                (), "against", FindingCode.TREND_AGAINST_NOT_RENDERED,
+                "trend 'against' references {name!r}, which is not a rendered column of {entity}.",
+            ),
+        ),
+    ),
+    "overdue-date": StyleSpec(
+        expand=_overdue_date,
+        keys=frozenset({"style", "calculated", "guard"}),
+        nested_keys={("guard",): _GUARD_KEYS},
+        calculated_type="calculated_date",
+        column_refs=(
+            ColumnRefRule(
+                ("guard",), "field", FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED,
+                "guard field {name!r} is not a rendered column of {entity}.",
+            ),
+        ),
+    ),
+}
 
 
 def expand_style(
@@ -391,17 +490,13 @@ def expand_style(
 ) -> dict[str, Any]:
     """Expand a declared style spec into plain SP column-formatting JSON."""
     style = spec.get("style")
-    if style == "severity":
-        return _severity(spec, context, theme)
-    if style == "pill":
-        return _pill(spec, context, theme)
-    if style == "data-bar":
-        return _data_bar(spec, context, theme)
-    if style == "trend":
-        return _trend(spec, context)
-    if style == "overdue-date":
-        return _overdue_date(spec, context, theme)
-    raise _fail(context, f"unknown style {style!r} (known: {list(_STYLES)})")
+    registered = STYLES.get(style) if isinstance(style, str) else None
+    if registered is None:
+        raise _fail(context, f"unknown style {style!r} (known: {list(STYLES)})")
+    # Hoisted from the five expanders, which each opened with it, so the same
+    # failure still wins.
+    _reject_unknown_keys(spec, registered.keys, context)
+    return registered.expand(spec, context, theme)
 
 
 def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:

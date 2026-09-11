@@ -1,15 +1,19 @@
 # test/test_styles.py
-import ast
 import copy
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from dbml_sharepoint.analysis import styles
-from dbml_sharepoint.analysis.styles import TOKENS, StyleToken, expand_style, parse_theme
+from dbml_sharepoint.analysis.styles import (
+    STYLES,
+    TOKENS,
+    StyleToken,
+    expand_style,
+    parse_theme,
+)
 
 
 def test_tokens_are_the_documented_severity_set() -> None:
@@ -275,50 +279,19 @@ def _field_refs(formatter: dict[str, Any]) -> list[str]:
     return refs
 
 
-#: The expander behind each `style:` name, so the accepted keys can be read out
-#: of the source instead of restated here and left to rot.
-_STYLE_EXPANDERS = {
-    "_severity": "severity",
-    "_pill": "pill",
-    "_data_bar": "data-bar",
-    "_trend": "trend",
-    "_overdue_date": "overdue-date",
-}
-
-
 def _accepted_keys() -> dict[str, dict[tuple[str, ...], set[str]]]:
-    """Every key each style accepts, per nested mapping, read from the
-    `_reject_unknown_keys` calls in `analysis/styles.py`.
+    """Every key each style accepts, per nested mapping, read from `STYLES`.
 
     Derived rather than listed so a key added to a style cannot escape the
     corpus below by nobody remembering to add it here.
     """
-    tree = ast.parse(Path(styles.__file__).read_text(encoding="utf-8"))
-    found: dict[str, dict[tuple[str, ...], set[str]]] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef) or node.name not in _STYLE_EXPANDERS:
-            continue
-        per_path: dict[tuple[str, ...], set[str]] = {}
-        for call in ast.walk(node):
-            if not isinstance(call, ast.Call):
-                continue
-            if not isinstance(call.func, ast.Name):
-                continue
-            if call.func.id != "_reject_unknown_keys":
-                continue
-            path: tuple[str, ...] = ()
-            context_arg = call.args[2]
-            if isinstance(context_arg, ast.JoinedStr):
-                # f"{context}.color_by" names the nested mapping it guards.
-                suffix = "".join(
-                    str(part.value)
-                    for part in context_arg.values
-                    if isinstance(part, ast.Constant)
-                )
-                path = tuple(suffix.strip(".").split("."))
-            per_path[path] = set(ast.literal_eval(call.args[1])) - {"style"}
-        found[_STYLE_EXPANDERS[node.name]] = per_path
-    return found
+    return {
+        name: {
+            (): set(spec.keys) - {"style"},
+            **{path: set(keys) for path, keys in spec.nested_keys.items()},
+        }
+        for name, spec in STYLES.items()
+    }
 
 
 #: One legitimate spec per style, the base every hostile substitution mutates.
@@ -363,8 +336,8 @@ def _hostile_corpus() -> list[tuple[str, dict[str, Any]]]:
 def test_the_hostile_corpus_covers_every_style_and_key() -> None:
     """The invariant below is only worth its runtime if the corpus is."""
     accepted = _accepted_keys()
-    assert set(accepted) == set(styles._STYLES)
-    assert set(_LEGITIMATE_SPECS) == set(styles._STYLES)
+    assert set(accepted) == set(STYLES)
+    assert set(_LEGITIMATE_SPECS) == set(STYLES)
     # The two styles with a nested mapping guard a second key set inside it.
     assert accepted["data-bar"][("color_by",)] == {"field", "map", "calculated"}
     assert accepted["overdue-date"][("guard",)] == {"field", "not"}
@@ -374,6 +347,26 @@ def test_the_hostile_corpus_covers_every_style_and_key() -> None:
         for keys in per_path.values()
     )
     assert len(_hostile_corpus()) == expected > len(_LEGITIMATE_SPECS)
+
+
+def test_the_registry_holds_the_key_sets_the_expanders_enforce() -> None:
+    """The same objects, not equal copies.
+
+    The registry publishes what the validator reads and the expanders enforce
+    what a mapping may declare, so two equal-but-separate frozensets would let
+    a key be added to one and not the other with every test still green.
+    """
+    assert STYLES["data-bar"].nested_keys[("color_by",)] is styles._COLOR_BY_KEYS
+    assert STYLES["overdue-date"].nested_keys[("guard",)] is styles._GUARD_KEYS
+
+
+@pytest.mark.parametrize("style_name", sorted(_LEGITIMATE_SPECS))
+def test_every_registered_style_expands_a_legitimate_spec(style_name: str) -> None:
+    """A registered style must expand, which is what makes the corpus above a
+    hostility test rather than a list of specs that all fail."""
+    out = expand_style(copy.deepcopy(_LEGITIMATE_SPECS[style_name]), "ctx")
+    assert isinstance(out, dict)
+    assert out["elmType"]
 
 
 def test_no_style_spec_can_emit_a_malformed_field_reference() -> None:
