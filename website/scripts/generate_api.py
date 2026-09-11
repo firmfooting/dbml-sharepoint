@@ -30,6 +30,7 @@ import re
 import shutil
 import sys
 from pathlib import Path, PurePath
+from types import FunctionType
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src"
@@ -270,12 +271,25 @@ def _type_str(annotation: object) -> str:
     return str(annotation)
 
 
+def _uses_generated_repr(cls: type) -> bool:
+    """True when a dataclass prints with the repr dataclasses wrote for it.
+
+    A hand-written `__repr__` is the class saying how it prints, and
+    `cli.ENTERPRISE_READER_DECLINED` has one naming the sentinel. Only the
+    generated repr is `reprlib.recursive_repr`-wrapped, which tells them apart.
+    """
+    return getattr(cls.__repr__, "__wrapped__", None) is not None
+
+
 def stable_repr(obj: object) -> str:
     """repr with set iteration order removed, at any depth.
 
     Sorting only top-level sets was not enough: a dict whose VALUES are
     frozensets fell through to plain repr, so the page differed between
-    processes and the docs looked stale on every other run.
+    processes and the docs looked stale on every other run. Dataclass
+    instances and functions are the same defect a level further in:
+    `analysis.styles.STYLES` holds both, and a plain repr published a
+    machine address beside an unsorted frozenset.
     """
     if isinstance(obj, (set, frozenset)):
         # An empty set has no brace form: repr(set()) is "set()", and
@@ -295,6 +309,22 @@ def stable_repr(obj: object) -> str:
         return "(" + inner + ("," if len(obj) == 1 else "") + ")"
     if isinstance(obj, list):
         return "[" + ", ".join(stable_repr(x) for x in obj) + "]"
+    if (
+        dataclasses.is_dataclass(obj)
+        and not isinstance(obj, type)
+        and _uses_generated_repr(type(obj))
+    ):
+        # A dataclass reprs its fields with plain repr, so a frozenset field
+        # reintroduced the iteration order this function exists to remove.
+        inner = ", ".join(
+            f"{f.name}={stable_repr(getattr(obj, f.name))}"
+            for f in dataclasses.fields(obj)
+            if f.repr
+        )
+        return f"{type(obj).__qualname__}({inner})"
+    if isinstance(obj, FunctionType):
+        # A function reprs with its address, which differs every process.
+        return f"<function {obj.__qualname__}>"
     return repr(obj)
 
 

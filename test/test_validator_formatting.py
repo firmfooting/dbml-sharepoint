@@ -1,6 +1,7 @@
 """Validator: column formatting."""
 from pathlib import Path
 
+import pytest
 from _findings import by_severity, messages, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
@@ -13,6 +14,7 @@ from _paths import FIXTURES
 from _validator_helpers import _project_errors, _project_inputs
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.styles import STYLES
 from dbml_sharepoint.analysis.validator import (
     validate,
     validate_against_mapping,
@@ -349,6 +351,112 @@ def test_a_color_by_map_on_a_generated_column_is_still_checked(
         Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
     )
     assert "'Bogus'" in finding.message
+
+
+#: The schema every counter-example below is declared against. One enum column
+#: for the two map rules to judge, a number for the bar and the trend, and a
+#: date for the overdue guard.
+_STYLED_SCHEMA = """
+    Enum rating {
+      "Low"
+      "High"
+    }
+    Table Risk {
+      Id int [pk, increment]
+      Title nvarchar [not null]
+      Rating rating
+      Score int
+      DueDate datetime
+    }
+"""
+
+#: One declaration per registered style that the style's own rules must refuse,
+#: as a (DBML, `column_formatting` fragment) pair. Each counter-example is the
+#: one the suite already fires that code with, so this table adds no code to the
+#: reachability roster and removes none.
+_BAD_DECLARATIONS: dict[str, tuple[str, str]] = {
+    "severity": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            Rating: { style: severity, map: { Bogus: good } }
+    """),
+    "pill": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            Rating: { style: pill, map: { Bogus: good } }
+    """),
+    "data-bar": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            Score:
+              { style: data-bar, max: 25,
+                color_by: { field: Rating, map: { Bogus: good } } }
+    """),
+    "trend": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            Score: { style: trend, against: Baseline }
+    """),
+    "overdue-date": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            DueDate:
+              { style: overdue-date, guard: { field: Stage, not: [Done] } }
+    """),
+}
+
+#: Every finding a style declaration can earn from the registry-driven block.
+_STYLE_RULE_CODES = frozenset({
+    FindingCode.STYLE_REQUIRES_CALCULATED,
+    FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
+    FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
+    FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
+    FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,
+    FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
+    FindingCode.TREND_AGAINST_NOT_RENDERED,
+    FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED,
+})
+
+
+def test_every_registered_style_has_a_counter_example() -> None:
+    """This is the assertion that fails the moment a sixth style is registered.
+
+    Registering a style is what makes the validator judge it, so a style with
+    no declaration anybody has watched a rule refuse is a style whose rules are
+    asserted rather than measured.
+    """
+    assert set(_BAD_DECLARATIONS) == set(STYLES)
+
+
+def test_the_style_rule_roster_names_every_rule_the_registry_carries() -> None:
+    """The roster below is the oracle, so it has to cover what it judges."""
+    registered = {rule.code for spec in STYLES.values() for rule in spec.value_maps}
+    registered |= {rule.code for spec in STYLES.values() for rule in spec.column_refs}
+    assert registered <= _STYLE_RULE_CODES
+
+
+@pytest.mark.parametrize("style_name", sorted(STYLES))
+def test_a_bad_declaration_of_every_style_is_refused(
+    style_name: str, tmp_path: Path,
+) -> None:
+    """Every registered style has at least one rule that fires on it.
+
+    The registry decides which rules run, so a style entered with none attached
+    is validated by nothing at all, and the build, the deploy and the rendered
+    page each stay silent about it.
+    """
+    dbml, formatting = _BAD_DECLARATIONS[style_name]
+    schema, bundle = pack(
+        tmp_path, dbml=dbml, mapping=blocks(entities("Risk"), formatting),
+    )
+    (styled,) = bundle.mapping.column_style_specs["Risk"]
+    at = Location(Section.COLUMN_FORMATTING, entity="Risk", column=styled)
+    fired = [
+        finding
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.code in _STYLE_RULE_CODES and finding.location == at
+    ]
+    assert fired, f"no style rule fired on the {style_name} declaration"
 
 
 def test_view_formatting_field_refs_validated() -> None:

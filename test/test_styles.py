@@ -1,7 +1,9 @@
 # test/test_styles.py
+import ast
 import copy
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -347,6 +349,48 @@ def test_the_hostile_corpus_covers_every_style_and_key() -> None:
         for keys in per_path.values()
     )
     assert len(_hostile_corpus()) == expected > len(_LEGITIMATE_SPECS)
+
+
+def _style_literals(source: str) -> set[str]:
+    """Every registered style name one module's source spells as a literal.
+
+    f-strings are covered too: an `ast.JoinedStr` holds its fixed text as
+    `ast.Constant` nodes, which `ast.walk` reaches like any other.
+    """
+    spelled = {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    return spelled & set(STYLES)
+
+
+def test_no_check_module_names_a_registered_style() -> None:
+    """`styles.py` owns the vocabulary, so no rule may re-spell it.
+
+    The checks used to test `style == "data-bar"` and index a
+    `calculated_type_for_style` dict of their own, so a sixth style expanded
+    and deployed with no validation and nothing said so.
+    """
+    checks = Path(styles.__file__).parent / "checks"
+    offenders = {
+        module.name: sorted(named)
+        for module in sorted(checks.glob("*.py"))
+        if (named := _style_literals(module.read_text(encoding="utf-8")))
+    }
+    assert offenders == {}
+
+
+def test_the_style_literal_scan_reports_a_seeded_literal_and_only_that() -> None:
+    """The gate's proof, over a seeded source rather than a live edit.
+
+    A scan that never reports anything is worth nothing, and running it only
+    against a clean `checks/` cannot tell a working walk from a broken one.
+    """
+    seeded = 'def check(vc):\n    if style == "trend":\n        return []\n'
+    clean = 'def check(vc):\n    if style == "sparkline":\n        return []\n'
+    assert _style_literals(seeded) == {"trend"}
+    assert _style_literals(clean) == set()
 
 
 def test_the_registry_holds_the_key_sets_the_expanders_enforce() -> None:
