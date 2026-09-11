@@ -1,6 +1,8 @@
 # src/dbml_sharepoint/analysis/checks/_formatting.py
 """Column formatting, style specs, and form formatting."""
 
+from typing import Any
+
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.clock_cells import cell_for, sentinel_of
 from dbml_sharepoint.analysis.column_projection import effective_column_types
@@ -23,6 +25,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
     undeployable,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
+from dbml_sharepoint.analysis.styles import STYLES
 from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 from dbml_sharepoint.model.mapping_types import MappingBundle
 
@@ -36,6 +39,16 @@ def _as_sharepoint_receives(
     measured here is the length SharePoint sees."""
     names = {internal: bundle.mapping.display_name_for(entity_name, internal) for internal in types}
     return rewrite_formula_refs(f"={rendered}", names)
+
+
+def _nested(spec: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | None:
+    """The mapping a style rule points into, or None when the spec has no such block."""
+    node: object = spec
+    for step in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(step)
+    return node if isinstance(node, dict) else None
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -113,12 +126,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                 Section.COLUMN_FORMATTING, entity=entity_name, column=col_name,
             )
             style = spec.get("style")
-            style_name = style if isinstance(style, str) else ""
-            calculated_type_for_style = {
-                "severity": "calculated_text",
-                "data-bar": "calculated_number",
-                "overdue-date": "calculated_date",
-            }.get(style_name)
+            registered = STYLES.get(style) if isinstance(style, str) else None
+            if registered is None:
+                # The loader expands every declared spec, so an unregistered
+                # style never reaches a bundle here.
+                continue
             target_type = types_by_col.get(col_name)
             # Both rules interpolate the COLUMN's type, so one with no
             # effective type would print "expects calculated_text, not None".
@@ -126,10 +138,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             # cross-site case. The pair is guarded rather than the column
             # skipped, because the trend, guard and color_by checks below
             # judge OTHER columns.
-            if target_type is not None:
+            if target_type is not None and registered.calculated_type is not None:
                 if (
-                    calculated_type_for_style is not None
-                    and target_type == calculated_type_for_style
+                    target_type == registered.calculated_type
                     and spec.get("calculated") is not True
                 ):
                     findings.append(Finding(
@@ -140,123 +151,118 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 elif (
                     spec.get("calculated") is True
-                    and calculated_type_for_style is not None
-                    and target_type != calculated_type_for_style
+                    and target_type != registered.calculated_type
                 ):
                     findings.append(Finding(
                         FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
                         f"{ctx}: calculated: true on {style} expects "
-                        f"{calculated_type_for_style}, not {target_type}.",
+                        f"{registered.calculated_type}, not {target_type}.",
                         location=at,
                     ))
-            if style in ("severity", "pill") and is_multi_value(
-                types_by_col.get(col_name, ""),
-            ):
-                # WATCHED ON A TENANT, and the sharper half of this rule is
-                # what was seen rather than what was predicted.
-                #
-                # The prediction from reading `styles._condition` was that
-                # `@currentField == 'View'` against an array is false in every
-                # branch and the cell renders unstyled -- the boolean case
-                # above, exactly. Probe run 3 on 2026-08-10 looked at the
-                # rendered page: the =if chain matches nothing, falls through
-                # to its `muted` fallback, and fills the cell FLAT GREY on
-                # every row.
-                #
-                # That is why this is an error and why it is not called
-                # "matches nothing". An unstyled cell reads as a gap. A
-                # uniform neutral fill reads as a verdict, on a template whose
-                # whole product is a capability matrix scanned at a glance,
-                # and an operator has no way to tell that the formatter never
-                # understood the value. Nothing in the build or the deploy can
-                # see it either: the JSON saves, reads back byte-identical and
-                # passes every phase.
-                #
-                # Both chip styles from one measurement, and the second is not
-                # an assertion about SharePoint -- `_severity` and `_pill`
-                # build the same `_if_chain` over the same `_condition` and
-                # both fall back to `muted`, which is readable here.
-                #
-                # @currentField on a multi-value field IS an array -- `length`
-                # counts its members, `join` concatenates them, `forEach`
-                # iterates them -- so an array-aware formatter is possible.
-                # None is offered until somebody has watched one render.
-                # https://learn.microsoft.com/sharepoint/dev/declarative-customization/column-formatting
-                findings.append(Finding(
-                    FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
-                    f"{ctx}: {style} on a multi-value column paints a neutral "
-                    f"fill on every row. The style compares @currentField "
-                    f"against quoted strings and a multi-value field is an "
-                    f"array, so no branch matches and every cell takes the "
-                    f"fallback -- measured on a live site, that is a filled "
-                    f"grey cell, which reads as a verdict rather than as a "
-                    f"gap. Nothing in the build or the deploy can see it. "
-                    f"Write a formatter built on join() or forEach over the "
-                    f"array, or style a scalar column beside this one.",
-                    location=at,
-                ))
-            elif style in ("severity", "pill") and is_boolean(
-                types_by_col.get(col_name),
-            ):
-                # Both styles compare @currentField against QUOTED strings.
-                # A SharePoint Yes/No column is a boolean, so every branch
-                # of the generated =if chain is false and the cell renders
-                # unstyled (no error in the build, the deploy or the
-                # console). Found by the stakeholder-contacts uplift, which
-                # wanted a chip on IsActive and got nothing.
-                findings.append(Finding(
-                    FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
-                    f"{ctx}: {style} on a Yes/No column matches nothing. The style "
-                    f"compares against quoted strings and a boolean is not one, so "
-                    f"every branch is false and the cell renders unstyled -- silently. "
-                    f"Use a bespoke formatter testing the value's truthiness.",
-                    location=at,
-                ))
-            elif style in ("severity", "pill"):
-                members = style_enum_members.get(types_by_col.get(col_name, ""))
-                if members is not None:
-                    for unknown in sorted(set(spec.get("map", {})) - members):
-                        findings.append(Finding(
-                            FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,
-                            f"{ctx}: map key {unknown!r} is not a member of "
-                            f"enum {types_by_col[col_name]!r}.",
-                            location=at,
-                        ))
-            if style == "data-bar":
-                # color_by's [$field] existence is already covered by the
-                # formatter_field_refs check on the expanded output; here we
-                # mirror the severity rule for the TRANSLATION map when the
-                # source column is enum-typed.
-                color_by = spec.get("color_by")
-                if isinstance(color_by, dict):
-                    cfield = color_by.get("field")
-                    if isinstance(cfield, str) and cfield:
-                        members = style_enum_members.get(types_by_col.get(cfield, ""))
-                        if members is not None:
-                            for unknown in sorted(set(color_by.get("map", {})) - members):
-                                findings.append(Finding(
-                                    FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
-                                    f"{ctx}: color_by map key {unknown!r} is not "
-                                    f"a member of enum {types_by_col[cfield]!r}.",
-                                    location=at,
-                                ))
-            if style == "trend":
-                against = spec.get("against")
-                if isinstance(against, str) and against not in rendered:
+            # A style that compares @currentField against quoted literals can be
+            # defeated by the styled column's own kind, before any key is read.
+            refused = False
+            if registered.literal_match:
+                if is_multi_value(types_by_col.get(col_name, "")):
+                    # WATCHED ON A TENANT, and the sharper half of this rule is
+                    # what was seen rather than what was predicted.
+                    #
+                    # The prediction from reading `styles._condition` was that
+                    # `@currentField == 'View'` against an array is false in every
+                    # branch and the cell renders unstyled -- the boolean case
+                    # above, exactly. Probe run 3 on 2026-08-10 looked at the
+                    # rendered page: the =if chain matches nothing, falls through
+                    # to its `muted` fallback, and fills the cell FLAT GREY on
+                    # every row.
+                    #
+                    # That is why this is an error and why it is not called
+                    # "matches nothing". An unstyled cell reads as a gap. A
+                    # uniform neutral fill reads as a verdict, on a template whose
+                    # whole product is a capability matrix scanned at a glance,
+                    # and an operator has no way to tell that the formatter never
+                    # understood the value. Nothing in the build or the deploy can
+                    # see it either: the JSON saves, reads back byte-identical and
+                    # passes every phase.
+                    #
+                    # Both chip styles from one measurement, and the second is not
+                    # an assertion about SharePoint -- `_severity` and `_pill`
+                    # build the same `_if_chain` over the same `_condition` and
+                    # both fall back to `muted`, which is readable here.
+                    #
+                    # @currentField on a multi-value field IS an array -- `length`
+                    # counts its members, `join` concatenates them, `forEach`
+                    # iterates them -- so an array-aware formatter is possible.
+                    # None is offered until somebody has watched one render.
+                    # https://learn.microsoft.com/sharepoint/dev/declarative-customization/column-formatting
                     findings.append(Finding(
-                        FindingCode.TREND_AGAINST_NOT_RENDERED,
-                        f"{ctx}: trend 'against' references {against!r}, "
-                        f"which is not a rendered column of {entity_name}.",
+                        FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
+                        f"{ctx}: {style} on a multi-value column paints a neutral "
+                        f"fill on every row. The style compares @currentField "
+                        f"against quoted strings and a multi-value field is an "
+                        f"array, so no branch matches and every cell takes the "
+                        f"fallback -- measured on a live site, that is a filled "
+                        f"grey cell, which reads as a verdict rather than as a "
+                        f"gap. Nothing in the build or the deploy can see it. "
+                        f"Write a formatter built on join() or forEach over the "
+                        f"array, or style a scalar column beside this one.",
                         location=at,
                     ))
-            if style == "overdue-date":
-                guard = spec.get("guard") or {}
-                gfield = guard.get("field") if isinstance(guard, dict) else None
-                if gfield and gfield not in rendered:
+                    refused = True
+                elif is_boolean(types_by_col.get(col_name)):
+                    # Both styles compare @currentField against QUOTED strings.
+                    # A SharePoint Yes/No column is a boolean, so every branch
+                    # of the generated =if chain is false and the cell renders
+                    # unstyled (no error in the build, the deploy or the
+                    # console). Found by the stakeholder-contacts uplift, which
+                    # wanted a chip on IsActive and got nothing.
                     findings.append(Finding(
-                        FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED,
-                        f"{ctx}: guard field {gfield!r} is not a rendered "
-                        f"column of {entity_name}.",
+                        FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
+                        f"{ctx}: {style} on a Yes/No column matches nothing. The style "
+                        f"compares against quoted strings and a boolean is not one, so "
+                        f"every branch is false and the cell renders unstyled -- silently. "
+                        f"Use a bespoke formatter testing the value's truthiness.",
+                        location=at,
+                    ))
+                    refused = True
+            # color_by's [$field] existence is already covered by the
+            # formatter_field_refs check on the expanded output; here we
+            # mirror the severity rule for the TRANSLATION map when the
+            # source column is enum-typed.
+            for map_rule in registered.value_maps:
+                # A column whose kind defeats every comparison is not also told
+                # about its map keys, which is what the refusals above chained.
+                if map_rule.source_key is None and refused:
+                    continue
+                block = _nested(spec, map_rule.at)
+                if block is None:
+                    continue
+                if map_rule.source_key is None:
+                    source = col_name
+                else:
+                    named = block.get(map_rule.source_key)
+                    if not isinstance(named, str) or not named:
+                        continue
+                    source = named
+                members = style_enum_members.get(types_by_col.get(source, ""))
+                if members is None:
+                    continue
+                for unknown in sorted(set(block.get("map", {})) - members):
+                    findings.append(Finding(
+                        map_rule.code,
+                        f"{ctx}: {map_rule.label} {unknown!r} is not a member of "
+                        f"enum {types_by_col[source]!r}.",
+                        location=at,
+                    ))
+            for ref_rule in registered.column_refs:
+                block = _nested(spec, ref_rule.at)
+                if block is None:
+                    continue
+                named = block.get(ref_rule.key)
+                if isinstance(named, str) and named not in rendered:
+                    findings.append(Finding(
+                        ref_rule.code,
+                        f"{ctx}: "
+                        + ref_rule.message.format(name=named, entity=entity_name),
                         location=at,
                     ))
 
