@@ -10,7 +10,10 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES
 
-from dbml_sharepoint.analysis.checks._structure import _formula_operands
+from dbml_sharepoint.analysis.checks._structure import (
+    _calculated_formula,
+    _formula_operands,
+)
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.analysis.validator import (
@@ -80,6 +83,15 @@ def test_calculated_column_without_formula_is_error() -> None:
     assert f.severity == "error"
     # No location on this one, so the column has to reach the reader in prose.
     assert "Risk.RiskScore" in f.message
+
+def test_a_calculated_column_without_a_formula_is_reported_by_the_helper_alone() -> None:
+    """`_calculated_formula` takes its formula directly, so this branch can
+    now be exercised without building a ValidationContext or a mapping
+    bundle, which is what the signature change was for."""
+    table = make_table("Risk", make_column("Score", "calculated_number"))
+    col = table.columns[-1]
+    findings = _calculated_formula(table, col, None, set(), {}, {})
+    only(findings, FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA)
 
 def test_orphan_calculated_formula_is_error() -> None:
     schema, bundle = _calc_inputs()

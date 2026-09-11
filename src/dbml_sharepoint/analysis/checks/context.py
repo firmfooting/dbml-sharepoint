@@ -14,7 +14,8 @@ tested one at a time.
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.list_description import family_for
+from dbml_sharepoint.analysis.lookups import lookup_display_columns, lookup_target_entities
 from dbml_sharepoint.analysis.reporting.plan import (
     VALIDATION_TIME_ZONE,
     ListPlan,
@@ -44,6 +45,9 @@ class ValidationContext:
 
     schema: Schema
     bundle: MappingBundle
+    # The family the emitter stamps into every list Description, resolved
+    # once from the same helper `generators.jsgen` uses.
+    family: str = ""
     table_names: set[str] = field(default_factory=set)
     tables_by_name: dict[str, Table] = field(default_factory=dict)
     enum_by_name: dict[str, EnumDef] = field(default_factory=dict)
@@ -55,6 +59,10 @@ class ValidationContext:
     # column cross-site?" need the pair: a cross-site ref and a real lookup can
     # both point out of the same entity, and only the first is exempt.
     cross_site_pairs: set[tuple[str, str]] = field(default_factory=set)
+    # The entities a real Lookup points at, built here so every check reads
+    # one value. A second derivation once told a list reached only by a
+    # cross-site ref, which has no picker, that its picker would stop working.
+    lookup_targets: set[str] = field(default_factory=set)
     # {entity: calculated column names}. Derived once here rather than in
     # each check, so no two of them can disagree about what "calculated"
     # means, which is the whole point of this object.
@@ -101,6 +109,8 @@ class ValidationContext:
         for xref in bundle.mapping.cross_site_reference_columns:
             cross_site_by_entity.setdefault(xref.entity, set()).add(xref.column)
             cross_site_pairs.add((xref.entity, xref.column))
+        lookup_targets = lookup_target_entities(schema, cross_site_pairs)
+        family = family_for(schema)
         enum_names = {e.name for e in schema.enums}
         index_targets_by_entity = {
             table.name: [
@@ -171,6 +181,7 @@ class ValidationContext:
         return cls(
             schema=schema,
             bundle=bundle,
+            family=family,
             table_names={t.name for t in schema.tables},
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
@@ -179,6 +190,7 @@ class ValidationContext:
             },
             cross_site_by_entity=cross_site_by_entity,
             cross_site_pairs=cross_site_pairs,
+            lookup_targets=lookup_targets,
             calculated_by_entity=calculated_by_entity,
             projected_by_entity=projected_by_entity,
             index_targets_by_entity=index_targets_by_entity,

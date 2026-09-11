@@ -18,11 +18,7 @@ from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
     MAX_ROLE_DEFINITION_DESCRIPTION,
 )
-from dbml_sharepoint.analysis.list_description import (
-    DESCRIPTION_LIMIT,
-    family_for,
-    marker_for,
-)
+from dbml_sharepoint.analysis.list_description import DESCRIPTION_LIMIT, marker_for
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 
 #: Refused inside every interpolated name. The terminator occurring once, at
@@ -101,7 +97,7 @@ def _marker_over_ceiling(vc: ValidationContext) -> Iterator[Finding]:
     passes `len("") > budget` and generation emits a marker over the ceiling,
     which SharePoint refuses part-way through phase 1.3.
     """
-    family = family_for(vc.schema)
+    family = vc.family
     for entity_name in vc.bundle.mapping.entities:
         marker = marker_for(family, entity_name)
         if len(marker) > DESCRIPTION_LIMIT:
