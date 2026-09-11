@@ -2,7 +2,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -638,6 +638,40 @@ def test_hyperlink_emits_field_url_display_format() -> None:
         "__metadata": {"type": "SP.FieldUrl"},
         "DisplayFormat": 0,
     }
+
+
+def test_meta_type_names_the_kind_it_cannot_map() -> None:
+    """A field kind absent from ENTITY_TYPE_BY_KIND must name itself and the
+    map to fix in its error, rather than raising a bare KeyError that leaves
+    the caller to work out which kind and which map were involved.
+    """
+    from dbml_sharepoint.analysis.typemap import FieldKind
+    from dbml_sharepoint.generators.jsgen import _meta_type
+
+    with pytest.raises(ValueError, match="ENTITY_TYPE_BY_KIND") as excinfo:
+        _meta_type(cast("FieldKind", "Bogus"))
+    assert "'Bogus'" in str(excinfo.value)
+
+
+def test_field_body_refuses_a_kind_the_match_does_not_know(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """mypy is the real gate that keeps `match sp.kind` exhaustive; this pins
+    the runtime shape of its default arm so a later refactor cannot turn
+    `assert_never` into a silent fall-through that drops the field's body.
+    """
+    from dataclasses import replace
+
+    from dbml_sharepoint.analysis.typemap import FieldKind, map_column
+    from dbml_sharepoint.generators import jsgen
+
+    col = Column(name="Whatever", type="nvarchar")
+    bogus = replace(map_column(col, set()), kind=cast("FieldKind", "Bogus"))
+    monkeypatch.setattr(jsgen, "_meta_type", lambda kind: "SP.FieldText")
+    monkeypatch.setattr(jsgen, "map_column", lambda col, enum_names: bogus)
+
+    with pytest.raises(AssertionError):
+        jsgen._field_body(col, {}, "APP_")
 
 
 def test_declared_defaults_are_reconciled_on_existing_fields() -> None:

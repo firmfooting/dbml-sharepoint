@@ -4,7 +4,7 @@
 import json
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, assert_never
 
 from dbml_sharepoint.analysis.column_projection import (
     SYSTEM_COLUMN_TYPES,
@@ -49,6 +49,7 @@ from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     ENTITY_TYPE_BY_KIND,
     TOTAL_FUNCTIONS,
+    FieldKind,
     format_description,
     map_column,
 )
@@ -1200,6 +1201,10 @@ def _field_body(
             # calculated column before generation runs.
             body["OutputType"] = sp.output_type
             body["Formula"] = (formulas or {}).get(sp.name, "")
+        case _:
+            # A new FieldKind member with no arm here fails mypy at check
+            # time, before it can reach a deploy script with no type body.
+            assert_never(sp.kind)
 
     return {"title": sp.name, "body": body}
 
@@ -1216,5 +1221,12 @@ def _bool_default_to_sp(value: str | int | bool) -> str:
     return "1" if value else "0"
 
 
-def _meta_type(kind: str) -> str:
-    return ENTITY_TYPE_BY_KIND[kind]
+def _meta_type(kind: FieldKind) -> str:
+    """The `__metadata.type` for a create body of this field kind."""
+    entity_type = ENTITY_TYPE_BY_KIND.get(kind)
+    if entity_type is None:
+        raise ValueError(
+            f"field kind {kind!r} has no SP.Field entity type in ENTITY_TYPE_BY_KIND; "
+            "add it beside FIELD_TYPE_KIND_BY_KIND in analysis/typemap.py",
+        )
+    return entity_type
