@@ -1730,7 +1730,9 @@ column_validation:
       # A running total only ever grows, so a negative number is a typo.
       MinutesSpent:
         when:
-          - { field: MinutesSpent, op: geq, value: 0 }
+          any_of:
+            - { field: MinutesSpent, op: is_null }
+            - { field: MinutesSpent, op: geq, value: 0 }
         message: "Minutes spent cannot be negative. Enter the running total of whole minutes spent on the request so far."
   Risk:
     columns:

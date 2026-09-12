@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _ratchet import Ratchet
 
 import dbml_sharepoint
 from dbml_sharepoint.analysis import clock_cells
@@ -50,6 +51,11 @@ SPELLINGS = {"today": ("today",), "today_offset": ("today+3", "today-1"), "now":
 #: Cells the renderer emits without a live observation behind them. A
 #: ratchet: an entry needs a reason, nothing measured may appear here, and
 #: an entry leaves when a probe or the verification artifact observes it.
+#:
+#: THE ONE RATCHET THAT CANNOT BE DRAINED FROM INSIDE THIS REPOSITORY. Every
+#: other one closed on 2026-09-12; these four need a live site, and two of them
+#: are relied on by shipped views. Tracked by #529, which says what a probe has
+#: to answer per cell.
 EMITTED_WITHOUT_EVIDENCE = {
     "validation/date/today_offset": (
         "the shifted form `[D]-N<=[Modified]` has never been saved live; only "
@@ -155,8 +161,20 @@ def test_renderings_are_declared_for_every_spelling_the_test_renders() -> None:
 
 
 def test_unmeasured_cells_are_on_the_ratchet_and_nothing_measured_is() -> None:
+    """The universe is every cell, so an entry naming a cell the table no
+    longer has is reported as the dead line it is rather than as a measurement
+    that arrived."""
     unmeasured = {cell.id for cell in CELLS if cell.status == "unmeasured"}
-    assert unmeasured == set(EMITTED_WITHOUT_EVIDENCE)
+    Ratchet(
+        name="EMITTED_WITHOUT_EVIDENCE",
+        subject="clock cell",
+        resolved="now measured",
+        violation="they are emitted with no live observation behind them",
+    ).check(
+        recorded=EMITTED_WITHOUT_EVIDENCE,
+        violating=unmeasured,
+        universe={cell.id for cell in CELLS},
+    )
     for cell_id, reason in EMITTED_WITHOUT_EVIDENCE.items():
         assert reason.strip(), cell_id
         assert cell_for(*reversed(cell_id.split("/"))).status == "unmeasured"

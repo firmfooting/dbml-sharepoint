@@ -15,6 +15,7 @@ from dbml_sharepoint.analysis.checks._structure import (
     _formula_operands,
 )
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import MAX_CALCULATED_FORMULA
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.analysis.validator import (
     validate,
@@ -158,16 +159,53 @@ def test_calculated_formula_must_start_with_equals() -> None:
     assert f.severity == "error"
     assert "Risk.RiskScore" in f.message
 
+def _formula_of_length(total: int) -> str:
+    """A syntactically valid formula of exactly `total` characters.
+
+    Built from the constant rather than counted by hand, so both boundary
+    tests move with `MAX_CALCULATED_FORMULA` instead of silently testing the
+    wrong side of it the day the limit changes.
+    """
+    formula = "=1" + "+1" * ((total - 2) // 2)
+    if len(formula) < total:
+        formula += "+1"[: total - len(formula)]
+    assert len(formula) == total, (len(formula), total)
+    return formula
+
+
 def test_calculated_formula_over_sp_limit_is_error() -> None:
     schema, bundle = _calc_inputs()
-    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=" + "1+" * 600 + "1"
+    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = _formula_of_length(
+        MAX_CALCULATED_FORMULA + 1,
+    )
     f = only(
         validate_against_mapping(schema, bundle),
         FindingCode.CALCULATED_FORMULA_TOO_LONG,
     )
     assert f.severity == "error"
     # The limit the author has to get under.
-    assert "1024" in f.message
+    assert str(MAX_CALCULATED_FORMULA) in f.message
+
+
+def test_calculated_formula_at_the_sp_limit_is_accepted() -> None:
+    """The other side of the boundary.
+
+    `MAX_CALCULATED_FORMULA` is the last ACCEPTED length, so the check is
+    `> MAX_CALCULATED_FORMULA` and never `>=`. Without this, any tighter cap
+    is indistinguishable from the declared one, which is the corollary in
+    AGENTS.md about a rule never being stronger than what the reference
+    satisfies. The constant is itself conservative (see its comment in
+    `analysis/limits.py`), which makes an accidental tightening below it
+    easier to ship and harder to notice.
+    """
+    schema, bundle = _calc_inputs()
+    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = _formula_of_length(
+        MAX_CALCULATED_FORMULA,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_TOO_LONG,
+    )
 
 def test_calculated_formula_unknown_column_reference_is_error() -> None:
     """SharePoint validates a formula's [Column] references when the field is

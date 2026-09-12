@@ -95,7 +95,7 @@ def test_normalisation_refusal_carries_source_coordinates() -> None:
 
 def test_refusal_kind_mapping_is_exact_and_exhaustive() -> None:
     from dbml_sharepoint.analysis.condition_rendering import ConditionRefusalKind
-    from dbml_sharepoint.analysis.conditions import _REFUSAL_FINDING_CODES
+    from dbml_sharepoint.analysis.conditions import REFUSAL_FINDING_CODES
 
     expected = {
         "COLUMN_TYPE_UNKNOWN": FindingCode.CONDITION_COLUMN_TYPE_UNKNOWN,
@@ -142,8 +142,8 @@ def test_refusal_kind_mapping_is_exact_and_exhaustive() -> None:
         "MULTI_VALUE_OPERAND_UNSUPPORTED": FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED,
         "MULTI_VALUE_SET_EQUALITY_UNSUPPORTED": FindingCode.MULTI_VALUE_SET_EQUALITY_UNSUPPORTED,
     }
-    assert set(_REFUSAL_FINDING_CODES) == set(ConditionRefusalKind)
-    assert {kind.name: code for kind, code in _REFUSAL_FINDING_CODES.items()} == expected
+    assert set(REFUSAL_FINDING_CODES) == set(ConditionRefusalKind)
+    assert {kind.name: code for kind, code in REFUSAL_FINDING_CODES.items()} == expected
 
 
 @pytest.mark.parametrize(

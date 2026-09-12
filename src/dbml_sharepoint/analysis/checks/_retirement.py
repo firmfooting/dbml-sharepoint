@@ -27,28 +27,18 @@ from dbml_sharepoint.analysis.save_rules import (
 )
 from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition
 
-#: Shipped families that carry an unguarded comparison on a nullable column,
-#: measured 2026-09-06 over every family in `solutions/`. Grandfathered so the
-#: rule can refuse NEW instances without the library-wide sweep that issue #156
-#: reserves for one change with one argument. A ratchet: entries only come out,
-#: and `test_validator_retirement.py` pins this set to exactly the shipped
-#: violations, so a new one in a shipped family fails the suite even though the
-#: validator would let it build.
+#: Shipped families carrying an unguarded comparison on a nullable column.
+#: EMPTY since 2026-09-12: the eight measured on 2026-09-06 were all numeric,
+#: and all eight took the blank arm in one change, which is the sweep issue
+#: #156 reserved. Kept as an empty ratchet rather than deleted, because the
+#: exemption is what lets a future measurement land without the rule having to
+#: be switched off while it does.
 #:
 #: Keyed on entity and column rather than on the family, because the validator
-#: never sees which family it is building. An author's own mapping that reuses
-#: one of these pairs for the same shape of rule is silenced with it, which is
-#: the price of not editing thirteen shipped mappings from inside this change.
-GRANDFATHERED_BLANK_ARMS: frozenset[tuple[str, str]] = frozenset({
-    ("Asset", "PurchaseCost"),
-    ("Contract", "AnnualValue"),
-    ("Contract", "NoticePeriodDays"),
-    ("GiftBenefit", "EstimatedValue"),
-    ("ServiceRequest", "MinutesSpent"),
-    ("Submission", "AmountAwarded"),
-    ("Submission", "AmountSought"),
-    ("Trip", "OdoEnd"),
-})
+#: never sees which family it is building. An author's own mapping reusing one
+#: of these pairs would be silenced with it, which is why it stays empty unless
+#: something is measured into it.
+GRANDFATHERED_BLANK_ARMS: frozenset[tuple[str, str]] = frozenset()
 
 
 def _blank_arm(

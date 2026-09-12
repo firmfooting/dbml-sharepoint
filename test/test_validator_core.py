@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.group_description import (
     description_budget,
 )
 from dbml_sharepoint.analysis.limits import (
+    MAX_DISPLAY_TITLE,
     MAX_GROUP_DESCRIPTION,
     MAX_INTERNAL_NAME,
     MAX_LIST_INDEXES,
@@ -2578,7 +2579,7 @@ def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:
 
 
 def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
-    """SharePoint caps a column's display title at 255 characters.
+    """SharePoint caps a column's display title at `MAX_DISPLAY_TITLE`.
 
     DOCUMENTED, not inferred. `Field element (Field)` on Microsoft Learn --
     which lists SharePoint Online among the products it applies to -- says of
@@ -2601,7 +2602,7 @@ def test_a_display_name_override_longer_than_the_sp_limit_is_an_error() -> None:
             # The whole display-name check is gated on a mode being declared,
             # so a bundle without one skips it and the override is never read.
             display_name_mode="title-case",
-            display_name_overrides={"Risk": {"Owner": "T" * 256}},
+            display_name_overrides={"Risk": {"Owner": "T" * (MAX_DISPLAY_TITLE + 1)}},
         ),
     )
 
@@ -2710,7 +2711,8 @@ def test_a_display_name_override_on_a_projected_field_is_accepted() -> None:
 
 
 def test_a_display_name_override_at_the_sp_limit_is_accepted() -> None:
-    """Exactly 255 characters is legal, so the rule must not reject it.
+    """Exactly `MAX_DISPLAY_TITLE` characters is legal, so the rule must not
+    reject it.
 
     The other side of the boundary, and the half that AGENTS.md's "an enforced
     rule must never be stronger than what the reference implementation actually
@@ -2724,7 +2726,7 @@ def test_a_display_name_override_at_the_sp_limit_is_accepted() -> None:
         make_bundle(
             entities=["Risk"],
             display_name_mode="title-case",
-            display_name_overrides={"Risk": {"Owner": "T" * 255}},
+            display_name_overrides={"Risk": {"Owner": "T" * MAX_DISPLAY_TITLE}},
         ),
     )
 

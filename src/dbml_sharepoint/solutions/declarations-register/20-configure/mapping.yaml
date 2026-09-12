@@ -474,7 +474,9 @@ column_validation:
         message: "An offer cannot have been made in the future. Use the date it was actually offered."
       EstimatedValue:
         when:
-          - { field: EstimatedValue, op: geq, value: 0 }
+          any_of:
+            - { field: EstimatedValue, op: is_null }
+            - { field: EstimatedValue, op: geq, value: 0 }
         message: "Estimated value cannot be negative. It is a best estimate of what the gift or benefit is worth, not what it cost us."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
