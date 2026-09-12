@@ -83,6 +83,20 @@ dev = [
 
 [tool.uv]
 default-groups = ["dev"]
+# The cooldown Renovate cannot enforce. `minimumReleaseAge` in renovate.json
+# holds a DECLARED dependency back for 14 days, but lock file maintenance is
+# delegated to the package manager, so a regenerated uv.lock can pull a
+# TRANSITIVE dependency published minutes ago and the automerge rule merges it.
+# Renovate passes a cutoff to npm and Poetry and has none for uv
+# (renovatebot/renovate#41652), so uv enforces its own, and the uv docs say to
+# hold the two equal.
+#
+# A relative span, not a date: uv records `exclude-newer-span = "P14D"` in the
+# lock rather than a resolved timestamp, so the window rolls and the lock does
+# not churn. MEASURED on uv 0.12.5, 2026-09-12: `uv lock --check` passes
+# immediately after regenerating, and no package version moved, because
+# everything locked today is already older than the window.
+exclude-newer = "14 days"
 
 [tool.ruff]
 line-length = 100
