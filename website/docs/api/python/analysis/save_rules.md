@@ -52,6 +52,12 @@ Sydney", at 10:57 local, with the server clock correct:
   and saved. Not yet observed: grid view refusing tomorrow, and the bulk
   Edit pane. SharePoint reads `[DM]<=[Modified]` back as `DM<=Modified`.
 
+CORROBORATED in production 2026-09-12, on a live programme-governance site:
+actions saved with `CompletedDate` blank, under the rule this module hoists
+and guards. That exercises the GUARD, so it says nothing about an unguarded
+blank operand, which stays unmeasured for the numeric columns issue #156
+grandfathers.
+
 So a column rule that compares a date with `today` or `now` cannot be
 exact where it was declared, and is hoisted onto the list rule here. The
 renderer then compares against `[Modified]`. Shared by the deployer, the
