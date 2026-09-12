@@ -1,5 +1,136 @@
 # Changelog
 
+## [0.5.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.4.0...v0.5.0) (2026-09-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** build and report require --time-zone (or DBMLSP_TIME_ZONE for build), and a mapping carrying reporting.time_zone no longer loads.
+* **programme-governance:** separate how far an involvement got from what it decides ([#476](https://github.com/firmfooting/dbml-sharepoint/issues/476))
+* **programme-governance:** name every list's Title column for what it holds ([#469](https://github.com/firmfooting/dbml-sharepoint/issues/469))
+* **logging:** rename the log lists and split the central log per application ([#463](https://github.com/firmfooting/dbml-sharepoint/issues/463))
+* **programme-governance:** rename ServiceDeskAddress to ExternalContactDetails ([#466](https://github.com/firmfooting/dbml-sharepoint/issues/466))
+* **solutions:** the raid-log and raci-matrix templates are removed. Anyone deploying either should take programme-governance, which is both of them on one site plus a service request queue and the process register. Deployed RAID_ and RACI_ lists are unaffected by a template's removal; nothing in this change touches a live site.
+* **programme-governance:** BusinessProcess is a mapping backlog, not an inventory ([#398](https://github.com/firmfooting/dbml-sharepoint/issues/398))
+* **solutions:** programme-governance replaces m365-adoption-program ([#387](https://github.com/firmfooting/dbml-sharepoint/issues/387))
+
+### Features
+
+* **analysis:** refuse minor versions without versioning on a list ([#440](https://github.com/firmfooting/dbml-sharepoint/issues/440)) ([88be842](https://github.com/firmfooting/dbml-sharepoint/commit/88be842fb8668e03e7d3611968e43f2befd39016))
+* **cli:** identify what this tool has provisioned on any site ([#453](https://github.com/firmfooting/dbml-sharepoint/issues/453)) ([a132e1b](https://github.com/firmfooting/dbml-sharepoint/commit/a132e1b3cbc122faf94c8d55be205aa3d193be8d))
+* **cli:** take the site's time zone as a build input, not a mapping key ([#508](https://github.com/firmfooting/dbml-sharepoint/issues/508)) ([2efa4f2](https://github.com/firmfooting/dbml-sharepoint/commit/2efa4f291dd2de9bf52eb837be2987cae3bda487))
+* **declarations-register:** split the interest review date into a typed half and a derived one ([d96bc5c](https://github.com/firmfooting/dbml-sharepoint/commit/d96bc5cf149045867a9257544f151b0376e0ef22))
+* **declarations-register:** split the interest review date into the review that happened and the one that is due ([#451](https://github.com/firmfooting/dbml-sharepoint/issues/451)) ([d96bc5c](https://github.com/firmfooting/dbml-sharepoint/commit/d96bc5cf149045867a9257544f151b0376e0ef22))
+* **deploy:** batch the phase 1 field wave, one ChangeSet per list ([#450](https://github.com/firmfooting/dbml-sharepoint/issues/450)) ([36b0921](https://github.com/firmfooting/dbml-sharepoint/commit/36b092168f46cdd33959b18a1ab3b7d0f1f114bc))
+* **deploy:** batch what measures, and refuse what does not - the [#332](https://github.com/firmfooting/dbml-sharepoint/issues/332) port with its evidence ([#448](https://github.com/firmfooting/dbml-sharepoint/issues/448)) ([947a4b3](https://github.com/firmfooting/dbml-sharepoint/commit/947a4b3b9feaf03a8bfa7e86aa925eaa569f411a))
+* **logging:** keep a run log and a type-2 change log on every deploy ([#422](https://github.com/firmfooting/dbml-sharepoint/issues/422)) ([922876f](https://github.com/firmfooting/dbml-sharepoint/commit/922876ff436ae0ef2eb189018b30858b5cfa0d55))
+* **logging:** rename the log lists and split the central log per application ([#463](https://github.com/firmfooting/dbml-sharepoint/issues/463)) ([4f6ee2d](https://github.com/firmfooting/dbml-sharepoint/commit/4f6ee2d7e6d9f75c8d8a708d1fb34791a6e647b0))
+* **mapping:** a declarative attachments setting ([#438](https://github.com/firmfooting/dbml-sharepoint/issues/438)) ([3d309e6](https://github.com/firmfooting/dbml-sharepoint/commit/3d309e6a22b39c5c1ace4fc8ffc37d3ba2a26d0b))
+* **mapping:** a declarative attachments setting, with libraries refused ([3d309e6](https://github.com/firmfooting/dbml-sharepoint/commit/3d309e6a22b39c5c1ace4fc8ffc37d3ba2a26d0b))
+* **probes:** ask how a document library's access surface diverges from a list ([#400](https://github.com/firmfooting/dbml-sharepoint/issues/400)) ([4142ece](https://github.com/firmfooting/dbml-sharepoint/commit/4142eced6d562ef239373254d8a18214bfc2e5ec))
+* **probes:** ask how a document library's edit form orders and reorders fields ([#395](https://github.com/firmfooting/dbml-sharepoint/issues/395)) ([b3d18e3](https://github.com/firmfooting/dbml-sharepoint/commit/b3d18e3dc949aa035d6f795db3fb295a59ae5b17))
+* **probes:** ask how a document library's field surface diverges from a list ([#403](https://github.com/firmfooting/dbml-sharepoint/issues/403)) ([7423c6a](https://github.com/firmfooting/dbml-sharepoint/commit/7423c6a7bae58727ec43410f1226be44890142d3))
+* **probes:** ask how a document library's formula surface diverges from a list ([#399](https://github.com/firmfooting/dbml-sharepoint/issues/399)) ([3ecb211](https://github.com/firmfooting/dbml-sharepoint/commit/3ecb211c757aaf02ab604ed3b806f22a8b3e15c3))
+* **probes:** ask how a document library's query surface diverges from a list ([#402](https://github.com/firmfooting/dbml-sharepoint/issues/402)) ([26cc70f](https://github.com/firmfooting/dbml-sharepoint/commit/26cc70f81de124647aee5fbc25031b2ed0cb393f))
+* **probes:** ask how a document library's views group by metadata and folder ([#396](https://github.com/firmfooting/dbml-sharepoint/issues/396)) ([4c00ed1](https://github.com/firmfooting/dbml-sharepoint/commit/4c00ed197de2f06f3941024b855c9377981f2e61))
+* **probes:** ask how a document library's views group by metadata and folder ([#396](https://github.com/firmfooting/dbml-sharepoint/issues/396)) ([4c00ed1](https://github.com/firmfooting/dbml-sharepoint/commit/4c00ed197de2f06f3941024b855c9377981f2e61))
+* **probes:** ask how a library's view totals and search discovery diverge from a list ([#406](https://github.com/firmfooting/dbml-sharepoint/issues/406)) ([9780d1b](https://github.com/firmfooting/dbml-sharepoint/commit/9780d1ba0da24f07da2e4cacf9b8c90afd5cbc3d))
+* **probes:** ask how list column interactions reach a document library ([#394](https://github.com/firmfooting/dbml-sharepoint/issues/394)) ([10a0143](https://github.com/firmfooting/dbml-sharepoint/commit/10a0143081bbd4ea82bacee3b760eca67b48e284))
+* **probes:** ask what a file is on a document library ([#389](https://github.com/firmfooting/dbml-sharepoint/issues/389)) ([215f5be](https://github.com/firmfooting/dbml-sharepoint/commit/215f5beab4faf673226ce4769b379b260b9a3716))
+* **probes:** ask what a folder is on a document library ([#392](https://github.com/firmfooting/dbml-sharepoint/issues/392)) ([f8a1fc5](https://github.com/firmfooting/dbml-sharepoint/commit/f8a1fc5b1bd4e7b1f29aa33772821462853c78f5))
+* **probes:** ask what content types a document library carries ([#393](https://github.com/firmfooting/dbml-sharepoint/issues/393)) ([7b860c7](https://github.com/firmfooting/dbml-sharepoint/commit/7b860c76fcf6f0f2ba8e2eb680d57a5a0cfb8d08))
+* **probes:** ask whether a multi-value lookup can be created, indexed and written ([#415](https://github.com/firmfooting/dbml-sharepoint/issues/415)) ([772265f](https://github.com/firmfooting/dbml-sharepoint/commit/772265f32224592ca5df72a772a954748ccc5a02))
+* **probes:** ask which SP.List settings actually stick ([#437](https://github.com/firmfooting/dbml-sharepoint/issues/437)) ([140177f](https://github.com/firmfooting/dbml-sharepoint/commit/140177f33cbb277ce2c2635edbba6cbe0e6a7346))
+* **probes:** measure whether OData $batch buys throttling headroom, and add the transport surface ([#407](https://github.com/firmfooting/dbml-sharepoint/issues/407)) ([bfad90b](https://github.com/firmfooting/dbml-sharepoint/commit/bfad90b6175e47b59f202b4a909d8fb705229b50))
+* **probes:** probe metadata columns and list validation on document libraries ([#391](https://github.com/firmfooting/dbml-sharepoint/issues/391)) ([7ce2e1a](https://github.com/firmfooting/dbml-sharepoint/commit/7ce2e1ad4f809dd975242f408eb05a8c5c4ed78c))
+* **programme-governance:** a process inventory, and the activity that maps it ([#388](https://github.com/firmfooting/dbml-sharepoint/issues/388)) ([56ee8be](https://github.com/firmfooting/dbml-sharepoint/commit/56ee8beee59200b57c1fe1604558507f3951a985))
+* **programme-governance:** calculate the backlog sweep, and name who to ask ([#458](https://github.com/firmfooting/dbml-sharepoint/issues/458)) ([6f14eba](https://github.com/firmfooting/dbml-sharepoint/commit/6f14eba114b511e76af17a2e226e4d9b86c4d038))
+* **programme-governance:** name every list's Title column for what it holds ([#469](https://github.com/firmfooting/dbml-sharepoint/issues/469)) ([dd0bb49](https://github.com/firmfooting/dbml-sharepoint/commit/dd0bb4973d820b2f9478869d043d574ba21b3fa2))
+* **programme-governance:** rename ServiceDeskAddress to ExternalContactDetails ([#466](https://github.com/firmfooting/dbml-sharepoint/issues/466)) ([c56f029](https://github.com/firmfooting/dbml-sharepoint/commit/c56f0299de76248e56d8c29ff4dc10d9237b629c))
+* **programme-governance:** separate how far an involvement got from what it decides ([#476](https://github.com/firmfooting/dbml-sharepoint/issues/476)) ([f3eecb9](https://github.com/firmfooting/dbml-sharepoint/commit/f3eecb9db8333371af644f2c819989f49d0c0203))
+* **reporting:** declare a site time zone and ship its transitions ([#496](https://github.com/firmfooting/dbml-sharepoint/issues/496)) ([9f03dc5](https://github.com/firmfooting/dbml-sharepoint/commit/9f03dc57d8ae0ab185eae12812b646c70eda3270))
+* **reporting:** declare derived columns in the mapping ([#495](https://github.com/firmfooting/dbml-sharepoint/issues/495)) ([d7d31fa](https://github.com/firmfooting/dbml-sharepoint/commit/d7d31fa1eb499cf039ca1ec9f59e7ae2343cfc1a))
+* **solutions:** land the column-history and deployment-log families ([#425](https://github.com/firmfooting/dbml-sharepoint/issues/425)) ([ca33f40](https://github.com/firmfooting/dbml-sharepoint/commit/ca33f40e0dd7414e40c2df0a51501b154b7e0f49))
+* support multi-value lookups (LookupMulti) end to end ([#416](https://github.com/firmfooting/dbml-sharepoint/issues/416)) ([b4356dc](https://github.com/firmfooting/dbml-sharepoint/commit/b4356dc5979a13d7cba574128498d660caeb5dd8))
+* **templates:** add the BatchWriter transport primitive for OData $batch ([#410](https://github.com/firmfooting/dbml-sharepoint/issues/410)) ([6480caa](https://github.com/firmfooting/dbml-sharepoint/commit/6480caa8729e5a6eecc5b89165f6cb634a4fe719))
+* **validator:** refuse a column rule that never says what a blank does ([#442](https://github.com/firmfooting/dbml-sharepoint/issues/442)) ([5412895](https://github.com/firmfooting/dbml-sharepoint/commit/54128959f2b9c2549798c1e802d8359f2bee6b15))
+* **wizard:** pick a journey, then a template ([#386](https://github.com/firmfooting/dbml-sharepoint/issues/386)) ([9ccd9fa](https://github.com/firmfooting/dbml-sharepoint/commit/9ccd9fa9f8d4ad9357ee1dad4ff1cb9740163c7e))
+
+
+### Bug Fixes
+
+* **analysis:** judge the report collision on the names the report really uses ([#445](https://github.com/firmfooting/dbml-sharepoint/issues/445)) ([5904bc7](https://github.com/firmfooting/dbml-sharepoint/commit/5904bc7c3ffc9354c2d1faff4f9bc9fb1347d3a0))
+* **analysis:** refuse a display_names override on the built-in Title ([#426](https://github.com/firmfooting/dbml-sharepoint/issues/426)) ([ea9a150](https://github.com/firmfooting/dbml-sharepoint/commit/ea9a150c9b6f1331d405932e8dcdf8dc37fc6c51))
+* **delegations-register:** split ReviewDate into the review that happened and the one that is due ([#435](https://github.com/firmfooting/dbml-sharepoint/issues/435)) ([ababbbf](https://github.com/firmfooting/dbml-sharepoint/commit/ababbbfd15d5e2fb5452bf80d3cac74ea3b0c8ff)), closes [#413](https://github.com/firmfooting/dbml-sharepoint/issues/413)
+* **deploy:** a throttle redirect is a throttle, and it holds every lane ([#401](https://github.com/firmfooting/dbml-sharepoint/issues/401)) ([2ecc43d](https://github.com/firmfooting/dbml-sharepoint/commit/2ecc43d1aa85cd351a901547a410aa3099e5fcd8))
+* **deploy:** count exit-cleanup failures the summary was printed before ([#429](https://github.com/firmfooting/dbml-sharepoint/issues/429)) ([74d9df4](https://github.com/firmfooting/dbml-sharepoint/commit/74d9df4181e8ee4640e3c6880f7da9fd7e543044))
+* **deploy:** read a lookup target's display field under the title the list holds now ([#376](https://github.com/firmfooting/dbml-sharepoint/issues/376)) ([b855be9](https://github.com/firmfooting/dbml-sharepoint/commit/b855be9491ea5e39227aa12ae0b68f5ce1910174))
+* **deploy:** refuse to enrol a reader into a group that already holds more ([#446](https://github.com/firmfooting/dbml-sharepoint/issues/446)) ([57f580a](https://github.com/firmfooting/dbml-sharepoint/commit/57f580a9a6febf7e0f6d759564b983fe935d1f72))
+* **deploy:** seal projected lookup columns, which nothing ever sealed ([#459](https://github.com/firmfooting/dbml-sharepoint/issues/459)) ([03a9c43](https://github.com/firmfooting/dbml-sharepoint/commit/03a9c43f45bf76839dffc604120d7e14fa22e9e4))
+* **deploy:** verify the enterprise reader's level by its bitmap, not its name ([#436](https://github.com/firmfooting/dbml-sharepoint/issues/436)) ([9688a8a](https://github.com/firmfooting/dbml-sharepoint/commit/9688a8a0303bbc287ed33f9f85c74df1fb12fc54)), closes [#199](https://github.com/firmfooting/dbml-sharepoint/issues/199)
+* **evidence:** fold the 2026-09-06 live runs into the tree ([#452](https://github.com/firmfooting/dbml-sharepoint/issues/452)) ([732d507](https://github.com/firmfooting/dbml-sharepoint/commit/732d50765b5e9aa2aca780887ca29c5f3b7a4992))
+* **extract:** the abort path referred to a name that was not in scope ([#454](https://github.com/firmfooting/dbml-sharepoint/issues/454)) ([b5c5447](https://github.com/firmfooting/dbml-sharepoint/commit/b5c54471165c71f4466c492f9a6c4e6ed1301d46))
+* **findings:** point index locations at index declarations, not synthetic column paths ([#516](https://github.com/firmfooting/dbml-sharepoint/issues/516)) ([6319863](https://github.com/firmfooting/dbml-sharepoint/commit/6319863cc9b447163b0e9410bffc5e79697e5bec))
+* **jsgen:** refuse an unhandled field kind at type-check time ([#515](https://github.com/firmfooting/dbml-sharepoint/issues/515)) ([b168c58](https://github.com/firmfooting/dbml-sharepoint/commit/b168c5838e0c6b0c9f988d7878b452a057a1871c)), closes [#256](https://github.com/firmfooting/dbml-sharepoint/issues/256)
+* **logging:** create a Boolean log column the way the deploy creates one ([#461](https://github.com/firmfooting/dbml-sharepoint/issues/461)) ([1128adf](https://github.com/firmfooting/dbml-sharepoint/commit/1128adf528a0712ee479b794aec65279c021d105))
+* **maintain:** read a deleted column's absence, not one status code ([#427](https://github.com/firmfooting/dbml-sharepoint/issues/427)) ([a18b9bc](https://github.com/firmfooting/dbml-sharepoint/commit/a18b9bcbdef16c7f5a13cabe5919fa21f8699480))
+* **maintenance:** a sealed column reaches the sidecar menu it exists for ([#380](https://github.com/firmfooting/dbml-sharepoint/issues/380)) ([67d23e2](https://github.com/firmfooting/dbml-sharepoint/commit/67d23e2d683df30ac7e083ef829748ae48c4a988))
+* **maintenance:** pick a column to delete by internal name, never by position ([#390](https://github.com/firmfooting/dbml-sharepoint/issues/390)) ([7378ebd](https://github.com/firmfooting/dbml-sharepoint/commit/7378ebd4e2c37da962707c42e9df82d931913a60))
+* **maintenance:** resolve a sidecar's list by URL, not by a title the URL no longer carries ([#419](https://github.com/firmfooting/dbml-sharepoint/issues/419)) ([909c10f](https://github.com/firmfooting/dbml-sharepoint/commit/909c10f1b34c39196dd848c4524eb3e6443adc96))
+* **manifest:** say the reader group reads no list when every deployed list excludes it ([#517](https://github.com/firmfooting/dbml-sharepoint/issues/517)) ([93a9c4a](https://github.com/firmfooting/dbml-sharepoint/commit/93a9c4a4476bbe0524fc79352565af572e0d2685)), closes [#194](https://github.com/firmfooting/dbml-sharepoint/issues/194)
+* **measures-register:** split ReviewDate into the review that happened and the one that is due ([#433](https://github.com/firmfooting/dbml-sharepoint/issues/433)) ([718d093](https://github.com/firmfooting/dbml-sharepoint/commit/718d093a55b18547de4c4bde0800858588dd6031))
+* **permissions:** close the last two enterprise-reader exclusivity gaps ([#441](https://github.com/firmfooting/dbml-sharepoint/issues/441)) ([50a81f3](https://github.com/firmfooting/dbml-sharepoint/commit/50a81f3c3a39a9d524b84a0bcba1f462f2198254))
+* **probes:** close the audit findings - abort vocabulary, dead controls, unrecorded ids ([#375](https://github.com/firmfooting/dbml-sharepoint/issues/375)) ([8318ce1](https://github.com/firmfooting/dbml-sharepoint/commit/8318ce1d2eeba8c0eb947ea72a508523068a1cac))
+* **probes:** make the foldered group-view scopes explicit ([#491](https://github.com/firmfooting/dbml-sharepoint/issues/491)) ([afd62e5](https://github.com/firmfooting/dbml-sharepoint/commit/afd62e552a8e42325d87bbeaffc52d3f34263f6c))
+* **probes:** re-read the Description control once before voiding a settings run ([#449](https://github.com/firmfooting/dbml-sharepoint/issues/449)) ([9d34387](https://github.com/firmfooting/dbml-sharepoint/commit/9d34387872438228fd5d92ebc1e74de08a9f304e))
+* **probes:** re-render throttle-batch-probe so ABORTED counts as open ([#414](https://github.com/firmfooting/dbml-sharepoint/issues/414)) ([3e04215](https://github.com/firmfooting/dbml-sharepoint/commit/3e042158ca4dd9fbd91e2d3f611e5ac789d293f7))
+* **probes:** retire the CAML control that could not pass ([#374](https://github.com/firmfooting/dbml-sharepoint/issues/374)) ([fe2ddfb](https://github.com/firmfooting/dbml-sharepoint/commit/fe2ddfb33c22bf86b6190e849c36cb8954bfbbe7))
+* **probes:** settle the unresolved library checks ([#488](https://github.com/firmfooting/dbml-sharepoint/issues/488)) ([db8ebc9](https://github.com/firmfooting/dbml-sharepoint/commit/db8ebc95cb79acc8af293d3f5438f453b4c20fa2))
+* **programme-governance:** index Involvement.NextContact ([#486](https://github.com/firmfooting/dbml-sharepoint/issues/486)) ([e4091f9](https://github.com/firmfooting/dbml-sharepoint/commit/e4091f986925955e26dd10e2ffd7b962ae61393d))
+* **reportgen:** guard an empty list, a text date and a renamed list's URL ([#468](https://github.com/firmfooting/dbml-sharepoint/issues/468)) ([857dfe9](https://github.com/firmfooting/dbml-sharepoint/commit/857dfe90c95a06af3fa3d06ad36dc5233ea822c2))
+* **reportgen:** resolve date-only columns and carry dependent lookups ([#494](https://github.com/firmfooting/dbml-sharepoint/issues/494)) ([7703b6d](https://github.com/firmfooting/dbml-sharepoint/commit/7703b6da54b949d28a8e64368b17d468b9e666f0))
+* **reporting:** stop selecting lookup columns SharePoint will not fetch ([#507](https://github.com/firmfooting/dbml-sharepoint/issues/507)) ([aca729f](https://github.com/firmfooting/dbml-sharepoint/commit/aca729f06dc90acd329cff311fd1a7d5e2f3b238))
+* **solutions:** clamp the review cadences at month end instead of overflowing ([#431](https://github.com/firmfooting/dbml-sharepoint/issues/431)) ([a03e7d5](https://github.com/firmfooting/dbml-sharepoint/commit/a03e7d5417904b769ccf8a193aa90403c11a37bf)), closes [#418](https://github.com/firmfooting/dbml-sharepoint/issues/418)
+* **solutions:** make every NextReviewDue say whether it is calculated ([#430](https://github.com/firmfooting/dbml-sharepoint/issues/430)) ([7c06988](https://github.com/firmfooting/dbml-sharepoint/commit/7c069885c6c679237ebc1fc38e0114a640e6c9d8))
+* **solutions:** split a risk's review date into the one that happened and the one that is due ([#411](https://github.com/firmfooting/dbml-sharepoint/issues/411)) ([648d9cc](https://github.com/firmfooting/dbml-sharepoint/commit/648d9cc9093f8a7636cdeea388d9226fafc9d743))
+* **solutions:** split the process register's review date so a refresh cannot be pushed out ([#434](https://github.com/firmfooting/dbml-sharepoint/issues/434)) ([0ae6d7d](https://github.com/firmfooting/dbml-sharepoint/commit/0ae6d7d9d083ef269a49f8b70cd6816ca35354fa)), closes [#413](https://github.com/firmfooting/dbml-sharepoint/issues/413)
+* **validator:** make the operand guard self-contained and pin the structure section order ([#513](https://github.com/firmfooting/dbml-sharepoint/issues/513)) ([24d62e0](https://github.com/firmfooting/dbml-sharepoint/commit/24d62e0bfc4102394a742d00d28ecbcd4c5d8d46))
+* **validator:** make the operand guard the function's own and pin the structure section order ([24d62e0](https://github.com/firmfooting/dbml-sharepoint/commit/24d62e0bfc4102394a742d00d28ecbcd4c5d8d46)), closes [#310](https://github.com/firmfooting/dbml-sharepoint/issues/310)
+* **validator:** refuse a column named like one the reporting pack adds ([#501](https://github.com/firmfooting/dbml-sharepoint/issues/501)) ([28e00a6](https://github.com/firmfooting/dbml-sharepoint/commit/28e00a62e611f49e1272cc792f0600de8a4eb1c1))
+* **validator:** refuse a projection the reporting pack cannot type ([#506](https://github.com/firmfooting/dbml-sharepoint/issues/506)) ([f1ef1c7](https://github.com/firmfooting/dbml-sharepoint/commit/f1ef1c7312450efc3bfb72f9f3731c614b56cf31))
+* **validator:** the unindexed-filter remedy prescribed a change the build refuses ([#510](https://github.com/firmfooting/dbml-sharepoint/issues/510)) ([71b99a4](https://github.com/firmfooting/dbml-sharepoint/commit/71b99a4a31739e77cd2f4ddeef21e1da1950a48d)), closes [#257](https://github.com/firmfooting/dbml-sharepoint/issues/257)
+* **wizard:** offer seeding only to a role that has demo rows ([#512](https://github.com/firmfooting/dbml-sharepoint/issues/512)) ([59e9f2c](https://github.com/firmfooting/dbml-sharepoint/commit/59e9f2c4748710f3475661df8f38e884fcb960b9))
+* **wizard:** offer seeding only to a role that has demo rows, and stop citing a file that is not written yet ([59e9f2c](https://github.com/firmfooting/dbml-sharepoint/commit/59e9f2c4748710f3475661df8f38e884fcb960b9)), closes [#205](https://github.com/firmfooting/dbml-sharepoint/issues/205)
+* **wizard:** stop writing a mapping whose previous_prefixes names the prefix ([#428](https://github.com/firmfooting/dbml-sharepoint/issues/428)) ([a58b37b](https://github.com/firmfooting/dbml-sharepoint/commit/a58b37b316d302a8337cb993a304db6c84d3a56f)), closes [#378](https://github.com/firmfooting/dbml-sharepoint/issues/378)
+
+
+### Performance Improvements
+
+* **validator:** build the structure family's derivations once ([#519](https://github.com/firmfooting/dbml-sharepoint/issues/519)) ([9b37494](https://github.com/firmfooting/dbml-sharepoint/commit/9b374944198667338fa06e29a86c7a6625a2d22b)), closes [#312](https://github.com/firmfooting/dbml-sharepoint/issues/312)
+
+
+### Documentation
+
+* **evidence:** cite the 2026-09-06 list-settings run, and pin the index ban's escapes ([#439](https://github.com/firmfooting/dbml-sharepoint/issues/439)) ([4318016](https://github.com/firmfooting/dbml-sharepoint/commit/4318016becb02e98ebbb17d2a52917c0d7dae605))
+* **library:** record what the two layers do past the threshold, and close the header question ([#492](https://github.com/firmfooting/dbml-sharepoint/issues/492)) ([238ee7e](https://github.com/firmfooting/dbml-sharepoint/commit/238ee7ecc2f5148377464292744f6decd95aaf52))
+* node --check proves a script parses, not that its branches run ([#455](https://github.com/firmfooting/dbml-sharepoint/issues/455)) ([583cf39](https://github.com/firmfooting/dbml-sharepoint/commit/583cf39cdaf7e9dbc2fbc8dd09d4b2a8f38ffe08))
+* **probes:** fold the built-in-levels census run into the tree ([#462](https://github.com/firmfooting/dbml-sharepoint/issues/462)) ([df26068](https://github.com/firmfooting/dbml-sharepoint/commit/df2606809ffafd5a49f2817b7f41ca687121c7a3))
+* **programme-governance:** keep the approval-tracking proposal as future work ([#447](https://github.com/firmfooting/dbml-sharepoint/issues/447)) ([a1d4edf](https://github.com/firmfooting/dbml-sharepoint/commit/a1d4edf0f3e0fe65e26c10f6d8acca19575c4918))
+* **programme-governance:** make the deploy checklist match what the family ships ([#432](https://github.com/firmfooting/dbml-sharepoint/issues/432)) ([2f25292](https://github.com/firmfooting/dbml-sharepoint/commit/2f25292556643943619cb6b281db8cbafa4b75e9))
+* refresh the live findings catalogue ([#373](https://github.com/firmfooting/dbml-sharepoint/issues/373)) ([94c2d56](https://github.com/firmfooting/dbml-sharepoint/commit/94c2d5658b65293de1eb0a26234a2a2d36a9b0d3))
+* refresh the live findings catalogue ([#487](https://github.com/firmfooting/dbml-sharepoint/issues/487)) ([b7a4be4](https://github.com/firmfooting/dbml-sharepoint/commit/b7a4be408af09384d46d9e0b7322f0e7467c0bd1))
+* refresh the live findings catalogue ([#493](https://github.com/firmfooting/dbml-sharepoint/issues/493)) ([d50181c](https://github.com/firmfooting/dbml-sharepoint/commit/d50181c625120ce3011a3b9d1dc81be0fdce312d))
+* **save-rules:** record the blank guard holding in production ([#528](https://github.com/firmfooting/dbml-sharepoint/issues/528)) ([b72da50](https://github.com/firmfooting/dbml-sharepoint/commit/b72da5066047aae4ffd1c4a36df6d3e3cdb707c5))
+* the README said the package was not published, and it is ([#509](https://github.com/firmfooting/dbml-sharepoint/issues/509)) ([8076600](https://github.com/firmfooting/dbml-sharepoint/commit/80766009e3c9f262a10b82e3c209f2290f46c2e0)), closes [#24](https://github.com/firmfooting/dbml-sharepoint/issues/24)
+* write down where a fact goes, the schema or the mapping ([#499](https://github.com/firmfooting/dbml-sharepoint/issues/499)) ([49f9227](https://github.com/firmfooting/dbml-sharepoint/commit/49f922795b15830f6e1122b7916271c5a0d90914))
+
+
+### Code Refactoring
+
+* **programme-governance:** BusinessProcess is a mapping backlog, not an inventory ([#398](https://github.com/firmfooting/dbml-sharepoint/issues/398)) ([bc65365](https://github.com/firmfooting/dbml-sharepoint/commit/bc653652339c83d46b7b00ff75a7cbb18cc2a798))
+* **solutions:** programme-governance replaces m365-adoption-program ([#387](https://github.com/firmfooting/dbml-sharepoint/issues/387)) ([600b7d0](https://github.com/firmfooting/dbml-sharepoint/commit/600b7d0dfee76a34f452d4e2e2fe18592bf323b3))
+* **solutions:** retire raid-log and raci-matrix into programme-governance ([#417](https://github.com/firmfooting/dbml-sharepoint/issues/417)) ([67eb63b](https://github.com/firmfooting/dbml-sharepoint/commit/67eb63b7c27d430f18373deb2cfaaf7d29c51b3a))
+
 ## [0.4.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.1.0...v0.4.0) (2026-09-03)
 
 
