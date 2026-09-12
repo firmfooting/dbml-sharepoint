@@ -1,6 +1,7 @@
 """The group Description composition, and the budget it leaves a human note."""
 
 import pytest
+from _ratchet import Ratchet
 
 from dbml_sharepoint.analysis.group_description import (
     FAMILY_MARKER_TEMPLATE,
@@ -137,12 +138,30 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is reserved so the first family that
 #: does need it gets the family-less marker rather than a name of its own.
+#:
+#: A RESERVATION, NOT A DEBT. Reviewed 2026-09-12 with the rest of the
+#: suite's ratchets: this one is empty of work by design and draining it would
+#: mean shipping a group nothing needs, so it stays until a family needs it.
 _NOT_YET_SHIPPED: frozenset[str] = frozenset({"dbml Enterprise Automation"})
 
 
 def test_the_not_yet_shipped_ratchet_names_only_tool_owned_groups() -> None:
-    """An entry naming nothing exempts nothing, and reads as if it did."""
-    assert _NOT_YET_SHIPPED <= TOOL_OWNED_GROUP_NAMES
+    """An entry naming nothing exempts nothing, and reads as if it did.
+
+    Only the universe question is asked here. Whether a reserved name has
+    started shipping is the business of the tests that read the families, and
+    asking it twice would put the answer in two places.
+    """
+    Ratchet(
+        name="_NOT_YET_SHIPPED",
+        subject="tool-owned group",
+        resolved="now shipped by a family",
+        violation="they are reserved and no family declares them",
+    ).check(
+        recorded=_NOT_YET_SHIPPED,
+        violating=_NOT_YET_SHIPPED,
+        universe=TOOL_OWNED_GROUP_NAMES,
+    )
 
 
 @pytest.mark.parametrize("name", sorted(TOOL_OWNED_GROUP_NAMES))

@@ -71,6 +71,15 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: Files still deferring an import into a function body. A RATCHET: entries
 #: come out, and one going in needs a reason in the pull request.
 #:
+#: BLOCKED ON #171, not on anybody writing a test. Nine of the fourteen are the
+#: `cli` import cycle, and breaking that is what #171 is: a deferral removed
+#: without it just moves the cycle. Reviewed 2026-09-12, when every ratchet in
+#: the suite that could be drained was.
+#:
+#: A magnitude ratchet rather than a membership one, which is why it does not
+#: go through `_ratchet.Ratchet`: an entry improves by its COUNT falling rather
+#: than by the key disappearing, and exact dict equality already says that.
+#:
 #: Not all of these are cycles. `wizard.py`'s five are, with `cli.py`, tracked
 #: by #171 (the fifth is `_ask_time_zone` borrowing `validate_time_zone`,
 #: the same way `_ask_site_url` borrows `validate_site_url`), and
