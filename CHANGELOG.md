@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.5.0...v0.5.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* guard eight shipped save rules and report a refusal that crashed the run ([#530](https://github.com/firmfooting/dbml-sharepoint/issues/530)) ([121335b](https://github.com/firmfooting/dbml-sharepoint/commit/121335bb16741c410dbeca24b068ac49ec73423f))
+
 ## [0.5.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.4.0...v0.5.0) (2026-09-12)
 
 
