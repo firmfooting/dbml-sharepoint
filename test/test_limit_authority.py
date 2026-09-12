@@ -26,6 +26,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from _paths import PACKAGE, TEST_DIR
+from _ratchet import Ratchet
 
 from dbml_sharepoint.analysis import limits
 
@@ -58,11 +59,14 @@ _PREDICATE_OWNERS = {
 #: constants would survive mutation. Four of the seven were killed by tests
 #: that exercise the boundary without naming the constant, and two constants
 #: absent from it survived.
-NOT_YET_PINNED = frozenset({
-    "LIST_VIEW_THRESHOLD",
-    "MAX_DISPLAY_TITLE",
-    "MAX_CALCULATED_FORMULA",
-})
+#:
+#: EMPTY since 2026-09-12. The last three were drained by making the tests that
+#: already exercised each boundary DERIVE their values from the constant rather
+#: than restate it, so the boundary moves when the ceiling does. That also
+#: closed the half of the calculated-formula boundary nothing tested: only the
+#: rejecting side was pinned, which left any tighter cap indistinguishable from
+#: the declared one.
+NOT_YET_PINNED: frozenset[str] = frozenset()
 
 
 def _limit_values() -> set[int]:
@@ -445,15 +449,11 @@ def test_every_limit_is_named_by_a_test_or_ratcheted() -> None:
     # test naming only the longer one as pinning both.
     unnamed = {name for name in names if re.search(rf"\b{name}\b", corpus) is None}
 
-    assert unnamed <= NOT_YET_PINNED, (
-        "A limit is named by no test and is not on the ratchet: "
-        f"{sorted(unnamed - NOT_YET_PINNED)}"
-    )
-    assert set(names) >= NOT_YET_PINNED, (
-        "The ratchet names a constant that no longer exists: "
-        f"{sorted(NOT_YET_PINNED - set(names))}"
-    )
-    stale = NOT_YET_PINNED - unnamed
-    assert not stale, (
-        f"These are now named by a test; remove them from the ratchet: {sorted(stale)}"
-    )
+    # The same three questions every ratchet in this suite asks; see
+    # `_ratchet.py` for why the third one needs a universe to be askable.
+    Ratchet(
+        name="NOT_YET_PINNED",
+        subject="limit constant",
+        resolved="now named by a test",
+        violation="no test so much as names them",
+    ).check(recorded=NOT_YET_PINNED, violating=unnamed, universe=names)
