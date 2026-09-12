@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from _findings import none_of, only
 from _packs import blocks, entities, pack
+from _ratchet import Ratchet
 
 from dbml_sharepoint.analysis.checks import _retirement
 from dbml_sharepoint.analysis.checks._retirement import GRANDFATHERED_BLANK_ARMS
@@ -126,12 +127,17 @@ def test_the_grandfather_list_is_exactly_the_shipped_violations(
 ) -> None:
     """The ratchet, measured rather than declared.
 
-    #156 reserves the library-wide sweep for one change with one argument, so
-    the eight spots measured on 2026-09-06 build on. Emptying the exemption and
-    running the real check over every shipped family pins the set both ways: a
-    NEW unguarded comparison in a shipped family fails here even though the
-    validator would let it build, and an entry that has been fixed has to come
-    out rather than linger and silence a rule that still exists.
+    #156 reserved the library-wide sweep for one change with one argument, and
+    that change landed on 2026-09-12, so the set is empty and this now pins
+    that it STAYS empty. Emptying the exemption and running the real check over
+    every shipped family pins it both ways: a NEW unguarded comparison in a
+    shipped family fails here even though the validator would let it build, and
+    an entry that has been fixed has to come out rather than linger and silence
+    a rule that still exists.
+
+    No universe is passed. An entry names an entity and column pair rather than
+    something with a roster, and a pair naming nothing is already reported as
+    turned, because a column that does not exist violates nothing.
     """
     monkeypatch.setattr(_retirement, "GRANDFATHERED_BLANK_ARMS", frozenset())
     fired = set()
@@ -142,7 +148,15 @@ def test_the_grandfather_list_is_exactly_the_shipped_violations(
             if finding.code is CODE:
                 assert finding.location is not None
                 fired.add((finding.location.entity, finding.location.column))
-    assert fired == set(GRANDFATHERED_BLANK_ARMS)
+    Ratchet(
+        name="GRANDFATHERED_BLANK_ARMS",
+        subject="shipped column",
+        resolved="now guarded, or gone from the library",
+        violation="they compare a nullable column without saying what a blank does",
+    ).check(
+        recorded={f"{e}.{c}" for e, c in GRANDFATHERED_BLANK_ARMS},
+        violating={f"{e}.{c}" for e, c in fired},
+    )
 
 
 def test_no_shipped_family_reports_the_rule_as_exempted() -> None:

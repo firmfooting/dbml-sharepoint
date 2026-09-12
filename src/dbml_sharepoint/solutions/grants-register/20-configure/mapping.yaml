@@ -373,11 +373,15 @@ column_validation:
     columns:
       AmountSought:
         when:
-          - { field: AmountSought, op: geq, value: 0 }
+          any_of:
+            - { field: AmountSought, op: is_null }
+            - { field: AmountSought, op: geq, value: 0 }
         message: "Amount sought cannot be negative. Leave it blank if the round does not name a figure."
       AmountAwarded:
         when:
-          - { field: AmountAwarded, op: geq, value: 0 }
+          any_of:
+            - { field: AmountAwarded, op: is_null }
+            - { field: AmountAwarded, op: geq, value: 0 }
         message: "Amount awarded cannot be negative. It comes from the signed agreement, not the announcement."
       SubmittedDate:
         when:

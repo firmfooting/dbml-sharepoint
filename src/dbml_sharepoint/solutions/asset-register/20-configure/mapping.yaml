@@ -260,7 +260,9 @@ column_validation:
         message: "An asset cannot have been purchased in the future. Use the invoice date."
       PurchaseCost:
         when:
-          - { field: PurchaseCost, op: geq, value: 0 }
+          any_of:
+            - { field: PurchaseCost, op: is_null }
+            - { field: PurchaseCost, op: geq, value: 0 }
         message: "Purchase cost cannot be negative. Leave it blank if you do not know it."
 
 # Save-time enforcement, on the LIST so it may reference more than one

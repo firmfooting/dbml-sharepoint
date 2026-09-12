@@ -307,7 +307,9 @@ column_validation:
         message: "An odometer reading cannot be negative. Read it off the dash."
       OdoEnd:
         when:
-          - { field: OdoEnd, op: geq, value: 0 }
+          any_of:
+            - { field: OdoEnd, op: is_null }
+            - { field: OdoEnd, op: geq, value: 0 }
         message: "An odometer reading cannot be negative. Read it off the dash."
 
 # Save-time enforcement, on the LIST so it may reference more than one

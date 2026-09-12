@@ -277,11 +277,15 @@ column_validation:
       # only arithmetic anyone ever does with this column.
       NoticePeriodDays:
         when:
-          - { field: NoticePeriodDays, op: geq, value: 0 }
+          any_of:
+            - { field: NoticePeriodDays, op: is_null }
+            - { field: NoticePeriodDays, op: geq, value: 0 }
         message: "Notice period is a number of days, counted forward. Enter 0 if no notice is required."
       AnnualValue:
         when:
-          - { field: AnnualValue, op: geq, value: 0 }
+          any_of:
+            - { field: AnnualValue, op: is_null }
+            - { field: AnnualValue, op: geq, value: 0 }
         message: "Annual value cannot be negative. Leave it blank if the contract has no recurring value."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
