@@ -143,15 +143,21 @@ ban-relative-imports = "all"
 #
 # The three it is holding, each ASSERTED by test/test_complexity_ratchet.py,
 # which measures them with this same ruff rather than restating them:
-#   `_views.py::check` at 61
 #   `_formatting.py::check` at 57
+#   `_views.py::check` at 53
 #   `jsgen.py::build_schema_json` at 40
 # They were prose once, and three of the four numbers had rotted (#311).
+#
+# 61 to 57 on 2026-09-12: `_views.py::check` gave up its field-set block, which
+# reads no view state and which the view loop reads nothing of, so the two were
+# only ever neighbours. That is the ratchet turning rather than a refactor done
+# for its own sake -- the guard the same change added to the index-exposure
+# check would otherwise have pushed 61 to 62.
 #
 # Deliberately NOT the default of 10. That flags 33 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
-max-complexity = 61
+max-complexity = 57
 
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,

@@ -81,7 +81,9 @@ _RefusalKind = _rendering.ConditionRefusalKind
 
 # The only renderer-refusal to Finding-code translation. Exhaustiveness is
 # asserted against the enum so a new refusal cannot fall through generically.
-_REFUSAL_FINDING_CODES: dict[
+# Public because `checks/_views.py` reports the refusal `normalise` raises
+# through the same table, and a second copy would be free to disagree.
+REFUSAL_FINDING_CODES: dict[
     _rendering.ConditionRefusalKind,
     FindingCode,
 ] = {
@@ -662,7 +664,7 @@ def _render_problems(
     try:
         _RENDERERS[target](leaf, types)
     except _rendering.ConditionRefusal as exc:
-        code = _REFUSAL_FINDING_CODES[exc.kind]
+        code = REFUSAL_FINDING_CODES[exc.kind]
         message = str(exc)
         if exc.path is not None:
             message = message.replace(f"{exc.path}:", f"{context}.{exc.field}:", 1)

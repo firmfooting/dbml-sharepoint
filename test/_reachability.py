@@ -25,6 +25,8 @@ uselessly on `pytest test/test_joins.py`.
 
 from __future__ import annotations
 
+from _ratchet import Ratchet
+
 # Codes no test constructs yet. A ratchet that only shrinks: deleting a line is
 # the point, and adding one needs a reason in the pull request. Measured, not
 # guessed -- see the module docstring.
@@ -32,11 +34,22 @@ from __future__ import annotations
 # Every name here is checked against `FindingCode` too, so a typo or a code that
 # was later renamed or deleted fails the gate rather than silently disarming the
 # guard for a rule that still exists.
-NOT_YET_REACHED = frozenset({
-    # Diagnosis reports an unknown operator before normalisation can try to
-    # negate it, so this renderer refusal has no current Finding path.
-    "CONDITION_OPERATOR_NOT_NEGATABLE",
-})
+# EMPTY since 2026-09-12. The last entry read "diagnosis reports an unknown
+# operator before normalisation can try to negate it", which was FALSE for the
+# view path: `checks/_views.py` normalises before that diagnosis runs, so the
+# refusal escaped as an uncaught `ConditionRefusal` and the run reported
+# nothing at all. Guarding it turned the crash into this finding.
+NOT_YET_REACHED: frozenset[str] = frozenset()
+
+
+#: This gate's wording. The three questions it asks are `_ratchet.Ratchet`'s,
+#: shared with every other ratchet in the suite.
+_RATCHET = Ratchet(
+    name="NOT_YET_REACHED",
+    subject="FindingCode",
+    resolved="now reached",
+    violation="no test makes them fire",
+)
 
 
 def evaluate(
@@ -50,27 +63,11 @@ def evaluate(
     Pure on purpose: the pytest wiring that collects `seen` is awkward to test
     directly, and the decisions worth pinning are all here.
     """
-    problems: list[str] = []
-
-    unknown = set(allowed_unreached) - set(declared)
-    if unknown:
-        problems.append(
-            "these NOT_YET_REACHED entries name no declared FindingCode and "
-            "must be deleted:\n  " + "\n  ".join(sorted(unknown)),
-        )
-
-    escaped = set(allowed_unreached) & set(seen)
-    if escaped:
-        problems.append(
-            "these codes are now reached -- delete them from NOT_YET_REACHED "
-            "so the ratchet holds:\n  " + "\n  ".join(sorted(escaped)),
-        )
-
-    unreached = set(declared) - set(seen) - set(allowed_unreached)
-    if unreached:
-        problems.append(
-            "these codes are declared but no test makes them fire:\n  "
-            + "\n  ".join(sorted(unreached)),
-        )
-
-    return problems
+    return _RATCHET.problems(
+        recorded=allowed_unreached,
+        # A declared code nothing constructed is the violation this gate is
+        # for; the roster of declared codes is also the universe a stale
+        # entry is measured against.
+        violating=set(declared) - set(seen),
+        universe=declared,
+    )

@@ -16,7 +16,11 @@ from _validator_helpers import _project_errors, _project_inputs
 
 from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA
+from dbml_sharepoint.analysis.limits import (
+    LIST_VIEW_THRESHOLD,
+    LIST_VIEW_THRESHOLD_FALLBACK_ROWS,
+    MAX_VALIDATION_FORMULA,
+)
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
@@ -200,8 +204,13 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
     # Which columns are exposed and what the threshold is: the two things an
     # author cannot act on without.
     assert "DueDate" in finding.message and "Status" in finding.message
-    assert "5,000" in finding.message
-    assert "newest 1,250 items, or none" in finding.message
+    # Read from the constants, so a ceiling that moves in `analysis/limits.py`
+    # moves the assertion with it instead of pinning prose that has gone stale.
+    assert f"{LIST_VIEW_THRESHOLD:,}" in finding.message
+    assert (
+        f"newest {LIST_VIEW_THRESHOLD_FALLBACK_ROWS:,} items, or none"
+        in finding.message
+    )
     # One indexed condition suffices and its position is irrelevant. Measured
     # at 6,000 items, both orderings of a degenerate AND served. Selectivity is
     # the caveat that survives, so the message must still carry one.
@@ -1504,3 +1513,48 @@ def test_a_list_with_no_date_column_still_collides_with_the_zone_flag() -> None:
         FindingCode.COLUMN_COLLIDES_WITH_REPORT_COLUMN,
     )
     assert "Note.DateZoneResolved" in finding.message
+
+
+def test_a_view_filter_negating_an_unknown_operator_is_reported_not_raised() -> None:
+    """The index-exposure check normalises `where`, and normalising negates.
+
+    MEASURED 2026-09-12, before the guard: a `none_of` over an operator that is
+    not in `NEGATION` made `validate_against_mapping` raise `ConditionRefusal`
+    out of this family, so the run produced no findings at all rather than a
+    bad one. The SAME operator written without `none_of` was reported cleanly
+    as `condition_operator_unknown`, because nothing had to negate it, which is
+    what made the crash look like a shape problem rather than an operator one.
+
+    Two codes, deliberately. The exposure check names the view it could not
+    analyse; the condition diagnosis, which only runs now because the validator
+    survives to reach it, names the operator on the leaf. An author fixing the
+    typo clears both.
+    """
+    schema = make_schema(make_table("Project", column("Status")))
+    bundle = make_bundle(
+        entities=["Project"],
+        views={
+            "Project": [
+                ViewDef(
+                    title="V",
+                    fields=["Title"],
+                    where=Group(
+                        kind="none_of",
+                        children=(Leaf("Status", "nonsense_op", "x"),),
+                    ),
+                ),
+            ],
+        },
+    )
+
+    findings = validate_against_mapping(schema, bundle)
+
+    refusal = only(findings, FindingCode.CONDITION_OPERATOR_NOT_NEGATABLE)
+    assert refusal.severity == "error"
+    assert "nonsense_op" in refusal.message
+    assert refusal.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where",
+    )
+    # The operator is named by the diagnosis too, which the crash used to
+    # prevent from running at all.
+    assert FindingCode.CONDITION_OPERATOR_UNKNOWN in codes(findings)

@@ -9,10 +9,16 @@ from dbml_sharepoint.analysis.column_projection import (
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.condition_rendering import (
     CAML,
+    ConditionRefusal,
     caml_condition_count,
     normalise,
 )
-from dbml_sharepoint.analysis.conditions import condition_fields, condition_findings, leaves
+from dbml_sharepoint.analysis.conditions import (
+    REFUSAL_FINDING_CODES,
+    condition_fields,
+    condition_findings,
+    leaves,
+)
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
@@ -404,17 +410,53 @@ def _editor_capacity_finding(
     )
 
 
-def check(vc: ValidationContext) -> list[Finding]:
+def _normalised_where(
+    where: Condition, entity: str, title: str, findings: list[Finding],
+) -> Condition | None:
+    """`where` pushed to positive leaves, or the finding refusing to.
+
+    `normalise` REFUSES a condition it cannot negate, and this family runs
+    BEFORE the condition diagnosis that would name the operator. Unguarded,
+    a `none_of` over an unknown operator left `validate_against_mapping`
+    raising `ConditionRefusal` out of the index-exposure check, and no run
+    reported the operator at all: the SAME operator written without `none_of`
+    is a clean `condition_operator_unknown`, because nothing has to negate it.
+    MEASURED 2026-09-12, on `none_of` over a leaf whose op is not in
+    `NEGATION`.
+
+    The exposure question needs a normalised tree and there is none, so the
+    caller skips the view and reports this instead. Translated through
+    `conditions.REFUSAL_FINDING_CODES`, the same table the renderer refusals
+    go through, so the two cannot disagree about which code a refusal is.
+    """
+    try:
+        return normalise(where)
+    except ConditionRefusal as refused:
+        findings.append(Finding(
+            REFUSAL_FINDING_CODES[refused.kind],
+            f"views[{entity}][{title!r}].where: {refused}",
+            location=Location(Section.VIEWS, entity=entity, view=title, sub="where"),
+        ))
+        return None
+
+
+def _field_set_findings(vc: ValidationContext) -> list[Finding]:
+    """Named column lists a view's `fields` pulls in with "@setname".
+
+    The loader expands them into `ViewDef.fields` before anything
+    downstream reads a view, so what is checked here is the DECLARATION.
+    Otherwise a bad set surfaces as a confusing error about the expanded
+    columns, or, for an unresolved `@name`, as a CAML field reference
+    SharePoint rejects live in the browser.
+
+    Lifted out of `check` unchanged. It reads no view state and the view
+    loop reads nothing it produces, so the two were only ever neighbours
+    in one function that had grown to the complexity ceiling.
+    """
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
-    # Field sets: named column lists a view's `fields` pulls in with
-    # "@setname". The loader expands them into ViewDef.fields before
-    # anything downstream reads a view, so what is checked here is the
-    # DECLARATION. Otherwise a bad set surfaces as a confusing error about
-    # the expanded columns, or (for an unresolved @name) as a CAML field
-    # reference SharePoint rejects live in the browser.
     for entity_name, entity_sets in bundle.mapping.field_sets.items():
         set_table = tables_by_name.get(entity_name)
         if set_table is None or entity_name not in bundle.mapping.entities:
@@ -486,7 +528,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"'@{set_name}'.",
                     location=at_set,
                 ))
+    return findings
 
+
+def check(vc: ValidationContext) -> list[Finding]:
+    bundle = vc.bundle
+    tables_by_name = vc.tables_by_name
+    cross_site_by_entity = vc.cross_site_by_entity
+    findings: list[Finding] = _field_set_findings(vc)
     # Declared views: everything checkable at build time IS checked at build
     # time. A deploy-time CAML rejection in the browser console is exactly
     # the failure class this tool exists to prevent.
@@ -719,8 +768,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # indexed". That question ignores how the conditions
                     # combine, and scored an OR with one indexed branch and one
                     # unindexed one as safe. See _index_covered.
+                    normalised = _normalised_where(
+                        view.where, entity_name, view.title, findings,
+                    )
+                    if normalised is None:
+                        continue
                     covered = _index_covered(
-                        normalise(view.where), vc.effective_indexes(entity_name),
+                        normalised, vc.effective_indexes(entity_name),
                     )
                     # An index on a Lookup or Person column counts here, same
                     # as any other: measured at 6,000 items with the column

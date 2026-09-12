@@ -64,6 +64,12 @@ the grammar in their own way.
 PROPERTY_ACCESSORS = {'person': frozenset({'email', 'id', 'title'}), 'lookup': frozenset({'lookupId', 'lookupValue'})}
 ```
 
+### `REFUSAL_FINDING_CODES`
+
+```python
+REFUSAL_FINDING_CODES = {<ConditionRefusalKind.COLUMN_TYPE_UNKNOWN: 1>: <FindingCode.CONDITION_COLUMN_TYPE_UNKNOWN: 'condition_column_type_unknown'>, <ConditionRefusalKind.DATE_IS_AN_UNQUOTED_YAML_DATETIME: 2>: <FindingCode.…
+```
+
 ### `leaves`
 
 ```python
