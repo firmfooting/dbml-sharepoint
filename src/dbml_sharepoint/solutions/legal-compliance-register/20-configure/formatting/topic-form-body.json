@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The topic",
+      "fields": ["Title", "ExternalRef", "Division", "Notes"]
+    },
+    {
+      "displayname": "Who owns it",
+      "fields": ["BusinessOwner", "ExecutiveResponsible", "LicenceHolder"]
+    },
+    {
+      "displayname": "Reporting and standing",
+      "fields": ["OversightCommittee", "Status"]
+    }
+  ]
+}

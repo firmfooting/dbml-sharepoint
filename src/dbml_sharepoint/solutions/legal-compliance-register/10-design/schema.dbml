@@ -1,0 +1,129 @@
+// ============================================================================
+// Legal compliance register: the compliance portal topics an organisation is
+// assessed on, and a document library holding one SAQ file per topic per
+// period, with the assessment workflow carried on the file.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project legal_compliance_register { database_type: 'SharePoint Online Lists' }
+
+// Customisation point. The organisation's divisions, in the executive's own
+// words. The library's folders (mapping.yaml, entities.SAQ.folders) carry
+// the same names, so change both together.
+Enum division {
+  "Clinical services"
+  "Corporate services"
+  "Community services"
+  "Executive and governance"
+}
+
+// Customisation point. The committees that receive compliance reporting.
+Enum committee {
+  "Audit and Risk Committee"
+  "Executive Committee"
+  "Board"
+  "Quality and Safety Committee"
+}
+
+// SAQ is a self-assessment questionnaire; REG is a regulatory register item
+// the portal issues beside them. Both are filed in the same library.
+Enum item_type {
+  "SAQ"
+  "REG"
+}
+
+// Calendar quarters: Q1 is January to March, Q2 is April to June, Q3 is
+// July to September, Q4 is October to December. Both period columns
+// pre-fill from a default formula at upload (mapping.yaml,
+// default_formulas), so a SAQ filed in the quarter it belongs to needs no
+// typing; one filed late is corrected by the coordinator. The
+// financial-year variant is in the README.
+Enum quarter {
+  "Q1"
+  "Q2"
+  "Q3"
+  "Q4"
+}
+
+Enum topic_status {
+  "Active"
+  "Retired"
+}
+
+// The lifecycle of one assessment. Overdue is not a member: it is derived
+// from DueDate by the Overdue view and the date's formatting.
+Enum assessment_status {
+  "Required"
+  "In progress"
+  "Submitted"
+  "Complete"
+  "No longer required"
+}
+
+Enum compliance_result {
+  "Not assessed"
+  "Compliant"
+  "Partially compliant"
+  "Non-compliant"
+}
+
+Table Topic {
+  Id                   int           [pk, increment]
+  Title                nvarchar      [not null, note: 'The topic name exactly as the compliance portal shows it']
+  ExternalRef          nvarchar      [unique, note: 'The topic identifier from the portal profile export. Leave blank if the export has none']
+  Division             division      [not null, note: 'The division that owns this topic. Its SAQ files sit in the matching library folder']
+  BusinessOwner        person        [not null, note: 'Who completes the SAQ for this topic']
+  ExecutiveResponsible person        [not null, note: 'The executive accountable for the topic, who confirms each assessment']
+  OversightCommittee   committee     [note: 'Where the result is reported']
+  LicenceHolder        person        [not null, note: 'Which named portal login records results for this topic']
+  Status               topic_status  [not null, default: 'Active', note: 'Retire a topic rather than deleting it, so its SAQs keep their history']
+  Notes                richtext      [note: 'Scope of the topic, legislation covered, anything the next owner should know']
+
+  indexes {
+    Division
+    BusinessOwner
+    ExecutiveResponsible
+    Status
+  }
+
+  Note: 'The register of portal topics: who completes each SAQ, which executive confirms it, which committee sees it and which licence holder records the result.'
+}
+
+// The library. Each row is a file: Title is empty after upload and the file
+// name lives in FileLeafRef, which is why no column here is called Title.
+//
+// Topic, Division, the two owner columns and DueDate are deliberately not
+// `not null`. A required column on a library is not enforced at REST upload
+// (measured: a bare Files/add succeeds with the column null and the file
+// not checked out), so the requirement lives in mapping.yaml as a save rule
+// gated on Status leaving Required, where the platform can enforce it.
+Table SAQ {
+  Id                   int                [pk, increment]
+  Topic                int                [ref: > Topic.Id, note: 'The portal topic this SAQ answers']
+  ItemType             item_type          [not null, default: 'SAQ', note: 'SAQ for a self-assessment questionnaire, REG for a regulatory register item']
+  PeriodYear           int                [not null, note: 'The year of the review period, as four digits. Pre-filled with the current year; change it for a SAQ filed after its quarter ended']
+  Quarter              quarter            [not null, note: 'The calendar quarter of the review period (Q1 is January to March). Pre-filled with the current quarter; change it for a SAQ filed late']
+  Division             division           [note: 'The division that owns the topic. File the SAQ in the matching folder']
+  BusinessOwner        person             [note: 'Copied from the topic. Drives the My responsibility view']
+  ExecutiveResponsible person             [note: 'Copied from the topic. Drives the My accountability view']
+  DueDate              date               [note: 'When the completed SAQ is due back to the coordinator']
+  Status               assessment_status  [not null, default: 'Required', note: 'Required when filed; the business owner moves it to In progress and Submitted; the executive sets Complete']
+  Compliance           compliance_result  [not null, default: 'Not assessed', note: 'Set by the business owner at submission and confirmed by the executive']
+  CompletedDate        date               [note: 'The day the executive confirmed the assessment']
+  ActionUrl            hyperlink          [note: 'For a Partially compliant or Non-compliant result: the action recorded on the audit actions or improvement register']
+  ExternalRecorded     date               [note: 'The day the licence holder recorded this result in the portal. Blank means the loop is not yet closed']
+  Notes                richtext           [note: 'Evidence sighted, caveats, what changed since last period']
+
+  indexes {
+    Topic
+    Status
+    DueDate
+    Division
+    PeriodYear
+    Quarter
+    BusinessOwner
+    ExecutiveResponsible
+  }
+
+  Note: 'One file per topic per period: the SAQ as issued, who completes it, when it is due, the result, and whether it has been recorded back in the portal.'
+}

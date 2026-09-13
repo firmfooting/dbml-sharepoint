@@ -18,6 +18,7 @@ from dbml_sharepoint.analysis.report_columns import LIBRARY_REPORT_COLUMNS
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import (
+    LIBRARY_REPORT_COLUMNS,
     ListPlan,
     build_plans,
     is_expand_queryable,

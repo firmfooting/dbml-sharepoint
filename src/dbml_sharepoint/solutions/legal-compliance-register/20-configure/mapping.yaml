@@ -1,0 +1,666 @@
+# Legal compliance register: physical mapping. One list (Topic) and one
+# document library (SAQ). Keys marked NEW arrive with the core document
+# library change and are refused by the loader until it lands.
+prefix: "LC_"
+
+entities:
+  Topic: { kind: List, base_template: 100, site_role: default }
+  SAQ:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    # NEW. Root folders, created at deploy and verified on redeploy. They
+    # must equal the division enum in 10-design/schema.dbml, name for name.
+    folders:
+      - "Clinical services"
+      - "Corporate services"
+      - "Community services"
+      - "Executive and governance"
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+
+# Nothing external binds a column today. If the optional reassignment flow
+# described in 50-govern/governance.md is built, declare what it binds so a
+# rename fails the build rather than the flow:
+#
+#   watched_lists:
+#     - { entity: Topic, column: BusinessOwner }
+#     - { entity: Topic, column: ExecutiveResponsible }
+#     - { entity: Topic, column: Division }
+#     - { entity: SAQ, column: Topic }
+#     - { entity: SAQ, column: BusinessOwner }
+#     - { entity: SAQ, column: ExecutiveResponsible }
+#     - { entity: SAQ, column: Division }
+#     - { entity: SAQ, column: Status }
+watched_lists: []
+
+# NEW. SharePoint evaluates a default formula when the item is created,
+# which on a library is the upload. Calendar quarters, Q1 being January to
+# March; the financial-year pair is in the README. The formula engine's
+# clock runs behind the site (mapping reference, "Which clock today reads"),
+# so on the first day of a quarter the pre-fill can name the previous one.
+default_formulas:
+  SAQ:
+    PeriodYear: "=YEAR(TODAY())"
+    Quarter: "=\"Q\"&ROUNDUP(MONTH(TODAY())/3,0)"
+
+# Security: coordinators maintain both; business owners and executives edit
+# the library without delete; everyone reads; Full Control confined to the
+# empty-by-default admin group.
+groups:
+  - name: "{prefix} Compliance Coordinators"
+    description: "File each period's SAQs, keep the topic register current, record confirmed results in the compliance portal."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "{prefix} Assessment Owners"
+    description: "Business owners who complete SAQs and executives who confirm them. Edit without delete."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+# SharePoint's built-in Edit carries ManageLists and Contribute carries
+# DeleteListItems, so "edit files and rows, never delete" is a level of
+# its own. Names are keys of BASE_PERMISSIONS in analysis/permissions.py.
+permission_levels:
+  - name: "{prefix} Contribute No Delete"
+    description: "Add and edit files and rows and read everything; no delete, no schema rights."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+      - OpenItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseClientIntegration
+      - UseRemoteAPIs
+      - CreateAlerts
+      - ManagePersonalViews
+      - EditMyUserInfo
+
+# The library is the working container; the topic register is maintained by
+# coordinators only. Site Members read both. Executives share the owners
+# group rather than holding a third level.
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "{prefix} Compliance Coordinators" }
+        level: "Contribute"
+      - principal: { kind: group, name: "{prefix} Assessment Owners" }
+        level: "{prefix} Contribute No Delete"
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+  overrides:
+    Topic:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Compliance Coordinators" }
+          level: "Contribute"
+        - principal: { kind: group, name: "{prefix} Assessment Owners" }
+          level: "Read"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Read"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible: drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement. See
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Internal names stay as authored in the DBML (views, indexes, the lookup
+# and the reporting bundle key on them); the deployer renames the display
+# title after create. Three overrides where auto-splitting reads badly or
+# says less than the column means.
+display_names:
+  mode: auto
+  overrides:
+    Topic:
+      ExternalRef: "Portal reference"
+    SAQ:
+      ItemType: "Type"
+      ActionUrl: "Action link"
+      ExternalRecorded: "Recorded in portal"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md). Tokens by role, not by word.
+column_formatting:
+  Topic:
+    Status:
+      style: severity
+      map: { "Active": low, "Retired": muted }
+  SAQ:
+    # Submitted takes warning rather than the intake neutral the style
+    # guide lists for the word: here it means "waiting on the executive".
+    Status:
+      style: severity
+      map:
+        "Required": neutral
+        "In progress": low
+        "Submitted": warning
+        "Complete": good
+        "No longer required": muted
+    Compliance:
+      style: severity
+      map:
+        "Not assessed": neutral
+        "Compliant": good
+        "Partially compliant": warning
+        "Non-compliant": severe
+    # The deadline, guarded on the two terminal statuses so a finished SAQ
+    # stops shouting.
+    DueDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Complete", "No longer required"] }
+
+# Every view on an entity shows the same identifying columns before its
+# own payload, so the spine is declared once. On the library the file name
+# is FileLeafRef; Title is empty after upload.
+field_sets:
+  Topic:
+    identity: [Title, Division, BusinessOwner, ExecutiveResponsible, Status]
+  SAQ:
+    identity: [FileLeafRef, Topic, PeriodYear, Quarter, Division, BusinessOwner, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are keyed on INTERNAL names; the build
+# rewrites them to display titles because ColumnWidth binds by display
+# name. Every SAQ view is `scope: recursive`, which renders
+# Scope="Recursive", so a file is found whichever division folder it was
+# filed in (library.folder.view-flattens-depth). Under recursive scope the
+# default view's group_by is the metadata grouping, not the folder one.
+views:
+  Topic:
+    - title: "Active topics"
+      default: true
+      fields: ["@identity", LicenceHolder, OversightCommittee]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: Division, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Division: 180
+        BusinessOwner: 160
+        ExecutiveResponsible: 180
+        Status: 120
+        LicenceHolder: 160
+        OversightCommittee: 200
+    - title: "By business owner"
+      fields: ["@identity", LicenceHolder]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: BusinessOwner, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Division: 180
+        BusinessOwner: 160
+        ExecutiveResponsible: 180
+        Status: 120
+        LicenceHolder: 160
+    - title: "Retired"
+      fields: ["@identity", Notes]
+      where:
+        - { field: Status, op: eq, value: "Retired" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Division: 180
+        BusinessOwner: 160
+        ExecutiveResponsible: 180
+        Status: 120
+        Notes: 200
+
+  SAQ:
+    # The working view. Complete and No longer required drop out, which is
+    # the "a finished SAQ disappears" behaviour the design asked for.
+    - title: "Pending"
+      default: true
+      scope: recursive
+      fields: ["@identity", ExecutiveResponsible, DueDate, Compliance]
+      where:
+        - { field: Status, op: not_in, value: ["Complete", "No longer required"] }
+      group_by: { field: Division, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        FileLeafRef: 300
+        Topic: 220
+        PeriodYear: 100
+        Quarter: 100
+        Division: 180
+        BusinessOwner: 160
+        Status: 150
+        ExecutiveResponsible: 180
+        DueDate: 140
+        Compliance: 160
+    - title: "My responsibility"
+      scope: recursive
+      fields: ["@identity", DueDate, Compliance]
+      where:
+        - { field: BusinessOwner, op: eq, value: me }
+        - { field: Status, op: in, value: ["Required", "In progress"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        FileLeafRef: 300
+        Topic: 220
+        PeriodYear: 100
+        Quarter: 100
+        Division: 180
+        BusinessOwner: 160
+        Status: 150
+        DueDate: 140
+        Compliance: 160
+    # Status descending puts Submitted above Required and In progress
+    # alphabetically. Asserted by nothing; recheck on any rename.
+    - title: "My accountability"
+      scope: recursive
+      fields: ["@identity", DueDate, Compliance, ActionUrl]
+      where:
+        - { field: ExecutiveResponsible, op: eq, value: me }
+        - { field: Status, op: not_in, value: ["Complete", "No longer required"] }
+      sort:
+        - { field: Status, direction: desc }
+        - { field: DueDate, direction: asc }
+      widths:
+        FileLeafRef: 300
+        Topic: 220
+        PeriodYear: 100
+        Quarter: 100
+        Division: 180
+        BusinessOwner: 160
+        Status: 150
+        DueDate: 140
+        Compliance: 160
+        ActionUrl: 180
+    - title: "Overdue"
+      scope: recursive
+      fields: ["@identity", ExecutiveResponsible, DueDate]
+      where:
+        - { field: DueDate, op: lt, value: today }
+        - { field: Status, op: not_in, value: ["Complete", "No longer required"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        FileLeafRef: 300
+        Topic: 220
+        PeriodYear: 100
+        Quarter: 100
+        Division: 180
+        BusinessOwner: 160
+        Status: 150
+        ExecutiveResponsible: 180
+        DueDate: 140
+    # The loop-closing view: confirmed here, not yet keyed into the portal.
+    # Empty is the healthy state.
+    - title: "To record in the portal"
+      scope: recursive
+      fields: ["@identity", Compliance, CompletedDate, ExternalRecorded]
+      where:
+        - { field: Status, op: eq, value: "Complete" }
+        - { field: ExternalRecorded, op: is_null }
+      sort:
+        - { field: CompletedDate, direction: asc }
+      widths:
+        FileLeafRef: 300
+        Topic: 220
+        PeriodYear: 100
+        Quarter: 100
+        Division: 180
+        BusinessOwner: 160
+        Status: 150
+        Compliance: 160
+        CompletedDate: 140
+        ExternalRecorded: 160
+
+# Form layouts: a strapline header and a sectioned body per entity. The SAQ
+# header's title line reads [$FileLeafRef], the file name, because Title
+# is empty on every uploaded file. Section field lists are authored with
+# INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Topic:
+    header: formatting/topic-form-header.json
+    body: formatting/topic-form-body.json
+  SAQ:
+    header: formatting/saq-form-header.json
+    body: formatting/saq-form-body.json
+
+# The confirmation and recording dates exist only once the executive has
+# set Complete, and an action link only for a gap result. Each field is
+# visible exactly when it is meaningful. A hidden field keeps its value.
+form_visibility:
+  SAQ:
+    columns:
+      CompletedDate:
+        when:
+          - { field: Status, op: eq, value: "Complete" }
+      ExternalRecorded:
+        when:
+          - { field: Status, op: eq, value: "Complete" }
+      ActionUrl:
+        when:
+          - { field: Compliance, op: in, value: ["Partially compliant", "Non-compliant"] }
+
+# Per-column save rules, each with its own message. The two date rules
+# compare with today, so the build hoists them onto the list rule under a
+# blank guard (mapping reference, "Rules against today and now").
+column_validation:
+  SAQ:
+    columns:
+      PeriodYear:
+        when:
+          - { field: PeriodYear, op: geq, value: 2024 }
+          - { field: PeriodYear, op: leq, value: 2100 }
+        message: "Enter the review year as four digits, 2024 or later."
+      CompletedDate:
+        when:
+          - { field: CompletedDate, op: leq, value: today }
+        message: "The confirmation date cannot be in the future."
+      ExternalRecorded:
+        when:
+          - { field: ExternalRecorded, op: leq, value: today }
+        message: "The portal recording date cannot be in the future."
+
+# Save-time enforcement on the LIST, three implications chained under one
+# message (a list has one ValidationFormula). `if A then B` is
+# `any_of[not A, B]`, so each branch starts with the case it does not
+# apply to.
+#
+# NOT here, because a validation formula cannot read the column: the topic
+# and the two owner columns (lookup and person operands are refused) and
+# the action link on a gap result (a hyperlink operand is refused, measured
+# 2026-07-29). Those stay governance checks; see 50-govern/governance.md.
+list_validation:
+  SAQ:
+    when:
+      # A SAQ past Required has been handed to somebody, so it must say
+      # which division and by when. Required columns would not do this:
+      # a REST upload lands with them empty.
+      - any_of:
+          - { field: Status, op: eq, value: "Required" }
+          - all_of:
+              - { field: Division, op: is_not_null }
+              - { field: DueDate, op: is_not_null }
+      # Submitted or Complete needs a real result.
+      - any_of:
+          - { field: Status, op: not_in, value: ["Submitted", "Complete"] }
+          - { field: Compliance, op: neq, value: "Not assessed" }
+      # Complete needs the day the executive confirmed it.
+      - any_of:
+          - { field: Status, op: neq, value: "Complete" }
+          - { field: CompletedDate, op: is_not_null }
+    message: "This SAQ cannot be saved yet. Check three things: any status other than Required needs a division and a due date; Submitted or Complete needs a compliance result other than Not assessed; and Complete also needs a completed date."
+
+# Reporting-only columns, computed in the generated Power Query and never
+# deployed. The owner columns exist on both entities, and the copy on an
+# OPEN SAQ is a defect when it disagrees with the register; a closed SAQ is
+# a historical fact and may disagree. Person columns reach the query as
+# <Column>Id and <Column>Title, so the comparison is on ids. Keep
+# OwnerDrift beside _UserAddedColumns on the report's documentation page:
+# expected all false.
+derived_columns:
+  SAQ:
+    - kind: lookup
+      from: Topic
+      via: Topic
+      pick:
+        TopicBusinessOwnerId: BusinessOwnerId
+        TopicExecutiveResponsibleId: ExecutiveResponsibleId
+        TopicDivision: Division
+      types:
+        TopicBusinessOwnerId: Int64
+        TopicExecutiveResponsibleId: Int64
+        TopicDivision: text
+      hidden: true
+    - kind: expr
+      name: OwnerDrift
+      type: logical
+      m: '([Status] = "Required" or [Status] = "In progress" or [Status] = "Submitted") and ([BusinessOwnerId] <> [TopicBusinessOwnerId] or [ExecutiveResponsibleId] <> [TopicExecutiveResponsibleId] or [Division] <> [TopicDivision])'
+
+# Demo rows and files (emitted as demo-data.js ONLY when built with --seed).
+# Every Title and every file name starts "[DEMO] ". Dates are today+/-N so
+# the views land on whatever day the demo runs; "@me" is the pasting
+# operator. Rollback requires per-list confirmation before every delete,
+# and deleted files go to the recycle bin (library.folder.delete-recycles).
+#
+# Coverage: six topics across all four divisions, one Retired; six files,
+# at least one in every folder, one per assessment status except No longer
+# required, every compliance result, one overdue, one confirmed but not
+# yet recorded (To record in the portal) and one recorded. Each file names
+# a topic that is a demo row, by key. Period year and quarter are set
+# explicitly so the file name and the columns agree whatever quarter the
+# demo is pasted in.
+demo_items:
+  Topic:
+    - key: topic-privacy
+      values:
+        Title: "[DEMO] Privacy and health records"
+        ExternalRef: "DEMO-1042"
+        Division: "Clinical services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Quality and Safety Committee"
+        LicenceHolder: "@me"
+        Status: "Active"
+        Notes: "Demo row. Health records handling, privacy principles and data breach notification."
+    - key: topic-whs
+      values:
+        Title: "[DEMO] Work health and safety"
+        ExternalRef: "DEMO-1057"
+        Division: "Corporate services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Audit and Risk Committee"
+        LicenceHolder: "@me"
+        Status: "Active"
+        Notes: "Demo row. Duties to workers and others, consultation, incident notification."
+    - key: topic-child-safe
+      values:
+        Title: "[DEMO] Child safe standards"
+        ExternalRef: "DEMO-1103"
+        Division: "Community services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Quality and Safety Committee"
+        LicenceHolder: "@me"
+        Status: "Active"
+        Notes: "Demo row. The standards, the reportable conduct scheme and working-with-children checks."
+    - key: topic-foi
+      values:
+        Title: "[DEMO] Freedom of information"
+        ExternalRef: "DEMO-1118"
+        Division: "Executive and governance"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Board"
+        LicenceHolder: "@me"
+        Status: "Active"
+        Notes: "Demo row. Request handling, statutory timeframes, the published information statement."
+    - key: topic-food
+      values:
+        Title: "[DEMO] Food safety"
+        ExternalRef: "DEMO-1126"
+        Division: "Clinical services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Quality and Safety Committee"
+        LicenceHolder: "@me"
+        Status: "Active"
+        Notes: "Demo row. Food safety programs at each kitchen, supervisor training, audit findings."
+    - key: topic-procurement
+      values:
+        Title: "[DEMO] Procurement"
+        ExternalRef: "DEMO-1131"
+        Division: "Corporate services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        OversightCommittee: "Audit and Risk Committee"
+        LicenceHolder: "@me"
+        Status: "Retired"
+        Notes: "Demo row. Retired when procurement moved under the shared-services agreement. Its 2026 Q2 SAQ stays in the library, which is why a topic is retired rather than deleted."
+  SAQ:
+    - key: saq-privacy-2026-q3
+      # NEW. The file the row describes; the name carries the [DEMO] marker.
+      file:
+        name: "[DEMO] Privacy and health records - 2026 Q3.txt"
+        folder: "Clinical services"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-privacy }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q3"
+        Division: "Clinical services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today+30"
+        Status: "Required"
+        Compliance: "Not assessed"
+    - key: saq-whs-2026-q3
+      file:
+        name: "[DEMO] Work health and safety - 2026 Q3.txt"
+        folder: "Corporate services"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-whs }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q3"
+        Division: "Corporate services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today+10"
+        Status: "In progress"
+        Compliance: "Not assessed"
+        Notes: "Demo row. Evidence being gathered from the WHS committee minutes and the incident register."
+    - key: saq-child-safe-2026-q3
+      file:
+        name: "[DEMO] Child safe standards - 2026 Q3.txt"
+        folder: "Community services"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-child-safe }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q3"
+        Division: "Community services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today+5"
+        Status: "Submitted"
+        Compliance: "Partially compliant"
+        ActionUrl: "https://example.sharepoint.com/sites/quality/demo-improvement-item"
+        Notes: "Demo row. Two of the eleven standards lack a documented review; the improvement item is linked. Waiting on the executive."
+    - key: saq-foi-2026-q3
+      file:
+        name: "[DEMO] Freedom of information - 2026 Q3.txt"
+        folder: "Executive and governance"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-foi }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q3"
+        Division: "Executive and governance"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today-7"
+        Status: "Required"
+        Compliance: "Not assessed"
+        Notes: "Demo row. A week past due and not started: this is what the Overdue view is for."
+    - key: saq-food-2026-q2
+      file:
+        name: "[DEMO] Food safety - 2026 Q2.txt"
+        folder: "Clinical services"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-food }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q2"
+        Division: "Clinical services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today-20"
+        Status: "Complete"
+        Compliance: "Compliant"
+        CompletedDate: "today-3"
+        Notes: "Demo row. Confirmed by the executive three days ago and not yet keyed into the portal. Set Recorded in portal and it leaves the loop-closing view."
+    - key: saq-procurement-2026-q2
+      file:
+        name: "[DEMO] Procurement - 2026 Q2.txt"
+        folder: "Corporate services"
+        content: "Demo file. Stands in for the SAQ the portal issued for this topic and period."
+      values:
+        Topic: { demo_ref: topic-procurement }
+        ItemType: "SAQ"
+        PeriodYear: 2026
+        Quarter: "Q2"
+        Division: "Corporate services"
+        BusinessOwner: "@me"
+        ExecutiveResponsible: "@me"
+        DueDate: "today-40"
+        Status: "Complete"
+        Compliance: "Non-compliant"
+        CompletedDate: "today-25"
+        ExternalRecorded: "today-24"
+        ActionUrl: "https://example.sharepoint.com/sites/quality/demo-audit-action"
+        Notes: "Demo row. The whole loop, closed: answered, confirmed, action linked, recorded in the portal the next day."

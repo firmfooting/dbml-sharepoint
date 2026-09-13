@@ -50,6 +50,7 @@ hand-off into that same improvement/investment chain.
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
 | [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log -> dated chase trail -> raised theme; how promptly the record was made is itself a column |
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation -> owner -> evidence -> review |
+| [legal-compliance-register](legal-compliance-register/) | Portal-issued legal compliance questionnaires | The first document library in the collection: one SAQ file per topic per quarter with the workflow on the file, two personal worklists, and a loop-closing view that is empty once every confirmed result is recorded back in the portal |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation, the lookup every other register's "per your delegations" points at |
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
@@ -280,14 +281,20 @@ that view exists as soon as the script finishes.
 **No exceptions.** Every entity in every template declares its views, its
 form header and its demo rows, and a test over every template says so.
 
-A document library is a supported kind. A library's items are files, so a
-library entity names the file through `FileLeafRef` in its views and its
-header, declares the folders the deploy creates, and flattens them with a
-recursive view; the measurements behind each of those are cited beside the
-code that relies on them. No shipped template holds a library yet. To
-manage controlled documents in the meantime, model the metadata as a
-`List` and keep the documents in a library you manage separately, linked
-with a hyperlink column.
+One family, `legal-compliance-register`, deploys a document library beside
+its list, and the library is held to the same standard as every list:
+declared views (recursive, so a file is found whichever folder it was filed
+in), a form header that names the file through `FileLeafRef` rather than
+the empty `Title`, demo files uploaded into declared folders under `--seed`,
+and folders created and verified by the deploy. A library is accepted only
+as `kind: DocumentLibrary` with `base_template: 101`, each of its demo items
+names a file, and the settings the deploy does not make (the Document ID
+feature, a retention label, per-folder column defaults, hiding the New
+Folder command) are listed in that family's `30-deploy/deploy.md` as manual
+steps a redeploy does not check. Where the metadata is the point and the
+documents are incidental, modelling the metadata as a `List` with a
+hyperlink to a library you manage separately is still the simpler shape,
+and it is the one every other family uses.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,
