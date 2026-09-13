@@ -41,13 +41,18 @@ def _findings(
     where: Callable[[str], Location],
 ) -> list[Finding]:
     declared = list(declared)
-    current = {name for name, _previous in declared}
+    # Case-insensitively: every one of these is resolved on the site by a
+    # case-insensitive read (lists and levels by getbytitle/getbyname, groups
+    # by a folded compare over the enumeration), so comparing exactly here
+    # passes a declaration the deploy then refuses on the operator's site.
+    current = {name.casefold() for name, _previous in declared}
     findings: list[Finding] = []
-    claims: dict[str, list[str]] = {}
+    claims: dict[str, tuple[str, list[str]]] = {}
     for name, previous_names in declared:
         for previous in previous_names:
-            claims.setdefault(previous, []).append(name)
-            if previous in current:
+            claim = claims.setdefault(previous.casefold(), (previous, []))
+            claim[1].append(name)
+            if previous.casefold() in current:
                 findings.append(Finding(
                     FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY,
                     f"{kind} {name!r}: renamed_from resolves to {previous!r}, "
@@ -57,7 +62,7 @@ def _findings(
                     f"from renamed_from.",
                     location=where(name),
                 ))
-    for previous, claimants in claims.items():
+    for previous, claimants in claims.values():
         if len(claimants) > 1:
             findings.append(Finding(
                 FindingCode.RENAMED_FROM_CLAIMED_TWICE,

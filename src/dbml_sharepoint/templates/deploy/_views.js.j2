@@ -56,6 +56,29 @@
   // absent view answers HTTP 400, which the browser console paints red even
   // though isAbsent400 handles it; operators read those lines as failures.
   const viewShapesByList = {};
+  // Which live view each declaration on a list resolved to. One enumeration
+  // serves every declaration, so a title this phase has already changed is
+  // still in it under the old name: a later declaration claiming that old
+  // title matched the same view, saw a basename mismatch, and its URL
+  // migration deleted the view the earlier declaration had just verified.
+  // Both were then reported verified with one of them gone.
+  const claimedViewIds = {};
+  const claimView = (listPath, id, title) => {
+    const claimed = claimedViewIds[listPath] || (claimedViewIds[listPath] = new Map());
+    const owner = claimed.get(id);
+    if (owner !== undefined && owner !== title) {
+      throw new Error(`views '${owner}' and '${title}' on this list both resolved to the same live view; refusing to write either`);
+    }
+    claimed.set(id, title);
+  };
+  // Write a title this phase has just changed back into the enumeration, so
+  // the matchers above see the list as it now is rather than as it was read.
+  // The guard is what fails closed; this is what stops it firing on a rename
+  // the deployer itself performed.
+  const noteViewTitle = (listPath, id, title) => {
+    const cached = (viewShapesByList[listPath] || []).find((v) => v.Id === id);
+    if (cached) cached.Title = title;
+  };
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
       // `$top=500`: a read with no explicit page size takes the server's,
@@ -176,11 +199,32 @@
       // ever hold it. The generator sets this flag on a library's generated
       // All Items and on no other view, so the foreign-view guard still stands
       // everywhere a declared view could otherwise take over somebody's page.
+      //
+      // A basename match is not identity. The same probe measured that the
+      // built-in can be deleted and the URL then reads free
+      // (`library.view.builtin-delete-frees-url`), so a foreign public view
+      // can be sitting on AllItems.aspx. Nothing in the enumeration says
+      // "built-in", so adoption takes the shape that WAS measured: the list's
+      // default view, under a title no declaration claims. Anything else
+      // falls through to the create beside it, which the URL drift gate fails
+      // closed exactly as it did before libraries were supported.
       if (!existing && view.adopts_builtin_view) {
-        const builtin = listedViews.find((v) => urlBasename(v) === desiredBasename) || null;
+        const claimedByADeclaration = (title) => SCHEMA.views.some(
+          (other) => other.list === view.list
+            && (nameKey(other.title) === nameKey(title)
+              || (other.renamed_from || []).some((t) => nameKey(t) === nameKey(title))),
+        );
+        const onTheUrl = listedViews.find((v) => urlBasename(v) === desiredBasename) || null;
+        const builtin = onTheUrl
+          && onTheUrl.DefaultView === true
+          && !claimedByADeclaration(onTheUrl.Title)
+          ? onTheUrl
+          : null;
         if (builtin) {
           existing = builtin;
           log('INFO', `[Phase {{ phase.number }}] Adopting the built-in view '${builtin.Title}' on '${view.list}' as '${view.title}'.`);
+        } else if (onTheUrl) {
+          log('WARN', `[Phase {{ phase.number }}] '${onTheUrl.Title}' holds ${desiredBasename} on '${view.list}' but is not this library's built-in view (default: ${onTheUrl.DefaultView === true}); not adopting it.`);
         }
       }
       if (!existing) {
@@ -194,6 +238,9 @@
           await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
         }
       } else {
+        // Before any write: two declarations resolving to one live view is
+        // the shape where one of them deletes what the other just verified.
+        claimView(listPath, existing.Id, view.title);
         if (existing.PersonalView) {
           throw new Error(`existing view '${view.title}' is a personal view; declared views must be public`);
         }
@@ -222,6 +269,12 @@
           if (view.url_slug !== view.title) {
             await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
           }
+          // The enumeration still holds the view this migration just deleted.
+          // Leaving it there lets a later declaration match a title that no
+          // longer exists and resolve an Id that no longer does either.
+          const migrated = viewShapesByList[listPath] || [];
+          const stale = migrated.findIndex((v) => v.Id === existing.Id);
+          if (stale !== -1) migrated.splice(stale, 1);
           existing = await readViewShape(viewUrl);
           if (!existing) throw new Error('view disappeared during URL migration');
         } else if (existing.Title !== view.title) {
@@ -234,6 +287,7 @@
             { __metadata: { type: 'SP.View' }, Title: view.title },
             viewDigest,
           );
+          noteViewTitle(listPath, existing.Id, view.title);
           existing = await readViewShape(viewUrl);
           if (!existing) throw new Error('view disappeared during title migration');
         }

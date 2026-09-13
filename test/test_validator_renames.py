@@ -70,6 +70,27 @@ def test_a_previous_name_listed_twice_on_one_entity_errors() -> None:
     only(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
 
 
+def test_a_previous_entity_name_collides_case_insensitively() -> None:
+    """The preflight resolves a list by title, and getbytitle folds case, so
+    'issue' finds the list 'Issue' and the deploy meets both the current and
+    the previous title. Comparing exactly here let that reach the operator.
+    """
+    found = _rename_findings({
+        "Risk": _entity("Risk", "issue"),
+        "Issue": _entity("Issue"),
+    })
+    assert "'issue'" in only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY).message
+
+
+def test_a_previous_entity_name_claimed_twice_collides_case_insensitively() -> None:
+    """Two lists racing to adopt one existing list, spelled differently."""
+    found = _rename_findings({
+        "Risk": _entity("Risk", "ProgramRisk"),
+        "Hazard": _entity("Hazard", "programrisk"),
+    })
+    only(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
+
+
 def test_a_previous_name_with_reserved_text_errors() -> None:
     """The old marker is computed from the previous name exactly as the
     current one is from the entity name, so the same grammar applies."""
@@ -130,6 +151,21 @@ def test_a_previous_level_name_that_is_still_a_declared_level_errors() -> None:
     )
     f = only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
     assert "permission level" in f.message
+
+
+def test_a_previous_group_name_collides_case_insensitively() -> None:
+    """The group rename reads one enumeration and compares folded titles, so
+    'gov handlers' resolves the declared 'GOV Handlers' on the site."""
+    found = _perm_findings([_group("GOV Leads", "gov handlers"), _group("GOV Handlers")])
+    only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
+
+
+def test_a_previous_level_name_collides_case_insensitively() -> None:
+    """Levels resolve by getbyname, which folds case the same way."""
+    found = _perm_findings(
+        [], [_level("GOV Submit Only", "gov read only"), _level("GOV Read Only")],
+    )
+    only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
 
 
 def test_clean_group_and_level_renames_are_silent() -> None:
