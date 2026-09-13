@@ -61,7 +61,7 @@ def test_a_composite_index_is_refused() -> None:
 
 
 def test_the_composite_refusal_names_the_table() -> None:
-    """A build over thirty entities reports one message, so it has to say
+    """A build over a whole schema reports one message, so it has to say
     which table to go and fix."""
     composite = table(
         "Assessment", "Status", "Category",

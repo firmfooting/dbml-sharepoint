@@ -21,7 +21,7 @@ def test_a_mapping_passes_through_unchanged() -> None:
 
 
 def test_an_empty_mapping_is_accepted() -> None:
-    """`{}` is this structure with zero entries, which thirty shipped mappings
+    """`{}` is this structure with zero entries, which the shipped mappings
     write deliberately. The guard is about SHAPE, never about emptiness."""
     assert _require_mapping({}, "mapping.enum_sources") == {}
 
