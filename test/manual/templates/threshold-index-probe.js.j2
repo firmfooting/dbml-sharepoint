@@ -216,6 +216,10 @@
  *                                              PROJECT? (issue #44)
  *     created-by-counts-as-join     (JOINSYS)  does Created By count as a join?
  *     modified-by-counts-as-join    (JOINEDT)  does Modified By count as a join?
+ *     created-date-counts-as-join   (JOINCRT)  does the Created DATE column count
+ *                                              as a join? (issue #53)
+ *     modified-date-counts-as-join  (JOINMOD)  does the Modified DATE column count
+ *                                              as a join? (issue #53)
  *     person-counts-as-join         (JOINPER)  does a Person column count as a join?
  *     projected-field-costs-a-join  (JOINPRJ)  does a lookup's additional-field projection
  *                                              cost its own join?
@@ -351,10 +355,14 @@
  *   by TYPE, at any list size, with real values present in the status column
  *   driving it. What does work is TGTSTO: an INDEXED filter first, then order.
  *
- *   NOT ESTABLISHED: Created, Modified, Author and Editor. All four were
- *   refused at 6,000, which this fixture cannot read as evidence: the loader
- *   owns every row, so each matches the whole list and breaches on result-set
- *   size. Needs rows from several principals over several intervals.
+ *   NOT ESTABLISHED: Created, Modified, Author and Editor as FILTERS. All four
+ *   were refused at 6,000, which this fixture cannot read as evidence: the
+ *   loader owns every row, so each matches the whole list and breaches on
+ *   result-set size. Needs rows from several principals over several intervals.
+ *   This is a statement about the four `scale.native-idx` rows and about
+ *   nothing else. The `scale.join` rows PROJECT these columns at the ceiling
+ *   rather than filtering on them, and a projection does not care who authored
+ *   the rows or when, so JOINCRT and JOINMOD are unaffected by it.
  *
  *   ANSWERED: the lookup target's size does not change the view result. With
  *   6,500 items in the TARGET and 6,000 in the source, the projecting query is
@@ -552,6 +560,8 @@
   expect('scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?');
   expect('scale.join.created-by-counts-as-join', 'Does Created By count as a join?');
   expect('scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?');
+  expect('scale.join.created-date-counts-as-join', 'Does the Created DATE column count as a join?');
+  expect('scale.join.modified-date-counts-as-join', 'Does the Modified DATE column count as a join?');
   expect('scale.join.person-counts-as-join', 'Does a Person column count as a join?');
   expect('scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?");
   expect('scale.index.caml-and-indexed-first', 'CAML And, INDEXED condition FIRST');
@@ -1736,6 +1746,8 @@
       ['scale.join.lookup-column-ceiling', 'How many Lookup columns can one view project?'],
       ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?'],
       ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?'],
+      ['scale.join.created-date-counts-as-join', 'Does the Created DATE column count as a join?'],
+      ['scale.join.modified-date-counts-as-join', 'Does the Modified DATE column count as a join?'],
       ['scale.join.person-counts-as-join', 'Does a Person column count as a join?'],
       ['scale.join.projected-field-costs-a-join', "Does a lookup's additional-field projection cost its own join?"],
       ['scale.index.caml-and-indexed-first', 'CAML And, INDEXED condition FIRST'],
@@ -1957,6 +1969,9 @@
   // Which column types count is thinner still: lookup, person/group and
   // managed metadata are named, and Created By / Modified By are widely
   // reported but nowhere documented. JOINSYS and JOINPER settle those.
+  // Nothing documents the Created and Modified DATE columns either way, and
+  // `analysis/joins.py` excludes them by INFERENCE from their type rather than
+  // from a measurement. JOINCRT and JOINMOD settle that (issue #53).
   //
   // The filter stays at Bucket='Z' throughout (indexed, 60 rows, established
   // as served), so the ONLY variable across these rows is how many joins the
@@ -2019,6 +2034,8 @@
     for (const [id, question] of [
       ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?'],
       ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?'],
+      ['scale.join.created-date-counts-as-join', 'Does the Created DATE column count as a join?'],
+      ['scale.join.modified-date-counts-as-join', 'Does the Modified DATE column count as a join?'],
       ['scale.join.person-counts-as-join', 'Does a Person column count as a join?'],
     ]) {
       record(id, question, 'NOT ESTABLISHED',
@@ -2053,10 +2070,21 @@
     //
     // One suspect per row, not two. A base of 11 with Author AND Editor fails
     // if the pair contributes two, and says nothing about which one did it.
+    //
+    // Created and Modified are the DATE columns, not the person-typed Created
+    // By and Modified By two rows above them. `analysis/joins.py` excludes them
+    // from join cost by inference from their type, which is the last inferred
+    // claim in the join model (issue #53). This is a PROJECTION at the ceiling,
+    // so the single-principal limitation that blocks the filter-side question
+    // against this fixture does not reach it: the loader owning every row
+    // decides which rows a filter matches and decides nothing about what a view
+    // can project.
     const atCeiling = available.slice(0, worked);
     const suspects = [
       ['scale.join.created-by-counts-as-join', 'Does Created By count as a join?', 'Author'],
       ['scale.join.modified-by-counts-as-join', 'Does Modified By count as a join?', 'Editor'],
+      ['scale.join.created-date-counts-as-join', 'Does the Created DATE column count as a join?', 'Created'],
+      ['scale.join.modified-date-counts-as-join', 'Does the Modified DATE column count as a join?', 'Modified'],
       ['scale.join.person-counts-as-join', 'Does a Person column count as a join?', 'Owner'],
     ];
     for (const [id, question, column] of suspects) {
@@ -2066,9 +2094,14 @@
         continue;
       }
       const r = await tryProject(['Title', ...atCeiling, column]);
+      // Whether the column came back is printed beside the verdict and never
+      // folded into it: a view that renders without returning the column under
+      // test is a different reading from one that returns it.
+      const returned = r.ok ? (r.present(column) ? 'PRESENT' : 'ABSENT') : 'n/a';
       record(id, question, r.ok ? 'NOT COUNTED' : 'COUNTED',
              `[${stamp}] ${worked} lookup(s) at the ceiling + ${column}, HTTP ` +
-             `${r.status}. ${r.ok
+             `${r.status}, ${column} ${returned} in the returned row ` +
+             `(${r.keys} key(s)). ${r.ok
                ? 'It renders, so this column adds no join.'
                : `It does not, so this column IS a join: ${r.text}`}`);
     }

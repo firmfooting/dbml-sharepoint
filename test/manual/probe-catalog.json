@@ -5538,7 +5538,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "two probe-owned lists, a second target text column, two target rows, a lookup column and one source item"
+        "two probe-owned lists, a second target text column, two target rows, two lookup columns, one source item, and a sentinel in the lookup column's Description"
       ],
       "cleanup": {
         "policy": "before"
@@ -5557,45 +5557,71 @@
               "depends_on": []
             },
             {
-              "id": "field.lookup.showfield-merge-accepted",
+              "id": "field.lookup.control-alt-column-accepted-at-creation",
               "depends_on": [
                 "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.control-description-merge-applies",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture"
+              ]
+            },
+            {
+              "id": "field.lookup.showfield-merge-accepted",
+              "depends_on": [
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             },
             {
               "id": "field.lookup.showfield-property-readback",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             },
             {
               "id": "field.lookup.showfield-stored-id-preserved",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             },
             {
               "id": "field.lookup.showfield-api-display-value",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             },
             {
               "id": "field.lookup.showfield-rendered-view",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             },
             {
               "id": "field.lookup.showfield-display-name-spelling",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             }
           ],
           "states": [],
           "controls": [
-            "field.lookup.control-showfield-fixture"
+            "field.lookup.control-showfield-fixture",
+            "field.lookup.control-alt-column-accepted-at-creation",
+            "field.lookup.control-description-merge-applies"
           ],
           "depends_on": []
         },
@@ -5607,7 +5633,9 @@
             {
               "id": "field.lookup.showfield-edit-form",
               "depends_on": [
-                "field.lookup.control-showfield-fixture"
+                "field.lookup.control-showfield-fixture",
+                "field.lookup.control-alt-column-accepted-at-creation",
+                "field.lookup.control-description-merge-applies"
               ]
             }
           ],
@@ -5616,12 +5644,15 @@
               "role": "source-edit-form",
               "page": "source item edit form at DefaultEditFormUrl?ID=<source item>",
               "assertions": [
-                "the lookup field shows the target Title sentinel, the AlternateLabel sentinel, or something else recorded verbatim"
+                "the ProbeShowField lookup shows the target Title sentinel, the AlternateLabel sentinel, or something else recorded verbatim",
+                "the ProbeShowFieldAlt control lookup shows the AlternateLabel sentinel"
               ]
             }
           ],
           "controls": [
-            "field.lookup.control-showfield-fixture"
+            "field.lookup.control-showfield-fixture",
+            "field.lookup.control-alt-column-accepted-at-creation",
+            "field.lookup.control-description-merge-applies"
           ],
           "depends_on": [
             "machine-findings"
@@ -6845,6 +6876,22 @@
             },
             {
               "id": "scale.join.created-by-counts-as-join",
+              "depends_on": [
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.join.lookup-column-ceiling"
+              ]
+            },
+            {
+              "id": "scale.join.created-date-counts-as-join",
+              "depends_on": [
+                "scale.threshold.fixture-item-count",
+                "scale.index.fixture-indexes-set",
+                "scale.join.lookup-column-ceiling"
+              ]
+            },
+            {
+              "id": "scale.join.modified-date-counts-as-join",
               "depends_on": [
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
