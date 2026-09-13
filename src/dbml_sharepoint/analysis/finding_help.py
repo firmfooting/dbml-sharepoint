@@ -557,6 +557,23 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.DUPLICATE_COLUMN_NAME: (
         "A table declares the same column name twice."
     ),
+    FindingCode.DUPLICATE_FOLDER: (
+        "A library's `folders` names the same folder twice. Names are "
+        "compared without regard to case, because a folder is addressed by "
+        "URL and SharePoint resolves that without regard to case."
+    ),
+    FindingCode.FOLDERS_ON_A_LIST: (
+        "`folders` is declared on an entity that is not a "
+        "`DocumentLibrary`. Only a library holds folders; the folder phase "
+        "creates each one under the library's root folder and reads it "
+        "back, and a list has no root folder to create under."
+    ),
+    FindingCode.FOLDER_NAME_INVALID: (
+        "A declared folder name breaks one of Microsoft's file and folder "
+        "name rules: it contains one of `\" * : < > ? / \\ |`, leads or "
+        "trails with a space, or is a reserved name. The message names the "
+        "rule."
+    ),
     FindingCode.DUPLICATE_DEMO_KEY: (
         "Two demo rows share a key. Keys are global across entities "
         "because `demo_ref` resolves against all of them."

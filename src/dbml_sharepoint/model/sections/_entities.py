@@ -17,6 +17,7 @@ from dbml_sharepoint.model.sections.context import SectionContext
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
+    "folders",
 })
 
 
@@ -44,6 +45,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
             renamed_from=optional_str_list(
                 spec, "renamed_from", f"entities.{name}",
             ),
+            # Shape only here; that the entity is a library, and that each
+            # name is one SharePoint accepts, are the validator's.
+            folders=optional_str_list(spec, "folders", f"entities.{name}"),
         )
     return {"entities": entities}
 

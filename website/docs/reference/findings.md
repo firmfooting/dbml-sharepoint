@@ -134,6 +134,7 @@ dbml-sharepoint explain unknown_column_type
 | `duplicate_display_title` | error | Two columns of one entity resolve to the same display title, making them indistinguishable on every form and view. |
 | `duplicate_enum_member` | error | One enum declares the same member twice. The members reach the deploy body as an ordered `Choices` collection, and the field reconciler compares that collection index by index, so a repeat can leave the reconciler unable to converge. It applies to every enum, not only the ones backing a multi-value column. |
 | `duplicate_enum_name` | error | Two enums share a name. |
+| `duplicate_folder` | error | A library's `folders` names the same folder twice. Names are compared without regard to case, because a folder is addressed by URL and SharePoint resolves that without regard to case. |
 | `duplicate_group_name` | error | Two `groups` entries share a name case-insensitively, which SharePoint resolves to one group. |
 | `duplicate_index_target` | error | One table's `indexes { }` names the same column twice. |
 | `duplicate_permission_level_name` | error | Two `permission_levels` entries share a name case- insensitively, which SharePoint resolves to one level. |
@@ -162,6 +163,8 @@ dbml-sharepoint explain unknown_column_type
 | `field_set_empty` | error | A field set declares no columns. |
 | `field_set_name_has_marker` | error | A field set's name contains `@`, which is the marker a view's `fields` uses to reference a set. |
 | `field_set_unreferenced` | warning | A field set is declared but no view on that entity expands it. |
+| `folder_name_invalid` | error | A declared folder name breaks one of Microsoft's file and folder name rules: it contains one of `" * : < > ? / \ |`, leads or trails with a space, or is a reserved name. The message names the rule. |
+| `folders_on_a_list` | error | `folders` is declared on an entity that is not a `DocumentLibrary`. Only a library holds folders; the folder phase creates each one under the library's root folder and reads it back, and a list has no root folder to create under. |
 | `form_columns_in_no_section` | warning | Columns are referenced by no form body section. SharePoint appends them to the last section, so the form still renders -- but the declared arrangement stops being the deployed one. |
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
 | `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |

@@ -185,6 +185,9 @@ class FindingCode(StrEnum):
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"
     ENTITY_KIND_TEMPLATE_MISMATCH = "entity_kind_template_mismatch", "error"
     DUPLICATE_DISPLAY_TITLE = "duplicate_display_title", "error"
+    DUPLICATE_FOLDER = "duplicate_folder", "error"
+    FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
+    FOLDER_NAME_INVALID = "folder_name_invalid", "error"
     COLUMN_COLLIDES_WITH_REPORT_COLUMN = (
         "column_collides_with_report_column", "error",
     )

@@ -116,6 +116,62 @@ def test_a_list_field_set_may_not_name_the_file(tmp_path: Path) -> None:
     ], "a list field set naming FileLeafRef must be refused"
 
 
+def _folders(tmp_path: Path, kind: str, template: int, folders: str) -> list[Finding]:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: {folders}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_folders_are_refused_on_a_list(tmp_path: Path) -> None:
+    """Only a library holds folders; on a list the key would validate clean
+    and the folder phase would then address a container with no root
+    folder to create under."""
+    f = only(_folders(tmp_path, "List", 100, '["A"]'), FindingCode.FOLDERS_ON_A_LIST)
+    assert "Docs" in f.message
+
+
+def test_a_library_may_declare_folders(tmp_path: Path) -> None:
+    """MEASURED 2026-09-03, `library.folder.creation-path` in
+    folder-probe.js: Folders/add(url=) under the root creates a folder that
+    reads back as an SP.Folder, so declared names with legal characters
+    validate clean."""
+    findings = _folders(
+        tmp_path, "DocumentLibrary", 101, '["Clinical services", "Corporate services"]',
+    )
+    none_of(findings, FindingCode.FOLDERS_ON_A_LIST)
+    none_of(findings, FindingCode.FOLDER_NAME_INVALID)
+    none_of(findings, FindingCode.DUPLICATE_FOLDER)
+
+
+def test_an_invalid_folder_name_is_refused(tmp_path: Path) -> None:
+    f = only(
+        _folders(tmp_path, "DocumentLibrary", 101, '["Clinical/Services"]'),
+        FindingCode.FOLDER_NAME_INVALID,
+    )
+    assert "/" in f.message
+
+
+def test_a_duplicate_folder_is_refused_case_insensitively(tmp_path: Path) -> None:
+    """A folder is addressed by URL, which SharePoint resolves without
+    regard to case, so two names differing only in case are one folder
+    declared twice."""
+    f = only(
+        _folders(tmp_path, "DocumentLibrary", 101, '["Clinical", "clinical"]'),
+        FindingCode.DUPLICATE_FOLDER,
+    )
+    assert "clinical" in f.message
+
+
 def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:
     """FileLeafRef is a system column the per-field deploy loop never
     writes, so a formatter declared on it would validate clean and deploy
