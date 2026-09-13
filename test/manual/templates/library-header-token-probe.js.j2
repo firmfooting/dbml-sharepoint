@@ -36,6 +36,39 @@
  * look at one form answers the whole question rather than one token per
  * deploy. A label with nothing after it is a token that did not resolve.
  *
+ * THE IDENTITY QUESTION IS CLOSED. MEASURED across revisions 208a2bce,
+ * f114c19f and b4c5ee75: of fourteen spellings of a file's identity, every
+ * one rendered EMPTY. FileLeafRef, FileRef, Name, LinkFilename,
+ * LinkFilenameNoMenu, FileDirRef, File_x0020_Name, DocIcon, EncodedAbsUrl,
+ * ServerUrl and File_x0020_Type. Only ordinary item fields resolved: ID,
+ * Modified, and Title once a value was typed into the column. It matches
+ * SharePoint/sp-dev-docs#7964, opened 2022-05-17 and closed
+ * type:archive-old-issue with no fix, though that issue named two of the
+ * fourteen and never established which tokens DO work.
+ *
+ * So those fourteen are gone from the battery and ID and Modified remain as
+ * CONTROLS. Absence is the whole predicate here, and a header that renders
+ * nothing at all looks identical to one whose every token fails.
+ *
+ * ROUND FOUR fixes two things round three got wrong, both of them the
+ * probe's fault rather than the platform's:
+ *
+ *   The lookup column never built. A plain POST to /fields answered HTTP 400,
+ *   "The property 'LookupListId' does not exist on type 'SP.FieldLookup'".
+ *   A lookup is the one field type that refuses that route, which the deploy
+ *   has always known (generators/jsgen.py: "the one field type SharePoint
+ *   refuses through a normal POST"); it goes through
+ *   FieldCollection.AddField, where LookupListId belongs to
+ *   SP.FieldCreationInformation. This probe now sends what the deploy sends.
+ *
+ *   The header laid out left to right and ran off the edge of the details
+ *   panel, so the typed lines could not be read. The form header gives its
+ *   root a row layout, so the column direction is now stated.
+ *
+ * The typedNotes mechanism did its job: the incomplete fixture was REPORTED
+ * as incomplete rather than read as a lookup token that does not resolve,
+ * which is the one mistake this whole probe exists to avoid.
+ *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
  *     A document library is created (BaseTemplate 101). Same question
@@ -47,7 +80,8 @@
  *   library.form.header-token-battery-renders
  *     MANUAL: open the uploaded file's display form and copy the header
  *     back. Which labelled lines carry a value? This is the half nobody
- *     had asked, and only eyes can answer it.
+ *     had asked, and only eyes can answer it. Now down to the two controls,
+ *     since the fourteen it was written for are settled.
  *   library.form.header-typed-column-battery-renders
  *     MANUAL, in the same look: which declared column TYPES carry a value
  *     there. Every file-identity spelling is now known to be empty, so a
@@ -128,18 +162,14 @@
       '2026-10-13T00:00:00Z'],
   ];
 
-  // Every token a library header might plausibly name for the file's
-  // identity, each on its own line behind a label that renders whatever
-  // happens. A label standing alone is the finding.
-  // Round one (revision 208a2bce) answered the four on the first line: only
-  // ID and Modified resolved, and Title resolved once it was given a value.
-  // The rest are every other spelling of a file's identity SharePoint
-  // carries, asked together because one look answers all of them.
-  const TOKENS = [
-    'FileLeafRef', 'Title', 'FileRef', 'Name', 'ID', 'Modified',
-    'LinkFilename', 'LinkFilenameNoMenu', 'FileDirRef', 'File_x0020_Name',
-    'DocIcon', 'EncodedAbsUrl', 'ServerUrl', 'File_x0020_Type',
-  ];
+  // THE CONTROLS, and all that is left of the identity battery. Rounds one
+  // to three settled that question: of fourteen spellings of a file's
+  // identity every one rendered empty, and only these two resolved
+  // (revisions 208a2bce and f114c19f, plus b4c5ee75 which reproduced it).
+  // They stay because absence is the whole predicate here. A header that
+  // renders nothing at all looks identical to one whose every token fails,
+  // and these two are what tell those apart.
+  const TOKENS = ['ID', 'Modified'];
 
   const Q = {
     fixture: 'A document library is created (BaseTemplate 101)',
@@ -209,8 +239,14 @@
     return { ok: res.ok, status: res.status, body: parsed, text };
   };
 
+  // A COLUMN, explicitly. MEASURED 2026-09-13, revision b4c5ee75: the same
+  // children under a bare div laid out left to right and ran off the edge of
+  // the details panel, so the last tokens could not be read at all. The form
+  // header gives its root a row layout of its own, so the direction has to be
+  // stated rather than left to the default.
   const header = {
     elmType: 'div',
+    style: { display: 'flex', 'flex-direction': 'column', width: '100%' },
     children: [
       {
         elmType: 'div',
@@ -220,6 +256,7 @@
       ...TOKENS.map((token) => ({
         elmType: 'div',
         attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
         txtContent: `=' ${token} -> [' + [$${token}] + ']'`,
       })),
       // Round three. One line per declared column TYPE, and the lookup asked
@@ -229,16 +266,19 @@
       ...TYPED.map(([name]) => ({
         elmType: 'div',
         attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
         txtContent: `=' ${name} -> [' + [$${name}] + ']'`,
       })),
       {
         elmType: 'div',
         attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
         txtContent: "=' dbmlspLookup -> [' + [$dbmlspLookup] + ']'",
       },
       {
         elmType: 'div',
         attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
         txtContent: "=' dbmlspLookup.lookupValue -> [' + [$dbmlspLookup.lookupValue] + ']'",
       },
     ],
@@ -316,6 +356,28 @@
       if (!made.ok) typedNotes.push(`${name}: ${short(made)}`);
       return made.ok;
     };
+
+    // A lookup is the ONE field type a plain POST to /fields refuses.
+    // MEASURED here 2026-09-13, revision b4c5ee75: that POST answered HTTP
+    // 400, "The property 'LookupListId' does not exist on type
+    // 'SP.FieldLookup'". The deploy has never used that shape; it goes
+    // through FieldCollection.AddField, where LookupListId is a property of
+    // SP.FieldCreationInformation. Same spelling here, so this probe is
+    // asking about the field the deploy would really create.
+    const addLookupField = async (name, listId) => {
+      const present = await spGet(
+        `${libPath}/fields/getbyinternalnameortitle('${name}')?$select=Id`);
+      if (present.ok) return true;
+      const made = await postVerbose(`${libPath}/fields/addfield`, {
+        parameters: {
+          __metadata: { type: 'SP.FieldCreationInformation' },
+          FieldTypeKind: 7, Title: name,
+          LookupListId: listId, LookupFieldName: 'Title',
+        },
+      });
+      if (!made.ok) typedNotes.push(`${name}: ${short(made)}`);
+      return made.ok;
+    };
     for (const [name, body] of TYPED) await addField(name, body);
 
     // The lookup needs a target holding a row, so the value has something to
@@ -346,10 +408,7 @@
         targetRowId = made.ok && made.body ? made.body.Id : null;
         if (!targetRowId) typedNotes.push(`${TARGET} row: ${short(made)}`);
       }
-      lookupReady = await addField('dbmlspLookup', {
-        __metadata: { type: 'SP.FieldLookup' },
-        FieldTypeKind: 7, LookupListId: targetId, LookupFieldName: 'Title',
-      });
+      lookupReady = await addLookupField('dbmlspLookup', targetId);
     }
 
     // One MERGE onto the file's own item. A lookup is written by Id through
