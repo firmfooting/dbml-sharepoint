@@ -45,6 +45,19 @@ String literals are stripped first so bracket text inside a quoted
 constant is not misread as a reference. Shared with jsgen, which orders
 Phase-1 field creation by these references.
 
+### `formula_function_names`
+
+```python
+def formula_function_names(formula: str) -> frozenset[str]
+```
+
+Function names a formula calls, as written, outside string literals.
+
+Text inside a quoted constant is data, so ``="IF("&amp;TODAY()`` calls only
+``TODAY``. Uses the same literal split as `rewrite_formula_refs`, so the
+two agree about where a literal begins. Names are returned as spelled:
+the allowlist a caller compares against decides what case it accepts.
+
 ### `rewrite_formula_refs`
 
 ```python

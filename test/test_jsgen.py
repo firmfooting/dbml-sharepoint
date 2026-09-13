@@ -677,12 +677,13 @@ def test_number_default_is_string_in_create_and_merge_shapes() -> None:
         "field": "SortOrder",
         "metadata_type": "SP.FieldNumber",
         "default_value": "0",
+        "default_formula": None,
     } in schema_json["field_defaults"]  # Phase 2.4 field MERGE
 
     js = _generate_simple_js()
     assert '"DefaultValue": "0"' in js
     assert '"default_value": "0"' in js
-    assert "DefaultValue: entry.fieldDefault.default_value" in js
+    assert "defaultBody.DefaultValue = entry.fieldDefault.default_value" in js
 
 
 def test_longtext_emits_plain_multiline_note_field() -> None:
@@ -768,6 +769,7 @@ def test_declared_defaults_are_reconciled_on_existing_fields() -> None:
         "field": "Status",
         "metadata_type": "SP.FieldChoice",
         "default_value": "Open",
+        "default_formula": None,
     } in schema_json["field_defaults"]
 
     js = _generate_simple_js()
@@ -2623,7 +2625,7 @@ def test_template_reconciles_custom_formatter(tmp_path: Path) -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
     assert "const canonicalJson = " in js
-    assert "'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter'" in js
+    assert "'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter'" in js
     assert "field.custom_formatter != null" in js
     assert (
         "canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)"
@@ -4274,3 +4276,62 @@ def test_a_formula_referencing_title_is_rewritten_to_its_display_name(
     )
     live = next(f for f in risk["fields_phase1"] if f["title"] == "Live")
     assert live["body"]["Formula"] == '=CONCATENATE("x",[Risk Statement])'
+
+
+def test_a_declared_default_formula_rides_the_create_body_and_the_defaults_phase(
+    tmp_path: Path,
+) -> None:
+    """DefaultFormula is emitted beside DefaultValue: in the create body, and
+    mirrored into the field_defaults entry the defaults phase re-applies."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Saq", ID_PK, TITLE, "PeriodYear int", "Due date"),
+        mapping=blocks(entities("Saq"), """
+            default_formulas:
+              Saq:
+                PeriodYear: "=YEAR(TODAY())"
+                Due: "=TODAY()"
+        """),
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+    bodies = {f["title"]: f["body"] for f in schema_json["lists"][0]["fields_phase1"]}
+    assert bodies["PeriodYear"]["DefaultFormula"] == "=YEAR(TODAY())"
+    assert "DefaultValue" not in bodies["PeriodYear"]
+    assert {
+        "list": "APP_Saq", "field": "PeriodYear", "metadata_type": "SP.FieldNumber",
+        "default_value": None, "default_formula": "=YEAR(TODAY())",
+    } in schema_json["field_defaults"]
+    assert {
+        "list": "APP_Saq", "field": "Due", "metadata_type": "SP.FieldDateTime",
+        "default_value": None, "default_formula": "=TODAY()",
+    } in schema_json["field_defaults"]
+
+
+def test_a_column_without_a_default_formula_carries_no_such_key() -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema_json = build_schema_json(
+        parse_dbml(FIXTURES / "simple.dbml"),
+        load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        "default",
+    )
+    assert all(
+        "DefaultFormula" not in f["body"]
+        for lst in schema_json["lists"]
+        for f in lst["fields_phase1"]
+    )
+    assert all(entry["default_formula"] is None for entry in schema_json["field_defaults"])
+
+
+def test_the_deploy_reconciles_and_reads_back_the_default_formula() -> None:
+    """Every place a DefaultValue is handled handles the formula beside it."""
+    js = _generate_simple_js()
+    assert "defaultFormula: normalizeDefaultFormula(field.body.DefaultFormula)" in js
+    assert "normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula" in js
+    assert "patchBody.DefaultFormula = field.body.DefaultFormula" in js
+    assert "drift('DefaultFormula'" in js
+    assert "defaultBody.DefaultFormula = entry.fieldDefault.default_formula" in js
+    assert "DefaultFormula readback did not match the declared formula" in js
+    assert "shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string'" in js
