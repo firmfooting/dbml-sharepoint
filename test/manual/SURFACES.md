@@ -291,7 +291,7 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-foldered-group-view-probe.js`,
 `library-guards-probe.js`, `view-scope-revert-probe.js`,
 `folder-shape-probe.js`, `folder-create-refusal-probe.js`,
-`folder-under-schema-probe.js`
+`folder-under-schema-probe.js`, `library-builtin-view-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
