@@ -574,6 +574,23 @@ FINDING_HELP: dict[FindingCode, str] = {
         "trails with a space, or is a reserved name. The message names the "
         "rule."
     ),
+    FindingCode.VIEW_SCOPE_ON_A_LIST: (
+        "A view declares `scope` on an entity that is not a "
+        "`DocumentLibrary`. Scope decides whether a view shows the files in "
+        "every folder or only the folder being viewed, and a list has no "
+        "folders for it to flatten."
+    ),
+    FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED: (
+        "A recursive library view groups by a column. Measured on a "
+        "document library past the list view threshold (analysis/limits.py, "
+        "`library.large-list.preindex-group-by-refusal-signature` and "
+        "`library.large-list.foldered-group-by-folder-scoped`, 2026-09-08): "
+        "a root-scoped group-by is refused at that size, an index does not "
+        "lift the refusal, and the same grouping is served only inside a "
+        "folder that is itself under the threshold. The view works until "
+        "the library reaches that size, and then its grouping stops "
+        "rendering at the root."
+    ),
     FindingCode.DUPLICATE_DEMO_KEY: (
         "Two demo rows share a key. Keys are global across entities "
         "because `demo_ref` resolves against all of them."

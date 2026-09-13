@@ -10,14 +10,55 @@ ceiling and a library rule should read as one function per question.
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
+from dbml_sharepoint.model.mapping_types import EntityMapping, ViewDef
 
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     for entity_name, entity in vc.bundle.mapping.entities.items():
         findings += _folders(entity_name, entity)
+        for view in vc.bundle.mapping.views.get(entity_name, []):
+            findings += _view_scope(entity_name, entity, view)
     return findings
+
+
+def _view_scope(entity_name: str, entity: EntityMapping, view: ViewDef) -> list[Finding]:
+    """`scope`: library only, and a warning where a grouping will stop rendering.
+
+    MEASURED 2026-09-08, `library.folder.view-flattens-depth` in
+    library-nesting-probe.js: a view read with no Scope returns only direct
+    children, FilesOnly only the root file, and Recursive and RecursiveAll
+    flatten the files at depth. `recursive` renders as Recursive rather than
+    RecursiveAll because RecursiveAll adds subfolder rows a grouped view would
+    count. The property write on a stored view is measured too
+    (`library.view.scope-on-create-reads-back` and
+    `library.view.scope-on-merge-reads-back`, 2026-09-13,
+    library-guards-probe.js: Scope 1 reads back 1 both ways).
+    """
+    if view.scope is None:
+        return []
+    at = Location(Section.VIEWS, entity=entity_name, view=view.title, sub="scope")
+    if not entity.is_library:
+        return [Finding(
+            FindingCode.VIEW_SCOPE_ON_A_LIST,
+            f"views[{entity_name}].{view.title}: scope is declared and {entity_name} "
+            f"is a {entity.kind}; only a DocumentLibrary has folders for a scope "
+            f"to flatten. Remove the key.",
+            location=at,
+        )]
+    if view.scope == "recursive" and view.group_by is not None:
+        return [Finding(
+            FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED,
+            f"views[{entity_name}].{view.title}: a recursive view groups by "
+            f"{', '.join(view.group_by.fields)}. Past {LIST_VIEW_THRESHOLD:,} files "
+            f"a root-scoped group-by is refused and only a folder-scoped one is "
+            f"served (`library.large-list.preindex-group-by-refusal-signature`, "
+            f"`library.large-list.foldered-group-by-folder-scoped`), so this "
+            f"grouping stops rendering at that size.",
+            location=at,
+        )]
+    return []
 
 
 def _folders(entity_name: str, entity: EntityMapping) -> list[Finding]:

@@ -21,6 +21,10 @@ from dbml_sharepoint.model.conditions import Condition
 # real value set instead of trusting a comment.
 type EntityKind = Literal["List", "DocumentLibrary", "HubOnlyList"]
 type SortDirection = Literal["asc", "desc"]
+# A library view's folder scope. `recursive` shows every file at any depth
+# (SharePoint's ViewScope Recursive, 1); `default` shows the direct children
+# of the folder being viewed, which is what a view with no scope does.
+type ViewScope = Literal["recursive", "default"]
 type PrincipalKind = Literal[
     "group",
     "associated_owner_group",
@@ -30,6 +34,7 @@ type PrincipalKind = Literal[
 type ReconcileMode = Literal["configured", "exact"]
 
 ENTITY_KINDS: frozenset[str] = frozenset(get_args(EntityKind.__value__))
+VIEW_SCOPES: frozenset[str] = frozenset(get_args(ViewScope.__value__))
 
 #: Derived from the `Literal` above for the same reason `ENTITY_KINDS` is:
 #: `mapping_loader` needs a runtime set to admit a raw YAML string against,
@@ -342,6 +347,9 @@ class ViewDef:
     # never touched, matching widths and formatting, so DELETING a totals
     # block does not remove a total from an already-deployed view.
     totals: dict[str, str] = field(default_factory=dict)
+    # A document library view's folder scope; None = the live Scope is never
+    # touched. Library only: the validator refuses it on a list.
+    scope: ViewScope | None = None
     # The `field_sets` entries this view's `fields` was expanded from, in
     # reference order, de-duplicated. Populated by _expand_field_sets at
     # load; empty when the view named its columns directly. The manifest

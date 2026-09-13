@@ -8,8 +8,9 @@ stops distinguishing them turns a test red.
 
 from pathlib import Path
 
+import pytest
 from _builders import ID_PK, TITLE, table
-from _findings import none_of, only
+from _findings import by_severity, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import schema as make_schema
@@ -170,6 +171,66 @@ def test_a_duplicate_folder_is_refused_case_insensitively(tmp_path: Path) -> Non
         FindingCode.DUPLICATE_FOLDER,
     )
     assert "clinical" in f.message
+
+
+def _scoped_view(
+    tmp_path: Path, kind: str, template: int, scope_line: str, group_line: str = "",
+) -> list[Finding]:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE, "Division nvarchar"),
+        mapping=f"""
+            entities:
+              Docs: {{ kind: {kind}, base_template: {template}, site_role: default }}
+            views:
+              Docs:
+                - title: "Pending"
+                  default: true
+                  fields: [Title]
+                  {scope_line}
+                  {group_line}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_scope_is_refused_on_a_list(tmp_path: Path) -> None:
+    findings = _scoped_view(tmp_path, "List", 100, "scope: recursive")
+    f = only(findings, FindingCode.VIEW_SCOPE_ON_A_LIST)
+    assert "Pending" in f.message
+
+
+def test_a_library_view_may_be_recursive(tmp_path: Path) -> None:
+    """MEASURED 2026-09-08, `library.folder.view-flattens-depth`: Recursive
+    flattens the files at every depth, and 2026-09-13,
+    `library.view.scope-on-create-reads-back`: the property sticks."""
+    findings = _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: recursive")
+    none_of(findings, FindingCode.VIEW_SCOPE_ON_A_LIST)
+    none_of(findings, FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED)
+
+
+def test_a_recursive_grouped_library_view_warns_about_folder_scoping(tmp_path: Path) -> None:
+    """The large-list measurements in analysis/limits.py: past the threshold
+    a root-scoped group-by is refused and only a folder-scoped one is
+    served, so a recursive grouped view stops rendering at that size."""
+    findings = _scoped_view(
+        tmp_path, "DocumentLibrary", 101, "scope: recursive", "group_by: { field: Division }",
+    )
+    f = only(by_severity(findings, "warning"), FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED)
+    assert "Division" in f.message
+    none_of(by_severity(findings, "error"), FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED)
+
+
+def test_a_default_scoped_grouped_library_view_does_not_warn(tmp_path: Path) -> None:
+    findings = _scoped_view(
+        tmp_path, "DocumentLibrary", 101, "scope: default", "group_by: { field: Division }",
+    )
+    none_of(findings, FindingCode.LIBRARY_GROUP_BY_FOLDER_SCOPED)
+
+
+def test_an_unknown_scope_is_refused_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="scope"):
+        _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: sideways")
 
 
 def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:
