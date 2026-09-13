@@ -59,6 +59,32 @@ def test_base_template_requirements_from_entities() -> None:
     assert "list_template_100" in keys
 
 
+def test_library_folders_are_assessed_and_required() -> None:
+    """A file standing where a folder is declared stops the folder phase, so
+    the assessment carries the declared folders and a BLOCKED requirement
+    for each library that declares any."""
+    from dataclasses import replace
+
+    from dbml_sharepoint.generators.assessgen import assess_targets
+
+    schema, bundle = _simple()
+    bundle = replace(bundle, mapping=replace(bundle.mapping, entities={
+        **bundle.mapping.entities,
+        "Task": replace(
+            bundle.mapping.entities["Task"], kind="DocumentLibrary", base_template=101,
+            folders=("Clinical services", "Corporate"),
+        ),
+    }))
+    targets = assess_targets(schema, bundle, "default")
+    assert targets["library_folders"] == [["APP_Task", ["Clinical services", "Corporate"]]]
+    assert 101 in targets["base_templates"]
+    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    assert "folder_shape:APP_Task" in keys
+    assert "folder_shape:APP_Project" not in keys
+    plain = assess_targets(*_simple(), "default")
+    assert plain["library_folders"] == []
+
+
 def test_conditional_requirements_absent_on_bare_mapping() -> None:
     schema = make_schema(make_table("Risk", column("Title", required=True)))
     bundle = make_bundle(entities=["Risk"])
@@ -585,6 +611,120 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
         "blocked on keys no requirement covers, so the verdict ignores them: "
         f"{sorted({f['key'] for f in blocked} - declared)}"
     )
+
+
+def _library_pack() -> tuple[Any, Any]:
+    """The simple fixture with Task declared as a library holding one folder."""
+    from dataclasses import replace
+
+    schema, bundle = _simple()
+    return schema, replace(bundle, mapping=replace(bundle.mapping, entities={
+        **bundle.mapping.entities,
+        "Task": replace(
+            bundle.mapping.entities["Task"], kind="DocumentLibrary", base_template=101,
+            folders=("Clinical services",),
+        ),
+    }))
+
+
+def _library_assess_js() -> str:
+    from dbml_sharepoint.generators.assessgen import generate_assess_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = _library_pack()
+    return generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def _library_markers() -> dict[str, str]:
+    """Every declared list present and carrying its marker, from the same
+    speller the assessment reads."""
+    from dbml_sharepoint.generators.assessgen import assess_targets
+
+    schema, bundle = _library_pack()
+    return dict(assess_targets(schema, bundle, "default")["list_markers"])
+
+
+def _folder_harness(object_type: int | None, *, unreadable: bool = False) -> str:
+    """`_ASSESS_HARNESS` answering the folder shape read with one row of
+    `object_type` (1 a folder, 0 a file), no row, or a refusal, and Task
+    as a library."""
+    rows = (
+        "[]" if object_type is None
+        else f"[{{ Id: 7, FileSystemObjectType: {object_type}, "
+        "FileLeafRef: 'Clinical services' }]"
+    )
+    body_head = "const body = (url) => {\n"
+    shape_read = (
+        f"{body_head}  if (url.includes('FileSystemObjectType')) {{\n"
+        f"    return {{ d: {{ results: {rows} }} }};\n"
+        "  }\n"
+    )
+    template_line = "Title: title, BaseTemplate: 100,"
+    library_template = "Title: title, BaseTemplate: title === 'APP_Task' ? 101 : 100,"
+    splices = [(body_head, shape_read), (template_line, library_template)]
+    if unreadable:
+        # The harness is dedented, so the dispatcher's lines sit two spaces in.
+        answer_line = "  return respond(200, body(u));\n"
+        refused_read = (
+            f"  if (u.includes('FileSystemObjectType')) return respond(500, {{}});\n{answer_line}"
+        )
+        splices.append((answer_line, refused_read))
+    harness = _ASSESS_HARNESS
+    for old, new in splices:
+        spliced = harness.replace(old, new, 1)
+        assert spliced != harness, f"not spliced into the harness: {old[:40]!r}"
+        harness = spliced
+    return harness
+
+
+def _folder_finding(summary: dict[str, Any]) -> dict[str, Any]:
+    return next(f for f in summary["findings"] if f["key"] == "folder_shape:APP_Task")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_blocks_a_file_where_a_folder_is_declared() -> None:
+    """MEASURED 2026-09-03, `library.folder.filesystem-object-type`: a folder's
+    item reads FileSystemObjectType 1, a file's 0. A file of a declared
+    folder's name would stop the folder phase, so it blocks the verdict."""
+    summary = _run_assess(_library_markers(), harness=_folder_harness(0), js=_library_assess_js())
+    finding = _folder_finding(summary)
+    assert finding["level"] == "BLOCKED" and "Clinical services" in finding["detail"]
+    assert summary["verdict"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("object_type", [1, None])
+def test_assess_passes_a_declared_folder_that_is_a_folder_or_absent(
+    object_type: int | None,
+) -> None:
+    summary = _run_assess(
+        _library_markers(), harness=_folder_harness(object_type), js=_library_assess_js(),
+    )
+    assert _folder_finding(summary)["level"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_passes_declared_folders_of_a_library_not_yet_created() -> None:
+    present = {title: marker for title, marker in _library_markers().items() if title != "APP_Task"}
+    summary = _run_assess(present, harness=_folder_harness(0), js=_library_assess_js())
+    finding = _folder_finding(summary)
+    assert finding["level"] == "PASS" and "will be created" in finding["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_warns_when_a_library_s_folders_cannot_be_read() -> None:
+    summary = _run_assess(
+        _library_markers(), harness=_folder_harness(None, unreadable=True),
+        js=_library_assess_js(),
+    )
+    finding = _folder_finding(summary)
+    assert finding["level"] == "WARN" and "Could not read" in finding["detail"]
 
 
 def _fields_harness(fields: list[dict[str, str]]) -> str:

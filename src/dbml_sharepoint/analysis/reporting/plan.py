@@ -853,6 +853,14 @@ def build_plans(
                         f"reporting has no plan for system column {name!r} "
                         f"of kind {kind!r}",
                     )
+        # A library's rows are files: the report carries the file name and
+        # path beside the declared columns, whether or not the system columns
+        # are on, because without them a row cannot be told from its neighbour.
+        library_entity = bundle.mapping.entities.get(table.name)
+        if library_entity is not None and library_entity.is_library:
+            for name in LIBRARY_REPORT_COLUMNS:
+                _plan_scalar(plan, name, ("type text", "NVARCHAR(400)"))
+                plan.system_outputs.append(name)
         if bundle.mapping.display_name_mode is not None:
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
@@ -889,6 +897,9 @@ def build_plans(
                 if f"{name}Id" in plan.system_outputs:
                     plan.renames.append((f"{name}Id", f"{title} Id"))
                     plan.renames.append((f"{name}Title", f"{title} Title"))
+            for name, title in LIBRARY_DISPLAY_TITLES.items():
+                if name in plan.system_outputs:
+                    plan.renames.append((name, title))
         plans.append(plan)
     # The SQL side selects a projection from the TARGET's view, so it can
     # only carry the ones that view actually has. The Power Query has no
@@ -911,6 +922,20 @@ def build_plans(
         ]
     _resolve_derived(plans, bundle, prefix)
     return plans
+
+
+#: What identifies a document library's row in the report: the file name and
+#: its server-relative path, both text. MEASURED 2026-07-29,
+#: `library.file.name-field-is-leafref` (Title is null after upload; the name
+#: is FileLeafRef) and 2026-09-08, `library.folder.file-in-nested-folder`
+#: (FileRef reads back the full nested path). Selected the way every library
+#: probe selected them, through `/items?$select=`.
+LIBRARY_REPORT_COLUMNS: tuple[str, ...] = ("FileLeafRef", "FileRef")
+
+#: The report's own names for those two columns. The report names them, not
+#: SharePoint: nothing here claims what display title the platform gives
+#: either field, and a report author should not meet an internal name.
+LIBRARY_DISPLAY_TITLES: dict[str, str] = {"FileLeafRef": "File Name", "FileRef": "File Path"}
 
 
 def _plan_person(plan: ListPlan, name: str) -> None:

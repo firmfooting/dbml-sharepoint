@@ -204,6 +204,18 @@ One plan per list the role deploys.
 supply. It is optional only so the derivation stays callable without one
 from a library caller; the pack the CLI emits is always zoned.
 
+### `LIBRARY_REPORT_COLUMNS`
+
+```python
+LIBRARY_REPORT_COLUMNS = ('FileLeafRef', 'FileRef')
+```
+
+### `LIBRARY_DISPLAY_TITLES`
+
+```python
+LIBRARY_DISPLAY_TITLES = {'FileLeafRef': 'File Name', 'FileRef': 'File Path'}
+```
+
 ### `TOLERANT_DATE_TYPES`
 
 ```python

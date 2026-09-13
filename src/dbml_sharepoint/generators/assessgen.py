@@ -73,9 +73,14 @@ def assess_targets(
     # [[new title, [[previous title, previous marker], ...]], ...], lists
     # rather than tuples so the Python side compares equal to the JSON.
     renames: list[list[Any]] = []
+    # [[library title, [folder, ...]], ...] for every library that declares
+    # folders: the assessment checks nothing stands where a folder will go.
+    library_folders: list[list[Any]] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
+        if entity.is_library and entity.folders:
+            library_folders.append([prefix + table_name, list(entity.folders)])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
             renames.append([
@@ -146,6 +151,7 @@ def assess_targets(
         "level_renames": level_renames,
         "group_renames": group_renames,
         "base_templates": sorted(templates),
+        "library_folders": library_folders,
         "declares_groups": bool(perms and perms.groups),
         "declares_seal": bool(m.seal_columns),
         "declares_prevent_deletion": bool(m.prevent_list_deletion),
@@ -179,6 +185,15 @@ def derive_requirements(
         reqs.append(Requirement(
             f"collision:{title}",
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
+            "BLOCKED",
+        ))
+    for title, folders in t["library_folders"]:
+        # A file standing where a folder is declared stops the folder phase,
+        # so it is known before the paste rather than part-way through it.
+        reqs.append(Requirement(
+            f"folder_shape:{title}",
+            f"Each declared folder of '{title}' ({', '.join(folders)}) is absent "
+            f"or a folder, not a file of that name",
             "BLOCKED",
         ))
     for title, _marker in t["list_markers"]:
