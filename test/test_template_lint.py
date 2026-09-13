@@ -88,7 +88,10 @@ KNOWN_CONTEXT = {
     # `deployment-log` family provisions.
     "sidecar_run_log_title", "sidecar_run_log_marker", "sidecar_run_log_fields",
     "sidecar_change_log_title", "sidecar_change_log_marker",
-    "sidecar_change_fields", "deployment_log_list", "deployment_log_change_list",
+    "sidecar_change_fields",
+    # The sidecars take the family's own protection settings (#465).
+    "sidecar_seal_columns", "sidecar_prevent_deletion",
+    "deployment_log_list", "deployment_log_change_list",
     "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
     "deployment_log_row_prefix", "application_name",
