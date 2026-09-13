@@ -35,7 +35,7 @@ Paste the whole file into the browser console on the site above, from a classic 
 
 dbml-sharepoint DEMO DATA script (built with --seed).
 
-Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared demo/sample rows. Every Title starts with '[DEMO] ' (visible in every view and form), and each row's text identifies it as demonstration data to delete before active use. Re-pasting is safe: rows that already exist (matched by Title) are skipped, never duplicated. rollback.js.txt confirms every list before delete; the Title prefix is a visible notice, not deletion authority.
+Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared demo/sample rows. Every Title starts with '[DEMO] ' (visible in every view and form), and each row's text identifies it as demonstration data to delete before active use. On a document library a row is a FILE: it is uploaded into its declared folder under the same prefixed name, and the row's values are set on the file. Re-pasting is safe: rows that already exist (matched by Title, or by file name within the folder on a library) are skipped, never duplicated. rollback.js.txt confirms every list before delete; the prefix is a visible notice, not deletion authority.
 
 ### `deploy.js.j2`
 
