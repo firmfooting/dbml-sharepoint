@@ -98,11 +98,47 @@
  *   `.lookupValue`, which is the documented accessor for exactly this in
  *   column and view formatting, returns EMPTY here.
  *
- * WHAT IS STILL OPEN, and what a family's header needs before it can use
- * either type: whether a header supports the expression functions that would
- * cut `<id>;#` off a lookup (`substring`, `indexOf`), whether a projected
- * lookup field renders its value cleanly, and which spelling gets a date to
- * render. None of those are asked here.
+ * ROUND FIVE asks all of that, as one battery on one header, because every
+ * one of these is a question about the same expression engine and answering
+ * them one deploy at a time is how a wrong assumption survives. The battery
+ * is four blocks, and the order is the argument:
+ *
+ *   C, the controls on the engine itself. Does a header evaluate `substring`,
+ *     `indexOf`, `if`, and plain concatenation over literals? Nothing else
+ *     here can be read without these. A blank from
+ *     `substring([$dbmlspLookup], ...)` is a lookup that cannot be cut down
+ *     if C2 renders, and a function the header never supported if C2 does
+ *     not, and those call for completely different fixes.
+ *   K, the two tokens already measured to resolve, kept as the header's own
+ *     control. A header that renders nothing looks exactly like a header
+ *     whose every token fails.
+ *   L, every remaining route to a lookup's display value: `.lookupValue`
+ *     (measured empty), `.lookupId`, a `substring` past the `;#`, a
+ *     READ-ONLY PROJECTED lookup column, and the bare token alone as the
+ *     whole txtContent. The projected column is the one that matters most
+ *     practically: it is a shape the generator can already emit today
+ *     (`_lookups.js.j2` ships projections by createfieldasxml), so if a
+ *     header reads it cleanly the family needs no new capability at all.
+ *   D, every route to a rendered date. D2, the bare token with nothing
+ *     concatenated to it, is the decisive one: if it renders and D1 does
+ *     not, the fault is in the CONCATENATION rather than the token, and the
+ *     remedy is to rewrite every date line rather than to find a better
+ *     spelling.
+ *   T, the column types not yet asked at all: Yes/No, a multi-line Note, and
+ *     a Person bare, by `.title` and by `.email`.
+ *
+ * ONE LIST DRIVES BOTH the rendered header and the eyes-on checklist, so a
+ * line cannot be rendered without being asked about or asked about without
+ * being rendered, which is how the last round lost its typed lines off the
+ * edge of the panel without noticing.
+ *
+ * THE RISK THIS ROUND CARRIES, stated because it changes how a null result
+ * should be read: an expression the engine cannot parse might discard the
+ * WHOLE header rather than its own line. Round four showed a per-line
+ * failure surviving (the date took its line and nothing else), so this is
+ * unlikely, but the controls are first for exactly this reason and the
+ * eyes-on text asks for "nothing rendered at all" as a distinct answer. That
+ * answer is a finding, not a failed run, and it splits the battery in two.
  *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
@@ -121,8 +157,12 @@
  *     MANUAL, in the same look: which declared column TYPES carry a value
  *     there. Every file-identity spelling is now known to be empty, so a
  *     family's header can only be built from its own columns, and which of
- *     those a header can read decides what that header may say. The lookup
- *     is asked bare AND through `.lookupValue`.
+ *     those a header can read decides what that header may say.
+ *   library.form.header-expression-battery-renders
+ *     MANUAL, same look again: the C, L, D and T blocks above. Which
+ *     expression functions the header evaluates, which route yields a
+ *     lookup's display value, which spelling renders a date, and what the
+ *     remaining column types do.
  *
  * OBSERVED, NEVER ASSERTED
  *   Every token's rendered value. The point is to learn which resolve, so
@@ -189,12 +229,20 @@
   // created on the library and given a value before the header is asked.
   const TARGET = 'dbmlsp Probe Header Lookup Target';
   const TARGET_ROW = 'Privacy and health records';
+  // Every entity type and FieldTypeKind here is the one analysis/typemap.py
+  // already maps that column kind to, so the fixture is the shape the deploy
+  // would really create rather than a probe-only approximation.
   const TYPED = [
     ['dbmlspChoice', { __metadata: { type: 'SP.FieldChoice' }, FieldTypeKind: 6,
       Choices: { results: ['Q1', 'Q2', 'Q3', 'Q4'] } }, 'Q3'],
     ['dbmlspNumber', { __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9 }, 2026],
     ['dbmlspDate', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4 },
       '2026-10-13T00:00:00Z'],
+    ['dbmlspBool', { __metadata: { type: 'SP.Field' }, FieldTypeKind: 8 }, true],
+    ['dbmlspNote', { __metadata: { type: 'SP.FieldMultiLineText' }, FieldTypeKind: 3,
+      RichText: false, NumberOfLines: 4 }, 'A note the header may or may not read'],
+    ['dbmlspPerson', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20,
+      SelectionMode: 0 }, null],
   ];
 
   // THE CONTROLS, and all that is left of the identity battery. Rounds one
@@ -206,17 +254,89 @@
   // and these two are what tell those apart.
   const TOKENS = ['ID', 'Modified'];
 
+  // ONE list drives the rendered header AND the eyes-on checklist below, so a
+  // line can never be rendered without being asked about, or asked about
+  // without being rendered. Every entry is `[label, txtContent]`, and every
+  // label is prefixed so an answer can be quoted back by tag rather than by
+  // retyping an expression.
+  //
+  // Ordered controls first, on purpose. If the C lines render and a later one
+  // does not, the failure belongs to that line. If NOTHING renders, one bad
+  // expression has discarded the whole header, and that is a finding in its
+  // own right rather than a failed run.
+  const LINES = [
+    // ---- C: what the expression engine itself supports ------------------
+    // Everything in L4 and D4 to D6 depends on these. Without them a blank
+    // from `substring([$dbmlspLookup], ...)` cannot be told from a function
+    // the header does not support at all, and that ambiguity is exactly the
+    // kind this probe exists to remove.
+    ['C1 concat', "=' C1 concat -> [' + 'ab' + ']'"],
+    ['C2 substring', "=' C2 substring -> [' + substring('abcdef', 1, 3) + ']'"],
+    ['C3 indexOf', "=' C3 indexOf -> [' + indexOf('abcdef', 'cd') + ']'"],
+    ['C4 if', "=' C4 if -> [' + if(1 == 1, 'yes', 'no') + ']'"],
+
+    // ---- K: known to resolve, kept as the header's own control ----------
+    // A header that renders nothing looks identical to one whose every token
+    // fails. These two are what separate those.
+    ['K1 ID', "=' K1 ID -> [' + [$ID] + ']'"],
+    ['K2 Modified', "=' K2 Modified -> [' + [$Modified] + ']'"],
+
+    // ---- L: getting a display value out of a lookup ---------------------
+    // L1 measured `1;#Privacy and health records` and L2 measured empty
+    // (revision 24752514). The rest are every remaining route to the value
+    // without the `<id>;#` prefix. L5 is the one the deploy could already
+    // build today: a read-only projected lookup, which is how it ships
+    // dependent fields.
+    ['L1 bare', "=' L1 bare -> [' + [$dbmlspLookup] + ']'"],
+    ['L2 lookupValue', "=' L2 lookupValue -> [' + [$dbmlspLookup.lookupValue] + ']'"],
+    ['L3 lookupId', "=' L3 lookupId -> [' + [$dbmlspLookup.lookupId] + ']'"],
+    ['L4 substring', "=' L4 substring -> [' + substring([$dbmlspLookup],"
+      + " indexOf([$dbmlspLookup], ';#') + 2, 200) + ']'"],
+    ['L5 projected', "=' L5 projected -> [' + [$dbmlspProjected] + ']'"],
+    ['L6 bare alone', '=[$dbmlspLookup]'],
+
+    // ---- D: getting a date to render ------------------------------------
+    // D1 is the measured failure, repeated so the run stands on its own. D2
+    // is the one that matters most: if a bare token renders and a
+    // concatenated one does not, the fault is in the concatenation and not
+    // in the token, and every date in every header needs rewriting rather
+    // than a different spelling.
+    ['D1 concat', "=' D1 concat -> [' + [$dbmlspDate] + ']'"],
+    ['D2 bare alone', '=[$dbmlspDate]'],
+    ['D3 displayValue', "=' D3 displayValue -> [' + [$dbmlspDate.displayValue] + ']'"],
+    ['D4 toLocaleDateString',
+      "=' D4 toLocaleDateString -> [' + toLocaleDateString([$dbmlspDate]) + ']'"],
+    ['D5 toLocaleString', "=' D5 toLocaleString -> [' + toLocaleString([$dbmlspDate]) + ']'"],
+    ['D6 toDateString', "=' D6 toDateString -> [' + toDateString([$dbmlspDate]) + ']'"],
+
+    // ---- T: the remaining column types a family header might name -------
+    ['T1 Choice', "=' T1 Choice -> [' + [$dbmlspChoice] + ']'"],
+    ['T2 Number', "=' T2 Number -> [' + [$dbmlspNumber] + ']'"],
+    ['T3 YesNo', "=' T3 YesNo -> [' + [$dbmlspBool] + ']'"],
+    ['T4 Note', "=' T4 Note -> [' + [$dbmlspNote] + ']'"],
+    ['T5 Person', "=' T5 Person -> [' + [$dbmlspPerson] + ']'"],
+    ['T6 Person.title', "=' T6 Person.title -> [' + [$dbmlspPerson.title] + ']'"],
+    ['T7 Person.email', "=' T7 Person.email -> [' + [$dbmlspPerson.email] + ']'"],
+  ];
+
   const Q = {
     fixture: 'A document library is created (BaseTemplate 101)',
     stored: "Is a header naming every candidate token accepted, and does it read back byte-identical",
     renders: 'MANUAL: which of those tokens carry a value on the rendered display form',
     typed: 'MANUAL: which declared column TYPES carry a value in that same header',
+    expressions: 'MANUAL: which expression functions, lookup routes, date spellings'
+      + ' and column types the header evaluates',
   };
 
   if (!CONFIRMED) {
     log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB}, upload one small`);
     log('INFO', `file '${FILE}' to it, and set a form header on its document content`);
-    log('INFO', `type carrying one labelled line per token: ${TOKENS.join(', ')}.`);
+    log('INFO', `type carrying one labelled line per token: ${TOKENS.join(', ')},`);
+    log('INFO', `plus ${LINES.length} tagged expression lines covering the engine's own`);
+    log('INFO', 'functions, every route to a lookup value, every date spelling and the');
+    log('INFO', 'remaining column types. It also adds a Yes/No, a Note, a Person and a');
+    log('INFO', 'read-only projected lookup column, and a scratch list for the lookup');
+    log('INFO', `to point at ('${TARGET}').`);
     log('INFO', 'Then it asks you to open that file and copy the header back.');
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
@@ -237,11 +357,13 @@
   expect('library.form.header-token-battery-stored', Q.stored);
   expect('library.form.header-token-battery-renders', Q.renders);
   expect('library.form.header-typed-column-battery-renders', Q.typed);
+  expect('library.form.header-expression-battery-renders', Q.expressions);
 
   const IDS = [
     'library.form.header-token-battery-stored',
     'library.form.header-token-battery-renders',
     'library.form.header-typed-column-battery-renders',
+    'library.form.header-expression-battery-renders',
   ];
   const voidAll = (ids, reason) => {
     for (const id of ids) {
@@ -294,28 +416,12 @@
         style: { display: 'block', width: '100%' },
         txtContent: `=' ${token} -> [' + [$${token}] + ']'`,
       })),
-      // Round three. One line per declared column TYPE, and the lookup asked
-      // BOTH ways: bare, and through `.lookupValue`, which is the accessor a
-      // view formatter uses. Which of the two a header wants is exactly the
-      // kind of thing that cannot be assumed.
-      ...TYPED.map(([name]) => ({
+      ...LINES.map(([, expression]) => ({
         elmType: 'div',
         attributes: { class: 'ms-fontSize-12' },
         style: { display: 'block', width: '100%' },
-        txtContent: `=' ${name} -> [' + [$${name}] + ']'`,
+        txtContent: expression,
       })),
-      {
-        elmType: 'div',
-        attributes: { class: 'ms-fontSize-12' },
-        style: { display: 'block', width: '100%' },
-        txtContent: "=' dbmlspLookup -> [' + [$dbmlspLookup] + ']'",
-      },
-      {
-        elmType: 'div',
-        attributes: { class: 'ms-fontSize-12' },
-        style: { display: 'block', width: '100%' },
-        txtContent: "=' dbmlspLookup.lookupValue -> [' + [$dbmlspLookup.lookupValue] + ']'",
-      },
     ],
   };
   // `headerJSONFormatter`, which is the key the deploy writes
@@ -444,6 +550,33 @@
         if (!targetRowId) typedNotes.push(`${TARGET} row: ${short(made)}`);
       }
       lookupReady = await addLookupField('dbmlspLookup', targetId);
+
+      // L5's column. A read-only Lookup linked back to the primary by
+      // FieldRef, which is the shape the deploy already ships for a
+      // projection (`_lookups.js.j2`, createfieldasxml with Options 8). It
+      // cannot be made through AddField because the FieldRef linkage has no
+      // FieldCreationInformation property. If the header reads THIS cleanly
+      // while the primary answers `<id>;#<value>`, the family gets its
+      // lookup label with a column the generator can already emit.
+      if (lookupReady) {
+        const primary = await spGet(
+          `${libPath}/fields/getbyinternalnameortitle('dbmlspLookup')?$select=Id`);
+        const primaryId = primary.ok ? primary.body.Id : null;
+        if (!primaryId) {
+          typedNotes.push('dbmlspProjected: the primary lookup Id could not be read');
+        } else {
+          const present = await spGet(
+            `${libPath}/fields/getbyinternalnameortitle('dbmlspProjected')?$select=Id`);
+          if (!present.ok) {
+            const xml = '<Field Type="Lookup" DisplayName="dbmlspProjected"'
+              + ' Name="dbmlspProjected" List="{' + targetId + '}" ShowField="Title"'
+              + ' FieldRef="{' + primaryId + '}" ReadOnly="TRUE"/>';
+            const made = await postVerbose(`${libPath}/fields/createfieldasxml`,
+                                           { parameters: { SchemaXml: xml, Options: 8 } });
+            if (!made.ok) typedNotes.push(`dbmlspProjected: ${short(made)}`);
+          }
+        }
+      }
     }
 
     // One MERGE onto the file's own item. A lookup is written by Id through
@@ -455,8 +588,20 @@
       typedNotes.push('no list item was served for the uploaded file, so no value was set');
     } else {
       const values = {};
-      for (const [name, , value] of TYPED) values[name] = value;
+      // A null in TYPED means the value is not a literal and is resolved
+      // below. Written through the `...Id` companion, exactly as a lookup is.
+      for (const [name, , value] of TYPED) {
+        if (value !== null) values[name] = value;
+      }
       if (lookupReady && targetRowId) values.dbmlspLookupId = targetRowId;
+      // The person is whoever is running this, because the probe cannot know
+      // another valid principal on somebody else's site.
+      const me = await spGet('web/currentuser?$select=Id');
+      if (readFailed(me)) {
+        typedNotes.push('the current user could not be read, so no person value was set');
+      } else {
+        values.dbmlspPersonId = me.body.Id;
+      }
       const shape = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
       const entity = readFailed(shape) ? null : shape.body.ListItemEntityTypeFullName;
       const set = await postVerbose(`${libPath}/items(${itemId})`,
@@ -517,13 +662,32 @@
              + 'type whose value a header cannot read.'
            : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
 
+  // Carries the same fixture caveat, because the C block is the only part of
+  // the battery that answers without one. Every L, D and T line reads a
+  // column this run had to build, so a column that did not build would read
+  // as a token that does not resolve, which is the one confusion this probe
+  // exists to prevent.
+  record('library.form.header-expression-battery-renders', Q.expressions,
+         typedNotes.length === 0 ? 'MANUAL' : 'MANUAL (fixture incomplete)',
+         typedNotes.length === 0
+           ? `the same look answers all ${LINES.length} tagged lines. Controls C1 to C4 `
+             + 'come first: if they render and a later line does not, that line is the '
+             + 'finding; if nothing renders at all, one expression discarded the whole '
+             + 'header and that is the finding instead.'
+           : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
+
   console.log('\n============ EYES-ON ============');
   console.log(`  Open '${LIB}', click '${FILE}', open its details panel.`);
-  console.log('  Copy the header block back verbatim. Expected shape, one per line:');
+  console.log('  Copy the header block back verbatim. One line per tag:');
   for (const token of TOKENS) console.log(`     ${token} -> [<value or empty>]`);
-  for (const [name] of TYPED) console.log(`     ${name} -> [<value or empty>]`);
-  console.log('     dbmlspLookup -> [<value or empty>]');
-  console.log('     dbmlspLookup.lookupValue -> [<value or empty>]');
+  for (const [label] of LINES) console.log(`     ${label}`);
+  console.log('');
+  console.log('  A label standing alone is a token that resolved to nothing.');
+  console.log('  A line that lost its own label is a token that destroyed the');
+  console.log('  expression around it, which is a different finding: say so.');
+  console.log('  If the header renders NOTHING AT ALL, say that instead. It means');
+  console.log('  one bad expression discards the whole header, which is worth');
+  console.log('  knowing on its own, and the battery gets split in two.');
   console.log('  answer: ______________________________________');
   console.log('=================================');
 
