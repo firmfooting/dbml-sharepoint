@@ -1508,7 +1508,7 @@ measured which one SharePoint honours when a field carries both.
 
 Accepted today, each measured on a live site:
 
-- `date` and `datetime`, through a date column filled by a REST item create
+- `date`, through a date-only column filled by a REST item create
   (`field.date.dynamic-default-rest-fill`).
 - `int`, `number` and a single-value enum, measured on 2026-09-13 by
   `test/manual/library-guards-probe.js` (revision c445a55c): the formula
@@ -1520,21 +1520,27 @@ Accepted today, each measured on a live site:
   showed what happens otherwise: a result outside the choice set is stored
   as a literal the column does not list, not refused and not left blank.
 
-`nvarchar` is refused with `default_formula_type_unmeasured`: the 2026-09-13
-run measured Number and Choice and not Text, so the declaration waits for
-the probe that does. The accepted set is one constant in
-`analysis/checks/_default_formulas.py`, widened by editing one line once the
-measurement lands. Every other type is refused
+`datetime` and `nvarchar` are refused with `default_formula_type_unmeasured`:
+every date measurement used a date-only column, and the 2026-09-13 run
+measured Number and Choice and not Text, so both wait for
+`test/manual/default-formula-functions-probe.js`. The accepted set is one
+constant in `analysis/checks/_default_formulas.py`, widened by editing one
+line once the measurement lands. Every other type is refused
 (`default_formula_type_unsupported`), as is a formula on the built-in Title
 or on a calculated, multi-value, Person, Hyperlink, Lookup or cross-site
 reference column (`default_formula_column_kind_unsupported`).
 
 The formula itself must start with `=`, may name no column (it runs before
 the row exists, so `[Created]` and `[Today]` alike are refused), and may call
-only `TODAY`, `YEAR`, `MONTH`, `DAY`, `ROUNDUP`, `ROUNDDOWN`, `MOD`, `TEXT`,
-`IF`, `AND` and `OR`, joined with `&` and the arithmetic operators. Function
-names are matched as spelled; nothing has measured what SharePoint does with
-any other name, so `today()` is refused where `TODAY()` is accepted.
+only `TODAY`, `YEAR`, `MONTH` and `ROUNDUP`, joined with `&` and the
+arithmetic operators: the four functions the 2026-09-13 run evaluated. `DAY`,
+`ROUNDDOWN`, `MOD`, `TEXT`, `IF`, `AND` and `OR` are refused with
+`default_formula_function_unmeasured` until the same functions probe has
+evaluated each in a default formula. The calculated column grammar documents
+them, which is evidence about a calculated column and not about a formula
+SharePoint runs at item create. Function names are matched as spelled;
+nothing has measured what SharePoint does with any other name, so `today()`
+is refused where `TODAY()` is accepted.
 
 ## `lookup_projections`
 

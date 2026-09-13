@@ -24,44 +24,58 @@ from dbml_sharepoint.model.parser import Column, Table
 
 #: The type class of a single-value enum column. Its DBML type is the enum's
 #: own name, so the set below cannot list it by spelling; `_type_class`
-#: answers this token for one instead.
-ENUM = "enum"
+#: answers this token for one instead. The brackets keep it clear of any
+#: name a DBML enum could take.
+ENUM = "<enum>"
 
 #: The DBML column types a default formula may be declared on. ONE constant,
 #: widened by editing this line once a live probe has measured the type.
 #:
-#: MEASURED, not inferred. `date` and `datetime` rest on a date column filled
-#: through a REST item create (`formula.datetime.today-function-default-value`,
-#: `field.date.dynamic-default-rest-fill`). `int`, `number` and a single-value
-#: enum were measured 2026-09-13 by test/manual/library-guards-probe.js,
-#: revision c445a55c: a POST to /fields carrying `DefaultFormula` on
-#: SP.FieldNumber and on SP.FieldChoice was accepted and read back exactly as
-#: sent, on a generic list and on a document library
-#: (`field.default-formula.number-property-reads-back`,
+#: MEASURED, not inferred. `date` rests on a date-only column (DisplayFormat
+#: 0) filled through a REST item create
+#: (`formula.datetime.today-function-default-value`,
+#: `field.date.dynamic-default-rest-fill`). `int`, `number` and a
+#: single-value enum were measured 2026-09-13 by
+#: test/manual/library-guards-probe.js, revision c445a55c: a POST to /fields
+#: carrying `DefaultFormula` on SP.FieldNumber and on SP.FieldChoice was
+#: accepted and read back exactly as sent, on a generic list and on a
+#: document library (`field.default-formula.number-property-reads-back`,
 #: `field.default-formula.choice-property-reads-back`), and an item POST
 #: carrying only Title read back the computed year and quarter
 #: (`field.default-formula.number-fills-on-item-create`,
 #: `field.default-formula.choice-fills-on-item-create`).
-DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"date", "datetime", "int", "number", ENUM})
+DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"date", "int", "number", ENUM})
 
 #: Types a probe is expected to admit and none has measured yet. Refused
 #: today with a finding that says the measurement is pending, rather than
-#: that the type is wrong. The 2026-09-13 run measured Number and Choice and
-#: not Text.
-PENDING_DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"nvarchar"})
+#: that the type is wrong. Every date measurement used DisplayFormat 0, so
+#: `datetime` (DisplayFormat 1) waits beside `nvarchar`, which the
+#: 2026-09-13 run did not cover; both are rows of
+#: test/manual/default-formula-functions-probe.js.
+PENDING_DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"datetime", "nvarchar"})
 
-#: The functions a default formula may call, in exactly these spellings. Any
-#: other name is refused, a lower-case one included, because nothing has
-#: measured what SharePoint does with it.
-DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({
-    "TODAY", "YEAR", "MONTH", "DAY", "ROUNDUP", "ROUNDDOWN", "MOD", "TEXT",
-    "IF", "AND", "OR",
+#: The functions a default formula may call, in exactly these spellings.
+#: MEASURED 2026-09-13 by library-guards-probe.js (c445a55c): =YEAR(TODAY())
+#: filled a Number column and ="Q"&ROUNDUP(MONTH(TODAY())/3,0) filled a
+#: Choice column on a bare item create
+#: (`field.default-formula.number-fills-on-item-create`,
+#: `field.default-formula.choice-fills-on-item-create`).
+DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({"TODAY", "YEAR", "MONTH", "ROUNDUP"})
+
+#: Functions the calculated column grammar documents and no live probe has
+#: called in a default formula yet. That grammar is evidence about a
+#: calculated column, not about a formula SharePoint evaluates at item
+#: create, and a formula that saves and fills nothing is the silent class
+#: this project exists to close. Refused as pending, one row each in
+#: test/manual/default-formula-functions-probe.js. Any other name, a
+#: lower-case spelling included, is refused outright.
+PENDING_DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({
+    "DAY", "ROUNDDOWN", "MOD", "TEXT", "IF", "AND", "OR",
 })
 
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
-    enum_names = set(vc.enum_by_name)
     for entity, formulas in vc.bundle.mapping.default_formulas.items():
         table = vc.tables_by_name.get(entity)
         if table is None:
@@ -74,7 +88,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         rendered = rendered_columns(table, vc.cross_site_columns(entity))
         columns_by_name = {col.name: col for col in table.columns}
         for name, formula in formulas.items():
-            findings += _one(vc, table, name, formula, rendered, columns_by_name, enum_names)
+            findings += _one(
+                vc, table, name, formula, rendered, columns_by_name, vc.enum_by_name,
+            )
     return findings
 
 
@@ -97,6 +113,15 @@ def _one(
         findings.append(_kind(
             at, table.name, name,
             "a cross-site reference column, deployed as a Choice and URL pair",
+        ))
+        return findings
+    if col is None and name in rendered:
+        # The two halves of a cross-site column are created by the deploy
+        # and declared by nobody, so "unknown" would be the wrong word.
+        findings.append(_kind(
+            at, table.name, name,
+            "a column the deploy derives from a cross-site reference rather "
+            "than one the DBML declares",
         ))
         return findings
     if col is None or name not in rendered:
@@ -145,7 +170,19 @@ def _formula_text(at: Location, entity: str, name: str, formula: str) -> list[Fi
             f"constants instead.",
             location=at,
         ))
-    unsupported = sorted(formula_function_names(formula) - DEFAULT_FORMULA_FUNCTIONS)
+    called = formula_function_names(formula)
+    pending = sorted(called & PENDING_DEFAULT_FORMULA_FUNCTIONS)
+    if pending:
+        findings.append(Finding(
+            FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED,
+            f"default_formulas.{entity}.{name}: the formula calls "
+            f"{', '.join(pending)}, which no live probe has evaluated in a "
+            f"default formula yet, so it is refused until "
+            f"default-formula-functions-probe.js measures it. Measured: "
+            f"{', '.join(sorted(DEFAULT_FORMULA_FUNCTIONS))}.",
+            location=at,
+        ))
+    unsupported = sorted(called - DEFAULT_FORMULA_FUNCTIONS - PENDING_DEFAULT_FORMULA_FUNCTIONS)
     if unsupported:
         findings.append(Finding(
             FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
@@ -215,7 +252,7 @@ def _type(
             FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED,
             f"default_formulas.{entity}.{col.name}: a default formula on a "
             f"{col.type} column has not been measured on a live site yet, so "
-            f"it is refused until the probe that measures it lands.",
+            f"it is refused until default-formula-functions-probe.js measures it.",
             location=at,
         )]
     return [Finding(

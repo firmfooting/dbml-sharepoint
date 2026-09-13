@@ -20,6 +20,13 @@ import re
 from _paths import PACKAGE, REPO_ROOT, TEST_DIR
 from typer.testing import CliRunner
 
+from dbml_sharepoint.analysis.checks._default_formulas import (
+    DEFAULT_FORMULA_FUNCTIONS,
+    DEFAULT_FORMULA_TYPES,
+    ENUM,
+    PENDING_DEFAULT_FORMULA_FUNCTIONS,
+    PENDING_DEFAULT_FORMULA_TYPES,
+)
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -106,6 +113,22 @@ def test_the_formula_target_entry_names_every_calculated_type() -> None:
     text = FINDING_HELP[FindingCode.FORMULA_TARGET_NOT_CALCULATED]
     missing = sorted(t for t in CALCULATED_TYPES if t not in text)
     assert not missing, f"the entry does not name {missing}: {text}"
+
+
+def test_the_default_formula_entries_name_every_type_and_function() -> None:
+    """Four entries restate a vocabulary the checker owns; hold each to it.
+
+    Whole words, so DAY cannot pass on the strength of TODAY.
+    """
+    for code, names in (
+        (FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED, DEFAULT_FORMULA_TYPES - {ENUM}),
+        (FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED, PENDING_DEFAULT_FORMULA_TYPES),
+        (FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED, DEFAULT_FORMULA_FUNCTIONS),
+        (FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED, PENDING_DEFAULT_FORMULA_FUNCTIONS),
+    ):
+        text = FINDING_HELP[code]
+        missing = sorted(n for n in names if not re.search(rf"\b{re.escape(n)}\b", text))
+        assert not missing, f"{code.name} does not name {missing}: {text}"
 
 
 def test_the_catalogue_records_no_severity_of_its_own() -> None:

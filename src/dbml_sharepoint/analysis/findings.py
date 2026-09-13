@@ -527,9 +527,8 @@ class FindingCode(StrEnum):
 
     # --- checks/_default_formulas.py: a DefaultFormula per column -----------
     # One rule per way a declaration can be wrong, so the message can say
-    # what to change. The type rules come in three strengths on purpose: a
-    # kind a formula can never fill, a type nobody has measured yet, and a
-    # type nothing plans to measure.
+    # what to change. A type or a function is refused in one of two
+    # strengths: outright, or until a named probe measures it.
     DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE = (
         "default_formula_beside_a_default_value", "error"
     )
@@ -539,6 +538,7 @@ class FindingCode(StrEnum):
     DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED = (
         "default_formula_column_kind_unsupported", "error"
     )
+    DEFAULT_FORMULA_FUNCTION_UNMEASURED = "default_formula_function_unmeasured", "error"
     DEFAULT_FORMULA_FUNCTION_UNSUPPORTED = "default_formula_function_unsupported", "error"
     DEFAULT_FORMULA_MISSING_EQUALS = "default_formula_missing_equals", "error"
     DEFAULT_FORMULA_REFERENCES_A_COLUMN = "default_formula_references_a_column", "error"

@@ -480,11 +480,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the built-in Title, a calculated, multi-value, Person, Hyperlink or "
         "Lookup column, or a cross-site reference column."
     ),
+    FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED: (
+        "A default formula calls DAY, ROUNDDOWN, MOD, TEXT, IF, AND or OR. "
+        "The calculated column grammar documents each, and no live probe has "
+        "evaluated one in a default formula yet, so the declaration is "
+        "refused until `default-formula-functions-probe.js` measures it, "
+        "not because the function is known to fail. Measured so far: TODAY, "
+        "YEAR, MONTH and ROUNDUP."
+    ),
     FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED: (
         "A default formula calls a function outside the allowed set (TODAY, "
-        "YEAR, MONTH, DAY, ROUNDUP, ROUNDDOWN, MOD, TEXT, IF, AND, OR, with "
-        "the `&` operator). Names are matched as spelled; nothing has "
-        "measured what SharePoint does with any other."
+        "YEAR, MONTH and ROUNDUP, with the `&` operator; DAY, ROUNDDOWN, MOD, "
+        "TEXT, IF, AND and OR are refused separately until a probe measures "
+        "them). Names are matched as spelled; nothing has measured what "
+        "SharePoint does with any other."
     ),
     FindingCode.DEFAULT_FORMULA_MISSING_EQUALS: (
         "A default formula does not start with `=`."
@@ -496,15 +505,16 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED: (
         "A default formula is declared on a column type no live probe has "
-        "measured yet (`nvarchar`). The 2026-09-13 run of "
-        "library-guards-probe.js measured Number and Choice and not Text, so "
-        "the declaration is refused until the measurement lands, not because "
-        "the type is known to fail."
+        "measured yet (`datetime`, `nvarchar`). Every date measurement used a "
+        "date-only column and the 2026-09-13 run of library-guards-probe.js "
+        "measured Number and Choice, so both wait for "
+        "`default-formula-functions-probe.js`; the declaration is refused "
+        "until then, not because the type is known to fail."
     ),
     FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED: (
         "A default formula is declared on a column type it is not supported "
-        "on. Supported: `date`, `datetime`, `int`, `number` and a "
-        "single-value enum, each measured on a live site (date through "
+        "on. Supported: `date`, `int`, `number` and a single-value enum, each "
+        "measured on a live site (date through "
         "`field.date.dynamic-default-rest-fill`; the rest through "
         "library-guards-probe.js c445a55c on 2026-09-13)."
     ),

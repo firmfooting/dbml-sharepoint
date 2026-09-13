@@ -19,6 +19,7 @@ from dbml_sharepoint.analysis.checks._default_formulas import (
     DEFAULT_FORMULA_FUNCTIONS,
     DEFAULT_FORMULA_TYPES,
     ENUM,
+    PENDING_DEFAULT_FORMULA_FUNCTIONS,
     PENDING_DEFAULT_FORMULA_TYPES,
 )
 from dbml_sharepoint.analysis.column_refs import formula_function_names
@@ -75,12 +76,12 @@ def _own(findings: list[Finding]) -> list[Finding]:
 # --- accepted declarations --------------------------------------------------
 
 
-@pytest.mark.parametrize("col", ["PeriodYear", "Score", "Due", "Opened"])
+@pytest.mark.parametrize("col", ["PeriodYear", "Score", "Due"])
 def test_a_formula_on_a_measured_scalar_type_is_accepted(col: str) -> None:
     assert _own(_findings({col: "=YEAR(TODAY())"})) == []
 
 
-def test_the_brief_s_own_examples_are_accepted() -> None:
+def test_the_year_and_quarter_examples_are_accepted() -> None:
     findings = _findings({
         "PeriodYear": "=YEAR(TODAY())",
         "Quarter": '="Q"&ROUNDUP(MONTH(TODAY())/3,0)',
@@ -129,24 +130,35 @@ def test_bracket_text_inside_a_string_literal_is_not_a_reference() -> None:
     )
 
 
-@pytest.mark.parametrize("formula", ["=NOW()", "=today()", "=DATE(2026,1,1)"])
-def test_a_function_outside_the_allowlist_is_refused(formula: str) -> None:
+@pytest.mark.parametrize(
+    ("formula", "refused"),
+    [("=NOW()", "NOW"), ("=today()", "today"), ("=DATE(2026,1,1)", "DATE")],
+)
+def test_a_function_outside_the_allowlist_is_refused(formula: str, refused: str) -> None:
     finding = only(
         _findings({"Due": formula}), FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
     )
+    assert f"calls {refused}," in finding.message
     assert "TODAY" in finding.message
 
 
-def test_every_allowed_function_passes_the_function_rule() -> None:
+@pytest.mark.parametrize("name", sorted(PENDING_DEFAULT_FORMULA_FUNCTIONS))
+def test_a_documented_but_unmeasured_function_is_refused_as_pending(name: str) -> None:
+    """The calculated grammar is evidence about a calculated column only."""
+    findings = _own(_findings({"Score": f"={name}(1)"}))
+    finding = only(findings, FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED)
+    assert f"calls {name}," in finding.message
+    assert "default-formula-functions-probe.js" in finding.message
+    none_of(findings, FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED)
+
+
+def test_every_measured_function_is_accepted() -> None:
     formula = "=" + "&".join(f"{name}(1)" for name in sorted(DEFAULT_FORMULA_FUNCTIONS))
-    none_of(_findings({"Ref": formula}), FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED)
+    assert _own(_findings({"Score": formula})) == []
 
 
 def test_a_function_name_inside_a_string_literal_is_not_a_call() -> None:
-    none_of(
-        _findings({"Ref": '="NOW("&TEXT(TODAY(),"yyyy")'}),
-        FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
-    )
+    assert _own(_findings({"Score": '="NOW("&"IF("&YEAR(TODAY())'})) == []
 
 
 def test_the_function_parser_reads_calls_outside_literals_only() -> None:
@@ -209,10 +221,23 @@ def test_a_cross_site_reference_column_is_refused_by_kind() -> None:
     assert "cross-site" in finding.message
 
 
-def test_an_unmeasured_type_is_refused_as_pending() -> None:
-    finding = only(_findings({"Ref": '="x"'}), FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED)
+def test_a_derived_cross_site_column_is_refused_by_kind() -> None:
+    """The deploy creates ParentAbbreviation, so "unknown" would be false."""
+    findings = _findings(
+        {"ParentAbbreviation": "=TODAY()"},
+        cross_site_reference_columns=[CrossSiteRef(entity="Saq", column="Parent")],
+    )
+    finding = only(findings, FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED)
+    assert "derives" in finding.message
+    none_of(findings, FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN)
+
+
+@pytest.mark.parametrize(("col", "type_name"), [("Ref", "nvarchar"), ("Opened", "datetime")])
+def test_an_unmeasured_type_is_refused_as_pending(col: str, type_name: str) -> None:
+    finding = only(_findings({col: "=TODAY()"}), FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED)
     assert "not been measured" in finding.message
-    assert "nvarchar" in finding.message
+    assert type_name in finding.message
+    assert "default-formula-functions-probe.js" in finding.message
 
 
 @pytest.mark.parametrize("col", ["Closed", "Notes"])
@@ -258,12 +283,30 @@ def test_an_unknown_entity_is_reported_under_this_section() -> None:
 
 def test_the_accepted_and_pending_sets_do_not_overlap() -> None:
     assert not DEFAULT_FORMULA_TYPES & PENDING_DEFAULT_FORMULA_TYPES
+    assert not DEFAULT_FORMULA_FUNCTIONS & PENDING_DEFAULT_FORMULA_FUNCTIONS
     assert ENUM in DEFAULT_FORMULA_TYPES
 
 
-def test_widening_the_constant_is_the_whole_change(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_widening_the_type_constant_is_the_whole_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The probe that measures `nvarchar` lands by editing one line."""
     monkeypatch.setattr(
         _default_formulas, "DEFAULT_FORMULA_TYPES", DEFAULT_FORMULA_TYPES | {"nvarchar"},
     )
     assert _own(_findings({"Ref": '="x"'})) == []
+
+
+def test_moving_a_function_across_is_the_whole_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe that measures IF lands by moving one name between the sets."""
+    monkeypatch.setattr(
+        _default_formulas, "DEFAULT_FORMULA_FUNCTIONS", DEFAULT_FORMULA_FUNCTIONS | {"IF"},
+    )
+    monkeypatch.setattr(
+        _default_formulas,
+        "PENDING_DEFAULT_FORMULA_FUNCTIONS",
+        PENDING_DEFAULT_FORMULA_FUNCTIONS - {"IF"},
+    )
+    assert _own(_findings({"Score": "=IF(MONTH(TODAY())>=7,1,0)"})) == []

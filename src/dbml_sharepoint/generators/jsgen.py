@@ -1102,10 +1102,12 @@ def _field_body(
         body["Description"] = sp.description
     # DefaultFormula is a property of the base SP.Field (CSOM
     # Field.DefaultFormula), so it rides the create body whatever the kind;
-    # the validator decides which kinds may declare one. Measured on a date
-    # column through an item create (`field.date.dynamic-default-rest-fill`)
-    # and on Number and Choice columns on 2026-09-13
-    # (library-guards-probe.js c445a55c, `field.default-formula.*`).
+    # the validator decides which kinds may declare one. MEASURED 2026-09-13,
+    # `field.default-formula.number-property-reads-back` and
+    # `field.default-formula.choice-property-reads-back` in
+    # library-guards-probe.js (c445a55c): sent this way on SP.FieldNumber and
+    # SP.FieldChoice, it read back as sent. A date-only column was filled
+    # through an item create (`field.date.dynamic-default-rest-fill`).
     default_formula = (default_formulas or {}).get(sp.name)
     if default_formula is not None:
         body["DefaultFormula"] = default_formula
