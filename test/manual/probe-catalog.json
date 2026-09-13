@@ -9615,7 +9615,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch document library carrying a single uploaded text file, and a form header set on its document content type listing one labelled line per candidate column token"
+        "one scratch document library carrying a single uploaded text file, a Choice, Number, DateTime and Lookup column each given a value on that file, a scratch list holding the one row the lookup points at, and a form header set on the library's document content type listing one labelled line per candidate token"
       ],
       "cleanup": {
         "policy": "manual"
@@ -9651,6 +9651,13 @@
           "findings": [
             {
               "id": "library.form.header-token-battery-renders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.header-token-battery-stored"
+              ]
+            },
+            {
+              "id": "library.form.header-typed-column-battery-renders",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
                 "library.form.header-token-battery-stored"
