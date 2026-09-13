@@ -33,7 +33,9 @@ _INTENDED_IMPORTERS: dict[str, set[str]] = {
     "generators/jsgen.py": {"SYSTEM_COLUMN_TYPES", "effective_column_types"},
     "analysis/reporting/plan.py": {"SYSTEM_COLUMN_TYPES"},
     "analysis/report_columns.py": {"SYSTEM_COLUMN_TYPES"},
-    "analysis/checks/_views.py": {"SYSTEM_COLUMN_TYPES", "effective_column_types"},
+    "analysis/checks/_views.py": {
+        "SYSTEM_COLUMN_TYPES", "effective_column_types", "system_column_types_for",
+    },
     "analysis/checks/_formatting.py": {"effective_column_types"},
     "analysis/checks/_retirement.py": {"effective_column_types"},
     "analysis/joins.py": {"SYSTEM_COLUMN_TYPES"},
@@ -83,6 +85,20 @@ def test_modeled_system_column_types_are_exact() -> None:
         "Modified": "datetime",
         "Author": "person",
         "Editor": "person",
+    }
+
+
+def test_a_library_types_the_file_name_column_and_a_list_does_not() -> None:
+    """An uploaded file's Title is null and its name is FileLeafRef (MEASURED
+    2026-07-29, `library.file.name-field-is-leafref`), so a library's views
+    may filter and sort on it and a list's may not. The list answer is the
+    pinned dict above, unchanged."""
+    from dbml_sharepoint.analysis.column_projection import system_column_types_for
+
+    assert system_column_types_for("List") == SYSTEM_COLUMN_TYPES
+    assert system_column_types_for("HubOnlyList") == SYSTEM_COLUMN_TYPES
+    assert system_column_types_for("DocumentLibrary") == {
+        **SYSTEM_COLUMN_TYPES, "FileLeafRef": "nvarchar",
     }
 
 

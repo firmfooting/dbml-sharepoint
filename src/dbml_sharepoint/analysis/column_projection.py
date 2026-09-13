@@ -42,6 +42,20 @@ SYSTEM_COLUMN_TYPES: dict[str, str] = {
     "Editor": "person",
 }
 
+# The file-identity column only a document library carries. Text: it is the
+# file name (MEASURED 2026-07-29, `library.file.name-field-is-leafref` in
+# document-library-probe.js). Kept beside rather than inside
+# `SYSTEM_COLUMN_TYPES` because that dict is what every LIST renders, and a
+# list view filtering on FileLeafRef would answer with no rows.
+LIBRARY_COLUMN_TYPES: dict[str, str] = {"FileLeafRef": "nvarchar"}
+
+
+def system_column_types_for(kind: str) -> dict[str, str]:
+    """`SYSTEM_COLUMN_TYPES`, plus the file-identity column on a library."""
+    if kind == "DocumentLibrary":
+        return {**SYSTEM_COLUMN_TYPES, **LIBRARY_COLUMN_TYPES}
+    return dict(SYSTEM_COLUMN_TYPES)
+
 
 def effective_column_types(
     declared: dict[str, str],

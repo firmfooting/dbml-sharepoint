@@ -5,6 +5,7 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import (
     SYSTEM_COLUMN_TYPES,
     effective_column_types,
+    system_column_types_for,
 )
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.condition_rendering import (
@@ -34,7 +35,7 @@ from dbml_sharepoint.analysis.limits import (
     MAX_FILTER_EDITOR_CONDITIONS,
     MAX_VIEW_ROW_LIMIT,
 )
-from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
 from dbml_sharepoint.analysis.typemap import (
     NUMBER_TYPES,
     NUMERIC_ONLY_TOTALS,
@@ -470,7 +471,7 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
                 set_table, cross_site_by_entity.get(entity_name, set()),
                 vc.projected_columns(entity_name),
             )
-            | {"Title"} | SYSTEM_COLUMNS
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
         )
         # A set is "referenced" if some view on this entity actually
         # expanded it. ViewDef.expanded_sets is the loader's record of
@@ -557,7 +558,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # separate on purpose; do not fold this into that helper.
         view_rendered = (
             rendered_columns(view_table, xcols, vc.projected_columns(entity_name))
-            | {"Title"} | SYSTEM_COLUMNS
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
         )
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
@@ -738,7 +739,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # rejections as distinct finding codes and locations: an
                 # unrenderable operator is not flattened into the same result
                 # as an unknown column.
-                where_types = {**SYSTEM_COLUMN_TYPES, **types_by_col}
+                where_types = {
+                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
+                }
                 where_findings = condition_findings(
                     view.where,
                     target=CAML,
@@ -757,7 +760,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # System columns are dropped before anything is decided. They
                 # are filterable but not declarable, so they can neither carry
                 # a DBML index nor be reported as missing one.
-                filtered = condition_fields(view.where) - SYSTEM_COLUMNS
+                filtered = (
+                    condition_fields(view.where)
+                    - system_columns_for(vc.kind_of(entity_name))
+                )
                 # Do not layer an index warning on top of an unknown-field
                 # error. Once every field resolves, assess the whole
                 # dependency set without pretending to understand AND/OR

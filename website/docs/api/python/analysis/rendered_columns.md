@@ -27,10 +27,27 @@ move the cycle rather than close it.
 SYSTEM_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'ID', 'Modified'})
 ```
 
+### `LIBRARY_COLUMNS`
+
+```python
+LIBRARY_COLUMNS = frozenset({'FileLeafRef'})
+```
+
+### `system_columns_for`
+
+```python
+def system_columns_for(kind: str) -> frozenset[str]
+```
+
+The system columns a container of this kind renders.
+
+Kind-aware so a list's views and formatters keep refusing FileLeafRef,
+which no list item carries, while a library's may name it.
+
 ### `UNDEPLOYABLE_DECLARATION_COLUMNS`
 
 ```python
-UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'ID', 'Modified', 'Title'})
+UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'FileLeafRef', 'ID', 'Modified', 'Title'})
 ```
 
 ### `undeployable`

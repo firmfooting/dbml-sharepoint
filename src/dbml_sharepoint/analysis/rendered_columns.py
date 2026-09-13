@@ -23,6 +23,25 @@ from dbml_sharepoint.model.parser import Table
 # for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
+# The file-identity column a document library has and a list does not. An
+# uploaded file's Title is null and its name is FileLeafRef (MEASURED
+# 2026-07-29, `library.file.name-field-is-leafref` and
+# `library.file-vs-item.title-after-upload` in document-library-probe.js),
+# a view may carry it (`library.doc-lib.view-fileleafref`, same run), and a
+# header whose title line reads [$FileLeafRef] renders on the file panel
+# (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03).
+LIBRARY_COLUMNS = frozenset({"FileLeafRef"})
+
+
+def system_columns_for(kind: str) -> frozenset[str]:
+    """The system columns a container of this kind renders.
+
+    Kind-aware so a list's views and formatters keep refusing FileLeafRef,
+    which no list item carries, while a library's may name it.
+    """
+    return SYSTEM_COLUMNS | LIBRARY_COLUMNS if kind == "DocumentLibrary" else SYSTEM_COLUMNS
+
+
 # Columns that never reach the per-field deploy loop, so a per-field
 # declaration on one is validated, reported and never written.
 #
@@ -36,7 +55,7 @@ SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 # Supporting Title properly means threading the formulas through the patch
 # path, a larger change than the calculated-formula and formatter sections
 # warrant. Fail closed instead, and say why.
-UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS
+UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS | LIBRARY_COLUMNS
 
 
 def undeployable(context: str, column: str) -> str:

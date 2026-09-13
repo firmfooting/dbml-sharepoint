@@ -22,7 +22,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     build_plans,
 )
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import EntityKind, MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 
 
@@ -212,6 +212,16 @@ class ValidationContext:
     def cross_site_columns(self, entity_name: str) -> set[str]:
         """Cross-site reference columns declared on one entity."""
         return self.cross_site_by_entity.get(entity_name, set())
+
+    def kind_of(self, entity_name: str) -> EntityKind:
+        """The declared kind of one entity, a generic list when undeclared.
+
+        An undeclared entity is `_structure`'s finding; the checks that read
+        the kind to pick a system-column set need an answer, not a KeyError,
+        and a list is the answer every entity had before libraries existed.
+        """
+        entity = self.bundle.mapping.entities.get(entity_name)
+        return "List" if entity is None else entity.kind
 
     def projected_columns(self, entity_name: str) -> set[str]:
         """Projected (dependent) field names on one entity, empty when none."""
