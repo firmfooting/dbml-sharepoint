@@ -74,7 +74,7 @@ from dbml_sharepoint.model.mapping_types import (
     ViewScope,
     view_url_slug,
 )
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Column, Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
@@ -457,6 +457,40 @@ def _order_calculated_after_references(
     return plain + ordered
 
 
+def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
+    """The MERGE body for a list's built-in Title, from its DBML declaration.
+
+    Title never goes through the field-body builder, because the column
+    already exists on every base template and is patched rather than created.
+    That divergence is why a `[unique]` Title deployed with no constraint at
+    all: the branch that writes `EnforceUniqueValues` sits on the create path
+    Title has already left, so the declaration saved, read back clean, passed
+    every deploy phase and did nothing (#307).
+
+    Worse, `_field_reconcile.js.j2` reads this same body back as the declared
+    shape, so an operator who noticed and ticked the box in list settings had
+    it turned off again by the next paste, with the field counted as skipped.
+
+    Both close here. The keys are ABSENT rather than `False` when the column
+    is not unique: the reconciler compares `EnforceUniqueValues === true`, and
+    an explicit false is a declaration about the property rather than silence
+    about it, which would change what every existing family deploys.
+    """
+    patch: dict[str, Any] = {
+        "__metadata": {"type": "SP.FieldText"},
+        "Required": col.required,
+        "Description": format_description(col.note),
+    }
+    if display_title is not None:
+        patch["Title"] = display_title
+    if col.unique:
+        patch["EnforceUniqueValues"] = True
+        patch["Indexed"] = True
+    if col.default is not None:
+        patch["DefaultValue"] = col.default
+    return patch
+
+
 def build_schema_json(
     schema: Schema,
     bundle: MappingBundle,
@@ -557,15 +591,8 @@ def build_schema_json(
                 continue
 
             if col.name == "Title":
-                title_patch = {
-                    "__metadata": {"type": "SP.FieldText"},
-                    "Required": col.required,
-                    "Description": format_description(col.note),
-                }
-                if title_display is not None:
-                    title_patch["Title"] = title_display
+                title_patch = _title_patch(col, title_display)
                 if col.default is not None:
-                    title_patch["DefaultValue"] = col.default
                     field_defaults_out.append({
                         "list": list_title,
                         "field": "Title",
