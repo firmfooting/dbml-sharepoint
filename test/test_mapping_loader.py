@@ -499,6 +499,47 @@ def test_calculated_formulas_default_empty_when_absent() -> None:
     assert bundle.mapping.calculated_formulas == {}
 
 
+def test_default_formulas_loaded(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        default_formulas:
+          Project:
+            PeriodYear: "=YEAR(TODAY())"
+            Quarter: "=\\"Q\\"&ROUNDUP(MONTH(TODAY())/3,0)"
+    """))
+    formulas = load_mapping(tmp_path / "m.yaml").mapping.default_formulas
+    assert formulas == {"Project": {
+        "PeriodYear": "=YEAR(TODAY())",
+        "Quarter": '="Q"&ROUNDUP(MONTH(TODAY())/3,0)',
+    }}
+
+
+def test_default_formulas_default_empty_when_absent() -> None:
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    assert bundle.mapping.default_formulas == {}
+
+
+def test_a_default_formula_must_be_a_string(tmp_path: Path) -> None:
+    """A bare number is a value, and a value belongs in the DBML `default:`."""
+    write_mapping(tmp_path, _views_yaml("""
+        default_formulas:
+          Project:
+            PeriodYear: 2026
+    """))
+    with pytest.raises(ValueError, match=r"default_formulas\.Project\.PeriodYear") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "2026" in str(err.value)
+
+
+def test_a_default_formulas_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _views_yaml("""
+        default_formulas:
+          Project:
+            - PeriodYear
+    """))
+    with pytest.raises(ValueError, match=r"default_formulas\.Project"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: Path) -> None:
     # The old form prepended "\n" to the appended block, with a comment saying
     # it mattered against however the fixture ends. The fixture does end
@@ -2410,6 +2451,7 @@ def test_a_validation_rule_without_a_message_is_refused(tmp_path: Path) -> None:
 _WRONG_SHAPES = [
     ("entities", "entities:\n  - Project\n  - Risk\n"),
     ("calculated_formulas", "calculated_formulas:\n  - Project\n"),
+    ("default_formulas", "default_formulas:\n  - Project\n"),
     ("views", "views:\n  - Project\n"),
     ("column_formatting", "column_formatting:\n  - Project\n"),
     ("form_formatting", "form_formatting:\n  - Project\n"),

@@ -55,6 +55,25 @@ def formula_column_refs(formula: str) -> frozenset[str]:
 # are literal tokens and pass through any rewrite untouched.
 _FORMULA_LITERAL_SPLIT = re.compile(r'("(?:""|[^"])*")')
 
+# A name immediately followed by an opening parenthesis is a function call.
+_FORMULA_FUNCTION_CALL = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def formula_function_names(formula: str) -> frozenset[str]:
+    """Function names a formula calls, as written, outside string literals.
+
+    Text inside a quoted constant is data, so ``="IF("&TODAY()`` calls only
+    ``TODAY``. Uses the same literal split as `rewrite_formula_refs`, so the
+    two agree about where a literal begins. Names are returned as spelled:
+    the allowlist a caller compares against decides what case it accepts.
+    """
+    return frozenset(
+        name
+        for index, part in enumerate(_FORMULA_LITERAL_SPLIT.split(formula))
+        if index % 2 == 0
+        for name in _FORMULA_FUNCTION_CALL.findall(part)
+    )
+
 
 def rewrite_formula_refs(formula: str, rename: dict[str, str]) -> str:
     """Rewrite a calculated formula's ``[Name]`` references through `rename`.

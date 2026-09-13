@@ -56,6 +56,25 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "default_formula_function_unmeasured": (
+        "Retired 2026-09-13. It refused DAY, ROUNDDOWN, MOD, TEXT, IF, AND "
+        "and OR in a default formula, which had been admitted on the "
+        "strength of the calculated column grammar rather than measured. "
+        "`test/manual/default-formula-functions-probe.js` gave each its own "
+        "column on a live site the same day and every one stored as sent and "
+        "filled on a bare item create, so all seven joined the allowed set "
+        "and nothing was left pending. A function nobody has measured is "
+        "still refused, by `default_formula_function_unsupported`."
+    ),
+    "default_formula_type_unmeasured": (
+        "Retired 2026-09-13. It refused a default formula on a `datetime` or "
+        "`nvarchar` column while every measurement had used a date-only "
+        "column, a Number or a Choice. The same functions probe measured a "
+        "Text column and a DateTime column at DisplayFormat 1, both of which "
+        "stored the formula and filled, so both types joined the accepted "
+        "set. A type nothing plans to measure is still refused, by "
+        "`default_formula_type_unsupported`."
+    ),
     "document_library_unsupported": (
         "Retired 2026-09-13. It refused `kind: DocumentLibrary` outright "
         "while the deploy had no file-identity vocabulary, no folder step "
@@ -460,6 +479,51 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A derived `count` names a child entity that is not in the schema, "
         "or a `via` column on that child which does not point back at the "
         "entity being counted for."
+    ),
+    FindingCode.DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE: (
+        "A column carries a default formula in the mapping and a `default:` "
+        "in the DBML. Nothing has measured which one SharePoint honours when "
+        "a field has both, so a column declares one or the other."
+    ),
+    FindingCode.DEFAULT_FORMULA_CHOICE_RESULT_UNCHECKED: (
+        "A default formula on a single-value enum column must produce a "
+        "member of the enum at run time, and the build cannot evaluate the "
+        "clock to check it. Measured 2026-09-13 (library-guards-probe.js "
+        "c445a55c, `field.default-formula.choice-non-member-result`): a "
+        "Choice formula whose result was not a member stored the literal "
+        "`Q13`. The field is not left blank; it holds a value outside the "
+        "choice set."
+    ),
+    FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED: (
+        "A default formula is declared on a column kind that cannot take one: "
+        "the built-in Title, a calculated, multi-value, Person, Hyperlink or "
+        "Lookup column, or a cross-site reference column."
+    ),
+    FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED: (
+        "A default formula calls a function outside the allowed set (TODAY, "
+        "YEAR, MONTH, DAY, ROUNDUP, ROUNDDOWN, MOD, TEXT, IF, AND, OR, with "
+        "the `&` operator), each of which filled a column on a live site on "
+        "2026-09-13. Names are matched as spelled; nothing has measured what "
+        "SharePoint does with any other."
+    ),
+    FindingCode.DEFAULT_FORMULA_MISSING_EQUALS: (
+        "A default formula does not start with `=`."
+    ),
+    FindingCode.DEFAULT_FORMULA_REFERENCES_A_COLUMN: (
+        "A default formula names a column in square brackets. It runs before "
+        "the row exists, so there is no column to read; compute from TODAY() "
+        "and constants."
+    ),
+    FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED: (
+        "A default formula is declared on a column type it is not supported "
+        "on. Supported: `date`, `datetime`, `int`, `number`, `nvarchar` and a "
+        "single-value enum, each measured on a live site (date through "
+        "`field.date.dynamic-default-rest-fill`; the rest through "
+        "library-guards-probe.js c445a55c on 2026-09-13)."
+    ),
+    FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN: (
+        "A default formula names a column the deploy does not create on that "
+        "entity."
     ),
     FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER: (
         "A column's default is not a member of the enum it is typed as."

@@ -1485,6 +1485,76 @@ references are not allowed…"* (`multi_value_operand_unsupported`). The full
 live-verified operand matrix is in the
 [DBML reference](dbml.md#constraints-sharepoint-imposes).
 
+## `default_formulas`
+
+```yaml
+default_formulas:
+  SAQ:
+    PeriodYear: "=YEAR(TODAY())"
+    Quarter: "=\"Q\"&ROUNDUP(MONTH(TODAY())/3,0)"
+```
+
+A SharePoint default formula per column: the field's `DefaultFormula`
+property, evaluated by SharePoint when a row is created. It is written in the
+create body, re-applied by the field-defaults phase and reconciled as a
+mutable property on every paste, so a formula edited by hand on the site is
+reverted and reported, exactly as a `DefaultValue` is. The manifest lists
+every declared formula beside the column it fills.
+
+The column is declared in the DBML; only the formula is here, for the reason
+`calculated_formulas` gives. A column takes a DBML `default:` or a default
+formula, not both (`default_formula_beside_a_default_value`): nothing has
+measured which one SharePoint honours when a field carries both.
+
+Accepted today, each measured on a live site:
+
+- `date`, through a date-only column filled by a REST item create
+  (`field.date.dynamic-default-rest-fill`).
+- `int`, `number` and a single-value enum, measured on 2026-09-13 by
+  `test/manual/library-guards-probe.js` (revision c445a55c): the formula
+  read back exactly as sent on a generic list and on a document library, and
+  an item created with only a Title read back the computed year and quarter.
+  On an enum column the build warns
+  (`default_formula_choice_result_unchecked`) because the result must be a
+  member at run time and the build cannot evaluate the clock. The same run
+  showed what happens otherwise: a result outside the choice set is stored
+  as a literal the column does not list, not refused and not left blank.
+- `nvarchar` and `datetime`, measured the same day by
+  `test/manual/default-formula-functions-probe.js`: a single-line Text column
+  stored the formula as sent and filled on a bare item create, and a DateTime
+  column at `DisplayFormat` 1 filled within a day of the browser clock.
+
+Every other type is refused (`default_formula_type_unsupported`), as is a
+formula on the built-in Title or on a calculated, multi-value, Person,
+Hyperlink, Lookup or cross-site reference column
+(`default_formula_column_kind_unsupported`). The accepted set is one constant
+in `analysis/checks/_default_formulas.py`, widened by editing one line once a
+measurement lands.
+
+The formula itself must start with `=`, may name no column (it runs before
+the row exists, so `[Created]` and `[Today]` alike are refused), and may call
+only `TODAY`, `YEAR`, `MONTH`, `DAY`, `ROUNDUP`, `ROUNDDOWN`, `MOD`, `TEXT`,
+`IF`, `AND` and `OR`, joined with `&` and the arithmetic operators. Each of
+those filled a column on a bare item create in the 2026-09-13 functions run,
+one column per function. Names are matched as spelled; nothing has measured
+what SharePoint does with any other name, so `today()` is refused where
+`TODAY()` is accepted.
+
+A column declares a DBML `default:` or a default formula, never both. The
+same run measured what happens if it does: a field created carrying both kept
+the formula, read `DefaultValue` back null, and filled from the formula. The
+author's default is discarded without a word, which is why the build refuses
+the pair rather than picking one.
+
+:::note
+
+A default formula a site owner adds by hand cannot be removed by this tool.
+MEASURED 2026-09-13: a MERGE clearing `DefaultFormula` is accepted and the
+formula stays. The reconcile reports it on every paste and names the manual
+step, which is to clear the field in the column settings page.
+
+:::
+
 ## `lookup_projections`
 
 ```yaml

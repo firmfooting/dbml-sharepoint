@@ -1433,9 +1433,11 @@
   // bypass the cache entirely (verification never trusts a cache). An
   // absent LIST yields an uncached empty result; the list may be created
   // later in this same run.
+  // DefaultFormula is a base SP.Field property like DefaultValue (CSOM
+  // Field.DefaultFormula), so it is selected on every subtype the same way.
   const _FIELD_SHAPE_SELECT = [
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
-    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter',
+    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter',
   ].join(',');
   let fieldShapesByList = Object.create(null);
   // No argument: full reset (phase starts). With a list name: drop only
@@ -1549,6 +1551,7 @@
         || typeof shape.ReadOnlyField !== 'boolean'
         || typeof shape.Sealed !== 'boolean'
         || !(shape.DefaultValue === null || typeof shape.DefaultValue === 'string')
+        || !(shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string')
         || !(shape.CustomFormatter == null || typeof shape.CustomFormatter === 'string')) {
       throw new Error(`Field '${listName}.${columnName}' shape probe returned an invalid response`);
     }
@@ -1750,12 +1753,14 @@
   const SCHEMA = {
   "field_defaults": [
     {
+      "default_formula": null,
       "default_value": "Open",
       "field": "Status",
       "list": "APP_Project",
       "metadata_type": "SP.FieldChoice"
     },
     {
+      "default_formula": null,
       "default_value": "0",
       "field": "SortOrder",
       "list": "APP_Project",
@@ -2413,6 +2418,14 @@
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
 
+  // A default formula lives in the field schema XML beside a calculated
+  // Formula (the DefaultFormula element), so it is compared on the same
+  // canonical form, which matches an encoded and a decoded readback alike.
+  // Null and '' are the same absent formula, as for DefaultValue.
+  const normalizeDefaultFormula = (value) => (
+    value == null || value === '' ? null : canonicalFormula(value)
+  );
+
   function normalizeDerivedValue(name, value) {
     if (name === 'Choices') return value.results;
     if (name === 'Formula') return canonicalFormula(value);
@@ -2450,6 +2463,7 @@
       enforceUniqueValues,
       indexed: enforceUniqueValues || indexedFieldKeys.has(`${listName}\u0000${field.title}`),
       defaultValue: normalizeDefaultValue(field.body.DefaultValue),
+      defaultFormula: normalizeDefaultFormula(field.body.DefaultFormula),
       derived,
     };
   }
@@ -3296,6 +3310,7 @@
       || actual.EnforceUniqueValues !== desired.enforceUniqueValues
       || actual.Indexed !== desired.indexed
       || normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue
+      || normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula
       // Declared-null means "never touch": a hand-applied format survives.
       || (field.custom_formatter != null
           && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter))
@@ -3318,6 +3333,21 @@
       if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) {
         patchBody.DefaultValue = desired.defaultValue;
       }
+      if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) {
+        // The declared text as authored, not its canonical form: the
+        // canonical form is for comparing, and SharePoint stores what it is sent.
+        patchBody.DefaultFormula = field.body.DefaultFormula == null ? null : field.body.DefaultFormula;
+      }
+      // MEASURED 2026-09-13,
+      // `field.default-formula.value-merge-null-keeps-formula` in
+      // default-formula-readback-probe.js: a MERGE carrying DefaultValue
+      // answered HTTP 204, cleared the value AND left DefaultFormula null.
+      // So reverting a hand-set value on a declared-formula column would
+      // destroy the formula and need a second paste to put it back. Both
+      // ride together whenever either moves.
+      if ('DefaultValue' in patchBody && desired.defaultFormula !== null) {
+        patchBody.DefaultFormula = field.body.DefaultFormula;
+      }
       if (field.custom_formatter != null
           && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
         patchBody.CustomFormatter = field.custom_formatter;
@@ -3335,8 +3365,9 @@
     // reconcile is diagnosable from the console log alone, without another
     // paste round-trip.
     const drifted = [];
-    const drift = (name, declaredValue, actualValue) => drifted.push(
-      `${name} (declared ${JSON.stringify(declaredValue)}; readback ${JSON.stringify(actualValue)})`,
+    const drift = (name, declaredValue, actualValue, note) => drifted.push(
+      `${name} (declared ${JSON.stringify(declaredValue)}; readback ${JSON.stringify(actualValue)})`
+      + (note ? `: ${note}` : ''),
     );
     if (actual.Title !== desiredTitle) drift('Title', desiredTitle, actual.Title);
     if (normalizeDescription(actual.Description) !== desired.description) drift('Description', desired.description, actual.Description);
@@ -3344,6 +3375,21 @@
     if (actual.EnforceUniqueValues !== desired.enforceUniqueValues) drift('EnforceUniqueValues', desired.enforceUniqueValues, actual.EnforceUniqueValues);
     if (actual.Indexed !== desired.indexed) drift('Indexed', desired.indexed, actual.Indexed);
     if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) drift('DefaultValue', desired.defaultValue, actual.DefaultValue);
+    if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) {
+      // MEASURED 2026-09-13, `field.default-formula.formula-merge-null-clears`
+      // in default-formula-readback-probe.js: MERGE DefaultFormula:null
+      // answered HTTP 204 and the formula still read back. A formula
+      // nothing declares cannot be removed from here at all, so the
+      // operator gets the manual step rather than the same bare line
+      // on every paste.
+      drift(
+        'DefaultFormula', field.body.DefaultFormula, actual.DefaultFormula,
+        desired.defaultFormula === null
+          ? 'SharePoint accepts clearing a default formula and keeps it, measured '
+            + '2026-09-13; remove it in the column settings page'
+          : null,
+      );
+    }
     if (field.custom_formatter != null
         && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
       drift('CustomFormatter', field.custom_formatter, actual.CustomFormatter);
@@ -5871,13 +5917,19 @@
         for (const entry of entries) {
           // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
           // sends, so only the transport differs: still by-Id, still a MERGE.
+          // Each default rides only when declared: a column with a formula
+          // and no value must not have its DefaultValue touched here.
+          const defaultBody = { __metadata: { type: entry.fieldDefault.metadata_type } };
+          if (entry.fieldDefault.default_value != null) {
+            defaultBody.DefaultValue = entry.fieldDefault.default_value;
+          }
+          if (entry.fieldDefault.default_formula != null) {
+            defaultBody.DefaultFormula = entry.fieldDefault.default_formula;
+          }
           await defaultsBatch.add(
             'POST',
             fieldMergePath(entry.target.listId, entry.target.field.Id),
-            {
-              __metadata: { type: entry.fieldDefault.metadata_type },
-              DefaultValue: entry.fieldDefault.default_value,
-            },
+            defaultBody,
             FIELD_MERGE_HEADERS,
           );
         }
@@ -5894,10 +5946,26 @@
     for (const { fieldDefault, target } of defaultTargets) {
       try {
         const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+        // A formula-only column reads DefaultValue back null, so this
+        // comparison is about the value and not about the formula beside
+        // it (MEASURED 2026-09-13,
+        // `field.default-formula.default-value-beside-formula-on-create`
+        // and `field.default-formula.default-value-after-item-create` in
+        // default-formula-readback-probe.js: null on create, and still
+        // null after an item create had filled the column once).
         if (!actual
             || normalizeDefaultValue(actual.DefaultValue)
                !== normalizeDefaultValue(fieldDefault.default_value)) {
           throw new Error('DefaultValue readback did not match the declared value');
+        }
+        // Compared whether or not a formula is declared: a formula the site
+        // holds and the declaration does not is drift this phase must name.
+        if (normalizeDefaultFormula(actual.DefaultFormula)
+            !== normalizeDefaultFormula(fieldDefault.default_formula)) {
+          throw new Error(
+            'DefaultFormula readback did not match the declared formula '
+            + `(declared ${JSON.stringify(fieldDefault.default_formula)}; readback ${JSON.stringify(actual.DefaultFormula)})`,
+          );
         }
         // The readback resolves list and column by name, so it is only
         // evidence about the field just written if both still resolve to it.

@@ -38,6 +38,7 @@ from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS
 from dbml_sharepoint.model.sections import (
     _columns,
+    _default_formulas,
     _demo,
     _display_names,
     _entities,
@@ -91,6 +92,7 @@ SECTION_FAMILIES: tuple[Section, ...] = (
     Section(("display_names",), _display_names.read),
     Section(("demo_items",), _demo.read, source="demo_source"),
     Section(("retired_columns",), _retired.read),
+    Section(("default_formulas",), _default_formulas.read),
 )
 
 #: Every top-level key load_mapping understands. A misspelling must fail

@@ -653,6 +653,12 @@ class Mapping:
     #
     # The validator enforces the pairing both ways.
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {entity: {column: formula}}: a SharePoint default formula, the
+    # `DefaultFormula` field property beside `DefaultValue`. It is written
+    # into the create body, re-applied by the field-defaults phase and
+    # reconciled as a mutable property. Which column types may carry one is
+    # decided by `analysis/checks/_default_formulas.py`, from live evidence.
+    default_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     # {entity: {column: (target columns)}} for a lookup column's additional
     # projected (dependent) fields. Each target column is projected onto the
     # source list as a read-only Lookup whose ShowField is that target column,

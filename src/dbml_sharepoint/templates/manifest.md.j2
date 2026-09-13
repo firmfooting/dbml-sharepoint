@@ -222,6 +222,7 @@ only the change feed).
 - Indexed columns: {{ counts.indexed }}
 - Views to provision: {{ counts.views }}
 - Formatted columns: {{ counts.formatted_columns }}
+- Default formulas: {{ counts.default_formulas }}
 - Validation errors: {{ counts.errors }}
 - Validation warnings: {{ counts.warnings }}
 
@@ -346,6 +347,21 @@ _(none declared)_
 
 Declared column formats (SP CustomFormatter JSON) are reconciled with the
 field; columns without a declaration keep any hand-applied format.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Default formulas
+
+{% if default_formulas %}
+{% for df in default_formulas %}
+- {{ df.list }}.{{ df.column }}: `{{ df.formula }}`
+{% endfor %}
+
+Declared in `default_formulas:`. Each is written as the field's
+DefaultFormula on create, re-applied in Phase {{ phase_num['defaults'] }}
+and reconciled on every paste, so a formula edited by hand on the site is
+reverted and reported. SharePoint evaluates it when a row is created.
 {% else %}
 _(none declared)_
 {% endif %}

@@ -8572,6 +8572,236 @@
       ]
     },
     {
+      "file": "default-formula-readback-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with two Number columns (one carrying a DefaultFormula, one carrying a DefaultFormula and a DefaultValue) and one bare item; one scratch document library with one Number column carrying a DefaultFormula and one bare file upload; one MERGE of DefaultFormula to null and one MERGE of DefaultValue to null on the list's columns"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.default-formula.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.default-formula.control-missing-field-read-refused",
+              "depends_on": [
+                "field.default-formula.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.default-formula.default-value-beside-formula-on-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.default-value-after-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.value-and-formula-both-on-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.value-and-formula-which-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.formula-merge-null-clears",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.value-merge-null-keeps-formula",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-field-read-refused"
+              ]
+            },
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.field.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.field.default-value-beside-formula-on-create",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-value-after-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.default-formula.fixture-list-created",
+            "field.default-formula.control-missing-field-read-refused",
+            "library.doc-lib.fixture-library-created",
+            "library.field.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "default-formula-functions-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with twelve columns: one per function the validator admits without a measurement, one single-line Text and one DateTime column, and the two financial-year formulas the shipped family documents; one bare item"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.default-formula.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.default-formula.control-missing-column-refused",
+              "depends_on": [
+                "field.default-formula.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-day-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-rounddown-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-mod-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-text-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-if-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-and-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused",
+                "field.default-formula.function-if-fills"
+              ]
+            },
+            {
+              "id": "field.default-formula.function-or-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused",
+                "field.default-formula.function-if-fills"
+              ]
+            },
+            {
+              "id": "field.default-formula.text-property-reads-back",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.text-fills-on-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.datetime-fills-on-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.shipped-financial-year-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.shipped-financial-quarter-fills",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.default-formula.fixture-list-created",
+            "field.default-formula.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-guards-probe.js",
       "surface": "library",
       "harness": "shared-v1",

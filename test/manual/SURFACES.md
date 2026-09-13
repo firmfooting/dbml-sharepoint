@@ -193,13 +193,15 @@ intact. Multi-value columns, lookups and their projected columns.
 Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `boolean`, `title` (the built-in Title column, which the tool never creates),
 `list` (the list object the columns belong to), `default-formula` (a
-column's `DefaultFormula` property, and what it fills at item create)
+column's `DefaultFormula` property, what it fills at item create, and what
+`DefaultValue` reads back beside it)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
 `lookup-showfield-probe.js`, `boolean-field-probe.js`,
 `title-rename-probe.js`, `title-seal-probe.js`,
-`site-zone-transitions-probe.js`
+`site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
+`default-formula-functions-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -582,6 +584,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `list-settings-probe.js` | `field` | `read-security-on-list`, `write-security-on-list`, `read-security-on-library`, `write-security-on-library`, because item-level permission trimming is an access question wherever it is set | `access.item-acl.*` |
 | `cross-lookup-probe.js` | `library` | `control-list-lookup-ceiling`, `library-lookup-ceiling`, `list-to-library-costs-a-join`, because a ceiling on how many lookups one view may project is a join question whichever container holds them | `scale.join.*` |
 | `library-guards-probe.js` | `library` | the eight `default-formula` rows measured on the generic list, with that container's fixture and its control, because what a `DefaultFormula` fills on an item create is a column question on either container | `field.default-formula.*` |
+| `default-formula-readback-probe.js` | `field` | the two `DefaultValue` read-backs measured on the document library, with that container's fixture and its control, reusing the guards probe's ids for both, because the library rows mirror the list rows the probe is keyed to | `library.doc-lib.*`, `library.field.*` |
 
 Some probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:

@@ -71,7 +71,7 @@ KNOWN_CONTEXT = {
     "targets", "requirements", "not_assessable",
     # manifestgen
     "phase_num", "counts", "findings", "polymorphic", "lists", "phase2",
-    "indexed", "views", "formatted_columns", "form_formatting", "retention",
+    "indexed", "views", "formatted_columns", "default_formulas", "form_formatting", "retention",
     "retired_columns",
     "form_visibility", "column_validation", "reconcile_modes", "list_validation",
     "prefix", "seed_items", "extra_sections", "extra_warnings",
