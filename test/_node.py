@@ -7,7 +7,10 @@ and the emitted scripts are the artefacts operators paste into production
 sites.
 
 Node is required; every caller skips without it rather than failing, since
-it is not a dependency of the package.
+it is not a dependency of the package. That skip is a LOCAL convenience
+only: `test/conftest.py` refuses a run under CI with node missing, because
+a skip there would retire the whole executed-script suite without turning
+anything red.
 """
 
 import shutil

@@ -36,6 +36,48 @@ settings.register_profile("ci", parent=settings.get_profile("default"), max_exam
 settings.load_profile("ci" if os.environ.get("CI") else "default")
 
 
+# --- Node is optional locally and mandatory in CI ---------------------------
+#
+# Every emitted script is executed against a mock web by a `test_*_runtime.py`
+# module, because a golden comparison proves a script did not CHANGE and only
+# running it proves it RUNS (AGENTS.md, and #454, where a branch whose only
+# job was to explain a failure threw a ReferenceError instead). Those modules
+# skip themselves when node is absent, which is right on a contributor's
+# machine and wrong on a runner: a skip is green, so an image that stopped
+# shipping node would retire the entire executed-script suite without turning
+# anything red.
+#
+# Measured 2026-09-14: 262 skip sites across 20 modules rest on this, and the
+# `test` job in .github/workflows/ci.yml had no `actions/setup-node` at all
+# while the `markdown` and `docs` jobs both pinned one. The job already ran
+# `node --check` twice, so it depended on node and never said so.
+#
+# Keyed on CI rather than on a flag of our own, the way the hypothesis profile
+# above already is. Every CI provider sets it, and a contributor never does.
+def node_is_required() -> bool:
+    """Whether a missing node should fail the run rather than skip it."""
+    return bool(os.environ.get("CI"))
+
+
+def pytest_collection_modifyitems(
+    session: pytest.Session, config: pytest.Config, items: list[pytest.Item],
+) -> None:
+    """Refuse a CI run that would silently skip every executed-script test."""
+    del session, items
+    if not node_is_required():
+        return
+    from _node import NODE
+
+    if NODE is None:
+        message = (
+            "node is not on PATH and CI is set. The runtime tests execute every "
+            "emitted script against a mock web, and they skip without node, so "
+            "this run would report green having tested none of them. Install "
+            "node (the workflow pins it with actions/setup-node) or unset CI."
+        )
+        raise pytest.UsageError(message)
+
+
 # --- The per-finding reachability gate -------------------------------------
 #
 # See `_reachability.py` for why an aggregate coverage floor cannot do this job.
