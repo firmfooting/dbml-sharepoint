@@ -403,6 +403,12 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
     // literal drops a `__proto__` key, so the mock would answer 404 for the
     // one list whose title this suite most needs to hold.
     const LIST_DESCRIPTIONS = new Map([]);
+    // What each declared list REPORTS as its ItemCount. A live site always
+    // answers a selected property, so this is answered for every list that
+    // exists; a title absent from the map reports an empty list. Rewritten by
+    // _run_assess. A Map for the same reason the one above is.
+    const LIST_ITEM_COUNTS = new Map([]);
+    const itemCountOf = (t) => (LIST_ITEM_COUNTS.has(t) ? LIST_ITEM_COUNTS.get(t) : 0);
     // The list title out of a URL, back in the spelling the declaration uses.
     // Non-greedy to the first `')`, then undo odataName's two encodings in
     // the order it applied them: percent first, apostrophe-doubling second.
@@ -448,6 +454,7 @@ _ASSESS_HARNESS = textwrap.dedent(r"""
         }
         return respond(200, { d: {
           Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),
+          ItemCount: itemCountOf(title),
         } });
       }
       // The list-title enumeration (web/lists?$select=Title...). Answers every
@@ -521,13 +528,16 @@ def _run_assess(
     *,
     harness: str = _ASSESS_HARNESS,
     js: str | None = None,
+    item_counts: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
     One string applies to every declared list; a mapping sets them per title.
     `harness` swaps the mocked site for a variant, such as a locked one, and
-    `js` for a script generated from another pack. Returns the summary the
-    script resolves with.
+    `js` for a script generated from another pack. `item_counts` sets what a
+    list reports as its size, per title, where the default empty list is what
+    the size checks read as comfortably under the threshold. Returns the
+    summary the script resolves with.
     """
     held = (
         dict.fromkeys(_declared_descriptions(), list_description)
@@ -539,6 +549,13 @@ def _run_assess(
         "const LIST_DESCRIPTIONS = new Map([]);",
         f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
     )
+    if item_counts is not None:
+        counted = mocked.replace(
+            "const LIST_ITEM_COUNTS = new Map([]);",
+            f"const LIST_ITEM_COUNTS = new Map({json.dumps(list(item_counts.items()))});",
+        )
+        assert counted != mocked, "the item counts were not spliced in"
+        mocked = counted
     script = mocked + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
     ).replace("(async () => {", "((async () => {", 1)
@@ -1003,13 +1020,19 @@ def test_the_assessment_records_every_finding_in_order() -> None:
         "2\tcollision:APP_Project\tINFO\t'APP_Project' already exists (BaseTemplate 100); the "
         "ownership check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_Project\tPASS\t'APP_Project' carries its provenance marker.\n"
+        "2\titem_count:APP_Project\tINFO\t'APP_Project' currently reports 0 item(s), under the "
+        "5,000-item list view threshold.\n"
         "2\tcollision:APP_Task\tINFO\t'APP_Task' already exists (BaseTemplate 100); the ownership "
         "check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_Task\tPASS\t'APP_Task' carries its provenance marker.\n"
+        "2\titem_count:APP_Task\tINFO\t'APP_Task' currently reports 0 item(s), under the "
+        "5,000-item list view threshold.\n"
         "2\tcollision:APP_AppSettings\tINFO\t'APP_AppSettings' already exists (BaseTemplate "
         "100); the ownership check below decides whether deploy may reconcile it.\n"
         "2\tprovenance_marker:APP_AppSettings\tPASS\t'APP_AppSettings' carries its provenance "
         "marker.\n"
+        "2\titem_count:APP_AppSettings\tINFO\t'APP_AppSettings' currently reports 0 item(s), "
+        "under the 5,000-item list view threshold.\n"
         "2\tcustom_formatter_surface\tPASS\tProperty surface present.\n"
         "2\tform_formatter_surface\tPASS\tProperty surface present.\n"
         "2\tversion_trim_mode\tNOT-ASSESSABLE\tThe list answered without "
@@ -1222,6 +1245,187 @@ def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
     ], summary["findings"]
 
 
+# --- How full an existing declared list already is --------------------------
+#
+# A proximity signal rather than a gate, reported at four bands. WARN and
+# DEGRADED at the two upper ones and BLOCKED at neither: `INDEX_CHANGE_CEILING`
+# in `analysis/limits.py` carries the two Microsoft sources that disagree about
+# whether an index change over the larger band is refused or queued, and what
+# would license BLOCKED.
+#
+# The counts below are fixed literals rather than `LIST_VIEW_THRESHOLD` and
+# `INDEX_CHANGE_CEILING` read back. An expectation derived from the constant it
+# measures moves with a mutant and can never kill one, which is the rule the
+# `limits.py` docstring records for its boundary tests.
+
+
+def _item_count_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """The size check's own findings, selected by key rather than by detail."""
+    return [f for f in summary["findings"] if f["key"].startswith("item_count:")]
+
+
+def _item_count_absent_harness() -> str:
+    """`_ASSESS_HARNESS` answering the list object without an `ItemCount`.
+
+    The list still exists and still answers 200. Only the property the size
+    check reads is missing, which a live site does not do for a property it
+    was asked for, and which is not the same answer as a list reporting none.
+    """
+    absent = _ASSESS_HARNESS.replace("ItemCount: itemCountOf(title),", "")
+    assert absent != _ASSESS_HARNESS, "the ItemCount was not dropped"
+    assert "ItemCount:" not in absent, "the mock still answers with one"
+    return absent
+
+
+def test_the_two_size_ceilings_travel_with_the_pack() -> None:
+    """`LIST_VIEW_THRESHOLD` and `INDEX_CHANGE_CEILING`, in the emitted payload.
+
+    The script quotes both numbers to the operator and spells neither, so the
+    payload is the one place they could drift from `analysis.limits`.
+    """
+    targets = assess_targets(*_simple(), "default")
+    assert targets["list_view_threshold"] == 5000
+    assert targets["index_change_ceiling"] == 20000
+
+
+def test_every_provisioned_list_has_a_size_requirement_that_only_warns() -> None:
+    """A WARN degrades the verdict only where a requirement declares the key.
+
+    The level is pinned as well as the key: a size finding that reached
+    BLOCKED would stop a deploy on evidence that does not support stopping it.
+    """
+    schema, bundle = _simple()
+    targets = assess_targets(schema, bundle, "default")
+    sizes = {
+        r.key: r.level_on_fail
+        for r in derive_requirements(schema, bundle, "default")
+        if r.key.startswith("item_count:")
+    }
+    assert sizes == {f"item_count:{title}": "WARN" for title in targets["list_titles"]}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_absent_declared_list_reports_no_size_at_all() -> None:
+    """A list nobody has created yet has no size to report.
+
+    Satisfied by the verdict loop skipping a requirement key with no finding,
+    which is why no arm of the size check special-cases absence.
+    """
+    summary = _run_assess({}, harness=_healthy_harness())
+    assert _item_count_findings(summary) == [], summary["findings"]
+    assert summary["verdict"] == "COMPATIBLE", [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_well_under_the_threshold_is_reported_without_degrading() -> None:
+    """The control for the three WARN bands below.
+
+    A DEGRADED there proves nothing unless a list this size comes out
+    COMPATIBLE against the same harness.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(),
+        item_counts={"APP_Project": 120},
+    )
+    reported = {f["key"]: f for f in _item_count_findings(summary)}
+    assert reported["item_count:APP_Project"]["level"] == "INFO"
+    assert "120 item(s)" in reported["item_count:APP_Project"]["detail"]
+    assert summary["verdict"] == "COMPATIBLE", [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_inside_the_proximity_band_warns_and_degrades_the_verdict() -> None:
+    """The band exists so an operator hears about it while indexing is cheap.
+
+    Once a list is over the threshold the remedies narrow, so a warning that
+    only fired there would arrive after the decision it informs.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(),
+        item_counts={"APP_Project": 4200},
+    )
+    finding = next(
+        f for f in _item_count_findings(summary) if f["key"] == "item_count:APP_Project"
+    )
+    assert finding["level"] == "WARN", finding
+    assert "4,200 item(s)" in finding["detail"]
+    assert "4,000 to 5,000" in finding["detail"]
+    assert summary["verdict"] == "DEGRADED"
+    # The only WARN on the run, so the DEGRADED can have come from nothing else.
+    assert [
+        f["key"] for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ] == ["item_count:APP_Project"], summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_at_the_list_view_threshold_warns_and_names_it() -> None:
+    """At the threshold, not past it: the documented figure is inclusive.
+
+    The larger band's number stays out of this finding, because an operator
+    reading both would have no way to tell which one this list crossed.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(),
+        item_counts={"APP_Project": 5000},
+    )
+    finding = next(
+        f for f in _item_count_findings(summary) if f["key"] == "item_count:APP_Project"
+    )
+    assert finding["level"] == "WARN", finding
+    assert "5,000-item list view threshold" in finding["detail"]
+    assert "20,000" not in finding["detail"], finding
+    assert summary["verdict"] == "DEGRADED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_at_the_index_change_ceiling_warns_and_names_both_numbers() -> None:
+    """The upper band is about an operation the deploy itself performs.
+
+    WARN and never BLOCKED. Both numbers, because a list this size has
+    crossed both and the operator is deciding what to do about each.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(),
+        item_counts={"APP_Project": 20000},
+    )
+    finding = next(
+        f for f in _item_count_findings(summary) if f["key"] == "item_count:APP_Project"
+    )
+    assert finding["level"] == "WARN", finding
+    assert "20,000 item(s)" in finding["detail"]
+    assert "20,000-item mark" in finding["detail"]
+    assert "5,000-item list view threshold" in finding["detail"]
+    assert summary["verdict"] == "DEGRADED"
+    assert not [
+        f for f in summary["findings"] if f["level"] == "BLOCKED"
+    ], summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_reports_no_item_count_is_not_read_as_a_small_one() -> None:
+    """A property the site did not return is not a count of zero.
+
+    Reading it as one would report every declared list as comfortably under
+    the threshold on a site that answered nothing about their size.
+    """
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_item_count_absent_harness()),
+    )
+    levels = {f["key"]: f["level"] for f in _item_count_findings(summary)}
+    assert levels == {
+        f"item_count:{title}": "NOT-ASSESSABLE" for title in _declared_descriptions()
+    }, summary["findings"]
+    assert summary["verdict"] == "DEGRADED", summary["findings"]
+    assert not [
+        f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}
+    ], summary["findings"]
+
+
 def _unreported_lock_state_harness() -> str:
     """`_healthy_harness` with the site answering 200 and no lock properties.
 
@@ -1359,17 +1563,20 @@ _MAY_REPORT_UNDEFINED: frozenset[str] = frozenset()
 def _bare_list_object_harness() -> str:
     """`_ASSESS_HARNESS` answering an existing list with its `Title` alone.
 
-    The default mock hands the collision probe a `BaseTemplate` and a
-    `Description`, so the gate below ran over the one payload whose properties
-    are all present and could not see the collision finding interpolate one
-    that was not.
+    The default mock hands the collision probe a `BaseTemplate`, a
+    `Description` and an `ItemCount`, so the gate below ran over the one
+    payload whose properties are all present and could not see the collision
+    finding interpolate one that was not.
     """
     bare = _ASSESS_HARNESS.replace(
         "Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS.get(title),",
         "Title: title,",
-    )
+    ).replace("ItemCount: itemCountOf(title),", "")
     assert bare != _ASSESS_HARNESS, "the list payload was not stripped"
     assert "BaseTemplate" not in bare, "the mock still answers with one"
+    # The property spelling, not the bare word: the map the stripped line read
+    # from is described in a comment further up the harness.
+    assert "ItemCount:" not in bare, "the mock still answers with one"
     return bare
 
 
@@ -1784,3 +1991,40 @@ def test_group_and_level_renames_are_blocking_requirements_with_their_previous_n
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
     assert reqs["rename_level:GOV Submit Only"].level_on_fail == "BLOCKED"
     assert reqs["rename_group:GOV Request Handlers"].level_on_fail == "BLOCKED"
+
+
+def _item_count_null_harness() -> str:
+    """`_ASSESS_HARNESS` answering the list object with a NULL `ItemCount`.
+
+    A different answer from the absent one above, and the one that reads as a
+    small list if the guard tests only for finiteness: `Number(null)` is 0.
+    """
+    nulled = _ASSESS_HARNESS.replace(
+        "ItemCount: itemCountOf(title),", "ItemCount: null,",
+    )
+    assert nulled != _ASSESS_HARNESS, "the ItemCount was not replaced"
+    assert "itemCountOf(title)" not in nulled, "the mock still answers a number"
+    return nulled
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_null_item_count_is_not_read_as_an_empty_list() -> None:
+    """The key present and the value null is still no answer about size.
+
+    `Number(null)` is 0, so a guard testing only finiteness passes it through
+    and reports every declared list as holding nothing, which is an INFO
+    saying the site is comfortably under a threshold it never answered about.
+    `reported()` at the top of the same file already treats `v == null` as
+    unreported, and this is that convention applied to the size check.
+    """
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_healthy_harness(_item_count_null_harness()),
+    )
+    levels = {f["key"]: f["level"] for f in _item_count_findings(summary)}
+    assert levels == {
+        f"item_count:{title}": "NOT-ASSESSABLE" for title in _declared_descriptions()
+    }, summary["findings"]
+    assert not [
+        f for f in _item_count_findings(summary) if f["level"] == "INFO"
+    ], summary["findings"]

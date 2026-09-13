@@ -723,6 +723,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           Id: sabotage === 'rebind'
             ? REPLACEMENT_LIST_ID : '22222222-2222-2222-2222-222222222222',
           Title: 'adopted', BaseTemplate: 100, ContentTypesEnabled: false,
+          // A live site answers every selected property, and the embedded
+          // assessment selects this one to report the list's size.
+          ItemCount: 0,
           Description: sabotage === 'marker' ? '' : description,
           EnableVersioning: true, EnableMinorVersions: false,
           MajorVersionLimit: 500, ValidationFormula: null, ValidationMessage: null } };
