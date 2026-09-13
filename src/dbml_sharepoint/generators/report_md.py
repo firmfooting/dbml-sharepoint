@@ -506,6 +506,18 @@ def generate_data_dictionary(
             )
         else:
             details.append("Versioning: off.")
+        if entity.is_library:
+            # A reader of this page decides what a row IS before reading its
+            # columns; on a library that is a file, and Title is not its name.
+            details.append(
+                "A document library: each row is a file, named by FileLeafRef "
+                "(its Title is empty after upload), carried into the report as "
+                "FileLeafRef and FileRef"
+                + (
+                    f", filed in one of: {', '.join(entity.folders)}."
+                    if entity.folders else "."
+                ),
+            )
         lines += ["", " ".join(details)]
 
     if mapping.reporting.users_table:

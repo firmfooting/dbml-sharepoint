@@ -2279,6 +2279,36 @@ authority; rollback confirms every target list separately. Only emitted with
 `build --seed`. See [demo data](../artifacts/demo-data.md). The section may
 live in a file beside the mapping; see [`demo_source`](#demo_source).
 
+### A document library's rows are files
+
+```yaml
+demo_items:
+  SAQ:
+    - key: saq-privacy
+      values:
+        Topic: { demo_ref: topic-privacy }
+        Division: "Clinical services"
+        Status: "Required"
+      file:
+        name: "[DEMO] Privacy and health records - 2026 Q3.txt"
+        folder: "Clinical services"
+        content: "Sample self-assessment questionnaire."
+```
+
+A row on a `DocumentLibrary` must declare `file` (a row on a list may
+not). A POST to a library's `/items` is refused outright (measured
+2026-07-29), so the seeding script uploads the file through `Files/add`
+into `folder`, one of the entity's declared [folders](#document-libraries)
+or the root when absent, finds it again by name within that folder, sets
+`values` on the file's item, and reads every literal value back before
+recording the row as created. A file already in its folder is skipped.
+
+The `[DEMO]` prefix and its trailing space go on `name`, because a file's
+Title is null after upload and the name is what every view and the file
+panel show; `Title` is not required in `values`. The name is held to
+Microsoft's file name rules, and `content` is the short text the file holds,
+defaulting to a one-line placeholder.
+
 ## `extensions`
 
 ```yaml

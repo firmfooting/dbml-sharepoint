@@ -56,6 +56,13 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "demo_rows_on_document_library": (
+        "Retired 2026-09-13. It refused `demo_items` on a `DocumentLibrary` "
+        "because seeding posted to `/items`, which a library refuses. The "
+        "seeding script now uploads each row's declared `file` and sets the "
+        "row's values on it; `demo_file_required_on_library` is the rule "
+        "that remains."
+    ),
     "document_library_unsupported": (
         "Retired 2026-09-13. It refused `kind: DocumentLibrary` outright "
         "while the deploy had no file-identity vocabulary, no folder step "
@@ -570,11 +577,33 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.DEMO_REF_UNKNOWN_KEY: (
         "A demo row's `demo_ref` names a key no demo row declares."
     ),
-    FindingCode.DEMO_ROWS_ON_DOCUMENT_LIBRARY: (
-        "`demo_items:` seeds a `DocumentLibrary`. A library's items are "
-        "files and seeding posts to `/items`, which SharePoint refuses "
-        "outright -- so the paste fails in front of whoever was being "
-        "shown the demo."
+    FindingCode.DEMO_FILE_REQUIRED_ON_LIBRARY: (
+        "A demo row on a `DocumentLibrary` declares no `file`. A library's "
+        "items are files: a POST to `/items` is refused outright (measured "
+        "2026-07-29), so the seeding script uploads the declared file and "
+        "then sets the row's values on it. Declare `file: { name, folder, "
+        "content }`."
+    ),
+    FindingCode.DEMO_FILE_ON_A_LIST: (
+        "A demo row declares `file` on an entity that is not a "
+        "`DocumentLibrary`. A list row is created with a POST to `/items` "
+        "and has nowhere to put a file."
+    ),
+    FindingCode.DEMO_FILE_FOLDER_UNDECLARED: (
+        "A demo file names a `folder` the library does not declare in "
+        "`entities.<name>.folders`. The folder phase creates only declared "
+        "folders, so the upload would have nowhere to go."
+    ),
+    FindingCode.DEMO_FILE_NAME_INVALID: (
+        "A demo file's `name` breaks one of Microsoft's file and folder name "
+        "rules: it contains one of `\" * : < > ? / \\ |`, leads or trails "
+        "with a space, or is a reserved name. The message names the rule."
+    ),
+    FindingCode.DEMO_FILE_NAME_MISSING_MARKER: (
+        f"A demo file's `name` does not start with `{DEMO_TITLE_PREFIX}`. On a "
+        "library the file name is what every view and the file panel show, "
+        "so it carries the sample-data notice a list row carries in its "
+        "Title."
     ),
     FindingCode.DEMO_TITLE_MISSING_MARKER: (
         f"A demo row's `Title` does not start with `{DEMO_TITLE_PREFIX}`, the "

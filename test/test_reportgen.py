@@ -2477,6 +2477,41 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
     assert 'base = SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
 
 
+def _with_task_as_library(folders: tuple[str, ...] = ()) -> tuple[Schema, MappingBundle]:
+    schema, bundle = _simple()
+    return schema, replace(
+        bundle,
+        mapping=replace(
+            bundle.mapping,
+            entities={
+                **bundle.mapping.entities,
+                "Task": replace(
+                    bundle.mapping.entities["Task"], kind="DocumentLibrary",
+                    base_template=101, folders=folders,
+                ),
+            },
+        ),
+    )
+
+
+def test_a_document_library_query_carries_the_file_name_and_path() -> None:
+    """A library's rows are files, so the report names each one by
+    FileLeafRef and FileRef (MEASURED 2026-07-29 and 2026-09-08), beside the
+    declared columns, whether or not the system columns are on."""
+    schema, bundle = _with_task_as_library()
+    query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "FileLeafRef" in query and "FileRef" in query
+    as_list = generate_powerquery(*_simple(), "default")["APP_Task.pq"]
+    assert "FileLeafRef" not in as_list
+
+
+def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
+    schema, bundle = _with_task_as_library(folders=("Clinical services", "Corporate"))
+    dictionary = generate_data_dictionary(schema, bundle, "default")
+    assert "each row is a file, named by FileLeafRef" in dictionary
+    assert "filed in one of: Clinical services, Corporate." in dictionary
+
+
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
     """`ServerRelativeUrl` is `/sites/<site>/Lists/<slug>`, so the scheme and
     host have to come from somewhere. A root site collection has no path

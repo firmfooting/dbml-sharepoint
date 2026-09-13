@@ -35,6 +35,15 @@ Enter. It is **read-only** and makes no changes. Read the final
 {% endfor %}
 
 Base templates required: {{ targets.base_templates | join(', ') }}.
+{% if targets.library_folders %}
+
+Declared library folders, each checked to be absent or already a folder
+rather than a file of that name:
+
+{% for title, folders in targets.library_folders %}
+- `{{ title }}`: {{ folders | join(', ') }}
+{% endfor %}
+{% endif %}
 
 ## Not assessable
 

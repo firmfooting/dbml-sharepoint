@@ -348,6 +348,37 @@
     // INFO rather than WARN, deliberately. The deploy repairs this, so it is
     // a report and not a gate, and a warning that always resolves itself is
     // how a warning stops meaning anything. Silent when everything matches.
+    // Declared library folders. A file standing where a folder is declared
+    // would stop the folder phase part-way through a paste, so it is a
+    // BLOCKED finding here. MEASURED 2026-09-03,
+    // `library.folder.filesystem-object-type` in folder-probe.js: a folder's
+    // list item reads FileSystemObjectType 1 (Learn: File 0, Folder 1), which
+    // is the shape read. Absence is read from the enumeration above, so a
+    // first deploy paints nothing red.
+    for (const [title, folders] of (TARGETS.library_folders || [])) {
+      const key = `folder_shape:${title}`;
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
+        finding(2, key, 'PASS', `'${title}' absent; its ${folders.length} declared folder(s) will be created.`);
+        continue;
+      }
+      const files = [];
+      let unreadable = null;
+      for (const name of folders) {
+        const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+        const rows = await probeGet(`web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`);
+        if (!rows.ok) { unreadable = rows.status || rows.error; break; }
+        const row = ((rows.d && rows.d.results) || [])[0];
+        if (row && Number(row.FileSystemObjectType) !== 1) files.push(name);
+      }
+      if (unreadable !== null) {
+        finding(2, key, 'WARN', `Could not read '${title}' for its declared folders (HTTP ${unreadable}).`);
+      } else if (files.length) {
+        finding(2, key, 'BLOCKED', `'${title}' holds a FILE where a folder is declared: ${files.join(', ')}. Rename or move it; the folder phase refuses to create beside it.`);
+      } else {
+        finding(2, key, 'PASS', `'${title}': every declared folder is absent or already a folder.`);
+      }
+    }
+
     for (const [title, columns] of (TARGETS.list_display_titles || [])) {
       if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
       const key = `display_titles:${title}`;

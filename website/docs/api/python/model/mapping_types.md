@@ -284,6 +284,23 @@ class ViewDef:
 
 One declared SharePoint list view (mapping `views:` section).
 
+### `DemoFile`
+
+```python
+@dataclass(frozen=True)
+class DemoFile:
+    name: str
+    folder: str | None = None
+    content: str = 'Sample document seeded by dbml-sharepoint. Delete before active use.'
+```
+
+The file a document library's demo row uploads (`demo_items[].file`).
+
+`name` is the file name and carries the demo marker, since a file's
+Title is null after upload; `folder` is one of the entity's declared
+folders, or None for the library root; `content` is the short text the
+file holds, so the upload is a real file rather than an empty one.
+
 ### `DemoItem`
 
 ```python
@@ -291,6 +308,7 @@ One declared SharePoint list view (mapping `views:` section).
 class DemoItem:
     key: str
     values: dict[str, typing.Any]
+    file: dbml_sharepoint.model.mapping_types.DemoFile | None = None
 ```
 
 One declared demo/sample row (mapping `demo_items:` section).
@@ -298,9 +316,11 @@ One declared demo/sample row (mapping `demo_items:` section).
 `values` are authored with INTERNAL column names. The value grammar
 ("@me" (deploying operator) on person columns, "today+N"/"today-N" on
 date columns, {demo_ref: key} on lookups) is resolved by the generated
-demo-data.js at RUN time; semantic rules live in the validator. Every
-Title must start with the configured demo prefix so sample data is visible
-in every view and form. Rollback requires per-list confirmation before every delete.
+demo-data.js at RUN time; semantic rules live in the validator. On a list
+every Title must start with the configured demo prefix so sample data is
+visible in every view and form; on a document library the file name
+carries it instead, and `file` says what to upload. Rollback requires
+per-list confirmation before every delete.
 
 ### `FormFormatting`
 

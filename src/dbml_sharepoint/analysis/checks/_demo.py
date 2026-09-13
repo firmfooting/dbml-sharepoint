@@ -17,6 +17,7 @@ from dbml_sharepoint.analysis.typemap import (
     is_multi_value,
     is_person,
 )
+from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping
 from dbml_sharepoint.model.parser import Column
 
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -78,6 +79,26 @@ def _demo_ref_findings(
     return []
 
 
+def _title_marker(
+    entity: EntityMapping, row: DemoItem, ctx: str, at: Location,
+) -> list[Finding]:
+    """A list row's Title carries the sample-data notice. A library row's
+    Title is null after upload, so its file name carries the notice instead
+    and `_library.py` holds that rule."""
+    if entity.is_library:
+        return []
+    demo_title = row.values.get("Title")
+    if isinstance(demo_title, str) and demo_title.startswith(DEMO_TITLE_PREFIX):
+        return []
+    return [Finding(
+        FindingCode.DEMO_TITLE_MISSING_MARKER,
+        f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the "
+        f"visible notice that identifies this declared row as sample "
+        f"data. Rollback requires per-list confirmation before every delete.",
+        location=at,
+    )]
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
@@ -95,30 +116,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.DEMO_ITEMS, entity=entity_name),
             ))
             continue
-        # A document library's items ARE files. demo-data.js POSTs to
-        # /items, and SharePoint refuses that on a library outright:
-        # HTTP 500, "To add an item to a document library, use
-        # SPFileCollection.Add()" (probed 2026-07-29,
-        # test/manual/document-library-probe.js,
-        # `library.file-vs-item.fileless-item-post`, L2 in that run).
-        #
-        # So the paste fails, loudly, in front of whoever was being shown
-        # the demo. Refusing at build turns that into a failed build.
-        # Seeding a library would mean uploading real files, which is a
-        # different feature from writing list rows and is not one this tool
-        # has.
-        if bundle.mapping.entities[entity_name].kind == "DocumentLibrary":
-            findings.append(Finding(
-                FindingCode.DEMO_ROWS_ON_DOCUMENT_LIBRARY,
-                f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
-                f"library's items are files. Seeding posts to /items, which SharePoint "
-                f"refuses outright -- HTTP 500, \"To add an item to a document library, "
-                f"use SPFileCollection.Add()\" -- so the paste fails in front of whoever "
-                f"was being shown the demo. Seed the register list that accompanies the "
-                f"library, and upload sample documents by hand.",
-                location=Location(Section.DEMO_ITEMS, entity=entity_name),
-            ))
-            continue
+        # A document library's rows are seeded as files (demo.js.j2 uploads
+        # each row's declared `file` and sets the values on it), and the
+        # library-only rules on `file` live in checks/_library.py.
         for row in demo_rows:
             if row.key in demo_keys:
                 findings.append(Finding(
@@ -143,17 +143,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for position, row in enumerate(demo_rows):
             ctx = f"demo_items[{entity_name}].{row.key}"
             at = Location(Section.DEMO_ITEMS, entity=entity_name, sub=row.key)
-            demo_title = row.values.get("Title")
-            if not isinstance(demo_title, str) or not demo_title.startswith(
-                DEMO_TITLE_PREFIX,
-            ):
-                findings.append(Finding(
-                    FindingCode.DEMO_TITLE_MISSING_MARKER,
-                    f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the "
-                    f"visible notice that identifies this declared row as sample "
-                    f"data. Rollback requires per-list confirmation before every delete.",
-                    location=at,
-                ))
+            findings += _title_marker(bundle.mapping.entities[entity_name], row, ctx, at)
             for col_name, value in row.values.items():
                 col_type = demo_types.get(col_name)
                 if col_name not in demo_writable or col_name == "Id":
