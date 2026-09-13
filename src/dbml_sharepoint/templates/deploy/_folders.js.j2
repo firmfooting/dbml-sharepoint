@@ -20,6 +20,20 @@
   // (2026-09-13, library-guards-probe.js): the endpoint answers with
   // EnableFolderCreation off, so this phase needs no ordering against that
   // switch.
+  //
+  // A live run of this phase answered HTTP 500 "Cannot create folder" for
+  // every declared folder, and folder-create-refusal-probe.js was written to
+  // find out why. MEASURED 2026-09-13, all four cells of
+  // `library.folder.control-plain-name-default-library`,
+  // `library.folder.spaced-name-default-library`,
+  // `library.folder.plain-name-content-types-disabled` and
+  // `library.folder.spaced-name-content-types-disabled`: the call is accepted
+  // and the folder reads back whether the name carries spaces or not, and
+  // whether or not the library was created with ContentTypesEnabled false.
+  // `library.folder.add-using-path-spaced-name`, same run: the ResourcePath
+  // spelling lands too. So the refusal is not the call, not the name and not
+  // that switch, and what remains is what this run applies to the library
+  // before this phase. folder-under-schema-probe.js asks that.
   const FOLDER_OBJECT_TYPE = 1;
   // A server-relative path inside the quotes, spelled as the probes sent it:
   // quotes doubled, slashes and spaces left for fetch to encode. NOT
