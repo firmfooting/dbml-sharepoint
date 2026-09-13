@@ -4845,6 +4845,11 @@ _CROSS_WEB_HARNESS = textwrap.dedent("""
     let nextItemId = 1;
     let primaryReads = 0;
 
+    // The id the probe settles on: the highest the target list holds plus its
+    // margin. Derived here so a test can answer for that one row.
+    const ABSENT_ID = CONFIG.targetHighestId === null
+      ? null : CONFIG.targetHighestId + 1000;
+
     // The leading space matters: `DisplayName="..."` ends in `Name="..."`, so
     // an unanchored pattern reads every field's display name as its internal
     // one and every existence check then misses.
@@ -4996,10 +5001,37 @@ _CROSS_WEB_HARNESS = textwrap.dedent("""
               error: `The field or property '${unknown[0]}' does not exist.`,
             });
           }
+          const label = String(sent.Title || '');
+          if (label.startsWith('present-') && CONFIG.presentWriteStatus !== 201) {
+            return jsonResponse(CONFIG.presentWriteStatus, { error: 'refused' });
+          }
+          if (label.startsWith('absent-') && CONFIG.absentWriteStatus !== 201) {
+            return jsonResponse(CONFIG.absentWriteStatus, { error: CONFIG.absentWriteError });
+          }
           const id = nextItemId;
           nextItemId += 1;
-          items.set(id, sent);
+          // What the server STORES for an accepted absent-id write, which is a
+          // separate question from whether it took the write at all.
+          items.set(id, label.startsWith('absent-') && CONFIG.absentStoredId !== 'as-written'
+            ? { ...sent, RelatedRiskId: CONFIG.absentStoredId } : sent);
           return jsonResponse(201, { Id: id });
+        }
+        if (u.includes('$select=Id&$orderby=Id desc')) {
+          if (CONFIG.targetIdsStatus !== 200) {
+            return jsonResponse(CONFIG.targetIdsStatus, { error: 'refused' });
+          }
+          return jsonResponse(200, {
+            value: ABSENT_ID === null ? [] : [{ Id: CONFIG.targetHighestId }],
+          });
+        }
+        if (ABSENT_ID !== null && u.includes(`/items(${ABSENT_ID})`)) {
+          if (CONFIG.absentIdReadStatus !== 200) {
+            return jsonResponse(CONFIG.absentIdReadStatus, { error: 'not found' });
+          }
+          return jsonResponse(200, { Id: ABSENT_ID });
+        }
+        if (u.includes('$select=RelatedRiskId') && CONFIG.absentRowReadStatus !== 200) {
+          return jsonResponse(CONFIG.absentRowReadStatus, { error: 'refused' });
         }
         if (u.includes('$select=RelatedRiskTitle&') || u.endsWith('$select=RelatedRiskTitle')) {
           return jsonResponse(400, {
@@ -5079,6 +5111,16 @@ _CROSS_WEB_HEALTHY: dict[str, Any] = {
     "localItemsStatus": 200,
     "otherItemsStatus": 200,
     "sourceRowStatus": 201,
+    # The absent-id arm: the target list's highest row, whether the id the
+    # probe derives from it reads back absent, and what the two writes answer.
+    "targetHighestId": 2,
+    "targetIdsStatus": 200,
+    "absentIdReadStatus": 404,
+    "presentWriteStatus": 201,
+    "absentWriteStatus": 201,
+    "absentWriteError": "refused",
+    "absentStoredId": "as-written",
+    "absentRowReadStatus": 200,
     "projectedIdStatus": 200,
     "primaryReadFailsAt": 0,
     "expandStatus": 200,
@@ -5219,6 +5261,181 @@ def test_a_healthy_run_records_both_controls_and_both_refusals() -> None:
     assert rows["field.lookup.primary-lists-dependent"]["outcome"] == "PASS"
     for row in _FILL_ROWS:
         assert rows[row]["outcome"] == "PASS", row
+
+
+#: The absent-id arm's two observation rows, void together or not at all.
+_ABSENT_ID_OBSERVATION_ROWS = (
+    "field.lookup.absent-target-id-write",
+    "field.lookup.absent-target-id-readback",
+)
+_ABSENT_ID_PRESENT_CONTROL = "field.lookup.control-present-target-id-write-accepted"
+_ABSENT_ID_ABSENCE_CONTROL = "field.lookup.control-absent-target-id-names-no-row"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_absent_id_arm_records_both_controls_and_both_observations() -> None:
+    """The control for the absent-id tests below.
+
+    Without it, a change that voided the arm for every run would pass all of
+    them and this file would be measuring an arm that measures nothing.
+    """
+    rows = _run_cross_web_probe()
+
+    assert rows[_ABSENT_ID_PRESENT_CONTROL]["outcome"] == "PASS"
+    assert rows[_ABSENT_ID_ABSENCE_CONTROL]["outcome"] == "PASS"
+    assert "1002" in rows[_ABSENT_ID_ABSENCE_CONTROL]["evidence"]
+    write = rows["field.lookup.absent-target-id-write"]
+    assert write["outcome"] == "ACCEPTED"
+    assert write["state"] == "settled"
+    readback = rows["field.lookup.absent-target-id-readback"]
+    assert readback["outcome"] == "OBSERVED"
+    # The two halves the row exists to separate: what the cell kept, and what
+    # the lookup resolves to with no row on the other end.
+    assert "stored id reads back 1002" in readback["evidence"]
+    assert "$expand gives null" in readback["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_absent_id_write_is_recorded_as_a_refusal() -> None:
+    """The other answer the arm exists to take.
+
+    A refusal is the result that would let the page say SharePoint checks a
+    lookup id at write time, so it has to read as a measurement and not as a
+    failed step, and the readback question then does not arise.
+    """
+    rows = _run_cross_web_probe(
+        absentWriteStatus=400,
+        absentWriteError="Invalid look up value. A lookup ID was not valid.",
+    )
+
+    write = rows["field.lookup.absent-target-id-write"]
+    assert write["outcome"] == "REFUSED"
+    assert write["state"] == "settled"
+    assert "A lookup ID was not valid." in write["evidence"]
+    assert rows["field.lookup.absent-target-id-readback"]["outcome"] == "NOT APPLICABLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_write_the_server_emptied_reads_back_as_emptied() -> None:
+    """Accepting the write and storing nothing is a third answer.
+
+    A report reading a stored id treats it as a live reference, so a run that
+    recorded ACCEPTED alone would leave the two apart-facts as one.
+    """
+    rows = _run_cross_web_probe(absentStoredId=None)
+
+    assert rows["field.lookup.absent-target-id-write"]["outcome"] == "ACCEPTED"
+    readback = rows["field.lookup.absent-target-id-readback"]
+    assert readback["outcome"] == "OBSERVED"
+    assert "stored id reads back null" in readback["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_write_of_a_real_target_id_voids_the_absent_id_rows() -> None:
+    """Without that control, a refusal is about creating items on this site."""
+    rows = _run_cross_web_probe(presentWriteStatus=403)
+
+    assert rows[_ABSENT_ID_PRESENT_CONTROL]["outcome"] == "FAIL"
+    for row in _ABSENT_ID_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+
+
+#: The whole arm, controls included. A primary pointing at some other list
+#: leaves the controls exactly as meaningless as the observations, so the
+#: guard that catches it has to void all four.
+_ABSENT_ID_ARM_ROWS = (
+    _ABSENT_ID_PRESENT_CONTROL,
+    _ABSENT_ID_ABSENCE_CONTROL,
+    *_ABSENT_ID_OBSERVATION_ROWS,
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reused_primary_pointing_at_another_list_voids_the_whole_arm() -> None:
+    """CLEANUP ships false, so a RelatedRisk left by an earlier run is normal.
+
+    Every row of this arm reads the probe's own target list. A primary that
+    points somewhere else makes the 404 a fact about a list the lookup never
+    consults, and the present-id control passes on any number that other list
+    happens to hold, so the arm would settle the wrong condition twice over.
+    """
+    rows = _run_cross_web_probe(readback={"RelatedRisk": {"LookupList": "{list-elsewhere}"}})
+
+    for row in _ABSENT_ID_ARM_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+    evidence = rows[_ABSENT_ID_PRESENT_CONTROL]["evidence"]
+    assert "LookupList=list-elsewhere" in evidence
+    assert "CLEANUP = true" in evidence
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_primary_whose_target_never_read_back_voids_the_whole_arm() -> None:
+    """A column this run cannot place is not a column it can measure through.
+
+    The reused field is the case: it is there, so nothing is created, and an
+    unreadable LookupList leaves the run unable to say which list the write
+    below would be about.
+    """
+    rows = _run_cross_web_probe(listsExist=True, preexistingFields=["RelatedRisk"])
+
+    for row in _ABSENT_ID_ARM_ROWS:
+        assert rows[row]["state"] == "void", row
+    assert "LookupList=(absent)" in rows[_ABSENT_ID_ABSENCE_CONTROL]["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_id_the_target_list_does_hold_voids_the_absent_id_rows() -> None:
+    """A write to an id that resolves is an ordinary write.
+
+    Recorded as a measurement it would say SharePoint accepts a dangling
+    reference, off a write that was never dangling.
+    """
+    rows = _run_cross_web_probe(absentIdReadStatus=200)
+
+    control = rows[_ABSENT_ID_ABSENCE_CONTROL]
+    assert control["outcome"] == "FAIL"
+    assert "the target list holds the row" in control["evidence"]
+    for row in _ABSENT_ID_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_read_that_cannot_say_whether_the_row_is_there_is_not_a_present_row() -> None:
+    """A refused read is a failed instrument, not a target list that holds it.
+
+    Both void the rows below, and they are recorded apart so a transcript says
+    which one happened.
+    """
+    rows = _run_cross_web_probe(absentIdReadStatus=503)
+
+    control = rows[_ABSENT_ID_ABSENCE_CONTROL]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "HTTP 503" in control["evidence"]
+    for row in _ABSENT_ID_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_target_ids_that_do_not_read_back_leave_the_arm_with_no_id_to_use() -> None:
+    """No id is known absent, so there is no write to make."""
+    rows = _run_cross_web_probe(targetIdsStatus=500, targetHighestId=None)
+
+    assert rows[_ABSENT_ID_ABSENCE_CONTROL]["outcome"] == "NOT ESTABLISHED"
+    for row in _ABSENT_ID_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_row_that_does_not_read_back_is_not_an_observation() -> None:
+    """The write is still recorded; the readback row has nothing to report."""
+    rows = _run_cross_web_probe(absentRowReadStatus=500)
+
+    assert rows["field.lookup.absent-target-id-write"]["outcome"] == "ACCEPTED"
+    readback = rows["field.lookup.absent-target-id-readback"]
+    assert readback["state"] == "void"
+    assert readback["outcome"] == "NOT ESTABLISHED"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

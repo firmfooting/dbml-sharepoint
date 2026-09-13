@@ -365,6 +365,39 @@ def test_unique_on_a_multi_value_column_is_refused_by_its_own_code() -> None:
     assert "Choice (multi-valued)" in finding.message
     none_of(findings, FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
 
+
+def test_unique_on_a_multi_value_lookup_names_the_lookup_arity() -> None:
+    """The same code at the other multi-value kind, and the message differs.
+
+    The rule picks its noun from `is_multi_value_lookup`, so the lookup arm
+    is a second branch that the Choice test above cannot reach. Without this,
+    a schema declaring `int[] [ref: ...] [unique]` could stop being refused,
+    or be refused in the Choice vocabulary, with nothing failing.
+
+    THE FOOTING IS WEAKER HERE THAN FOR THE INDEX REFUSAL and the validator
+    says so: only the indexing half was measured on a multi-value lookup
+    (2026-09-02, HTTP 500). EnforceUniqueValues is refused on Microsoft's
+    documented list of types unique values cannot be enforced for, which
+    names "Lookup (multi-valued)", plus the measured MultiChoice precedent.
+    `website/docs/concepts/relationships.md` states it the same way.
+    """
+    schema = make_schema(
+        make_table("Party", make_column("Title")),
+        make_table(
+            "Matter",
+            make_column("Parties", "int[]", ref="Party.Id", unique=True),
+        ),
+    )
+
+    findings = validate(schema)
+
+    finding = only(findings, FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "Parties" in finding.message
+    assert "Lookup (multi-valued)" in finding.message
+    none_of(findings, FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
+
+
 def test_a_default_on_a_multi_value_column_is_refused_by_validate() -> None:
     """`validate` and `build` must refuse the same declaration.
 

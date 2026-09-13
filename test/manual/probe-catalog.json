@@ -6255,7 +6255,8 @@
       "authority": "allow-writes",
       "writes": [
         "two fixed lists, a primary lookup and its FieldRef-linked dependent field, rows",
-        "four more lookup columns on the source list for the cross-web arm, two same-web controls and two at a list in another web it only reads (a subweb of this site, or the one OTHER_WEB_URL names), plus one source row per accepted cross-web column, set to a row in that web"
+        "four more lookup columns on the source list for the cross-web arm, two same-web controls and two at a list in another web it only reads (a subweb of this site, or the one OTHER_WEB_URL names), plus one source row per accepted cross-web column, set to a row in that web",
+        "two more source rows for the absent-id arm, one naming a target row that exists and one naming an id it first read back as absent"
       ],
       "cleanup": {
         "policy": "manual"
@@ -6305,6 +6306,41 @@
           "states": [],
           "controls": [
             "field.lookup.control-primary-lookup-created"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "absent-target-id-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.lookup.control-present-target-id-write-accepted",
+              "depends_on": []
+            },
+            {
+              "id": "field.lookup.control-absent-target-id-names-no-row",
+              "depends_on": []
+            },
+            {
+              "id": "field.lookup.absent-target-id-write",
+              "depends_on": [
+                "field.lookup.control-present-target-id-write-accepted",
+                "field.lookup.control-absent-target-id-names-no-row"
+              ]
+            },
+            {
+              "id": "field.lookup.absent-target-id-readback",
+              "depends_on": [
+                "field.lookup.control-present-target-id-write-accepted",
+                "field.lookup.control-absent-target-id-names-no-row"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.lookup.control-present-target-id-write-accepted",
+            "field.lookup.control-absent-target-id-names-no-row"
           ],
           "depends_on": []
         },

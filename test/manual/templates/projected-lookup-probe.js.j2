@@ -45,6 +45,14 @@
  *        setting RelatedRisk to an OPEN risk fills the dependent Title
  *   field.lookup.dependent-fill-blank-label      (DEPLIVE)
  *        for a CLOSED risk (LiveTitle blank) the dependent still shows Title
+ *   field.lookup.control-present-target-id-write-accepted
+ *        an item write naming a target row that EXISTS is accepted here
+ *   field.lookup.control-absent-target-id-names-no-row
+ *        the id the write below uses answers 404 from the target list
+ *   field.lookup.absent-target-id-write
+ *        what an item write answers when the id names no target row
+ *   field.lookup.absent-target-id-readback
+ *        what an accepted row stores, and what the lookup expands to
  *
  * The probe's own surface is `field` and every question is a question about
  * the lookup column type, so nothing here files elsewhere. `BOOT` keeps its
@@ -199,6 +207,50 @@
  * result about a column inside a web does not transfer to the boundary
  * between two.
  *
+ * QUESTION THREE (issue #31), the absent-id arm:
+ *
+ *   Does SharePoint check at write time that a lookup id names a row in the
+ *   target list?
+ *
+ * `website/docs/concepts/relationships.md` tells adopters that a DBML `Ref` is
+ * a pointer and not a foreign key. Microsoft Learn was searched for the write
+ * side on 2026-09-14 and holds only the neighbouring question: the `Field`
+ * element documents `RelationshipDeleteBehavior` and its `None` default, and no
+ * Microsoft page states what an item write does with a lookup id no row
+ * carries. So the page marks write-time enforcement not established, and
+ * `analysis/limits.py` parks it on the rows below.
+ *
+ * WHAT IT DEPENDS ON, AND WHAT IT OBSERVES, kept apart for the reason the
+ * cross-web arm gives above.
+ *
+ *   field.lookup.control-present-target-id-write-accepted
+ *        DEPENDS: an item create carrying a RelatedRiskId that a target row
+ *        DOES carry is accepted BY THIS RUN. Without it a refusal below says
+ *        this site refuses item creates, not that the absent id was refused.
+ *   field.lookup.control-absent-target-id-names-no-row
+ *        DEPENDS: the id the write below uses answers HTTP 404 from the target
+ *        list. It is the highest id that list holds plus a margin, READ rather
+ *        than assumed, because against a site that already holds that row the
+ *        write below is an ordinary one and nothing would say so.
+ *   field.lookup.absent-target-id-write
+ *        OBSERVES: the status, and the message if there is one, of an item
+ *        create whose RelatedRiskId names that absent id. Whichever way it
+ *        goes: an acceptance and a refusal are both answers here.
+ *   field.lookup.absent-target-id-readback
+ *        OBSERVES: for an accepted write, what the stored id reads back and
+ *        what `$expand` gives for the lookup. A write SharePoint accepted and
+ *        then emptied is a different fact from one that keeps the id, and a
+ *        report reading the second cannot tell it from a live reference.
+ *
+ * ALL FOUR VOID TOGETHER, controls included, when RelatedRisk does not read
+ * back pointing at this probe's own target list. CLEANUP ships false, so a
+ * column an earlier run left is the ordinary case, and every row above reads
+ * the target list: an id absent from a list the lookup does not consult
+ * bounds nothing, and the present-id control passes on any number the
+ * lookup's real target happens to hold.
+ *
+ * Both ends are generic lists in one web, so these file under `lookup`.
+ *
  * NOT YET RUN. Nothing below has been measured against a live site.
  */
 
@@ -250,6 +302,10 @@
   };
 
   const readFailed = (r) => !r.ok || r.body === null;
+
+  // Hoisted: the absent-id arm compares a target list before the cross-web arm does.
+  const asGuid = (value) => String(value === undefined || value === null ? '' : value)
+    .replace(/[{}]/g, '').toLowerCase();
 
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
     const res = await fetch(`${WEB}/_api/${path}`, {
@@ -341,6 +397,9 @@
     log('INFO', 'RelatedRisk lookup into the target, plus a FieldRef-linked');
     log('INFO', 'dependent lookup projecting Title), then set RelatedRisk on');
     log('INFO', 'source rows and read back whether the dependent auto-fills.');
+    log('INFO', 'It would add two more source rows for the absent-id arm: one');
+    log('INFO', 'naming a target row that exists, as the control, and one');
+    log('INFO', 'naming an id it first read back as absent from the target.');
     log('INFO', 'It would then add four more lookup columns to the source');
     log('INFO', 'list for the cross-web arm: two at a list in THIS web as the');
     log('INFO', 'controls, and two at a list in the other web, which it READS');
@@ -363,6 +422,10 @@
   expect('field.lookup.primary-lists-dependent', 'the primary lists the dependent in DependentLookupInternalNames');
   expect('field.lookup.dependent-fill-live-label', 'setting RelatedRisk to an OPEN risk fills the dependent Title');
   expect('field.lookup.dependent-fill-blank-label', 'for a CLOSED risk (LiveTitle blank) the dependent still shows the real Title');
+  expect('field.lookup.control-present-target-id-write-accepted', 'an item create naming a target row that EXISTS is accepted by this run');
+  expect('field.lookup.control-absent-target-id-names-no-row', 'the id the write below uses names no row in the target list');
+  expect('field.lookup.absent-target-id-write', 'what an item create answers when RelatedRiskId names an id no target row carries');
+  expect('field.lookup.absent-target-id-readback', 'what an accepted absent-id row stores, and what the lookup expands to');
   expect('field.cross-web.control-other-web-has-a-list', 'a web whose Id reads back different from the web this page is on holds a readable generic list to point a lookup at');
   expect('field.cross-web.control-other-web-list-has-an-item', 'that list in the other web holds a readable row whose Title differs from the row of this web sharing its list-local id');
   expect('field.cross-web.control-same-web-lookup-created', 'the same createfieldasxml call is accepted when the target list is in THIS web');
@@ -585,6 +648,103 @@
                await setAndRead(closedId), closedId);
   }
 
+  // ---- Absent-id arm (issue #31) -------------------------------------
+  const PRESENT_WRITE_QUESTION = 'an item create naming a target row that EXISTS is accepted by this run';
+  const ABSENT_ID_QUESTION = 'the id the write below uses names no row in the target list';
+  const ABSENT_WRITE_QUESTION = 'what an item create answers when RelatedRiskId names an id no target row carries';
+  const ABSENT_READBACK_QUESTION = 'what an accepted absent-id row stores, and what the lookup expands to';
+
+  const writeRelated = async (label, riskId) => {
+    digest = await getDigest();
+    return spPost(sourceItems, { Title: label, RelatedRiskId: riskId }, digest);
+  };
+
+  const ARM_ROWS = ['field.lookup.control-present-target-id-write-accepted',
+                    'field.lookup.control-absent-target-id-names-no-row',
+                    'field.lookup.absent-target-id-write',
+                    'field.lookup.absent-target-id-readback'];
+
+  // CLEANUP ships false, so a reused RelatedRisk is the ordinary case, and an
+  // id absent from THIS target list bounds nothing if the lookup points elsewhere.
+  const primaryTarget = asGuid(primaryField.body.LookupList);
+  if (primaryTarget !== asGuid(target.id)) {
+    voidAll(ARM_ROWS,
+            `RelatedRisk reads back LookupList=${primaryTarget || '(absent)'} and this arm reads `
+            + `list ${asGuid(target.id)}, so neither the present id nor the absent one is known `
+            + 'to be about the list this lookup targets. Set CLEANUP = true to rebuild it');
+  } else {
+    const present = await writeRelated(`present-${openId}`, openId);
+    record('field.lookup.control-present-target-id-write-accepted', PRESENT_WRITE_QUESTION,
+           present.ok ? 'PASS' : 'FAIL',
+           `RelatedRiskId=${openId} answered HTTP ${present.status}`);
+
+    // The highest id plus a margin, read rather than assumed: on a site already
+    // holding that row the write below would be an ordinary one.
+    const highest = await spGet(`${targetItems}?$select=Id&$orderby=Id desc&$top=1`);
+    const highestRows = (highest.ok && highest.body && highest.body.value) || [];
+    const absentId = highestRows.length ? highestRows[0].Id + 1000 : null;
+    const absentRead = absentId === null
+      ? null : await spGet(`${targetItems}(${absentId})?$select=Id`);
+    if (absentId === null) {
+      record('field.lookup.control-absent-target-id-names-no-row', ABSENT_ID_QUESTION,
+             'NOT ESTABLISHED',
+             `the target list's ids did not read back (HTTP ${highest.status}), so this run had `
+             + 'no id it knows to be absent');
+    } else if (absentRead.status === 404) {
+      record('field.lookup.control-absent-target-id-names-no-row', ABSENT_ID_QUESTION, 'PASS',
+             `item ${absentId} answers HTTP 404 from the list RelatedRisk points at`);
+    } else if (absentRead.ok) {
+      record('field.lookup.control-absent-target-id-names-no-row', ABSENT_ID_QUESTION, 'FAIL',
+             `item ${absentId} reads back, so the target list holds the row this arm needs `
+             + 'to be missing');
+    } else {
+      // Neither 404 nor a row: the read did not answer, which is not the same
+      // as an id that is present.
+      record('field.lookup.control-absent-target-id-names-no-row', ABSENT_ID_QUESTION,
+             'NOT ESTABLISHED',
+             `reading item ${absentId} answered HTTP ${absentRead.status}, so this run cannot `
+             + 'say whether the row is there');
+    }
+
+    const ABSENT_ROWS = ['field.lookup.absent-target-id-write',
+                         'field.lookup.absent-target-id-readback'];
+    if (!present.ok) {
+      voidAll(ABSENT_ROWS,
+              `an item create naming a target row that exists answered HTTP ${present.status}, so `
+              + 'a refusal below would be about creating items here');
+    } else if (absentId === null || absentRead.status !== 404) {
+      voidAll(ABSENT_ROWS, 'no id was established as absent, so the write below would not be the '
+        + 'write this arm asks about');
+    } else {
+      const absentWrite = await writeRelated(`absent-${absentId}`, absentId);
+      record('field.lookup.absent-target-id-write', ABSENT_WRITE_QUESTION,
+             absentWrite.ok ? 'ACCEPTED' : 'REFUSED',
+             `RelatedRiskId=${absentId} answered HTTP ${absentWrite.status}`
+             + (absentWrite.ok ? '' : `: ${absentWrite.text.slice(0, 240)}`));
+      if (!absentWrite.ok) {
+        record('field.lookup.absent-target-id-readback', ABSENT_READBACK_QUESTION,
+               'NOT APPLICABLE', 'the write was refused, so no row carries the absent id');
+      } else {
+        const itemId = absentWrite.body.Id;
+        const stored = await spGet(`${sourceItems}(${itemId})?$select=RelatedRiskId`);
+        const expanded = await spGet(
+          `${sourceItems}(${itemId})?$select=RelatedRisk/Title&$expand=RelatedRisk`);
+        if (readFailed(stored) || readFailed(expanded)) {
+          record('field.lookup.absent-target-id-readback', ABSENT_READBACK_QUESTION,
+                 'NOT ESTABLISHED',
+                 `the accepted row did not read back (stored HTTP ${stored.status}, expansion `
+                 + `HTTP ${expanded.status})`, 'void');
+        } else {
+          const seen = expanded.body.RelatedRisk;
+          record('field.lookup.absent-target-id-readback', ABSENT_READBACK_QUESTION, 'OBSERVED',
+                 `stored id reads back ${JSON.stringify(stored.body.RelatedRiskId)} for a write of `
+                 + `${absentId}; $expand gives `
+                 + `${seen === null || seen === undefined ? 'null' : JSON.stringify(seen)}`);
+        }
+      }
+    }
+  }
+
   // ---- Cross-web arm (issue #184) ------------------------------------
   //
   // The other web is only ever read, so a refusal below is about the lookup
@@ -602,9 +762,6 @@
   const WEBID_READBACK_QUESTION = 'a field accepted through the List+WebId spelling reads back LookupList and LookupWebId still pointing at the other web';
   const LIST_RESOLVE_QUESTION = 'a field accepted through the List spelling stores a real item id from the other web and expands to the Title on that row';
   const WEBID_RESOLVE_QUESTION = 'a field accepted through the List+WebId spelling stores a real item id from the other web and expands to the Title on that row';
-
-  const asGuid = (value) => String(value === undefined || value === null ? '' : value)
-    .replace(/[{}]/g, '').toLowerCase();
 
   // A Title is compared and never described: an exact length beside an
   // unsalted 32-bit digest of somebody's production row is recoverable from a
