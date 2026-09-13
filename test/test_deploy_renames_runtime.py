@@ -282,7 +282,8 @@ _LOOKUP_HARNESS = textwrap.dedent(r"""
       TypeAsString: f.TypeAsString, Description: f.Description ?? null,
       Required: !!f.Required, EnforceUniqueValues: !!f.EnforceUniqueValues,
       Indexed: !!f.Indexed, ReadOnlyField: !!f.ReadOnlyField, Sealed: !!f.Sealed,
-      DefaultValue: f.DefaultValue ?? null, CustomFormatter: f.CustomFormatter ?? null,
+      DefaultValue: f.DefaultValue ?? null, DefaultFormula: f.DefaultFormula ?? null,
+      CustomFormatter: f.CustomFormatter ?? null,
     });
     const reply = (status, payload) => ({
       ok: status < 400, status, headers: { get: () => null },
@@ -437,7 +438,8 @@ def _text_field(name: str, ident: str) -> dict[str, Any]:
         "Id": ident, "InternalName": name, "Title": name, "TypeAsString": "Text",
         "Description": "", "Required": False, "EnforceUniqueValues": False,
         "Indexed": False, "ReadOnlyField": False, "Sealed": False,
-        "DefaultValue": None, "CustomFormatter": None, "MaxLength": 255,
+        "DefaultValue": None, "DefaultFormula": None, "CustomFormatter": None,
+        "MaxLength": 255,
     }
 
 

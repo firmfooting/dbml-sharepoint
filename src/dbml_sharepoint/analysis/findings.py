@@ -29,6 +29,7 @@ class Section(StrEnum):
     COLUMN_VALIDATION = "column_validation"
     CONDITIONS = "conditions"
     CROSS_SITE_REFERENCE_COLUMNS = "cross_site_reference_columns"
+    DEFAULT_FORMULAS = "default_formulas"
     DEMO_ITEMS = "demo_items"
     DISPLAY_NAMES = "display_names"
     ENTITIES = "entities"
@@ -522,6 +523,27 @@ class FindingCode(StrEnum):
     # asked the same predicates of a multi-value lookup and got the same
     # answers, so the code was retired rather than reworded. The three above
     # cover it now, since they are about arity and a lookup has one.
+
+    # --- checks/_default_formulas.py: a DefaultFormula per column -----------
+    # One rule per way a declaration can be wrong, so the message can say
+    # what to change. The type rules come in three strengths on purpose: a
+    # kind a formula can never fill, a type nobody has measured yet, and a
+    # type nothing plans to measure.
+    DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE = (
+        "default_formula_beside_a_default_value", "error"
+    )
+    DEFAULT_FORMULA_CHOICE_RESULT_UNCHECKED = (
+        "default_formula_choice_result_unchecked", "warning"
+    )
+    DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED = (
+        "default_formula_column_kind_unsupported", "error"
+    )
+    DEFAULT_FORMULA_FUNCTION_UNSUPPORTED = "default_formula_function_unsupported", "error"
+    DEFAULT_FORMULA_MISSING_EQUALS = "default_formula_missing_equals", "error"
+    DEFAULT_FORMULA_REFERENCES_A_COLUMN = "default_formula_references_a_column", "error"
+    DEFAULT_FORMULA_TYPE_UNMEASURED = "default_formula_type_unmeasured", "error"
+    DEFAULT_FORMULA_TYPE_UNSUPPORTED = "default_formula_type_unsupported", "error"
+    DEFAULT_FORMULA_UNKNOWN_COLUMN = "default_formula_unknown_column", "error"
 
     # --- schema-only rules, from validator.validate() ---
     AUTO_INCREMENT_PK_MUST_BE_ID = "auto_increment_pk_must_be_id", "error"

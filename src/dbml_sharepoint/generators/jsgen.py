@@ -554,6 +554,7 @@ def build_schema_json(
                         "field": "Title",
                         "metadata_type": "SP.FieldText",
                         "default_value": col.default,
+                        "default_formula": None,
                     })
                 continue
 
@@ -589,6 +590,7 @@ def build_schema_json(
                 col, enums_by_name, list_title_prefix=prefix,
                 entities=bundle.mapping.entities,
                 formulas=bundle.mapping.calculated_formulas.get(table_name, {}),
+                default_formulas=bundle.mapping.default_formulas.get(table_name, {}),
             )
             if field is None:
                 continue
@@ -596,12 +598,16 @@ def build_schema_json(
                 field["projections"] = projections
             fields_phase1.append(field)
             body = field["body"]
-            if "DefaultValue" in body:
+            # Both defaults ride one entry: the phase MERGEs whichever is
+            # declared and reads both back, so an entry always carries both
+            # keys, null where the column declares no such default.
+            if "DefaultValue" in body or "DefaultFormula" in body:
                 field_defaults_out.append({
                     "list": list_title,
                     "field": field["title"],
                     "metadata_type": body["__metadata"]["type"],
-                    "default_value": body["DefaultValue"],
+                    "default_value": body.get("DefaultValue"),
+                    "default_formula": body.get("DefaultFormula"),
                 })
 
         fields_phase1 = _order_calculated_after_references(fields_phase1)
@@ -1054,6 +1060,7 @@ def _field_body(
     col: Any, enums_by_name: dict[str, Any], list_title_prefix: str,
     entities: dict[str, EntityMapping] | None = None,
     formulas: dict[str, str] | None = None,
+    default_formulas: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     enum_names = set(enums_by_name)
     sp = map_column(col, enum_names)
@@ -1071,6 +1078,15 @@ def _field_body(
         body["Indexed"] = True
     if sp.description:
         body["Description"] = sp.description
+    # DefaultFormula is a property of the base SP.Field (CSOM
+    # Field.DefaultFormula), so it rides the create body whatever the kind;
+    # the validator decides which kinds may declare one. Measured on a date
+    # column through an item create (`field.date.dynamic-default-rest-fill`)
+    # and on Number and Choice columns on 2026-09-13
+    # (library-guards-probe.js c445a55c, `field.default-formula.*`).
+    default_formula = (default_formulas or {}).get(sp.name)
+    if default_formula is not None:
+        body["DefaultFormula"] = default_formula
 
     match sp.kind:
         case "Text":

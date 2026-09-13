@@ -1177,3 +1177,28 @@ def test_manifest_prints_the_list_rule_budget_against_sharepoint_limits() -> Non
         f"formula: {len(written['validation_formula'])} of 1023 characters, "
         f"message: {len(written['validation_message'])} of 1024"
     ) in section
+
+
+def test_manifest_lists_default_formulas() -> None:
+    schema = make_schema(
+        make_table("Saq", column("Title", required=True), column("PeriodYear", "int")),
+    )
+    bundle = make_bundle(
+        entities=["Saq"],
+        default_formulas={"Saq": {"PeriodYear": "=YEAR(TODAY())"}},
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "## Default formulas" in md
+    assert "- APP_Saq.PeriodYear: `=YEAR(TODAY())`" in md
+    assert "- Default formulas: 1" in md
+    assert f"re-applied in Phase {pn('defaults')}" in md

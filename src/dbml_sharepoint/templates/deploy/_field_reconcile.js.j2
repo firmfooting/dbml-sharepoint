@@ -173,6 +173,14 @@
 
 {% include "_formula_canonical.js.j2" %}
 
+  // A default formula lives in the field schema XML beside a calculated
+  // Formula (the DefaultFormula element), so it is compared on the same
+  // canonical form, which matches an encoded and a decoded readback alike.
+  // Null and '' are the same absent formula, as for DefaultValue.
+  const normalizeDefaultFormula = (value) => (
+    value == null || value === '' ? null : canonicalFormula(value)
+  );
+
   function normalizeDerivedValue(name, value) {
     if (name === 'Choices') return value.results;
     if (name === 'Formula') return canonicalFormula(value);
@@ -210,6 +218,7 @@
       enforceUniqueValues,
       indexed: enforceUniqueValues || indexedFieldKeys.has(`${listName}\u0000${field.title}`),
       defaultValue: normalizeDefaultValue(field.body.DefaultValue),
+      defaultFormula: normalizeDefaultFormula(field.body.DefaultFormula),
       derived,
     };
   }
@@ -1056,6 +1065,7 @@
       || actual.EnforceUniqueValues !== desired.enforceUniqueValues
       || actual.Indexed !== desired.indexed
       || normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue
+      || normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula
       // Declared-null means "never touch": a hand-applied format survives.
       || (field.custom_formatter != null
           && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter))
@@ -1077,6 +1087,11 @@
       if (actual.Indexed !== desired.indexed) patchBody.Indexed = desired.indexed;
       if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) {
         patchBody.DefaultValue = desired.defaultValue;
+      }
+      if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) {
+        // The declared text as authored, not its canonical form: the
+        // canonical form is for comparing, and SharePoint stores what it is sent.
+        patchBody.DefaultFormula = field.body.DefaultFormula == null ? null : field.body.DefaultFormula;
       }
       if (field.custom_formatter != null
           && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
@@ -1104,6 +1119,7 @@
     if (actual.EnforceUniqueValues !== desired.enforceUniqueValues) drift('EnforceUniqueValues', desired.enforceUniqueValues, actual.EnforceUniqueValues);
     if (actual.Indexed !== desired.indexed) drift('Indexed', desired.indexed, actual.Indexed);
     if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) drift('DefaultValue', desired.defaultValue, actual.DefaultValue);
+    if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) drift('DefaultFormula', field.body.DefaultFormula, actual.DefaultFormula);
     if (field.custom_formatter != null
         && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
       drift('CustomFormatter', field.custom_formatter, actual.CustomFormatter);
