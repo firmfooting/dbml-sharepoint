@@ -349,11 +349,19 @@
   }
 
   function declaredFieldsForList(list) {
-    const titleField = syntheticTitleField(list);
+    // No title_patch means this declaration says nothing about Title, so
+    // there is no declared column here to check or reconcile. That is a
+    // document library whose Title carries no display rename: its built-in
+    // Title reads Sealed and refuses every write (MEASURED 2026-09-13), so
+    // the generator emits no patch for it. Every other consumer of
+    // syntheticTitleField already guards on the same fact; this one is
+    // reached only once the list EXISTS, which is why a first provision
+    // never found it.
+    const titleField = list.title_patch ? [syntheticTitleField(list)] : [];
     const deferred = SCHEMA.phase2_lookups
       .filter(lookup => lookup.list === list.title)
       .map(lookup => lookup.field);
-    return [titleField, ...list.fields_phase1, ...deferred];
+    return [...titleField, ...list.fields_phase1, ...deferred];
   }
 
   // A property that could not be compared is not a difference, and printing it

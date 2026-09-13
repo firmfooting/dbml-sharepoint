@@ -2352,6 +2352,10 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         "formatting": None,
         "widths": None,
         "url_slug": "OpenRisks",
+        # A DECLARED view never adopts a page it did not create, on either
+        # kind. The flag is the generated All Items on a library and nothing
+        # else, which is what keeps the foreign-view guard standing here.
+        "adopts_builtin_view": False,
     }
 
 
@@ -2404,6 +2408,9 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
         "formatting": None,
         "widths": None,
         "url_slug": "AllItems",
+        # A LIST's built-in view is already titled All Items, so the title
+        # matcher adopts it and nothing here may adopt by URL.
+        "adopts_builtin_view": False,
     }]
 
 
@@ -4453,3 +4460,53 @@ def test_the_deploy_reconciles_and_reads_back_the_default_formula() -> None:
     assert "defaultBody.DefaultFormula = entry.fieldDefault.default_formula" in js
     assert "DefaultFormula readback did not match the declared formula" in js
     assert "shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string'" in js
+
+
+def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
+    tmp_path: Path,
+) -> None:
+    """The flag that narrows the view phase's foreign-view guard, and the test
+    that keeps it narrow.
+
+    MEASURED 2026-09-13 in library-builtin-view-probe.js: a bare library's
+    view on AllItems.aspx reads 'All Documents'
+    (`library.view.builtin-occupies-allitems`) and a second view created under
+    the slug is minted AllItems1.aspx
+    (`library.view.create-allitems-title-on-library`), so on a library that URL
+    can only ever hold the built-in view. A generic LIST ships 'All Items'
+    there (`library.view.control-list-builtin-occupies-allitems`) and is
+    adopted by title, reaching no URL match at all.
+
+    Every other view stays under the guard: a declared view whose .aspx is
+    already taken by somebody else's page fails the run closed rather than
+    renaming a view it did not create.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    declared = """
+        views:
+          Doc:
+            - title: "By division"
+              fields: [Title, Division]
+    """
+
+    def views_of(kind: str, template: int, where: Path) -> list[dict[str, Any]]:
+        where.mkdir(parents=True, exist_ok=True)
+        schema, bundle = pack(
+            where,
+            dbml=table("Doc", ID_PK, TITLE, "Division nvarchar"),
+            mapping=blocks(
+                entities(entity("Doc", kind=kind, base_template=template)), declared,
+            ),
+        )
+        views: list[dict[str, Any]] = build_schema_json(schema, bundle, "default")["views"]
+        return views
+
+    library = views_of("DocumentLibrary", 101, tmp_path / "library")
+    assert {v["title"] for v in library} == {"All Items", "By division"}
+    adopting = {v["title"] for v in library if v["adopts_builtin_view"]}
+    assert adopting == {"All Items"}, adopting
+
+    as_list = views_of("List", 100, tmp_path / "list")
+    assert {v["title"] for v in as_list} == {"All Items", "By division"}
+    assert not any(v["adopts_builtin_view"] for v in as_list)

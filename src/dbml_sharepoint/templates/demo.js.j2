@@ -191,6 +191,24 @@
     // The name filter alone would match the same name in another folder.
     return rows.find((row) => row.FileDirRef === folderUrl) || null;
   }
+  // A rich Note does not return the bytes it was given. MEASURED 2026-09-13,
+  // `text.item-value.rich-note-roundtrip` and `text.item-value.rich-note-colon`
+  // in item-text-roundtrip-probe.js: `:` stores as `&#58;`, and so do
+  // `& < > " { }`, while `' / # % + @ - [ ] ( ) = ? ;` pass through. The same
+  // run measured `text.item-value.rich-note-decode-recovers`, that decoding
+  // the read-back returns the written string exactly, which is what makes
+  // this comparison honest rather than merely permissive. Numeric forms
+  // first and `&amp;` LAST: decoding it earlier would turn a stored
+  // `&amp;#58;`, which is what a written `&#58;` becomes, into a colon.
+  const decodeStored = (value) => String(value)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+
   // Every literal value is read back and compared: the MERGE is a second
   // write on the file, and a value it did not keep would leave a file that
   // looks seeded and is not.
@@ -206,8 +224,18 @@
     }
     const stored = (await r.json()).d || {};
     for (const f of literals) {
-      if (String(stored[f.name]) !== String(f.value)) {
-        throw new Error(`${f.name} was written ${JSON.stringify(f.value)} and read back ${JSON.stringify(stored[f.name])}`);
+      // Only a column measured to encode is decoded. Decoding every column
+      // would forgive a difference the site really made, which is the one
+      // way this check can fail silently rather than loudly.
+      const raw = String(stored[f.name]);
+      const seen = f.encoded_on_store ? decodeStored(raw) : raw;
+      if (seen !== String(f.value)) {
+        // Both forms, because they differ and only the stored one is what a
+        // later reader sees on the page.
+        const shown = f.encoded_on_store && seen !== raw
+          ? `${JSON.stringify(raw)} (decoding to ${JSON.stringify(seen)})`
+          : JSON.stringify(raw);
+        throw new Error(`${f.name} was written ${JSON.stringify(f.value)} and read back ${shown}`);
       }
     }
   }

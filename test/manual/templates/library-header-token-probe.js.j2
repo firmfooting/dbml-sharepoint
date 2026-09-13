@@ -1,0 +1,704 @@
+{# test/manual/templates/library-header-token-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   A document library's form header is stored and read back byte-identical
+ *   and renders nothing. Which column tokens does that header actually
+ *   resolve at render time?
+ *
+ * OBSERVED on a live display form 2026-09-13: the shipped
+ * legal-compliance-register library's header title line reads
+ * `=if([$FileLeafRef] == '', 'New SAQ', [$FileLeafRef])` and rendered EMPTY,
+ * collapsing the header so its description line sat beside the icon.
+ *
+ * What had been measured is only that a library content type ACCEPTS such a
+ * header: `library.doc-lib.header-fileleafref` in document-library-probe.js,
+ * whose own comment says "Storage only. Whether the header RENDERS is the
+ * checklist's job below." That checklist item was never answered, and the
+ * tool shipped a family relying on it. This is the failure class AGENTS.md
+ * names first: a formatter that saves, reads back byte-identical, passes
+ * every deploy phase, and does nothing on the page.
+ *
+ * It measured even less than that. MEASURED 2026-09-13, revision af2a4ff1 of
+ * this probe: a formatter whose header sits under a top-level `header` key,
+ * which is the spelling `library.doc-lib.header-fileleafref` stored, is
+ * accepted, reads back byte-identical and renders NOTHING; the form keeps its
+ * stock "Item properties" heading. The deploy writes `headerJSONFormatter`
+ * (generators/jsgen.py), and the shipped family's header DOES render under
+ * it, minus the one line this probe is about. So that check proved that an
+ * arbitrary JSON string can be stored on ClientFormCustomFormatter, and
+ * nothing at all about headers.
+ *
+ * One header carrying every candidate on its own LABELLED line, so a single
+ * look at one form answers the whole question rather than one token per
+ * deploy. A label with nothing after it is a token that did not resolve.
+ *
+ * THE IDENTITY QUESTION IS CLOSED. MEASURED across revisions 208a2bce,
+ * f114c19f and b4c5ee75: of fourteen spellings of a file's identity, every
+ * one rendered EMPTY. FileLeafRef, FileRef, Name, LinkFilename,
+ * LinkFilenameNoMenu, FileDirRef, File_x0020_Name, DocIcon, EncodedAbsUrl,
+ * ServerUrl and File_x0020_Type. Only ordinary item fields resolved: ID,
+ * Modified, and Title once a value was typed into the column. It matches
+ * SharePoint/sp-dev-docs#7964, opened 2022-05-17 and closed
+ * type:archive-old-issue with no fix, though that issue named two of the
+ * fourteen and never established which tokens DO work.
+ *
+ * So those fourteen are gone from the battery and ID and Modified remain as
+ * CONTROLS. Absence is the whole predicate here, and a header that renders
+ * nothing at all looks identical to one whose every token fails.
+ *
+ * ROUND FOUR fixes two things round three got wrong, both of them the
+ * probe's fault rather than the platform's:
+ *
+ *   The lookup column never built. A plain POST to /fields answered HTTP 400,
+ *   "The property 'LookupListId' does not exist on type 'SP.FieldLookup'".
+ *   A lookup is the one field type that refuses that route, which the deploy
+ *   has always known (generators/jsgen.py: "the one field type SharePoint
+ *   refuses through a normal POST"); it goes through
+ *   FieldCollection.AddField, where LookupListId belongs to
+ *   SP.FieldCreationInformation. This probe now sends what the deploy sends.
+ *
+ *   The header laid out left to right and ran off the edge of the details
+ *   panel, so the typed lines could not be read. The form header gives its
+ *   root a row layout, so the column direction is now stated.
+ *
+ * The typedNotes mechanism did its job: the incomplete fixture was REPORTED
+ * as incomplete rather than read as a lookup token that does not resolve,
+ * which is the one mistake this whole probe exists to avoid.
+ *
+ * ROUND FOUR ANSWERED IT. MEASURED 2026-09-13, revision 24752514, on a live
+ * library display form, read off a header that finally stacked:
+ *
+ *     ID                        -> [1]
+ *     Modified                  -> [13/09/2026 11:40 PM]
+ *     dbmlspChoice              -> [Q3]
+ *     dbmlspNumber              -> [2026]
+ *     (the dbmlspDate line)        the WHOLE line rendered `Invalid Date`
+ *     dbmlspLookup              -> [1;#Privacy and health records]
+ *     dbmlspLookup.lookupValue  -> []
+ *
+ * So a header CAN read a declared column, which is what makes a meaningful
+ * header possible at all, but three of the four types answer in a shape
+ * nothing documents:
+ *
+ *   Choice resolves to the member text, and Number to the raw number. The
+ *   form BODY shows the same Number as `2,026`, so the header is not
+ *   applying the column's display formatting.
+ *
+ *   DateTime does not render empty. It DESTROYS the expression: the label,
+ *   the arrow and the brackets all vanished and the line read `Invalid
+ *   Date`. That is worse than a blank, because a blank leaves the rest of
+ *   the header standing and this takes a whole line with it.
+ *
+ *   Lookup resolves to the RAW stored form, `<id>;#<value>`, which is the
+ *   internal encoding and not something any header would want to show. And
+ *   `.lookupValue`, which is the documented accessor for exactly this in
+ *   column and view formatting, returns EMPTY here.
+ *
+ * ROUND FIVE asks all of that, as one battery on one header, because every
+ * one of these is a question about the same expression engine and answering
+ * them one deploy at a time is how a wrong assumption survives. The battery
+ * is four blocks, and the order is the argument:
+ *
+ *   C, the controls on the engine itself. Does a header evaluate `substring`,
+ *     `indexOf`, `if`, and plain concatenation over literals? Nothing else
+ *     here can be read without these. A blank from
+ *     `substring([$dbmlspLookup], ...)` is a lookup that cannot be cut down
+ *     if C2 renders, and a function the header never supported if C2 does
+ *     not, and those call for completely different fixes.
+ *   K, the two tokens already measured to resolve, kept as the header's own
+ *     control. A header that renders nothing looks exactly like a header
+ *     whose every token fails.
+ *   L, every remaining route to a lookup's display value: `.lookupValue`
+ *     (measured empty), `.lookupId`, a `substring` past the `;#`, a
+ *     READ-ONLY PROJECTED lookup column, and the bare token alone as the
+ *     whole txtContent. The projected column is the one that matters most
+ *     practically: it is a shape the generator can already emit today
+ *     (`_lookups.js.j2` ships projections by createfieldasxml), so if a
+ *     header reads it cleanly the family needs no new capability at all.
+ *   D, every route to a rendered date. D2, the bare token with nothing
+ *     concatenated to it, is the decisive one: if it renders and D1 does
+ *     not, the fault is in the CONCATENATION rather than the token, and the
+ *     remedy is to rewrite every date line rather than to find a better
+ *     spelling.
+ *   T, the column types not yet asked at all: Yes/No, a multi-line Note, and
+ *     a Person bare, by `.title` and by `.email`.
+ *
+ * ONE LIST DRIVES BOTH the rendered header and the eyes-on checklist, so a
+ * line cannot be rendered without being asked about or asked about without
+ * being rendered, which is how the last round lost its typed lines off the
+ * edge of the panel without noticing.
+ *
+ * THE RISK THIS ROUND CARRIES, stated because it changes how a null result
+ * should be read: an expression the engine cannot parse might discard the
+ * WHOLE header rather than its own line. Round four showed a per-line
+ * failure surviving (the date took its line and nothing else), so this is
+ * unlikely, but the controls are first for exactly this reason and the
+ * eyes-on text asks for "nothing rendered at all" as a distinct answer. That
+ * answer is a finding, not a failed run, and it splits the battery in two.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101). Same question
+ *     folder-probe.js asks, by the same method, so it keeps the same id.
+ *   library.form.header-token-battery-stored
+ *     Is the battery header accepted on the library's document content type,
+ *     and does it read back byte-identical? Machine-answerable, and it is
+ *     the half that was already known to pass.
+ *   library.form.header-token-battery-renders
+ *     MANUAL: open the uploaded file's display form and copy the header
+ *     back. Which labelled lines carry a value? This is the half nobody
+ *     had asked, and only eyes can answer it. Now down to the two controls,
+ *     since the fourteen it was written for are settled.
+ *   library.form.header-typed-column-battery-renders
+ *     MANUAL, in the same look: which declared column TYPES carry a value
+ *     there. Every file-identity spelling is now known to be empty, so a
+ *     family's header can only be built from its own columns, and which of
+ *     those a header can read decides what that header may say.
+ *   library.form.header-expression-battery-renders
+ *     MANUAL, same look again: the C, L, D and T blocks above. Which
+ *     expression functions the header evaluates, which route yields a
+ *     lookup's display value, which spelling renders a date, and what the
+ *     remaining column types do.
+ *
+ * OBSERVED, NEVER ASSERTED
+ *   Every token's rendered value. The point is to learn which resolve, so
+ *   asserting any of them in advance would decide the answer in the probe
+ *   rather than on the page.
+ *
+ * NOT MEASURED HERE
+ *   What the NEW form header shows (no item exists yet, so every token is
+ *   empty there by construction), and whether a token that resolves on a
+ *   library also resolves on a list. The deploy emits a different header
+ *   per kind, so the list case is a separate question.
+ *
+ * WHAT THE EARLIER ROUNDS ANSWERED
+ *   MEASURED 2026-09-13, revisions 208a2bce and f114c19f, on a live library
+ *   form. Of fourteen spellings of a file's identity, every one rendered
+ *   EMPTY: FileLeafRef, FileRef, Name, LinkFilename, LinkFilenameNoMenu,
+ *   FileDirRef, File_x0020_Name, DocIcon, EncodedAbsUrl, ServerUrl and
+ *   File_x0020_Type. Only ordinary item fields resolved: ID -> [1],
+ *   Modified -> [13/09/2026 10:58 PM], and Title -> [test] once a value was
+ *   typed into the column.
+ *
+ *   So there is no spelling that puts a file's name in a library's form
+ *   header, and a family that wants a meaningful header has to build it from
+ *   its own declared columns. Which column TYPES a header can read is what
+ *   this round asks.
+ *
+ * REPORTED UPSTREAM
+ *   SharePoint/sp-dev-docs#11026, filed 2026-09-13 from rounds one to four:
+ *   the fourteen empty identity tokens, the lookup's raw `<id>;#<value>`, the
+ *   empty `.lookupValue`, and the custom date rendering `Invalid Date` while
+ *   `[$Modified]` renders correctly in the same header. It links this probe
+ *   at commit 4af91908 as the repro, and says round five's battery is
+ *   outstanding. Comment there with what round five measures, either way: a
+ *   working workaround changes what is worth fixing, and the issue says so.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   Form header, body and footer formatting, and the `[$Column]` syntax:
+ *     "Configure the list form" (SharePoint list formatting)
+ *   ClientFormCustomFormatter on a content type:
+ *     "SP.ContentType properties" (CSOM)
+ *   A column left out of every body section is appended to the LAST section:
+ *     "Configure the list form", Configure custom body
+ *
+ * KNOWN AND UNFIXED UPSTREAM
+ *   SharePoint/sp-dev-docs#7964, "Form formatting: In header section
+ *   [$FileLeafRef], [$FileRef] coming blank", opened 2022-05-17 against
+ *   SharePoint Online, labelled area:list-formatting-form and
+ *   type:bug-suspected. It was closed as type:archive-old-issue, "too old for
+ *   active work", with no comment, no fix and no workaround. Its repro is the
+ *   one measured here. Nothing in that issue says which tokens DO resolve,
+ *   which is what this probe is for.
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back, THEN open the library, click the
+ *      uploaded file, open its details panel and copy the header back too.
+ *
+ * WHEN FINISHED: delete the library it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe Header Tokens';
+  const libPath = `web/lists/getbytitle('${LIB}')`;
+  const FILE = 'dbmlsp-header-probe.txt';
+  // Round three. Every file-identity spelling is dead, so the only header a
+  // family can build is one made of its own declared columns. These are the
+  // TYPES the shipped legal-compliance-register header would need, each
+  // created on the library and given a value before the header is asked.
+  const TARGET = 'dbmlsp Probe Header Lookup Target';
+  const TARGET_ROW = 'Privacy and health records';
+  // Every entity type and FieldTypeKind here is the one analysis/typemap.py
+  // already maps that column kind to, so the fixture is the shape the deploy
+  // would really create rather than a probe-only approximation.
+  const TYPED = [
+    ['dbmlspChoice', { __metadata: { type: 'SP.FieldChoice' }, FieldTypeKind: 6,
+      Choices: { results: ['Q1', 'Q2', 'Q3', 'Q4'] } }, 'Q3'],
+    ['dbmlspNumber', { __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9 }, 2026],
+    ['dbmlspDate', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4 },
+      '2026-10-13T00:00:00Z'],
+    ['dbmlspBool', { __metadata: { type: 'SP.Field' }, FieldTypeKind: 8 }, true],
+    ['dbmlspNote', { __metadata: { type: 'SP.FieldMultiLineText' }, FieldTypeKind: 3,
+      RichText: false, NumberOfLines: 4 }, 'A note the header may or may not read'],
+    ['dbmlspPerson', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20,
+      SelectionMode: 0 }, null],
+  ];
+
+  // THE CONTROLS, and all that is left of the identity battery. Rounds one
+  // to three settled that question: of fourteen spellings of a file's
+  // identity every one rendered empty, and only these two resolved
+  // (revisions 208a2bce and f114c19f, plus b4c5ee75 which reproduced it).
+  // They stay because absence is the whole predicate here. A header that
+  // renders nothing at all looks identical to one whose every token fails,
+  // and these two are what tell those apart.
+  const TOKENS = ['ID', 'Modified'];
+
+  // ONE list drives the rendered header AND the eyes-on checklist below, so a
+  // line can never be rendered without being asked about, or asked about
+  // without being rendered. Every entry is `[label, txtContent]`, and every
+  // label is prefixed so an answer can be quoted back by tag rather than by
+  // retyping an expression.
+  //
+  // Ordered controls first, on purpose. If the C lines render and a later one
+  // does not, the failure belongs to that line. If NOTHING renders, one bad
+  // expression has discarded the whole header, and that is a finding in its
+  // own right rather than a failed run.
+  const LINES = [
+    // ---- C: what the expression engine itself supports ------------------
+    // Everything in L4 and D4 to D6 depends on these. Without them a blank
+    // from `substring([$dbmlspLookup], ...)` cannot be told from a function
+    // the header does not support at all, and that ambiguity is exactly the
+    // kind this probe exists to remove.
+    ['C1 concat', "=' C1 concat -> [' + 'ab' + ']'"],
+    ['C2 substring', "=' C2 substring -> [' + substring('abcdef', 1, 3) + ']'"],
+    ['C3 indexOf', "=' C3 indexOf -> [' + indexOf('abcdef', 'cd') + ']'"],
+    ['C4 if', "=' C4 if -> [' + if(1 == 1, 'yes', 'no') + ']'"],
+
+    // ---- K: known to resolve, kept as the header's own control ----------
+    // A header that renders nothing looks identical to one whose every token
+    // fails. These two are what separate those.
+    ['K1 ID', "=' K1 ID -> [' + [$ID] + ']'"],
+    ['K2 Modified', "=' K2 Modified -> [' + [$Modified] + ']'"],
+
+    // ---- L: getting a display value out of a lookup ---------------------
+    // L1 measured `1;#Privacy and health records` and L2 measured empty
+    // (revision 24752514). The rest are every remaining route to the value
+    // without the `<id>;#` prefix. L5 is the one the deploy could already
+    // build today: a read-only projected lookup, which is how it ships
+    // dependent fields.
+    ['L1 bare', "=' L1 bare -> [' + [$dbmlspLookup] + ']'"],
+    ['L2 lookupValue', "=' L2 lookupValue -> [' + [$dbmlspLookup.lookupValue] + ']'"],
+    ['L3 lookupId', "=' L3 lookupId -> [' + [$dbmlspLookup.lookupId] + ']'"],
+    ['L4 substring', "=' L4 substring -> [' + substring([$dbmlspLookup],"
+      + " indexOf([$dbmlspLookup], ';#') + 2, 200) + ']'"],
+    ['L5 projected', "=' L5 projected -> [' + [$dbmlspProjected] + ']'"],
+    ['L6 bare alone', '=[$dbmlspLookup]'],
+
+    // ---- D: getting a date to render ------------------------------------
+    // D1 is the measured failure, repeated so the run stands on its own. D2
+    // is the one that matters most: if a bare token renders and a
+    // concatenated one does not, the fault is in the concatenation and not
+    // in the token, and every date in every header needs rewriting rather
+    // than a different spelling.
+    ['D1 concat', "=' D1 concat -> [' + [$dbmlspDate] + ']'"],
+    ['D2 bare alone', '=[$dbmlspDate]'],
+    ['D3 displayValue', "=' D3 displayValue -> [' + [$dbmlspDate.displayValue] + ']'"],
+    ['D4 toLocaleDateString',
+      "=' D4 toLocaleDateString -> [' + toLocaleDateString([$dbmlspDate]) + ']'"],
+    ['D5 toLocaleString', "=' D5 toLocaleString -> [' + toLocaleString([$dbmlspDate]) + ']'"],
+    ['D6 toDateString', "=' D6 toDateString -> [' + toDateString([$dbmlspDate]) + ']'"],
+
+    // ---- T: the remaining column types a family header might name -------
+    ['T1 Choice', "=' T1 Choice -> [' + [$dbmlspChoice] + ']'"],
+    ['T2 Number', "=' T2 Number -> [' + [$dbmlspNumber] + ']'"],
+    ['T3 YesNo', "=' T3 YesNo -> [' + [$dbmlspBool] + ']'"],
+    ['T4 Note', "=' T4 Note -> [' + [$dbmlspNote] + ']'"],
+    ['T5 Person', "=' T5 Person -> [' + [$dbmlspPerson] + ']'"],
+    ['T6 Person.title', "=' T6 Person.title -> [' + [$dbmlspPerson.title] + ']'"],
+    ['T7 Person.email', "=' T7 Person.email -> [' + [$dbmlspPerson.email] + ']'"],
+  ];
+
+  const Q = {
+    fixture: 'A document library is created (BaseTemplate 101)',
+    stored: "Is a header naming every candidate token accepted, and does it read back byte-identical",
+    renders: 'MANUAL: which of those tokens carry a value on the rendered display form',
+    typed: 'MANUAL: which declared column TYPES carry a value in that same header',
+    expressions: 'MANUAL: which expression functions, lookup routes, date spellings'
+      + ' and column types the header evaluates',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB}, upload one small`);
+    log('INFO', `file '${FILE}' to it, and set a form header on its document content`);
+    log('INFO', `type carrying one labelled line per token: ${TOKENS.join(', ')},`);
+    log('INFO', `plus ${LINES.length} tagged expression lines covering the engine's own`);
+    log('INFO', 'functions, every route to a lookup value, every date spelling and the');
+    log('INFO', 'remaining column types. It also adds a Yes/No, a Note, a Person and a');
+    log('INFO', 'read-only projected lookup column, and a scratch list for the lookup');
+    log('INFO', `to point at ('${TARGET}').`);
+    log('INFO', 'Then it asks you to open that file and copy the header back.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library would be reused, whose content');
+      log('INFO', 'type may already carry a header. Set CLEANUP = true.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  expect('library.doc-lib.fixture-library-created', Q.fixture);
+  expect('library.form.header-token-battery-stored', Q.stored);
+  expect('library.form.header-token-battery-renders', Q.renders);
+  expect('library.form.header-typed-column-battery-renders', Q.typed);
+  expect('library.form.header-expression-battery-renders', Q.expressions);
+
+  const IDS = [
+    'library.form.header-token-battery-stored',
+    'library.form.header-token-battery-renders',
+    'library.form.header-typed-column-battery-renders',
+    'library.form.header-expression-battery-renders',
+  ];
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 200)}`;
+
+  // A field subtype and an item MERGE both need the verbose spelling: the
+  // harness posts `odata=nometadata`, under which the server reads a create
+  // body as a bare SP.Field and refuses SP.FieldChoice's own properties. The
+  // deploy sends `__metadata` on both, so the probe does too, and what is
+  // measured is the surface rather than a transport this project never uses.
+  const postVerbose = async (path, body, extraHeaders = {}) => {
+    const digest = await getDigest();
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=verbose',
+        'Content-Type': 'application/json;odata=verbose',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
+      credentials: 'same-origin',
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // A COLUMN, explicitly. MEASURED 2026-09-13, revision b4c5ee75: the same
+  // children under a bare div laid out left to right and ran off the edge of
+  // the details panel, so the last tokens could not be read at all. The form
+  // header gives its root a row layout of its own, so the direction has to be
+  // stated rather than left to the default.
+  const header = {
+    elmType: 'div',
+    style: { display: 'flex', 'flex-direction': 'column', width: '100%' },
+    children: [
+      {
+        elmType: 'div',
+        attributes: { class: 'ms-fontWeight-bold ms-fontSize-16' },
+        txtContent: 'dbmlsp header token probe',
+      },
+      ...TOKENS.map((token) => ({
+        elmType: 'div',
+        attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
+        txtContent: `=' ${token} -> [' + [$${token}] + ']'`,
+      })),
+      ...LINES.map(([, expression]) => ({
+        elmType: 'div',
+        attributes: { class: 'ms-fontSize-12' },
+        style: { display: 'block', width: '100%' },
+        txtContent: expression,
+      })),
+    ],
+  };
+  // `headerJSONFormatter`, which is the key the deploy writes
+  // (generators/jsgen.py). MEASURED 2026-09-13 by revision af2a4ff1 of this
+  // probe: the same header stored under a top-level `header` key is accepted,
+  // reads back byte-identical and renders NOTHING, leaving the form on its
+  // stock "Item properties" heading. So a stored formatter proves nothing
+  // about the key being one SharePoint reads.
+  const formatter = JSON.stringify({ headerJSONFormatter: header });
+
+  await resetList(LIB);
+
+  // ---- fixture ---------------------------------------------------------
+  {
+    const existing = await spGet(libPath);
+    if (!existing.ok) {
+      const digest = await getDigest();
+      const made = await spPost('web/lists', {
+        Title: LIB,
+        BaseTemplate: 101,
+        Description: 'dbml-sharepoint header token probe. Safe to delete.',
+        ContentTypesEnabled: false,
+      }, digest);
+      record('library.doc-lib.fixture-library-created', Q.fixture,
+             made.ok ? 'PASS' : 'FAIL',
+             made.ok ? `created '${LIB}'` : short(made));
+      if (!made.ok) {
+        voidAll(IDS, 'the library fixture did not build, so it has no content type to set.');
+        return report();
+      }
+    } else {
+      record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
+             'reusing an existing library, whose content type may already carry a header. '
+             + 'Set CLEANUP = true for a clean answer.');
+    }
+  }
+
+  // A file, because a header with no item behind it renders every token
+  // empty by construction and would answer the question wrongly.
+  {
+    const root = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);
+    if (readFailed(root)) {
+      voidAll(IDS, `the library RootFolder did not read back (HTTP ${root.status}).`);
+      return report();
+    }
+    const digest = await getDigest();
+    const url = `web/GetFolderByServerRelativeUrl('${root.body.ServerRelativeUrl}')`
+      + `/Files/add(url='${FILE}',overwrite=true)`;
+    const res = await fetch(`${WEB}/_api/${url}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json;odata=nometadata', 'X-RequestDigest': digest },
+      body: 'dbml-sharepoint header token probe. Safe to delete.',
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      voidAll(IDS, `the probe file did not upload: HTTP ${res.status} ${(await res.text()).slice(0, 160)}`);
+      return report();
+    }
+  }
+
+  // ---- typed columns, and a value in each --------------------------------
+  // Reported rather than fatal: the identity battery above is the older
+  // question and must still be answerable if this newer fixture will not
+  // build. A token whose column never got a value would read as a token that
+  // does not resolve, which is the one mistake this whole probe is about.
+  const typedNotes = [];
+  {
+    const addField = async (name, body) => {
+      const present = await spGet(
+        `${libPath}/fields/getbyinternalnameortitle('${name}')?$select=Id`);
+      if (present.ok) return true;
+      const made = await postVerbose(`${libPath}/fields`, { ...body, Title: name });
+      if (!made.ok) typedNotes.push(`${name}: ${short(made)}`);
+      return made.ok;
+    };
+
+    // A lookup is the ONE field type a plain POST to /fields refuses.
+    // MEASURED here 2026-09-13, revision b4c5ee75: that POST answered HTTP
+    // 400, "The property 'LookupListId' does not exist on type
+    // 'SP.FieldLookup'". The deploy has never used that shape; it goes
+    // through FieldCollection.AddField, where LookupListId is a property of
+    // SP.FieldCreationInformation. Same spelling here, so this probe is
+    // asking about the field the deploy would really create.
+    const addLookupField = async (name, listId) => {
+      const present = await spGet(
+        `${libPath}/fields/getbyinternalnameortitle('${name}')?$select=Id`);
+      if (present.ok) return true;
+      const made = await postVerbose(`${libPath}/fields/addfield`, {
+        parameters: {
+          __metadata: { type: 'SP.FieldCreationInformation' },
+          FieldTypeKind: 7, Title: name,
+          LookupListId: listId, LookupFieldName: 'Title',
+        },
+      });
+      if (!made.ok) typedNotes.push(`${name}: ${short(made)}`);
+      return made.ok;
+    };
+    for (const [name, body] of TYPED) await addField(name, body);
+
+    // The lookup needs a target holding a row, so the value has something to
+    // point at and `.lookupValue` has something to return.
+    let lookupReady = false;
+    const targetPath = `web/lists/getbytitle('${TARGET}')`;
+    const target = await spGet(`${targetPath}?$select=Id`);
+    let targetId = target.ok ? target.body.Id : null;
+    if (!targetId) {
+      const digest = await getDigest();
+      const made = await spPost('web/lists', {
+        Title: TARGET, BaseTemplate: 100,
+        Description: 'dbml-sharepoint header token probe lookup target. Safe to delete.',
+      }, digest);
+      targetId = made.ok && made.body ? made.body.Id : null;
+      if (!targetId) typedNotes.push(`${TARGET}: ${short(made)}`);
+    }
+    let targetRowId = null;
+    if (targetId) {
+      const rows = await spGet(`${targetPath}/items?$select=Id,Title&$top=5`);
+      const found = !readFailed(rows)
+        && (rows.body.value || []).find((row) => row.Title === TARGET_ROW);
+      if (found) {
+        targetRowId = found.Id;
+      } else {
+        const digest = await getDigest();
+        const made = await spPost(`${targetPath}/items`, { Title: TARGET_ROW }, digest);
+        targetRowId = made.ok && made.body ? made.body.Id : null;
+        if (!targetRowId) typedNotes.push(`${TARGET} row: ${short(made)}`);
+      }
+      lookupReady = await addLookupField('dbmlspLookup', targetId);
+
+      // L5's column. A read-only Lookup linked back to the primary by
+      // FieldRef, which is the shape the deploy already ships for a
+      // projection (`_lookups.js.j2`, createfieldasxml with Options 8). It
+      // cannot be made through AddField because the FieldRef linkage has no
+      // FieldCreationInformation property. If the header reads THIS cleanly
+      // while the primary answers `<id>;#<value>`, the family gets its
+      // lookup label with a column the generator can already emit.
+      if (lookupReady) {
+        const primary = await spGet(
+          `${libPath}/fields/getbyinternalnameortitle('dbmlspLookup')?$select=Id`);
+        const primaryId = primary.ok ? primary.body.Id : null;
+        if (!primaryId) {
+          typedNotes.push('dbmlspProjected: the primary lookup Id could not be read');
+        } else {
+          const present = await spGet(
+            `${libPath}/fields/getbyinternalnameortitle('dbmlspProjected')?$select=Id`);
+          if (!present.ok) {
+            const xml = '<Field Type="Lookup" DisplayName="dbmlspProjected"'
+              + ' Name="dbmlspProjected" List="{' + targetId + '}" ShowField="Title"'
+              + ' FieldRef="{' + primaryId + '}" ReadOnly="TRUE"/>';
+            const made = await postVerbose(`${libPath}/fields/createfieldasxml`,
+                                           { parameters: { SchemaXml: xml, Options: 8 } });
+            if (!made.ok) typedNotes.push(`dbmlspProjected: ${short(made)}`);
+          }
+        }
+      }
+    }
+
+    // One MERGE onto the file's own item. A lookup is written by Id through
+    // its `...Id` companion, which is the spelling the deploy uses too.
+    const items = await spGet(`${libPath}/items?$select=Id&$top=5`);
+    const itemId = !readFailed(items) && (items.body.value || [])[0]
+      ? items.body.value[0].Id : null;
+    if (!itemId) {
+      typedNotes.push('no list item was served for the uploaded file, so no value was set');
+    } else {
+      const values = {};
+      // A null in TYPED means the value is not a literal and is resolved
+      // below. Written through the `...Id` companion, exactly as a lookup is.
+      for (const [name, , value] of TYPED) {
+        if (value !== null) values[name] = value;
+      }
+      if (lookupReady && targetRowId) values.dbmlspLookupId = targetRowId;
+      // The person is whoever is running this, because the probe cannot know
+      // another valid principal on somebody else's site.
+      const me = await spGet('web/currentuser?$select=Id');
+      if (readFailed(me)) {
+        typedNotes.push('the current user could not be read, so no person value was set');
+      } else {
+        values.dbmlspPersonId = me.body.Id;
+      }
+      const shape = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
+      const entity = readFailed(shape) ? null : shape.body.ListItemEntityTypeFullName;
+      const set = await postVerbose(`${libPath}/items(${itemId})`,
+        { __metadata: { type: entity || 'SP.ListItem' }, ...values },
+        { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      if (!set.ok) typedNotes.push(`the value MERGE was refused: ${short(set)}`);
+    }
+  }
+
+  // ---- store the battery on the document content type -------------------
+  {
+    // The collection is unordered and a library carries a Folder content
+    // type as well as a Document one, so the first entry can be the folder,
+    // which would store the formatter where no document ever reads it. Same
+    // rule the deploy uses: the first id under 0x01 that is not under 0x0120.
+    const cts = await spGet(`${libPath}/contenttypes?$select=Id,Name&$top=20`);
+    const idOf = (ct) => String((ct && ct.Id && ct.Id.StringValue) || (ct && ct.Id) || '');
+    const ct = ((cts.ok && cts.body && cts.body.value) || [])
+      .find((c) => idOf(c).startsWith('0x01') && !idOf(c).startsWith('0x0120'));
+    if (!ct) {
+      voidAll(IDS, `no document content type was found on the library (HTTP ${cts.status}).`);
+      return report();
+    }
+    const digest = await getDigest();
+    const set = await spPost(`${libPath}/contenttypes('${idOf(ct)}')`,
+      { ClientFormCustomFormatter: formatter }, digest,
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    if (!set.ok) {
+      record('library.form.header-token-battery-stored', Q.stored, 'REFUSED', short(set));
+      voidAll(['library.form.header-token-battery-renders'],
+              'the header was refused, so there is nothing on the form to look at.');
+      return report();
+    }
+    const back = await spGet(
+      `${libPath}/contenttypes('${idOf(ct)}')?$select=ClientFormCustomFormatter`);
+    if (readFailed(back)) {
+      record('library.form.header-token-battery-stored', Q.stored, 'NOT ESTABLISHED',
+             `the read-back failed (HTTP ${back.status}), so storage is unconfirmed`, 'void');
+    } else {
+      const stored = back.body.ClientFormCustomFormatter;
+      record('library.form.header-token-battery-stored', Q.stored,
+             stored === formatter ? 'PASS' : 'CHANGED',
+             stored === formatter
+               ? `stored byte-identical on content type '${ct.Name}'`
+               : `wrote ${formatter.length} chars, read back ${JSON.stringify(String(stored).slice(0, 200))}`);
+    }
+  }
+
+  record('library.form.header-token-battery-renders', Q.renders, 'MANUAL',
+         'open the library, click the uploaded file, open its details panel and copy '
+         + 'the header back. A label with nothing after it is a token that did not '
+         + 'resolve.');
+
+  record('library.form.header-typed-column-battery-renders', Q.typed,
+         typedNotes.length === 0 ? 'MANUAL' : 'MANUAL (fixture incomplete)',
+         typedNotes.length === 0
+           ? 'the same look answers these: a label with nothing after it is a column '
+             + 'type whose value a header cannot read.'
+           : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
+
+  // Carries the same fixture caveat, because the C block is the only part of
+  // the battery that answers without one. Every L, D and T line reads a
+  // column this run had to build, so a column that did not build would read
+  // as a token that does not resolve, which is the one confusion this probe
+  // exists to prevent.
+  record('library.form.header-expression-battery-renders', Q.expressions,
+         typedNotes.length === 0 ? 'MANUAL' : 'MANUAL (fixture incomplete)',
+         typedNotes.length === 0
+           ? `the same look answers all ${LINES.length} tagged lines. Controls C1 to C4 `
+             + 'come first: if they render and a later line does not, that line is the '
+             + 'finding; if nothing renders at all, one expression discarded the whole '
+             + 'header and that is the finding instead.'
+           : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
+
+  console.log('\n============ EYES-ON ============');
+  console.log(`  Open '${LIB}', click '${FILE}', open its details panel.`);
+  console.log('  Copy the header block back verbatim. One line per tag:');
+  for (const token of TOKENS) console.log(`     ${token} -> [<value or empty>]`);
+  for (const [label] of LINES) console.log(`     ${label}`);
+  console.log('');
+  console.log('  A label standing alone is a token that resolved to nothing.');
+  console.log('  A line that lost its own label is a token that destroyed the');
+  console.log('  expression around it, which is a different finding: say so.');
+  console.log('  If the header renders NOTHING AT ALL, say that instead. It means');
+  console.log('  one bad expression discards the whole header, which is worth');
+  console.log('  knowing on its own, and the battery gets split in two.');
+  console.log('  answer: ______________________________________');
+  console.log('=================================');
+
+  return report();
+})();

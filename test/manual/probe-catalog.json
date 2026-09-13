@@ -9345,6 +9345,385 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-builtin-view-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library and one scratch generic list, both read for the views they ship with; a view titled AllItems is then created on the library to reproduce a URL collision, and the library's built-in view is renamed, rescoped, given a new field set, hidden, demoted from default and finally deleted"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.builtin-view-inventory",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.builtin-occupies-allitems",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-view-inventory"
+              ]
+            },
+            {
+              "id": "library.view.control-list-builtin-occupies-allitems",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.create-allitems-title-on-library",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-title-rename",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-getbytitle-after-rename",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-scope-merge",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-viewfields-replace",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-hidden-while-default",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems"
+              ]
+            },
+            {
+              "id": "library.view.builtin-hidden-once-not-default",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems",
+                "library.view.builtin-title-rename"
+              ]
+            },
+            {
+              "id": "library.view.builtin-delete-once-not-default",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.builtin-occupies-allitems",
+                "library.view.builtin-title-rename"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.control-list-builtin-occupies-allitems"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "list-identity-cache-probe.js",
+      "surface": "transport",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list and one scratch document library, each created, read by title, hard-deleted and created again under the same title so a by-title read can be asked whether it answers the new object or the dead one, and so the same stale URL can be re-read under each candidate cache directive; both are deleted at the end"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "transport",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "transport.cache.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "transport.cache.observed-response-headers",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.control-repeat-read-unchanged",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.control-enumeration-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.id-select-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.shape-select-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.control-busted-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.id-select-after-recreate-library",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-no-store",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-no-cache-header",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-reload",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.plain-read-after-reload",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate",
+                "transport.cache.remedy-reload"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "transport.cache.fixture-list-created",
+            "transport.cache.control-repeat-read-unchanged",
+            "transport.cache.control-enumeration-after-recreate",
+            "transport.cache.control-busted-after-recreate"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "item-text-roundtrip-probe.js",
+      "surface": "text",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list carrying a single-line Text column, a multi-line Note with RichText false and a multi-line Note with RichText true, and up to three items whose values are read straight back and compared with what was written"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "text",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "text.item-value.fixture-columns-created",
+              "depends_on": []
+            },
+            {
+              "id": "text.item-value.single-line-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.plain-note-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-colon",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            },
+            {
+              "id": "text.item-value.control-plain-note-colon",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-decode-recovers",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-encoding-idempotent",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "text.item-value.fixture-columns-created",
+            "text.item-value.control-plain-note-colon"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "library-header-token-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library carrying a single uploaded text file, a Choice, Number, DateTime, Yes/No, Note, Person and Lookup column plus a read-only projected lookup, each given a value on that file, a scratch list holding the one row the lookup points at, and a form header on the library's document content type carrying one tagged line per candidate expression"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.form.header-token-battery-stored",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "library.form.header-token-battery-renders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.header-token-battery-stored"
+              ]
+            },
+            {
+              "id": "library.form.header-typed-column-battery-renders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.header-token-battery-stored"
+              ]
+            },
+            {
+              "id": "library.form.header-expression-battery-renders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.header-token-battery-stored"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "file-header",
+              "page": "uploaded file details",
+              "assertions": [
+                "rendered header visible",
+                "one labelled line per candidate token",
+                "a label standing alone marks a token that did not resolve"
+              ]
+            }
+          ],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.form.header-token-battery-stored"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
     }
   ]
 }

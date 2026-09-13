@@ -29,9 +29,18 @@ SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 # `library.file-vs-item.title-after-upload` in document-library-probe.js) and
 # its name is FileLeafRef (`library.file.name-field-is-leafref` in
 # file-operations-probe.js, same day), a view may carry it
-# (`library.doc-lib.view-fileleafref`, document-library-probe.js), and a
-# header whose title line reads [$FileLeafRef] renders on the file panel
-# (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03).
+# (`library.doc-lib.view-fileleafref`, document-library-probe.js), and a form
+# BODY section may name it: OBSERVED 2026-09-13 on a live display form, where
+# it renders as the file's Name field.
+#
+# The HEADER is a different question and this set does not rest on it. A
+# reviewed capture of 2026-09-03 recorded [$FileLeafRef] rendering in a header
+# under `library.doc-lib.header-fileleafref`; a live form on 2026-09-13 showed
+# that title line EMPTY while the rest of the same header rendered. That check
+# also stores its formatter under a top-level `header` key, which
+# library-header-token-probe.js measured the platform ignoring outright, so it
+# cannot be what settled the question either way.
+# library-header-token-probe.js re-asks it under the key the deploy writes.
 LIBRARY_COLUMNS = frozenset({"FileLeafRef"})
 
 

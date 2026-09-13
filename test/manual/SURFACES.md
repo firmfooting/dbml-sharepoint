@@ -222,10 +222,16 @@ length, read it back, compare), but the *slot* matters, because these results
 are famously not transferable between slots. That is what `scope` is for.
 
 Scopes: `list-desc`, `group-desc`, `role-desc`, `col-desc`, `field-title`,
-`view-title`, `valmsg`, `view-fmt`, `col-fmt`, `form-fmt`
+`view-title`, `valmsg`, `view-fmt`, `col-fmt`, `form-fmt`, `item-value`
+
+`item-value` is the slot a seed and a demo row write into, and the only one
+here whose string is the user's data rather than a setting about it. It is a
+slot like the rest: what a column does to a value it stores is not
+transferable from what a description does to one.
 
 Probes: `list-description-probe.js`, `group-description-probe.js`,
-`role-definition-probe.js`, `formatter-xml-probe.js`
+`role-definition-probe.js`, `formatter-xml-probe.js`,
+`item-text-roundtrip-probe.js`
 
 ### 8. `access`: identities, groups, permission levels, ACLs
 
@@ -291,7 +297,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-foldered-group-view-probe.js`,
 `library-guards-probe.js`, `view-scope-revert-probe.js`,
 `folder-shape-probe.js`, `folder-create-refusal-probe.js`,
-`folder-under-schema-probe.js`
+`folder-under-schema-probe.js`, `library-builtin-view-probe.js`,
+`library-header-token-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -546,11 +553,16 @@ and `library-content-type-probe.js`, the four probes taking it out.
 The HTTP transport the emitted scripts ride on: OData `$batch` multipart
 encoding and whether batching is counted per request or per operation, how
 throttling is signalled (429/503 status versus a redirect to
-`/_layouts/15/Throttle.htm`), and `Retry-After` presence.
+`/_layouts/15/Throttle.htm`), and `Retry-After` presence. `cache` asks
+whether a repeated GET is answered from a cache rather than from the site,
+which is a property of the delivery and not of the object being read: the
+same question about the same list can be answered twice with two different
+Ids without the list having changed.
 
-Scopes: `batch`, `throttle`, `retry`
+Scopes: `batch`, `throttle`, `retry`, `cache`
 
-Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`
+Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`,
+`list-identity-cache-probe.js`
 
 ## Checks that file under a different surface than their probe
 

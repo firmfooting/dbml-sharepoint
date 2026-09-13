@@ -71,8 +71,10 @@ _HARNESS = textwrap.dedent("""
     // actually suspending, not on a stub that resolves immediately.
     const RESPONSES = JSON.parse(RESPONSES_JSON);
     const calls = [];
-    globalThis.fetch = async (url) => {
+    const inits = [];
+    globalThis.fetch = async (url, init) => {
       calls.push(String(url));
+      inits.push(init === undefined ? null : init);
       const queue = RESPONSES[String(url)];
       const next = queue.length > 1 ? queue.shift() : queue[0];
       return {
@@ -183,3 +185,63 @@ def test_a_throttle_pauses_every_lane_not_just_the_one_that_saw_it() -> None:
         f"lane B fired during lane A's backoff: {calls}. A throttle has to "
         "hold every lane, or the run keeps spending quota while refused."
     )
+def test_every_request_defeats_the_browser_cache() -> None:
+    """A by-title read can otherwise answer with a list that no longer exists.
+
+    MEASURED 2026-09-13, revision c9c55b1f, `transport.cache.id-select-after-recreate`
+    and `transport.cache.shape-select-after-recreate` in
+    list-identity-cache-probe.js: after a list is hard-deleted and another
+    created under the same title, which is what a rollback followed by a
+    redeploy does, BOTH by-title reads answered with the dead list's Id, under
+    `Cache-Control: private, max-age=0` and `ETag: "1"`. The enumeration and a
+    unique-parameter read both answered the live one, and the same run with
+    the browser's cache disabled answered fresh on every row, which is what
+    puts it in the browser rather than in SharePoint.
+
+    This is a safety defect rather than an inconvenience. Two reads that go
+    stale together AGREE with each other, so the ownership guard passes while
+    naming an object the run never saw, which is the one thing that guard
+    exists to prevent. It reached us the loud way instead: the ownership
+    survey and the filter-editor check ask by different URLs, so they are
+    separate cache entries filled at different times, and Phase 3.1 reported
+    the list changing identity mid-phase.
+
+    `cache: 'no-store'` because it is the only one of the three that neither
+    reads the cache nor writes it, so a read cannot be answered from an entry
+    and cannot leave one for a later read either. All three were measured
+    fresh (`transport.cache.remedy-no-store`, `remedy-no-cache-header`,
+    `remedy-reload`), so this picks the strongest rather than the only one
+    that works.
+    """
+    result = _run_transport(
+        {GOOD_URL: [{"status": 200}]},
+        f"""
+        await fetchWithRetry({json.dumps(GOOD_URL)}, {{}});
+        await fetchWithRetry({json.dumps(GOOD_URL)}, {{ method: 'POST', body: 'x' }});
+        await fetchWithRetry({json.dumps(GOOD_URL)});
+        return {{ inits }};
+        """,
+    )
+    assert [init["cache"] for init in result["inits"]] == ["no-store"] * 3, (
+        "a request went out able to be answered from the browser cache"
+    )
+    # The caller's own options survive it: no-store is added, never swapped in.
+    assert result["inits"][1]["method"] == "POST"
+    assert result["inits"][1]["body"] == "x"
+
+
+def test_a_caller_cannot_opt_back_into_the_cache() -> None:
+    """The directive is applied after the caller's options, not before.
+
+    Spread the other way round, one caller passing `cache` for its own reason
+    would silently re-enable the stale read for that request, and nothing
+    downstream could see it.
+    """
+    result = _run_transport(
+        {GOOD_URL: [{"status": 200}]},
+        f"""
+        await fetchWithRetry({json.dumps(GOOD_URL)}, {{ cache: 'force-cache' }});
+        return {{ inits }};
+        """,
+    )
+    assert result["inits"][0]["cache"] == "no-store"

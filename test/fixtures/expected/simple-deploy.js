@@ -309,11 +309,32 @@
   // there is nothing to honour and the backoff is all there is. Waiting four
   // minutes on a paste is cheap; a deploy abandoned mid-Phase-4 leaves
   // columns unsealed and needs the whole run again.
+  //
+  // `cache: 'no-store'` on every request, applied AFTER the caller's options
+  // so no caller can opt back in. A by-title list read can otherwise answer
+  // with a list that no longer exists. MEASURED 2026-09-13, revision
+  // c9c55b1f, `transport.cache.id-select-after-recreate` and
+  // `transport.cache.shape-select-after-recreate` in
+  // list-identity-cache-probe.js: after a hard delete and a create under the
+  // same title, which is a rollback then a redeploy, both by-title reads
+  // answered the DEAD list, under `Cache-Control: private, max-age=0` and
+  // `ETag: "1"`. The enumeration and a unique-parameter read answered the
+  // live one, and the same run with the browser's cache disabled was fresh
+  // throughout, so the entry is the browser's.
+  //
+  // Two reads that go stale TOGETHER agree with each other, and then an
+  // ownership guard passes while naming an object the run never saw. That is
+  // the failure this whole transport is guarded for, so the directive goes
+  // here rather than at the call sites that happen to know about it today.
+  // All three candidates measured fresh (`remedy-no-store`,
+  // `remedy-no-cache-header`, `remedy-reload`); no-store is the one that
+  // neither reads an entry nor leaves one.
   async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
+    const init = { ...(opts || {}), cache: 'no-store' };
     for (let i = 0; ; i++) {
       await passThrottleGate();
-      const r = await fetch(url, opts);
+      const r = await fetch(url, init);
       requestCount += 1;
       if (isThrottled(r) && i < attempts) {
         const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);
@@ -2113,6 +2134,7 @@
   "seed_items": [],
   "views": [
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "\u003cWhere\u003e\u003cAnd\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003cOr\u003e\u003cIsNotNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNotNull\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNull\u003e\u003c/Or\u003e\u003c/And\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
@@ -2132,6 +2154,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -2156,6 +2179,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -2180,6 +2204,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cAnd\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003cOr\u003e\u003cIsNotNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNotNull\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNull\u003e\u003c/Or\u003e\u003c/And\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
@@ -2199,6 +2224,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -2566,11 +2592,19 @@
   }
 
   function declaredFieldsForList(list) {
-    const titleField = syntheticTitleField(list);
+    // No title_patch means this declaration says nothing about Title, so
+    // there is no declared column here to check or reconcile. That is a
+    // document library whose Title carries no display rename: its built-in
+    // Title reads Sealed and refuses every write (MEASURED 2026-09-13), so
+    // the generator emits no patch for it. Every other consumer of
+    // syntheticTitleField already guards on the same fact; this one is
+    // reached only once the list EXISTS, which is why a first provision
+    // never found it.
+    const titleField = list.title_patch ? [syntheticTitleField(list)] : [];
     const deferred = SCHEMA.phase2_lookups
       .filter(lookup => lookup.list === list.title)
       .map(lookup => lookup.field);
-    return [titleField, ...list.fields_phase1, ...deferred];
+    return [...titleField, ...list.fields_phase1, ...deferred];
   }
 
   // A property that could not be compared is not a difference, and printing it
@@ -6189,6 +6223,24 @@
       const halfMigrated = listedViews.find(
         (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
       ) || null;
+      // The one view that may adopt a page it did not create. A library ships
+      // a built-in view on AllItems.aspx under a title of its own, so the
+      // matchers above read it as foreign and the create beside it is
+      // suffixed, which the URL drift gate then fails closed. MEASURED
+      // 2026-09-13 in library-builtin-view-probe.js: a bare library answers
+      // 'All Documents' on that URL (`library.view.builtin-occupies-allitems`)
+      // and a second view created under the slug is minted AllItems1.aspx
+      // (`library.view.create-allitems-title-on-library`), so nothing else can
+      // ever hold it. The generator sets this flag on a library's generated
+      // All Items and on no other view, so the foreign-view guard still stands
+      // everywhere a declared view could otherwise take over somebody's page.
+      if (!existing && view.adopts_builtin_view) {
+        const builtin = listedViews.find((v) => urlBasename(v) === desiredBasename) || null;
+        if (builtin) {
+          existing = builtin;
+          log('INFO', `[Phase 3.1] Adopting the built-in view '${builtin.Title}' on '${view.list}' as '${view.title}'.`);
+        }
+      }
       if (!existing) {
         if (halfMigrated) {
           log('INFO', `[Phase 3.1] Adopting half-migrated view '${view.url_slug}' on '${view.list}' as '${view.title}'.`);

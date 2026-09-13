@@ -953,6 +953,17 @@ def build_schema_json(
                 # The .aspx name is fixed at creation: create under the slug,
                 # rename Title to the declared display afterwards.
                 "url_slug": view_url_slug(view.title),
+                # A library ships a built-in view on AllItems.aspx that is NOT
+                # titled All Items, so the view phase's title matcher reads it
+                # as foreign and the create beside it is suffixed.
+                # MEASURED 2026-09-13, `library.view.builtin-occupies-allitems`
+                # and `library.view.create-allitems-title-on-library` in
+                # library-builtin-view-probe.js: a bare library's view on that
+                # URL reads 'All Documents', and a second view created under
+                # the slug is minted AllItems1.aspx. So that URL can only ever
+                # hold the built-in view, which is what makes adopting whatever
+                # sits on it safe here and nowhere else.
+                "adopts_builtin_view": view is all_items and entity.is_library,
             })
 
     # === Permissions (R5) ===

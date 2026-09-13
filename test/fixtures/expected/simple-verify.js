@@ -207,11 +207,32 @@
   // there is nothing to honour and the backoff is all there is. Waiting four
   // minutes on a paste is cheap; a deploy abandoned mid-Phase-4 leaves
   // columns unsealed and needs the whole run again.
+  //
+  // `cache: 'no-store'` on every request, applied AFTER the caller's options
+  // so no caller can opt back in. A by-title list read can otherwise answer
+  // with a list that no longer exists. MEASURED 2026-09-13, revision
+  // c9c55b1f, `transport.cache.id-select-after-recreate` and
+  // `transport.cache.shape-select-after-recreate` in
+  // list-identity-cache-probe.js: after a hard delete and a create under the
+  // same title, which is a rollback then a redeploy, both by-title reads
+  // answered the DEAD list, under `Cache-Control: private, max-age=0` and
+  // `ETag: "1"`. The enumeration and a unique-parameter read answered the
+  // live one, and the same run with the browser's cache disabled was fresh
+  // throughout, so the entry is the browser's.
+  //
+  // Two reads that go stale TOGETHER agree with each other, and then an
+  // ownership guard passes while naming an object the run never saw. That is
+  // the failure this whole transport is guarded for, so the directive goes
+  // here rather than at the call sites that happen to know about it today.
+  // All three candidates measured fresh (`remedy-no-store`,
+  // `remedy-no-cache-header`, `remedy-reload`); no-store is the one that
+  // neither reads an entry nor leaves one.
   async function fetchWithRetry(url, opts, attempts = 8) {
     const t0 = Date.now();
+    const init = { ...(opts || {}), cache: 'no-store' };
     for (let i = 0; ; i++) {
       await passThrottleGate();
-      const r = await fetch(url, opts);
+      const r = await fetch(url, init);
       requestCount += 1;
       if (isThrottled(r) && i < attempts) {
         const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);

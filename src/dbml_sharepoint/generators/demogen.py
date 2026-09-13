@@ -39,6 +39,15 @@ _TODAY_OFFSET = TODAY_SENTINEL
 
 _DATE_TYPES = {"date", "datetime"}
 
+#: The one column type whose stored value is not the value it was given. A
+#: Note with RichText true HTML-encodes on the way in. MEASURED 2026-09-13,
+#: `text.item-value.rich-note-roundtrip` and `text.item-value.rich-note-colon`
+#: in item-text-roundtrip-probe.js. `longtext` (RichText false) and `nvarchar`
+#: were measured in the same run returning the bytes they were given, so this
+#: is a property of RichText rather than of the transport, and the set stays
+#: at one member until something measures another.
+_ENCODED_ON_STORE = {"richtext"}
+
 
 def _field_plan(
     col_type: str | None, name: str, value: Any, *, is_ref: bool = False,
@@ -143,6 +152,14 @@ def _field_plan(
                 "kind": "date_offset",
                 "value": -offset if sign == "-" else offset,
             }
+    # `encoded_on_store` travels with the plan rather than being re-derived in
+    # the script: demo.js sees field names and values, never DBML types, and a
+    # second reader of the type language is how the two come to disagree.
+    if element_type(col_type or "") in _ENCODED_ON_STORE:
+        return {
+            "name": name, "kind": "literal", "value": value,
+            "encoded_on_store": True,
+        }
     return {"name": name, "kind": "literal", "value": value}
 
 
