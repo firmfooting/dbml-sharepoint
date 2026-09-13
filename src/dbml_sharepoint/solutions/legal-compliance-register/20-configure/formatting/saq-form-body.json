@@ -2,7 +2,7 @@
   "sections": [
     {
       "displayname": "The SAQ",
-      "fields": ["Topic", "ItemType", "PeriodYear", "Quarter", "Division", "DueDate", "Title"]
+      "fields": ["FileLeafRef", "Topic", "ItemType", "PeriodYear", "Quarter", "Division", "DueDate", "Title"]
     },
     {
       "displayname": "Complete it",

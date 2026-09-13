@@ -9608,6 +9608,75 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-header-token-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library carrying a single uploaded text file, and a form header set on its document content type listing one labelled line per candidate column token"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.form.header-token-battery-stored",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "visible-findings",
+          "surface": "library",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "library.form.header-token-battery-renders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.form.header-token-battery-stored"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "file-header",
+              "page": "uploaded file details",
+              "assertions": [
+                "rendered header visible",
+                "one labelled line per candidate token",
+                "a label standing alone marks a token that did not resolve"
+              ]
+            }
+          ],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.form.header-token-battery-stored"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
     }
   ]
 }
