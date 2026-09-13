@@ -97,7 +97,7 @@ from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
-from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
 from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import Table
@@ -184,10 +184,13 @@ def all_items_rendered(
     table: Table,
     cross_site_cols: AbstractSet[str],
     projected_cols: AbstractSet[str] = frozenset(),
+    kind: str = "List",
 ) -> set[str]:
     """Every column the generated `All Items` view renders, before hiding.
 
-    `rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
+    `rendered_columns` plus `Title` plus the system columns the container's
+    kind renders: the five every list has, and `FileLeafRef` on a document
+    library, which the generator leads the library's recovery view with. The
     `{"Title"}` union is not redundant padding: a DBML table need not declare
     its own `Title` column at all, because SharePoint's base-template `Title` exists
     on every list regardless, and `jsgen.py` writes it into `All Items`
@@ -210,7 +213,7 @@ def all_items_rendered(
     """
     return (
         rendered_columns(table, set(cross_site_cols), set(projected_cols))
-        | {"Title"} | SYSTEM_COLUMNS
+        | {"Title"} | system_columns_for(kind)
     )
 
 
@@ -238,7 +241,7 @@ def all_items_joining_fields(
     carries ONE equivalence test pinning the two together; if that test goes,
     so does the guarantee.
     """
-    rendered = all_items_rendered(table, cross_site_cols, projected_cols)
+    rendered = all_items_rendered(table, cross_site_cols, projected_cols, entity.kind)
     bearing = join_bearing_columns(table, cross_site_cols)
     hidden = all_items_hidden(entity)
     return joining_fields(rendered - hidden, bearing)

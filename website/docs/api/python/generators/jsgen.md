@@ -21,6 +21,12 @@ def generate_deploy_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: d
 UNMANAGED = '__dbmlsp_unmanaged__'
 ```
 
+### `SCOPE_RECURSIVE`
+
+```python
+SCOPE_RECURSIVE = 1
+```
+
 ### `build_schema_json`
 
 ```python

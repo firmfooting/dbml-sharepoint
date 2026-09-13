@@ -1073,12 +1073,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         at_hide = Location(
             Section.ENTITIES, entity=entity_name, sub="hide_from_all_items",
         )
-        # The kind guard mirrors the `entity.kind != "DocumentLibrary"` guard in
-        # generators/jsgen.py, which builds All Items for everything except a
-        # DocumentLibrary. Counting one here would
-        # refuse a schema over a view the generator never creates. An entity
-        # with no table is already reported by _structure; a second message
-        # would not help.
+        # An entity with no table is already reported by _structure; a second
+        # message would not help. A document library is NOT skipped: since #14
+        # closed, generators/jsgen.py builds All Items for a library too,
+        # leading with FileLeafRef and flattening the folders, and counting it
+        # here is what keeps the validator and the generator agreeing.
         #
         # But a hide_from_all_items key on an entity this loop SKIPS must still
         # be refused, or the loop silently accepts a key that can never do
@@ -1087,7 +1086,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # is answered here, BEFORE the continue: there is no generated view yet
         # for `all_items_joining_fields` to measure, so nothing downstream
         # could ever tell the key was honoured.
-        if table is None or entity.kind == "DocumentLibrary":
+        if table is None:
             for col_name in entity.hide_from_all_items:
                 findings.append(Finding(
                     FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
@@ -1113,7 +1112,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         # undetected; see `all_items_rendered`'s docstring in joins.py and
         # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
         # test/test_validator_joins.py.
-        rendered = all_items_rendered(table, xcols, vc.projected_columns(entity_name))
+        rendered = all_items_rendered(
+            table, xcols, vc.projected_columns(entity_name), entity.kind,
+        )
         bearing = join_bearing_columns(table, xcols)
         shown_joins = all_items_joining_fields(
             table, entity, xcols, vc.projected_columns(entity_name),
@@ -1134,8 +1135,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # would report as a typo and the author would go looking for one.
         #
         # `hide_ctx` is ALREADY BOUND at the top of this loop, above the
-        # `continue` that skips a DocumentLibrary or a table-less entity. The
-        # skipped case refuses the key there. Do not re-assign it here.
+        # `continue` that skips a table-less entity. The skipped case refuses
+        # the key there. Do not re-assign it here.
         for col_name in entity.hide_from_all_items:
             if col_name in xcols:
                 findings.append(Finding(

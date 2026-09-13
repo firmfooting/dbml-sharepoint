@@ -373,49 +373,38 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling() -> None:
     assert "Editor" not in _named(f.message)
     assert "hide_from_all_items" in f.message
 
-def test_a_document_library_gets_no_all_items_join_finding() -> None:
-    """The `kind == "DocumentLibrary"` half of the loop guard, PAIRED.
+def test_a_document_library_counts_its_all_items_joins_like_a_list() -> None:
+    """Since #14 closed, `jsgen.py` builds `All Items` for a library too,
+    leading with FileLeafRef, so the validator counts it the same way. The
+    two containers are asserted together so a guard that starts skipping
+    one of them again turns this red rather than reopening the
+    validator/generator disagreement this module exists to avoid."""
+    for kind in ("DocumentLibrary", "List"):
+        schema, bundle = _join_inputs(_persons(13), kind=kind)
+        found = _join_findings(schema, bundle, _all_items())
+        f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+        assert "15 join-bearing columns" in f.message, kind
 
-    `jsgen.py` builds `All Items` only under its `entity.kind !=
-    "DocumentLibrary"` guard, so counting one here would refuse a schema over a view
-    the generator never creates, the exact validator/generator disagreement
-    this module exists to avoid. Deleting the clause must turn a test red, and
-    only the pair does that: the count alone proves nothing, because the same
-    13 columns are what the List case is asserted on.
-
-    `kind: DocumentLibrary` is separately a `DOCUMENT_LIBRARY_UNSUPPORTED` error
-    from `_structure.py`,
-    so this build is already red for another reason. That is not a licence to
-    skip the guard. It is why the guard is easy to delete unnoticed."""
-    schema, bundle = _join_inputs(_persons(13), kind="DocumentLibrary")
-    assert _join_findings(schema, bundle, _all_items()) == []
-
-    # The pair. The identical schema declared `kind: List` DOES error, so the
-    # empty result above is the guard and not an accident of the fixture.
-    as_list, as_list_bundle = _join_inputs(_persons(13))
-    found = _join_findings(as_list, as_list_bundle, _all_items())
-    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
-    assert "15 join-bearing columns" in f.message
-
-def test_hide_from_all_items_on_a_document_library_is_refused() -> None:
-    """The refusal above the loop's `continue`, exercised for the first time in
-    this file. No other test in this section supplies `hide_from_all_items` on
-    an entity the loop skips, so without this the branch that answers it has
-    no red/green cycle anywhere in the suite. `_join_findings` would not even
-    see it, since it carries a different code entirely.
-
-    Task 5's own covering test for this branch is already green at its
-    fail-first gate, by design, because Task 4 answers this key before Task 5
-    exists. That is documented there, not a gap here.
-
-    Pairs with `test_a_document_library_gets_no_all_items_join_finding` above:
-    that one catches deleting the loop's `continue`, this one catches deleting
-    the refusal that runs before it. Neither test alone covers the guard."""
+def test_hide_from_all_items_on_a_document_library_is_honoured() -> None:
+    """A library has a generated All Items now, so the key does real work
+    there: hiding Author takes one join off the count, exactly as on a
+    list, and the key is not refused."""
     schema, bundle = _join_inputs(
-        [], kind="DocumentLibrary", hide_from_all_items=("Author",),
+        _persons(11), kind="DocumentLibrary", hide_from_all_items=("Author", "Editor"),
     )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW)
+    none_of(findings, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+
+def test_hide_from_all_items_on_a_table_less_entity_is_refused() -> None:
+    """The refusal above the loop's `continue`: an entity the mapping declares
+    but the schema has no table for gets no generated view, so the key would
+    silently do nothing. `_structure` reports the missing table; this reports
+    the key beside it."""
+    _schema, bundle = _join_inputs([], hide_from_all_items=("Author",))
+    orphan = make_schema()
     only(
-        validate_against_mapping(schema, bundle),
+        validate_against_mapping(orphan, bundle),
         FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
     )
 
