@@ -85,6 +85,13 @@
     for (const { fieldDefault, target } of defaultTargets) {
       try {
         const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+        // A formula-only column reads DefaultValue back null, so this
+        // comparison is about the value and not about the formula beside
+        // it (MEASURED 2026-09-13,
+        // `field.default-formula.default-value-beside-formula-on-create`
+        // and `field.default-formula.default-value-after-item-create` in
+        // default-formula-readback-probe.js: null on create, and still
+        // null after an item create had filled the column once).
         if (!actual
             || normalizeDefaultValue(actual.DefaultValue)
                !== normalizeDefaultValue(fieldDefault.default_value)) {

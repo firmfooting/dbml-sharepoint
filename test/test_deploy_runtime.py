@@ -3835,6 +3835,44 @@ def test_a_hand_edited_default_formula_is_reverted_to_the_declaration(tmp_path: 
     assert summary["errors"] == []
 
 
+# The same column with a DefaultValue somebody set by hand. The declaration
+# carries a formula and no value, so the revert clears the value.
+_HAND_SET_VALUE_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    {
+      const due = fieldShape('APP_Escalation', 'Due', {
+        FieldTypeKind: 4, DisplayFormat: 0, Required: false, Description: '',
+        DefaultFormula: '=TODAY()', DefaultValue: '2030-01-01',
+      });
+      due.Id = '33333335-3333-3333-3333-333333333333';
+      created['APP_Escalation Due'] = due;
+    }
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_reverting_a_hand_set_value_resends_the_declared_formula(tmp_path: Path) -> None:
+    """MEASURED 2026-09-13, `field.default-formula.value-merge-null-keeps-formula`
+    in default-formula-readback-probe.js: a MERGE carrying DefaultValue cleared
+    the value and left DefaultFormula null. So a revert that sent DefaultValue
+    alone would destroy the declared formula and take two pastes to converge.
+    The patch has to carry both.
+    """
+    summary, calls, output = _run_capturing_calls(
+        _HAND_SET_VALUE_HARNESS, _default_formula_deploy_js(tmp_path),
+    )
+    reverts = [
+        json.loads(call["body"])
+        for call in _field_writes(calls, "APP_Escalation")
+        if "getbyinternalnameortitle('Due')" in call["url"]
+        and call["body"] and "DefaultValue" in call["body"]
+    ]
+    assert reverts, calls
+    assert all(b["DefaultValue"] is None for b in reverts), reverts
+    assert [b.get("DefaultFormula") for b in reverts] == ["=TODAY()"] * len(reverts), reverts
+    assert "readback did not match" not in output, output[-3000:]
+    assert summary["errors"] == []
+
+
 def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 

@@ -2074,7 +2074,7 @@ def test_mutable_drift_errors_carry_declared_and_readback_values() -> None:
     formula loop burned three paste round-trips on 'Formula' with no
     values)."""
     js = _generate_simple_js()
-    assert "const drift = (name, declaredValue, actualValue)" in js
+    assert "const drift = (name, declaredValue, actualValue, note)" in js
     assert "declared ${JSON.stringify(declaredValue)}" in js
     assert "readback ${JSON.stringify(actualValue)}" in js
     assert "did not retain declared mutable setting(s)" in js
@@ -4444,7 +4444,12 @@ def test_the_deploy_reconciles_and_reads_back_the_default_formula() -> None:
     assert "defaultFormula: normalizeDefaultFormula(field.body.DefaultFormula)" in js
     assert "normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula" in js
     assert "patchBody.DefaultFormula = field.body.DefaultFormula" in js
-    assert "drift('DefaultFormula'" in js
+    assert "drift(\n        'DefaultFormula'" in js
+    # MEASURED 2026-09-13: clearing a formula is accepted and does nothing,
+    # so the surviving drift has to name the manual step.
+    assert "remove it in the column settings page" in js
+    # The same run: a MERGE carrying DefaultValue drops the formula beside it.
+    assert "if ('DefaultValue' in patchBody && desired.defaultFormula !== null)" in js
     assert "defaultBody.DefaultFormula = entry.fieldDefault.default_formula" in js
     assert "DefaultFormula readback did not match the declared formula" in js
     assert "shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string'" in js

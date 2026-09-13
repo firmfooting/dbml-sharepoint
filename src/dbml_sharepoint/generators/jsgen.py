@@ -1108,6 +1108,10 @@ def _field_body(
     # library-guards-probe.js (c445a55c): sent this way on SP.FieldNumber and
     # SP.FieldChoice, it read back as sent. A date-only column was filled
     # through an item create (`field.date.dynamic-default-rest-fill`).
+    # DefaultValue reads back null beside it, which is what the defaults
+    # phase and the reconcile compare against (MEASURED 2026-09-13,
+    # `field.default-formula.default-value-beside-formula-on-create` in
+    # default-formula-readback-probe.js).
     default_formula = (default_formulas or {}).get(sp.name)
     if default_formula is not None:
         body["DefaultFormula"] = default_formula

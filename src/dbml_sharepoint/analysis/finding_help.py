@@ -56,6 +56,25 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "default_formula_function_unmeasured": (
+        "Retired 2026-09-13. It refused DAY, ROUNDDOWN, MOD, TEXT, IF, AND "
+        "and OR in a default formula, which had been admitted on the "
+        "strength of the calculated column grammar rather than measured. "
+        "`test/manual/default-formula-functions-probe.js` gave each its own "
+        "column on a live site the same day and every one stored as sent and "
+        "filled on a bare item create, so all seven joined the allowed set "
+        "and nothing was left pending. A function nobody has measured is "
+        "still refused, by `default_formula_function_unsupported`."
+    ),
+    "default_formula_type_unmeasured": (
+        "Retired 2026-09-13. It refused a default formula on a `datetime` or "
+        "`nvarchar` column while every measurement had used a date-only "
+        "column, a Number or a Choice. The same functions probe measured a "
+        "Text column and a DateTime column at DisplayFormat 1, both of which "
+        "stored the formula and filled, so both types joined the accepted "
+        "set. A type nothing plans to measure is still refused, by "
+        "`default_formula_type_unsupported`."
+    ),
     "document_library_unsupported": (
         "Retired 2026-09-13. It refused `kind: DocumentLibrary` outright "
         "while the deploy had no file-identity vocabulary, no folder step "
@@ -480,19 +499,11 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the built-in Title, a calculated, multi-value, Person, Hyperlink or "
         "Lookup column, or a cross-site reference column."
     ),
-    FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED: (
-        "A default formula calls DAY, ROUNDDOWN, MOD, TEXT, IF, AND or OR. "
-        "The calculated column grammar documents each, and no live probe has "
-        "evaluated one in a default formula yet, so the declaration is "
-        "refused until `default-formula-functions-probe.js` measures it, "
-        "not because the function is known to fail. Measured so far: TODAY, "
-        "YEAR, MONTH and ROUNDUP."
-    ),
     FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED: (
         "A default formula calls a function outside the allowed set (TODAY, "
-        "YEAR, MONTH and ROUNDUP, with the `&` operator; DAY, ROUNDDOWN, MOD, "
-        "TEXT, IF, AND and OR are refused separately until a probe measures "
-        "them). Names are matched as spelled; nothing has measured what "
+        "YEAR, MONTH, DAY, ROUNDUP, ROUNDDOWN, MOD, TEXT, IF, AND, OR, with "
+        "the `&` operator), each of which filled a column on a live site on "
+        "2026-09-13. Names are matched as spelled; nothing has measured what "
         "SharePoint does with any other."
     ),
     FindingCode.DEFAULT_FORMULA_MISSING_EQUALS: (
@@ -503,18 +514,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the row exists, so there is no column to read; compute from TODAY() "
         "and constants."
     ),
-    FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED: (
-        "A default formula is declared on a column type no live probe has "
-        "measured yet (`datetime`, `nvarchar`). Every date measurement used a "
-        "date-only column and the 2026-09-13 run of library-guards-probe.js "
-        "measured Number and Choice, so both wait for "
-        "`default-formula-functions-probe.js`; the declaration is refused "
-        "until then, not because the type is known to fail."
-    ),
     FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED: (
         "A default formula is declared on a column type it is not supported "
-        "on. Supported: `date`, `int`, `number` and a single-value enum, each "
-        "measured on a live site (date through "
+        "on. Supported: `date`, `datetime`, `int`, `number`, `nvarchar` and a "
+        "single-value enum, each measured on a live site (date through "
         "`field.date.dynamic-default-rest-fill`; the rest through "
         "library-guards-probe.js c445a55c on 2026-09-13)."
     ),

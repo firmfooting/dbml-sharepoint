@@ -3338,6 +3338,16 @@
         // canonical form is for comparing, and SharePoint stores what it is sent.
         patchBody.DefaultFormula = field.body.DefaultFormula == null ? null : field.body.DefaultFormula;
       }
+      // MEASURED 2026-09-13,
+      // `field.default-formula.value-merge-null-keeps-formula` in
+      // default-formula-readback-probe.js: a MERGE carrying DefaultValue
+      // answered HTTP 204, cleared the value AND left DefaultFormula null.
+      // So reverting a hand-set value on a declared-formula column would
+      // destroy the formula and need a second paste to put it back. Both
+      // ride together whenever either moves.
+      if ('DefaultValue' in patchBody && desired.defaultFormula !== null) {
+        patchBody.DefaultFormula = field.body.DefaultFormula;
+      }
       if (field.custom_formatter != null
           && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
         patchBody.CustomFormatter = field.custom_formatter;
@@ -3355,8 +3365,9 @@
     // reconcile is diagnosable from the console log alone, without another
     // paste round-trip.
     const drifted = [];
-    const drift = (name, declaredValue, actualValue) => drifted.push(
-      `${name} (declared ${JSON.stringify(declaredValue)}; readback ${JSON.stringify(actualValue)})`,
+    const drift = (name, declaredValue, actualValue, note) => drifted.push(
+      `${name} (declared ${JSON.stringify(declaredValue)}; readback ${JSON.stringify(actualValue)})`
+      + (note ? `: ${note}` : ''),
     );
     if (actual.Title !== desiredTitle) drift('Title', desiredTitle, actual.Title);
     if (normalizeDescription(actual.Description) !== desired.description) drift('Description', desired.description, actual.Description);
@@ -3364,7 +3375,21 @@
     if (actual.EnforceUniqueValues !== desired.enforceUniqueValues) drift('EnforceUniqueValues', desired.enforceUniqueValues, actual.EnforceUniqueValues);
     if (actual.Indexed !== desired.indexed) drift('Indexed', desired.indexed, actual.Indexed);
     if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) drift('DefaultValue', desired.defaultValue, actual.DefaultValue);
-    if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) drift('DefaultFormula', field.body.DefaultFormula, actual.DefaultFormula);
+    if (normalizeDefaultFormula(actual.DefaultFormula) !== desired.defaultFormula) {
+      // MEASURED 2026-09-13, `field.default-formula.formula-merge-null-clears`
+      // in default-formula-readback-probe.js: MERGE DefaultFormula:null
+      // answered HTTP 204 and the formula still read back. A formula
+      // nothing declares cannot be removed from here at all, so the
+      // operator gets the manual step rather than the same bare line
+      // on every paste.
+      drift(
+        'DefaultFormula', field.body.DefaultFormula, actual.DefaultFormula,
+        desired.defaultFormula === null
+          ? 'SharePoint accepts clearing a default formula and keeps it, measured '
+            + '2026-09-13; remove it in the column settings page'
+          : null,
+      );
+    }
     if (field.custom_formatter != null
         && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
       drift('CustomFormatter', field.custom_formatter, actual.CustomFormatter);
@@ -5921,6 +5946,13 @@
     for (const { fieldDefault, target } of defaultTargets) {
       try {
         const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+        // A formula-only column reads DefaultValue back null, so this
+        // comparison is about the value and not about the formula beside
+        // it (MEASURED 2026-09-13,
+        // `field.default-formula.default-value-beside-formula-on-create`
+        // and `field.default-formula.default-value-after-item-create` in
+        // default-formula-readback-probe.js: null on create, and still
+        // null after an item create had filled the column once).
         if (!actual
             || normalizeDefaultValue(actual.DefaultValue)
                !== normalizeDefaultValue(fieldDefault.default_value)) {

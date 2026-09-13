@@ -527,8 +527,11 @@ class FindingCode(StrEnum):
 
     # --- checks/_default_formulas.py: a DefaultFormula per column -----------
     # One rule per way a declaration can be wrong, so the message can say
-    # what to change. A type or a function is refused in one of two
-    # strengths: outright, or until a named probe measures it.
+    # what to change. Two of these were the pending pair, refused until a
+    # named probe measured a type or a function; the 2026-09-13 run of
+    # default-formula-functions-probe.js emptied both sets and they are
+    # retired in finding_help.py. The shape is what to rebuild if a later
+    # type or function is worth admitting and nothing has measured it.
     DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE = (
         "default_formula_beside_a_default_value", "error"
     )
@@ -538,11 +541,9 @@ class FindingCode(StrEnum):
     DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED = (
         "default_formula_column_kind_unsupported", "error"
     )
-    DEFAULT_FORMULA_FUNCTION_UNMEASURED = "default_formula_function_unmeasured", "error"
     DEFAULT_FORMULA_FUNCTION_UNSUPPORTED = "default_formula_function_unsupported", "error"
     DEFAULT_FORMULA_MISSING_EQUALS = "default_formula_missing_equals", "error"
     DEFAULT_FORMULA_REFERENCES_A_COLUMN = "default_formula_references_a_column", "error"
-    DEFAULT_FORMULA_TYPE_UNMEASURED = "default_formula_type_unmeasured", "error"
     DEFAULT_FORMULA_TYPE_UNSUPPORTED = "default_formula_type_unsupported", "error"
     DEFAULT_FORMULA_UNKNOWN_COLUMN = "default_formula_unknown_column", "error"
 

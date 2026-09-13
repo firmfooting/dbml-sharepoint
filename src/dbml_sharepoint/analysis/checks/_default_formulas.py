@@ -43,36 +43,39 @@ ENUM = "<enum>"
 #: `field.default-formula.choice-property-reads-back`), and an item POST
 #: carrying only Title read back the computed year and quarter
 #: (`field.default-formula.number-fills-on-item-create`,
-#: `field.default-formula.choice-fills-on-item-create`).
-DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"date", "int", "number", ENUM})
-
-#: Types a probe is expected to admit and none has measured yet. Refused
-#: today with a finding that says the measurement is pending, rather than
-#: that the type is wrong. Every date measurement used DisplayFormat 0, so
-#: `datetime` (DisplayFormat 1) waits beside `nvarchar`, which the
-#: 2026-09-13 run did not cover; both are rows of
-#: test/manual/default-formula-functions-probe.js.
-PENDING_DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({"datetime", "nvarchar"})
-
-#: The functions a default formula may call, in exactly these spellings.
-#: MEASURED 2026-09-13 by library-guards-probe.js (c445a55c): =YEAR(TODAY())
-#: filled a Number column and ="Q"&ROUNDUP(MONTH(TODAY())/3,0) filled a
-#: Choice column on a bare item create
-#: (`field.default-formula.number-fills-on-item-create`,
-#: `field.default-formula.choice-fills-on-item-create`).
-DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({"TODAY", "YEAR", "MONTH", "ROUNDUP"})
-
-#: Functions the calculated column grammar documents and no live probe has
-#: called in a default formula yet. That grammar is evidence about a
-#: calculated column, not about a formula SharePoint evaluates at item
-#: create, and a formula that saves and fills nothing is the silent class
-#: this project exists to close. Refused as pending, one row each in
-#: test/manual/default-formula-functions-probe.js. Any other name, a
-#: lower-case spelling included, is refused outright.
-PENDING_DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({
-    "DAY", "ROUNDDOWN", "MOD", "TEXT", "IF", "AND", "OR",
+#: `field.default-formula.choice-fills-on-item-create`). `nvarchar` and
+#: `datetime` joined them on the same date through
+#: test/manual/default-formula-functions-probe.js: a Text column stored the
+#: formula as sent and filled on a bare item create
+#: (`field.default-formula.text-property-reads-back`,
+#: `field.default-formula.text-fills-on-item-create`), and a DateTime column
+#: at DisplayFormat 1 filled within a day of the browser clock
+#: (`field.default-formula.datetime-fills-on-item-create`).
+DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({
+    "date", "datetime", "int", "number", "nvarchar", ENUM,
 })
 
+#: The functions a default formula may call, in exactly these spellings. Any
+#: other name is refused, a lower-case one included, because nothing has
+#: measured what SharePoint does with it.
+#:
+#: TODAY, YEAR, MONTH and ROUNDUP were measured 2026-09-13 by
+#: library-guards-probe.js (c445a55c): =YEAR(TODAY()) filled a Number column
+#: and ="Q"&ROUNDUP(MONTH(TODAY())/3,0) filled a Choice column on a bare item
+#: create. The other seven were admitted once on the strength of the
+#: calculated column grammar, which is evidence about a calculated column and
+#: not about a formula SharePoint evaluates at item create, and were refused
+#: as pending until default-formula-functions-probe.js measured each on the
+#: same date: one column per function, every one stored as sent and filled on
+#: a bare item create (`field.default-formula.function-day-fills` and its six
+#: neighbours). The same run measured the two financial-year formulas the
+#: legal-compliance-register README offers
+#: (`field.default-formula.shipped-financial-year-fills`,
+#: `field.default-formula.shipped-financial-quarter-fills`).
+DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({
+    "TODAY", "YEAR", "MONTH", "DAY", "ROUNDUP", "ROUNDDOWN", "MOD", "TEXT",
+    "IF", "AND", "OR",
+})
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
@@ -133,13 +136,18 @@ def _one(
         ))
         return findings
     if col.default is not None:
-        # Nothing has measured which of the two SharePoint honours when a
-        # field carries both, so a column declares one or the other.
+        # MEASURED 2026-09-13, `field.default-formula.value-and-formula-
+        # both-on-create` and `...which-fills` in
+        # default-formula-readback-probe.js: a field created with both kept
+        # the formula, read DefaultValue back null, and filled from the
+        # formula. So declaring both does not fail, it discards the `default:`
+        # silently, which is the reason to refuse it here.
         findings.append(Finding(
             FindingCode.DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE,
             f"default_formulas.{table.name}.{name}: the column also declares "
-            f"`default: {col.default!r}` in the DBML. A column takes a default "
-            f"value or a default formula, not both; remove one.",
+            f"`default: {col.default!r}` in the DBML. SharePoint keeps the "
+            f"formula and drops the value, so the default would never be "
+            f"used; declare one or the other.",
             location=at,
         ))
     reason = _unsupported_kind(col, enum_names)
@@ -170,19 +178,7 @@ def _formula_text(at: Location, entity: str, name: str, formula: str) -> list[Fi
             f"constants instead.",
             location=at,
         ))
-    called = formula_function_names(formula)
-    pending = sorted(called & PENDING_DEFAULT_FORMULA_FUNCTIONS)
-    if pending:
-        findings.append(Finding(
-            FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED,
-            f"default_formulas.{entity}.{name}: the formula calls "
-            f"{', '.join(pending)}, which no live probe has evaluated in a "
-            f"default formula yet, so it is refused until "
-            f"default-formula-functions-probe.js measures it. Measured: "
-            f"{', '.join(sorted(DEFAULT_FORMULA_FUNCTIONS))}.",
-            location=at,
-        ))
-    unsupported = sorted(called - DEFAULT_FORMULA_FUNCTIONS - PENDING_DEFAULT_FORMULA_FUNCTIONS)
+    unsupported = sorted(formula_function_names(formula) - DEFAULT_FORMULA_FUNCTIONS)
     if unsupported:
         findings.append(Finding(
             FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
@@ -245,14 +241,6 @@ def _type(
             f"be a member of {col.type} at run time. A result the enum does not "
             f"list is stored as a literal the column does not offer, not "
             f"refused and not left blank.",
-            location=at,
-        )]
-    if type_class in PENDING_DEFAULT_FORMULA_TYPES:
-        return [Finding(
-            FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED,
-            f"default_formulas.{entity}.{col.name}: a default formula on a "
-            f"{col.type} column has not been measured on a live site yet, so "
-            f"it is refused until default-formula-functions-probe.js measures it.",
             location=at,
         )]
     return [Finding(

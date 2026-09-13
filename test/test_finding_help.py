@@ -24,8 +24,6 @@ from dbml_sharepoint.analysis.checks._default_formulas import (
     DEFAULT_FORMULA_FUNCTIONS,
     DEFAULT_FORMULA_TYPES,
     ENUM,
-    PENDING_DEFAULT_FORMULA_FUNCTIONS,
-    PENDING_DEFAULT_FORMULA_TYPES,
 )
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
@@ -116,15 +114,13 @@ def test_the_formula_target_entry_names_every_calculated_type() -> None:
 
 
 def test_the_default_formula_entries_name_every_type_and_function() -> None:
-    """Four entries restate a vocabulary the checker owns; hold each to it.
+    """Two entries restate a vocabulary the checker owns; hold each to it.
 
     Whole words, so DAY cannot pass on the strength of TODAY.
     """
     for code, names in (
         (FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED, DEFAULT_FORMULA_TYPES - {ENUM}),
-        (FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED, PENDING_DEFAULT_FORMULA_TYPES),
         (FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED, DEFAULT_FORMULA_FUNCTIONS),
-        (FindingCode.DEFAULT_FORMULA_FUNCTION_UNMEASURED, PENDING_DEFAULT_FORMULA_FUNCTIONS),
     ):
         text = FINDING_HELP[code]
         missing = sorted(n for n in names if not re.search(rf"\b{re.escape(n)}\b", text))

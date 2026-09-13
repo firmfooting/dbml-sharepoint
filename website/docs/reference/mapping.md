@@ -1519,28 +1519,41 @@ Accepted today, each measured on a live site:
   member at run time and the build cannot evaluate the clock. The same run
   showed what happens otherwise: a result outside the choice set is stored
   as a literal the column does not list, not refused and not left blank.
+- `nvarchar` and `datetime`, measured the same day by
+  `test/manual/default-formula-functions-probe.js`: a single-line Text column
+  stored the formula as sent and filled on a bare item create, and a DateTime
+  column at `DisplayFormat` 1 filled within a day of the browser clock.
 
-`datetime` and `nvarchar` are refused with `default_formula_type_unmeasured`:
-every date measurement used a date-only column, and the 2026-09-13 run
-measured Number and Choice and not Text, so both wait for
-`test/manual/default-formula-functions-probe.js`. The accepted set is one
-constant in `analysis/checks/_default_formulas.py`, widened by editing one
-line once the measurement lands. Every other type is refused
-(`default_formula_type_unsupported`), as is a formula on the built-in Title
-or on a calculated, multi-value, Person, Hyperlink, Lookup or cross-site
-reference column (`default_formula_column_kind_unsupported`).
+Every other type is refused (`default_formula_type_unsupported`), as is a
+formula on the built-in Title or on a calculated, multi-value, Person,
+Hyperlink, Lookup or cross-site reference column
+(`default_formula_column_kind_unsupported`). The accepted set is one constant
+in `analysis/checks/_default_formulas.py`, widened by editing one line once a
+measurement lands.
 
 The formula itself must start with `=`, may name no column (it runs before
 the row exists, so `[Created]` and `[Today]` alike are refused), and may call
-only `TODAY`, `YEAR`, `MONTH` and `ROUNDUP`, joined with `&` and the
-arithmetic operators: the four functions the 2026-09-13 run evaluated. `DAY`,
-`ROUNDDOWN`, `MOD`, `TEXT`, `IF`, `AND` and `OR` are refused with
-`default_formula_function_unmeasured` until the same functions probe has
-evaluated each in a default formula. The calculated column grammar documents
-them, which is evidence about a calculated column and not about a formula
-SharePoint runs at item create. Function names are matched as spelled;
-nothing has measured what SharePoint does with any other name, so `today()`
-is refused where `TODAY()` is accepted.
+only `TODAY`, `YEAR`, `MONTH`, `DAY`, `ROUNDUP`, `ROUNDDOWN`, `MOD`, `TEXT`,
+`IF`, `AND` and `OR`, joined with `&` and the arithmetic operators. Each of
+those filled a column on a bare item create in the 2026-09-13 functions run,
+one column per function. Names are matched as spelled; nothing has measured
+what SharePoint does with any other name, so `today()` is refused where
+`TODAY()` is accepted.
+
+A column declares a DBML `default:` or a default formula, never both. The
+same run measured what happens if it does: a field created carrying both kept
+the formula, read `DefaultValue` back null, and filled from the formula. The
+author's default is discarded without a word, which is why the build refuses
+the pair rather than picking one.
+
+:::note
+
+A default formula a site owner adds by hand cannot be removed by this tool.
+MEASURED 2026-09-13: a MERGE clearing `DefaultFormula` is accepted and the
+formula stays. The reconcile reports it on every paste and names the manual
+step, which is to clear the field in the column settings page.
+
+:::
 
 ## `lookup_projections`
 
