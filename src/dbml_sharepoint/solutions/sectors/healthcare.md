@@ -57,6 +57,7 @@ A SharePoint list never replaces a mandated system:
 | Fridge temps, trolley checks, cleaning rounds | routine-checks | Cold-chain evidence; kills the paper sheets |
 | Switchboard: code log, message book, key register | switchboard-log | The emergency-planning committee's evidence base |
 | NSQHS / aged-care standards evidence | compliance-obligations | One slice per standard, end-to-end |
+| Legal compliance SAQs issued by a compliance portal | legal-compliance-register | The portal is the statutory system of record; the library is the working record where named people complete and confirm each SAQ before a licence holder re-keys it, replacing the shared portal login |
 | Volunteers with police/WWCC discipline | volunteer-register | The expiry sweep is the control |
 | Grants and their acquittals | grants-register | Regional services live on these |
 | Consumer feedback (Std 2 partnering) | complaints-feedback | Statutory-scheme check first |
