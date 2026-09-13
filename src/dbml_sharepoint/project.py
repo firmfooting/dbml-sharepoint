@@ -11,7 +11,7 @@ contract -- 2 for misuse, 1 for a refused build -- and a second vocabulary
 for the same failures would have to be translated back at every call site.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, NoReturn
 from urllib.parse import urlparse, urlunparse
@@ -291,18 +291,19 @@ def validate_time_zone(time_zone: str) -> str:
 
 
 def missing_time_zone() -> typer.BadParameter:
-    """The refusal for a build that named no zone anywhere.
+    """The refusal for a run that named no zone anywhere.
 
     Not a typer-level required option, because `dbml-sharepoint.env` may
     supply it (`DBMLSP_TIME_ZONE`), so "required" here means "required
-    after the file has been read". A build that reached this far has been
+    after the file has been read". A run that reached this far has been
     told nothing about the site's zone, and the pack cannot convert a
-    timestamp by a zone it was never given.
+    timestamp by a zone it was never given. Shared by `build` and `report`,
+    which read the zone the same way.
     """
     return typer.BadParameter(
         f"--time-zone is required: the reporting pack converts every "
         f"timestamp by the site's time zone, and a zone is a fact about the "
-        f"site rather than the mapping, so the build has to be told. Pass "
+        f"site rather than the mapping, so it has to be given. Pass "
         f"--time-zone, or set {TIME_ZONE_KEY} in {ENV_FILENAME}. "
         f"{_HOW_TO_FIND_THE_ZONE}",
     )
@@ -567,6 +568,30 @@ def resolve_env_settings(
         resolved[CHANGE_LOG_LIST_PARAMETER],
         resolved[TIME_ZONE_PARAMETER],
         provenance,
+    )
+
+
+def resolve_env_time_zone(
+    env_file: Path | None, time_zone: str | None,
+) -> tuple[str | None, EnvProvenance]:
+    """The zone for a command that consumes the file's zone and nothing else.
+
+    `report` wants the precedence `build` applies -- a flag beats the file,
+    the file beats nothing said -- without inheriting the other five
+    settings, so this runs the one resolver and narrows the record to the
+    key it actually used. Reporting the rest would have a `report` run say
+    it applied an enterprise reader it never reads.
+    """
+    (
+        _reader, _log_list, _change_list, _log_site, _change_log,
+        resolved, provenance,
+    ) = resolve_env_settings(env_file, None, None, None, None, None, time_zone)
+    return resolved, replace(
+        provenance,
+        values=tuple(
+            value for value in provenance.values
+            if value.setting.parameter == TIME_ZONE_PARAMETER
+        ),
     )
 
 

@@ -2,23 +2,18 @@
 
 import datetime as dt
 from collections.abc import Callable
-from contextlib import suppress
-from difflib import get_close_matches
 from pathlib import Path
-from textwrap import wrap
 
 import typer
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
-from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
 )
-from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_GUIDE,
@@ -52,21 +47,23 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_columns_js,
     generate_protection_js,
 )
-from dbml_sharepoint.generators.reportgen import render_reporting
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
     TIME_ZONE_KEY,
 )
-from dbml_sharepoint.pipeline import execute_build, execute_extraction
+from dbml_sharepoint.pipeline import (
+    UnknownFindingCodeError,
+    execute_build,
+    execute_explain,
+    execute_extraction,
+    execute_report,
+    execute_validation,
+)
 from dbml_sharepoint.project import (
-    load_config,
     project_input,
-    require_known_site_role,
     resolve_env_file,
-    resolve_extension_or_refuse,
     validate_site_url,
-    validate_time_zone,
 )
 from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive
 
@@ -117,56 +114,6 @@ def new() -> None:
     """
     raise typer.Exit(code=run_wizard())
 
-
-# Includes the pre-normalisation names for the same reason `bundle`'s
-# _LEGACY_ARTIFACTS does: `report` clears its previous output so a query
-# for a list that has left the schema cannot outlive it, and a name this
-# command used to write is exactly that kind of survivor. Note the old
-# DATA-DICTIONARY.md spelling was unique to THIS command -- `build` has
-# always written reporting/data-dictionary.md -- which is the
-# inconsistency the rename closed.
-_REPORT_FILES = (
-    REPORT_GUIDE,
-    REPORT_DICTIONARY,
-    # Superseded names, newest first. `reporting.md` existed only briefly
-    # between the case normalisation and this rename, but "briefly" is not
-    # "never" for anyone tracking main.
-    "reporting.md",
-    "REPORTING.md",
-    "DATA-DICTIONARY.md",
-)
-# (subdirectory, glob) pairs naming everything `report` writes below `out`.
-_REPORT_DIRECTORY_CONTENTS = (
-    (REPORT_POWERQUERY_DIR, "*.pq"),
-    (REPORT_SQL_DIR, REPORT_VIEWS_SQL),
-)
-
-
-def _clear_report_output(out: Path) -> None:
-    """Remove the artifacts this command writes, and nothing else.
-
-    Deliberately not `rmtree` on powerquery/ and sql/. Those names are
-    generic, `--out` is routinely aimed at a directory the operator also
-    keeps their own work in, and a hand-written migration sitting beside
-    views.sql is not this command's to delete. Remove by the names `report`
-    generates, then drop each directory only if emptying it left nothing
-    behind.
-
-    `*.pq` is the one broad pattern, and it is deliberate: a stale query
-    from a list that has left the schema is indistinguishable from a
-    hand-written one, and leaving it is the worse failure, because it
-    documents a list that no longer exists. The docs say so; `--out` is not the place
-    to keep your own .pq files.
-    """
-    for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
-        directory = out / dirname
-        for path in sorted(directory.glob(pattern)):
-            if path.is_file():
-                path.unlink()
-        with suppress(OSError):
-            directory.rmdir()  # refuses when the operator left anything here
-    for filename in _REPORT_FILES:
-        (out / filename).unlink(missing_ok=True)
 
 
 def _env_file_help() -> str:
@@ -422,11 +369,9 @@ def validate(
     """
     schema = project_input(schema, SCHEMA_RELPATH, "--schema")
     mapping = project_input(mapping, MAPPING_RELPATH, "--mapping")
-    parsed_schema, bundle, _ = load_config(schema, mapping, None)
-    ext = resolve_extension_or_refuse(extension, bundle, mapping)
-    require_known_site_role(bundle, site_role)
-
-    findings = validate_all(parsed_schema, bundle, ext)
+    findings = execute_validation(
+        schema=schema, mapping=mapping, site_role=site_role, extension=extension,
+    )
     for f in findings:
         typer.echo(f"  [{f.severity.upper()}] {f.code}: {f.message}", err=True)
 
@@ -455,45 +400,14 @@ def explain(
     any release. So the code is the only part worth looking up, and until
     now the only place to look it up was a website.
 
-    Reads `FINDING_HELP`, which ships inside the package. The published
-    reference at `reference/findings.md` is generated from the same data, so
-    the two cannot disagree.
+    The catalogue lookup is `execute_explain`; this is the terminal it
+    reaches, and the exit code an unknown token earns.
     """
-    if not code:
-        for member in sorted(FINDING_HELP):
-            typer.echo(f"  {member.severity:<7}  {member}")
-        typer.echo(
-            f"\n{len(FINDING_HELP)} codes. "
-            "Run `dbml-sharepoint explain <code>` for any one of them.",
-        )
-        return
-
-    # Tolerate the token exactly as a build prints it. Findings render as
-    # `[ERROR] unknown_column_type: schema[Project].Sponsor: ...`, and the obvious
-    # thing to do is select the code and paste it -- which brings the colon.
-    wanted = code.strip().rstrip(":").lower()
-    found = next((c for c in FINDING_HELP if str(c) == wanted), None)
-    if found is None and wanted in RETIRED_FINDINGS:
-        # A code an older build printed stays answerable after its rule goes.
-        typer.echo(f"{wanted}  [retired]\n")
-        for line in wrap(RETIRED_FINDINGS[wanted], width=76):
-            typer.echo(line)
-        return
-    if found is None:
-        near = get_close_matches(wanted, [str(c) for c in FINDING_HELP], n=3, cutoff=0.6)
-        suggestion = f" Did you mean: {', '.join(near)}?" if near else ""
-        typer.echo(
-            f"No finding code {wanted!r}.{suggestion}\n"
-            "Run `dbml-sharepoint explain` with no argument to list them all.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    # Severity off the code, meaning off the catalogue: the two facts have
-    # one home each, and this is just the place they are printed together.
-    typer.echo(f"{found}  [{found.severity}]\n")
-    for line in wrap(FINDING_HELP[found], width=76):
-        typer.echo(line)
+    try:
+        typer.echo(execute_explain(code))
+    except UnknownFindingCodeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
 @app.command()
@@ -504,12 +418,13 @@ def report(
     mapping: Path | None = typer.Option(
         None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
     ),
-    time_zone: str = typer.Option(
-        ...,
+    time_zone: str | None = typer.Option(
+        None,
         "--time-zone",
         help="The site's time zone as an IANA name, such as Australia/Melbourne "
         "or Europe/London (Site settings > Regional settings > Time zone). "
-        "Every list query carries its daylight-saving transitions.",
+        "Every list query carries its daylight-saving transitions. Required, "
+        f"from here or from {TIME_ZONE_KEY} in the env file.",
     ),
     site_role: str = typer.Option(
         "default", help="Site role; must match a site_role declared by the mapping's entities.",
@@ -520,6 +435,7 @@ def report(
         help="Optional release.yaml; stamps release metadata into "
         f"data-dictionary.md. Default: {RELEASE_RELPATH} when it exists.",
     ),
+    env_file: Path | None = typer.Option(None, help=_env_file_help()),
 ) -> None:
     """Generate reporting queries (Power Query M + SQL views) from the schema.
 
@@ -528,16 +444,14 @@ def report(
     data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
 
-    `--time-zone` is a required option here rather than one the env file
-    may supply: this command reads no `dbml-sharepoint.env`, and inventing
-    that discovery for one key would give `report` half of `build`'s
-    precedence rules. It needs no site URL, because the pack it writes
-    reads a `SiteUrl` parameter instead, but the zone shapes the queries
-    themselves and has no parameter to fall back on.
+    The zone is required, from `--time-zone` or from the env file, and is
+    read with the precedence `build` reads it with. It needs no site URL,
+    because the pack it writes reads a `SiteUrl` parameter instead, but the
+    zone shapes the queries themselves and has no parameter to fall back on.
+
+    The other five env keys are `build` inputs and are not read here. The
+    file is still parsed whole, so a malformed line is refused either way.
     """
-    # Refused first, before any file is read: a zone the database does not
-    # declare has nothing to derive from, and nothing in `out` is touched.
-    time_zone = validate_time_zone(time_zone)
     # Whether this run is reporting on the project in the working directory,
     # or on files somebody named explicitly. It decides the release default
     # below, so it has to be read BEFORE the paths are resolved.
@@ -561,51 +475,11 @@ def report(
     # came from the same place.
     if release is None and from_the_project and RELEASE_RELPATH.is_file():
         release = RELEASE_RELPATH
-    parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
-
-    require_known_site_role(bundle, site_role)
-
-    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-
-    # Render everything before writing anything. This command does not
-    # validate, documenting the contract as "assumes a schema that `build`
-    # accepts", so the generators are the first thing to meet a schema
-    # mistake, and they signal one by raising: an unmapped column type, a
-    # composite DBML index. Unhandled, that printed a traceback for a typo
-    # in a file the operator hand-edited, which is exactly what
-    # `config_error` exists to prevent on the loading side. Rendering up
-    # front also keeps a failure from leaving a half-written report set
-    # behind, where the stale files outlive the error on the terminal.
-    # `render_reporting` is the same composition `build` ships, so the two
-    # commands cannot drift in what they write.
-    try:
-        pack = render_reporting(
-            parsed_schema, bundle, site_role,
-            release=release_obj, generated_at=generated_at,
-            source_schema=schema.name, source_mapping=mapping.name,
-            time_zone=time_zone,
-        )
-    except ValueError as exc:
-        # The schema was read and refused, so whatever is in `out` describes
-        # a schema that no longer exists. Clear it rather than leave a stale
-        # set looking current. Only reachable once the config loaded and the
-        # role resolved: a mistyped --schema path or an unknown --site-role
-        # never learns anything about the report, and must not destroy the
-        # last good one on its way out.
-        _clear_report_output(out)
-        typer.echo(
-            f"[ERROR] schema {schema}: {exc}\n"
-            "Run `build --dry-run` for the full validation report.",
-            err=True,
-        )
-        raise typer.Exit(code=1) from exc
-
-    # Drop the previous set so a list removed from the schema does not leave
-    # its .pq file behind, outliving the schema that justified it.
-    _clear_report_output(out)
-
-    for relpath, content in pack.items():
-        write_artifact(out / relpath, content)
+    pack = execute_report(
+        schema=schema, mapping=mapping, site_role=site_role, out=out,
+        release=release, time_zone=time_zone,
+        env_file=resolve_env_file(env_file),
+    )
     queries = [p for p in pack if p.startswith(f"{REPORT_POWERQUERY_DIR}/")]
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), "

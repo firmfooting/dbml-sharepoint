@@ -91,7 +91,8 @@ same precedence as every other key there: the flag wins, then the file.
 
 `build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
 defaults for flags an operator would otherwise retype on every
-invocation. There are six keys today:
+invocation. `report` reads the same file for `DBMLSP_TIME_ZONE`, the one
+key it has an input for. There are six keys today:
 
 | Key | Flag it supplies | Meaning |
 | --- | --- | --- |
@@ -100,7 +101,7 @@ invocation. There are six keys today:
 | `DBMLSP_DEPLOY_CHANGES` | `--deployment-changes` | Title of the central change log to write type-2 change rows into, beside the deployment log above |
 | `DBMLSP_DEPLOY_LOG_SITE` | `--deployment-log-site` | Title of the central logging site the deployment log list lives on |
 | `DBMLSP_CHANGE_LOG_LIST` | `--change-log-list` | Title of the hidden per-site change log the deploy writes type-2 rows into |
-| `DBMLSP_TIME_ZONE` | `--time-zone` | The site's time zone as an IANA name; a build needs one from the flag or from here |
+| `DBMLSP_TIME_ZONE` | `--time-zone` | The site's time zone as an IANA name; a build and a report each need one from the flag or from here |
 
 Every key carries the `DBMLSP_` prefix; a key without it, or one this
 table does not list, is refused rather than silently skipped.
@@ -323,8 +324,10 @@ Emit the reporting pack only (no site URL required): `powerquery/`,
 follows the mapping's [`reporting`](mapping.md#reporting) section: the
 system columns and the `_Users` dimension are there only when it asks
 for them. The site's time zone is still required, because the queries
-carry its transitions; unlike `build`, this command reads no
-`dbml-sharepoint.env`, so the flag is the only way to pass it.
+carry its transitions. It reads `dbml-sharepoint.env` for
+`DBMLSP_TIME_ZONE` under the same precedence `build` applies, and for that
+one key only: the other five settings there are inputs `report` has no use
+for.
 
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
@@ -343,13 +346,15 @@ that no longer exists.
 | --- | --- | --- |
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
-| `--time-zone ZONE` | required | The site's time zone as an IANA name, as for `build` |
+| `--time-zone ZONE` | required, or `DBMLSP_TIME_ZONE` | The site's time zone as an IANA name, as for `build` |
 | `--site-role ROLE` | `default` | Which entities to include |
 | `--out PATH` | `./reports` | Output directory |
 | `--release PATH` | `20-configure/release.yaml` when present | Stamp release provenance into the outputs |
+| `--env-file PATH` | `dbml-sharepoint.env` when present | Defaults file; only `DBMLSP_TIME_ZONE` is an input to this command |
 
 Inside a project directory that makes the whole command `dbml-sharepoint
-report --time-zone Region/City`. `--release` stays genuinely optional: an
+report --time-zone Region/City`, or `dbml-sharepoint report` alone once
+`dbml-sharepoint.env` names the zone. `--release` stays genuinely optional: an
 unstamped dictionary is
 a supported result, so unlike the other two a missing release.yaml is not
 a refusal; it is simply picked up when it is there.
