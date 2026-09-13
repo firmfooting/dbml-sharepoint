@@ -14,6 +14,7 @@ Nothing here may import from `analysis/checks/`, which imports this, or from
 move the cycle rather than close it.
 """
 
+from dbml_sharepoint.model.mapping_types import EntityKind
 from dbml_sharepoint.model.parser import Table
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
@@ -24,20 +25,21 @@ from dbml_sharepoint.model.parser import Table
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
 # The file-identity column a document library has and a list does not. An
-# uploaded file's Title is null and its name is FileLeafRef (MEASURED
-# 2026-07-29, `library.file.name-field-is-leafref` and
-# `library.file-vs-item.title-after-upload` in document-library-probe.js),
-# a view may carry it (`library.doc-lib.view-fileleafref`, same run), and a
+# uploaded file's Title is null (MEASURED 2026-07-29,
+# `library.file-vs-item.title-after-upload` in document-library-probe.js) and
+# its name is FileLeafRef (`library.file.name-field-is-leafref` in
+# file-operations-probe.js, same day), a view may carry it
+# (`library.doc-lib.view-fileleafref`, document-library-probe.js), and a
 # header whose title line reads [$FileLeafRef] renders on the file panel
 # (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03).
 LIBRARY_COLUMNS = frozenset({"FileLeafRef"})
 
 
-def system_columns_for(kind: str) -> frozenset[str]:
+def system_columns_for(kind: EntityKind) -> frozenset[str]:
     """The system columns a container of this kind renders.
 
-    Kind-aware so a list's views and formatters keep refusing FileLeafRef,
-    which no list item carries, while a library's may name it.
+    Kind-aware so a library's views and formatters may name FileLeafRef,
+    where it has been measured; a list keeps refusing it, unmeasured.
     """
     return SYSTEM_COLUMNS | LIBRARY_COLUMNS if kind == "DocumentLibrary" else SYSTEM_COLUMNS
 

@@ -3,13 +3,15 @@
 
 The adopted harness answers every list as an owned generic list; here one
 answers as a library (BaseTemplate 101), so the view phase's Scope write and
-read-back and the ACL phase's wait for the inheritance flag run under Node.
+read-back, the ACL phase's wait for the inheritance flag and the folder
+phase's create run under Node inside the real deploy scope.
 Node is required; the module skips without it.
 """
 
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -18,11 +20,22 @@ from _packs import pack
 from _paths import FIXTURES
 from test_deploy_runtime import _summary_of, _view_guard_harness, _without_assessment
 
+from dbml_sharepoint.analysis.phases import phase_number
+
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 _LIBRARY_ENTITY = """
 entities:
   Escalation: { kind: DocumentLibrary, base_template: 101, site_role: default }
+"""
+
+_FOLDERED_LIBRARY = """
+entities:
+  Escalation:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    folders: ["Clinical services"]
 """
 
 _RECURSIVE_VIEW = _LIBRARY_ENTITY + """
@@ -60,12 +73,23 @@ list_permissions:
 
 #: Answers the list-level inheritance read. `__uniqueAfter` is how many reads
 #: it takes for the flag to turn true once the break has been sent; a value
-#: nothing reaches keeps it false for good.
+#: nothing reaches keeps it false for good. `__uniqueFail` makes every read
+#: after the ACL phase's own break answer HTTP 500; the isolation phase breaks
+#: earlier without re-reading, and the ACL probe before the break still passes.
 _INHERITANCE_JS = """globalThis.fetch = async (url, opts = {}) => {
   const asked = String(url);
-  if (asked.includes('breakroleinheritance')) globalThis.__broke = true;
+  if (asked.includes('breakroleinheritance')) {
+    globalThis.__broke = true;
+    if (mockPhase === globalThis.__aclPhase) globalThis.__brokeInAcl = true;
+  }
   if (asked.endsWith('$select=HasUniqueRoleAssignments')) {
     globalThis.__uniqueReads = (globalThis.__uniqueReads || 0) + 1;
+    if (globalThis.__brokeInAcl && globalThis.__uniqueFail) {
+      return {
+        ok: false, status: 500, headers: { get: () => null },
+        json: async () => ({}), text: async () => 'boom',
+      };
+    }
     const unique = Boolean(globalThis.__broke)
       && globalThis.__uniqueReads >= globalThis.__uniqueAfter;
     return {
@@ -73,6 +97,35 @@ _INHERITANCE_JS = """globalThis.fetch = async (url, opts = {}) => {
       json: async () => ({ d: { HasUniqueRoleAssignments: unique } }),
       text: async () => '',
     };
+  }
+"""
+
+#: Answers the folder phase's reads for the one folder `_FOLDERED_LIBRARY`
+#: declares. `__folderCreated` turns on at the create POST, after which the
+#: folder reads back as existing and its item as FileSystemObjectType 1.
+_FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
+  const requested = String(url);
+  const folderAnswer = (payload) => ({
+    ok: true, status: 200, headers: { get: () => null },
+    json: async () => payload, text: async () => '',
+  });
+  if (requested.includes('/RootFolder?')) {
+    return folderAnswer({ d: { ServerRelativeUrl: '/sites/test/APP_Escalation' } });
+  }
+  if (requested.includes('/folders/add(')) {
+    globalThis.__folderCreated = true;
+    return folderAnswer({ d: { Name: 'Clinical services' } });
+  }
+  if (requested.includes('GetFolderByServerRelativeUrl(')) {
+    return folderAnswer({ d: {
+      Exists: Boolean(globalThis.__folderCreated), Name: 'Clinical services',
+      ServerRelativeUrl: '/sites/test/APP_Escalation/Clinical services',
+    } });
+  }
+  if (requested.includes('FileSystemObjectType')) {
+    const rows = globalThis.__folderCreated
+      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services' }] : [];
+    return folderAnswer({ d: { results: rows } });
   }
 """
 
@@ -96,10 +149,18 @@ def _library_deploy_js(tmp_path: Path, mapping: str) -> str:
     ))
 
 
-def _library_harness(*, scope_sticks: bool = True, unique_after: int | None = None) -> str:
+def _library_harness(
+    *, scope_sticks: bool = True, unique_after: int | None = None,
+    unique_fail: bool = False, declared_folder: bool = False,
+) -> str:
     """The view-guard harness (per-view identity, view creates) with the one
     list answering as a library and the level marker carrying this pack's
-    project name."""
+    project name.
+
+    `unique_after` and `unique_fail` splice the inheritance read in;
+    `declared_folder` splices the folder reads in, for a pack built from
+    `_FOLDERED_LIBRARY`.
+    """
     harness = _view_guard_harness({}).replace("simple-test", "t")
     for what, old, new in (
         ("base template", "BaseTemplate: 100,", "BaseTemplate: 101,"),
@@ -110,12 +171,27 @@ def _library_harness(*, scope_sticks: bool = True, unique_after: int | None = No
         spliced = harness.replace(old, new)
         assert spliced != harness, f"{what} was not spliced into the harness"
         harness = spliced
-    if unique_after is not None:
-        anchor = "globalThis.fetch = async (url, opts = {}) => {\n"
+    anchor = "globalThis.fetch = async (url, opts = {}) => {\n"
+    if unique_after is not None or unique_fail:
         spliced = harness.replace(anchor, _INHERITANCE_JS, 1)
         assert spliced != harness, "the inheritance read was not spliced into the harness"
-        harness = f"globalThis.__uniqueAfter = {unique_after};\n" + spliced
-    return harness
+        # A failing re-read still needs the probe before the break to read
+        # false, or the phase never breaks and never re-reads.
+        harness = (
+            f"globalThis.__uniqueAfter = {1000 if unique_after is None else unique_after};\n"
+            f"globalThis.__uniqueFail = {json.dumps(unique_fail)};\n"
+            f"globalThis.__aclPhase = {json.dumps(phase_number('acls'))};\n" + spliced
+        )
+    if declared_folder:
+        spliced = harness.replace(anchor, _FOLDER_JS, 1)
+        assert spliced != harness, "the folder reads were not spliced into the harness"
+        harness = spliced
+    # The library settle wait is real time the mock needs none of.
+    return (
+        "{ const real = globalThis.setTimeout;"
+        " globalThis.setTimeout = (fn, _ms, ...a) => real(fn, 0, ...a); }\n"
+        + harness
+    )
 
 
 def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
@@ -141,15 +217,19 @@ def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, A
 
 
 def _scope_writes(calls: list[dict[str, Any]], title: str) -> list[Any]:
-    """Every Scope the deploy sent for one view: in the create body when the
-    view was absent, in a MERGE when it existed and read back differently."""
+    """Every Scope the deploy sent for one view, named by its plain title: in
+    the create body when the view was absent, in a MERGE (whose URL carries
+    the title encoded) when it existed and read back differently."""
+    encoded = quote(title)
     written: list[Any] = []
     for call in calls:
         if call["method"] != "POST" or not call["body"]:
             continue
         parsed = json.loads(call["body"])
         created = call["url"].endswith("/views") and parsed.get("Title") == title
-        merged = f"views/getbytitle('{title}')" in call["url"] and "viewfields" not in call["url"]
+        merged = (
+            f"views/getbytitle('{encoded}')" in call["url"] and "viewfields" not in call["url"]
+        )
         if (created or merged) and parsed.get("Scope") is not None:
             written.append(parsed["Scope"])
     return written
@@ -164,7 +244,7 @@ def test_a_recursive_library_view_is_written_and_reads_back(tmp_path: Path) -> N
     )
     assert summary["errors"] == [], summary["errors"]
     assert _scope_writes(calls, "Flat") == [1]
-    assert _scope_writes(calls, "All%20Items") == [1], (
+    assert _scope_writes(calls, "All Items") == [1], (
         "a library's generated All Items must be recursive too"
     )
 
@@ -202,3 +282,31 @@ def test_a_library_whose_flag_never_turns_is_refused(tmp_path: Path) -> None:
         e for e in summary["errors"] if "still reads HasUniqueRoleAssignments=false" in str(e)
     ]
     assert refused, summary["errors"]
+
+
+def test_a_failed_re_read_of_the_flag_is_reported_and_writes_no_allowlist(
+    tmp_path: Path,
+) -> None:
+    """The re-read after the break answering HTTP 500 is its own named
+    error, and the phase stops before a single role assignment is sent."""
+    summary, calls, _reads = _run(
+        _library_harness(unique_fail=True), _library_deploy_js(tmp_path, _BROKEN_INHERITANCE),
+    )
+    failed = [e for e in summary["errors"] if "re-read failed" in str(e)]
+    assert failed, summary["errors"]
+    assignments = [
+        c["url"] for c in calls
+        if "addroleassignment" in c["url"] or "removeroleassignment" in c["url"]
+    ]
+    assert assignments == [], assignments
+
+
+def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> None:
+    """The folder phase inside the real deploy scope rather than as a
+    rendered partial: the helpers it reads are the deploy's own, and the
+    summary key it fills is the one deploy.js.j2 declares."""
+    summary, _calls, _reads = _run(
+        _library_harness(declared_folder=True), _library_deploy_js(tmp_path, _FOLDERED_LIBRARY),
+    )
+    assert summary["errors"] == [], summary["errors"]
+    assert summary["foldersCreated"] == ["APP_Escalation/Clinical services"]

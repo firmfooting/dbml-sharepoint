@@ -17,9 +17,11 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _packs import pack
 
+from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.mapping_types import (
+    ENTITY_KINDS,
     EntityKind,
     EntityMapping,
     FormFormatting,
@@ -231,6 +233,19 @@ def test_a_default_scoped_grouped_library_view_does_not_warn(tmp_path: Path) -> 
 def test_an_unknown_scope_is_refused_at_load(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="scope"):
         _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: sideways")
+
+
+def test_a_list_shaped_scope_is_refused_at_load(tmp_path: Path) -> None:
+    """A list is unhashable, so without an isinstance guard the loader would
+    raise TypeError, which the CLI does not catch, instead of its refusal."""
+    with pytest.raises(ValueError, match="scope"):
+        _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: [recursive]")
+
+
+def test_every_declared_kind_has_a_base_template() -> None:
+    """A kind the Literal admits and `TEMPLATE_BY_KIND` omits is a KeyError
+    inside validation, not a finding."""
+    assert set(TEMPLATE_BY_KIND) == ENTITY_KINDS
 
 
 def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:

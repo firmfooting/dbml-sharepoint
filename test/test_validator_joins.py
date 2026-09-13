@@ -57,8 +57,9 @@ def _join_inputs(
                     name="Person", kind="List", base_template=100, site_role="default",
                 ),
                 "Project": EntityMapping(
-                    name="Project", kind=kind, base_template=100, site_role="default",
-                    hide_from_all_items=hide_from_all_items,
+                    name="Project", kind=kind,
+                    base_template=101 if kind == "DocumentLibrary" else 100,
+                    site_role="default", hide_from_all_items=hide_from_all_items,
                 ),
             },
             views={"Project": views} if views is not None else {},
@@ -387,8 +388,13 @@ def test_a_document_library_counts_its_all_items_joins_like_a_list() -> None:
 
 def test_hide_from_all_items_on_a_document_library_is_honoured() -> None:
     """A library has a generated All Items now, so the key does real work
-    there: hiding Author takes one join off the count, exactly as on a
-    list, and the key is not refused."""
+    there: hiding Author and Editor takes two joins off the count, exactly
+    as on a list, and the key is not refused. The counterpart pins that the
+    same fixture without the hide is over the ceiling, so the clear below
+    is the key's doing."""
+    schema, bundle = _join_inputs(_persons(11), kind="DocumentLibrary")
+    only(_join_findings(schema, bundle, _all_items()), FindingCode.JOIN_THRESHOLD_EXCEEDED)
+
     schema, bundle = _join_inputs(
         _persons(11), kind="DocumentLibrary", hide_from_all_items=("Author", "Editor"),
     )

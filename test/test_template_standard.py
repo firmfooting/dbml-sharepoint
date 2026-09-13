@@ -1197,7 +1197,7 @@ def _is_icon(node: dict[str, Any]) -> bool:
     return isinstance(icon, str) and bool(icon) and "ms-fontSize-42" in _classes(node)
 
 
-def _is_title_line(node: dict[str, Any], kind: str = "List") -> bool:
+def _is_title_line(node: dict[str, Any], kind: str) -> bool:
     """The live line names the row: `[$Title]` on a list, `[$FileLeafRef]` on
     a document library, where Title is null after upload and the file name
     is what a reader recognises (reviewed capture

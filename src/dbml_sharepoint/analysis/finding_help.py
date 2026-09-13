@@ -570,9 +570,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.FOLDER_NAME_INVALID: (
         "A declared folder name breaks one of Microsoft's file and folder "
-        "name rules: it contains one of `\" * : < > ? / \\ |`, leads or "
-        "trails with a space, or is a reserved name. The message names the "
-        "rule."
+        "name rules, or the two this tool adds: it contains one of "
+        "`\" * : < > ? / \\ | # %` (`#` and `%` are URL metacharacters the "
+        "REST paths would misread), leads or trails with a space, contains "
+        "`_vti_`, starts with `~$`, U+309B or U+1027, or is a reserved name. "
+        "The message names the rule."
     ),
     FindingCode.VIEW_SCOPE_ON_A_LIST: (
         "A view declares `scope` on an entity that is not a "

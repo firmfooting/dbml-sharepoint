@@ -4,7 +4,8 @@
 The phase partial is rendered on its own and wrapped in a harness that
 defines the deploy helpers it calls, so each branch (create, verify and
 skip, refuse a file where a folder was declared, a root that does not read
-back) runs under Node rather than being asserted from the template's text.
+back, a create that vanishes or reads back as a file, a shape read that
+fails) runs under Node rather than being asserted from the template's text.
 Node is required; the module skips without it.
 """
 
@@ -35,6 +36,7 @@ _HARNESS = textwrap.dedent("""
     const isAbsent400 = () => false;
     const logChange = (change) => { changes.push(change); };
     const created = new Set(STATE.existing);
+    const createdByRun = new Set();
     const answer = (url, method) => {
       if (url.includes('RootFolder')) {
         return STATE.rootMissing ? [500, {}] : [200, { d: { ServerRelativeUrl: STATE.root } }];
@@ -42,7 +44,9 @@ _HARNESS = textwrap.dedent("""
       if (url.includes('folders/add(url=')) {
         const name = decodeURIComponent(url.split("folders/add(url='")[1].split("')")[0]);
         if (STATE.refuseCreate) return [500, { error: 'refused' }];
-        created.add(name);
+        createdByRun.add(name);
+        // vanishAfterCreate: the create answers 200 and the folder never appears.
+        if (!STATE.vanishAfterCreate) created.add(name);
         return [200, { d: { Name: name } }];
       }
       if (url.includes('GetFolderByServerRelativeUrl')) {
@@ -52,10 +56,14 @@ _HARNESS = textwrap.dedent("""
         return [200, { d: { Exists: created.has(name), Name: name, ServerRelativeUrl: path } }];
       }
       if (url.includes('FileSystemObjectType')) {
+        if (STATE.refuseShapeRead) return [500, { error: 'refused' }];
         // encodeURIComponent leaves the apostrophes bare, so the name sits
         // between two literal quotes with its spaces as %20.
         const name = decodeURIComponent(url.split("FileLeafRef%20eq%20'")[1].split("'")[0]);
-        const type = STATE.filesNamed.includes(name) ? 0 : 1;
+        // createdAsFile: this run's own create landed as a file, not a folder.
+        const asFile = STATE.filesNamed.includes(name)
+          || (STATE.createdAsFile && createdByRun.has(name));
+        const type = asFile ? 0 : 1;
         return [200, { d: { results: created.has(name) || STATE.filesNamed.includes(name)
           ? [{ Id: 7, FileSystemObjectType: type, FileLeafRef: name }] : [] } }];
       }
@@ -109,7 +117,8 @@ def _library(*folders: str) -> dict[str, Any]:
 def _state(**overrides: Any) -> dict[str, Any]:
     return {
         "root": _ROOT, "existing": [], "filesNamed": [], "rootMissing": False,
-        "refuseCreate": False, **overrides,
+        "refuseCreate": False, "vanishAfterCreate": False, "createdAsFile": False,
+        "refuseShapeRead": False, **overrides,
     }
 
 
@@ -166,6 +175,42 @@ def test_a_refused_create_is_reported_against_the_folder() -> None:
     (error,) = result["summary"]["errors"]
     assert error["folder"] == "Clinical services"
     assert result["summary"]["foldersCreated"] == []
+
+
+def test_a_folder_that_does_not_read_back_after_creation_is_reported() -> None:
+    """The create answered 200 and the read-back finds nothing, so the
+    phase reports the folder rather than recording one nobody can see."""
+    result = _run_phase(_state(vanishAfterCreate=True), [_library("Clinical services")])
+    (error,) = result["summary"]["errors"]
+    assert error["folder"] == "Clinical services"
+    assert "did not read back" in error["error"]
+    assert result["summary"]["foldersCreated"] == []
+    assert result["changes"] == []
+
+
+def test_a_create_that_reads_back_as_a_file_is_reported() -> None:
+    """The path exists after the create but its item reads
+    FileSystemObjectType 0, so the shape check refuses to count it."""
+    result = _run_phase(_state(createdAsFile=True), [_library("Clinical services")])
+    (error,) = result["summary"]["errors"]
+    assert error["folder"] == "Clinical services"
+    assert "not a folder" in error["error"]
+    assert result["summary"]["foldersCreated"] == []
+    assert result["changes"] == []
+
+
+def test_a_shape_read_that_fails_on_an_existing_folder_writes_nothing() -> None:
+    """An existing folder whose item probe answers 500 is neither verified
+    nor recreated: the phase cannot tell a folder from a file and stops."""
+    result = _run_phase(
+        _state(existing=["Clinical services"], refuseShapeRead=True),
+        [_library("Clinical services")],
+    )
+    assert result["posts"] == []
+    (error,) = result["summary"]["errors"]
+    assert error["folder"] == "Clinical services"
+    assert "folder item probe failed" in error["error"]
+    assert result["summary"]["foldersVerified"] == []
 
 
 def test_lists_and_libraries_without_folders_are_left_alone() -> None:

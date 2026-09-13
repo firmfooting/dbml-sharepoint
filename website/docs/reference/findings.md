@@ -163,7 +163,7 @@ dbml-sharepoint explain unknown_column_type
 | `field_set_empty` | error | A field set declares no columns. |
 | `field_set_name_has_marker` | error | A field set's name contains `@`, which is the marker a view's `fields` uses to reference a set. |
 | `field_set_unreferenced` | warning | A field set is declared but no view on that entity expands it. |
-| `folder_name_invalid` | error | A declared folder name breaks one of Microsoft's file and folder name rules: it contains one of `" * : < > ? / \ |`, leads or trails with a space, or is a reserved name. The message names the rule. |
+| `folder_name_invalid` | error | A declared folder name breaks one of Microsoft's file and folder name rules, or the two this tool adds: it contains one of `" * : < > ? / \ | # %` (`#` and `%` are URL metacharacters the REST paths would misread), leads or trails with a space, contains `_vti_`, starts with `~$`, U+309B or U+1027, or is a reserved name. The message names the rule. |
 | `folders_on_a_list` | error | `folders` is declared on an entity that is not a `DocumentLibrary`. Only a library holds folders; the folder phase creates each one under the library's root folder and reads it back, and a list has no root folder to create under. |
 | `form_columns_in_no_section` | warning | Columns are referenced by no form body section. SharePoint appends them to the last section, so the form still renders -- but the declared arrangement stops being the deployed one. |
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |

@@ -36,13 +36,13 @@ LIBRARY_COLUMNS = frozenset({'FileLeafRef'})
 ### `system_columns_for`
 
 ```python
-def system_columns_for(kind: str) -> frozenset[str]
+def system_columns_for(kind: EntityKind) -> frozenset[str]
 ```
 
 The system columns a container of this kind renders.
 
-Kind-aware so a list's views and formatters keep refusing FileLeafRef,
-which no list item carries, while a library's may name it.
+Kind-aware so a library's views and formatters may name FileLeafRef,
+where it has been measured; a list keeps refusing it, unmeasured.
 
 ### `UNDEPLOYABLE_DECLARATION_COLUMNS`
 

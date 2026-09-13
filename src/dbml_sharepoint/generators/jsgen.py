@@ -71,6 +71,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     MappingBundle,
     ViewDef,
+    ViewScope,
     view_url_slug,
 )
 from dbml_sharepoint.model.parser import Schema
@@ -354,16 +355,21 @@ def _view_aggregations(view: ViewDef) -> str:
     )
 
 
-# SP.View.Scope for a view that shows every file at any depth. Learn, CSOM
-# ViewScope: DefaultValue 0, Recursive 1, RecursiveAll 2, FilesOnly 3, and
-# the View element's Scope attribute "corresponds to the Scope property of
-# the SPView class". Recursive rather than RecursiveAll because RecursiveAll
-# adds subfolder rows a grouped view would count (MEASURED 2026-09-08,
-# `library.folder.view-flattens-depth` in library-nesting-probe.js). The
-# property sticks on a stored view whether sent on create or by MERGE
+# SP.View.Scope per declared value. Learn, CSOM ViewScope: DefaultValue 0,
+# Recursive 1, RecursiveAll 2, FilesOnly 3, and the View element's Scope
+# attribute "corresponds to the Scope property of the SPView class".
+# Recursive rather than RecursiveAll because RecursiveAll adds subfolder rows
+# a grouped view would count (MEASURED 2026-09-08,
+# `library.folder.view-flattens-depth` in library-nesting-probe.js). Scope 1
+# sticks on a stored view whether sent on create or by MERGE from 0
 # (`library.view.scope-on-create-reads-back`,
 # `library.view.scope-on-merge-reads-back`, 2026-09-13, library-guards-probe.js).
-SCOPE_RECURSIVE = 1
+# A MERGE from 1 back to 0 is the subject of view-scope-revert-probe.js and is
+# not yet measured; the view phase reads Scope back after every write, so a 0
+# that did not stick is reported as drift rather than passed over.
+# Keyed by the loader's vocabulary, so a value it admits and this table does
+# not name fails here rather than deploying as "leave the property alone".
+_VIEW_SCOPE_VALUES: dict[ViewScope, int] = {"recursive": 1, "default": 0}
 
 
 def _view_caml_query(
@@ -371,7 +377,8 @@ def _view_caml_query(
 ) -> str:
     """Render a declared view's ViewQuery inner XML: <GroupBy>, then <Where>
     from the shared condition grammar, then <OrderBy> (ascending is CAML's
-    default; only descending carries the attribute)."""
+    default; only descending carries the attribute). `kind` decides which
+    system columns a <Where> may type: FileLeafRef only on a library."""
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
@@ -711,7 +718,7 @@ def build_schema_json(
             "title": list_title,
             "kind": entity.kind,
             "base_template": entity.base_template,
-            # The folder phase and the seeding script key on these rather
+            # The folder phase and the ACL settle loop key on these rather
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
@@ -895,8 +902,9 @@ def build_schema_json(
                 "title": view.title,
                 "view_fields": list(view.fields),
                 "caml_query": _view_caml_query(view, column_types, entity.kind),
-                # SP.View.Scope, or null to leave the live property alone.
-                "scope": SCOPE_RECURSIVE if view.scope == "recursive" else None,
+                # SP.View.Scope, or null when no scope is declared, which
+                # leaves the live property alone.
+                "scope": None if view.scope is None else _VIEW_SCOPE_VALUES[view.scope],
                 "aggregations": _view_aggregations(view),
                 "row_limit": view.row_limit,
                 "set_default": view.default,

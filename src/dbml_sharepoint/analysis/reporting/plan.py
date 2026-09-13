@@ -238,7 +238,7 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     under /<Title>/Forms/.
     """
     entity = bundle.mapping.entities.get(entity_name)
-    if entity is not None and entity.kind == "DocumentLibrary":
+    if entity is not None and entity.is_library:
         return f"/{list_title}/Forms/DispForm.aspx?ID="
     return f"/Lists/{list_title}/DispForm.aspx?ID="
 
@@ -252,7 +252,7 @@ def _item_url_suffix(bundle: MappingBundle, entity_name: str) -> str:
     library's RootFolder is the library, and its forms sit in Forms/.
     """
     entity = bundle.mapping.entities.get(entity_name)
-    if entity is not None and entity.kind == "DocumentLibrary":
+    if entity is not None and entity.is_library:
         return "/Forms/DispForm.aspx?ID="
     return "/DispForm.aspx?ID="
 

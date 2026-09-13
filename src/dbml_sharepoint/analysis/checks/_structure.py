@@ -76,18 +76,10 @@ _SUPPORTED_CALCULATED_OPERANDS = (
     "calculated column"
 )
 
-# The BaseTemplate each kind provisions, and an ALLOWLIST of what this tool
-# builds. `base_template` is an unconstrained int read straight from the
-# mapping and posted straight to SharePoint, and `_lists.js.j2` sends the
-# number and never the kind, so the pair is validated here rather than
-# assumed: a kind whose number names the other container would provision
-# that container while every later phase assumed the declared one.
-#
-# 100 is the generic list. 101 is the document library (MEASURED 2026-07-29,
-# `library.doc-lib.fixture-library-created` in document-library-probe.js: a
-# POST to web/lists with BaseTemplate 101 creates a library, and later runs
-# of every library probe reuse that same create). Any other number is refused
-# without a claim about what SharePoint would do with it.
+# The BaseTemplate each kind provisions, as an allowlist: `_lists.js.j2`
+# sends the number and never the kind, so the pair is checked here. 101 is
+# the document library (MEASURED 2026-07-29,
+# `library.doc-lib.fixture-library-created` in document-library-probe.js).
 TEMPLATE_BY_KIND: dict[EntityKind, int] = {
     "List": 100,
     "HubOnlyList": 100,
@@ -304,9 +296,10 @@ def _entity_kind(entity_name: str, entity: EntityMapping) -> list[Finding]:
     """Refuse a kind whose base template is not the one it provisions.
 
     A document library is a supported kind since #14 closed. Its items are
-    files, its Title is null after an upload and the name lives in FileLeafRef
-    (MEASURED 2026-07-29, `library.file-vs-item.title-after-upload` and
-    `library.file.name-field-is-leafref` in document-library-probe.js), and a
+    files, its Title is null after an upload (MEASURED 2026-07-29,
+    `library.file-vs-item.title-after-upload` in document-library-probe.js),
+    the name lives in FileLeafRef (`library.file.name-field-is-leafref` in
+    file-operations-probe.js, same day), and a
     header whose title line reads [$FileLeafRef] renders on the file panel
     (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03). The
     vocabulary that lets a view, a formatter and that header name the file
@@ -383,7 +376,7 @@ def _attachments_are_measurable(
     is about the entity, this is about the setting, and an author who fixes
     one still needs to see the other.
     """
-    if entity.kind != "DocumentLibrary" or vc.bundle.mapping.attachments:
+    if not entity.is_library or vc.bundle.mapping.attachments:
         return []
     return [Finding(
         FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
@@ -432,7 +425,7 @@ def _minor_versions_need_versioning(
     What the skip avoids is telling an author that a write observed to succeed
     will fail.
     """
-    if entity.kind == "DocumentLibrary":
+    if entity.is_library:
         return []
     versioning = vc.bundle.mapping.versioning_for(entity_name)
     if not versioning.enable_minor_versions or versioning.enable_versioning:

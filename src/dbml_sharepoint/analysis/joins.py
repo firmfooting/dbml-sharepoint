@@ -99,7 +99,7 @@ from collections.abc import Set as AbstractSet
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
-from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.model.mapping_types import EntityKind, EntityMapping
 from dbml_sharepoint.model.parser import Table
 
 # Measured: 12 rendered, 13 refused. Above this a view is blank at any list size.
@@ -183,8 +183,8 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
 def all_items_rendered(
     table: Table,
     cross_site_cols: AbstractSet[str],
-    projected_cols: AbstractSet[str] = frozenset(),
-    kind: str = "List",
+    projected_cols: AbstractSet[str],
+    kind: EntityKind,
 ) -> set[str]:
     """Every column the generated `All Items` view renders, before hiding.
 

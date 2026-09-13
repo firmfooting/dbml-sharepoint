@@ -185,13 +185,6 @@ class FindingCode(StrEnum):
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"
     ENTITY_KIND_TEMPLATE_MISMATCH = "entity_kind_template_mismatch", "error"
     DUPLICATE_DISPLAY_TITLE = "duplicate_display_title", "error"
-    DUPLICATE_FOLDER = "duplicate_folder", "error"
-    FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
-    FOLDER_NAME_INVALID = "folder_name_invalid", "error"
-    VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
-    # Warning severity: the view renders and answers correctly below the
-    # threshold; what changes past it is measured, and the author may accept it.
-    LIBRARY_GROUP_BY_FOLDER_SCOPED = "library_group_by_folder_scoped", "warning"
     COLUMN_COLLIDES_WITH_REPORT_COLUMN = (
         "column_collides_with_report_column", "error",
     )
@@ -302,6 +295,14 @@ class FindingCode(StrEnum):
     WIDTH_COLUMN_NOT_DISPLAYED = "width_column_not_displayed", "error"
     WIDTH_OUT_OF_RANGE = "width_out_of_range", "error"
 
+    # --- checks/_library.py: folders, view scope ---------------------------
+    DUPLICATE_FOLDER = "duplicate_folder", "error"
+    FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
+    FOLDER_NAME_INVALID = "folder_name_invalid", "error"
+    VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
+    # Warning severity: the view renders and answers correctly below the
+    # threshold; what changes past it is measured, and the author may accept it.
+    LIBRARY_GROUP_BY_FOLDER_SCOPED = "library_group_by_folder_scoped", "warning"
     # --- checks/_formatting.py: column formatting, style specs, form
     # formatting, list validation
     UNDEPLOYABLE_COLUMN_DECLARATION = "undeployable_column_declaration", "error"

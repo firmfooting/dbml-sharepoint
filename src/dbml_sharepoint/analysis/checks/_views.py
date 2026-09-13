@@ -3,7 +3,6 @@
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import (
-    SYSTEM_COLUMN_TYPES,
     effective_column_types,
     system_column_types_for,
 )
@@ -1024,13 +1023,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at_view,
                     ))
                     continue
-                # SYSTEM_COLUMN_TYPES for the same reason the `where` check
-                # merges it: ID, Created, Modified, Author and Editor are
+                # The kind's system columns for the same reason the `where`
+                # check merges them: ID, Created, Modified, Author and Editor are
                 # renderable in a view without being DBML columns, and
                 # without their types they report as the empty string,
                 # which made Author escape the arithmetic rule and produced
                 # a message reading "is ." on every system column.
-                col_type = {**SYSTEM_COLUMN_TYPES, **types_by_col}.get(total_col, "")
+                col_type = {
+                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
+                }.get(total_col, "")
                 if func != "count" and total_col in entity_lookups:
                     # A lookup is int-typed in DBML, so without this it
                     # walks straight through the numeric rule. SharePoint

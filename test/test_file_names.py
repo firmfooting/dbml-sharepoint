@@ -3,8 +3,8 @@
 Learn, "Restrictions and limitations in OneDrive and SharePoint" (read
 2026-09-13): the characters `" * : < > ? / \\ |` are not allowed in a file or
 folder name, nor is a leading or trailing space, nor a handful of reserved
-names. Square brackets are not on the list, which is what lets `[DEMO]`
-prefix a file name.
+names, and a folder may not start with U+309B or U+1027. Square brackets
+are not on the list, which is what lets `[DEMO]` prefix a file name.
 """
 
 import pytest
@@ -51,6 +51,8 @@ def test_a_legal_name_has_no_reason(name: str) -> None:
         ("forms", "reserved"),
         ("a_vti_b", "_vti_"),
         ("~$temp.docx", "~$"),
+        ("\u309bfolder", "first"),
+        ("\u1027folder", "first"),
     ],
 )
 def test_an_illegal_name_names_the_rule_it_breaks(name: str, fragment: str) -> None:

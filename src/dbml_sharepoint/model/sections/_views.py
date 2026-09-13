@@ -128,7 +128,11 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 )
             widths[str(col)] = px
     raw_scope = raw_view.get("scope")
-    if raw_scope is not None and raw_scope not in VIEW_SCOPES:
+    # isinstance first: a list or mapping is unhashable, and `in` over a
+    # frozenset would raise the TypeError the CLI does not catch.
+    if raw_scope is not None and (
+        not isinstance(raw_scope, str) or raw_scope not in VIEW_SCOPES
+    ):
         raise ValueError(
             f"{context}: scope must be one of {', '.join(sorted(VIEW_SCOPES))}, "
             f"got {raw_scope!r}",
