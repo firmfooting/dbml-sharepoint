@@ -241,3 +241,118 @@ def test_a_value_the_site_did_not_keep_fails_the_file() -> None:
     (error,) = summary["errors"]
     assert 'Status was written "Required" and read back "Complete"' in error["error"]
     assert summary["created"] == []
+#: What a rich Note does to a string on the way in. MEASURED 2026-09-13,
+#: `text.item-value.rich-note-roundtrip` and `text.item-value.rich-note-colon`
+#: in item-text-roundtrip-probe.js: a Note with RichText true stores
+#: `Colon: ... & < > " { }` as `Colon&#58; ... &amp; &lt; &gt; &quot; &#123;
+#: &#125;`, while `' / # % + @ - [ ] ( ) = ? ;` pass through untouched. The
+#: same run measured the plain Note and the single-line Text returning the
+#: bytes they were given, so the encoding belongs to RichText and not to the
+#: transport.
+_RICH_WRITTEN = 'Reviewed: privacy & records <ok> {q3}'
+_RICH_STORED = 'Reviewed&#58; privacy &amp; records &lt;ok&gt; &#123;q3&#125;'
+
+
+def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
+    """The same library, carrying one richtext column with a demo value."""
+    schema = make_schema(
+        make_table(
+            "Doc", column("Title"), column("Division", "division"),
+            column("Status", "doc_status"), column("Notes", "richtext"),
+        ),
+        enums=[
+            enum("division", "Clinical services", "Corporate services"),
+            enum("doc_status", "Required", "Complete"),
+        ],
+    )
+    bundle = make_bundle(
+        entities={
+            "Doc": EntityMapping(
+                name="Doc", kind="DocumentLibrary", base_template=101,
+                site_role="default", folders=(_FOLDER, "Corporate services"),
+            ),
+        },
+        demo_items={
+            "Doc": [
+                DemoItem(
+                    key="d1",
+                    values={"Division": _FOLDER, "Status": "Required", "Notes": written},
+                    file=DemoFile(name=_NAME, folder=_FOLDER, content="Sample SAQ."),
+                ),
+            ],
+        },
+    )
+    return generate_demo_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def _seed_rich(**overrides: Any) -> dict[str, Any]:
+    state = {
+        "root": _ROOT, "folder": _FOLDER, "name": _NAME, "present": False,
+        "refuseUpload": False, "vanishAfterUpload": False, "refuseMerge": False,
+        "refuseReadback": False, "stored": None, **overrides,
+    }
+    body = _rich_demo_js(overrides.pop("written", _RICH_WRITTEN)).rstrip()
+    assert body.endswith("})();")
+    output = run_node(
+        f"const STATE = {json.dumps(state)};\n{_HARNESS}\n({body[:-1]}).then((r) => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "});\n",
+    )
+    result = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
+    parsed: dict[str, Any] = json.loads(result.removeprefix("__RESULT__"))
+    return parsed
+
+
+def test_a_rich_note_read_back_in_its_stored_encoding_is_accepted() -> None:
+    """The defect this closes: seeding a library refused every rich Note
+    carrying one of the encoded characters, because the read-back compares
+    the MERGE's second write and a rich Note never returns the bytes it was
+    given. MEASURED 2026-09-13, `text.item-value.rich-note-decode-recovers`:
+    decoding the character references returns the written string exactly, so
+    the decoded form is what the comparison can honestly be made on."""
+    summary = _seed_rich(stored={
+        "Division": _FOLDER, "Status": "Required", "Notes": _RICH_STORED,
+    })
+    assert summary["errors"] == []
+    assert [row["key"] for row in summary["created"]] == ["d1"]
+
+
+def test_a_rich_note_the_site_did_not_keep_still_fails_the_file() -> None:
+    """Decoding the read-back must not decode the check away: a value the
+    site genuinely did not store is still caught."""
+    summary = _seed_rich(stored={
+        "Division": _FOLDER, "Status": "Required", "Notes": 'Reviewed&#58; something else',
+    })
+    (error,) = summary["errors"]
+    assert "Notes was written" in error["error"]
+    assert summary["created"] == []
+
+
+def test_a_rich_note_reports_both_forms_when_it_fails() -> None:
+    """An operator reading the error needs the stored form as well as the
+    decoded one, because the two differ and only one of them is on the page."""
+    summary = _seed_rich(stored={
+        "Division": _FOLDER, "Status": "Required", "Notes": '&lt;wrong&gt;',
+    })
+    (error,) = summary["errors"]
+    assert "&lt;wrong&gt;" in error["error"]
+    assert "<wrong>" in error["error"]
+
+
+def test_a_plain_column_is_still_compared_byte_for_byte() -> None:
+    """Only a rich Note is decoded. MEASURED in the same run: the single-line
+    Text and the plain Note both returned the bytes they were given, so
+    decoding either would forgive a difference the site really made."""
+    summary = _seed_rich(stored={
+        "Division": _FOLDER, "Status": "&lt;Required&gt;", "Notes": _RICH_STORED,
+    })
+    (error,) = summary["errors"]
+    assert "Status was written" in error["error"]
