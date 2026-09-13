@@ -5,8 +5,10 @@
  *
  * Probes the site's capabilities against this pack's requirements and
  * prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes:
- * every call is a GET except the contextinfo digest fetch and one read-only
- * CSOM ProcessQuery.
+ * every call is a GET except the contextinfo digest fetch, one read-only
+ * CSOM ProcessQuery, and the OData $batch POSTs that carry those GETs, whose
+ * parts are all GETs and which the transport below cannot spell any other
+ * way.
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
@@ -23,6 +25,18 @@
   log('INFO', 'Read-only assessment. No changes are made.');
 
 {% include "_digest_cached.js.j2" %}
+
+  // The READ half of the $batch transport, and only the read half: this
+  // script includes `_http_batch_read.js.j2` where the write-capable scripts
+  // include `_http_batch.js.j2`, so the one thing it gains is BatchReader,
+  // which spells every part `GET`. `_http_write.js.j2` and its `spHeaders`
+  // stay out, which is what keeps the no-write property readable here rather
+  // than being a claim about what a shared partial happens to hold.
+  // BatchReader's outer request still needs X-RequestDigest even though every
+  // part is a read (measured 2026-09-04: without it the identical envelope
+  // came back HTTP 403), and getDigest above is where that comes from.
+
+{% include "_http_batch_read.js.j2" %}
 
 {% include "_assess_body.js.j2" %}
 

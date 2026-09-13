@@ -1363,9 +1363,12 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     assert _call_count(js, "ownedListIdentity") == 17
     assert _call_count(js, "ownedFieldIdentity") == 2
     code = _without_line_comments(js)
-    # The index read-back, and the form phase's two: its content-type
-    # resolution and its layout read-back.
-    assert code.count("new BatchReader(") == 3
+    # The index read-back, the form phase's two (its content-type resolution
+    # and its layout read-back), and the assessment's own `probeMany`, which
+    # the deploy carries because it includes `_assess_body.js.j2` for its
+    # gate. The last one reads and never writes, which is why the read half of
+    # the transport is its own partial.
+    assert code.count("new BatchReader(") == 4
     assert "fieldShapePath(idx.list, idx.field)" in code
 
 
