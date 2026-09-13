@@ -5756,7 +5756,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -5834,6 +5834,12 @@
           ViewQuery: view.caml_query,
         };
         if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        // SP.View.Scope, on a document library's view only (the validator
+        // refuses the key on a list). MEASURED 2026-09-13,
+        // `library.view.scope-on-create-reads-back` in library-guards-probe.js:
+        // a view created with Scope 1 in its body answered HTTP 201 and read
+        // Scope back as 1.
+        if (view.scope != null) createBody.Scope = view.scope;
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
@@ -5939,6 +5945,12 @@
         }
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
+        }
+        // MEASURED 2026-09-13, `library.view.scope-on-merge-reads-back`: a
+        // stored view reading Scope 0 took MERGE Scope 1 (HTTP 204) and read
+        // back 1, so a scope edited by hand is put back here.
+        if (view.scope != null && existing.Scope !== view.scope) {
+          patchBody.Scope = view.scope;
         }
         // Declared totals only. A view with none keeps whatever is live,
         if (Object.keys(patchBody).length > 1) {
@@ -6055,6 +6067,9 @@
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
       if (actual.Hidden !== view.hidden) {
         drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
+      if (view.scope != null && actual.Scope !== view.scope) {
+        drifted.push(`Scope (declared ${view.scope}; readback ${actual.Scope})`);
       }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
@@ -6865,6 +6880,33 @@
                 throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
               }
             });
+            // MEASURED 2026-09-09, `library.access.unique-permissions-library`
+            // in library-access-probe.js: on a document library the break
+            // answered HTTP 200 and HasUniqueRoleAssignments read false on the
+            // first read and true on the second, within 10 s, exactly as on a
+            // generic list once settled. So a library is re-read until the flag
+            // turns, and refused if it never does: an exact-mode allowlist
+            // written onto a list that still inherits would be a no-op the
+            // verify below could not tell from success.
+            const aclIsLibrary = (SCHEMA.lists.find((l) => l.title === la.list) || {}).is_library === true;
+            if (aclIsLibrary) {
+              const LIBRARY_ACL_SETTLE_MS = 2000;
+              let unique = false;
+              for (let attempt = 0; attempt < 5 && !unique; attempt += 1) {
+                if (attempt > 0) await sleep(LIBRARY_ACL_SETTLE_MS);
+                const again = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')?$select=HasUniqueRoleAssignments`), {
+                  headers: { 'Accept': 'application/json;odata=verbose' },
+                });
+                if (!again.ok) {
+                  const text = await again.text();
+                  throw new Error(`HasUniqueRoleAssignments re-read failed: HTTP ${again.status} ${text}`);
+                }
+                unique = Boolean((await again.json()).d.HasUniqueRoleAssignments);
+              }
+              if (!unique) {
+                throw new Error(`'${la.list}' still reads HasUniqueRoleAssignments=false after breakroleinheritance; refusing to write an allowlist onto a library that inherits`);
+              }
+            }
             log('INFO', `[Phase 4.2] Broke inheritance on '${la.list}'.`);
           } else {
             log('INFO', `[Phase 4.2] '${la.list}' already has unique role assignments, reconciling existing bindings.`);
