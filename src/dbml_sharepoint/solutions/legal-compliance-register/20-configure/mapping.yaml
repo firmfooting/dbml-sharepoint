@@ -174,6 +174,9 @@ display_names:
       ItemType: "Type"
       ActionUrl: "Action link"
       ExternalRecorded: "Recorded in portal"
+      # The internal name carries the entity because `Notes` is taken on a
+      # document library; the label people read is still Notes.
+      AssessmentNotes: "Notes"
 
 # Column formatting: the fleet style standard (website/docs/reference/
 # style-guide.md). Tokens by role, not by word.
@@ -590,7 +593,7 @@ demo_items:
         DueDate: "today+10"
         Status: "In progress"
         Compliance: "Not assessed"
-        Notes: "Demo row. Evidence being gathered from the WHS committee minutes and the incident register."
+        AssessmentNotes: "Demo row. Evidence being gathered from the WHS committee minutes and the incident register."
     - key: saq-child-safe-2026-q3
       file:
         name: "[DEMO] Child safe standards - 2026 Q3.txt"
@@ -608,7 +611,7 @@ demo_items:
         Status: "Submitted"
         Compliance: "Partially compliant"
         ActionUrl: "https://example.sharepoint.com/sites/quality/demo-improvement-item"
-        Notes: "Demo row. Two of the eleven standards lack a documented review; the improvement item is linked. Waiting on the executive."
+        AssessmentNotes: "Demo row. Two of the eleven standards lack a documented review; the improvement item is linked. Waiting on the executive."
     - key: saq-foi-2026-q3
       file:
         name: "[DEMO] Freedom of information - 2026 Q3.txt"
@@ -625,7 +628,7 @@ demo_items:
         DueDate: "today-7"
         Status: "Required"
         Compliance: "Not assessed"
-        Notes: "Demo row. A week past due and not started: this is what the Overdue view is for."
+        AssessmentNotes: "Demo row. A week past due and not started: this is what the Overdue view is for."
     - key: saq-food-2026-q2
       file:
         name: "[DEMO] Food safety - 2026 Q2.txt"
@@ -643,7 +646,7 @@ demo_items:
         Status: "Complete"
         Compliance: "Compliant"
         CompletedDate: "today-3"
-        Notes: "Demo row. Confirmed by the executive three days ago and not yet keyed into the portal. Set Recorded in portal and it leaves the loop-closing view."
+        AssessmentNotes: "Demo row. Confirmed by the executive three days ago and not yet keyed into the portal. Set Recorded in portal and it leaves the loop-closing view."
     - key: saq-procurement-2026-q2
       file:
         name: "[DEMO] Procurement - 2026 Q2.txt"
@@ -663,4 +666,4 @@ demo_items:
         CompletedDate: "today-25"
         ExternalRecorded: "today-24"
         ActionUrl: "https://example.sharepoint.com/sites/quality/demo-audit-action"
-        Notes: "Demo row. The whole loop, closed: answered, confirmed, action linked, recorded in the portal the next day."
+        AssessmentNotes: "Demo row. The whole loop, closed: answered, confirmed, action linked, recorded in the portal the next day."

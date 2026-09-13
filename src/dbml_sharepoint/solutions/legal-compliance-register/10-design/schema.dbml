@@ -112,7 +112,11 @@ Table SAQ {
   CompletedDate        date               [note: 'The day the executive confirmed the assessment']
   ActionUrl            hyperlink          [note: 'For a Partially compliant or Non-compliant result: the action recorded on the audit actions or improvement register']
   ExternalRecorded     date               [note: 'The day the licence holder recorded this result in the portal. Blank means the loop is not yet closed']
-  Notes                richtext           [note: 'Evidence sighted, caveats, what changed since last period']
+  // Not `Notes`: MEASURED 2026-09-13 on a live document library, a column
+  // created under that name is minted InternalName `Notes0`, because the
+  // name is taken on a library though not on a list. The deploy's
+  // immutable-name check aborts the run. The display title is still Notes.
+  AssessmentNotes      richtext           [note: 'Evidence sighted, caveats, what changed since last period']
 
   indexes {
     Topic

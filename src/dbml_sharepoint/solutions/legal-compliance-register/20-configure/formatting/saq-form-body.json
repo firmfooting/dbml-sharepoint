@@ -6,7 +6,7 @@
     },
     {
       "displayname": "Complete it",
-      "fields": ["BusinessOwner", "Status", "Compliance", "Notes"]
+      "fields": ["BusinessOwner", "Status", "Compliance", "AssessmentNotes"]
     },
     {
       "displayname": "Confirm it",
