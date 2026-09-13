@@ -149,9 +149,34 @@ def _library_deploy_js(tmp_path: Path, mapping: str) -> str:
     ))
 
 
+#: A MERGE addressed by immutable view Id, which is how the view phase renames
+#: a view it adopted under another title. The shared harness only serves
+#: getbytitle, so without this the rename lands nowhere and the read-back
+#: reports a view that disappeared. Re-keying `views` is the point: the deploy
+#: reads the view back by its DECLARED title on the very next call, exactly as
+#: `library.view.builtin-getbytitle-after-rename` measured on the live site.
+_VIEW_MERGE_BY_ID_JS = (
+    "  if ((opts.method || 'GET') === 'POST' && opts.body"
+    " && /\\/views\\('[^']+'\\)$/.test(u)) {\n"
+    "    const guid = (u.match(/\\/views\\('([^']+)'\\)$/) || [])[1];\n"
+    "    const named = VIEW_BY_GUID[guid];\n"
+    "    const state = named && views[`${named.list} ${named.title}`];\n"
+    "    const parsed = JSON.parse(opts.body);\n"
+    "    if (state && parsed.Title !== undefined && parsed.Title !== named.title) {\n"
+    "      delete views[`${named.list} ${named.title}`];\n"
+    "      state.Title = parsed.Title;\n"
+    "      views[`${named.list} ${parsed.Title}`] = state;\n"
+    "      VIEW_GUIDS[`${named.list} ${parsed.Title}`] = guid;\n"
+    "      named.title = parsed.Title;\n"
+    "    }\n"
+    "  }\n"
+)
+
+
 def _library_harness(
     *, scope_sticks: bool = True, unique_after: int | None = None,
     unique_fail: bool = False, declared_folder: bool = False,
+    builtin_view_title: str | None = None,
 ) -> str:
     """The view-guard harness (per-view identity, view creates) with the one
     list answering as a library and the level marker carrying this pack's
@@ -160,13 +185,29 @@ def _library_harness(
     `unique_after` and `unique_fail` splice the inheritance read in;
     `declared_folder` splices the folder reads in, for a pack built from
     `_FOLDERED_LIBRARY`.
+
+    `builtin_view_title` renames the view the mock seeds on AllItems.aspx.
+    The shared harness seeds it as 'All Items', which is what a generic LIST
+    ships; a live library ships 'All Documents' there
+    (`library.view.builtin-occupies-allitems`, 2026-09-13), and that title is
+    the whole reason the view phase needs to adopt by URL.
     """
     harness = _view_guard_harness({}).replace("simple-test", "t")
     for what, old, new in (
         ("base template", "BaseTemplate: 100,", "BaseTemplate: 101,"),
         ("scope write", "'RowLimit', 'ViewQuery']", "'RowLimit', 'ViewQuery', 'Scope']"),
+        ("view merge by id",
+         "  if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {\n",
+         _VIEW_MERGE_BY_ID_JS
+         + "  if ((opts.method || 'GET') === 'POST'"
+           " && u.includes('/views/getbytitle')) {\n"),
+        ("built-in view title",
+         "(listTitle, title = 'All Items') =>",
+         f"(listTitle, title = {json.dumps(builtin_view_title)}) =>"),
     ):
         if what == "scope write" and not scope_sticks:
+            continue
+        if what == "built-in view title" and builtin_view_title is None:
             continue
         spliced = harness.replace(old, new)
         assert spliced != harness, f"{what} was not spliced into the harness"
@@ -310,3 +351,105 @@ def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> Non
     )
     assert summary["errors"] == [], summary["errors"]
     assert summary["foldersCreated"] == ["APP_Escalation/Clinical services"]
+
+
+def _view_titles_created(calls: list[dict[str, Any]]) -> list[str]:
+    """Every Title the run POSTed to a /views collection, in order."""
+    made: list[str] = []
+    for call in calls:
+        if call["method"] != "POST" or not call["body"] or not call["url"].endswith("/views"):
+            continue
+        parsed = json.loads(call["body"])
+        if parsed.get("__metadata", {}).get("type") == "SP.View":
+            made.append(parsed["Title"])
+    return made
+
+
+def _titles_merged_by_id(calls: list[dict[str, Any]]) -> list[str]:
+    """Every Title sent to a view addressed by its immutable Id, which is how
+    the phase renames a view it adopted under another title."""
+    renamed: list[str] = []
+    for call in calls:
+        url = call["url"]
+        if call["method"] != "POST" or not call["body"]:
+            continue
+        if "/views('" not in url or not url.endswith("')"):
+            continue
+        title = json.loads(call["body"]).get("Title")
+        if title is not None:
+            renamed.append(title)
+    return renamed
+
+
+def test_a_librarys_builtin_view_is_adopted_rather_than_created_beside(
+    tmp_path: Path,
+) -> None:
+    """MEASURED 2026-09-13, `library.view.builtin-occupies-allitems` and
+    `library.view.create-allitems-title-on-library` in
+    library-builtin-view-probe.js: a bare library's view on AllItems.aspx reads
+    'All Documents', and a second view created under the slug is minted
+    AllItems1.aspx. The generated All Items can therefore never be created at
+    its own declared URL, and a live run failed the view closed on that drift.
+
+    The phase adopts the view already on the URL instead: nothing is POSTed to
+    the views collection for it, and the adopted view is renamed by Id.
+    """
+    summary, calls, _reads = _run(
+        _library_harness(builtin_view_title="All Documents"),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW),
+    )
+    assert summary["errors"] == [], summary["errors"]
+    assert "All Items" not in _view_titles_created(calls), (
+        "the generated All Items was created beside the built-in view, "
+        "which is the defect adopting it avoids"
+    )
+    assert "All Items" in _titles_merged_by_id(calls), (
+        "the adopted view was never renamed to the declared title"
+    )
+
+
+def test_an_adopted_builtin_view_still_takes_every_declared_setting(
+    tmp_path: Path,
+) -> None:
+    """Adoption is only worth having if the view then reconciles like any
+    other. Each of these was measured on the live built-in view on 2026-09-13:
+    `library.view.builtin-scope-merge`, `library.view.builtin-viewfields-replace`
+    and `library.view.builtin-hidden-once-not-default`.
+    """
+    _summary, calls, _reads = _run(
+        _library_harness(builtin_view_title="All Documents"),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW),
+    )
+    assert _scope_writes(calls, "All Items") == [1], (
+        "an adopted All Items must still be made recursive"
+    )
+    encoded = quote("All Items")
+    hidden = [
+        json.loads(call["body"]).get("Hidden")
+        for call in calls
+        if call["method"] == "POST" and call["body"]
+        and f"views/getbytitle('{encoded}')" in call["url"]
+        and "viewfields" not in call["url"]
+        and json.loads(call["body"]).get("Hidden") is not None
+    ]
+    assert hidden == [True], (
+        "the recovery view is hidden behind the declared default, adopted or not"
+    )
+    assert any(
+        "removeallviewfields" in call["url"] and encoded in call["url"] for call in calls
+    ), "the adopted view's field list was never rebuilt"
+
+
+def test_a_library_whose_builtin_view_is_already_all_items_is_adopted_by_title(
+    tmp_path: Path,
+) -> None:
+    """The URL match is a fallback, not a replacement. When the view on the URL
+    already carries the declared title there is nothing to rename, and the run
+    must not send a title MERGE it does not need.
+    """
+    summary, calls, _reads = _run(
+        _library_harness(), _library_deploy_js(tmp_path, _RECURSIVE_VIEW),
+    )
+    assert summary["errors"] == [], summary["errors"]
+    assert "All Items" not in _view_titles_created(calls)
+    assert _titles_merged_by_id(calls) == []

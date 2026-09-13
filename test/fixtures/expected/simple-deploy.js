@@ -2113,6 +2113,7 @@
   "seed_items": [],
   "views": [
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "\u003cWhere\u003e\u003cAnd\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003cOr\u003e\u003cIsNotNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNotNull\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNull\u003e\u003c/Or\u003e\u003c/And\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
@@ -2132,6 +2133,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -2156,6 +2158,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -2180,6 +2183,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cAnd\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003cOr\u003e\u003cIsNotNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNotNull\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"ID\"/\u003e\u003c/IsNull\u003e\u003c/Or\u003e\u003c/And\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
@@ -2199,6 +2203,7 @@
       "widths": null
     },
     {
+      "adopts_builtin_view": false,
       "aggregations": "",
       "caml_query": "",
       "formatting": null,
@@ -6189,6 +6194,24 @@
       const halfMigrated = listedViews.find(
         (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
       ) || null;
+      // The one view that may adopt a page it did not create. A library ships
+      // a built-in view on AllItems.aspx under a title of its own, so the
+      // matchers above read it as foreign and the create beside it is
+      // suffixed, which the URL drift gate then fails closed. MEASURED
+      // 2026-09-13 in library-builtin-view-probe.js: a bare library answers
+      // 'All Documents' on that URL (`library.view.builtin-occupies-allitems`)
+      // and a second view created under the slug is minted AllItems1.aspx
+      // (`library.view.create-allitems-title-on-library`), so nothing else can
+      // ever hold it. The generator sets this flag on a library's generated
+      // All Items and on no other view, so the foreign-view guard still stands
+      // everywhere a declared view could otherwise take over somebody's page.
+      if (!existing && view.adopts_builtin_view) {
+        const builtin = listedViews.find((v) => urlBasename(v) === desiredBasename) || null;
+        if (builtin) {
+          existing = builtin;
+          log('INFO', `[Phase 3.1] Adopting the built-in view '${builtin.Title}' on '${view.list}' as '${view.title}'.`);
+        }
+      }
       if (!existing) {
         if (halfMigrated) {
           log('INFO', `[Phase 3.1] Adopting half-migrated view '${view.url_slug}' on '${view.list}' as '${view.title}'.`);
