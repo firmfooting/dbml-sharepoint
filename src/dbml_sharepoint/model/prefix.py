@@ -10,6 +10,8 @@ in a public module rather than in either of them.
 
 from collections.abc import Sequence
 
+from dbml_sharepoint.model.errors import MappingValueError
+
 #: The placeholder a group or permission-level name may open with. It expands
 #: to the list prefix STEM (the prefix without its trailing underscore), so
 #: one `prefix:` rewrite renames the groups and levels with the lists. The
@@ -31,7 +33,7 @@ def expand_prefix(value: str, prefix: str, context: str) -> str:
     if PREFIX_PLACEHOLDER not in value:
         return value
     if not value.startswith(PREFIX_PLACEHOLDER) or value.count(PREFIX_PLACEHOLDER) > 1:
-        raise ValueError(
+        raise MappingValueError(
             f"{context}: the {PREFIX_PLACEHOLDER} placeholder may appear once, at the "
             f"start of the name, got {value!r}",
         )

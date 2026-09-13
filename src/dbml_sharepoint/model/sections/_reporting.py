@@ -10,6 +10,12 @@ from typing import Any
 
 from dbml_sharepoint.analysis.derived import DERIVED_AGGREGATES, DERIVED_TYPES
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import (
+    MappingReferenceError,
+    MappingShapeError,
+    MappingValueError,
+    UnknownMappingKeyError,
+)
 from dbml_sharepoint.model.mapping_types import DerivedColumn, ReportingOptions
 from dbml_sharepoint.model.sections.context import SectionContext
 
@@ -52,7 +58,7 @@ def _parse_reporting(block: Any) -> ReportingOptions:
     # Refused by name, before the generic unknown-key check can call it a
     # typo: the key existed, and the author needs to know where it went.
     if "time_zone" in section:
-        raise ValueError(REMOVED_TIME_ZONE_KEY_MESSAGE)
+        raise UnknownMappingKeyError(REMOVED_TIME_ZONE_KEY_MESSAGE)
     switches = ("system_columns", "users_table")
     _reject_unknown_keys(section, set(switches), "reporting")
     values: dict[str, bool] = {}
@@ -61,7 +67,7 @@ def _parse_reporting(block: Any) -> ReportingOptions:
         # YAML reads "yes" and 1 as truthy, so anything but a real boolean
         # would switch the feature on by accident and never say so.
         if not isinstance(value, bool):
-            raise ValueError(
+            raise MappingShapeError(
                 f"reporting.{name}: expected true or false, got {value!r}",
             )
         values[name] = value
@@ -71,7 +77,7 @@ def _parse_reporting(block: Any) -> ReportingOptions:
 def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
+        raise MappingShapeError(
             f"{where}: {key} must be a non-empty string, got {value!r}",
         )
     return value
@@ -87,8 +93,12 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     """
     item = _require_mapping(item, where)
     kind = item.get("kind")
+    # isinstance first: a list or mapping is unhashable, so the membership
+    # test below raises the TypeError the CLI deliberately does not catch.
+    if kind is not None and not isinstance(kind, str):
+        raise MappingShapeError(f"{where}: kind must be a string, got {kind!r}")
     if kind not in _DERIVED_KEYS:
-        raise ValueError(
+        raise MappingValueError(
             f"{where}: kind must be one of "
             f"{', '.join(sorted(_DERIVED_KEYS))}, got {kind!r}. `filter` is "
             f"deliberately absent: a reporting column may not drop rows, "
@@ -101,7 +111,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     if kind == "expr":
         declared_type = _derived_text(item, "type", where)
         if declared_type not in DERIVED_TYPES:
-            raise ValueError(
+            raise MappingValueError(
                 f"{where}: type must be one of "
                 f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
             )
@@ -118,7 +128,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
         via = str(item.get("via", ""))
         join_key = str(item.get("key", ""))
         if bool(via) == bool(join_key):
-            raise ValueError(
+            raise MappingShapeError(
                 f"{where}: a lookup joins EITHER on `via`, a lookup column "
                 f"whose key the generator derives, OR on `key`, a key "
                 f"column this query already carries. Exactly one, and "
@@ -127,24 +137,29 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
         pick = _require_mapping(item.get("pick"), f"{where}.pick")
         types = _require_mapping(item.get("types"), f"{where}.types")
         if not pick:
-            raise ValueError(f"{where}: pick must name at least one column")
+            raise MappingShapeError(f"{where}: pick must name at least one column")
         for new_name, source in pick.items():
             if not isinstance(source, str) or not source.strip():
-                raise ValueError(
+                raise MappingShapeError(
                     f"{where}.pick.{new_name} must be a non-empty string, "
                     f"got {source!r}",
                 )
             declared = types.get(new_name)
+            # The shape before the word, for the same unhashable reason.
+            if declared is not None and not isinstance(declared, str):
+                raise MappingShapeError(
+                    f"{where}.types.{new_name} must be a string, got {declared!r}",
+                )
             if declared not in DERIVED_TYPES:
                 # Every picked column is typed, so none can reach the query
                 # as `type any` and load as an Error in every populated cell.
-                raise ValueError(
+                raise MappingValueError(
                     f"{where}.types.{new_name} must be one of "
                     f"{', '.join(sorted(DERIVED_TYPES))}, got {declared!r}",
                 )
         unknown = set(types) - set(pick)
         if unknown:
-            raise ValueError(
+            raise MappingReferenceError(
                 f"{where}.types names {', '.join(sorted(unknown))}, which "
                 f"pick does not produce",
             )
@@ -160,24 +175,24 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
         )
     aggregate = _derived_text(item, "aggregate", where)
     if aggregate not in DERIVED_AGGREGATES:
-        raise ValueError(
+        raise MappingValueError(
             f"{where}: aggregate must be one of "
             f"{', '.join(sorted(DERIVED_AGGREGATES))}, got {aggregate!r}",
         )
     declared_type = _derived_text(item, "type", where)
     if declared_type not in DERIVED_TYPES:
-        raise ValueError(
+        raise MappingValueError(
             f"{where}: type must be one of "
             f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
         )
     column = str(item.get("column", ""))
     if aggregate != "count" and not column:
-        raise ValueError(
+        raise MappingShapeError(
             f"{where}: aggregate {aggregate!r} reads a column of the child "
             f"rows, so `column` is required. Only `count` needs none.",
         )
     if aggregate == "count" and column:
-        raise ValueError(
+        raise MappingShapeError(
             f"{where}: aggregate `count` counts rows and reads no column, "
             f"so `column` must be absent, got {column!r}",
         )
@@ -200,7 +215,7 @@ def _parse_derived_columns(raw: Any) -> dict[str, list[DerivedColumn]]:
     out: dict[str, list[DerivedColumn]] = {}
     for entity, items in _require_mapping(raw, "derived_columns").items():
         if not isinstance(items, list):
-            raise ValueError(
+            raise MappingShapeError(
                 f"derived_columns.{entity} must be a list of columns, "
                 f"got {items!r}",
             )

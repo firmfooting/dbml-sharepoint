@@ -15,13 +15,57 @@ from typing import Any
 
 import yaml
 
+from dbml_sharepoint.model.errors import (
+    MappingReferenceError,
+    MappingShapeError,
+    MappingSourceError,
+    MappingValueError,
+)
 
-def load_yaml(path: Path) -> dict[str, Any]:
+
+def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
+    """Parse one YAML file, naming every way reading it can fail.
+
+    `yaml.YAMLError` and the `OSError` from opening the file are neither of
+    them a `MappingError`, so a caller switching on the base class used to
+    miss the two most ordinary failures there are: a mapping with a typo
+    that stops it parsing, and a source file that is not where the mapping
+    says. The original is kept as `__cause__`, and the parser's own text is
+    passed through because it carries the line and column, which is the part
+    an author can act on.
+
+    Decoding is the third way, and it is the one that hides: the bytes turn
+    into text inside `yaml.safe_load`, so a file that is not UTF-8 raises
+    `UnicodeDecodeError` past both of the other handlers. It is a
+    `ValueError` subclass, so it reached a caller catching `ValueError`
+    looking exactly like a refusal this module composed.
+
+    `named_by` is the declaration that pointed at this file, when one did.
+    An unreadable file is then the reference that did not resolve, which is
+    what `MappingReferenceError` documents; a path the caller supplied has
+    no declaration to blame, so it is the document itself that failed.
+    """
+    try:
+        with path.open(encoding="utf-8") as fh:
+            return yaml.safe_load(fh)
+    except OSError as exc:
+        reason = exc.strerror or exc
+        if named_by is None:
+            raise MappingSourceError(f"{path}: cannot be read: {reason}") from exc
+        raise MappingReferenceError(f"{named_by}: cannot read {path}: {reason}") from exc
+    except UnicodeDecodeError as exc:
+        # The pointer resolved and the file opened, so the declaration is
+        # not what is wrong: these bytes are not a document at all.
+        raise MappingSourceError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise MappingSourceError(f"{path}: is not valid YAML: {exc}") from exc
+
+
+def load_yaml(path: Path, named_by: str | None = None) -> dict[str, Any]:
     """Load a YAML file; require a top-level mapping (dict)."""
-    with path.open(encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh)
+    raw = read_yaml_document(path, named_by)
     if not isinstance(raw, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{path}: expected a YAML mapping at the top level, got {type(raw).__name__}",
         )
     return raw
@@ -39,15 +83,21 @@ def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise ValueError(f"{context}: cannot read {value!r}: {exc}") from exc
+            raise MappingReferenceError(f"{context}: cannot read {value!r}: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            # `read_text` decodes, so the same hole `read_yaml_document` had:
+            # a `ValueError` subclass that no handler here caught.
+            raise MappingSourceError(
+                f"{context}: {value!r} is not valid UTF-8: {exc}",
+            ) from exc
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"{context}: {value!r} is not valid JSON: {exc}") from exc
+            raise MappingValueError(f"{context}: {value!r} is not valid JSON: {exc}") from exc
         if not isinstance(parsed, dict):
-            raise ValueError(f"{context}: {value!r} must contain a JSON object")
+            raise MappingShapeError(f"{context}: {value!r} must contain a JSON object")
         return parsed
-    raise ValueError(
+    raise MappingShapeError(
         f"{context}: expected a relative .json path or an inline mapping, "
         f"got {type(value).__name__}",
     )
@@ -70,7 +120,7 @@ def strict_bool(
     """
     value = raw.get(key, default)
     if not isinstance(value, bool):
-        raise ValueError(f"{context}.{key}: expected true or false, got {value!r}")
+        raise MappingShapeError(f"{context}.{key}: expected true or false, got {value!r}")
     return value
 
 
@@ -84,7 +134,7 @@ def optional_bool(
     """
     value = raw.get(key, default)
     if not isinstance(value, bool):
-        raise ValueError(f"{context}.{key} must be a boolean, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be a boolean, got {value!r}")
     return value
 
 
@@ -99,8 +149,38 @@ def optional_str(raw: Mapping[str, Any], key: str, context: str) -> str | None:
     """
     value = raw.get(key)
     if value is not None and not isinstance(value, str):
-        raise ValueError(f"{context}.{key} must be a string, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
     return value
+
+
+def strict_str(
+    raw: Mapping[str, Any], key: str, context: str, *, default: str,
+) -> str:
+    """Read a string that falls back to a default, refusing a declared null.
+
+    The one difference from `optional_str` is `raw.get(key, default)` rather
+    than `raw.get(key)`, and it is the difference between two declarations
+    this loader must not confuse. An absent key takes the default. A key
+    written as `direction:` with nothing after it holds None, which is not a
+    string, so it is refused rather than answered with a value the author did
+    not write. `strict_bool` separates the same pair the same way.
+
+    Use it wherever the fallback is a CHOICE the loader would otherwise make
+    silently. Where the fallback is the empty value of the same kind (`""`
+    for free text, `()` for a list of names), absence and null mean the same
+    thing and `optional_str` is the reader.
+    """
+    value = raw.get(key, default)
+    if not isinstance(value, str):
+        raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
+    return value
+
+
+def _require(raw: Mapping[str, Any], key: str, context: str) -> Any:
+    """The value under `key`, refusing a block that omits it."""
+    if key not in raw:
+        raise MappingShapeError(f"{context}.{key} is required")
+    return raw[key]
 
 
 def require_int(raw: Mapping[str, Any], key: str, context: str) -> int:
@@ -111,13 +191,13 @@ def require_int(raw: Mapping[str, Any], key: str, context: str) -> int:
     are ones where 1 is a legal-looking value, so nothing downstream can tell
     the difference.
 
-    Subscripted, not `.get()`: an absent required key stays the KeyError it
-    has always been. Reporting that with a location is the error-model work
-    in #170, and doing it here would change an unrelated message.
+    An absent key is a `MappingShapeError` naming the key path, not the bare
+    KeyError this subscripted before #170: the hierarchy claims an absent
+    required key, so a caller catching `MappingError` has to get one.
     """
-    value = raw[key]
+    value = _require(raw, key, context)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{context}.{key} must be an integer, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be an integer, got {value!r}")
     return value
 
 
@@ -133,18 +213,18 @@ def optional_int(raw: Mapping[str, Any], key: str, context: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{context}.{key} must be an integer, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be an integer, got {value!r}")
     return value
 
 
 def require_str(raw: Mapping[str, Any], key: str, context: str) -> str:
     """Read a required string. The mirror of `optional_str`.
 
-    Subscripted for the same reason as `require_int`.
+    Refuses an absent key the same way `require_int` does.
     """
-    value = raw[key]
+    value = _require(raw, key, context)
     if not isinstance(value, str):
-        raise ValueError(f"{context}.{key} must be a string, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
     return value
 
 
@@ -161,10 +241,10 @@ def optional_str_list(raw: Mapping[str, Any], key: str, context: str) -> tuple[s
     if value is None:
         return ()
     if not isinstance(value, list):
-        raise ValueError(f"{context}.{key} must be a list of strings, got {value!r}")
+        raise MappingShapeError(f"{context}.{key} must be a list of strings, got {value!r}")
     for item in value:
         if not isinstance(item, str):
-            raise ValueError(
+            raise MappingShapeError(
                 f"{context}.{key} must be a list of strings, got {item!r}",
             )
     return tuple(value)

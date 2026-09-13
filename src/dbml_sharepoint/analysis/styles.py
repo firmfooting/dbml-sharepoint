@@ -40,6 +40,10 @@ from dbml_sharepoint.analysis.findings import FindingCode
 # guard is a parser under `model/`.
 from dbml_sharepoint.model._keys import _reject_unknown_keys
 
+# Same route as the guard above, and the same reason: `_formatting.read`
+# delegates to this module, so a refusal here is a mapping refusal.
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
 
 
@@ -95,8 +99,19 @@ def _calculated_scalar(constructor: str) -> str:
     )
 
 
-def _fail(context: str, message: str) -> ValueError:
-    return ValueError(f"{context}: {message}")
+def _fail(context: str, message: str) -> MappingShapeError:
+    """A spec that is not the shape its expander reads: a key absent, or a
+    value of the wrong YAML type."""
+    return MappingShapeError(f"{context}: {message}")
+
+
+def _not_in_vocabulary(context: str, message: str) -> MappingValueError:
+    """A spec naming a style or a token this module does not define.
+
+    The same sentence as `_fail`, with the class the loader's split gives a
+    word outside a closed set rather than a shape.
+    """
+    return MappingValueError(f"{context}: {message}")
 
 
 # SP resolves `[$Name]` against a column's INTERNAL name; anything else
@@ -138,7 +153,9 @@ def _resolve(
         return theme[token_name]
     token = TOKENS.get(token_name)
     if token is None:
-        raise _fail(context, f"unknown token {token_name!r} (known: {sorted(TOKENS)})")
+        raise _not_in_vocabulary(
+            context, f"unknown token {token_name!r} (known: {sorted(TOKENS)})",
+        )
     return token
 
 
@@ -151,10 +168,20 @@ def _if_chain(pairs: list[tuple[str, str]], fallback: str) -> str:
 
 
 def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
+    """The `map` of column value to token name.
+
+    A value is stringified because a cell is compared as text and YAML reads
+    `1` or `true` as a scalar. A TOKEN is not: `str()` on a list made
+    `map: {Open: [good]}` report the unknown token `"['good']"`, a word
+    outside the vocabulary where the real fault is the shape.
+    """
     value_map = spec.get("map")
     if not isinstance(value_map, dict) or not value_map:
         raise _fail(context, "this style requires a non-empty 'map' of value -> token")
-    return {str(value): str(token) for value, token in value_map.items()}
+    for value, token in value_map.items():
+        if not isinstance(token, str):
+            raise _fail(context, f"map[{value!r}] must be a token name, got {token!r}")
+    return {str(value): token for value, token in value_map.items()}
 
 
 def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
@@ -217,7 +244,7 @@ def _pill(
         if theme and token_name in theme:
             continue
         if token_name not in _PILL_CLASSES:
-            raise _fail(
+            raise _not_in_vocabulary(
                 context,
                 f"unknown token {token_name!r} (known: {sorted(_PILL_CLASSES)})",
             )
@@ -490,9 +517,15 @@ def expand_style(
 ) -> dict[str, Any]:
     """Expand a declared style spec into plain SP column-formatting JSON."""
     style = spec.get("style")
-    registered = STYLES.get(style) if isinstance(style, str) else None
+    # The shape before the word, the split the loader draws everywhere else:
+    # `style: []` is not a style name this module declines to know.
+    if not isinstance(style, str):
+        raise _fail(context, f"'style' must be a string, got {style!r}")
+    registered = STYLES.get(style)
     if registered is None:
-        raise _fail(context, f"unknown style {style!r} (known: {list(STYLES)})")
+        raise _not_in_vocabulary(
+            context, f"unknown style {style!r} (known: {list(STYLES)})",
+        )
     # Hoisted from the five expanders, which each opened with it, so the same
     # failure still wins.
     _reject_unknown_keys(spec, registered.keys, context)
@@ -508,8 +541,14 @@ def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
         raise _fail(context, "expected a mapping of token overrides")
     theme: dict[str, StyleToken] = {}
     for name, override in raw.items():
+        # The shape before the word here too: a YAML key may be any scalar,
+        # and `1` is not a token name spelled wrongly.
+        if not isinstance(name, str):
+            raise _fail(context, f"token name must be a string, got {name!r}")
         if name not in TOKENS:
-            raise _fail(context, f"unknown token {name!r} (known: {sorted(TOKENS)})")
+            raise _not_in_vocabulary(
+                context, f"unknown token {name!r} (known: {sorted(TOKENS)})",
+            )
         if not isinstance(override, dict):
             raise _fail(context, f"{name}: expected a mapping with classes/icon")
         _reject_unknown_keys(override, {"classes", "icon"}, f"{context}.{name}")
@@ -520,8 +559,10 @@ def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
             raise _fail(
                 context, f"{name}: 'classes' (non-empty list or string) is required",
             )
+        # An absent `icon` keeps the token's own and `icon: null` is a
+        # declared no icon; `str()` on anything else emitted "['Emoji2']".
         icon = override.get("icon", TOKENS[name].icon)
-        theme[name] = StyleToken(
-            classes, icon if icon is None or isinstance(icon, str) else str(icon),
-        )
+        if icon is not None and not isinstance(icon, str):
+            raise _fail(context, f"{name}: 'icon' must be a string or null, got {icon!r}")
+        theme[name] = StyleToken(classes, icon)
     return theme

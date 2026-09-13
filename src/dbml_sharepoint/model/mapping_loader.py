@@ -24,6 +24,7 @@ from types import MappingProxyType
 from typing import Any
 
 from dbml_sharepoint.model._retirement import _apply_retirement
+from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
 from dbml_sharepoint.model.reading import load_yaml
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
@@ -45,13 +46,13 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     # in the sections parsed ahead of this gate.
     unknown_sections = set(raw) - KNOWN_SECTIONS
     if unknown_sections:
-        raise ValueError(
+        raise UnknownMappingKeyError(
             f"unknown mapping section(s) {sorted(unknown_sections)}. Unknown keys used to be "
             f"ignored, so a misspelled section silently deployed nothing.",
         )
     for removed, replacement in _REMOVED_SECTIONS.items():
         if removed in raw:
-            raise ValueError(f"{removed!r} has been replaced by {replacement}")
+            raise UnknownMappingKeyError(f"{removed!r} has been replaced by {replacement}")
 
     loaded: dict[str, Any] = {}
     for family in SECTION_FAMILIES:

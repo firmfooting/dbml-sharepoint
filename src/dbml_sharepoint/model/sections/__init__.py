@@ -32,10 +32,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS
+from dbml_sharepoint.model.reading import read_yaml_document
 from dbml_sharepoint.model.sections import (
     _columns,
     _default_formulas,
@@ -137,20 +137,20 @@ def _pointed_blocks(
     keys: tuple[str, ...], pointer: str, source: Any, raw: Mapping[str, Any], base_dir: Path,
 ) -> dict[str, Any]:
     if not isinstance(source, str) or not source.strip():
-        raise ValueError(
+        raise MappingShapeError(
             f"{pointer} must be a path relative to the mapping, got {source!r}",
         )
     inline = sorted(set(keys) & set(raw))
     if inline:
-        raise ValueError(
+        raise MappingShapeError(
             f"{pointer} points at {source!r}, so "
             f"{', '.join(inline)} may not also be declared in the mapping. "
             f"Move the section into that file, or drop {pointer}.",
         )
     path = (base_dir / source).resolve()
     if not path.is_file():
-        raise ValueError(f"{pointer}: cannot read {source!r} at {path}")
-    contents = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raise MappingReferenceError(f"{pointer}: cannot read {source!r} at {path}")
+    contents = read_yaml_document(path, pointer) or {}
     block = _require_mapping(contents, f"{source}")
     _reject_unknown_keys(block, frozenset(keys), f"{source}")
     return {key: block[key] for key in keys if key in block}

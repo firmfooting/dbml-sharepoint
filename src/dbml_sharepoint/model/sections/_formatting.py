@@ -13,6 +13,7 @@ from typing import Any
 
 from dbml_sharepoint.analysis import styles
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import FormFormatting
 from dbml_sharepoint.model.reading import load_json_value
 from dbml_sharepoint.model.sections.context import SectionContext
@@ -54,7 +55,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
     if not isinstance(parts, dict):
-        raise ValueError(f"{context}: expected a mapping of header/body/footer parts")
+        raise MappingShapeError(f"{context}: expected a mapping of header/body/footer parts")
     _reject_unknown_keys(parts, {"header", "body", "footer"}, context)
     loaded = {
         name: load_json_value(base_dir, value, f"{context}.{name}")
@@ -62,7 +63,7 @@ def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormForm
         if value is not None
     }
     if not loaded:
-        raise ValueError(f"{context}: declare at least one of header/body/footer")
+        raise MappingShapeError(f"{context}: declare at least one of header/body/footer")
     # Every accepted part must be carried. Dropping one here is invisible:
     # `footer` was allow-listed, loaded and then discarded, so a declaration
     # validated clean, reported no findings and deployed nothing, and a

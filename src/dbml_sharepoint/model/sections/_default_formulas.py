@@ -9,6 +9,7 @@ formula, is the validator's question (`analysis/checks/_default_formulas.py`).
 from typing import Any
 
 from dbml_sharepoint.model._keys import _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -24,7 +25,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             # Not coerced with str(): a bare `2026` or `true` is a value, and
             # a value belongs in the DBML `default:` setting, not here.
             if not isinstance(formula, str):
-                raise ValueError(
+                raise MappingShapeError(
                     f"default_formulas.{entity}.{column}: expected a formula "
                     f"string such as \"=TODAY()\", got {formula!r}",
                 )
