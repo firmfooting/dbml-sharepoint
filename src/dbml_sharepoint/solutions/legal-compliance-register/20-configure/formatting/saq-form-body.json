@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The SAQ",
+      "fields": ["Topic", "ItemType", "PeriodYear", "Quarter", "Division", "DueDate", "Title"]
+    },
+    {
+      "displayname": "Complete it",
+      "fields": ["BusinessOwner", "Status", "Compliance", "Notes"]
+    },
+    {
+      "displayname": "Confirm it",
+      "fields": ["ExecutiveResponsible", "CompletedDate", "ActionUrl"]
+    },
+    {
+      "displayname": "Record in the portal",
+      "fields": ["ExternalRecorded"]
+    }
+  ]
+}
