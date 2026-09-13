@@ -43,6 +43,17 @@
  *        name, two target rows, the lookup on Title and the linked source
  *        item are all in place, and the lookup reads back LookupField=Title.
  *        If this fails, everything below is VOID rather than open.
+ *   field.lookup.control-alt-column-accepted-at-creation
+ *        CONTROL: a SECOND lookup created directly on the alternate column
+ *        establishes that the column is a legal display target at all.
+ *        Learn's `Field element (Field)` limits what may be targeted by
+ *        type, so without this a refused repoint cannot be told apart from
+ *        a target SharePoint would never have accepted in any form.
+ *   field.lookup.control-description-merge-applies
+ *        CONTROL: a Description MERGE through the SAME request envelope
+ *        establishes that the request reaches this field object. Without
+ *        this an ACCEPTED status with the property UNCHANGED cannot be told
+ *        apart from a MERGE that applies nothing in this transport.
  *   field.lookup.showfield-merge-accepted
  *        Did the field MERGE that sets LookupField to the internal name
  *        'AlternateLabel' come back accepted? HTTP status and body only.
@@ -68,6 +79,25 @@
  *        setting it to the display name does not raise an error, but breaks
  *        the field". A silent acceptance that breaks the column is the exact
  *        failure class this repository exists to catch, so it is measured.
+ *
+ * TWO READINGS AN UNCONTROLLED TRANSCRIPT CANNOT SEPARATE. If the run reports
+ * the MERGE ACCEPTED and the property UNCHANGED, that has two explanations and
+ * they imply opposite things about whether the pin in `immutable_shape.py` is
+ * justified. Either SharePoint takes the request and ignores LookupField, in
+ * which case the pin is correct, or a MERGE against this field object applies
+ * nothing in this transport, in which case the run measured the transport and
+ * says nothing about the platform. A REFUSAL carries the mirror ambiguity: the
+ * platform refusing a change, or the platform refusing a target it would never
+ * have accepted at creation either. `control-description-merge-applies`
+ * separates the first pair and `control-alt-column-accepted-at-creation` the
+ * second. Both are measured BEFORE the LookupField MERGE is sent, and either
+ * one failing voids the rows that read the repoint rather than leaving them to
+ * be misread.
+ *
+ * THE VERBOSE TYPE IS READ, NOT ASSUMED. The verbose envelope names an entity
+ * type, and a wrong type name comes back refused in exactly the shape a refused
+ * property does. The probe reads `__metadata.type` off the field and prints
+ * which spelling it sent beside every verdict that used it.
  *
  * THE FIXTURE IS DISCRIMINATING BY CONSTRUCTION. The target holds two rows
  * whose Title and AlternateLabel are four different strings, so "the cell
@@ -109,6 +139,12 @@
   // control has two distinct spellings to send.
   const ALT = 'AlternateLabel';
   const ALT_DISPLAY = 'Alternate Label Display';
+  // The control lookup, created directly on ALT rather than repointed onto it.
+  const ALT_LOOKUP = 'ProbeShowFieldAlt';
+  // The Description control's sentinel, compared byte-for-byte on readback. It
+  // carries this paste's own moment, so a Description left behind by an earlier
+  // run can never satisfy the control without the write happening again.
+  const DESC_CONTROL = `dbmlsp-probe-description-control-${Date.now()}`;
   // Ownership is this exact description, never the title. A same-title list
   // somebody else made is refused rather than recycled.
   const OWNERSHIP = 'dbml-sharepoint lookup-showfield probe (issue #377). Safe to recycle.';
@@ -122,6 +158,8 @@
 
   const Q = {
     fixture: 'CONTROL: are both lists, the second target column, the two target rows, the lookup and the linked source item in place, with the lookup displaying Title?',
+    altColumn: 'CONTROL: is the alternate target column a legal lookup display target at all, measured by creating a second lookup directly on it?',
+    descriptionMerge: 'CONTROL: does a MERGE of an ordinary property through this same request envelope reach this field object?',
     accepted: 'Does SharePoint accept a MERGE setting an existing lookup\'s LookupField to another target column\'s internal name?',
     readback: 'Re-reading the field afterwards, what does LookupField hold?',
     preserved: 'Did the source item keep the target id it stored before the mutation?',
@@ -132,6 +170,8 @@
   };
 
   expect('field.lookup.control-showfield-fixture', Q.fixture);
+  expect('field.lookup.control-alt-column-accepted-at-creation', Q.altColumn);
+  expect('field.lookup.control-description-merge-applies', Q.descriptionMerge);
   expect('field.lookup.showfield-merge-accepted', Q.accepted);
   expect('field.lookup.showfield-property-readback', Q.readback);
   expect('field.lookup.showfield-stored-id-preserved', Q.preserved);
@@ -140,8 +180,12 @@
   expect('field.lookup.showfield-edit-form', Q.editForm);
   expect('field.lookup.showfield-display-name-spelling', Q.displayName);
 
-  // Every row that a failed fixture control voids rather than leaves open.
+  // Every row that a failed fixture control voids rather than leaves open. The
+  // two controls are in here too, because a fixture that never built leaves
+  // them unmeasurable rather than merely unmeasured.
   const DEPENDANTS = [
+    ['field.lookup.control-alt-column-accepted-at-creation', Q.altColumn],
+    ['field.lookup.control-description-merge-applies', Q.descriptionMerge],
     ['field.lookup.showfield-merge-accepted', Q.accepted],
     ['field.lookup.showfield-property-readback', Q.readback],
     ['field.lookup.showfield-stored-id-preserved', Q.preserved],
@@ -150,11 +194,16 @@
     ['field.lookup.showfield-edit-form', Q.editForm],
     ['field.lookup.showfield-display-name-spelling', Q.displayName],
   ];
-  const voidDependants = (why) => {
-    for (const [id, question] of DEPENDANTS) {
+  // What a failed CONTROL voids: the rows that read the repoint attempt.
+  // Neither control is in here, because one of them failing does not make the
+  // other unanswerable, and a control that voids itself reports nothing.
+  const MEASURED = DEPENDANTS.slice(2);
+  const voidRows = (rows, why) => {
+    for (const [id, question] of rows) {
       record(id, question, 'NOT ESTABLISHED', why, 'void');
     }
   };
+  const voidDependants = (why) => voidRows(DEPENDANTS, why);
 
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
@@ -163,8 +212,11 @@
     log('INFO', `text column with internal name '${ALT}' and display title`);
     log('INFO', `'${ALT_DISPLAY}' to the target, create two target rows, add a`);
     log('INFO', `lookup '${LOOKUP}' displaying Title, link one source item to the`);
-    log('INFO', `first target row, then MERGE LookupField to '${ALT}' and read`);
-    log('INFO', 'back the field, the stored id, an item API and a rendered view.');
+    log('INFO', `first target row, and add a second lookup '${ALT_LOOKUP}' created`);
+    log('INFO', `directly on '${ALT}' as a control. It would then MERGE a Description`);
+    log('INFO', 'sentinel as a second control, MERGE LookupField to');
+    log('INFO', `'${ALT}', and read back the field, the stored id, an item API and a`);
+    log('INFO', 'rendered view.');
     log('INFO', 'Nothing else on the site is touched.');
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${SOURCE}' then '${TARGET}' would be RECYCLED first.`);
@@ -420,6 +472,45 @@
     return report();
   }
 
+  // ---- Control: is the alternate column a legal display target at all? --
+  // A second lookup created DIRECTLY on it, never repointed onto it. Learn's
+  // `Field element (Field)` limits a lookup's display target by type, so
+  // without this a refused repoint and an illegal target read identically.
+  let altLookupMade = null;
+  if (readFailed(await spGet(`${fieldPath(SOURCE, ALT_LOOKUP)}?$select=InternalName`))) {
+    const digest = await getDigest();
+    altLookupMade = await spPost(`${listPath(SOURCE)}/fields/addfield`, {
+      parameters: {
+        Title: ALT_LOOKUP,
+        FieldTypeKind: 7,
+        LookupListId: targetList.d.Id,
+        LookupFieldName: ALT,
+      },
+    }, digest);
+  }
+  const altLookupRead = await spGet(
+    `${fieldPath(SOURCE, ALT_LOOKUP)}?$select=InternalName,TypeAsString,LookupField`);
+  const altLookupHeld = readFailed(altLookupRead) ? null : altLookupRead.body.LookupField;
+  const altLegal = altLookupHeld === ALT;
+  record('field.lookup.control-alt-column-accepted-at-creation', Q.altColumn,
+         altLegal ? 'PASS' : 'FAIL',
+         `a second lookup '${ALT_LOOKUP}' was requested with LookupFieldName=`
+         + `${JSON.stringify(ALT)}. `
+         + (altLookupMade ? `Creation ${bounded(altLookupMade)}. ` : 'It already existed. ')
+         + `It reads back LookupField=${JSON.stringify(altLookupHeld)}, TypeAsString=`
+         + `${readFailed(altLookupRead) ? 'unreadable' : JSON.stringify(altLookupRead.body.TypeAsString)}. `
+         + (altLegal
+             ? `${ALT} IS a legal display target at creation, so a refusal below is `
+               + 'about the CHANGE rather than about the target.'
+             : `${ALT} is NOT established as a legal display target, so a refusal `
+               + 'below would not be attributable to immutability.'));
+  if (!altLegal) {
+    voidRows(MEASURED,
+             'the alternate column is not established as a legal display target, so a '
+             + 'refused repoint below would not be attributable to immutability');
+    return report();
+  }
+
   // ---- The negative control pass, which measures nothing else ---------
   if (NEGATIVE_DISPLAY_NAME) {
     log('INFO', 'NEGATIVE_DISPLAY_NAME is on. This pass measures the display-name');
@@ -427,14 +518,39 @@
   }
 
   // ---- Observation helpers --------------------------------------------
-  const mergeShowField = async (value, verbose) => {
+  // The verbose envelope names an entity type, and a wrong type name is refused
+  // in exactly the shape a refused property is, so it is read off the field
+  // rather than assumed to be 'SP.FieldLookup'.
+  const readVerboseType = async () => {
+    const response = await fetch(`${WEB}/_api/${fieldPath(SOURCE, LOOKUP)}`, {
+      headers: { Accept: 'application/json;odata=verbose' },
+    });
+    const body = await response.json().catch(() => null);
+    const type = (body && body.d && body.d.__metadata && body.d.__metadata.type) || null;
+    return { ok: response.ok && Boolean(type), status: response.status, type };
+  };
+  const typeRead = await readVerboseType();
+  const VERBOSE_TYPE = typeRead.type || 'SP.FieldLookup';
+  // The fallback is never silent: every verdict that used the verbose envelope
+  // prints which of the two spellings it sent.
+  const typeNote = typeRead.type
+    ? `verbose __metadata.type=${JSON.stringify(VERBOSE_TYPE)}, read off the field`
+    : `the field's own __metadata.type could not be read (HTTP ${typeRead.status}), `
+      + `so the verbose envelope fell back to ${JSON.stringify(VERBOSE_TYPE)}`;
+  log('INFO', `Verbose envelope: ${typeNote}.`);
+
+  // One envelope, two payloads. The Description control is only a control if it
+  // travels exactly the way the LookupField MERGE travels.
+  const mergeFieldProperty = async (payload, verbose) => {
     const digest = await getDigest();
     return verbose
       ? spPost(fieldPath(SOURCE, LOOKUP),
-               { __metadata: { type: 'SP.FieldLookup' }, LookupField: value }, digest,
+               { __metadata: { type: VERBOSE_TYPE }, ...payload }, digest,
                { ...MERGE_HEADERS, 'Content-Type': 'application/json;odata=verbose' })
-      : spPost(fieldPath(SOURCE, LOOKUP), { LookupField: value }, digest, MERGE_HEADERS);
+      : spPost(fieldPath(SOURCE, LOOKUP), payload, digest, MERGE_HEADERS);
   };
+  const mergeShowField = (value, verbose) =>
+    mergeFieldProperty({ LookupField: value }, verbose);
 
   // RenderListDataAsStream is what the modern list page itself calls, so it
   // answers "what would a reader see" rather than "what does REST list".
@@ -493,6 +609,47 @@
   const textBefore = await readValuesAsText();
   log('INFO', `Before the mutation, the rendered lookup cell is ${renderBefore.ok ? renderBefore.cell : `unreadable (${renderBefore.note})`}.`);
 
+  // ---- Control: does a MERGE through this envelope reach the field? ----
+  // Sent BEFORE the LookupField MERGE and through mergeFieldProperty, so the
+  // envelope proved here is the one the primary measurement uses, and the two
+  // spellings are walked in the same order for the same reason. The sentinel is
+  // left in the Description deliberately: it is this run's own evidence that
+  // the transport worked, on a column this probe owns and later recycles.
+  const descRead0 = await spGet(`${fieldPath(SOURCE, LOOKUP)}?$select=Description`);
+  const descBefore = readFailed(descRead0) ? null : descRead0.body.Description;
+  const descNoMeta = await mergeFieldProperty({ Description: DESC_CONTROL }, false);
+  let descVerbose = null;
+  let descRead = await spGet(`${fieldPath(SOURCE, LOOKUP)}?$select=Description`);
+  let descHeld = readFailed(descRead) ? null : descRead.body.Description;
+  if (descHeld !== DESC_CONTROL) {
+    descVerbose = await mergeFieldProperty({ Description: DESC_CONTROL }, true);
+    descRead = await spGet(`${fieldPath(SOURCE, LOOKUP)}?$select=Description`);
+    descHeld = readFailed(descRead) ? null : descRead.body.Description;
+  }
+  const descApplied = descHeld === DESC_CONTROL;
+  const descEnvelope = descApplied ? (descVerbose ? 'verbose' : 'nometadata') : null;
+  const envelopeNote = descApplied
+    ? `A Description MERGE through the ${descEnvelope} envelope DID apply to this `
+      + 'field object in this run, so a LookupField that does not move is about the '
+      + 'property rather than about the transport.'
+    : 'No Description MERGE applied to this field object, so nothing here separates '
+      + 'an ignored property from a request that never reached the field.';
+  record('field.lookup.control-description-merge-applies', Q.descriptionMerge,
+         descApplied ? 'PASS' : 'FAIL',
+         `Description was ${JSON.stringify(descBefore)} before. nometadata MERGE `
+         + `${bounded(descNoMeta)}`
+         + (descVerbose ? `; verbose MERGE ${bounded(descVerbose)}` : '')
+         + `. ${typeNote}. Description reads back ${JSON.stringify(descHeld)}, which `
+         + `${descApplied ? 'is' : 'is NOT'} the sentinel ${JSON.stringify(DESC_CONTROL)}. `
+         + envelopeNote);
+  if (!descApplied) {
+    voidRows(MEASURED,
+             'no MERGE through this envelope reached the field object, so an unchanged '
+             + 'LookupField below would not be attributable to the platform ignoring '
+             + 'the property');
+    return report();
+  }
+
   if (NEGATIVE_DISPLAY_NAME) {
     // Restore a known-good INTERNAL name first, so what follows is measured
     // from a state this run established rather than inherited.
@@ -521,7 +678,8 @@
     const held = readFailed(after) ? null : after.body.LookupField;
     const renderedAfter = await renderLookupCell();
     const carries = renderedAfter.ok ? whichLabel(renderedAfter.cell) : null;
-    const transport = `${usedVerbose ? 'nometadata refused, verbose ' : ''}MERGE ${bounded(sent)}`;
+    const transport = `${usedVerbose ? 'nometadata refused, verbose ' : ''}MERGE ${bounded(sent)}`
+      + `. ${envelopeNote}`;
     record('field.lookup.showfield-display-name-spelling', Q.displayName,
            held === null ? 'NOT ESTABLISHED'
              : !sent.ok ? (isRefusal(sent.status) ? 'REFUSED' : 'NOT ESTABLISHED')
@@ -560,7 +718,7 @@
   const finalReadback = readbackSecond || readbackFirst;
   const held = readFailed(finalReadback) ? null : finalReadback.body.LookupField;
   const attempts = `nometadata MERGE ${bounded(first)}`
-    + (second ? `; verbose MERGE with __metadata SP.FieldLookup ${bounded(second)}` : '');
+    + (second ? `; verbose MERGE with __metadata ${VERBOSE_TYPE} ${bounded(second)}` : '');
   const anyAccepted = first.ok || Boolean(second && second.ok);
   const anyRefused = (!first.ok && isRefusal(first.status))
     || Boolean(second && !second.ok && isRefusal(second.status));
@@ -573,19 +731,24 @@
            + 'server did not reject the content and this run has no answer.'));
 
   // ---- 2. Did the stored property change ------------------------------
+  // UNCHANGED is the reading the two controls exist for, so both travel with
+  // it: the envelope that applied, and the legality of the target.
   record('field.lookup.showfield-property-readback', Q.readback,
          held === null ? 'NOT ESTABLISHED'
            : held === ALT ? 'REPOINTED'
            : held === 'Title' ? 'UNCHANGED'
            : 'CHANGED TO SOMETHING ELSE',
-         held === null
+         (held === null
            ? `the field could not be read back after the mutation (HTTP `
              + `${finalReadback.status}), so this run cannot say what it holds`
            : `LookupField=${JSON.stringify(held)} after the mutation, from `
              + `${JSON.stringify('Title')} before it. LookupList=`
              + `${JSON.stringify(finalReadback.body.LookupList)}, TypeAsString=`
              + `${JSON.stringify(finalReadback.body.TypeAsString)}. First readback held `
-             + `${JSON.stringify(heldFirst)}.`);
+             + `${JSON.stringify(heldFirst)}.`)
+         + ` ${envelopeNote} A lookup created directly on ${JSON.stringify(ALT)} holds `
+         + `LookupField=${JSON.stringify(altLookupHeld)}, so that column is a legal `
+         + 'display target.');
 
   // ---- 3. Did the source item keep its stored id ----------------------
   const itemAfter = await readSourceItem();
@@ -686,7 +849,9 @@
     console.log(`  1. Open the item titled '${SOURCE_ROW}' on '${SOURCE}' for editing.`);
     console.log('     (DefaultEditFormUrl could not be read, so there is no exact link.)');
   }
-  console.log(`  2. Read the '${LOOKUP}' field.`);
+  console.log(`  2. Read the '${LOOKUP}' field. The form also carries`);
+  console.log(`     '${ALT_LOOKUP}', which is the control lookup and shows ${ALT}`);
+  console.log(`     whatever happened above. The subject is '${LOOKUP}'.`);
   console.log(`     "${TITLE_ONE}" means the form still shows the target Title.`);
   console.log(`     "${ALT_ONE}" means it shows ${ALT}.`);
   console.log('     Blank, an id, or an error is its own answer. Write it down verbatim.');
