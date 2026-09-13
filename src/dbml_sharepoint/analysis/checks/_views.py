@@ -579,7 +579,14 @@ def check(vc: ValidationContext) -> list[Finding]:
         # further down; see analysis/joins.py.
         entity_join_bearing = join_bearing_columns(view_table, xcols)
         titles = [v.title for v in views]
-        if "All Items" in titles:
+        # Case-insensitively, everywhere a title meets another title below.
+        # SharePoint resolves views/getbytitle that way and will not hold two
+        # views on one list differing only in case, so a rule comparing
+        # exactly passes a declaration the deploy then cannot deploy.
+        folded: dict[str, list[str]] = {}
+        for title in titles:
+            folded.setdefault(title.casefold(), []).append(title)
+        if "all items" in folded:
             findings.append(Finding(
                 FindingCode.ALL_ITEMS_VIEW_DECLARED,
                 f"views[{entity_name}]: 'All Items' is generated with every "
@@ -587,12 +594,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"instead of overriding that recovery view.",
                 location=at_entity,
             ))
-        # Case-insensitively: SharePoint resolves views/getbytitle that way
-        # and will not hold two views on one list differing only in case, so
-        # the second create collides mid-deploy.
-        folded: dict[str, list[str]] = {}
-        for title in titles:
-            folded.setdefault(title.casefold(), []).append(title)
+        # The second create would collide mid-deploy.
         for variants in sorted(folded.values(), key=lambda v: v[0]):
             if len(variants) < 2:
                 continue
@@ -604,7 +606,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                    f"treats them as one view." if len(distinct) > 1 else ""),
                 location=at_entity,
             ))
-        previous_claims: dict[str, list[str]] = {}
+        previous_claims: dict[str, tuple[str, list[str]]] = {}
         for view in views:
             for previous in view.renamed_from:
                 ctx = f"views[{entity_name}].{view.title}.renamed_from"
@@ -627,22 +629,26 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"previous title.",
                         location=at_renamed,
                     ))
-                if previous == "All Items":
+                if previous.casefold() == "all items":
                     findings.append(Finding(
                         FindingCode.PREVIOUS_TITLE_IS_RESERVED,
                         f"{ctx}: 'All Items' is reserved for the generated "
                         f"recovery view and cannot be adopted.",
                         location=at_renamed,
                     ))
-                if previous in titles and previous != view.title:
+                # Its OWN title folded is the supported casing-only rename,
+                # and the deploy matches the view it already found.
+                if (previous.casefold() != view.title.casefold()
+                        and previous.casefold() in folded):
                     findings.append(Finding(
                         FindingCode.PREVIOUS_TITLE_IS_A_CURRENT_TITLE,
                         f"{ctx}: {previous!r} is another declared view's "
                         f"current title.",
                         location=at_renamed,
                     ))
-                previous_claims.setdefault(previous, []).append(view.title)
-        for previous, claimants in previous_claims.items():
+                claim = previous_claims.setdefault(previous.casefold(), (previous, []))
+                claim[1].append(view.title)
+        for previous, claimants in previous_claims.values():
             if len(claimants) > 1:
                 findings.append(Finding(
                     FindingCode.PREVIOUS_TITLE_CLAIMED_TWICE,

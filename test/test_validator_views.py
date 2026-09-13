@@ -102,6 +102,43 @@ def test_view_previous_titles_cannot_collide_or_claim_all_items() -> None:
     assert len(claimed) == 2, claimed
     assert any("'Legacy'" in m for m in claimed)
 
+def test_view_previous_titles_collide_case_insensitively() -> None:
+    """Every comparison between two declared titles folds case. SharePoint
+    resolves views/getbytitle that way and will not hold two views on one list
+    differing only in case, so an exact comparison passed each of these into a
+    deploy that then had two declarations resolving to one live view.
+    """
+    errors = _project_errors(
+        views={
+            "Project": [
+                ViewDef(
+                    title="Open", fields=["Title"],
+                    renamed_from=["all items", "legacy"],
+                ),
+                ViewDef(
+                    title="Closed", fields=["Title"],
+                    renamed_from=["OPEN", "LEGACY"],
+                ),
+            ],
+        },
+    )
+    only(errors, FindingCode.PREVIOUS_TITLE_IS_RESERVED)
+    assert "'OPEN'" in only(
+        errors, FindingCode.PREVIOUS_TITLE_IS_A_CURRENT_TITLE,
+    ).message
+    claimed = messages(errors, FindingCode.PREVIOUS_TITLE_CLAIMED_TWICE)
+    assert len(claimed) == 1, claimed
+    assert "'legacy'" in claimed[0], claimed
+
+def test_a_casing_only_rename_of_a_view_is_still_allowed() -> None:
+    """The one comparison that must NOT fold. `title: Open` with
+    `renamed_from: [open]` is how a view is recased, and the deploy handles it
+    by excluding the view it already matched as current."""
+    errors = _project_errors(
+        views={"Project": [ViewDef(title="Open", fields=["Title"], renamed_from=["open"])]},
+    )
+    assert [e.code for e in errors] == [], [e.message for e in errors]
+
 def test_view_field_references_must_be_rendered_columns() -> None:
     errors = _project_errors(
         views={
@@ -1154,6 +1191,14 @@ def test_all_items_title_is_reserved_for_the_generated_unfiltered_view() -> None
     )
     finding = only(errors, FindingCode.ALL_ITEMS_VIEW_DECLARED)
     assert finding.location == Location(Section.VIEWS, entity="Project")
+
+def test_the_reserved_all_items_title_is_matched_case_insensitively() -> None:
+    """The deploy resolves the recovery view by title, which SharePoint folds,
+    so 'all items' overrides it exactly as 'All Items' would."""
+    errors = _project_errors(
+        views={"Project": [ViewDef(title="all items", fields=["Title"])]},
+    )
+    only(errors, FindingCode.ALL_ITEMS_VIEW_DECLARED)
 
 def test_view_row_limit_at_the_configured_ceiling_is_accepted() -> None:
     """Pin the accepted side of MAX_VIEW_ROW_LIMIT."""
