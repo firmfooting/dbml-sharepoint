@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
  *
- * REVISION: 24752514
+ * REVISION: bc2c36cd
  *
  * ONE QUESTION:
  *   A document library's form header is stored and read back byte-identical
@@ -67,6 +67,41 @@
  * The typedNotes mechanism did its job: the incomplete fixture was REPORTED
  * as incomplete rather than read as a lookup token that does not resolve,
  * which is the one mistake this whole probe exists to avoid.
+ *
+ * ROUND FOUR ANSWERED IT. MEASURED 2026-09-13, revision 24752514, on a live
+ * library display form, read off a header that finally stacked:
+ *
+ *     ID                        -> [1]
+ *     Modified                  -> [13/09/2026 11:40 PM]
+ *     dbmlspChoice              -> [Q3]
+ *     dbmlspNumber              -> [2026]
+ *     (the dbmlspDate line)        the WHOLE line rendered `Invalid Date`
+ *     dbmlspLookup              -> [1;#Privacy and health records]
+ *     dbmlspLookup.lookupValue  -> []
+ *
+ * So a header CAN read a declared column, which is what makes a meaningful
+ * header possible at all, but three of the four types answer in a shape
+ * nothing documents:
+ *
+ *   Choice resolves to the member text, and Number to the raw number. The
+ *   form BODY shows the same Number as `2,026`, so the header is not
+ *   applying the column's display formatting.
+ *
+ *   DateTime does not render empty. It DESTROYS the expression: the label,
+ *   the arrow and the brackets all vanished and the line read `Invalid
+ *   Date`. That is worse than a blank, because a blank leaves the rest of
+ *   the header standing and this takes a whole line with it.
+ *
+ *   Lookup resolves to the RAW stored form, `<id>;#<value>`, which is the
+ *   internal encoding and not something any header would want to show. And
+ *   `.lookupValue`, which is the documented accessor for exactly this in
+ *   column and view formatting, returns EMPTY here.
+ *
+ * WHAT IS STILL OPEN, and what a family's header needs before it can use
+ * either type: whether a header supports the expression functions that would
+ * cut `<id>;#` off a lookup (`substring`, `indexOf`), whether a projected
+ * lookup field renders its value cleanly, and which spelling gets a date to
+ * render. None of those are asked here.
  *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
@@ -363,7 +398,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 24752514. Quote this when reporting results.');
+  log('INFO', 'probe revision bc2c36cd. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Header Tokens';
   const libPath = `web/lists/getbytitle('${LIB}')`;
