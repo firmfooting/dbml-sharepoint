@@ -6,10 +6,13 @@
  * Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared
  * demo/sample rows. Every Title starts with '{{ demo_title_prefix }}' (visible in every
  * view and form), and each row's text
- * identifies it as demonstration data to delete before active use.
- * Re-pasting is safe: rows that already exist (matched by Title) are
- * skipped, never duplicated. rollback.js.txt confirms every list before delete;
- * the Title prefix is a visible notice, not deletion authority.
+ * identifies it as demonstration data to delete before active use. On a
+ * document library a row is a FILE: it is uploaded into its declared folder
+ * under the same prefixed name, and the row's values are set on the file.
+ * Re-pasting is safe: rows that already exist (matched by Title, or by file
+ * name within the folder on a library) are skipped, never duplicated.
+ * rollback.js.txt confirms every list before delete; the prefix is a visible
+ * notice, not deletion authority.
  */
 (async () => {
   const SITE_URL  = {{ site_url | tojson }};
@@ -104,20 +107,14 @@
   // A Map for the same reason as `entityTypes` above: a demo key of
   // `__proto__` would not survive assignment into an object.
   const createdIds = new Map();
-  for (const item of DEMO_PLAN) {
-    try {
-      const digest = await getDigest();
-      const titleField = item.fields.find((f) => f.name === 'Title');
-      const existingId = await findByTitle(item.list, titleField.value);
-      if (existingId != null) {
-        createdIds.set(item.key, existingId);  // later demo_refs still resolve
-        summary.skipped.push({ list: item.list, key: item.key, id: existingId });
-        log('INFO', `'${item.list}': demo row '${item.key}' already exists (Id ${existingId}); skipped.`);
-        continue;
-      }
-      const body = { __metadata: { type: await entityTypeFor(item.list) } };
-      const writtenRefIds = new Map();  // resolved ids, for the read-back below
-      for (const f of item.fields) {
+
+  // The values a row writes, as SharePoint takes them. Shared by the list
+  // path (one POST creates the row) and the library path (a MERGE sets them
+  // on the uploaded file's item), so the two cannot spell a value differently.
+  async function itemBody(item) {
+    const body = { __metadata: { type: await entityTypeFor(item.list) } };
+    const writtenRefIds = new Map();  // resolved ids, for the read-back below
+    for (const f of item.fields) {
         if (f.kind === 'literal') {
           body[f.name] = f.value;
         } else if (f.kind === 'multi_value') {
@@ -155,7 +152,123 @@
           // overdue, Tolerance due) land on whatever day the demo runs.
           body[f.name] = new Date(Date.now() + f.value * 86400000).toISOString();
         }
+    }
+    return { body, writtenRefIds };
+  }
+
+  // ---- Library rows are files ----------------------------------------
+  // MEASURED 2026-07-29, `library.file-vs-item.fileless-item-post` in
+  // document-library-probe.js: a POST to a library's /items answers HTTP
+  // 500, "To add an item to a document library, use SPFileCollection.Add()".
+  // So a library row is uploaded through Files/add into its folder
+  // (`library.file.upload-path-files-add`, 2026-09-03), found again by its
+  // name (`library.file.name-field-is-leafref`, and FileDirRef carries the
+  // folder path: `library.folder.file-in-nested-folder`, 2026-09-08), and
+  // its declared values are MERGEd onto the file's item and read back.
+  // Server-relative paths are spelled as the probes sent them, quotes doubled
+  // and slashes left for fetch; names needing more are refused at build.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  const rootFolders = new Map();
+  async function rootFolderOf(listTitle) {
+    if (!rootFolders.has(listTitle)) {
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/RootFolder?$select=ServerRelativeUrl`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`cannot read the root folder of '${listTitle}' (HTTP ${r.status})`);
+      const url = ((await r.json()).d || {}).ServerRelativeUrl;
+      if (!url) throw new Error(`'${listTitle}' read back no root folder URL`);
+      rootFolders.set(listTitle, url);
+    }
+    return rootFolders.get(listTitle);
+  }
+  async function findFile(listTitle, folderUrl, name) {
+    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileLeafRef,FileDirRef&$filter=${filter}&$top=50`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
+    const rows = (await r.json()).d.results || [];
+    // The name filter alone would match the same name in another folder.
+    return rows.find((row) => row.FileDirRef === folderUrl) || null;
+  }
+  // Every literal value is read back and compared: the MERGE is a second
+  // write on the file, and a value it did not keep would leave a file that
+  // looks seeded and is not.
+  async function verifyLiterals(item, itemId) {
+    const literals = item.fields.filter((f) => f.kind === 'literal');
+    if (!literals.length) return;
+    const select = literals.map((f) => odataName(f.name)).join(',');
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items(${itemId})?$select=${select}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      throw new Error(`the read-back of Id ${itemId} failed (HTTP ${r.status}), so the values written to demo file '${item.key}' are unverified`);
+    }
+    const stored = (await r.json()).d || {};
+    for (const f of literals) {
+      if (String(stored[f.name]) !== String(f.value)) {
+        throw new Error(`${f.name} was written ${JSON.stringify(f.value)} and read back ${JSON.stringify(stored[f.name])}`);
       }
+    }
+  }
+  async function seedFile(item) {
+    const root = await rootFolderOf(item.list);
+    const folderUrl = item.file.folder ? `${root}/${item.file.folder}` : root;
+    const existing = await findFile(item.list, folderUrl, item.file.name);
+    if (existing) {
+      createdIds.set(item.key, existing.Id);  // later demo_refs still resolve
+      summary.skipped.push({ list: item.list, key: item.key, id: existing.Id });
+      log('INFO', `'${item.list}': demo file '${item.file.name}' already exists in '${folderUrl}' (Id ${existing.Id}); skipped.`);
+      return;
+    }
+    // overwrite=false, so SharePoint itself refuses to replace a file that
+    // arrived between the probe above and this write (Learn, "Files and
+    // folders REST API reference", Files/add(url, overwrite)).
+    const upload = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(folderUrl)}')/Files/add(url='${pathLiteral(item.file.name)}',overwrite=false)`), {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
+      body: item.file.content,
+    });
+    if (!upload.ok) {
+      throw new Error(spError(await upload.text()) || `file upload failed (HTTP ${upload.status})`);
+    }
+    const uploaded = await findFile(item.list, folderUrl, item.file.name);
+    if (!uploaded) throw new Error(`'${item.file.name}' did not read back in '${folderUrl}' after upload`);
+    const { body, writtenRefIds } = await itemBody(item);
+    if (Object.keys(body).length > 1) {
+      const merge = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items(${uploaded.Id})`), {
+        method: 'POST',
+        headers: spHeaders(await getDigest(), { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+        body: JSON.stringify(body),
+      });
+      if (!merge.ok) {
+        throw new Error(spError(await merge.text()) || `setting the file's values failed (HTTP ${merge.status})`);
+      }
+    }
+    // Before `createdIds`, so an unverified file resolves no later demo_ref.
+    await verifyLiterals(item, uploaded.Id);
+    await verifyMultiValues(item, uploaded.Id, writtenRefIds);
+    createdIds.set(item.key, uploaded.Id);
+    summary.created.push({ list: item.list, key: item.key, id: uploaded.Id, file: `${folderUrl}/${item.file.name}` });
+    log('INFO', `'${item.list}': uploaded demo file '${item.file.name}' into '${folderUrl}' (Id ${uploaded.Id}).`);
+  }
+
+  for (const item of DEMO_PLAN) {
+    try {
+      if (item.file) {
+        await seedFile(item);
+        continue;
+      }
+      const digest = await getDigest();
+      const titleField = item.fields.find((f) => f.name === 'Title');
+      const existingId = await findByTitle(item.list, titleField.value);
+      if (existingId != null) {
+        createdIds.set(item.key, existingId);  // later demo_refs still resolve
+        summary.skipped.push({ list: item.list, key: item.key, id: existingId });
+        log('INFO', `'${item.list}': demo row '${item.key}' already exists (Id ${existingId}); skipped.`);
+        continue;
+      }
+      const { body, writtenRefIds } = await itemBody(item);
       const createResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items`), {
         method: 'POST', headers: spHeaders(digest), body: JSON.stringify(body),
       });

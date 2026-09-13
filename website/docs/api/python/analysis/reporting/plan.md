@@ -204,6 +204,12 @@ One plan per list the role deploys.
 supply. It is optional only so the derivation stays callable without one
 from a library caller; the pack the CLI emits is always zoned.
 
+### `LIBRARY_REPORT_TYPES`
+
+```python
+LIBRARY_REPORT_TYPES = ('type text', 'NVARCHAR(400)')
+```
+
 ### `TOLERANT_DATE_TYPES`
 
 ```python

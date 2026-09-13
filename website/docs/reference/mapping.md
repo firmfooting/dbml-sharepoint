@@ -220,6 +220,12 @@ tenant, and the deploy relies on nothing about a library that was not:
   which is what lets a filtered view find a file whichever folder it was
   filed in (`library-nesting-probe.js`, 2026-09-08). The generated
   `All Items` on a library is recursive and leads with the file name.
+- The reporting pack carries `FileLeafRef` and `FileRef` for a library
+  beside its declared columns, under no switch, because without them one
+  row cannot be told from its neighbour. They reach the report as
+  `File Name` and `File Path`, so a display title landing on either is
+  refused on a library (`display_title_collides_with_report_column`) and
+  allowed on a list.
 - Breaking inheritance, role assignments, indexes, choice, lookup and
   calculated columns, list validation, column formatting, versioning and
   sealing all behave as on a list, each with its own probe under
@@ -2297,6 +2303,36 @@ sample data visible in every view and form. The prefix is not deletion
 authority; rollback confirms every target list separately. Only emitted with
 `build --seed`. See [demo data](../artifacts/demo-data.md). The section may
 live in a file beside the mapping; see [`demo_source`](#demo_source).
+
+### A document library's rows are files
+
+```yaml
+demo_items:
+  SAQ:
+    - key: saq-privacy
+      values:
+        Topic: { demo_ref: topic-privacy }
+        Division: "Clinical services"
+        Status: "Required"
+      file:
+        name: "[DEMO] Privacy and health records - 2026 Q3.txt"
+        folder: "Clinical services"
+        content: "Sample self-assessment questionnaire."
+```
+
+A row on a `DocumentLibrary` must declare `file` (a row on a list may
+not). A POST to a library's `/items` is refused outright (measured
+2026-07-29), so the seeding script uploads the file through `Files/add`
+into `folder`, one of the entity's declared [folders](#document-libraries)
+or the root when absent, finds it again by name within that folder, sets
+`values` on the file's item, and reads every literal value back before
+recording the row as created. A file already in its folder is skipped.
+
+The `[DEMO]` prefix and its trailing space go on `name`, because a file's
+Title is null after upload and the name is what every view and the file
+panel show; `Title` is not required in `values`. The name is held to
+Microsoft's file name rules, and `content` is the short text the file holds,
+defaulting to a one-line placeholder.
 
 ## `extensions`
 

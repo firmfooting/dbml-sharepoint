@@ -33,6 +33,8 @@ from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
     ITEM_URL_COLUMN,
     ITEM_URL_RESOLVED_COLUMN,
+    LIBRARY_DISPLAY_TITLES,
+    LIBRARY_REPORT_COLUMNS,
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
@@ -853,6 +855,14 @@ def build_plans(
                         f"reporting has no plan for system column {name!r} "
                         f"of kind {kind!r}",
                     )
+        # A library's rows are files: the report carries the file name and
+        # path beside the declared columns, whether or not the system columns
+        # are on, because without them a row cannot be told from its neighbour.
+        library_entity = bundle.mapping.entities.get(table.name)
+        if library_entity is not None and library_entity.is_library:
+            for name in LIBRARY_REPORT_COLUMNS:
+                _plan_scalar(plan, name, LIBRARY_REPORT_TYPES)
+                plan.system_outputs.append(name)
         if bundle.mapping.display_name_mode is not None:
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
@@ -889,6 +899,9 @@ def build_plans(
                 if f"{name}Id" in plan.system_outputs:
                     plan.renames.append((f"{name}Id", f"{title} Id"))
                     plan.renames.append((f"{name}Title", f"{title} Title"))
+            for name, title in LIBRARY_DISPLAY_TITLES.items():
+                if name in plan.system_outputs:
+                    plan.renames.append((name, title))
         plans.append(plan)
     # The SQL side selects a projection from the TARGET's view, so it can
     # only carry the ones that view actually has. The Power Query has no
@@ -911,6 +924,13 @@ def build_plans(
         ]
     _resolve_derived(plans, bundle, prefix)
     return plans
+
+
+#: The (M type token, SQL type) the two library columns report as. 400
+#: characters because that is the ceiling Learn puts on the whole decoded
+#: path including the file name ("SharePoint limits", read 2026-09-13), so
+#: no legal `FileRef` can exceed it and no legal `FileLeafRef` can either.
+LIBRARY_REPORT_TYPES: tuple[str, str] = ("type text", "NVARCHAR(400)")
 
 
 def _plan_person(plan: ListPlan, name: str) -> None:

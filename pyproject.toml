@@ -159,13 +159,14 @@ ban-relative-imports = "all"
 # which measures them with this same ruff rather than restating them:
 #   `_formatting.py::check` at 57
 #   `_views.py::check` at 53
-#   `_demo.py::check` at 39
+#   `_permissions.py::check` at 39
 # They were prose once, and three of the four numbers had rotted (#311).
 #
-# `jsgen.py::build_schema_json` left the three on 2026-09-13, from 40 to 39,
-# when the guard that built All Items for everything but a document library
-# went with #14: a library gets that view too now. It ties three check
-# functions at 39, and the test names the first of the tie by module name.
+# Two functions left the three on 2026-09-13 with #14. `jsgen.py::build_schema_json`
+# went from 40 to 39 when the guard that built All Items for everything but
+# a document library went, and `_demo.py::check` from 39 to 37 when its
+# library refusal went and its Title-marker rule became a helper. That
+# leaves a tie at 39, and the test names the first of it by module name.
 #
 # 61 to 57 on 2026-09-12: `_views.py::check` gave up its field-set block, which
 # reads no view state and which the view loop reads nothing of, so the two were

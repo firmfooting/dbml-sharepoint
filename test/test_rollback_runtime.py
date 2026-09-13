@@ -16,6 +16,7 @@ import textwrap
 from typing import Any
 
 import pytest
+from _model import as_library
 from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
@@ -140,6 +141,19 @@ def _rollback_js() -> str:
     )
 
 
+def _library_rollback_js() -> str:
+    """The same fixture with APP_Task declared as a document library."""
+    return generate_rollback_js(
+        schema=_SCHEMA,
+        bundle=as_library(load_mapping(FIXTURES / "sharepoint-mapping.yaml"), "Task"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
 def _listing(
     list_title: str,
     titles: list[str],
@@ -167,6 +181,7 @@ def _rollback(
     answers: list[str] | None = None,
     paged_titles: list[str] | None = None,
     fail_second_page: bool = False,
+    js: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
     """Run rollback.js against the mock and return (summary, calls, prompts)."""
     harness = _HARNESS.replace(
@@ -182,7 +197,7 @@ def _rollback(
         f"const FAIL_SECOND_PAGE = {json.dumps(fail_second_page)};",
         1,
     )
-    body = _rollback_js().rstrip()
+    body = (js or _rollback_js()).rstrip()
     assert body.endswith("})();")
     # Wrap the emitted IIFE rather than editing inside it, so what runs is
     # the artefact byte for byte.
@@ -307,6 +322,37 @@ def test_each_non_empty_list_is_confirmed_on_its_own() -> None:
     assert len(_non_empty_prompts(prompts)) == 2
     assert summary["deleted"] == ["APP_Task"]
     assert _skips(summary)["APP_Project"] == "non-empty"
+
+
+def test_a_document_library_is_confirmed_as_files_and_folders() -> None:
+    """The operator should read the word for what is really being deleted.
+
+    A library's items are files and folders, and recycling a folder takes its
+    children with it (MEASURED 2026-09-03, `library.folder.delete-recycles`),
+    so the prompt says so. The phrase that authorises the delete is the same
+    one, and cancelling still writes nothing.
+    """
+    summary, calls, prompts = _rollback(
+        {"APP_Task": _listing("APP_Task", ["Real record"])},
+        answers=["no"],
+        js=_library_rollback_js(),
+    )
+    (asked,) = _non_empty_prompts(prompts)
+    assert "document library" in asked
+    assert "every file and folder in it" in asked
+    assert _skips(summary)["APP_Task"] == "non-empty"
+    assert _writes(calls) == []
+
+
+def test_a_list_is_never_described_as_a_library() -> None:
+    """The other direction: the same fixture as a list says items, not files,
+    so a generator that stopped telling the two apart turns this red."""
+    _summary, _calls, prompts = _rollback(
+        {"APP_Task": _listing("APP_Task", ["Real record"])}, answers=["no"],
+    )
+    (asked,) = _non_empty_prompts(prompts)
+    assert "document library" not in asked
+    assert "currently reports 1 items" in asked
 
 
 def test_a_list_this_family_never_provisioned_is_never_prompted_for() -> None:
