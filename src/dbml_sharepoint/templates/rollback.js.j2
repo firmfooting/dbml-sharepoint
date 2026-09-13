@@ -286,8 +286,22 @@
         }
         throw new Error(`HTTP ${r.status}${detail ? `, ${detail}` : ''}`);
       }
+      // A 200 on the DELETE is not the list being gone, and this is the
+      // destructive script: an operator told "Deleted X" stops looking for X.
+      // By id, not by title, so a same-titled replacement created since does
+      // not read as the list this run deleted. Same check `confirmDeleted`
+      // makes in columns.js, which rollback did not have.
+      const gone = await fetchWithRetry(apiUrl(`web/lists(guid'${stillOwned.id}')?$select=Id`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (gone.ok) {
+        throw new Error(`the delete answered HTTP ${r.status} but the list still reads back by its id (${stillOwned.id}); it has NOT been deleted.`);
+      }
+      if (gone.status !== 404 && !isAbsent400(gone.status, await gone.text())) {
+        throw new Error(`the delete answered HTTP ${r.status}, and the readback that would confirm it failed with HTTP ${gone.status}; whether '${name}' is gone is unknown.`);
+      }
       summary.deleted.push(name);
-      log('INFO', `Deleted ${name}.`);
+      log('INFO', `Deleted ${name}, confirmed absent by list id.`);
     } catch (err) {
       summary.errors.push({ list: name, error: err.message });
       log('ERROR', `${name}: ${err.message}`);
