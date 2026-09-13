@@ -68,6 +68,9 @@ _HARNESS = textwrap.dedent(r"""
         // is the window between the confirmation prompt and the first
         // destructive write. Undefined means nothing changes in it.
         afterPrompt: spec.afterPrompt,
+        // What the by-id readback after the DELETE answers. Undefined is a
+        // list that really went; 'lingers' answers 200 and 'unreadable' 500.
+        afterDelete: spec.afterDelete,
         ownershipReads: 0,
         rows: spec.titles.map((t, i) => ({ Id: i + 1, Title: t })),
         deleted: false,
@@ -108,6 +111,19 @@ _HARNESS = textwrap.dedent(r"""
           d.__next = 'https://example.sharepoint.com/sites/test/_api/__list_page=2';
         }
         return reply(200, { d });
+      }
+      // The post-delete confirmation, addressed by list id so a same-titled
+      // replacement cannot answer for the list this run deleted.
+      const byGuid = /\/lists\(guid'([^']+)'\)/.exec(u);
+      if (byGuid) {
+        const entry = Object.values(state).find((x) => x.id === byGuid[1]);
+        if (entry && entry.afterDelete === 'lingers') {
+          return reply(200, { d: { Id: entry.id } });
+        }
+        if (entry && entry.afterDelete === 'unreadable') {
+          return reply(500, { error: { message: { value: 'readback failed' } } });
+        }
+        return reply(404, { error: { message: { value: 'list not found' } } });
       }
       const match = /getbytitle\('([^']+)'\)/.exec(u);
       const s = match ? state[decodeURIComponent(match[1])] : null;
@@ -185,12 +201,17 @@ def _listing(
     count: int | None = None,
     list_id: str = _ID,
     after_prompt: dict[str, Any] | None = None,
+    after_delete: str | None = None,
 ) -> dict[str, Any]:
     """One list's live state. `description=None` means unreadable.
 
     `after_prompt` replaces `id` and/or `description` on every ownership read
     after the first, which is how a test puts a change inside the window
     between the confirmation and the first destructive write.
+
+    `after_delete` is what the by-id readback answers once the DELETE has
+    returned 200: 'lingers' for a list that is still there, 'unreadable' for
+    a read that never answered the question.
     """
     if ours and description is not None:
         description = f"{_MARKER[list_title]} {description}".strip()
@@ -202,6 +223,8 @@ def _listing(
     }
     if after_prompt is not None:
         state["afterPrompt"] = after_prompt
+    if after_delete is not None:
+        state["afterDelete"] = after_delete
     return state
 
 
@@ -340,6 +363,32 @@ def test_confirming_recycles_every_item_then_deletes_the_list() -> None:
     )
     assert len(deletes) == 1
     assert last_recycle < deletes[0]
+
+
+def test_a_list_still_reading_back_after_its_delete_is_not_reported_deleted() -> None:
+    """HTTP 200 on the DELETE is the request being accepted, not the list
+    being gone. An operator told "Deleted X" stops looking for X, so the
+    absence is confirmed by list id before that line is printed."""
+    summary, _calls, _ = _rollback(
+        {"APP_Task": _listing("APP_Task", ["Real record"], after_delete="lingers")},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert summary["deleted"] == []
+    assert [e["error"] for e in summary["errors"]] == [
+        ("the delete answered HTTP 200 but the list still reads back by its "
+         f"id ({_ID}); it has NOT been deleted."),
+    ], summary["errors"]
+
+
+def test_a_confirmation_read_that_fails_leaves_the_delete_unreported() -> None:
+    """The other half: a readback that never answered cannot confirm the
+    deletion either, and reporting it as done would be the same claim."""
+    summary, _calls, _ = _rollback(
+        {"APP_Task": _listing("APP_Task", ["Real record"], after_delete="unreadable")},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert summary["deleted"] == []
+    assert "whether 'APP_Task' is gone is unknown" in summary["errors"][0]["error"]
 
 
 def test_each_non_empty_list_is_confirmed_on_its_own() -> None:
