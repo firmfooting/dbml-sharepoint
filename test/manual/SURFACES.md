@@ -192,7 +192,8 @@ intact. Multi-value columns, lookups and their projected columns.
 
 Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `boolean`, `title` (the built-in Title column, which the tool never creates),
-`list` (the list object the columns belong to)
+`list` (the list object the columns belong to), `default-formula` (a
+column's `DefaultFormula` property, and what it fills at item create)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
@@ -284,7 +285,8 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-large-list-preindex-group-view-probe.js`,
 `library-large-list-modern-view-probe.js`,
 `library-large-list-foldered-fixture-probe.js`,
-`library-large-list-foldered-group-view-probe.js`
+`library-large-list-foldered-group-view-probe.js`,
+`library-guards-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -577,6 +579,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `list-settings-probe.js` | `field` | the thirteen `*-sticks` rows measured on the document library, with that container's fixture, its two controls and its property enumeration | `library.doc-lib.*` |
 | `list-settings-probe.js` | `field` | `read-security-on-list`, `write-security-on-list`, `read-security-on-library`, `write-security-on-library`, because item-level permission trimming is an access question wherever it is set | `access.item-acl.*` |
 | `cross-lookup-probe.js` | `library` | `control-list-lookup-ceiling`, `library-lookup-ceiling`, `list-to-library-costs-a-join`, because a ceiling on how many lookups one view may project is a join question whichever container holds them | `scale.join.*` |
+| `library-guards-probe.js` | `library` | the eight `default-formula` rows measured on the generic list, with that container's fixture and its control, because what a `DefaultFormula` fills on an item create is a column question on either container | `field.default-formula.*` |
 
 Some probes cross a *scope* boundary within their own surface rather than a
 surface boundary, and are listed for the same reason:
