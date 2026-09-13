@@ -153,15 +153,26 @@
   // Read the live Description and answer whether THIS family provisioned the
   // list. Read at delete time, never captured earlier: a marker recorded when
   // the script was generated says what was true then, not what is true now.
-  async function carriesOurMarker(name, expectedMarker) {
+  //
+  // The Id rides along on a request already being made. The marker alone
+  // cannot see a same-titled replacement, because a replacement can carry a
+  // copied Description; the Id is what separates them. Same argument
+  // `ownedListIdentity` makes in the deploy, and the same cost, since
+  // `$select=Id,Description` is one request just as `$select=Description` was.
+  //
+  // Returns null when the question could not be answered at all, which the
+  // caller must treat as "do not delete" rather than as "not ours".
+  async function readOwnership(name, expectedMarker) {
     if (typeof expectedMarker !== 'string' || expectedMarker === '') return null;
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=Description`), {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=Id,Description`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) return null;
     const j = await r.json();
     const description = (j && j.d && typeof j.d.Description === 'string') ? j.d.Description : '';
-    return description.indexOf(expectedMarker) !== -1;
+    const id = (j && j.d && typeof j.d.Id === 'string') ? j.d.Id : null;
+    if (id === null) return null;
+    return { ours: description.indexOf(expectedMarker) !== -1, id };
   }
 
   for (const target of TARGET_LISTS) {
@@ -174,13 +185,13 @@
       // on the way out (helm/helm#31333, which shipped that asymmetry from
       // 2020 to 2026). A title collision is enough to reach it, and the
       // list-name prefix is optional.
-      const ours = await carriesOurMarker(name, target.expected_marker);
-      if (ours === null) {
+      const owned = await readOwnership(name, target.expected_marker);
+      if (owned === null) {
         summary.skipped.push({ list: name, reason: 'provenance-unreadable' });
         log('WARN', `'${name}': could not read its Description to confirm this family provisioned it; skipping rather than deleting.`);
         continue;
       }
-      if (!ours) {
+      if (!owned.ours) {
         summary.skipped.push({ list: name, reason: 'not-ours' });
         log('WARN', `'${name}': exists but carries no '${target.expected_marker}' marker, so it was not provisioned by this family. Skipping; nothing has been deleted. Rename it, or delete it by hand if you are certain.`);
         continue;
@@ -206,8 +217,31 @@
         });
         continue;
       }
-      // Authorised: read and recycle live items even when the earlier count
-      // was zero, then delete. recycle() keeps every item restorable.
+      // Authorised by a human, who took as long as they took. The check that
+      // authorised this ran BEFORE the confirmation above, and that call
+      // blocks for however long somebody reads and types, so by here the
+      // classification is of arbitrary age while everything after it is
+      // irreversible in practice. Ask again, against the same title, before
+      // the first destructive write.
+      //
+      // Both halves have to still hold. An unreadable answer is not evidence
+      // of ownership and is not evidence against it, so it skips: the same
+      // fail-closed posture as the first check. A different Id is a
+      // same-titled list that arrived during the pause, which is the case the
+      // marker on its own cannot see.
+      const stillOwned = await readOwnership(name, target.expected_marker);
+      if (stillOwned === null || !stillOwned.ours || stillOwned.id !== owned.id) {
+        const why = stillOwned === null
+          ? 'its Description could not be read again'
+          : !stillOwned.ours
+            ? `it no longer carries the '${target.expected_marker}' marker`
+            : `the title now resolves to a different list (${owned.id} before the prompt, ${stillOwned.id} now)`;
+        summary.skipped.push({ list: name, reason: 'ownership-changed-during-confirmation' });
+        log('WARN', `'${name}': confirmed for deletion, but ${why}. Nothing has been recycled or deleted. Re-run to see the site as it is now.`);
+        continue;
+      }
+      // Read and recycle live items even when the earlier count was zero,
+      // then delete. recycle() keeps every item restorable.
       await recycleItems(name);
       // Unlock only once deletion is authorised for THIS list; skipped
       // lists keep their protection untouched.
