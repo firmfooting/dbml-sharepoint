@@ -9771,6 +9771,413 @@
           ]
         }
       ]
+    },
+    {
+      "file": "blank-operand-probe.js",
+      "surface": "formula",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with one nullable Number column; four save rules stored in turn, a bare and a guarded comparison, each once on the column and once on the list; up to twelve items, three per rule: one over the limit, one omitting the column, one sending it as null"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "formula",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "formula.validation.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "formula.validation.fixture-number-column",
+              "depends_on": [
+                "formula.validation.fixture-list-created"
+              ]
+            },
+            {
+              "id": "formula.validation.control-missing-column-refused",
+              "depends_on": [
+                "formula.validation.fixture-list-created",
+                "formula.validation.fixture-number-column"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-no-rule-in-force",
+              "depends_on": [
+                "formula.validation.fixture-list-created",
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-bare-column-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-list-created",
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force"
+              ]
+            },
+            {
+              "id": "formula.validation.control-over-limit-under-bare-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-bare-column-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-omitted-under-bare-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-bare-column-rule-stored",
+                "formula.validation.control-over-limit-under-bare-column-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-null-under-bare-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-bare-column-rule-stored",
+                "formula.validation.control-over-limit-under-bare-column-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-guarded-column-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-list-created",
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force"
+              ]
+            },
+            {
+              "id": "formula.validation.control-over-limit-under-guarded-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-guarded-column-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-omitted-under-guarded-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-guarded-column-rule-stored",
+                "formula.validation.control-over-limit-under-guarded-column-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-null-under-guarded-column-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-guarded-column-rule-stored",
+                "formula.validation.control-over-limit-under-guarded-column-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-column-rule-cleared",
+              "depends_on": [
+                "formula.validation.fixture-list-created",
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-bare-list-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared"
+              ]
+            },
+            {
+              "id": "formula.validation.control-over-limit-under-bare-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-bare-list-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-omitted-under-bare-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-bare-list-rule-stored",
+                "formula.validation.control-over-limit-under-bare-list-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-null-under-bare-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-bare-list-rule-stored",
+                "formula.validation.control-over-limit-under-bare-list-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.fixture-guarded-list-rule-stored",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared"
+              ]
+            },
+            {
+              "id": "formula.validation.control-over-limit-under-guarded-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-guarded-list-rule-stored"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-omitted-under-guarded-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-guarded-list-rule-stored",
+                "formula.validation.control-over-limit-under-guarded-list-rule"
+              ]
+            },
+            {
+              "id": "formula.validation.blank-null-under-guarded-list-rule",
+              "depends_on": [
+                "formula.validation.fixture-number-column",
+                "formula.validation.control-missing-column-refused",
+                "formula.validation.fixture-no-rule-in-force",
+                "formula.validation.fixture-column-rule-cleared",
+                "formula.validation.fixture-guarded-list-rule-stored",
+                "formula.validation.control-over-limit-under-guarded-list-rule"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "formula.validation.fixture-list-created",
+            "formula.validation.fixture-number-column",
+            "formula.validation.control-missing-column-refused",
+            "formula.validation.fixture-no-rule-in-force",
+            "formula.validation.fixture-bare-column-rule-stored",
+            "formula.validation.control-over-limit-under-bare-column-rule",
+            "formula.validation.fixture-guarded-column-rule-stored",
+            "formula.validation.control-over-limit-under-guarded-column-rule",
+            "formula.validation.fixture-column-rule-cleared",
+            "formula.validation.fixture-bare-list-rule-stored",
+            "formula.validation.control-over-limit-under-bare-list-rule",
+            "formula.validation.fixture-guarded-list-rule-stored",
+            "formula.validation.control-over-limit-under-guarded-list-rule"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "field-sealed-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with two Text columns; Sealed written on one of them four times in both directions, three attempted writes of CanBeDeleted, and three field deletes: the second column unsealed, the first once sealed and once unsealed"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site, and to delete columns on them"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.sealed.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.sealed.fixture-subject-column",
+              "depends_on": [
+                "field.sealed.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.sealed.control-unknown-property-refused",
+              "depends_on": [
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column"
+              ]
+            },
+            {
+              "id": "field.sealed.control-description-sticks",
+              "depends_on": [
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "field.sealed.seal-write-readback",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "field.sealed.canbedeleted-after-seal",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.seal-write-readback"
+              ]
+            },
+            {
+              "id": "field.sealed.unseal-write-readback",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "field.sealed.canbedeleted-after-unseal",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.unseal-write-readback"
+              ]
+            },
+            {
+              "id": "field.sealed.canbedeleted-write-while-unsealed",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-description-sticks",
+                "field.sealed.unseal-write-readback"
+              ]
+            },
+            {
+              "id": "field.sealed.fixture-reseal-written",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-description-sticks",
+                "field.sealed.unseal-write-readback"
+              ]
+            },
+            {
+              "id": "field.sealed.canbedeleted-write-while-sealed",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-description-sticks",
+                "field.sealed.fixture-reseal-written"
+              ]
+            },
+            {
+              "id": "field.sealed.both-properties-in-one-merge",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-description-sticks",
+                "field.sealed.unseal-write-readback"
+              ]
+            },
+            {
+              "id": "field.sealed.control-plain-column-deleted",
+              "depends_on": [
+                "field.sealed.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.sealed.fixture-sealed-for-delete",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-plain-column-deleted"
+              ]
+            },
+            {
+              "id": "field.sealed.delete-while-sealed",
+              "depends_on": [
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
+                "field.sealed.control-plain-column-deleted",
+                "field.sealed.fixture-sealed-for-delete"
+              ]
+            },
+            {
+              "id": "field.sealed.fixture-subject-restored",
+              "depends_on": [
+                "field.sealed.control-plain-column-deleted",
+                "field.sealed.fixture-sealed-for-delete"
+              ]
+            },
+            {
+              "id": "field.sealed.fixture-unsealed-for-delete",
+              "depends_on": [
+                "field.sealed.control-plain-column-deleted",
+                "field.sealed.fixture-sealed-for-delete",
+                "field.sealed.fixture-subject-restored"
+              ]
+            },
+            {
+              "id": "field.sealed.delete-while-unsealed",
+              "depends_on": [
+                "field.sealed.control-plain-column-deleted",
+                "field.sealed.fixture-subject-restored",
+                "field.sealed.fixture-unsealed-for-delete"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.sealed.fixture-list-created",
+            "field.sealed.fixture-subject-column",
+            "field.sealed.control-unknown-property-refused",
+            "field.sealed.control-description-sticks",
+            "field.sealed.seal-write-readback",
+            "field.sealed.unseal-write-readback",
+            "field.sealed.fixture-reseal-written",
+            "field.sealed.control-plain-column-deleted",
+            "field.sealed.fixture-sealed-for-delete",
+            "field.sealed.fixture-subject-restored",
+            "field.sealed.fixture-unsealed-for-delete"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
