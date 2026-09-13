@@ -273,7 +273,31 @@
     let renameFailures = 0;
     if (summary.errors.length === 0) {
       const refusals = [];
-      const decide = (label, current, currentExists, found) => {
+      // "Restore that marker" sends an operator to the obvious UI route, and
+      // for a site group that route fails SILENTLY. MEASURED 2026-09-04:
+      // editing a group's description through Site permissions, the group,
+      // Settings changed what that page displays and did NOT change
+      // `SP.Group.Description`, which is the property this deploy reads and
+      // writes. The two held different opening sentences, different family
+      // slugs and different group names, so they are separate stored values
+      // rather than one value read two ways.
+      //
+      // The operator then believes the repair worked and the next deploy
+      // refuses identically, which cost about an hour the first time. Lists
+      // and permission levels do not have this problem: their settings pages
+      // edit the property the deploy reads, so this sentence is attached to
+      // the group branch and to nothing else.
+      //
+      // It says what was observed and no more. Which store the page writes
+      // to, and whether any UI path reaches `SP.Group.Description`, is not
+      // known and is not claimed here.
+      const GROUP_MARKER_REMEDY = ' The marker lives in `SP.Group.Description`.'
+        + " Editing the group's description through its settings page does not"
+        + ' change that property (measured 2026-09-04), so a repair made there'
+        + ' will look right on the page and leave this refusal unchanged. Send'
+        + ' a MERGE to web/sitegroups(<id>) with __metadata type SP.Group and'
+        + ' the Description, then read it back with $select=Description.';
+      const decide = (label, current, currentExists, found, remedy = '') => {
         const names = found.map((f) => `'${f.name}'`).join(', ');
         if (found.length === 0) return null;
         if (currentExists) {
@@ -283,7 +307,7 @@
           return `more than one previous name of ${label} '${current}' exists (${names}); deploy cannot choose which to rename. Remove or retitle all but one by hand.`;
         }
         if (!found[0].carries) {
-          return `${label} '${found[0].name}' exists but does not carry the exact provenance marker for its previous name ("${found[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created it.`;
+          return `${label} '${found[0].name}' exists but does not carry the exact provenance marker for its previous name ("${found[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created it.${remedy}`;
         }
         return null;
       };
@@ -319,7 +343,10 @@
               }
             }
             if (found.length === 0) continue;
-            const refusal = decide('site group', grp.name, byName(grp.name).length > 0, found);
+            const refusal = decide(
+              'site group', grp.name, byName(grp.name).length > 0, found,
+              GROUP_MARKER_REMEDY,
+            );
             if (refusal) refusals.push(refusal);
             else principalRenames.push({ object: 'group', from: found[0].name, to: grp.name, id: found[0].id, marker: found[0].marker, description: grp.description });
           }

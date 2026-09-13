@@ -379,3 +379,73 @@ def test_the_assessment_reports_the_level_it_will_rename(tmp_path: Path) -> None
     planned = [f for f in findings if f["key"] == "rename_level:GOV Submit Only"]
     assert len(planned) == 1 and planned[0]["level"] == "INFO"
     assert "ADOPT Submit Only" in planned[0]["detail"]
+# --- The refusal has to be actionable, not just correct --------------------
+#
+# "Restore that marker" sends an operator to the obvious UI route, and for a
+# site group that route fails silently. MEASURED 2026-09-04: editing a
+# group's description through its settings page changed what the page shows
+# and did NOT change `SP.Group.Description`, which is what this deploy reads.
+# The operator believes the repair worked and the next run refuses
+# identically. See #397.
+
+
+def _group_refusal(summary: dict[str, Any]) -> str:
+    """The one rename error raised about the group."""
+    errors = [e["error"] for e in summary["errors"] if "site group" in e["error"]]
+    assert len(errors) == 1, f"expected one group refusal, got {errors}"
+    return str(errors[0])
+
+
+def test_the_group_marker_refusal_names_the_property_it_reads(tmp_path: Path) -> None:
+    """A marker repaired anywhere else is not repaired."""
+    summary, _calls, _state = _run_deploy(
+        tmp_path, _old_group("A hand-made group."), _old_level(f"x {_old_level_marker()}"),
+    )
+    refusal = _group_refusal(summary)
+    assert "SP.Group.Description" in refusal, (
+        "the refusal does not say which property carries the marker"
+    )
+    assert "settings page does not change that property" in refusal
+
+
+def test_the_group_marker_refusal_gives_the_route_that_works(tmp_path: Path) -> None:
+    """Naming the trap without naming the exit leaves the operator stuck."""
+    summary, _calls, _state = _run_deploy(
+        tmp_path, _old_group("A hand-made group."), _old_level(f"x {_old_level_marker()}"),
+    )
+    refusal = _group_refusal(summary)
+    assert "web/sitegroups(<id>)" in refusal
+    assert "SP.Group" in refusal
+    assert "$select=Description" in refusal, "no way to confirm the repair took"
+
+
+def test_the_group_refusal_claims_only_what_was_measured(tmp_path: Path) -> None:
+    """It is dated, and it does not claim more than the observation.
+
+    Which store the settings page writes to, and whether ANY UI path reaches
+    `SP.Group.Description`, was never established. Saying so would be the
+    plausibility this project refuses.
+    """
+    summary, _calls, _state = _run_deploy(
+        tmp_path, _old_group("A hand-made group."), _old_level(f"x {_old_level_marker()}"),
+    )
+    refusal = _group_refusal(summary)
+    assert "measured 2026-09-04" in refusal
+    for overclaim in ("no UI", "cannot be edited", "impossible", "never reachable"):
+        assert overclaim not in refusal, f"the refusal claims more than was measured: {overclaim}"
+
+
+def test_a_permission_level_refusal_carries_no_group_advice(tmp_path: Path) -> None:
+    """A level's settings page DOES edit the property the deploy reads.
+
+    Lists and permission levels do not have the group's problem, so pasting
+    the group remedy onto them would send an operator to a REST call they do
+    not need and cast doubt on a UI route that works.
+    """
+    summary, _calls, _state = _run_deploy(
+        tmp_path, _old_group(f"Old leads. {_old_group_marker()}"), _old_level("hand-made"),
+    )
+    errors = [e["error"] for e in summary["errors"] if "permission level" in e["error"]]
+    assert len(errors) == 1, f"expected one level refusal, got {errors}"
+    assert "SP.Group.Description" not in errors[0]
+    assert "web/sitegroups" not in errors[0]
