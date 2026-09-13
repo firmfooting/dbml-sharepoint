@@ -968,10 +968,11 @@ def test_every_header_has_an_icon_a_title_line_and_a_strapline(template: str) ->
             problems.append(f"{entity}: no form header declared")
             continue
         nodes = list(_walk(header))
+        kind = loaded.mapping.entities[entity].kind
         missing = [
             part for part, present in (
                 ("icon", any(_is_icon(node) for node in nodes)),
-                ("title line", any(_is_title_line(node) for node in nodes)),
+                ("title line", any(_is_title_line(node, kind) for node in nodes)),
                 ("strapline", any(_is_strapline(node) for node in nodes)),
             ) if not present
         ]
@@ -1196,11 +1197,16 @@ def _is_icon(node: dict[str, Any]) -> bool:
     return isinstance(icon, str) and bool(icon) and "ms-fontSize-42" in _classes(node)
 
 
-def _is_title_line(node: dict[str, Any]) -> bool:
+def _is_title_line(node: dict[str, Any], kind: str = "List") -> bool:
+    """The live line names the row: `[$Title]` on a list, `[$FileLeafRef]` on
+    a document library, where Title is null after upload and the file name
+    is what a reader recognises (reviewed capture
+    `library.doc-lib.header-fileleafref`, 2026-09-03)."""
     text = _text(node)
+    identity = "[$FileLeafRef]" if kind == "DocumentLibrary" else "[$Title]"
     return (
         text.startswith("=")
-        and "[$Title]" in text
+        and identity in text
         and {"ms-fontSize-16", "ms-fontWeight-bold"} <= _classes(node)
     )
 
