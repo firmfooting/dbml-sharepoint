@@ -67,6 +67,9 @@
   };
   const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
+  // `!body.X` is true both for a property that is unset and for one the site
+  // never served, and only the first says the column carries nothing.
+  const unset = (body, prop) => prop in body && !body[prop];
 
   const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
     headers: { Accept: 'application/json;odata=nometadata' },
@@ -99,34 +102,145 @@
     if (!have.has('DT')) {
       made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'DT', DisplayFormat: 0 });
     }
-    record('formula.validation.fixture-dt-column', 'the DT column exists', made.ok ? 'PASS' : 'FAIL', made.ok ? `DT ${made.status}` : `DT create refused: HTTP ${made.status} ${reason(made)}`);
+    // The whole field is read rather than a $select: naming a property the
+    // entity does not have answers HTTP 400, which would read as "absent" for
+    // a column of the right Title that is simply the wrong type. A DT left by
+    // an earlier run is the normal path, since this probe has no CLEANUP.
+    //
+    // Requiredness and a default are part of the shape because four of the six
+    // form steps leave DT blank: a DT an earlier run left required, or carrying
+    // a value of its own, refuses or fills that save for a reason the step
+    // never asked about, and the row is written up against the [Modified]
+    // rule. Each is read as served-and-falsy, because a property the site
+    // withheld is not a property that is unset.
+    const dt = await spGet(`${fields}/getbyinternalnameortitle('DT')`);
+    const dtShape = !readFailed(dt) && dt.body.TypeAsString === 'DateTime'
+      && dt.body.DisplayFormat === 0
+      && unset(dt.body, 'Required') && unset(dt.body, 'DefaultValue');
+    record('formula.validation.fixture-dt-column', 'the DT column exists', dtShape ? 'PASS' : 'FAIL',
+      (made.ok ? `DT ${made.status}` : `DT create refused: HTTP ${made.status} ${reason(made)}`)
+      + '; ' + (readFailed(dt)
+        ? `DT did not read back (HTTP ${dt.status})`
+        : `reads back TypeAsString=${dt.body.TypeAsString} DisplayFormat=${dt.body.DisplayFormat}`
+          + ` Required=${JSON.stringify(dt.body.Required)}`
+          + ` DefaultValue=${JSON.stringify(dt.body.DefaultValue)}`));
+    // MEASURED 2026-09-02 (save-instant-paths-probe): SharePoint stores
+    // `[DM]<=[Modified]` and reads it back as `DM<=Modified`, so the
+    // comparison ignores the brackets, as the deployer's own readback does.
+    const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
+    // A MERGE answers 204 whether or not the store kept the formula, and six
+    // MANUAL form findings hang off these two rows: a rule that never landed
+    // would be written up as a form-versus-REST divergence. Both are read
+    // back, which is what this file's own report mode already does.
+    //
+    // The readback runs whatever the write answered, because the question is
+    // whether the rule IS stored: a MERGE throttled over a store that already
+    // holds the rule is not the rule being absent, and a failed write is only
+    // evidence beside the reading.
+    const storedVerdict = async (sent, write, path) => {
+      const back = await spGet(`${path}?$select=ValidationFormula`);
+      const wrote = `MERGE answered HTTP ${write.status}${write.ok ? '' : ` ${reason(write)}`}`;
+      if (readFailed(back)) {
+        return { held: false, line: `${wrote}; the rule did not read back (HTTP ${back.status})` };
+      }
+      return {
+        held: canonical(back.body.ValidationFormula) === canonical(sent),
+        line: `${wrote}; sent ${JSON.stringify(sent)}, stored ${JSON.stringify(back.body.ValidationFormula)}`,
+      };
+    };
+    const COLUMN_RULE = '=[DT]<=TODAY()';
     const cv = await post(`${fields}/getbytitle('DT')`, {
       __metadata: { type: 'SP.FieldDateTime' },
-      ValidationFormula: '=[DT]<=TODAY()', ValidationMessage: 'DT: TODAY() says this is in the future',
+      ValidationFormula: COLUMN_RULE, ValidationMessage: 'DT: TODAY() says this is in the future',
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-    record('formula.validation.fixture-today-column-rule-stored', 'the column rule =[DT]<=TODAY() is stored', cv.ok ? 'PASS' : 'FAIL', cv.ok ? `HTTP ${cv.status}` : `HTTP ${cv.status} ${reason(cv)}`);
+    const columnRule = await storedVerdict(COLUMN_RULE, cv, `${fields}/getbyinternalnameortitle('DT')`);
+    record('formula.validation.fixture-today-column-rule-stored', 'the column rule =[DT]<=TODAY() is stored', columnRule.held ? 'PASS' : 'FAIL', columnRule.line);
+    const LIST_RULE = '=OR(ISBLANK([DM]),[DM]<=[Modified])';
     const lv = await post(listPath, {
       __metadata: { type: 'SP.List' },
-      ValidationFormula: '=OR(ISBLANK([DM]),[DM]<=[Modified])', ValidationMessage: 'DM: later than this save',
+      ValidationFormula: LIST_RULE, ValidationMessage: 'DM: later than this save',
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-    record('formula.validation.fixture-modified-list-rule-stored', 'the list rule =OR(ISBLANK([DM]),[DM]<=[Modified]) is stored', lv.ok ? 'PASS' : 'FAIL', lv.ok ? `HTTP ${lv.status}` : `HTTP ${lv.status} ${reason(lv)}`);
+    const listRule = await storedVerdict(LIST_RULE, lv, listPath);
+    record('formula.validation.fixture-modified-list-rule-stored', 'the list rule =OR(ISBLANK([DM]),[DM]<=[Modified]) is stored', listRule.held ? 'PASS' : 'FAIL', listRule.line);
     // One bare item per list, not one per setup run: reuse an existing
     // 'today-now' row when a previous setup left one, so repeated setup runs
     // do not accumulate rows the form steps then have to look past.
     const existing = await spGet(`${items}?$select=Id,Title&$filter=${encodeURIComponent("Title eq 'today-now'")}&$top=1`);
-    const bare = (existing.body && existing.body.value && existing.body.value.length)
-      ? { ok: true, body: { d: { Id: existing.body.value[0].Id } }, reused: true }
+    const left = !readFailed(existing) && Array.isArray(existing.body.value) && existing.body.value.length
+      ? existing.body.value[0].Id
+      : null;
+    const reused = left !== null;
+    const bare = reused
+      ? { ok: true, status: 200, body: { d: { Id: left } } }
       : await post(items, { __metadata: { type: itemType }, Title: 'today-now' });
-    if (bare.ok) {
-      const back = await spGet(`${items}(${bare.body.d.Id})?$select=Id,T,Created`);
+    // An accepted create that served no id leaves no row to read T off, and
+    // `bare.body.d.Id` threw on it, losing every row the run already had.
+    const bareId = bare.ok && bare.body !== null && bare.body.d ? bare.body.d.Id : null;
+    if (bareId !== undefined && bareId !== null) {
+      const back = await spGet(`${items}(${bareId})?$select=Id,T,Created`);
       const siteMidnight = new Date(nowUtc.getFullYear(), nowUtc.getMonth(), nowUtc.getDate()).toISOString();
-      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default', 'PASS',
-        `T = ${back.body && back.body.T} (site-local midnight today would be ${siteMidnight}); Created ${back.body && back.body.Created}`);
+      // T and its =TODAY() default come from the today-semantics probe, not
+      // from here. A row that reads back blank says the default never fired,
+      // and PASS would report a resolved TODAY() nobody observed.
+      //
+      // The question is what TODAY() resolves to RIGHT NOW, and only a row
+      // this run created answers it: the default fires once, at create, so a
+      // row an earlier run left holds what TODAY() resolved to on its own day.
+      const filled = !readFailed(back) && back.body.T !== null && back.body.T !== undefined;
+      const resolved = filled && !reused;
+      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default',
+        resolved ? 'PASS' : 'NOT ESTABLISHED',
+        readFailed(back)
+          ? `the bare item did not read back (HTTP ${back.status})`
+          : `T = ${JSON.stringify(back.body.T)} (site-local midnight today would be ${siteMidnight}); Created ${back.body.Created}`
+            + (filled ? '' : '. Run the today-semantics probe first: T carries the =TODAY() default this reads')
+            + (reused
+              ? '. That row was left by an earlier setup run, so T is what TODAY() resolved to '
+                + "then rather than now. Delete the 'today-now' item and run setup again."
+              : ''));
     } else {
-      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default', 'FAIL', `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
+      record('formula.datetime.today-function-default-value', 'what TODAY() resolves to right now, through the =TODAY() default',
+        bare.ok ? 'NOT ESTABLISHED' : 'FAIL',
+        bare.ok
+          ? `the bare item create answered HTTP ${bare.status} and served no id, so there is no row to read T off`
+          : `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
     }
     for (const [id, question, step] of formSteps) {
       record(id, question, 'MANUAL', `${step}; note what happened, then run again with MODE = 'report'`);
+    }
+    // A form step is only a form-versus-REST comparison while the rule it
+    // names is in the store. Voided by id after the loop above, so a step
+    // whose rule never landed is not handed to a person to go and perform.
+    const voidSteps = (ids, why) => {
+      for (const id of ids) {
+        record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', why, 'void');
+      }
+    };
+    // Every New step goes through a form that shows DT: two type a date into
+    // it and two leave it blank, so a DT of another shape refuses or fills
+    // those saves for a reason no step asked about. The two Edit steps open an
+    // item that already carries a DT, so they are not about its shape.
+    if (!dtShape) {
+      voidSteps(['formula.validation.form-new-today-under-today-rule',
+                 'formula.validation.form-new-tomorrow-under-today-rule',
+                 'formula.validation.form-new-today-under-modified-rule',
+                 'formula.validation.form-new-tomorrow-under-modified-rule'],
+                'DT is not the optional, undefaulted date column the New steps type into and leave '
+                + 'blank, so what the form does with one says nothing about either rule');
+    }
+    if (!columnRule.held) {
+      voidSteps(['formula.validation.form-new-today-under-today-rule',
+                 'formula.validation.form-new-tomorrow-under-today-rule'],
+                'the column rule =[DT]<=TODAY() did not read back off DT, so the form has no DT '
+                + 'rule to evaluate and a save either way says nothing about TODAY()');
+    }
+    if (!listRule.held) {
+      voidSteps(['formula.validation.form-new-today-under-modified-rule',
+                 'formula.validation.form-new-tomorrow-under-modified-rule',
+                 'formula.validation.form-edit-today-under-modified-rule',
+                 'formula.validation.form-edit-tomorrow-under-modified-rule'],
+                'the list rule over [DM] and [Modified] did not read back off the list, so the '
+                + 'form has no rule to evaluate and a save either way says nothing about [Modified]');
     }
     record('formula.validation.fixture-form-rows-readback', 'report: the rows the form saved', 'NOT REACHED', 'run again with MODE = report after the form steps');
     record('formula.validation.fixture-rules-readback', 'report: the rules as stored now', 'NOT REACHED', 'run again with MODE = report after the form steps');
@@ -140,9 +254,11 @@
       `id=${r.Id} title=${r.Title} DT=${r.DT} DM=${r.DM} T=${r.T} Created=${r.Created} Modified=${r.Modified}`);
     record('formula.validation.fixture-form-rows-readback', 'report: the rows the form saved', readFailed(rows) ? 'FAIL' : 'PASS', lines.join(' | ') || 'no rows');
     const ruleNow = await spGet(`${listPath}?$select=ValidationFormula,ValidationMessage`);
-    const dt = await spGet(`${fields}/getbytitle('DT')?$select=ValidationFormula`);
-    record('formula.validation.fixture-rules-readback', 'report: the rules as stored now', 'PASS',
-      `list: ${ruleNow.body && ruleNow.body.ValidationFormula}; DT: ${dt.body && dt.body.ValidationFormula}`);
+    const dtNow = await spGet(`${fields}/getbytitle('DT')?$select=ValidationFormula`);
+    const bothRead = !readFailed(ruleNow) && !readFailed(dtNow);
+    record('formula.validation.fixture-rules-readback', 'report: the rules as stored now', bothRead ? 'PASS' : 'FAIL',
+      `list: ${readFailed(ruleNow) ? `did not read back (HTTP ${ruleNow.status})` : JSON.stringify(ruleNow.body.ValidationFormula)}`
+      + `; DT: ${readFailed(dtNow) ? `did not read back (HTTP ${dtNow.status})` : JSON.stringify(dtNow.body.ValidationFormula)}`);
     for (const id of ['formula.validation.fixture-dt-column', 'formula.validation.fixture-today-column-rule-stored', 'formula.validation.fixture-modified-list-rule-stored', 'formula.datetime.today-function-default-value']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE', 'a setup-mode question');
     }

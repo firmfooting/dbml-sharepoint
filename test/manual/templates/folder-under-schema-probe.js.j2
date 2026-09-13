@@ -286,35 +286,98 @@
     return `item ${row.Id}, FileSystemObjectType ${row.FileSystemObjectType}${guard}`;
   };
 
+  // Does the folder this run asked for exist under the library root now? The
+  // create's own status is not that: `folder-create-refusal-probe` settled
+  // that the call answers 200, and a 200 with nothing under the root is the
+  // shape every row here would otherwise report as a state that accepted a
+  // folder.
+  const folderExists = async (name) => {
+    const r = await spGet(
+      `web/GetFolderByServerRelativeUrl('${pathLiteral(`${rootUrl}/${name}`)}')?$select=Exists,ServerRelativeUrl`);
+    // `absent` is what folder-shape-probe classifies as a path nothing
+    // occupies; any other reading leaves the name unknown rather than free.
+    if (readFailed(r)) {
+      return {
+        present: false, absent: r.status === 404,
+        line: `the folder did not read back (HTTP ${r.status})`,
+      };
+    }
+    return {
+      present: r.body.Exists === true,
+      absent: r.body.Exists === false,
+      line: `the folder reads back Exists=${r.body.Exists} at ${r.body.ServerRelativeUrl}`,
+    };
+  };
+
+  // MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`: a
+  // create on a name a folder already holds answers HTTP 200 and returns that
+  // folder. CLEANUP ships false, so on the second run every state meets the
+  // folder the first run left, and a no-op reads as the state taking one.
+  const freeName = async (id, question, name) => {
+    const before = await folderExists(name);
+    if (before.absent) return true;
+    record(id, question, 'NOT ESTABLISHED',
+           `'${name}' was not read as free before the create (${before.line}), and a create over `
+           + 'a folder that is already there answers 200 and returns it. Set CLEANUP = true.');
+    return false;
+  };
+
   const addFolder = async (id, question, name) => {
+    if (!await freeName(id, question, name)) return false;
     const digest = await getDigest();
     const res = await spPost(
       `web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`,
       {}, digest);
     if (!res.ok) {
-      record(id, question, isRefusal(res.status) ? 'REFUSED' : 'FAIL', short(res));
+      // A 401, 403, 408 or 429 says nothing about whether this state takes a
+      // folder, and FAIL settles the row as though it did.
+      record(id, question, isRefusal(res.status) ? 'REFUSED' : 'NOT ESTABLISHED', short(res));
       return false;
     }
-    record(id, question, 'PASS', `HTTP ${res.status}, and ${await folderItem(name)}`);
+    const back = await folderExists(name);
+    if (!back.present) {
+      record(id, question, 'NOT ESTABLISHED',
+             `HTTP ${res.status}, but ${back.line}. An accepted call that left no folder is not `
+             + 'this state accepting a folder.');
+      return false;
+    }
+    record(id, question, 'PASS', `HTTP ${res.status}, ${back.line}, and ${await folderItem(name)}`);
     return true;
   };
 
   // ---- the bare library ------------------------------------------------
   if (!await addFolder('library.folder.control-add-on-bare-library', Q.control, NAMES.bare)) {
     voidAll(IDS.slice(1),
-            'the control refused on a bare library, so this run cannot attribute a later refusal '
-            + 'to a setting. Something outside these three states is blocking folder creation here.');
+            'the control did not record a folder created on a bare library, so this run cannot '
+            + 'attribute a later refusal to a setting. Its own row says what stopped it.');
     return report();
   }
+
+  // Every row here names the state the library was in, so each state is READ
+  // BACK before the folder create that reports on it. A 2xx from the write
+  // that was meant to enter the state is not the state: a row recorded off one
+  // would attribute a refusal, or an acceptance, to a setting that is not
+  // there. The list formula's own restore below already worked this way.
+  const GUARD_FORMULA = `=[${GUARD}]="ok"`;
+  const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
+  // `!body.X` is true both for a property that is unset and for one the site
+  // never served, and only the first says the column carries nothing.
+  const unset = (body, prop) => prop in body && !body[prop];
 
   // ---- state 1: broken role inheritance --------------------------------
   {
     const digest = await getDigest();
     const broke = await spPost(
       `${libPath}/breakroleinheritance(copyRoleAssignments=true,clearSubscopes=true)`, {}, digest);
-    if (!broke.ok) {
+    const back = await spGet(`${libPath}?$select=HasUniqueRoleAssignments`);
+    const unique = !readFailed(back) && back.body.HasUniqueRoleAssignments === true;
+    if (!broke.ok || !unique) {
       record('library.folder.add-with-broken-inheritance', Q.acl, 'NOT ESTABLISHED',
-             `the library's inheritance could not be broken (${short(broke)}), so this state was never entered.`);
+             `the library's inheritance was not broken (${broke.ok ? `HTTP ${broke.status}` : short(broke)}; `
+             + `${readFailed(back)
+               ? `HasUniqueRoleAssignments did not read back, HTTP ${back.status}`
+               : `HasUniqueRoleAssignments reads back ${back.body.HasUniqueRoleAssignments}`}), `
+             + 'so this state was never entered.');
     } else {
       await addFolder('library.folder.add-with-broken-inheritance', Q.acl, NAMES.acl);
     }
@@ -331,11 +394,30 @@
       Required: true,
       Description: 'dbmlsp folder under schema probe guard column.',
     });
-    guardMade = made.ok;
-    guardExists = made.ok;
-    if (!made.ok) {
+    // The whole field, not a $select: naming a property the entity does not
+    // have answers HTTP 400, which would read as an absent column rather than
+    // as one of the wrong type left by an earlier run.
+    //
+    // The state is REQUIRED with NO default and NO rule of its own, which is
+    // what the shipped family declares for two of its five library columns. A
+    // column left by an earlier run carrying either is the state the NEXT row
+    // names, and a refusal under it would be recorded against requiredness.
+    // Each is read as served-and-falsy, because a column carrying neither
+    // reads back either way and a property the site withheld is not evidence.
+    const back = await spGet(`${libPath}/fields/getbyinternalnameortitle('${GUARD}')`);
+    guardMade = !readFailed(back) && back.body.Required === true
+      && back.body.TypeAsString === 'Text'
+      && unset(back.body, 'DefaultValue') && unset(back.body, 'ValidationFormula');
+    guardExists = !readFailed(back);
+    if (!guardMade) {
       record('library.folder.add-with-required-column', Q.required, 'NOT ESTABLISHED',
-             `the required column could not be created (${short(made)}), so this state was never entered.`);
+             `the required column with no default and no rule of its own is not on the library (create answered ${made.ok ? `HTTP ${made.status}` : short(made)}; `
+             + `${readFailed(back)
+               ? `the column did not read back, HTTP ${back.status}`
+               : `it reads back TypeAsString=${back.body.TypeAsString} Required=${back.body.Required}`
+                 + ` DefaultValue=${JSON.stringify(back.body.DefaultValue)}`
+                 + ` ValidationFormula=${JSON.stringify(back.body.ValidationFormula)}`}), `
+             + 'so this state was never entered.');
     } else {
       await addFolder('library.folder.add-with-required-column', Q.required, NAMES.required);
     }
@@ -350,13 +432,21 @@
       `${libPath}/fields/getbyinternalnameortitle('${GUARD}')`,
       {
         __metadata: { type: 'SP.FieldText' },
-        ValidationFormula: `=[${GUARD}]="ok"`,
+        ValidationFormula: GUARD_FORMULA,
         ValidationMessage: 'dbmlsp probe: this column must read ok.',
       },
       MERGE);
-    if (!set.ok) {
+    const back = await spGet(
+      `${libPath}/fields/getbyinternalnameortitle('${GUARD}')?$select=ValidationFormula`);
+    const held = set.ok && !readFailed(back)
+      && canonical(back.body.ValidationFormula) === canonical(GUARD_FORMULA);
+    if (!held) {
       record('library.folder.add-with-column-validation', Q.columnValidation, 'NOT ESTABLISHED',
-             `the column validation formula was refused at the field set (${short(set)}), so this state was never entered.`);
+             `the column validation formula is not on ${GUARD} (MERGE answered ${set.ok ? `HTTP ${set.status}` : short(set)}; `
+             + `${readFailed(back)
+               ? `ValidationFormula did not read back, HTTP ${back.status}`
+               : `it reads back ${JSON.stringify(back.body.ValidationFormula)}`}), `
+             + 'so this state was never entered.');
     } else {
       await addFolder('library.folder.add-with-column-validation', Q.columnValidation, NAMES.columnValidation);
     }
@@ -372,13 +462,19 @@
     // The deploy's own spelling: SP.List metadata, both properties together.
     const set = await postVerbose(libPath, {
       __metadata: { type: 'SP.List' },
-      ValidationFormula: `=[${GUARD}]="ok"`,
+      ValidationFormula: GUARD_FORMULA,
       ValidationMessage: 'dbmlsp probe: this item must read ok.',
     }, MERGE);
-    listValidated = set.ok;
-    if (!set.ok) {
+    const back = await spGet(`${libPath}?$select=ValidationFormula`);
+    listValidated = set.ok && !readFailed(back)
+      && canonical(back.body.ValidationFormula) === canonical(GUARD_FORMULA);
+    if (!listValidated) {
       record('library.folder.add-with-list-validation', Q.listValidation, 'NOT ESTABLISHED',
-             `the list validation formula was refused (${short(set)}), so this state was never entered.`);
+             `the list validation formula is not on the library (MERGE answered ${set.ok ? `HTTP ${set.status}` : short(set)}; `
+             + `${readFailed(back)
+               ? `ValidationFormula did not read back, HTTP ${back.status}`
+               : `it reads back ${JSON.stringify(back.body.ValidationFormula)}`}), `
+             + 'so this state was never entered.');
     } else {
       await addFolder('library.folder.add-with-list-validation', Q.listValidation, NAMES.listValidation);
     }
@@ -391,18 +487,24 @@
   // ---- the two other spellings, in the final state ---------------------
   if (finalStateReason) {
     record('library.folder.add-using-path-under-validation', Q.usingPath, 'NOT ESTABLISHED', finalStateReason);
-  } else {
+  } else if (await freeName('library.folder.add-using-path-under-validation', Q.usingPath, NAMES.usingPath)) {
     const digest = await getDigest();
     const res = await spPost(
       `web/Folders/AddUsingPath(decodedurl='${pathLiteral(`${rootUrl}/${NAMES.usingPath}`)}')`, {}, digest);
+    const back = res.ok ? await folderExists(NAMES.usingPath) : null;
     record('library.folder.add-using-path-under-validation', Q.usingPath,
-           res.ok ? 'PASS' : isRefusal(res.status) ? 'REFUSED' : 'FAIL',
-           res.ok ? `HTTP ${res.status}, and ${await folderItem(NAMES.usingPath)}` : short(res));
+           !res.ok ? (isRefusal(res.status) ? 'REFUSED' : 'NOT ESTABLISHED')
+             : back.present ? 'PASS' : 'NOT ESTABLISHED',
+           !res.ok ? short(res)
+             : back.present
+               ? `HTTP ${res.status}, ${back.line}, and ${await folderItem(NAMES.usingPath)}`
+               : `HTTP ${res.status}, but ${back.line}. An accepted call that left no folder is `
+                 + 'not this spelling creating one.');
   }
 
   if (finalStateReason) {
     record('library.folder.add-as-list-item-under-validation', Q.listItem, 'NOT ESTABLISHED', finalStateReason);
-  } else {
+  } else if (await freeName('library.folder.add-as-list-item-under-validation', Q.listItem, NAMES.listItem)) {
     // An item create names the list's OWN entity type, which is per-list and
     // read rather than spelled: `SP.Data.<something>Item` is derived from the
     // library's URL and guessing it returns a refusal about the type, which
@@ -419,11 +521,15 @@
         FileSystemObjectType: 1,
         FileLeafRef: NAMES.listItem,
       });
+      const back = res.ok ? await folderExists(NAMES.listItem) : null;
       record('library.folder.add-as-list-item-under-validation', Q.listItem,
-             res.ok ? 'PASS' : isRefusal(res.status) ? 'REFUSED' : 'FAIL',
-             res.ok
-               ? `HTTP ${res.status} as ${itemType}, and ${await folderItem(NAMES.listItem)}`
-               : `${short(res)} (as ${itemType})`);
+             !res.ok ? (isRefusal(res.status) ? 'REFUSED' : 'NOT ESTABLISHED')
+               : back.present ? 'PASS' : 'NOT ESTABLISHED',
+             !res.ok ? `${short(res)} (as ${itemType})`
+               : back.present
+                 ? `HTTP ${res.status} as ${itemType}, ${back.line}, and ${await folderItem(NAMES.listItem)}`
+                 : `HTTP ${res.status} as ${itemType}, but ${back.line}. An accepted item POST that `
+                   + 'left no folder is not this spelling creating one.');
     }
   }
 
@@ -456,8 +562,17 @@
   }, MERGE);
 
   const cleared = await setListFormula('', '');
-  if (!cleared.ok) {
-    voidAll(RESTORE_IDS, `the list validation formula could not be cleared (${short(cleared)}), `
+  // Read back, because the whole window rests on the formula being GONE. A
+  // MERGE that answered 204 and kept the formula would make the create below
+  // report on the guarded library while the row says it was cleared.
+  const clearedBack = await spGet(`${libPath}?$select=ValidationFormula`);
+  const isClear = cleared.ok && !readFailed(clearedBack) && !canonical(clearedBack.body.ValidationFormula);
+  if (!isClear) {
+    voidAll(RESTORE_IDS, 'the list validation formula was not cleared (MERGE answered '
+            + `${cleared.ok ? `HTTP ${cleared.status}` : short(cleared)}; `
+            + `${readFailed(clearedBack)
+              ? `ValidationFormula did not read back, HTTP ${clearedBack.status}`
+              : `it still reads back ${JSON.stringify(clearedBack.body.ValidationFormula)}`}), `
             + 'so the clear-create-restore shape could not be tried at all.');
     return report();
   }
@@ -470,7 +585,8 @@
   const formulaBack = readFailed(readBack) ? null : readBack.body.ValidationFormula;
   const restoredOk = restored.ok && typeof formulaBack === 'string' && formulaBack.includes(GUARD);
   record('library.folder.restore-list-validation-after-folders', Q.restored,
-         restoredOk ? 'PASS' : restored.ok ? 'FAIL' : isRefusal(restored.status) ? 'REFUSED' : 'FAIL',
+         restoredOk ? 'PASS' : restored.ok ? 'FAIL'
+           : isRefusal(restored.status) ? 'REFUSED' : 'NOT ESTABLISHED',
          restored.ok
            ? `HTTP ${restored.status}, and ValidationFormula reads back ${JSON.stringify(formulaBack)}`
            : short(restored));
@@ -493,13 +609,14 @@
            'NOT ESTABLISHED',
            'the formula did not read back after the restore, so a refusal here would say nothing '
            + 'about whether a restored guard is in force.');
-  } else {
+  } else if (await freeName('library.folder.control-restored-validation-refuses-a-folder',
+                            Q.controlRestored, NAMES.afterRestore)) {
     const digest = await getDigest();
     const after = await spPost(
       `web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(NAMES.afterRestore)}')`,
       {}, digest);
     record('library.folder.control-restored-validation-refuses-a-folder', Q.controlRestored,
-           after.ok ? 'FAIL' : isRefusal(after.status) ? 'PASS' : 'FAIL',
+           after.ok ? 'FAIL' : isRefusal(after.status) ? 'PASS' : 'NOT ESTABLISHED',
            after.ok
              ? `HTTP ${after.status}: the create was ACCEPTED, so the restored formula is not in force `
                + 'and the three rows above are about an unguarded library'

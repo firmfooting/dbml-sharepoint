@@ -289,7 +289,11 @@
   };
   const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
-  const verdict = (r) => (r.ok ? 'SAVED' : `REFUSED HTTP ${r.status} ${reason(r)}`);
+  const verdict = (r) => (r.ok ? 'SAVED'
+    : `${isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'} HTTP ${r.status} ${reason(r)}`);
+  // `!body.X` is true both for a property that is unset and for one the site
+  // never served, and only the first says the column carries nothing.
+  const unset = (body, prop) => prop in body && !body[prop];
 
   const dated = await fetch(`${WEB}/_api/web/regionalsettings/timezone`, {
     headers: { Accept: 'application/json;odata=nometadata' },
@@ -315,14 +319,61 @@
     ['formula.validation.form-new-prefilled-default-under-modified-rule', 'form: New with TR left at its prefilled default saves', 'New, Title "N1", leave TR at its prefilled value, Save; note the prefilled TR'],
   ];
 
+  // Rows whose answer is only about the [today] default racing [Modified].
+  // Voided by id when the fixture they rest on is not there, rather than
+  // reported from a run that measured a column with no default.
+  const RACE_IDS = [
+    'formula.validation.today-default-races-modified-rule-rest',
+    'formula.validation.today-default-races-modified-rule-form-endpoint',
+    'formula.validation.form-new-prefilled-default-under-modified-rule',
+  ];
+  const voidAll = (ids, why) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', why, 'void');
+    }
+  };
+
   if (MODE === 'setup') {
     const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
+    // The dynamic default is what every race row below is about, so it is READ
+    // BACK rather than taken from the create's status or from a column of the
+    // right Title being present. CLEANUP ships false, so a column left by an
+    // earlier run is the normal path, and it may be any shape at all.
+    // The whole field is read: `$select` naming a property the entity does not
+    // have answers HTTP 400, which would read here as "did not read back" for
+    // a column that is simply the wrong type.
     const ensure = async (title, displayFormat) => {
-      if (have.has(title)) return `${title} exists`;
-      const r = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat, DefaultValue: '[today]' });
-      return `${title} ${r.ok ? 'created with default [today]' : `create refused ${r.status} ${reason(r)}`}`;
+      let sent = `${title} was already present, so this run sent no create`;
+      if (!have.has(title)) {
+        const r = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat, DefaultValue: '[today]' });
+        sent = `${title} create answered HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`;
+      }
+      const back = await spGet(`${fields}/getbyinternalnameortitle('${title}')`);
+      if (readFailed(back)) {
+        return { held: false, line: `${sent}; ${title} did not read back (HTTP ${back.status})` };
+      }
+      // Whatever the column carries of its own is part of the shape: the race
+      // rows read a refusal as the LIST rule firing, and a leftover column
+      // rule, or a leftover requiredness, refuses the same create for a reason
+      // this probe never asked about. A column this probe creates carries
+      // neither, so requiring both unset is the clean-run shape rather than a
+      // new demand on the tenant, and each is read as served-and-falsy because
+      // a property the site withheld is not a property that is unset.
+      return {
+        held: back.body.TypeAsString === 'DateTime'
+          && back.body.DefaultValue === '[today]' && back.body.DisplayFormat === displayFormat
+          && unset(back.body, 'ValidationFormula') && unset(back.body, 'Required'),
+        line: `${sent}; ${title} reads back TypeAsString=${back.body.TypeAsString}`
+          + ` DisplayFormat=${back.body.DisplayFormat} DefaultValue=${JSON.stringify(back.body.DefaultValue)}`
+          + ` ValidationFormula=${JSON.stringify(back.body.ValidationFormula)}`
+          + ` Required=${JSON.stringify(back.body.Required)}`,
+      };
     };
-    record('formula.validation.fixture-default-columns', 'TR (date) and WR (datetime) exist with dynamic default [today]', 'PASS', [await ensure('TR', 0), await ensure('WR', 1)].join('; '));
+    const tr = await ensure('TR', 0);
+    const wr = await ensure('WR', 1);
+    const defaulted = tr.held && wr.held;
+    record('formula.validation.fixture-default-columns', 'TR (date) and WR (datetime) exist with dynamic default [today]',
+      defaulted ? 'PASS' : 'FAIL', `${tr.line}; ${wr.line}`);
     const rule = '=AND(OR(ISBLANK([DM]),[DM]<=[Modified]),OR(ISBLANK([TR]),[TR]<=[Modified]),OR(ISBLANK([WR]),[WR]<=[Modified]))';
     const lv = await post(listPath, { __metadata: { type: 'SP.List' }, ValidationFormula: rule, ValidationMessage: 'probe: a date is after this save' },
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
@@ -331,46 +382,103 @@
     // back as `DM<=Modified`, so the comparison ignores the brackets, as the
     // deployer's own readback does.
     const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
-    record('formula.validation.fixture-three-column-modified-rule-stored', 'the list rule over DM, TR and WR against [Modified] is stored', lv.ok && back.body && canonical(back.body.ValidationFormula) === canonical(rule) ? 'PASS' : 'FAIL',
-      lv.ok ? `stored: ${back.body && back.body.ValidationFormula}` : `HTTP ${lv.status} ${reason(lv)}`);
+    // The question is whether the rule IS stored, so the readback decides it
+    // and the write's status is only evidence. A MERGE that came back 429 over
+    // a store already holding the rule is not the rule being absent.
+    const ruleStored = !readFailed(back) && canonical(back.body.ValidationFormula) === canonical(rule);
+    record('formula.validation.fixture-three-column-modified-rule-stored', 'the list rule over DM, TR and WR against [Modified] is stored', ruleStored ? 'PASS' : 'FAIL',
+      `MERGE answered HTTP ${lv.status}${lv.ok ? '' : ` ${reason(lv)}`}; `
+      + `${readFailed(back) ? `the rule did not read back (HTTP ${back.status})` : `stored: ${JSON.stringify(back.body.ValidationFormula)}`}`);
 
     // ---- R1: the default race through REST, five times --------------------
+    // Counted by what each create ANSWERED, not by matching the evidence text:
+    // a create that was throttled or refused for lack of permission is neither
+    // a save nor a refusal, and folding it into either produces ALL REFUSED or
+    // MIXED for a run that did not race anything.
     const outcomes = [];
+    let saved = 0;
+    let refused = 0;
     for (let i = 1; i <= 5; i += 1) {
       const r = await post(items, { __metadata: { type: itemType }, Title: `R1-${i}` });
       if (r.ok) {
-        const row = await spGet(`${items}(${r.body.d.Id})?$select=Id,TR,WR,Created,Modified`);
-        outcomes.push(`R1-${i} SAVED id=${row.body.Id} TR=${row.body.TR} WR=${row.body.WR} Modified=${row.body.Modified}`);
+        saved += 1;
+        // The create answering is what SAVED counts, so a readback that never
+        // answered costs this line its values rather than the whole run: the
+        // id and the row were both dereferenced unguarded and threw.
+        const id = r.body !== null && r.body.d ? r.body.d.Id : null;
+        const row = id === undefined || id === null
+          ? null
+          : await spGet(`${items}(${id})?$select=Id,TR,WR,Created,Modified`);
+        outcomes.push(row !== null && !readFailed(row)
+          ? `R1-${i} SAVED id=${row.body.Id} TR=${row.body.TR} WR=${row.body.WR} Modified=${row.body.Modified}`
+          : `R1-${i} SAVED, but the row it created did not read back (${row === null
+            ? `the create answered HTTP ${r.status} and served no id`
+            : `HTTP ${row.status}`})`);
       } else {
+        if (isRefusal(r.status)) refused += 1;
         outcomes.push(`R1-${i} ${verdict(r)}`);
       }
     }
-    const saved = outcomes.filter((o) => o.includes(' SAVED ')).length;
-    record('formula.validation.today-default-races-modified-rule-rest', 'five bare REST creates: does the [today] default race the rule?', saved === 5 ? 'ALL SAVED' : saved === 0 ? 'ALL REFUSED' : 'MIXED', outcomes.join(' | '));
+    const answered = saved + refused === 5;
+    record('formula.validation.today-default-races-modified-rule-rest', 'five bare REST creates: does the [today] default race the rule?',
+      !answered ? 'NOT ESTABLISHED' : saved === 5 ? 'ALL SAVED' : refused === 5 ? 'ALL REFUSED' : 'MIXED',
+      answered ? outcomes.join(' | ')
+        : `${5 - saved - refused} of the five creates neither saved nor were refused: ${outcomes.join(' | ')}`);
 
     // ---- R2: the same through the form's endpoint -----------------------------
-    const folder = list.body.RootFolder.ServerRelativeUrl;
-    const r2 = await post(`${listPath}/AddValidateUpdateItemUsingPath`, {
-      listItemCreateInfo: { __metadata: { type: 'SP.ListItemCreationInformationUsingPath' }, FolderPath: { __metadata: { type: 'SP.ResourcePath' }, DecodedUrl: folder } },
-      formValues: [{ FieldName: 'Title', FieldValue: 'formula.validation.today-default-races-modified-rule-form-endpoint' }],
-      bNewDocumentUpdate: false,
-    });
-    const r2rows = (r2.ok && r2.body && r2.body.d && r2.body.d.AddValidateUpdateItemUsingPath && r2.body.d.AddValidateUpdateItemUsingPath.results) || [];
-    const r2err = r2rows.filter((x) => x.HasException).map((x) => `${x.FieldName}: ${x.ErrorMessage}`);
-    const r2id = (r2rows.find((x) => x.FieldName === 'Id') || {}).FieldValue;
-    let r2detail = r2.ok ? (r2err.length ? `REFUSED by validation: ${r2err.join('; ')}` : `SAVED id=${r2id}`) : `HTTP ${r2.status} ${reason(r2)}`;
-    if (r2id) {
-      const row = await spGet(`${items}(${r2id})?$select=Id,TR,WR,Modified`);
-      r2detail += `; TR=${row.body && row.body.TR} WR=${row.body && row.body.WR} Modified=${row.body && row.body.Modified}`;
+    // An $expand can answer 2xx without the expansion, and dereferencing a
+    // RootFolder the payload never carried threw away the whole run.
+    const folder = (list.body.RootFolder || {}).ServerRelativeUrl;
+    if (!folder) {
+      record('formula.validation.today-default-races-modified-rule-form-endpoint', 'a bare create through the form endpoint saves',
+        'NOT ESTABLISHED', 'the list read served no RootFolder path, so the form endpoint had no folder to create in');
+    } else {
+      const r2 = await post(`${listPath}/AddValidateUpdateItemUsingPath`, {
+        listItemCreateInfo: { __metadata: { type: 'SP.ListItemCreationInformationUsingPath' }, FolderPath: { __metadata: { type: 'SP.ResourcePath' }, DecodedUrl: folder } },
+        formValues: [{ FieldName: 'Title', FieldValue: 'formula.validation.today-default-races-modified-rule-form-endpoint' }],
+        bNewDocumentUpdate: false,
+      });
+      // This endpoint reports a refusal INSIDE a 200, so the payload is the
+      // answer: a 2xx nobody could read carries no results to look at, and an
+      // empty list of them read as nothing having gone wrong.
+      const r2served = !readFailed(r2) && r2.body.d && r2.body.d.AddValidateUpdateItemUsingPath
+        && Array.isArray(r2.body.d.AddValidateUpdateItemUsingPath.results);
+      const r2rows = r2served ? r2.body.d.AddValidateUpdateItemUsingPath.results : [];
+      const r2err = r2rows.filter((x) => x.HasException).map((x) => `${x.FieldName}: ${x.ErrorMessage}`);
+      const r2id = (r2rows.find((x) => x.FieldName === 'Id') || {}).FieldValue;
+      let r2detail = !r2.ok ? `HTTP ${r2.status} ${reason(r2)}`
+        : !r2served ? `HTTP ${r2.status}, but the response carried no form-endpoint results, so whether the item saved was never seen`
+          : r2err.length ? `REFUSED by validation: ${r2err.join('; ')}` : `SAVED id=${r2id}`;
+      if (r2id) {
+        const row = await spGet(`${items}(${r2id})?$select=Id,TR,WR,Modified`);
+        r2detail += readFailed(row)
+          ? `; the row it created did not read back (HTTP ${row.status})`
+          : `; TR=${row.body.TR} WR=${row.body.WR} Modified=${row.body.Modified}`;
+      }
+      // A 401, 403, 408 or 429 here is not the form endpoint refusing the save.
+      record('formula.validation.today-default-races-modified-rule-form-endpoint', 'a bare create through the form endpoint saves',
+        !r2.ok ? (isRefusal(r2.status) ? 'REFUSED' : 'NOT ESTABLISHED')
+          : !r2served ? 'NOT ESTABLISHED'
+            : r2err.length ? 'REFUSED' : 'SAVED', r2detail);
     }
-    record('formula.validation.today-default-races-modified-rule-form-endpoint', 'a bare create through the form endpoint saves', r2.ok && !r2err.length ? 'SAVED' : 'REFUSED', r2detail);
 
     // ---- H1: a hidden list ------------------------------------------------------
     if (CREATE_HIDDEN_LIST) {
       const h = await post('web/lists', { __metadata: { type: 'SP.List' }, Title: HIDDEN, BaseTemplate: 100, Hidden: true, Description: 'dbml-sharepoint probe: may this list be hidden?' });
       const hb = h.ok ? await spGet(`web/lists/getbytitle('${enc(HIDDEN)}')?$select=Hidden,NoCrawl`) : null;
-      record('field.list.hidden-list-readback', 'a list created with Hidden=true reads back hidden', h.ok ? (hb.body && hb.body.Hidden ? 'PASS' : 'FAIL') : 'FAIL',
-        h.ok ? `Hidden=${hb.body && hb.body.Hidden} NoCrawl=${hb.body && hb.body.NoCrawl}; open Site contents and note whether '${HIDDEN}' is listed` : `create refused: HTTP ${h.status} ${reason(h)}`);
+      // FAIL is the claim that the list did not stay hidden, so it needs the
+      // property in hand: neither a 2xx with no payload nor a payload that
+      // withheld Hidden is a list reading back visible.
+      const read = hb !== null && !readFailed(hb) && 'Hidden' in hb.body;
+      record('field.list.hidden-list-readback', 'a list created with Hidden=true reads back hidden',
+        !h.ok ? 'FAIL' : !read ? 'NOT ESTABLISHED' : hb.body.Hidden ? 'PASS' : 'FAIL',
+        !h.ok
+          ? `create refused: HTTP ${h.status} ${reason(h)}`
+          : !read
+            ? `HTTP ${h.status} on the create, but ${readFailed(hb)
+              ? `the list did not read back (HTTP ${hb.status})`
+              : 'the payload carried no Hidden property'}`
+            : `Hidden=${hb.body.Hidden} NoCrawl=${hb.body.NoCrawl}; open Site contents and note whether '${HIDDEN}' is listed`);
     } else {
       record('field.list.hidden-list-readback', 'a list created with Hidden=true reads back hidden', 'NOT APPLICABLE', 'CREATE_HIDDEN_LIST is off');
     }
@@ -380,6 +488,19 @@
     }
     record('formula.validation.fixture-path-rows-readback', 'report: the rows as saved', 'NOT REACHED', 'run again with MODE = report after the human steps');
     record('formula.validation.fixture-three-column-rule-readback', 'report: the list rule as stored now', 'NOT REACHED', 'run again with MODE = report after the human steps');
+    // Voided last, so the rows above are written once and then overwritten by
+    // id. The R1 items are created either way, because the form, grid and bulk
+    // steps need rows to open whatever the fixture turned out to be.
+    if (!ruleStored) {
+      voidAll([...new Set([...RACE_IDS, ...humanSteps.map(([id]) => id)])],
+              'the list rule over DM, TR and WR did not read back, so a save that was accepted '
+              + 'was not accepted under the rule this asks about');
+    } else if (!defaulted) {
+      voidAll(RACE_IDS,
+              'TR and WR do not both read back carrying the dynamic default [today], so a bare '
+              + 'create races nothing: an accepted save would be a finding about a column with '
+              + 'no default rather than about the default landing at the same instant as [Modified]');
+    }
     log('INFO', `The list is at ${WEB}/Lists/${encodeURIComponent(LIST)}`);
   } else {
     for (const id of ['formula.validation.fixture-default-columns', 'formula.validation.fixture-three-column-modified-rule-stored', 'formula.validation.today-default-races-modified-rule-rest', 'formula.validation.today-default-races-modified-rule-form-endpoint', 'field.list.hidden-list-readback']) {
@@ -393,7 +514,8 @@
       `id=${r.Id} title=${r.Title} DM=${r.DM} TR=${r.TR} WR=${r.WR} Created=${r.Created} Modified=${r.Modified}`);
     record('formula.validation.fixture-path-rows-readback', 'report: the rows as saved', readFailed(rows) ? 'FAIL' : 'PASS', lines.join(' | ') || 'no rows');
     const ruleNow = await spGet(`${listPath}?$select=ValidationFormula`);
-    record('formula.validation.fixture-three-column-rule-readback', 'report: the list rule as stored now', 'PASS', `${ruleNow.body && ruleNow.body.ValidationFormula}`);
+    record('formula.validation.fixture-three-column-rule-readback', 'report: the list rule as stored now', readFailed(ruleNow) ? 'FAIL' : 'PASS',
+      readFailed(ruleNow) ? `the list rule did not read back (HTTP ${ruleNow.status})` : JSON.stringify(ruleNow.body.ValidationFormula));
   }
   return report();
 })();

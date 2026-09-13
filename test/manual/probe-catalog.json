@@ -431,7 +431,9 @@
           "findings": [
             {
               "id": "formula.choice.calc-column-accepted",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             },
             {
               "id": "formula.choice.calc-column-renders",
@@ -451,7 +453,9 @@
             },
             {
               "id": "formula.choice.spaced-display-name-accepted",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             },
             {
               "id": "formula.choice.spaced-display-name-as-stored",
@@ -463,7 +467,9 @@
             },
             {
               "id": "formula.choice.datetime-result-accepted",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             },
             {
               "id": "formula.choice.datetime-result-computes",
@@ -471,7 +477,9 @@
             },
             {
               "id": "formula.calc.lookup-operand-accepted",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             },
             {
               "id": "formula.validation.lookup-operand",
@@ -487,7 +495,9 @@
             },
             {
               "id": "formula.choice.number-result-accepted",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             },
             {
               "id": "formula.choice.number-result-computes",
@@ -507,7 +517,9 @@
             },
             {
               "id": "formula.choice.retitled-operand-referenced-anew",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.control-person-operand-refused"
+              ]
             }
           ],
           "states": [],
@@ -6612,13 +6624,15 @@
             {
               "id": "formula.validation.today-default-races-modified-rule-rest",
               "depends_on": [
-                "formula.validation.fixture-three-column-modified-rule-stored"
+                "formula.validation.fixture-three-column-modified-rule-stored",
+                "formula.validation.fixture-default-columns"
               ]
             },
             {
               "id": "formula.validation.today-default-races-modified-rule-form-endpoint",
               "depends_on": [
-                "formula.validation.fixture-three-column-modified-rule-stored"
+                "formula.validation.fixture-three-column-modified-rule-stored",
+                "formula.validation.fixture-default-columns"
               ]
             },
             {
@@ -6676,7 +6690,8 @@
             {
               "id": "formula.validation.form-new-prefilled-default-under-modified-rule",
               "depends_on": [
-                "formula.validation.fixture-three-column-modified-rule-stored"
+                "formula.validation.fixture-three-column-modified-rule-stored",
+                "formula.validation.fixture-default-columns"
               ]
             }
           ],
@@ -6715,7 +6730,8 @@
           ],
           "controls": [
             "formula.validation.fixture-three-column-modified-rule-stored",
-            "formula.validation.today-default-races-modified-rule-rest"
+            "formula.validation.today-default-races-modified-rule-rest",
+            "formula.validation.fixture-default-columns"
           ],
           "depends_on": [],
           "surface": "formula"
