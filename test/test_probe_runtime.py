@@ -3040,3 +3040,1748 @@ def test_a_measurement_run_reverts_nothing_and_names_both_sets() -> None:
         "LVMultiChoice, LVLookup, LVCalc."
     ) in output
     assert "Still indexed from a previous run: LVChoice." in output
+
+
+# --------------------------------------------------------------------------
+# library-builtin-view-probe.js: which view each row is about, and what it
+# records when the step that row depends on did not answer.
+# --------------------------------------------------------------------------
+BUILTIN_VIEW_PROBE = MANUAL / "library-builtin-view-probe.js"
+
+#: What the harness does when nothing is asked of it: a library whose built-in
+#: view sits on AllItems.aspx under a title of its own, every write taking and
+#: every read answering. Two of those are the live run of 2026-09-13 rather
+#: than a convenience, and the rest of this file varies one knob at a time:
+#: the built-in view reads 'All Documents' on AllItems.aspx, and a second view
+#: created under the slug is minted AllItems1.aspx.
+_BUILTIN_VIEW_DEFAULTS: dict[str, Any] = {
+    # Where the library's built-in view sits. 'AllDocuments.aspx' leaves
+    # AllItems.aspx free while a default view still exists.
+    "builtinBasename": "AllItems.aspx",
+    # 'normal', 'missing' (the created view never appears in the collection),
+    # 'unreadable' (the collection read after the create fails).
+    "collisionReadback": "normal",
+    # 'takes', 'ignored' (the MERGE answers OK and the Title does not move),
+    # 'refused'.
+    "rename": "takes",
+    # 'replaced', or 'survivor': removeallviewfields leaves one field behind
+    # and addviewfield answers OK without applying anything.
+    "viewFields": "replaced",
+    # Does hiding the default view move DefaultView to another view?
+    "hideMovesDefault": False,
+    # Restoring Hidden to false: 'takes', 'ignored', 'refused'.
+    "restore": "takes",
+    # How a read of a view that is no longer there answers: 'absent' (404) or
+    # 'transient' (500, which proves nothing either way).
+    "missingViewRead": "absent",
+    # Whether the view collection still reads back after the DELETE.
+    "viewsAfterDelete": "readable",
+}
+
+#: A SharePoint holding lists of views, controllable in the eight ways a run
+#: of this probe can go wrong without any request failing outright. It also
+#: keeps every view write, so a test can ask WHICH view was renamed or
+#: deleted rather than only what the run recorded about it.
+_BUILTIN_VIEW_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const writes = [];
+    globalThis.__writes = writes;
+
+    const lists = new Map();
+    let nextList = 1;
+    let nextView = 1;
+    // Armed by the call it belongs to rather than by a request count, which
+    // would shift the moment a question is added earlier in the run.
+    let failNextLibraryViewList = false;
+
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const BY_ID = /^\\/views\\('([^']+)'\\)(.*)$/;
+    const BY_TITLE = /^\\/views\\/getbytitle\\('(.*?)'\\)/;
+    const ADD_FIELD = /^\\/ViewFields\\/addviewfield\\('([^']+)'\\)$/;
+
+    const baseOf = (view) => view.ServerRelativeUrl.split('/').pop();
+    const publicShape = (view) => ({
+      Id: view.Id, Title: view.Title, ServerRelativeUrl: view.ServerRelativeUrl,
+      DefaultView: view.DefaultView, Hidden: view.Hidden, Scope: view.Scope,
+      PersonalView: view.PersonalView,
+    });
+
+    const makeView = (held, title, basename, extra = {}) => {
+      const view = {
+        Id: `view-${nextView}`,
+        Title: title,
+        ServerRelativeUrl: `${held.ServerRelativeUrl}/Forms/${basename}`,
+        DefaultView: false, Hidden: false, Scope: 0, PersonalView: false,
+        fields: ['DocIcon', 'LinkFilename', 'Modified'],
+        ...extra,
+      };
+      nextView += 1;
+      held.views.push(view);
+      return view;
+    };
+
+    // The basename SharePoint mints for a new view: the title, suffixed until
+    // it names a page nothing else holds.
+    const mint = (held, title) => {
+      const taken = (name) => held.views.some(
+        (v) => baseOf(v).toLowerCase() === name.toLowerCase());
+      if (!taken(`${title}.aspx`)) return `${title}.aspx`;
+      let n = 1;
+      while (taken(`${title}${n}.aspx`)) n += 1;
+      return `${title}${n}.aspx`;
+    };
+
+    const createList = (title, template) => {
+      const held = {
+        Id: `list-${nextList}`, Title: title, BaseTemplate: template,
+        ServerRelativeUrl: `/sites/test/${nextList}`, views: [],
+      };
+      nextList += 1;
+      lists.set(title, held);
+      makeView(held,
+               template === 101 ? 'All Documents' : 'All Items',
+               template === 101 ? CONFIG.builtinBasename : 'AllItems.aspx',
+               { DefaultView: true });
+      return held;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url).split('/_api/')[1] || '';
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const sent = () => JSON.parse(opts.body === undefined ? '{}' : String(opts.body));
+
+      if (u.startsWith('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u === 'web/lists' && method === 'POST') {
+        const made = sent();
+        return jsonResponse(201, { Id: createList(made.Title, made.BaseTemplate).Id });
+      }
+
+      const named = LIST.exec(u);
+      if (!named) return jsonResponse(404, { error: `no such endpoint: ${u}` });
+      const held = lists.get(named[1]);
+      if (!held) return jsonResponse(404, { error: 'list not found' });
+      const rest = named[2].split('?')[0];
+
+      if (rest === '') return jsonResponse(200, { Id: held.Id, Title: held.Title });
+
+      if (rest === '/views' && method === 'POST') {
+        const made = sent();
+        const view = makeView(held, made.Title, mint(held, made.Title));
+        writes.push({ op: 'create', view: view.Id, title: made.Title });
+        if (made.Title === 'AllItems' && CONFIG.collisionReadback === 'missing') {
+          view.invisible = true;
+        }
+        if (made.Title === 'AllItems' && CONFIG.collisionReadback === 'unreadable') {
+          failNextLibraryViewList = true;
+        }
+        return jsonResponse(201, { Id: view.Id });
+      }
+      if (rest === '/views') {
+        if (held.BaseTemplate === 101 && failNextLibraryViewList) {
+          failNextLibraryViewList = false;
+          return jsonResponse(500, { error: 'the view collection could not be read' });
+        }
+        return jsonResponse(200, {
+          value: held.views.filter((v) => !v.invisible).map(publicShape),
+        });
+      }
+
+      const byTitle = BY_TITLE.exec(rest);
+      if (byTitle) {
+        const wanted = byTitle[1].replace(/''/g, "'");
+        const found = held.views.find((v) => v.Title === wanted);
+        return found ? jsonResponse(200, publicShape(found))
+                     : jsonResponse(404, { error: 'view not found' });
+      }
+
+      const byId = BY_ID.exec(rest);
+      if (!byId) return jsonResponse(404, { error: `no such endpoint: ${rest}` });
+      const view = held.views.find((v) => v.Id === byId[1]);
+      if (!view) {
+        return jsonResponse(CONFIG.missingViewRead === 'transient' ? 500 : 404,
+                            { error: 'view not found' });
+      }
+      const tail = byId[2];
+
+      if (tail === '' && verb === 'MERGE') {
+        const body = sent();
+        writes.push({ op: 'merge', view: view.Id, title: view.Title, body });
+        for (const [name, value] of Object.entries(body)) {
+          if (name === '__metadata') continue;
+          if (name === 'Title' && CONFIG.rename === 'refused') {
+            return jsonResponse(500, { error: 'the Title could not be set' });
+          }
+          if (name === 'Title' && CONFIG.rename === 'ignored') continue;
+          if (name === 'Hidden' && value === false && CONFIG.restore === 'refused') {
+            return jsonResponse(500, { error: 'Hidden could not be cleared' });
+          }
+          if (name === 'Hidden' && value === false && CONFIG.restore === 'ignored') continue;
+          view[name] = value;
+          if (name === 'DefaultView' && value === true) {
+            for (const other of held.views) {
+              if (other !== view) other.DefaultView = false;
+            }
+          }
+          if (name === 'Hidden' && value === true
+              && CONFIG.hideMovesDefault && view.DefaultView) {
+            view.DefaultView = false;
+            const next = held.views.find((o) => o !== view && !o.Hidden);
+            if (next) next.DefaultView = true;
+          }
+        }
+        return jsonResponse(204, {});
+      }
+      if (tail === '' && verb === 'DELETE') {
+        writes.push({ op: 'delete', view: view.Id, title: view.Title });
+        held.views = held.views.filter((v) => v !== view);
+        if (CONFIG.viewsAfterDelete === 'unreadable') failNextLibraryViewList = true;
+        return jsonResponse(200, {});
+      }
+      if (tail === '' && method === 'GET') return jsonResponse(200, publicShape(view));
+
+      if (tail === '/ViewFields' && method === 'GET') {
+        return jsonResponse(200, { Items: { results: view.fields.slice() } });
+      }
+      if (tail === '/ViewFields/removeallviewfields' && method === 'POST') {
+        view.fields = CONFIG.viewFields === 'survivor' ? ['DocIcon'] : [];
+        return jsonResponse(200, {});
+      }
+      const add = ADD_FIELD.exec(tail);
+      if (add && method === 'POST') {
+        if (CONFIG.viewFields !== 'survivor') view.fields.push(add[1]);
+        return jsonResponse(200, {});
+      }
+      return jsonResponse(404, { error: `no such endpoint: ${rest}` });
+    };
+""")
+
+
+def _builtin_view_probe_js() -> str:
+    """The rendered built-in view probe with its gates open and its table
+    exposed, alongside the view writes the run aimed at the mock.
+
+    The dump goes inside report() rather than before one call of it: this
+    probe returns report() from five places, and splicing at one of them
+    would leave an aborted run invisible to these tests.
+    """
+    js = BUILTIN_VIEW_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n"
+        "    console.log('__ROWS__' + JSON.stringify(RESULTS));\n"
+        "    console.log('__WRITES__' + JSON.stringify(globalThis.__writes));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _run_builtin_view_probe(
+    **overrides: Any,
+) -> tuple[dict[str, dict[str, str]], list[dict[str, Any]]]:
+    """Run the probe and return id -> the whole recorded row, and the writes."""
+    config = _BUILTIN_VIEW_DEFAULTS | overrides
+    script = (
+        _BUILTIN_VIEW_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _builtin_view_probe_js()
+    )
+    output = _run(script)
+    rows = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert rows is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    writes = next(ln for ln in output.splitlines() if ln.startswith("__WRITES__"))
+    return (
+        {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
+        json.loads(writes.removeprefix("__WRITES__")),
+    )
+
+
+#: Every row that only exists because a view was found on AllItems.aspx.
+_BUILTIN_VIEW_ADOPTION = (
+    "library.view.builtin-title-rename",
+    "library.view.builtin-getbytitle-after-rename",
+    "library.view.builtin-scope-merge",
+    "library.view.builtin-viewfields-replace",
+    "library.view.builtin-hidden-while-default",
+    "library.view.builtin-hidden-once-not-default",
+    "library.view.builtin-delete-once-not-default",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_answering_the_way_the_live_run_did_settles_every_row() -> None:
+    """The baseline the failure cases are varied from, and the two values the
+    live run of 2026-09-13 actually measured: the view on AllItems.aspx reads
+    'All Documents', and a view created under the slug beside it is minted
+    AllItems1.aspx.
+    """
+    rows, _writes = _run_builtin_view_probe()
+
+    assert rows["library.view.builtin-occupies-allitems"]["outcome"] == "OCCUPIED"
+    assert "'All Documents' at AllItems.aspx" in (
+        rows["library.view.builtin-occupies-allitems"]["evidence"]
+    )
+    assert rows["library.view.create-allitems-title-on-library"]["outcome"] == "SUFFIXED"
+    assert "AllItems1.aspx" in (
+        rows["library.view.create-allitems-title-on-library"]["evidence"]
+    )
+    for check in _BUILTIN_VIEW_ADOPTION:
+        assert rows[check]["outcome"] == "PASS", (check, rows[check])
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_free_allitems_url_is_not_answered_by_renaming_the_default_view() -> None:
+    """A library whose built-in view sits somewhere else leaves AllItems.aspx
+    free, and FREE is the whole answer.
+
+    Selecting the default view instead produced adoption evidence for a view
+    that was never on the URL: the run renamed, refielded, hid and finally
+    deleted a page nobody had asked about, and recorded FREE while doing it.
+    """
+    rows, writes = _run_builtin_view_probe(builtinBasename="AllDocuments.aspx")
+
+    occupies = rows["library.view.builtin-occupies-allitems"]
+    assert occupies["outcome"] == "FREE"
+    assert "no public view on a bare library reports AllItems.aspx" in occupies["evidence"]
+    voided = {row_id for row_id, row in rows.items() if row["state"] == "void"}
+    assert voided == set(_BUILTIN_VIEW_ADOPTION)
+    touched = [
+        write for write in writes
+        if write["op"] in {"merge", "delete"} and write["title"] == "All Documents"
+    ]
+    assert not touched, (
+        f"the run wrote to the library's default view {touched}, which never held "
+        f"AllItems.aspx, so every adoption row would be evidence about another page"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("readback", "evidence"),
+    [
+        ("missing", "no view titled 'AllItems' read back"),
+        ("unreadable", "the view collection did not read back"),
+    ],
+)
+def test_a_collision_nothing_read_back_is_not_evidence_of_a_suffix(
+    readback: str, evidence: str,
+) -> None:
+    """SUFFIXED is a basename this run saw. The production adoption rule cites
+    this row as live proof that SharePoint mints a suffixed page, so a create
+    whose readback never found the view must not supply it.
+    """
+    rows, _writes = _run_builtin_view_probe(collisionReadback=readback)
+
+    collide = rows["library.view.create-allitems-title-on-library"]
+    assert collide["outcome"] == "NOT ESTABLISHED"
+    assert evidence in collide["evidence"]
+    assert "no basename was observed" in collide["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("rename", ["ignored", "refused"])
+def test_a_getbytitle_lookup_after_a_failed_rename_is_not_a_lookup_result(
+    rename: str,
+) -> None:
+    """The row asks whether getbytitle resolves a renamed view. A rename that
+    never took leaves the lookup measuring the unmet prerequisite, and FAIL
+    there reads as the surface refusing something it was never asked.
+    """
+    rows, _writes = _run_builtin_view_probe(rename=rename)
+
+    assert rows["library.view.builtin-title-rename"]["outcome"] == "FAIL"
+    lookup = rows["library.view.builtin-getbytitle-after-rename"]
+    assert lookup["outcome"] == "NOT ESTABLISHED"
+    assert lookup["state"] == "void"
+    assert "did not read back under \"All Items\"" in lookup["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_set_of_the_right_length_is_not_the_field_that_was_asked_for() -> None:
+    """removeallviewfields leaving one field behind, and an addviewfield that
+    answers OK without applying anything, give a view holding exactly one
+    field that is not the one requested.
+    """
+    rows, _writes = _run_builtin_view_probe(viewFields="survivor")
+
+    fields = rows["library.view.builtin-viewfields-replace"]
+    assert fields["outcome"] == "FAIL"
+    assert '["DocIcon"], not the requested ["FileLeafRef"]' in fields["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_view_that_stops_being_the_default_when_hidden_answers_another_question() -> None:
+    """The question is whether the built-in view can be hidden WHILE it holds
+    DefaultView. A MERGE that hides it and moves the default elsewhere is the
+    next row's experiment, not this one's.
+    """
+    rows, _writes = _run_builtin_view_probe(hideMovesDefault=True)
+
+    hidden = rows["library.view.builtin-hidden-while-default"]
+    assert hidden["outcome"] == "NOT ESTABLISHED"
+    assert "DefaultView moved off it" in hidden["evidence"]
+    # The row below asks about a view that is not the default, and still does.
+    assert rows["library.view.builtin-hidden-once-not-default"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("restore", ["ignored", "refused"])
+def test_a_hidden_flag_that_was_never_cleared_voids_the_second_hidden_row(
+    restore: str,
+) -> None:
+    """The second hidden measurement needs a visible view to start from. Left
+    hidden by the row above, its MERGE can do nothing and still read back
+    true, which reports that hiding works once the default has moved.
+    """
+    rows, _writes = _run_builtin_view_probe(restore=restore)
+
+    second = rows["library.view.builtin-hidden-once-not-default"]
+    assert second["outcome"] == "NOT ESTABLISHED"
+    assert second["state"] == "void"
+    assert "Hidden did not read back false" in second["evidence"]
+    # Only the row that depends on the restore. The delete is unaffected.
+    assert rows["library.view.builtin-delete-once-not-default"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_verification_read_that_merely_failed_is_not_a_deleted_view() -> None:
+    """Absence is what proves a delete. A 500 on the read afterwards says
+    nothing, and reading it as the view being gone reports a deletion and a
+    freed URL that nobody observed.
+    """
+    rows, _writes = _run_builtin_view_probe(missingViewRead="transient")
+
+    deleted = rows["library.view.builtin-delete-once-not-default"]
+    assert deleted["outcome"] == "NOT ESTABLISHED"
+    assert "neither read back nor read as absent (HTTP 500)" in deleted["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_freed_url_is_not_reported_from_a_view_collection_that_never_read() -> None:
+    """The row's evidence says AllItems.aspx is free. That is a reading of the
+    view collection, so a collection that did not read back cannot supply it.
+    """
+    rows, _writes = _run_builtin_view_probe(viewsAfterDelete="unreadable")
+
+    deleted = rows["library.view.builtin-delete-once-not-default"]
+    assert deleted["outcome"] == "NOT ESTABLISHED"
+    assert "whether AllItems.aspx is free was not observed" in deleted["evidence"]
+
+
+# --------------------------------------------------------------------------
+# library-header-token-probe.js: the fixture the rendered header is read
+# against, and what happens when a piece of it was never established.
+# --------------------------------------------------------------------------
+HEADER_TOKEN_PROBE = MANUAL / "library-header-token-probe.js"
+
+#: The two scratch containers this probe owns. Both are its fixture: the
+#: lookup target holds the row the lookup points at, so one left behind is a
+#: previous run's fixture answering this run's question.
+_HEADER_LIB = "dbmlsp Probe Header Tokens"
+_HEADER_TARGET = "dbmlsp Probe Header Lookup Target"
+_HEADER_FILE = "dbmlsp-header-probe.txt"
+
+#: The three rows only a person can answer, off the rendered form.
+_HEADER_MANUAL_ROWS = (
+    "library.form.header-token-battery-renders",
+    "library.form.header-typed-column-battery-renders",
+    "library.form.header-expression-battery-renders",
+)
+
+#: A SharePoint that serves a library the way one behaves when this probe is
+#: re-run: `/items` in creation order rather than the order the probe wants,
+#: a Folder content type ahead of the Document one, and a MERGE that answers
+#: 2xx whether or not it kept the value. What the CONFIG varies is each thing
+#: a live run could leave unestablished under a green transcript.
+_HEADER_TOKEN_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const LIB = 'dbmlsp Probe Header Tokens';
+    const TARGET = 'dbmlsp Probe Header Lookup Target';
+
+    // What this site holds, keyed by title, plus the two ledgers the tests
+    // read: which lists were recycled, and which items were written to.
+    const lists = new Map();
+    const recycled = [];
+    const merged = [];
+    let nextListId = 1;
+    let nextItemId = 1;
+
+    const makeList = (title, template) => {
+      const held = {
+        Id: `list-${nextListId}`, Title: title, BaseTemplate: template,
+        ServerRelativeUrl: `/sites/test/${nextListId}`,
+        fields: new Map(), items: [], formatter: null,
+      };
+      nextListId += 1;
+      lists.set(title, held);
+      return held;
+    };
+
+    // What an earlier run left behind, built before the probe starts so the
+    // run has to deal with it rather than being handed a clean site.
+    if (CONFIG.existingLibrary) {
+      const held = makeList(LIB, 101);
+      for (const name of CONFIG.leftoverItems) {
+        held.items.push({ Id: nextItemId, FileLeafRef: name });
+        nextItemId += 1;
+      }
+    }
+    if (CONFIG.existingTarget) {
+      const held = makeList(TARGET, 100);
+      for (const row of CONFIG.targetRows) {
+        held.items.push({ Id: row.Id, Title: row.Title });
+        nextItemId = Math.max(nextItemId, row.Id + 1);
+      }
+    }
+
+    // A library carries a Folder content type as well as a Document one, and
+    // the Folder is served first here: the probe's own rule for picking the
+    // document type is then doing work rather than reading the only entry.
+    const contentTypesOf = (held) => (held.BaseTemplate === 101
+      ? [{ Id: { StringValue: '0x0120001A' }, Name: 'Folder' },
+         { Id: { StringValue: '0x0101002B' }, Name: 'Document' }]
+      : [{ Id: { StringValue: '0x0100003C' }, Name: 'Item' }]);
+
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FIELD = /getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM = /^\\/items\\((\\d+)\\)/;
+    const UPLOAD = /GetFolderByServerRelativeUrl\\('([^']+)'\\)\\/Files\\/add\\(url='([^']+)'/;
+    const FILE_ITEM = /GetFileByServerRelativeUrl\\('([^']+)'\\)\\/ListItemAllFields/;
+    const XML_NAME = /Name="([^"]+)"/;
+
+    const selected = (u) => {
+      const asked = /\\$select=([^&]+)/.exec(u);
+      return asked ? decodeURIComponent(asked[1]).split(',') : [];
+    };
+
+    // What a read of one item answers. A column the MERGE discarded reads
+    // back null, which is what SharePoint serves for an empty column and
+    // what the form would then render as a blank.
+    const itemView = (item, names) => {
+      if (!names.length) return { ...item };
+      const view = {};
+      for (const name of names) {
+        const held = item[name];
+        view[name] = held === undefined ? null
+          : (name === 'dbmlspDate' && CONFIG.dateReadBack ? CONFIG.dateReadBack : held);
+      }
+      return view;
+    };
+
+    // What the content type answers when its formatter is read back.
+    const storedFormatter = (held) => {
+      if (CONFIG.storage === 'changed') {
+        // A server that kept the header and dropped a style property it did
+        // not recognise. Accepted, readable, and not the battery submitted.
+        return String(held.formatter).split(',"width":"100%"').join('');
+      }
+      return held.formatter;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url).split('/_api/')[1] || '';
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? null : String(opts.body);
+      const sent = () => JSON.parse(raw || '{}');
+
+      if (u.includes('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.startsWith('web/currentuser')) return jsonResponse(200, { Id: 11 });
+      if (u === 'web/lists' && method === 'POST') {
+        const made = sent();
+        const held = makeList(made.Title, made.BaseTemplate);
+        return jsonResponse(201, { Id: held.Id, Title: held.Title });
+      }
+
+      const upload = UPLOAD.exec(u);
+      if (upload) {
+        const held = [...lists.values()].find(
+          (one) => one.ServerRelativeUrl === upload[1]);
+        if (!held) return jsonResponse(404, { error: 'no such folder' });
+        const already = held.items.find((item) => item.FileLeafRef === upload[2]);
+        if (!already) {
+          held.items.push({ Id: nextItemId, FileLeafRef: upload[2] });
+          nextItemId += 1;
+        }
+        return jsonResponse(200, { Name: upload[2] });
+      }
+      const fileItem = FILE_ITEM.exec(u);
+      if (fileItem) {
+        const leaf = fileItem[1].split('/').pop();
+        const folder = fileItem[1].slice(0, -(leaf.length + 1));
+        const held = [...lists.values()].find(
+          (one) => one.ServerRelativeUrl === folder);
+        const item = held && held.items.find((row) => row.FileLeafRef === leaf);
+        if (!item) return jsonResponse(404, { error: 'no such file' });
+        return jsonResponse(200, itemView(item, selected(u)));
+      }
+
+      const named = LIST.exec(u);
+      if (!named) return jsonResponse(404, { error: `no such endpoint: ${u}` });
+      const held = lists.get(named[1]);
+      const rest = named[2];
+      if (!held) return jsonResponse(404, { error: 'list not found' });
+
+      if (rest.startsWith('/recycle')) {
+        recycled.push(held.Title);
+        lists.delete(held.Title);
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: held.ServerRelativeUrl });
+      }
+      if (rest.startsWith("/contenttypes('")) {
+        const id = rest.split("'")[1];
+        const ct = contentTypesOf(held).find((one) => one.Id.StringValue === id);
+        if (!ct) return jsonResponse(404, { error: 'no such content type' });
+        if (verb === 'MERGE') {
+          if (CONFIG.storage === 'refused') {
+            return jsonResponse(500, { error: 'the formatter was refused' });
+          }
+          held.formatter = sent().ClientFormCustomFormatter;
+          return jsonResponse(204, {});
+        }
+        if (CONFIG.storage === 'unreadable') {
+          return jsonResponse(500, { error: 'the content type did not read back' });
+        }
+        return jsonResponse(200, { ClientFormCustomFormatter: storedFormatter(held) });
+      }
+      if (rest.startsWith('/contenttypes')) {
+        return jsonResponse(200, { value: contentTypesOf(held) });
+      }
+      if (rest.startsWith('/fields/createfieldasxml')) {
+        const xml = sent().parameters.SchemaXml;
+        held.fields.set(XML_NAME.exec(xml)[1], { readOnly: true });
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/fields/addfield')) {
+        const made = sent().parameters;
+        held.fields.set(made.Title, { lookup: made.LookupListId });
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/fields/getbyinternalnameortitle')) {
+        const name = FIELD.exec(rest)[1];
+        return held.fields.has(name)
+          ? jsonResponse(200, { Id: `field-${name}` })
+          : jsonResponse(404, { error: 'field not found' });
+      }
+      if (rest.startsWith('/fields') && method === 'POST') {
+        const made = sent();
+        held.fields.set(made.Title, { kind: made.FieldTypeKind });
+        return jsonResponse(201, { Id: `field-${made.Title}` });
+      }
+
+      const one = ITEM.exec(rest);
+      if (one) {
+        const item = held.items.find((row) => row.Id === Number(one[1]));
+        if (!item) return jsonResponse(404, { error: 'item not found' });
+        if (verb === 'DELETE') {
+          held.items = held.items.filter((row) => row.Id !== item.Id);
+          return jsonResponse(200, {});
+        }
+        if (verb === 'MERGE') {
+          merged.push(item.Id);
+          for (const [name, value] of Object.entries(sent())) {
+            if (name === '__metadata') continue;
+            // Accepted and discarded, which is what a 2xx cannot tell you.
+            if (CONFIG.dropOnMerge.includes(name)) continue;
+            item[name] = value;
+          }
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, itemView(item, selected(rest)));
+      }
+      if (rest.startsWith('/items')) {
+        if (method === 'POST') {
+          const made = { Id: nextItemId, ...sent() };
+          nextItemId += 1;
+          held.items.push(made);
+          return jsonResponse(201, { Id: made.Id });
+        }
+        return jsonResponse(200, { value: held.items.map((item) => ({ ...item })) });
+      }
+      return jsonResponse(200, {
+        Id: held.Id, Title: held.Title,
+        ListItemEntityTypeFullName: 'SP.Data.ProbeLibItem',
+      });
+    };
+
+    // The site as the run left it, so a test can ask what was written to
+    // rather than only what the probe said about it.
+    globalThis.__dump = () => ({
+      recycled,
+      merged,
+      lists: [...lists.values()].map((held) => ({
+        Title: held.Title, items: held.items.map((item) => ({ ...item })),
+      })),
+    });
+""")
+
+
+def _header_token_probe_js(cleanup: bool = False) -> str:
+    """The rendered header probe with its gates open and its table exposed.
+
+    ``cleanup`` opens the destructive flag an operator sets for a clean
+    fixture, which is the only state in which the pre-run reset runs at all.
+
+    The dump goes inside report() rather than before one call of it: this
+    probe returns report() from seven places, and splicing at one of them
+    would leave an aborted run invisible to these tests.
+    """
+    js = HEADER_TOKEN_PROBE.read_text(encoding="utf-8")
+    gates = ["CONFIRMED", "ALLOW_WRITES"]
+    if cleanup:
+        gates.append("CLEANUP")
+    for gate in gates:
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n"
+        "    console.log('__ROWS__' + JSON.stringify(RESULTS));\n"
+        "    console.log('__SITE__' + JSON.stringify(__dump()));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _header_token_output(cleanup: bool = False, **config: Any) -> str:
+    settings: dict[str, Any] = {
+        "existingLibrary": False,
+        "existingTarget": False,
+        "leftoverItems": [],
+        "targetRows": [],
+        "dropOnMerge": [],
+        "dateReadBack": None,
+        "storage": "verbatim",
+        **config,
+    }
+    return _run(
+        _HEADER_TOKEN_HARNESS.replace("__CONFIG__", json.dumps(settings))
+        + "\n"
+        + _header_token_probe_js(cleanup=cleanup)
+    )
+
+
+def _marked(output: str, marker: str) -> Any:
+    line = next((ln for ln in output.splitlines() if ln.startswith(marker)), None)
+    assert line is not None, f"the probe printed no {marker} line:\n{output[-3000:]}"
+    return json.loads(line.removeprefix(marker))
+
+
+def _run_header_token_probe(
+    cleanup: bool = False, **config: Any,
+) -> tuple[dict[str, dict[str, str]], dict[str, Any], str]:
+    """Run the header probe and return its rows, the site it left, and stdout."""
+    output = _header_token_output(cleanup=cleanup, **config)
+    rows = {row["id"]: row for row in _marked(output, "__ROWS__")}
+    return rows, _marked(output, "__SITE__"), output
+
+
+def _library_items(site: dict[str, Any]) -> list[dict[str, Any]]:
+    held = next(one for one in site["lists"] if one["Title"] == _HEADER_LIB)
+    items: list[dict[str, Any]] = held["items"]
+    return items
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_header_run_that_builds_its_whole_fixture_asks_for_the_look() -> None:
+    """The control for every test below.
+
+    Without it a probe that voided everything would satisfy all of them, and
+    this section would be measuring a probe that had stopped measuring.
+    """
+    rows, site, output = _run_header_token_probe()
+
+    assert rows["library.doc-lib.fixture-library-created"]["outcome"] == "PASS"
+    assert rows["library.form.header-token-battery-stored"]["outcome"] == "PASS"
+    for row_id in _HEADER_MANUAL_ROWS:
+        assert rows[row_id]["outcome"] == "MANUAL", row_id
+        assert rows[row_id]["state"] == "awaiting-capture", row_id
+    assert not [row for row in rows.values() if row["state"] in {"open", "void"}]
+    # The typed values are on the uploaded file, which is the item the
+    # operator is about to open.
+    file_item = next(
+        item for item in _library_items(site)
+        if item["FileLeafRef"] == _HEADER_FILE
+    )
+    assert site["merged"] == [file_item["Id"]]
+    assert file_item["dbmlspChoice"] == "Q3"
+    assert "============ EYES-ON ============" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_cleanup_resets_the_lookup_target_as_well_as_the_library() -> None:
+    """CLEANUP promises a clean fixture, and the lookup target is half of it.
+
+    A run that recycles only the library reuses whatever row an earlier run
+    left in the target, so the lookup the header reads points at fixture
+    nobody in this run created. The operator is told to delete both as well,
+    since a manual tidy-up that names one leaves the other behind for the
+    next run to find.
+    """
+    rows, site, output = _run_header_token_probe(
+        cleanup=True,
+        existingLibrary=True,
+        existingTarget=True,
+        targetRows=[{"Id": 91, "Title": "Privacy and health records"}],
+    )
+
+    assert site["recycled"] == [_HEADER_LIB, _HEADER_TARGET]
+    # The row the lookup points at is one THIS run created, not the one the
+    # previous run left under the same title.
+    file_item = next(
+        item for item in _library_items(site)
+        if item["FileLeafRef"] == _HEADER_FILE
+    )
+    assert file_item["dbmlspLookupId"] != 91
+    assert rows["library.doc-lib.fixture-library-created"]["outcome"] == "PASS"
+    assert (
+        f"When finished, delete '{_HEADER_LIB}', then '{_HEADER_TARGET}'." in output
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_typed_values_land_on_the_uploaded_file_and_not_a_row_it_found() -> None:
+    """`/items?$top=5` is unordered, and a reused library holds a row per
+    folder as well as per file.
+
+    Writing to whatever came back first modifies content this probe does not
+    own, and leaves the file the operator is asked to open carrying none of
+    the values whose blanks they are about to report as unresolved tokens.
+    """
+    rows, site, _ = _run_header_token_probe(
+        existingLibrary=True, leftoverItems=["an-earlier-file.txt"],
+    )
+
+    items = _library_items(site)
+    stale = next(item for item in items if item["FileLeafRef"] == "an-earlier-file.txt")
+    file_item = next(item for item in items if item["FileLeafRef"] == _HEADER_FILE)
+    assert site["merged"] == [file_item["Id"]]
+    assert stale["Id"] < file_item["Id"], "the leftover must be served first"
+    assert "dbmlspChoice" not in stale
+    assert file_item["dbmlspChoice"] == "Q3"
+    assert rows["library.form.header-typed-column-battery-renders"]["outcome"] == "MANUAL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_value_the_merge_accepted_and_dropped_is_reported_as_an_incomplete_fixture() -> None:
+    """A 2xx says the request was taken, not that the value is on the item.
+
+    A column that reads back empty renders an empty line in the header, which
+    is indistinguishable on the page from a token the header cannot resolve.
+    That is the one confusion this probe exists to prevent, so the two rows
+    resting on those values say the fixture is incomplete and name the
+    column.
+    """
+    rows, site, _ = _run_header_token_probe(dropOnMerge=["dbmlspChoice"])
+
+    file_item = next(
+        item for item in _library_items(site)
+        if item["FileLeafRef"] == _HEADER_FILE
+    )
+    assert "dbmlspChoice" not in file_item
+    for row_id in (
+        "library.form.header-typed-column-battery-renders",
+        "library.form.header-expression-battery-renders",
+    ):
+        assert rows[row_id]["outcome"] == "MANUAL (fixture incomplete)", row_id
+        assert "dbmlspChoice" in rows[row_id]["evidence"], row_id
+        assert '"Q3"' in rows[row_id]["evidence"], row_id
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_read_back_in_another_spelling_is_not_reported_as_a_lost_write() -> None:
+    """The readback must not kill the experiment the moment it works.
+
+    SharePoint answers a DateTime in its own ISO spelling, so the value is
+    compared as an instant. A string compare would report a fixture that did
+    not build on every run that built one.
+    """
+    rows, _, _ = _run_header_token_probe(dateReadBack="2026-10-13T00:00:00.000Z")
+
+    for row_id in _HEADER_MANUAL_ROWS:
+        assert rows[row_id]["outcome"] == "MANUAL", row_id
+
+
+@pytest.mark.parametrize(
+    ("storage", "outcome"),
+    [("changed", "CHANGED"), ("unreadable", "NOT ESTABLISHED"), ("refused", "REFUSED")],
+)
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_header_that_is_not_the_battery_voids_every_row_a_person_answers(
+    storage: str, outcome: str,
+) -> None:
+    """Every manual row is an observation of THIS battery on a form.
+
+    A formatter that was refused, never read back, or read back changed
+    leaves the form carrying something else, so asking somebody to interpret
+    the lines on it collects evidence for a different experiment. The run
+    stops instead, and says why on all three rows.
+    """
+    rows, _, output = _run_header_token_probe(storage=storage)
+
+    assert rows["library.form.header-token-battery-stored"]["outcome"] == outcome
+    for row_id in _HEADER_MANUAL_ROWS:
+        assert rows[row_id]["state"] == "void", row_id
+    assert "============ EYES-ON ============" not in output
+
+
+# --------------------------------------------------------------------------
+# item-text-roundtrip-probe.js: the column shapes every encoding row is
+# attributed to, and what happens when the list only carries their names.
+# --------------------------------------------------------------------------
+TEXT_PROBE = MANUAL / "item-text-roundtrip-probe.js"
+
+#: The seven rows the fixture gates. Each one reads an encoding off a column
+#: type, so a fixture that was never established has to void all of them
+#: rather than let a reading be attributed to a shape nobody confirmed.
+_TEXT_MEASUREMENTS = (
+    "text.item-value.single-line-roundtrip",
+    "text.item-value.plain-note-roundtrip",
+    "text.item-value.rich-note-roundtrip",
+    "text.item-value.rich-note-colon",
+    "text.item-value.control-plain-note-colon",
+    "text.item-value.rich-note-decode-recovers",
+    "text.item-value.rich-note-encoding-idempotent",
+)
+
+_TEXT_FIXTURE = "text.item-value.fixture-columns-created"
+
+#: A list an earlier run left behind, with all three names present and the
+#: right shapes under them.
+_HEALTHY_FIELDS = [
+    {"InternalName": "dbmlspLine", "FieldTypeKind": 2},
+    {"InternalName": "dbmlspPlain", "FieldTypeKind": 3,
+     "RichText": False, "NumberOfLines": 6},
+    {"InternalName": "dbmlspRich", "FieldTypeKind": 3,
+     "RichText": True, "NumberOfLines": 6},
+]
+
+# A SharePoint that holds columns as SHAPES rather than as names, because the
+# defect this covers is a name accepted for a shape. What a column does to a
+# value it stores is decided by the shape it actually holds, so a fixture the
+# probe got wrong shows up in the measurement rather than being invisible.
+_TEXT_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const fields = new Map(CONFIG.fields.map((f) => [f.InternalName, { ...f }]));
+    const items = new Map();
+    let nextId = 1;
+    let listExists = CONFIG.listExists;
+
+    // Per-list, and guessed wrong by the probe's first attempt, which is the
+    // shape a live create has: the entity type name has to be read back.
+    const ENTITY = 'SP.Data.DbmlspxProbexItemxTextListItem';
+
+    const FIELD_RE = /getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM_RE = /items\\((\\d+)\\)/;
+    const SELECT_RE = /\\$select=([^&]+)/;
+
+    // What a rich text column did to a value on the live run of 2026-09-13: a
+    // colon came back as a numeric character reference. Keyed off the shape
+    // the column ACTUALLY holds, never off its name, so a plain column under
+    // the rich name returns the bytes it was given.
+    const store = (name, value) => {
+      const held = fields.get(name);
+      if (held && held.RichText === true) return String(value).replace(/:/g, '&#58;');
+      return value;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const sent = opts.body === undefined ? {} : JSON.parse(String(opts.body));
+
+      if (u.includes('/contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.endsWith('/web/lists') && method === 'POST') {
+        listExists = true;
+        return jsonResponse(201, { Title: sent.Title });
+      }
+      if (!listExists) return jsonResponse(404, { error: 'list not found' });
+
+      const named = FIELD_RE.exec(u);
+      if (named) {
+        if (CONFIG.unreadableFields.includes(named[1])) {
+          return jsonResponse(500, { error: 'the field read failed' });
+        }
+        const held = fields.get(named[1]);
+        if (!held) return jsonResponse(404, { error: 'field not found' });
+        return jsonResponse(200, { ...held });
+      }
+
+      if (u.endsWith('/fields') && method === 'POST') {
+        const kept = {
+          InternalName: sent.Title,
+          FieldTypeKind: sent.FieldTypeKind,
+          NumberOfLines: sent.NumberOfLines,
+        };
+        if (sent.RichText !== undefined) kept.RichText = sent.RichText;
+        // A tenant that takes a property and does not keep it. A null drops
+        // the property from the field entirely, which is the other way a
+        // shape can be unavailable to the run that depends on it.
+        for (const [prop, value] of Object.entries(CONFIG.dropsOnCreate[sent.Title] || {})) {
+          if (value === null) delete kept[prop]; else kept[prop] = value;
+        }
+        fields.set(sent.Title, kept);
+        return jsonResponse(201, { d: { InternalName: sent.Title } });
+      }
+
+      if (u.includes('/items')) {
+        if (method === 'POST') {
+          if (sent.__metadata.type !== ENTITY) {
+            return jsonResponse(500, { error: 'the entity type name is wrong' });
+          }
+          const id = nextId;
+          nextId += 1;
+          const stored = {};
+          for (const [name, value] of Object.entries(sent)) {
+            if (name === '__metadata') continue;
+            stored[name] = store(name, value);
+          }
+          items.set(id, stored);
+          return jsonResponse(201, { d: { Id: id } });
+        }
+        const held = items.get(Number(ITEM_RE.exec(u)[1]));
+        if (!held) return jsonResponse(404, { error: 'item not found' });
+        const out = {};
+        for (const name of SELECT_RE.exec(u)[1].split(',')) out[name] = held[name];
+        return jsonResponse(200, out);
+      }
+
+      if (u.includes('ListItemEntityTypeFullName')) {
+        return jsonResponse(200, { ListItemEntityTypeFullName: ENTITY });
+      }
+      return jsonResponse(200, { Title: 'dbmlsp Probe Item Text' });
+    };
+""")
+
+
+def _text_probe_js() -> str:
+    """The rendered probe with its gates open and its result table exposed.
+
+    CLEANUP is left false on purpose. The review this covers is about the run
+    that reuses whatever an earlier run left, and turning CLEANUP on would
+    hide exactly that case.
+    """
+    js = TEXT_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _run_text_probe(**changes: Any) -> dict[str, dict[str, str]]:
+    """Run the probe against an empty site plus `changes`, id -> whole row.
+
+    The whole row, because what a refused fixture has to leave behind is
+    EVIDENCE naming the shape it could not establish. An outcome of FAIL on
+    its own would pass for a list that failed to build at all.
+    """
+    config: dict[str, Any] = {
+        "listExists": False,
+        "fields": [],
+        "dropsOnCreate": {},
+        "unreadableFields": [],
+    }
+    config.update(changes)
+    script = (
+        _TEXT_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _text_probe_js()
+    )
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
+    )
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_fixture_read_back_with_the_declared_shapes_measures_all_three() -> None:
+    """The control for the four tests below, and the shape of a healthy run.
+
+    Without it, a shape check that refused every fixture would pass all of
+    them while retiring the probe.
+    """
+    rows = _run_text_probe()
+
+    assert rows[_TEXT_FIXTURE]["outcome"] == "PASS"
+    evidence = rows[_TEXT_FIXTURE]["evidence"]
+    assert "dbmlspLine (FieldTypeKind 2)" in evidence
+    assert "dbmlspPlain (FieldTypeKind 3, RichText false)" in evidence
+    assert "dbmlspRich (FieldTypeKind 3, RichText true)" in evidence
+    assert "read back from the field itself" in evidence
+
+    assert rows["text.item-value.single-line-roundtrip"]["outcome"] == "IDENTICAL"
+    assert rows["text.item-value.plain-note-roundtrip"]["outcome"] == "IDENTICAL"
+    assert rows["text.item-value.rich-note-roundtrip"]["outcome"] == "CHANGED"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_plain_column_left_under_the_rich_name_is_not_measured_as_rich() -> None:
+    """CLEANUP off and a scratch list an earlier run left: `dbmlspRich` is
+    present, and it is a plain Note.
+
+    Every column here returns the bytes it was given, so the run reads as a
+    tenant that encodes nothing, and the rich text finding this probe exists
+    to record is contradicted by a column that was never rich text.
+    """
+    seeded = [dict(field) for field in _HEALTHY_FIELDS]
+    seeded[2]["RichText"] = False
+    rows = _run_text_probe(listExists=True, fields=seeded)
+
+    assert rows[_TEXT_FIXTURE]["outcome"] == "FAIL", (
+        "a Note with RichText false was accepted under the rich name, so "
+        "every encoding row below it is attributed to a shape the run never "
+        "established."
+    )
+    assert "dbmlspRich: RichText is false, not true" in rows[_TEXT_FIXTURE]["evidence"]
+    voided = [row_id for row_id, row in rows.items() if row["state"] == "void"]
+    assert sorted(voided) == sorted(_TEXT_MEASUREMENTS)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_rich_text_flag_the_tenant_dropped_on_create_fails_the_fixture() -> None:
+    """A create that answers 201 is the server's word that it took the body,
+    not a reading of the field it made.
+
+    A dropped RichText is the same corruption as the reused column above, and
+    it reaches a run that started from an empty site.
+    """
+    rows = _run_text_probe(dropsOnCreate={"dbmlspRich": {"RichText": False}})
+
+    assert rows[_TEXT_FIXTURE]["outcome"] == "FAIL"
+    assert "dbmlspRich: RichText is false, not true" in rows[_TEXT_FIXTURE]["evidence"]
+    voided = [row_id for row_id, row in rows.items() if row["state"] == "void"]
+    assert sorted(voided) == sorted(_TEXT_MEASUREMENTS)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_that_does_not_carry_rich_text_at_all_fails_closed() -> None:
+    """A property missing from the payload is not a match.
+
+    Read as one, a tenant that does not report RichText would certify every
+    rich text row on a field whose shape nothing here can see.
+    """
+    rows = _run_text_probe(dropsOnCreate={"dbmlspRich": {"RichText": None}})
+
+    assert rows[_TEXT_FIXTURE]["outcome"] == "FAIL"
+    assert "dbmlspRich: RichText is absent from the field" in rows[_TEXT_FIXTURE]["evidence"]
+    voided = [row_id for row_id, row in rows.items() if row["state"] == "void"]
+    assert sorted(voided) == sorted(_TEXT_MEASUREMENTS)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_shape_that_never_reads_back_voids_rather_than_measuring() -> None:
+    """The create is accepted and the field will not read. Nothing is known
+    about the column, so nothing may be attributed to it."""
+    rows = _run_text_probe(unreadableFields=["dbmlspPlain"])
+
+    assert rows[_TEXT_FIXTURE]["outcome"] == "FAIL"
+    assert (
+        "dbmlspPlain: its shape did not read back: HTTP 500"
+        in rows[_TEXT_FIXTURE]["evidence"]
+    )
+    voided = [row_id for row_id, row in rows.items() if row["state"] == "void"]
+    assert sorted(voided) == sorted(_TEXT_MEASUREMENTS)
+
+
+# --------------------------------------------------------------------------
+# list-identity-cache-probe.js: what the probe is allowed to delete, and
+# which rows survive a control that did not hold.
+# --------------------------------------------------------------------------
+IDENTITY_PROBE = MANUAL / "list-identity-cache-probe.js"
+
+#: The two scratch titles, and the URL fragments that pick one read out of the
+#: run. Spelled from the probe's own constants, because a title that drifts
+#: would leave every fault below matching nothing and every test still green.
+_IDENTITY_LIST = "dbmlsp Probe Cache Identity"
+_IDENTITY_LIB = "dbmlsp Probe Cache Identity Library"
+#: The closing quote matters: the library title has the list title as a prefix.
+_LIST_PATH = f"getbytitle('{_IDENTITY_LIST}')"
+_LIB_PATH = f"getbytitle('{_IDENTITY_LIB}')"
+_OWNERSHIP = "dbml-sharepoint list identity cache probe. Safe to delete."
+#: The ownership question this probe asks before it creates anything.
+_EXISTS_READ = "$select=Id,Description&dbmlsp="
+#: The filter-editor spelling. Excluded from the two reads that also start
+#: `?$select=Id`: the ownership question above and the cache-busted control.
+_PLAIN_READ = "?$select=Id"
+_PLAIN_NOT = ["Description", "dbmlsp="]
+#: The ownership survey's spelling, picked out by a column only it selects.
+_SHAPE_READ = "ValidationMessage"
+_BUSTED_READ = "$select=Id&dbmlsp="
+
+# A SharePoint that holds lists by title AND a browser cache that holds
+# answers by URL, because the second is what this probe measures: a by-title
+# read served from an entry filled before a delete-and-recreate answers with
+# the list that no longer exists.
+#
+# Every request is printed as a __CALL__ line. What the probe must NOT send
+# (a hard DELETE against a list it did not create) cannot be read off the
+# result table, only off the traffic.
+_IDENTITY_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const lists = new Map(CONFIG.seeded.map((row) => [row.Title, { ...row }]));
+    let nextId = 1;
+
+    // url -> the answer a later read of that same url can be served. A
+    // directive in `bypassing` skips it; no-store never fills it.
+    const entries = new Map();
+
+    // Per-title DELETE counters, so a test can let the run's own recreate
+    // through and refuse only the delete that tears the fixture down.
+    const deletes = new Map();
+    const nth = (title) => {
+      const seen = (deletes.get(title) || 0) + 1;
+      deletes.set(title, seen);
+      return seen;
+    };
+    const ruleFor = (rules, title) => rules.find((rule) => rule.title === title) || null;
+
+    const TITLE = /getbytitle\\('([^']*)'\\)/;
+
+    const respond = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: {
+        get: (name) => (CONFIG.responseHeaders[name] === undefined
+          ? null : CONFIG.responseHeaders[name]),
+      },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // A read fault is armed by what the URL SAYS, never by a call count
+    // alone: a count pins the test to today's request order, and `skip`
+    // counts only the reads that already match the shape under test.
+    const faults = CONFIG.readFaults.map((fault) => ({ ...fault, seen: 0 }));
+    const faultFor = (u) => {
+      const rule = faults.find((fault) => fault.contains.every((s) => u.includes(s))
+        && !fault.notContains.some((s) => u.includes(s)));
+      if (!rule) return null;
+      rule.seen += 1;
+      if (rule.seen <= rule.skip) return null;
+      if (rule.seen > rule.skip + rule.times) return null;
+      return rule;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      console.log(`__CALL__${verb} ${u}`);
+
+      if (u.includes('/contextinfo')) {
+        return respond(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.includes('/_api/web/lists?')) {
+        return respond(200, { d: { results: [...lists.values()].map(
+          (row) => ({ Id: row.Id, Title: row.Title })) } });
+      }
+      if (u.endsWith('/_api/web/lists') && method === 'POST') {
+        const sent = JSON.parse(String(opts.body));
+        if (lists.has(sent.Title)) {
+          return respond(400, { error: 'a list of that title already exists' });
+        }
+        nextId += 1;
+        const made = {
+          Id: `list-${nextId - 1}`, Title: sent.Title,
+          Description: sent.Description, BaseTemplate: sent.BaseTemplate,
+        };
+        lists.set(sent.Title, made);
+        return respond(201, { Id: made.Id });
+      }
+
+      const named = TITLE.exec(u);
+      if (!named) return respond(404, { error: 'no such endpoint' });
+      const title = named[1];
+
+      if (u.endsWith('/recycle')) {
+        if (CONFIG.refuseRecycle.includes(title)) {
+          return respond(500, { error: 'the recycle was refused' });
+        }
+        lists.delete(title);
+        return respond(200, { value: 'recycle-bin-id' });
+      }
+      if (u.includes('/items')) return respond(200, { value: [] });
+
+      if (verb === 'DELETE') {
+        const seen = nth(title);
+        const refused = ruleFor(CONFIG.refuseDelete, title);
+        if (refused && seen > refused.skip) {
+          return respond(500, { error: 'the delete was refused' });
+        }
+        const pretend = ruleFor(CONFIG.pretendDeleted, title);
+        if (pretend && seen > pretend.skip) return respond(200, {});
+        if (!lists.has(title)) return respond(404, { error: 'no such list' });
+        lists.delete(title);
+        return respond(200, {});
+      }
+
+      const directive = opts.cache
+        || (((opts.headers || {})['Cache-Control'] === 'no-cache')
+          ? 'no-cache-header' : 'default');
+      const bypass = !CONFIG.cacheStale || CONFIG.bypassing.includes(directive);
+      if (!bypass && entries.has(u)) return entries.get(u)();
+
+      const fault = faultFor(u);
+      // A read that never answered leaves no entry behind either.
+      if (fault && fault.status) {
+        return respond(fault.status, { error: 'the read did not answer' });
+      }
+      const held = lists.get(title);
+      const answer = held === undefined
+        ? () => respond(404, { error: { message: `List '${title}' does not exist` } })
+        : () => respond(200, { d: { ...held, Id: (fault && fault.id) || held.Id } });
+      if (directive !== 'no-store') entries.set(u, answer);
+      return answer();
+    };
+""")
+
+#: A run where nothing has gone wrong: both scratch titles are free, the
+#: browser holds a stale entry per URL, and only `no-store` and `reload`
+#: defeat it. Each test changes one thing.
+_IDENTITY_HEALTHY: dict[str, Any] = {
+    "seeded": [],
+    "cacheStale": True,
+    # The no-cache REQUEST header is left cacheable, which is what the probe's
+    # own prose expects of it, so `remedy-reload` and `plain-read-after-reload`
+    # still have an entry to defeat and to repair.
+    "bypassing": ["no-store", "reload"],
+    "responseHeaders": {"Cache-Control": "private, max-age=0", "ETag": '"1"'},
+    "readFaults": [],
+    "refuseDelete": [],
+    "pretendDeleted": [],
+    "refuseRecycle": [],
+}
+
+
+def _fault(
+    contains: list[str],
+    *,
+    not_contains: list[str] | None = None,
+    skip: int = 0,
+    times: int = 1,
+    status: int | None = None,
+    answers: str | None = None,
+) -> dict[str, Any]:
+    """One read fault: the shape it matches, how many to let past, what it does."""
+    return {
+        "contains": contains,
+        "notContains": not_contains or [],
+        "skip": skip,
+        "times": times,
+        "status": status,
+        "id": answers,
+    }
+
+
+def _identity_probe_js(cleanup: bool = False) -> str:
+    """The rendered probe with its gates opened and its result table exposed.
+
+    The dump is spliced into report() rather than beside a call to it: every
+    exit now reports through finish(), so there is no single call site.
+    """
+    js = IDENTITY_PROBE.read_text(encoding="utf-8")
+    gates = ["CONFIRMED", "ALLOW_WRITES"] + (["CLEANUP"] if cleanup else [])
+    for gate in gates:
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n"
+        "    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _identity_run(cleanup: bool = False, **changes: Any) -> tuple[dict[str, Any], str]:
+    """Run the probe against `_IDENTITY_HEALTHY` plus `changes`.
+
+    Returns the whole recorded row per id, and the raw output. Both, because
+    the teardown reports through the log rather than through a row, and what
+    the probe refuses to DELETE is only visible in the traffic.
+    """
+    config = json.loads(json.dumps(_IDENTITY_HEALTHY))
+    config.update(changes)
+    script = (
+        _IDENTITY_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _identity_probe_js(cleanup)
+    )
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
+    )
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return rows, output
+
+
+def _calls(output: str) -> list[str]:
+    """Every request the probe sent, as "<verb> <url>"."""
+    return [
+        ln.removeprefix("__CALL__")
+        for ln in output.splitlines()
+        if ln.startswith("__CALL__")
+    ]
+
+
+def _deletes(output: str, path: str) -> list[str]:
+    """The hard DELETEs sent against one by-title path."""
+    return [call for call in _calls(output) if call.startswith("DELETE ") and path in call]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_stale_by_title_entry_is_measured_and_the_remedies_separated() -> None:
+    """The healthy run, and the control that gives every test below meaning.
+
+    Without it a probe that voided everything would pass them all: each one
+    asserts that a row is NOT settled, and a row that never settles under any
+    conditions measures nothing at all.
+    """
+    rows, output = _identity_run()
+
+    assert rows["transport.cache.fixture-list-created"]["outcome"] == "PASS"
+    assert rows["transport.cache.control-repeat-read-unchanged"]["outcome"] == "PASS"
+    assert rows["transport.cache.control-enumeration-after-recreate"]["outcome"] == "NEW"
+    assert rows["transport.cache.id-select-after-recreate"]["outcome"] == "STALE"
+    assert rows["transport.cache.shape-select-after-recreate"]["outcome"] == "STALE"
+    assert rows["transport.cache.control-busted-after-recreate"]["outcome"] == "FRESH"
+    assert rows["transport.cache.remedy-no-store"]["outcome"] == "FRESH"
+    assert rows["transport.cache.remedy-no-cache-header"]["outcome"] == "STALE"
+    assert rows["transport.cache.remedy-reload"]["outcome"] == "FRESH"
+    assert rows["transport.cache.plain-read-after-reload"]["outcome"] == "FRESH"
+    assert rows["transport.cache.id-select-after-recreate-library"]["outcome"] == "STALE"
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+    assert "deleted and confirmed absent" in output
+
+
+# --- P1: a scratch title this run did not create is not deleted ------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_foreign_list_under_the_scratch_title_is_never_deleted() -> None:
+    """The destructive branch has to fail closed, and a title is not ownership.
+
+    An unconditional hard DELETE at the top of the run destroys whatever the
+    site keeps under that title, permanently and before the probe has created
+    anything at all. Nothing downstream can see that it happened: the run then
+    proceeds exactly as it would on an empty site.
+    """
+    rows, output = _identity_run(seeded=[{
+        "Id": "someone-elses-1",
+        "Title": _IDENTITY_LIST,
+        "Description": "A list this site actually uses",
+    }])
+
+    fixture = rows["transport.cache.fixture-list-created"]
+    assert fixture["outcome"] == "ABORTED"
+    assert fixture["state"] == "open"
+    assert "without this probe's" in fixture["evidence"]
+    assert _deletes(output, _LIST_PATH) == []
+    assert not [call for call in _calls(output) if call.endswith("/_api/web/lists")]
+    assert all(row["state"] in {"open", "void"} for row in rows.values())
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_foreign_library_under_the_scratch_title_is_never_deleted() -> None:
+    """The same unconditional delete was written twice, once for each title.
+
+    The list half can be fixed on its own and leave the library half exactly
+    as it was, so the library is asserted separately rather than assumed to
+    follow.
+    """
+    rows, output = _identity_run(seeded=[{
+        "Id": "someone-elses-2",
+        "Title": _IDENTITY_LIB,
+        "Description": "A library this site actually uses",
+    }])
+
+    library = rows["transport.cache.id-select-after-recreate-library"]
+    assert library["outcome"] == "NOT ESTABLISHED"
+    assert library["state"] == "void"
+    assert "without this probe's" in library["evidence"]
+    assert _deletes(output, _LIB_PATH) == []
+    # The list half still answered, and its own scratch list was still removed.
+    assert rows["transport.cache.id-select-after-recreate"]["outcome"] == "STALE"
+    assert "deleted and confirmed absent" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_leftover_from_this_probe_stops_a_run_that_has_not_opted_into_cleanup() -> None:
+    """Even the probe's own leftover goes through the recoverable path.
+
+    CLEANUP is the opt-in, and recycling is what makes it recoverable. A run
+    that hard-deletes the leftover for itself takes that choice away from the
+    operator and puts the object beyond the recycle bin.
+    """
+    rows, output = _identity_run(seeded=[{
+        "Id": "leftover-1",
+        "Title": _IDENTITY_LIST,
+        "Description": _OWNERSHIP,
+    }])
+
+    fixture = rows["transport.cache.fixture-list-created"]
+    assert fixture["outcome"] == "ABORTED"
+    assert "CLEANUP = true" in fixture["evidence"]
+    assert _deletes(output, _LIST_PATH) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_leftover_is_recycled_before_the_first_hard_delete() -> None:
+    """With CLEANUP on the run proceeds, and the leftover goes to the bin.
+
+    The probe hard-deletes its own fixture mid-run, which is the experiment.
+    What this pins is the order: nothing is hard-deleted until the probe has
+    created the object it is deleting.
+    """
+    rows, output = _identity_run(cleanup=True, seeded=[{
+        "Id": "leftover-1",
+        "Title": _IDENTITY_LIST,
+        "Description": _OWNERSHIP,
+    }])
+
+    assert rows["transport.cache.fixture-list-created"]["outcome"] == "PASS"
+    calls = _calls(output)
+    recycled = next(i for i, call in enumerate(calls) if call.endswith("/recycle"))
+    created = next(i for i, call in enumerate(calls) if call.endswith("/_api/web/lists"))
+    deleted = next(i for i, call in enumerate(calls) if call.startswith("DELETE "))
+    assert recycled < created < deleted
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_whose_existence_cannot_be_read_is_treated_as_occupied() -> None:
+    """A throttle is not an empty site, and the branch it gates is destructive.
+
+    `readFailed` in the shared harness exists because a refusal comes back as
+    a parsed JSON body, so "the response arrived" says nothing about whether
+    the question was answered.
+    """
+    rows, output = _identity_run(readFaults=[
+        _fault([_LIST_PATH, _EXISTS_READ], status=429),
+    ])
+
+    fixture = rows["transport.cache.fixture-list-created"]
+    assert fixture["outcome"] == "ABORTED"
+    assert "could not tell whether" in fixture["evidence"]
+    assert "429" in fixture["evidence"]
+    assert _deletes(output, _LIST_PATH) == []
+    assert not [call for call in _calls(output) if call.endswith("/_api/web/lists")]
+
+
+# --- The survey URL has to be primed before the recreate -------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_survey_url_that_was_never_primed_voids_only_its_own_row() -> None:
+    """A URL's FIRST read cannot be answered from an entry, so it reads fresh.
+
+    Recording that as FRESH is the failure this whole probe exists to catch in
+    the deploy: a row that settles on a read which never asked the question.
+    The `?$select=Id` row was primed and is unaffected, so the void is scoped
+    to the one measurement that lost its control.
+    """
+    rows, _ = _identity_run(readFaults=[
+        _fault([_LIST_PATH, _SHAPE_READ], status=500),
+    ])
+
+    shape = rows["transport.cache.shape-select-after-recreate"]
+    assert shape["outcome"] == "NOT ESTABLISHED"
+    assert shape["state"] == "void"
+    assert "that URL's first" in shape["evidence"]
+    assert rows["transport.cache.id-select-after-recreate"]["outcome"] == "STALE"
+    assert rows["transport.cache.control-busted-after-recreate"]["outcome"] == "FRESH"
+
+
+# --- A failed repeat-read control stops the run ----------------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_repeat_control_that_disagrees_stops_before_the_recreate() -> None:
+    """The probe's own contract: a later disagreement is then unattributable.
+
+    Two identical reads that already disagree with nothing written between
+    them mean this run cannot tell a stale entry from whatever else is moving.
+    Every row after it would still print a verdict, and `remedy-no-store` is
+    the one a fix would be built on.
+    """
+    rows, output = _identity_run(
+        cacheStale=False,
+        readFaults=[_fault(
+            [_LIST_PATH, _PLAIN_READ], not_contains=_PLAIN_NOT, skip=1,
+            answers="list-somewhere-else",
+        )],
+    )
+
+    repeat = rows["transport.cache.control-repeat-read-unchanged"]
+    assert repeat["outcome"] == "FAIL"
+    voided = [
+        identity for identity, row in rows.items()
+        if row["state"] == "void" and "disagreed" in row["evidence"]
+    ]
+    assert "transport.cache.remedy-no-store" in voided
+    assert "transport.cache.id-select-after-recreate" in voided
+    assert "transport.cache.id-select-after-recreate-library" in voided
+    assert len(voided) == 9
+    # It stopped rather than recreating, and still took its fixture away.
+    assert len(_deletes(output, _LIST_PATH)) == 1
+    assert "deleted and confirmed absent" in output
+
+
+# --- A read that never answered is not a third identity --------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("identity", "fault"),
+    [
+        (
+            "transport.cache.id-select-after-recreate",
+            _fault([_LIST_PATH, _PLAIN_READ], not_contains=_PLAIN_NOT, skip=2, status=500),
+        ),
+        (
+            "transport.cache.control-busted-after-recreate",
+            _fault([_LIST_PATH, _BUSTED_READ], status=500),
+        ),
+        (
+            "transport.cache.remedy-no-store",
+            _fault([_LIST_PATH, _PLAIN_READ], not_contains=_PLAIN_NOT, skip=3, status=503),
+        ),
+        (
+            "transport.cache.id-select-after-recreate-library",
+            _fault([_LIB_PATH, _PLAIN_READ], not_contains=_PLAIN_NOT, skip=1, status=500),
+        ),
+    ],
+)
+def test_a_cache_probe_read_that_never_answered_voids_its_row(
+    identity: str, fault: dict[str, Any],
+) -> None:
+    """UNEXPECTED settles, and says a third list answered. Nothing did.
+
+    A transient 500 and a genuinely unrecognised Id are the same null here,
+    and only one of them is a finding. `remedy-no-store` is in the list
+    because a directive reported as not working is what would send the fix
+    towards a unique parameter on every URL instead.
+    """
+    rows, _ = _identity_run(cacheStale=False, readFaults=[fault])
+
+    row = rows[identity]
+    assert row["outcome"] == "NOT ESTABLISHED"
+    assert row["state"] == "void"
+    assert "did not answer" in row["evidence"]
+
+
+# --- The teardown is confirmed, not announced ------------------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("how", ["refuseDelete", "pretendDeleted"])
+def test_a_final_delete_that_left_the_container_behind_is_reported(how: str) -> None:
+    """Cleanup policy "after" is a promise to the operator, so it is read back.
+
+    Both shapes leave the same scratch list on the site: one where the DELETE
+    is refused outright, and one where it answers 200 and changes nothing.
+    Only a read-back separates either from a clean teardown.
+    """
+    # skip 1: the run's own mid-experiment recreate still goes through, so
+    # what is under test is the teardown rather than the fixture.
+    config: dict[str, Any] = {how: [{"title": _IDENTITY_LIST, "skip": 1}]}
+    _, output = _identity_run(**config)
+
+    assert "cleanup did not finish" in output
+    assert _IDENTITY_LIST in output.split("cleanup did not finish", 1)[1]
+    assert "deleted and confirmed absent" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_teardown_read_that_cannot_answer_is_not_read_as_gone() -> None:
+    """The confirming read fails closed too, or it only moves the assumption."""
+    _, output = _identity_run(readFaults=[
+        _fault([_LIST_PATH, _EXISTS_READ], skip=1, status=429),
+    ])
+
+    assert "could not confirm" in output
+    assert "deleted and confirmed absent" not in output

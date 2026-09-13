@@ -9450,7 +9450,8 @@
               "id": "library.view.builtin-getbytitle-after-rename",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
-                "library.view.builtin-occupies-allitems"
+                "library.view.builtin-occupies-allitems",
+                "library.view.builtin-title-rename"
               ]
             },
             {
@@ -9537,13 +9538,15 @@
             {
               "id": "transport.cache.control-enumeration-after-recreate",
               "depends_on": [
-                "transport.cache.fixture-list-created"
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged"
               ]
             },
             {
               "id": "transport.cache.id-select-after-recreate",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate"
               ]
             },
@@ -9551,6 +9554,7 @@
               "id": "transport.cache.shape-select-after-recreate",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate"
               ]
             },
@@ -9558,19 +9562,22 @@
               "id": "transport.cache.control-busted-after-recreate",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate"
               ]
             },
             {
               "id": "transport.cache.id-select-after-recreate-library",
               "depends_on": [
-                "transport.cache.fixture-list-created"
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged"
               ]
             },
             {
               "id": "transport.cache.remedy-no-store",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate",
                 "transport.cache.id-select-after-recreate"
               ]
@@ -9579,6 +9586,7 @@
               "id": "transport.cache.remedy-no-cache-header",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate",
                 "transport.cache.id-select-after-recreate"
               ]
@@ -9587,6 +9595,7 @@
               "id": "transport.cache.remedy-reload",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate",
                 "transport.cache.id-select-after-recreate"
               ]
@@ -9595,6 +9604,7 @@
               "id": "transport.cache.plain-read-after-reload",
               "depends_on": [
                 "transport.cache.fixture-list-created",
+                "transport.cache.control-repeat-read-unchanged",
                 "transport.cache.control-enumeration-after-recreate",
                 "transport.cache.id-select-after-recreate",
                 "transport.cache.remedy-reload"

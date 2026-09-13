@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A BY-TITLE LIST READ GO STALE
  *
- * REVISION: c9c55b1f
+ * REVISION: 7a53fe18
  *
  * ONE QUESTION:
  *   A list is deleted and another is created under the same title, which is
@@ -119,8 +119,8 @@
  *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
  *   4. Copy the RESULTS block back verbatim.
  *
- * WHEN FINISHED: the probe deletes what it creates, but check for a list and
- * a library named below if it aborted part way.
+ * WHEN FINISHED: the probe deletes what it creates and reads back to confirm
+ * each one is gone, so a leftover is reported rather than assumed away.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -346,10 +346,14 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c9c55b1f. Quote this when reporting results.');
+  log('INFO', 'probe revision 7a53fe18. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Cache Identity';
   const LIB = 'dbmlsp Probe Cache Identity Library';
+
+  // Written on every container this probe creates, and the only marker that
+  // lets it delete one: a title is not ownership.
+  const OWNERSHIP = 'dbml-sharepoint list identity cache probe. Safe to delete.';
 
   // The two spellings the deploy actually sends, and the Accept header it
   // sends them under. A different Accept can key a different cache entry, so
@@ -382,6 +386,9 @@
     log('INFO', 'spellings plainly, with a cache-busting parameter, and under each of');
     log('INFO', "cache: 'no-store', a no-cache request header and cache: 'reload'.");
     log('INFO', `The same delete-and-recreate is then done for a LIBRARY '${LIB}'.`);
+    log('INFO', 'A list already under either title stops the run instead: only one');
+    log('INFO', 'carrying this probe\'s own description is cleared, and only with');
+    log('INFO', 'CLEANUP on, which recycles it rather than deleting it.');
     log('INFO', 'Both are deleted at the end. Nothing else on the site is touched.');
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
@@ -427,6 +434,22 @@
 
   const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 200)}`;
 
+  // Which list did this read answer? A read that failed or carried no Id
+  // never answered at all, so it voids its row: recording UNEXPECTED would
+  // settle it as a third identity nobody observed.
+  const sayRead = (id, question, label, r, liveId, deadId, note) => {
+    if (!r.ok || !r.id) {
+      record(id, question, 'NOT ESTABLISHED',
+             `${label} did not answer, so the list it names is unknown: ${short(r)}`,
+             'void');
+      return;
+    }
+    record(id, question,
+           r.id === liveId ? 'FRESH' : r.id === deadId ? 'STALE' : 'UNEXPECTED',
+           `${label} answered ${r.id}; live is ${liveId}, dead was ${deadId}`
+           + (note || ''));
+  };
+
   // Read exactly the way the deploy reads, headers included, and hand back
   // the response object too so its caching headers can be reported.
   const readVerbose = async (suffix, init = {}) => {
@@ -441,15 +464,21 @@
     try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
     return {
       ok: res.ok, status: res.status, text, res,
+      d: (parsed && parsed.d) || null,
       id: (parsed && parsed.d && parsed.d.Id) || null,
     };
   };
 
   const titlePath = (title) => `web/lists/getbytitle('${String(title).replace(/'/g, "''")}')`;
+  const nonce = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const readId = (title) => readVerbose(`${titlePath(title)}?$select=Id`);
   const readShape = (title) => readVerbose(`${titlePath(title)}?$select=${SHAPE_SELECT}`);
-  const readBusted = (title) => readVerbose(
-    `${titlePath(title)}?$select=Id&dbmlsp=${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  const readBusted = (title) => readVerbose(`${titlePath(title)}?$select=Id&dbmlsp=${nonce()}`);
+
+  // Asked on a unique URL every time, because the stale by-title entry this
+  // probe exists to measure would otherwise answer its own setup questions.
+  const exists = (title) => readVerbose(
+    `${titlePath(title)}?$select=Id,Description&dbmlsp=${nonce()}`,
   );
 
   const enumeratedId = async (title) => {
@@ -469,8 +498,42 @@
     return spPost('web/lists', {
       Title: title,
       BaseTemplate: template,
-      Description: 'dbml-sharepoint list identity cache probe. Safe to delete.',
+      Description: OWNERSHIP,
     }, digest);
+  };
+
+  // May this run create under `title`, and remove what is there first? A
+  // container without this probe's description is never touched, and a read
+  // that cannot answer counts as occupied, because the destructive branch is
+  // the one that has to fail closed.
+  const claimTitle = async (title) => {
+    const found = await exists(title);
+    if (found.status === 404) return { ok: true };
+    if (!found.ok || !found.id) {
+      return { ok: false, why: `could not tell whether '${title}' exists: ${short(found)}` };
+    }
+    if (!found.d || found.d.Description !== OWNERSHIP) {
+      return {
+        ok: false,
+        why: `'${title}' already exists on Id ${found.id} without this probe's`
+          + ' ownership description, so this run did not create it and will not'
+          + ' delete it. Remove or rename it by hand and re-run.',
+      };
+    }
+    const recycled = await resetList(title);
+    if (!recycled) {
+      return {
+        ok: false,
+        why: `'${title}' on Id ${found.id} is left over from an earlier run of this`
+          + ' probe. Set CLEANUP = true to recycle it, which is restorable from the'
+          + ' site recycle bin.',
+      };
+    }
+    const after = await exists(title);
+    if (after.status !== 404) {
+      return { ok: false, why: `'${title}' is still present after the recycle: ${short(after)}` };
+    }
+    return { ok: true };
   };
 
   // The hard DELETE a rollback sends, not a recycle: a recycled list keeps
@@ -488,13 +551,52 @@
     return { ok: res.ok, status: res.status, text: await res.text() };
   };
 
+  // Cleanup is advertised as policy "after", so it is confirmed rather than
+  // announced: a refused DELETE otherwise leaves a container behind silently.
+  const teardown = async (title) => {
+    const gone = await deleteList(title);
+    const after = await exists(title);
+    if (after.status === 404) return null;
+    if (after.ok && after.id) {
+      return `'${title}' is still on Id ${after.id} after its delete (${short(gone)})`;
+    }
+    return `could not confirm '${title}' is gone: delete ${short(gone)},`
+      + ` read back ${short(after)}`;
+  };
+
+  // Every exit that created something runs this, so an early abort does not
+  // leave a scratch container the operator was never told about.
+  const finish = async (titles) => {
+    const leftover = [];
+    for (const title of titles) {
+      const why = await teardown(title);
+      if (why) leftover.push(why);
+    }
+    if (leftover.length) {
+      log('FAIL', `cleanup did not finish: ${leftover.join('; ')}. Remove by hand.`);
+    } else if (titles.length) {
+      log('INFO', `deleted and confirmed absent: ${titles.join(', ')}.`);
+    }
+    return report();
+  };
+
   // ---- fixture ---------------------------------------------------------
-  await deleteList(LIST);
+  // Only the titles this run was cleared to use, so nothing else is deleted.
+  const OWNED = [];
+
+  const claimed = await claimTitle(LIST);
+  if (!claimed.ok) {
+    record('transport.cache.fixture-list-created', Q.fixture, 'ABORTED', claimed.why);
+    voidAll(IDS, 'the scratch title was not this run\'s to use, so nothing was created.');
+    return report();
+  }
+  OWNED.push(LIST);
+
   const first = await createList(LIST, 100);
   if (!first.ok) {
     record('transport.cache.fixture-list-created', Q.fixture, 'FAIL', short(first));
     voidAll(IDS, 'the fixture list did not build, so nothing could be recreated under its title.');
-    return report();
+    return finish(OWNED);
   }
   const before = await readId(LIST);
   const beforeShape = await readShape(LIST);
@@ -502,10 +604,15 @@
     record('transport.cache.fixture-list-created', Q.fixture, 'FAIL',
            `the list was created but its Id did not read back: ${short(before)}`);
     voidAll(IDS, 'the first Id was never established, so no later read can be compared to it.');
-    return report();
+    return finish(OWNED);
   }
   record('transport.cache.fixture-list-created', Q.fixture, 'PASS',
          `'${LIST}' created on ${before.id}`);
+
+  // The survey URL needs an entry from BEFORE the recreate. Without one, the
+  // read after it is that URL's first and reports FRESH having measured
+  // nothing.
+  const shapePrimed = Boolean(beforeShape.ok && beforeShape.id === before.id);
 
   record('transport.cache.observed-response-headers', Q.headers, 'OBSERVED',
          ['Cache-Control', 'ETag', 'Expires', 'Age', 'Vary']
@@ -514,9 +621,16 @@
 
   {
     const again = await readId(LIST);
+    const agrees = Boolean(again.ok && again.id && again.id === before.id);
     record('transport.cache.control-repeat-read-unchanged', Q.repeat,
-           again.id === before.id ? 'PASS' : 'FAIL',
+           agrees ? 'PASS' : 'FAIL',
            `first ${before.id}, second ${again.id}, shape-select read ${beforeShape.id}`);
+    if (!agrees) {
+      voidAll(IDS.slice(2),
+              'two identical reads disagreed with nothing written between them, so this'
+              + ' run cannot attribute any later disagreement to the recreate.');
+      return finish(OWNED);
+    }
   }
 
   // ---- delete, recreate under the same title ---------------------------
@@ -529,7 +643,7 @@
         : !made || !made.ok ? `the recreate failed: ${short(made || gone)}`
         : live.error;
       voidAll(IDS.slice(2), `the delete-and-recreate did not complete: ${why}`);
-      return report();
+      return finish(OWNED);
     }
 
     record('transport.cache.control-enumeration-after-recreate', Q.enumerated,
@@ -538,21 +652,23 @@
            + ` (it was ${before.id} before the recreate)`);
 
     const plainId = await readId(LIST);
-    record('transport.cache.id-select-after-recreate', Q.idSelect,
-           plainId.id === live.id ? 'FRESH' : plainId.id === before.id ? 'STALE' : 'UNEXPECTED',
-           `?$select=Id answered ${plainId.id}; live is ${live.id}, dead was ${before.id}`);
+    sayRead('transport.cache.id-select-after-recreate', Q.idSelect,
+            '?$select=Id', plainId, live.id, before.id);
 
-    const plainShape = await readShape(LIST);
-    record('transport.cache.shape-select-after-recreate', Q.shapeSelect,
-           plainShape.id === live.id ? 'FRESH'
-             : plainShape.id === before.id ? 'STALE' : 'UNEXPECTED',
-           `the survey's $select answered ${plainShape.id};`
-           + ` live is ${live.id}, dead was ${before.id}`);
+    if (!shapePrimed) {
+      record('transport.cache.shape-select-after-recreate', Q.shapeSelect, 'NOT ESTABLISHED',
+             `the survey's $select never answered ${before.id} before the recreate`
+             + ` (${short(beforeShape)}), so a read of it now is that URL's first and`
+             + ' cannot show a stale entry', 'void');
+    } else {
+      const plainShape = await readShape(LIST);
+      sayRead('transport.cache.shape-select-after-recreate', Q.shapeSelect,
+              "the survey's $select", plainShape, live.id, before.id);
+    }
 
     const busted = await readBusted(LIST);
-    record('transport.cache.control-busted-after-recreate', Q.busted,
-           busted.id === live.id ? 'FRESH' : busted.id === before.id ? 'STALE' : 'UNEXPECTED',
-           `the cache-busted read answered ${busted.id}; live is ${live.id}`);
+    sayRead('transport.cache.control-busted-after-recreate', Q.busted,
+            'the cache-busted read', busted, live.id, before.id);
 
     // ---- round two: which directive on the SAME url reads it fresh ------
     // Ordered by what each one does to the entry, not by preference.
@@ -560,36 +676,37 @@
     // measuring what they were written to measure; the no-cache header only
     // revalidates; reload refetches AND rewrites, so it goes last and
     // `afterReload` reads what it left behind.
-    const verdict = (r) => (r.id === live.id ? 'FRESH'
-      : r.id === before.id ? 'STALE' : 'UNEXPECTED');
-    const say = (label, r) => `${label} answered ${r.id};`
-      + ` live is ${live.id}, dead was ${before.id}`;
-
     const noStore = await readVerbose(`${titlePath(LIST)}?$select=Id`, { cache: 'no-store' });
-    record('transport.cache.remedy-no-store', Q.noStore,
-           verdict(noStore), say("cache: 'no-store'", noStore));
+    sayRead('transport.cache.remedy-no-store', Q.noStore,
+            "cache: 'no-store'", noStore, live.id, before.id);
 
     const noCacheHeader = await readVerbose(`${titlePath(LIST)}?$select=Id`,
                                             { headers: { 'Cache-Control': 'no-cache' } });
-    record('transport.cache.remedy-no-cache-header', Q.noCacheHeader,
-           verdict(noCacheHeader), say('a no-cache request header', noCacheHeader));
+    sayRead('transport.cache.remedy-no-cache-header', Q.noCacheHeader,
+            'a no-cache request header', noCacheHeader, live.id, before.id);
 
     const reloaded = await readVerbose(`${titlePath(LIST)}?$select=Id`, { cache: 'reload' });
-    record('transport.cache.remedy-reload', Q.reload,
-           verdict(reloaded), say("cache: 'reload'", reloaded));
+    sayRead('transport.cache.remedy-reload', Q.reload,
+            "cache: 'reload'", reloaded, live.id, before.id);
 
     const afterReload = await readId(LIST);
-    record('transport.cache.plain-read-after-reload', Q.afterReload,
-           verdict(afterReload),
-           say('an ordinary read after reload', afterReload)
-           + (afterReload.id === live.id
-             ? '. So one cache-defeating read repairs the entry for the reads after it'
-             : '. So repairing the entry once is not enough and every read must carry it'));
+    sayRead('transport.cache.plain-read-after-reload', Q.afterReload,
+            'an ordinary read after reload', afterReload, live.id, before.id,
+            afterReload.id === live.id
+              ? '. So one cache-defeating read repairs the entry for the reads after it'
+              : '. So repairing the entry once is not enough and every read must carry it');
   }
 
   // ---- the same question on a document library -------------------------
   {
-    await deleteList(LIB);
+    const claimedLib = await claimTitle(LIB);
+    if (!claimedLib.ok) {
+      record('transport.cache.id-select-after-recreate-library', Q.library, 'NOT ESTABLISHED',
+             claimedLib.why, 'void');
+      return finish(OWNED);
+    }
+    OWNED.push(LIB);
+
     const made = await createList(LIB, 101);
     const firstLib = made.ok ? await readId(LIB) : null;
     let ok = Boolean(made.ok && firstLib && firstLib.id);
@@ -606,20 +723,15 @@
     } else {
       const live = await enumeratedId(LIB);
       const plain = await readId(LIB);
-      record('transport.cache.id-select-after-recreate-library', Q.library,
-             live.error ? 'NOT ESTABLISHED'
-               : plain.id === live.id ? 'FRESH'
-               : plain.id === firstLib.id ? 'STALE' : 'UNEXPECTED',
-             live.error ? live.error
-               : `?$select=Id answered ${plain.id}; live is ${live.id},`
-                 + ` dead was ${firstLib.id}`,
-             live.error ? 'void' : undefined);
+      if (live.error) {
+        record('transport.cache.id-select-after-recreate-library', Q.library,
+               'NOT ESTABLISHED', live.error, 'void');
+      } else {
+        sayRead('transport.cache.id-select-after-recreate-library', Q.library,
+                '?$select=Id', plain, live.id, firstLib.id);
+      }
     }
   }
 
-  await deleteList(LIST);
-  await deleteList(LIB);
-  log('INFO', 'both scratch containers deleted.');
-
-  return report();
+  return finish(OWNED);
 })();
