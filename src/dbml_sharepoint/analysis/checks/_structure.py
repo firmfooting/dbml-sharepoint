@@ -299,12 +299,13 @@ def _entity_kind(entity_name: str, entity: EntityMapping) -> list[Finding]:
     files, its Title is null after an upload (MEASURED 2026-07-29,
     `library.file-vs-item.title-after-upload` in document-library-probe.js),
     the name lives in FileLeafRef (`library.file.name-field-is-leafref` in
-    file-operations-probe.js, same day), and a
-    header whose title line reads [$FileLeafRef] renders on the file panel
-    (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03). The
-    vocabulary that lets a view, a formatter and that header name the file
-    is `rendered_columns.system_columns_for`; the folder and seeding steps
-    are `templates/deploy/_folders.js.j2` and `generators/demogen.py`.
+    file-operations-probe.js, same day), and a form BODY section may name it
+    (OBSERVED 2026-09-13 on a live display form, rendering as Name). Whether a
+    HEADER can name it is open and this rule does not rest on it: see the note
+    in `rendered_columns` and library-header-token-probe.js. The vocabulary
+    that lets a view and a formatter name the file is
+    `rendered_columns.system_columns_for`; the folder and seeding steps are
+    `templates/deploy/_folders.js.j2` and `generators/demogen.py`.
 
     What remains here is the pairing. `_lists.js.j2` sends BaseTemplate and
     never sends `kind`, so an author who changes one and leaves the other

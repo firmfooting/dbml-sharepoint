@@ -22,6 +22,16 @@
  * names first: a formatter that saves, reads back byte-identical, passes
  * every deploy phase, and does nothing on the page.
  *
+ * It measured even less than that. MEASURED 2026-09-13, revision af2a4ff1 of
+ * this probe: a formatter whose header sits under a top-level `header` key,
+ * which is the spelling `library.doc-lib.header-fileleafref` stored, is
+ * accepted, reads back byte-identical and renders NOTHING; the form keeps its
+ * stock "Item properties" heading. The deploy writes `headerJSONFormatter`
+ * (generators/jsgen.py), and the shipped family's header DOES render under
+ * it, minus the one line this probe is about. So that check proved that an
+ * arbitrary JSON string can be stored on ClientFormCustomFormatter, and
+ * nothing at all about headers.
+ *
  * One header carrying every candidate on its own LABELLED line, so a single
  * look at one form answers the whole question rather than one token per
  * deploy. A label with nothing after it is a token that did not resolve.
@@ -50,11 +60,30 @@
  *   library also resolves on a list. The deploy emits a different header
  *   per kind, so the list case is a separate question.
  *
+ * WHAT ROUND ONE ANSWERED
+ *   MEASURED 2026-09-13, revision 208a2bce, on a live library form:
+ *     FileLeafRef -> []      Title -> []      FileRef -> []
+ *     Name -> []             ID -> [1]        Modified -> [13/09/2026 10:51 PM]
+ *   and Title then rendered its value once one was typed into the column. So
+ *   the header reads ordinary item fields and returns nothing for every
+ *   file-identity field. This round asks the remaining spellings.
+ *
  * MICROSOFT LEARN CITATIONS
  *   Form header, body and footer formatting, and the `[$Column]` syntax:
  *     "Configure the list form" (SharePoint list formatting)
  *   ClientFormCustomFormatter on a content type:
  *     "SP.ContentType properties" (CSOM)
+ *   A column left out of every body section is appended to the LAST section:
+ *     "Configure the list form", Configure custom body
+ *
+ * KNOWN AND UNFIXED UPSTREAM
+ *   SharePoint/sp-dev-docs#7964, "Form formatting: In header section
+ *   [$FileLeafRef], [$FileRef] coming blank", opened 2022-05-17 against
+ *   SharePoint Online, labelled area:list-formatting-form and
+ *   type:bug-suspected. It was closed as type:archive-old-issue, "too old for
+ *   active work", with no comment, no fix and no workaround. Its repro is the
+ *   one measured here. Nothing in that issue says which tokens DO resolve,
+ *   which is what this probe is for.
  *
  * HOW TO RUN
  *   1. Open a site you own, at /_layouts/15/settings.aspx.
@@ -77,7 +106,15 @@
   // Every token a library header might plausibly name for the file's
   // identity, each on its own line behind a label that renders whatever
   // happens. A label standing alone is the finding.
-  const TOKENS = ['FileLeafRef', 'Title', 'FileRef', 'Name', 'ID', 'Modified'];
+  // Round one (revision 208a2bce) answered the four on the first line: only
+  // ID and Modified resolved, and Title resolved once it was given a value.
+  // The rest are every other spelling of a file's identity SharePoint
+  // carries, asked together because one look answers all of them.
+  const TOKENS = [
+    'FileLeafRef', 'Title', 'FileRef', 'Name', 'ID', 'Modified',
+    'LinkFilename', 'LinkFilenameNoMenu', 'FileDirRef', 'File_x0020_Name',
+    'DocIcon', 'EncodedAbsUrl', 'ServerUrl', 'File_x0020_Type',
+  ];
 
   const Q = {
     fixture: 'A document library is created (BaseTemplate 101)',
@@ -135,7 +172,13 @@
       })),
     ],
   };
-  const formatter = JSON.stringify({ header });
+  // `headerJSONFormatter`, which is the key the deploy writes
+  // (generators/jsgen.py). MEASURED 2026-09-13 by revision af2a4ff1 of this
+  // probe: the same header stored under a top-level `header` key is accepted,
+  // reads back byte-identical and renders NOTHING, leaving the form on its
+  // stock "Item properties" heading. So a stored formatter proves nothing
+  // about the key being one SharePoint reads.
+  const formatter = JSON.stringify({ headerJSONFormatter: header });
 
   await resetList(LIB);
 
