@@ -130,12 +130,17 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
 """
 
 
-def _library_deploy_js(tmp_path: Path, mapping: str) -> str:
+def _library_deploy_js(tmp_path: Path, mapping: str, *, titled: bool = True) -> str:
+    """`titled` declares a Title column, which is what puts a `title_patch` on
+    the list. A library naming its files through FileLeafRef declares none, and
+    the shipped legal-compliance-register library is one, so `titled=False` is
+    the shape that reaches the branches a null patch takes."""
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
+    columns = [ID_PK, TITLE, "Note nvarchar"] if titled else [ID_PK, "Note nvarchar"]
     schema, bundle = pack(
-        tmp_path, dbml=table("Escalation", ID_PK, TITLE, "Note nvarchar"), mapping=mapping,
+        tmp_path, dbml=table("Escalation", *columns), mapping=mapping,
     )
     return _without_assessment(generate_deploy_js(
         schema=schema,
@@ -453,3 +458,77 @@ def test_a_library_whose_builtin_view_is_already_all_items_is_adopted_by_title(
     assert summary["errors"] == [], summary["errors"]
     assert "All Items" not in _view_titles_created(calls)
     assert _titles_merged_by_id(calls) == []
+
+
+def _schema_lists(deploy_js: str) -> list[dict[str, Any]]:
+    """The SCHEMA.lists the emitted script carries."""
+    blob = deploy_js.split("const SCHEMA = ", 1)[1]
+    depth = 0
+    for index, char in enumerate(blob):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                blob = blob[: index + 1]
+                break
+    lists: list[dict[str, Any]] = json.loads(blob)["lists"]
+    return lists
+
+
+def test_a_library_naming_files_by_leafref_declares_no_title_patch(
+    tmp_path: Path,
+) -> None:
+    """The state the branches below exist for. A library whose Title carries no
+    display rename gets no patch, because its built-in Title reads Sealed and
+    the maintenance unseal of it is refused HTTP 400 (MEASURED 2026-09-13).
+    The shipped legal-compliance-register library is exactly this shape.
+    """
+    untitled = _schema_lists(_library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=False))
+    assert [lst["title_patch"] for lst in untitled] == [None]
+    second = tmp_path / "titled"
+    second.mkdir()
+    titled = _schema_lists(_library_deploy_js(second, _RECURSIVE_VIEW, titled=True))
+    assert titled[0]["title_patch"] is not None, (
+        "a declared Title column must still produce a patch, or this fixture "
+        "stops telling the two shapes apart"
+    )
+
+
+def test_preflight_over_an_existing_library_with_no_title_patch_does_not_throw(
+    tmp_path: Path,
+) -> None:
+    """The preflight synthesised a Title field for every list and read
+    `list.title_patch.Title` off it, which throws on a null patch. Every other
+    caller of syntheticTitleField already guarded on the same fact.
+
+    It is reached only once the list EXISTS, because the field wave runs over
+    the lists whose shape the list wave read back. A first provision onto a
+    clean site therefore never found it, and the live run that did reported
+    `Phase 1.2: read-only preflight: Cannot read properties of null (reading
+    'Title')`, aborting before any write.
+    """
+    summary, _calls, _reads = _run(
+        _library_harness(),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=False),
+    )
+    assert summary.get("aborted") is None, summary.get("aborted")
+    assert summary["errors"] == [], summary["errors"]
+
+
+def test_a_declared_title_column_is_still_preflighted_on_a_library(
+    tmp_path: Path,
+) -> None:
+    """The guard skips a patch that is absent, not one that is there. A library
+    that does declare a Title column keeps its synthetic field and the shape
+    check that comes with it."""
+    summary, calls, _reads = _run(
+        _library_harness(),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=True),
+    )
+    assert summary.get("aborted") is None, summary.get("aborted")
+    assert any(
+        "getbyinternalnameortitle('Title')" in call["url"]
+        or "fields?" in call["url"]
+        for call in calls
+    ), "a declared Title column was never read during the run"
