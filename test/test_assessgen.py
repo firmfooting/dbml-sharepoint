@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _model import as_library, column
 from _model import bundle as make_bundle
-from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
@@ -63,18 +63,10 @@ def test_library_folders_are_assessed_and_required() -> None:
     """A file standing where a folder is declared stops the folder phase, so
     the assessment carries the declared folders and a BLOCKED requirement
     for each library that declares any."""
-    from dataclasses import replace
-
     from dbml_sharepoint.generators.assessgen import assess_targets
 
     schema, bundle = _simple()
-    bundle = replace(bundle, mapping=replace(bundle.mapping, entities={
-        **bundle.mapping.entities,
-        "Task": replace(
-            bundle.mapping.entities["Task"], kind="DocumentLibrary", base_template=101,
-            folders=("Clinical services", "Corporate"),
-        ),
-    }))
+    bundle = as_library(bundle, "Task", ("Clinical services", "Corporate"))
     targets = assess_targets(schema, bundle, "default")
     assert targets["library_folders"] == [["APP_Task", ["Clinical services", "Corporate"]]]
     assert 101 in targets["base_templates"]
@@ -615,16 +607,8 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
 
 def _library_pack() -> tuple[Any, Any]:
     """The simple fixture with Task declared as a library holding one folder."""
-    from dataclasses import replace
-
     schema, bundle = _simple()
-    return schema, replace(bundle, mapping=replace(bundle.mapping, entities={
-        **bundle.mapping.entities,
-        "Task": replace(
-            bundle.mapping.entities["Task"], kind="DocumentLibrary", base_template=101,
-            folders=("Clinical services",),
-        ),
-    }))
+    return schema, as_library(bundle, "Task", ("Clinical services",))
 
 
 def _library_assess_js() -> str:

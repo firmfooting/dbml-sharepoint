@@ -358,6 +358,12 @@ class ViewDef:
     expanded_sets: list[str] = field(default_factory=list)
 
 
+#: What a demo file holds when the mapping declares no `content`. A real
+#: file rather than an empty one, because an empty upload is a shape no
+#: probe measured, and a sentence the reader can act on.
+DEMO_FILE_CONTENT = "Sample document seeded by dbml-sharepoint. Delete before active use."
+
+
 @dataclass(frozen=True)
 class DemoFile:
     """The file a document library's demo row uploads (`demo_items[].file`).
@@ -370,7 +376,7 @@ class DemoFile:
 
     name: str
     folder: str | None = None
-    content: str = "Sample document seeded by dbml-sharepoint. Delete before active use."
+    content: str = DEMO_FILE_CONTENT
 
 
 @dataclass(frozen=True)

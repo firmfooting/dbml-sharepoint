@@ -167,10 +167,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                 )
                 if reporting.system_columns:
                     person_columns += system_person_columns()
+            # A library's rows are files, so its query names each one under
+            # no switch at all: `File Name` and `File Path` are reserved
+            # there and free on a list.
+            library_entity = bundle.mapping.entities[table.name]
             reserved = set(report_columns_for(
                 table.name,
                 system_columns=reporting.system_columns,
                 person_columns=person_columns,
+                library=library_entity.is_library,
             ))
             # `resolved` above is the SharePoint FIELD titles, which is what
             # the duplicate rule needs and not what this one does. The query

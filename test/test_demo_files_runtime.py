@@ -2,9 +2,11 @@
 """Execute the generated demo-data.js against a mock library.
 
 A library row is a file: uploaded into its folder, found again by name, its
-values set on the file's item and read back. Each branch runs under Node:
-the upload, the re-paste skip, a refused upload, and a value the site did
-not keep. Node is required; the module skips without it.
+values set on the file's item and read back. Every branch runs under Node:
+the upload, the re-paste skip, and each of the five ways it can fail. A
+branch whose only job is to explain a failure is the one a static reading
+cannot check, so each is provoked here. Node is required; the module
+skips without it.
 """
 
 import json
@@ -104,17 +106,27 @@ _HARNESS = textwrap.dedent(r"""
           payload = { d: {} };
         }
       } else if (u.includes('FileLeafRef%20eq')) {
-        payload = { d: { results: uploaded
+        payload = { d: { results: uploaded && !STATE.vanishAfterUpload
           ? [{ Id: 9, FileLeafRef: STATE.name, FileDirRef: STATE.root + '/' + STATE.folder }]
           : [] } };
       } else if (method === 'POST' && /\/items\(9\)$/.test(u)) {
-        status = 204;
-        merged = JSON.parse(opts.body);
-        payload = {};
+        if (STATE.refuseMerge) {
+          status = 500;
+          payload = { error: { message: { value: 'merge refused' } } };
+        } else {
+          status = 204;
+          merged = JSON.parse(opts.body);
+          payload = {};
+        }
       } else if (/\/items\(9\)\?/.test(u)) {
-        payload = { d: STATE.stored === null
-          ? { Division: merged.Division, Status: merged.Status }
-          : STATE.stored };
+        if (STATE.refuseReadback) {
+          status = 500;
+          payload = { error: { message: { value: 'read-back refused' } } };
+        } else {
+          payload = { d: STATE.stored === null
+            ? { Division: merged.Division, Status: merged.Status }
+            : STATE.stored };
+        }
       }
       return {
         ok: status < 400, status,
@@ -130,7 +142,8 @@ _HARNESS = textwrap.dedent(r"""
 def _seed(**overrides: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     state = {
         "root": _ROOT, "folder": _FOLDER, "name": _NAME, "present": False,
-        "refuseUpload": False, "stored": None, **overrides,
+        "refuseUpload": False, "vanishAfterUpload": False, "refuseMerge": False,
+        "refuseReadback": False, "stored": None, **overrides,
     }
     body = _demo_js().rstrip()
     assert body.endswith("})();")
@@ -171,7 +184,7 @@ def test_a_library_row_is_uploaded_into_its_folder_and_its_values_set() -> None:
     assert summary["created"] == [
         {"list": "APP_Doc", "key": "d1", "id": 9, "file": f"{_ROOT}/{_FOLDER}/{_NAME}"},
     ]
-    assert not _posts(calls, "/items'") and not any(
+    assert not any(
         c["method"] == "POST" and c["url"].endswith("/items") for c in calls
     ), "a library row must never be created with a POST to /items"
 
@@ -190,6 +203,34 @@ def test_a_refused_upload_is_reported_and_nothing_is_set() -> None:
     (error,) = summary["errors"]
     assert error["key"] == "d1" and "upload refused" in error["error"]
     assert _posts(calls, "/items(9)") == []
+    assert summary["created"] == []
+
+
+def test_a_file_that_does_not_read_back_after_upload_is_reported() -> None:
+    """The upload answered 200 and the file is not there. Fail closed and
+    named, rather than MERGE values onto an item nothing has found."""
+    summary, calls = _seed(vanishAfterUpload=True)
+    (error,) = summary["errors"]
+    assert error["key"] == "d1"
+    assert "did not read back" in error["error"]
+    assert _posts(calls, "/items(9)") == []
+    assert summary["created"] == []
+
+
+def test_a_refused_merge_never_records_the_file_as_created() -> None:
+    """The file is uploaded and its values are not set, so the row is an
+    error: a file that looks seeded and carries none of its data."""
+    summary, calls = _seed(refuseMerge=True)
+    (error,) = summary["errors"]
+    assert "merge refused" in error["error"]
+    assert _posts(calls, "Files/add(") != []
+    assert summary["created"] == []
+
+
+def test_a_read_back_that_fails_leaves_the_values_unverified() -> None:
+    summary, _calls = _seed(refuseReadback=True)
+    (error,) = summary["errors"]
+    assert "unverified" in error["error"]
     assert summary["created"] == []
 
 

@@ -242,6 +242,34 @@ def test_a_list_shaped_scope_is_refused_at_load(tmp_path: Path) -> None:
         _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: [recursive]")
 
 
+def test_a_library_display_title_may_not_be_a_file_report_column() -> None:
+    """The reporting pack names a library's rows by file name and path,
+    under no switch at all, and renaming a schema column onto a name the
+    table already carries is an error in M: the build stays green, the
+    model publishes and the refresh fails. The auto split alone reaches
+    it, so the rule cannot be documentation.
+
+    Asserted on both containers: a list carries no file columns, so the
+    same schema must pass there.
+    """
+    schema = make_schema(make_table(
+        "Docs", make_column("Title", required=True), make_column("FileName", "nvarchar"),
+    ))
+    as_library = make_bundle(entities={"Docs": _docs()}, display_name_mode="auto")
+    finding = only(
+        validate_against_mapping(schema, as_library),
+        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    )
+    assert "'File Name'" in finding.message
+    as_list = make_bundle(
+        entities={"Docs": _docs("List", 100)}, display_name_mode="auto",
+    )
+    none_of(
+        validate_against_mapping(schema, as_list),
+        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    )
+
+
 def test_every_declared_kind_has_a_base_template() -> None:
     """A kind the Literal admits and `TEMPLATE_BY_KIND` omits is a KeyError
     inside validation, not a finding."""

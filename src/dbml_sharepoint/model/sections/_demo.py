@@ -12,7 +12,7 @@ against the schema.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.mapping_types import DemoFile, DemoItem
+from dbml_sharepoint.model.mapping_types import DEMO_FILE_CONTENT, DemoFile, DemoItem
 from dbml_sharepoint.model.reading import optional_str, require_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
@@ -69,5 +69,5 @@ def _parse_demo_file(raw_file: Any, context: str) -> DemoFile | None:
     return DemoFile(
         name=require_str(raw_file, "name", context),
         folder=optional_str(raw_file, "folder", context),
-        **({"content": content} if content is not None else {}),
+        content=DEMO_FILE_CONTENT if content is None else content,
     )

@@ -68,6 +68,24 @@ USERS_DISPLAY_TITLES: dict[str, str] = {
     "Principal Kind": "Principal Kind",
 }
 
+#: What identifies a document library's row in the report: the file name
+#: and its server-relative path, both text. MEASURED 2026-07-29,
+#: `library.file.name-field-is-leafref` (Title is null after upload; the
+#: name is FileLeafRef) and 2026-09-08, `library.folder.file-in-nested-folder`
+#: (FileRef reads back the full nested path). Selected the way every
+#: library probe selected them, through `/items?$select=`.
+LIBRARY_REPORT_COLUMNS: tuple[str, ...] = ("FileLeafRef", "FileRef")
+
+#: The report's own names for those two columns. The report names them, not
+#: SharePoint: nothing here claims what display title the platform gives
+#: either field, and a report author should not meet an internal name.
+#: Shared with `checks/_naming` for the same reason the fixed columns are:
+#: a display title landing on one of these renames a column onto a name
+#: the table already carries, and the refresh fails after publication.
+LIBRARY_DISPLAY_TITLES: dict[str, str] = {
+    "FileLeafRef": "File Name", "FileRef": "File Path",
+}
+
 #: The helper column linking each row back to its SharePoint item. Added by
 #: the query itself, so no declared column stands behind it.
 ITEM_URL_COLUMN = "ItemURL"
@@ -206,6 +224,7 @@ def report_columns_for(
     *,
     system_columns: bool = False,
     person_columns: tuple[str, ...] = (),
+    library: bool = False,
 ) -> tuple[str, ...]:
     """Every reporting column present when `entity`'s rename runs.
 
@@ -213,10 +232,15 @@ def report_columns_for(
     the table too, renamed in the same step as the schema columns, so a
     schema column landing on one of them fails the refresh the same way.
     `person_columns` are the columns that carry a `... Key` when the users
-    table is on; pass none when it is off.
+    table is on; pass none when it is off. `library` says the entity is a
+    document library, whose rows are files: the query names each one, under
+    no switch, so those two names are reserved on a library and free on a
+    list.
     """
     columns = (*REPORT_FIXED_COLUMNS, f"{entity}{REPORT_KEY_SUFFIX}")
     if system_columns:
         columns += system_report_columns()
     columns += tuple(person_key_column(name) for name in person_columns)
+    if library:
+        columns += tuple(LIBRARY_DISPLAY_TITLES.values())
     return columns

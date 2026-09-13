@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import cast, get_args
 
 import pytest
+from _model import as_library, column, person
 from _model import bundle as make_bundle
-from _model import column, person
 from _model import enum as make_enum
 from _model import ref as make_ref
 from _model import schema as make_schema
@@ -14,6 +14,7 @@ from _model import table as make_table
 from _packs import pack
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.report_columns import LIBRARY_REPORT_COLUMNS
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import (
@@ -1285,7 +1286,12 @@ def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> Non
             produced = _plan_typed_columns(plan) | {
                 out for _via, _t, _tc, out, _m in plan.key_joined
             }
-            assert set(plan.output_columns) == produced, plan.entity
+            # A library's file name and path are typed by the query and
+            # declared by no field, so they are system outputs: in
+            # `produced`, and deliberately not in `output_columns`.
+            library = set(LIBRARY_REPORT_COLUMNS) & produced
+            assert library <= set(plan.system_outputs), plan.entity
+            assert set(plan.output_columns) == produced - library, plan.entity
             # A duplicate would rename one column twice, so the list and the
             # set have to be the same size.
             assert len(plan.output_columns) == len(set(plan.output_columns))
@@ -2460,18 +2466,7 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
     """A library's RootFolder is the library itself; its display form sits
     one level down, which is the same difference the declared path carries."""
     schema, bundle = _simple()
-    bundle = replace(
-        bundle,
-        mapping=replace(
-            bundle.mapping,
-            entities={
-                **bundle.mapping.entities,
-                "Task": replace(
-                    bundle.mapping.entities["Task"], kind="DocumentLibrary",
-                ),
-            },
-        ),
-    )
+    bundle = as_library(bundle, "Task")
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '& "/Forms/DispForm.aspx?ID="' in query, query
     assert 'base = SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
@@ -2479,19 +2474,7 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
 
 def _with_task_as_library(folders: tuple[str, ...] = ()) -> tuple[Schema, MappingBundle]:
     schema, bundle = _simple()
-    return schema, replace(
-        bundle,
-        mapping=replace(
-            bundle.mapping,
-            entities={
-                **bundle.mapping.entities,
-                "Task": replace(
-                    bundle.mapping.entities["Task"], kind="DocumentLibrary",
-                    base_template=101, folders=folders,
-                ),
-            },
-        ),
-    )
+    return schema, as_library(bundle, "Task", folders)
 
 
 def test_a_document_library_query_carries_the_file_name_and_path() -> None:
@@ -2503,6 +2486,9 @@ def test_a_document_library_query_carries_the_file_name_and_path() -> None:
     assert "FileLeafRef" in query and "FileRef" in query
     as_list = generate_powerquery(*_simple(), "default")["APP_Task.pq"]
     assert "FileLeafRef" not in as_list
+    # The same invariant every other entity is held to, on the one shape
+    # whose columns are produced by the plan and declared by no field.
+    _assert_declared_outputs_match(schema, bundle)
 
 
 def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:

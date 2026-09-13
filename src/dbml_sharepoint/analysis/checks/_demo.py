@@ -92,7 +92,7 @@ def _title_marker(
         return []
     return [Finding(
         FindingCode.DEMO_TITLE_MISSING_MARKER,
-        f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}' -- the "
+        f"{ctx}: Title must start with '{DEMO_TITLE_PREFIX}'. It is the "
         f"visible notice that identifies this declared row as sample "
         f"data. Rollback requires per-list confirmation before every delete.",
         location=at,

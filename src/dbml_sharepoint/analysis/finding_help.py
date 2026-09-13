@@ -608,9 +608,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "folders, so the upload would have nowhere to go."
     ),
     FindingCode.DEMO_FILE_NAME_INVALID: (
-        "A demo file's `name` breaks one of Microsoft's file and folder name "
-        "rules: it contains one of `\" * : < > ? / \\ |`, leads or trails "
-        "with a space, or is a reserved name. The message names the rule."
+        "A demo file's `name` breaks one of Microsoft's file and folder "
+        "name rules, or the two this tool adds: it contains one of "
+        "`\" * : < > ? / \\ | # %` (`#` and `%` are URL metacharacters the "
+        "REST paths would misread), leads or trails with a space, contains "
+        "`_vti_`, starts with `~$`, U+309B or U+1027, or is a reserved name. "
+        "The message names the rule."
     ),
     FindingCode.DEMO_FILE_NAME_MISSING_MARKER: (
         f"A demo file's `name` does not start with `{DEMO_TITLE_PREFIX}`. On a "

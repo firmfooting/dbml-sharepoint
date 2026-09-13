@@ -220,6 +220,12 @@ tenant, and the deploy relies on nothing about a library that was not:
   which is what lets a filtered view find a file whichever folder it was
   filed in (`library-nesting-probe.js`, 2026-09-08). The generated
   `All Items` on a library is recursive and leads with the file name.
+- The reporting pack carries `FileLeafRef` and `FileRef` for a library
+  beside its declared columns, under no switch, because without them one
+  row cannot be told from its neighbour. They reach the report as
+  `File Name` and `File Path`, so a display title landing on either is
+  refused on a library (`display_title_collides_with_report_column`) and
+  allowed on a list.
 - Breaking inheritance, role assignments, indexes, choice, lookup and
   calculated columns, list validation, column formatting, versioning and
   sealing all behave as on a list, each with its own probe under

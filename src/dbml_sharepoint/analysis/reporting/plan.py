@@ -33,6 +33,8 @@ from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
     ITEM_URL_COLUMN,
     ITEM_URL_RESOLVED_COLUMN,
+    LIBRARY_DISPLAY_TITLES,
+    LIBRARY_REPORT_COLUMNS,
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
     REPORT_SYSTEM_COLUMNS,
@@ -859,7 +861,7 @@ def build_plans(
         library_entity = bundle.mapping.entities.get(table.name)
         if library_entity is not None and library_entity.is_library:
             for name in LIBRARY_REPORT_COLUMNS:
-                _plan_scalar(plan, name, ("type text", "NVARCHAR(400)"))
+                _plan_scalar(plan, name, LIBRARY_REPORT_TYPES)
                 plan.system_outputs.append(name)
         if bundle.mapping.display_name_mode is not None:
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
@@ -924,18 +926,11 @@ def build_plans(
     return plans
 
 
-#: What identifies a document library's row in the report: the file name and
-#: its server-relative path, both text. MEASURED 2026-07-29,
-#: `library.file.name-field-is-leafref` (Title is null after upload; the name
-#: is FileLeafRef) and 2026-09-08, `library.folder.file-in-nested-folder`
-#: (FileRef reads back the full nested path). Selected the way every library
-#: probe selected them, through `/items?$select=`.
-LIBRARY_REPORT_COLUMNS: tuple[str, ...] = ("FileLeafRef", "FileRef")
-
-#: The report's own names for those two columns. The report names them, not
-#: SharePoint: nothing here claims what display title the platform gives
-#: either field, and a report author should not meet an internal name.
-LIBRARY_DISPLAY_TITLES: dict[str, str] = {"FileLeafRef": "File Name", "FileRef": "File Path"}
+#: The (M type token, SQL type) the two library columns report as. 400
+#: characters because that is the ceiling Learn puts on the whole decoded
+#: path including the file name ("SharePoint limits", read 2026-09-13), so
+#: no legal `FileRef` can exceed it and no legal `FileLeafRef` can either.
+LIBRARY_REPORT_TYPES: tuple[str, str] = ("type text", "NVARCHAR(400)")
 
 
 def _plan_person(plan: ListPlan, name: str) -> None:

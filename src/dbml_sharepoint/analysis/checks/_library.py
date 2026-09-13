@@ -62,9 +62,9 @@ def _demo_file(entity_name: str, entity: EntityMapping, row: DemoItem) -> list[F
     if not row.file.name.startswith(DEMO_TITLE_PREFIX):
         findings.append(Finding(
             FindingCode.DEMO_FILE_NAME_MISSING_MARKER,
-            f"{ctx}: file.name must start with '{DEMO_TITLE_PREFIX}' -- on a "
-            f"library the file name is the visible notice that identifies this "
-            f"row as sample data.",
+            f"{ctx}: file.name must start with '{DEMO_TITLE_PREFIX}'. On a "
+            f"library the file name is the visible notice that identifies "
+            f"this row as sample data.",
             location=at,
         ))
     reason = invalid_file_name_reason(row.file.name)

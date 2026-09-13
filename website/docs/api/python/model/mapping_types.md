@@ -284,6 +284,12 @@ class ViewDef:
 
 One declared SharePoint list view (mapping `views:` section).
 
+### `DEMO_FILE_CONTENT`
+
+```python
+DEMO_FILE_CONTENT = 'Sample document seeded by dbml-sharepoint. Delete before active use.'
+```
+
 ### `DemoFile`
 
 ```python

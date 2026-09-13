@@ -296,7 +296,7 @@ class FindingCode(StrEnum):
     WIDTH_COLUMN_NOT_DISPLAYED = "width_column_not_displayed", "error"
     WIDTH_OUT_OF_RANGE = "width_out_of_range", "error"
 
-    # --- checks/_library.py: folders, view scope ---------------------------
+    # --- checks/_library.py: folders, view scope, demonstration files ------
     DUPLICATE_FOLDER = "duplicate_folder", "error"
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
@@ -304,6 +304,13 @@ class FindingCode(StrEnum):
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
     LIBRARY_GROUP_BY_FOLDER_SCOPED = "library_group_by_folder_scoped", "warning"
+    # A library row IS a file, so these five are about the file a demo row
+    # uploads. The row's values are `_demo.py`'s, on either container.
+    DEMO_FILE_REQUIRED_ON_LIBRARY = "demo_file_required_on_library", "error"
+    DEMO_FILE_ON_A_LIST = "demo_file_on_a_list", "error"
+    DEMO_FILE_FOLDER_UNDECLARED = "demo_file_folder_undeclared", "error"
+    DEMO_FILE_NAME_INVALID = "demo_file_name_invalid", "error"
+    DEMO_FILE_NAME_MISSING_MARKER = "demo_file_name_missing_marker", "error"
     # --- checks/_formatting.py: column formatting, style specs, form
     # formatting, list validation
     UNDEPLOYABLE_COLUMN_DECLARATION = "undeployable_column_declaration", "error"
@@ -337,11 +344,6 @@ class FindingCode(StrEnum):
     LIST_VALIDATION_FORMULA_TOO_LONG = "list_validation_formula_too_long", "error"
 
     # --- checks/_demo.py: rows seeded by `--seed`
-    DEMO_FILE_REQUIRED_ON_LIBRARY = "demo_file_required_on_library", "error"
-    DEMO_FILE_ON_A_LIST = "demo_file_on_a_list", "error"
-    DEMO_FILE_FOLDER_UNDECLARED = "demo_file_folder_undeclared", "error"
-    DEMO_FILE_NAME_INVALID = "demo_file_name_invalid", "error"
-    DEMO_FILE_NAME_MISSING_MARKER = "demo_file_name_missing_marker", "error"
     DUPLICATE_DEMO_KEY = "duplicate_demo_key", "error"
     DEMO_TITLE_MISSING_MARKER = "demo_title_missing_marker", "error"
     DEMO_COLUMN_NOT_WRITABLE = "demo_column_not_writable", "error"
