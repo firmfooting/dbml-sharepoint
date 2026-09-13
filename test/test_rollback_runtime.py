@@ -63,6 +63,12 @@ _HARNESS = textwrap.dedent(r"""
       state[title] = {
         count: spec.count,
         description: spec.description,
+        id: spec.id,
+        // What the site says on every ownership read after the first, which
+        // is the window between the confirmation prompt and the first
+        // destructive write. Undefined means nothing changes in it.
+        afterPrompt: spec.afterPrompt,
+        ownershipReads: 0,
         rows: spec.titles.map((t, i) => ({ Id: i + 1, Title: t })),
         deleted: false,
       };
@@ -106,10 +112,19 @@ _HARNESS = textwrap.dedent(r"""
       const match = /getbytitle\('([^']+)'\)/.exec(u);
       const s = match ? state[decodeURIComponent(match[1])] : null;
       if (!s) return reply(404, { error: { message: { value: 'list not found' } } });
-      if (u.includes('$select=Description')) {
-        return s.description === null
+      if (u.includes('$select=Id,Description')) {
+        // The ownership read happens twice per list: once to classify it and
+        // once again after the confirmation prompt returns. `afterPrompt`
+        // lets a test change what the site says between the two, which is
+        // the whole window this guard exists to cover.
+        s.ownershipReads = (s.ownershipReads || 0) + 1;
+        const after = s.ownershipReads > 1 && s.afterPrompt ? s.afterPrompt : null;
+        const description = after && 'description' in after
+          ? after.description : s.description;
+        const id = after && 'id' in after ? after.id : s.id;
+        return description === null
           ? reply(500, { error: { message: { value: 'description unreadable' } } })
-          : reply(200, { d: { Description: s.description } });
+          : reply(200, { d: { Id: id, Description: description } });
       }
       if (u.includes('$select=AllowDeletion')) {
         return reply(200, { d: { AllowDeletion: true } });
@@ -154,6 +169,13 @@ def _library_rollback_js() -> str:
     )
 
 
+#: A stand-in list GUID. Any well-formed value does: rollback compares the
+#: one it read before the prompt against the one it reads after, and never
+#: parses either.
+_ID = "11111111-1111-4111-8111-111111111111"
+_OTHER_ID = "22222222-2222-4222-8222-222222222222"
+
+
 def _listing(
     list_title: str,
     titles: list[str],
@@ -161,15 +183,26 @@ def _listing(
     ours: bool = True,
     description: str | None = "",
     count: int | None = None,
+    list_id: str = _ID,
+    after_prompt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """One list's live state. `description=None` means unreadable."""
+    """One list's live state. `description=None` means unreadable.
+
+    `after_prompt` replaces `id` and/or `description` on every ownership read
+    after the first, which is how a test puts a change inside the window
+    between the confirmation and the first destructive write.
+    """
     if ours and description is not None:
         description = f"{_MARKER[list_title]} {description}".strip()
-    return {
+    state: dict[str, Any] = {
         "count": len(titles) if count is None else count,
         "description": description,
+        "id": list_id,
         "titles": titles,
     }
+    if after_prompt is not None:
+        state["afterPrompt"] = after_prompt
+    return state
 
 
 def _tag(line: str, marker: str) -> Any:
@@ -268,7 +301,7 @@ def test_cancelling_a_demo_titled_list_skips_it_and_writes_nothing() -> None:
         answers=["no"],
     )
     assert _skips(summary)["APP_Task"] == "non-empty"
-    assert summary["deleted"] == []
+    assert "APP_Task" not in summary["deleted"]
     assert summary["errors"] == []
     assert _writes(calls) == []
 
@@ -387,7 +420,7 @@ def test_an_empty_list_still_requires_per_list_confirmation() -> None:
     )
     assert len(_non_empty_prompts(prompts)) == 1
     assert _skips(summary)["APP_Task"] == "empty-unconfirmed"
-    assert summary["deleted"] == []
+    assert "APP_Task" not in summary["deleted"]
     assert _writes(calls) == []
 
 
@@ -408,7 +441,7 @@ def test_stale_zero_count_with_live_rows_still_prompts_and_cancels_without_write
     )
     assert len(_non_empty_prompts(prompts)) == 1
     assert _skips(summary)["APP_Task"] == "empty-unconfirmed"
-    assert summary["deleted"] == []
+    assert "APP_Task" not in summary["deleted"]
     assert _writes(calls) == []
 
 
@@ -435,7 +468,7 @@ def test_target_on_second_enumeration_page_is_still_confirmed() -> None:
     )
     assert len(_non_empty_prompts(prompts)) == 1
     assert _skips(summary)["APP_Task"] == "non-empty"
-    assert summary["deleted"] == []
+    assert "APP_Task" not in summary["deleted"]
     assert _writes(calls) == []
 
 
@@ -448,8 +481,115 @@ def test_failed_later_enumeration_page_never_publishes_partial_absence() -> None
         paged_titles=["APP_Project"],
         fail_second_page=True,
     )
-    assert summary["deleted"] == []
+    assert "APP_Task" not in summary["deleted"]
     assert summary["skipped"] == []
     assert len(summary["errors"]) == 3
     assert _non_empty_prompts(prompts) == []
     assert _writes(calls) == []
+# --- The window between the confirmation and the first destructive write ---
+#
+# `prompt()` blocks for as long as a human takes to read and type, and the
+# check that authorises a delete ran before it. Everything after it is
+# irreversible in practice, so the classification is re-asked immediately
+# before the first recycle. These four make that re-ask fire; without them
+# the guard is a comment.
+
+
+def test_a_marker_removed_during_the_prompt_stops_the_delete() -> None:
+    """The plain case: it was ours when asked, and is not ours now."""
+    summary, calls, prompts = _rollback(
+        {"APP_Task": _listing(
+            "APP_Task", [f"{_DEMO}One"],
+            after_prompt={"description": "somebody else took this title"},
+        )},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert len(_non_empty_prompts(prompts)) == 1, "it never got as far as asking"
+    assert "APP_Task" not in summary["deleted"]
+    assert {"list": "APP_Task", "reason": "ownership-changed-during-confirmation"} \
+        in summary["skipped"]
+    # Nothing destructive may have happened, not even the recycle that runs
+    # before the delete.
+    assert not [c for c in calls if "/recycle" in c["url"]], "items were recycled anyway"
+    assert not [
+        c for c in calls
+        if c["method"] == "POST" and c["headers"].get("X-HTTP-Method") == "DELETE"
+    ], "the list was deleted anyway"
+
+
+def test_a_same_titled_replacement_during_the_prompt_stops_the_delete() -> None:
+    """The case the marker alone cannot see.
+
+    A replacement can carry a copied Description, so it answers the marker
+    question correctly while being a different object. The Id is what
+    separates them, which is why the ownership read takes both.
+    """
+    summary, calls, _prompts = _rollback(
+        {"APP_Task": _listing(
+            "APP_Task", [f"{_DEMO}One"], after_prompt={"id": _OTHER_ID},
+        )},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert "APP_Task" not in summary["deleted"]
+    assert {"list": "APP_Task", "reason": "ownership-changed-during-confirmation"} \
+        in summary["skipped"]
+    assert not [c for c in calls if "/recycle" in c["url"]]
+
+
+def test_an_unreadable_recheck_stops_the_delete() -> None:
+    """Fail closed, the same way the first check does.
+
+    An answer that could not be read is not evidence of ownership and not
+    evidence against it. Deleting on it would make an outage authorise the
+    destruction it cannot describe.
+    """
+    summary, calls, _prompts = _rollback(
+        {"APP_Task": _listing(
+            "APP_Task", [f"{_DEMO}One"], after_prompt={"description": None},
+        )},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert "APP_Task" not in summary["deleted"]
+    assert {"list": "APP_Task", "reason": "ownership-changed-during-confirmation"} \
+        in summary["skipped"]
+    assert not [c for c in calls if "/recycle" in c["url"]]
+
+
+def test_an_unchanged_list_is_still_deleted_after_the_recheck() -> None:
+    """The guard must not cost a correct rollback its delete.
+
+    A second read that agrees with the first is the ordinary path, and it has
+    to stay ordinary, or the fix would trade a rare wrong delete for a
+    reliable failure to delete anything.
+    """
+    summary, calls, _prompts = _rollback(
+        {"APP_Task": _listing("APP_Task", [f"{_DEMO}One"])},
+        answers=["DELETE NON-EMPTY"],
+    )
+    assert "APP_Task" in summary["deleted"]
+    assert not [r for r in summary["skipped"] if r["list"] == "APP_Task"]
+    assert [c for c in calls if "/recycle" in c["url"]], "the item was never recycled"
+
+
+def test_the_ownership_question_is_asked_exactly_twice() -> None:
+    """Once to classify, once to re-confirm. Not once, and not per item."""
+    _summary, calls, _prompts = _rollback(
+        {"APP_Task": _listing("APP_Task", [f"{_DEMO}One", f"{_DEMO}Two"])},
+        answers=["DELETE NON-EMPTY"],
+    )
+    reads = [c for c in calls if "$select=Id,Description" in c["url"]]
+    assert len(reads) == 2, f"asked {len(reads)} times, expected 2"
+
+
+def test_a_list_refused_at_the_prompt_is_never_rechecked() -> None:
+    """A skip needs no second read: nothing destructive follows it.
+
+    The re-ask exists to cover the window before a WRITE. Spending a request
+    on a list the operator declined would be cost with nothing behind it.
+    """
+    _summary, calls, _prompts = _rollback(
+        {"APP_Task": _listing("APP_Task", [f"{_DEMO}One"])},
+        answers=["no"],
+    )
+    reads = [c for c in calls if "$select=Id,Description" in c["url"]]
+    assert len(reads) == 1, f"asked {len(reads)} times, expected 1"
