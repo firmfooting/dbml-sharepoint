@@ -20,6 +20,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      # This job already depends on node twice below, to syntax-check every
+      # emitted script, and it never declared it. It was running on whatever
+      # the runner image happened to ship. The runtime tests are the worse
+      # exposure: they SKIP when node is absent rather than failing, so an
+      # image that dropped it would turn every executed-script test into a
+      # skip and leave the run green. conftest.py now refuses that, and this
+      # pins the version those tests run under rather than inheriting it.
+      # Same version as the markdown and docs jobs, which did declare it.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
       - name: Sync dependencies
         run: uv sync
       - name: Lint
