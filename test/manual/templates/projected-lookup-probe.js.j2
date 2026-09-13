@@ -1,7 +1,10 @@
+{# test/manual/templates/projected-lookup-probe.js.j2
+   Rendered to test/manual/projected-lookup-probe.js by render_probes.py.
+   Edit the template, not the rendered .js. #}
 /**
  * dbml-sharepoint PROBE: PROJECTED LOOKUP FIELD (DEPENDENT LOOKUP)
  *
- * REVISION: 148d2ada
+ * REVISION: {{ revision }}
  *
  * TWO QUESTIONS. The first is the one this probe was written for; the second
  * was added for issue #184 and shares its fixture.
@@ -219,7 +222,7 @@
 
   const log = (level, msg) => console.log(`[${level}] ${msg}`);
 
-  log('INFO', 'probe revision 148d2ada. Quote this when reporting results.');
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
   const getDigest = async () => {
     const res = await fetch(`${WEB}/_api/contextinfo`, {

@@ -6254,7 +6254,8 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "two fixed lists, a primary lookup and its FieldRef-linked dependent field, rows"
+        "two fixed lists, a primary lookup and its FieldRef-linked dependent field, rows",
+        "four more lookup columns on the source list for the cross-web arm, two same-web controls and two at a list in another web it only reads (a subweb of this site, or the one OTHER_WEB_URL names), plus one source row per accepted cross-web column, set to a row in that web"
       ],
       "cleanup": {
         "policy": "manual"
@@ -6304,6 +6305,79 @@
           "states": [],
           "controls": [
             "field.lookup.control-primary-lookup-created"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "cross-web-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.cross-web.control-other-web-has-a-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.cross-web.control-other-web-list-has-an-item",
+              "depends_on": [
+                "field.cross-web.control-other-web-has-a-list"
+              ]
+            },
+            {
+              "id": "field.cross-web.control-same-web-lookup-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.cross-web.control-same-web-webid-accepted",
+              "depends_on": []
+            },
+            {
+              "id": "field.cross-web.createfieldasxml-other-web-refused",
+              "depends_on": [
+                "field.cross-web.control-other-web-has-a-list",
+                "field.cross-web.control-same-web-lookup-created"
+              ]
+            },
+            {
+              "id": "field.cross-web.webid-attribute-refused",
+              "depends_on": [
+                "field.cross-web.control-other-web-has-a-list",
+                "field.cross-web.control-same-web-webid-accepted"
+              ]
+            },
+            {
+              "id": "field.cross-web.list-spelling-targets-other-web",
+              "depends_on": [
+                "field.cross-web.createfieldasxml-other-web-refused"
+              ]
+            },
+            {
+              "id": "field.cross-web.webid-spelling-targets-other-web",
+              "depends_on": [
+                "field.cross-web.webid-attribute-refused"
+              ]
+            },
+            {
+              "id": "field.cross-web.list-spelling-resolves-remote-item",
+              "depends_on": [
+                "field.cross-web.createfieldasxml-other-web-refused",
+                "field.cross-web.control-other-web-list-has-an-item"
+              ]
+            },
+            {
+              "id": "field.cross-web.webid-spelling-resolves-remote-item",
+              "depends_on": [
+                "field.cross-web.webid-attribute-refused",
+                "field.cross-web.control-other-web-list-has-an-item"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.cross-web.control-other-web-has-a-list",
+            "field.cross-web.control-other-web-list-has-an-item",
+            "field.cross-web.control-same-web-lookup-created",
+            "field.cross-web.control-same-web-webid-accepted"
           ],
           "depends_on": []
         }

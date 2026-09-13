@@ -182,16 +182,34 @@ Lookup columns; a relationship into a list on a different site needs the
 mapping's `cross_site_reference_columns` pattern (a Choice + URL pair)
 instead of a real Lookup.
 [DBML reference](../reference/dbml.md#references-lookups) and
-[mapping reference](../reference/mapping.md) already state this. It is
-not repeated here
-with a fresh citation: a focused search for a current Microsoft Learn or
-Support page that states the same-site restriction as its own subject,
-rather than as a side effect of a template- or workflow-scoped article,
-did not turn one up. Rather than publish it with a citation that does not
-really support it, it stays where it already lives, and
-[issue #184](https://github.com/firmfooting/dbml-sharepoint/issues/184)
-tracks sourcing it properly, by a probe if Microsoft documentation never
-states it directly.
+[mapping reference](../reference/mapping.md) already state this, so the
+rule is not repeated here. How far it is sourced is a separate question,
+and the answer is only partly.
+
+Microsoft does state the restriction, in a note of its own on ["Create
+list relationships by using lookup
+columns"](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns),
+which applies to Microsoft 365 and Microsoft Lists: "Lookup columns should
+be created and used within the same site." That is advice rather than a
+documented refusal, and it describes the column pane rather than the REST
+field API this tool writes through. On that API Microsoft documents
+nothing: `FieldLookup.LookupList` and `FieldLookup.LookupWebId` are
+published with no constraint at all. The server object model documents the
+opposite for its own surface, with an `SPFieldCollection.AddLookup`
+overload that takes a target web id and is described as creating a lookup
+"for another list in a different website".
+
+So what Microsoft documents is a cross-web lookup being accepted, on a
+surface this tool does not use, and what it does not document is
+SharePoint Online refusing one on the surface this tool does.
+[Issue #184](https://github.com/firmfooting/dbml-sharepoint/issues/184)
+stays open until the cross-web arm of `projected-lookup-probe.js` measures
+what SharePoint Online does with a lookup created at a list in another
+web. That arm measures one pair of webs per run, by default a subweb of the
+site it is pasted on, while the build rule compares site roles that can be
+deployed to unrelated site collections, so a run can bound the rule rather
+than remove it. The build refuses the schema either way, because it fails
+closed.
 
 **The two-level `group_by` ceiling.** Documented in
 [mapping reference](../reference/mapping.md#views); not repeated here

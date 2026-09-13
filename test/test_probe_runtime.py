@@ -4785,3 +4785,1216 @@ def test_a_teardown_read_that_cannot_answer_is_not_read_as_gone() -> None:
 
     assert "could not confirm" in output
     assert "deleted and confirmed absent" not in output
+
+
+# --------------------------------------------------------------------------
+# projected-lookup-probe.js: the cross-web arm. What the arm CONCLUDES is
+# the product, and a create that answers 200 and then reads back pointing
+# at this web is the failure class AGENTS.md names: it saves, it reads
+# back, and it did nothing the caller asked for.
+# --------------------------------------------------------------------------
+CROSS_WEB_PROBE = MANUAL / "projected-lookup-probe.js"
+
+#: The other web the arm looks for, and the list it would target. Opaque
+#: values only: the probe prints GUIDs and never a site name, and this mock
+#: holds it to that by giving it nothing else to print.
+CROSS_WEB_OTHER_WEB_ID = "11111111-1111-1111-1111-111111111111"
+CROSS_WEB_OTHER_WEB_URL = "https://example.sharepoint.com/sites/test/sub"
+CROSS_WEB_OTHER_LIST_ID = "22222222-2222-2222-2222-222222222222"
+CROSS_WEB_THIS_WEB_ID = "33333333-3333-3333-3333-333333333333"
+#: The site collection both webs sit in by default, which is the topology a
+#: subweb found through `web/webs` gives, and the one a distant pair would not.
+CROSS_WEB_THIS_SITE_ID = "55555555-5555-5555-5555-555555555555"
+CROSS_WEB_FAR_SITE_ID = "66666666-6666-6666-6666-666666666666"
+#: The row in the other web's list that an accepted cross-web column is set to.
+CROSS_WEB_OTHER_ITEM_ID = 41
+#: The two Titles the comparison has to tell apart, and that the transcript may
+#: not carry: a lookup id is list-local, so a column that quietly repointed at
+#: this web stores 41 and expands the row of this web that happens to be 41.
+CROSS_WEB_REMOTE_TITLE = "title-of-the-row-in-the-other-web"
+CROSS_WEB_LOCAL_TITLE = "title-of-the-row-in-this-web"
+
+_CROSS_WEB_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      location: { origin: 'https://example.sharepoint.com' },
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+        webServerRelativeUrl: '/sites/test',
+        userLoginName: 'probe@example.com',
+        userId: 11,
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // Fields SharePoint now holds, by internal name. Seeded empty so the
+    // probe's own existence checks drive the creates, which is what a first
+    // run against a clean site looks like.
+    const fields = new Map();
+    for (const name of CONFIG.preexistingFields) {
+      fields.set(name, { InternalName: name, schema: '' });
+    }
+    const items = new Map();
+    let nextItemId = 1;
+    let primaryReads = 0;
+
+    // The leading space matters: `DisplayName="..."` ends in `Name="..."`, so
+    // an unanchored pattern reads every field's display name as its internal
+    // one and every existence check then misses.
+    const NAME_IN_SCHEMA = / Name="([^"]+)"/;
+    const LIST_IN_SCHEMA = / List="\\{?([^"}]+)\\}?"/;
+    const WEBID_IN_SCHEMA = / WebId="\\{?([^"}]+)\\}?"/;
+    const FIELD_RE = /getbyinternalnameortitle\\('([^']+)'\\)/;
+
+    // The list a column actually points at, which is what its readback says
+    // and otherwise what its schema asked for.
+    const targetListOf = (name) => {
+      const override = CONFIG.readback[name] || {};
+      const fromSchema = LIST_IN_SCHEMA.exec((fields.get(name) || {}).schema || '');
+      const raw = override.LookupList !== undefined
+        ? override.LookupList : (fromSchema ? fromSchema[1] : '');
+      return String(raw).replace(/[{}]/g, '').toLowerCase();
+    };
+
+    // A lookup id is list-local, so an expansion is a row of the list the
+    // column points at: 'target' follows it, 'this-web' is the misdirected
+    // column that resolves a row of this web carrying the same number, and
+    // 'nothing' is the column whose properties persisted and resolve no row.
+    const expandedRow = (name, storedId) => {
+      if (CONFIG.expandResolvesAs === 'nothing') return null;
+      const local = CONFIG.expandResolvesAs === 'this-web'
+        || targetListOf(name) !== String(CONFIG.otherListId).toLowerCase();
+      const rows = local ? CONFIG.localItems : CONFIG.otherItems;
+      return rows.find((row) => row.Id === storedId) || null;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const body = opts.body === undefined ? null : String(opts.body);
+
+      if (u.includes('/contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+
+      // Everything the probe sends to the OTHER web goes through its own
+      // absolute URL, so one prefix test separates the two sides.
+      if (u.startsWith(CONFIG.otherWebUrl)) {
+        // The other web's own identity, which an operator-supplied URL is
+        // resolved through, and the site collection it sits in.
+        if (/\\/_api\\/web\\?\\$select=Id$/.test(u)) {
+          if (CONFIG.otherWebStatus !== 200) {
+            return jsonResponse(CONFIG.otherWebStatus, { error: 'refused' });
+          }
+          return jsonResponse(200, { Id: CONFIG.otherWebId });
+        }
+        if (/\\/_api\\/site\\?\\$select=Id$/.test(u)) {
+          if (CONFIG.otherSiteStatus !== 200) {
+            return jsonResponse(CONFIG.otherSiteStatus, { error: 'refused' });
+          }
+          return jsonResponse(200, { Id: CONFIG.otherSiteId });
+        }
+        if (u.includes('web/lists?')) return jsonResponse(200, { value: CONFIG.otherLists });
+        if (u.includes('/items')) {
+          if (CONFIG.otherItemsStatus !== 200) {
+            return jsonResponse(CONFIG.otherItemsStatus, { error: 'refused' });
+          }
+          return jsonResponse(200, { value: CONFIG.otherItems });
+        }
+        return jsonResponse(200, { value: [] });
+      }
+
+      if (/\\/_api\\/web\\?\\$select=Id$/.test(u)) {
+        if (CONFIG.thisWebStatus !== 200) {
+          return jsonResponse(CONFIG.thisWebStatus, { error: 'refused' });
+        }
+        return jsonResponse(200, { Id: CONFIG.thisWebId });
+      }
+
+      if (/\\/_api\\/site\\?\\$select=Id$/.test(u)) {
+        if (CONFIG.thisSiteStatus !== 200) {
+          return jsonResponse(CONFIG.thisSiteStatus, { error: 'refused' });
+        }
+        return jsonResponse(200, { Id: CONFIG.thisSiteId });
+      }
+
+      if (u.includes('/createfieldasxml')) {
+        const sent = JSON.parse(body || '{}');
+        const schema = String((sent.parameters || {}).SchemaXml || '');
+        const name = (NAME_IN_SCHEMA.exec(schema) || [null, '?'])[1];
+        const rule = CONFIG.creates[name];
+        if (rule && rule.ok === false) {
+          return jsonResponse(rule.status || 400, { error: rule.error || 'refused' });
+        }
+        // `vanish` is the create that answers 200 and leaves no column, which
+        // is the shape a status alone cannot tell from a real acceptance.
+        if (!(rule && rule.vanish)) fields.set(name, { InternalName: name, schema });
+        return jsonResponse(200, { Id: `field-${name}` });
+      }
+
+      const field = FIELD_RE.exec(u);
+      if (field) {
+        const name = field[1];
+        if (name === 'RelatedRisk') {
+          primaryReads += 1;
+          if (CONFIG.primaryReadFailsAt && primaryReads >= CONFIG.primaryReadFailsAt) {
+            return jsonResponse(500, { error: 'refused' });
+          }
+        }
+        if (!fields.has(name)) return jsonResponse(404, { error: 'not found' });
+        // LookupList and LookupWebId are derived from the schema that was
+        // sent, which is what SharePoint does when it honours the attributes;
+        // a test that wants a repoint overrides them through CONFIG.readback.
+        const schema = fields.get(name).schema || '';
+        const listAttr = LIST_IN_SCHEMA.exec(schema);
+        const webAttr = WEBID_IN_SCHEMA.exec(schema);
+        const payload = {
+          Id: `field-${name}`,
+          InternalName: name,
+          TypeAsString: 'Lookup',
+          IsDependentLookup: name === 'RelatedRiskTitle',
+          PrimaryFieldId: name === 'RelatedRiskTitle' ? 'field-RelatedRisk' : null,
+          DependentLookupInternalNames:
+            name === 'RelatedRisk' ? ['RelatedRiskTitle'] : [],
+          LookupField: 'Title',
+          LookupList: listAttr ? `{${listAttr[1]}}` : undefined,
+          LookupWebId: webAttr ? webAttr[1] : CONFIG.thisWebId,
+          ...(CONFIG.readback[name] || {}),
+        };
+        for (const absent of CONFIG.absentProperties) delete payload[absent];
+        return jsonResponse(200, payload);
+      }
+
+      if (u.includes('web/webs')) return jsonResponse(200, { value: CONFIG.webs });
+
+      if (method === 'POST' && u.endsWith('/web/lists')) {
+        const sent = JSON.parse(body || '{}');
+        return jsonResponse(201, { Id: `list-${sent.Title}` });
+      }
+
+      if (u.includes('/items')) {
+        if (method === 'POST') {
+          if (u.includes('ProjSource') && CONFIG.sourceRowStatus !== 201) {
+            return jsonResponse(CONFIG.sourceRowStatus, { error: 'refused' });
+          }
+          const sent = JSON.parse(body || '{}');
+          // SharePoint refuses a write naming a column that is not there, and
+          // a mock that took it would hide a row set through a field the
+          // create reported and never left behind.
+          const unknown = Object.keys(sent)
+            .filter((key) => key.endsWith('Id') && !fields.has(key.slice(0, -2)));
+          if (unknown.length) {
+            return jsonResponse(400, {
+              error: `The field or property '${unknown[0]}' does not exist.`,
+            });
+          }
+          const id = nextItemId;
+          nextItemId += 1;
+          items.set(id, sent);
+          return jsonResponse(201, { Id: id });
+        }
+        if (u.includes('$select=RelatedRiskTitle&') || u.endsWith('$select=RelatedRiskTitle')) {
+          return jsonResponse(400, {
+            error: "The field or property 'RelatedRiskTitle' does not exist",
+          });
+        }
+        if (u.endsWith('$select=RelatedRiskTitleId') && CONFIG.projectedIdStatus !== 200) {
+          return jsonResponse(CONFIG.projectedIdStatus, { error: 'refused' });
+        }
+        // The rows of THIS web, served to a read of the local target list the
+        // same way an expansion of a repointed column resolves them.
+        const wanted = /\\$filter=Id eq (\\d+)/.exec(u);
+        if (wanted) {
+          if (CONFIG.localItemsStatus !== 200) {
+            return jsonResponse(CONFIG.localItemsStatus, { error: 'refused' });
+          }
+          return jsonResponse(200, {
+            value: CONFIG.localItems.filter((row) => row.Id === Number(wanted[1])),
+          });
+        }
+        const holder = /\\/items\\((\\d+)\\)/.exec(u);
+        if (holder) {
+          const stored = items.get(Number(holder[1])) || {};
+          const expand = /\\$expand=([A-Za-z0-9_]+)/.exec(u);
+          if (expand) {
+            // Per column as well as globally: one spelling's expansion failing
+            // while the other answers is what a combined row has to rule on.
+            const only = CONFIG.expandFailsFor[expand[1]];
+            if (only) return jsonResponse(only, { error: 'refused' });
+            if (CONFIG.expandStatus !== 200) {
+              return jsonResponse(CONFIG.expandStatus, { error: 'refused' });
+            }
+            const row = expandedRow(expand[1], stored[`${expand[1]}Id`]);
+            return jsonResponse(200, { [expand[1]]: row ? { Title: row.Title } : null });
+          }
+          return jsonResponse(200, {
+            ...stored,
+            RelatedRiskTitleId: stored.RelatedRiskId,
+          });
+        }
+        return jsonResponse(200, { value: [] });
+      }
+
+      if (/getbytitle\\('[^']*'\\)$/.test(u)) {
+        if (CONFIG.listsExist) return jsonResponse(200, { Id: 'list-existing' });
+        return jsonResponse(404, { error: 'not found' });
+      }
+
+      return jsonResponse(200, { value: [] });
+    };
+""")
+
+#: A run where the other web is there with a row in it, all three same-web
+#: controls are accepted, and SharePoint refuses both cross-web spellings.
+#: Each test changes one thing.
+_CROSS_WEB_HEALTHY: dict[str, Any] = {
+    "listsExist": False,
+    "preexistingFields": [],
+    "absentProperties": [],
+    "thisWebId": CROSS_WEB_THIS_WEB_ID,
+    "thisWebStatus": 200,
+    "thisSiteId": CROSS_WEB_THIS_SITE_ID,
+    "thisSiteStatus": 200,
+    "webs": [{"Id": CROSS_WEB_OTHER_WEB_ID, "Url": CROSS_WEB_OTHER_WEB_URL}],
+    "otherWebUrl": CROSS_WEB_OTHER_WEB_URL,
+    "otherWebId": CROSS_WEB_OTHER_WEB_ID,
+    "otherWebStatus": 200,
+    # A subweb found through web/webs sits in the same site collection, which
+    # is the topology the arm measures unless an operator supplies another.
+    "otherSiteId": CROSS_WEB_THIS_SITE_ID,
+    "otherSiteStatus": 200,
+    "otherLists": [{"Id": CROSS_WEB_OTHER_LIST_ID, "BaseTemplate": 100, "Hidden": False}],
+    "otherListId": CROSS_WEB_OTHER_LIST_ID,
+    "otherItems": [{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_REMOTE_TITLE}],
+    # The row of THIS web that shares the remote row's number.
+    "localItems": [{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_LOCAL_TITLE}],
+    "localItemsStatus": 200,
+    "otherItemsStatus": 200,
+    "sourceRowStatus": 201,
+    "projectedIdStatus": 200,
+    "primaryReadFailsAt": 0,
+    "expandStatus": 200,
+    "expandFailsFor": {},
+    "expandResolvesAs": "target",
+    "creates": {
+        "XwebList": {"ok": False, "status": 400, "error": "The lookup list is in another web."},
+        "XwebListAndWeb": {
+            "ok": False, "status": 400, "error": "The lookup list is in another web.",
+        },
+    },
+    "readback": {},
+}
+
+
+def _cross_web_probe_js(other_web_url: str = "") -> str:
+    """The rendered probe with its gates opened and its result table exposed.
+
+    The gates are flipped rather than the file being re-rendered with
+    different values: what an operator pastes is what this must run.
+    `other_web_url` is set the way an operator sets it, by editing the
+    constant, so the supplied-web path is exercised as it ships.
+    """
+    js = CROSS_WEB_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    if other_web_url:
+        supplied = js.replace(
+            "  const OTHER_WEB_URL = '';",
+            f"  const OTHER_WEB_URL = '{other_web_url}';", 1,
+        )
+        assert supplied != js, "OTHER_WEB_URL is not spelled as this test expects"
+        js = supplied
+    exposed = js.replace(
+        "\n  report();\n",
+        "\n  console.log('__ROWS__' + JSON.stringify(RESULTS));\n  report();\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice in before report()"
+    return exposed
+
+
+def _cross_web_transcript(
+    other_web_url: str = "", **changes: Any,
+) -> tuple[dict[str, dict[str, str]], str]:
+    """Run the probe against `_CROSS_WEB_HEALTHY` plus `changes`.
+
+    Returns the rows by id, and what the run printed with this test's own dump
+    of the table removed, because what an operator copies back is the whole
+    console rather than the row objects.
+    """
+    config = json.loads(json.dumps(_CROSS_WEB_HEALTHY))
+    for key, value in changes.items():
+        if key in {"creates", "readback", "expandFailsFor"}:
+            config[key].update(value)
+        else:
+            config[key] = value
+    script = (
+        _CROSS_WEB_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n" + _cross_web_probe_js(other_web_url)
+    )
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return rows, output.replace(line, "")
+
+
+def _run_cross_web_probe(
+    other_web_url: str = "", **changes: Any,
+) -> dict[str, dict[str, str]]:
+    """The rows alone, for the tests that rule on a verdict rather than a leak."""
+    return _cross_web_transcript(other_web_url, **changes)[0]
+
+
+#: The readback and resolution rows of one spelling, which are recorded per
+#: spelling because the two are separate requests that may answer differently.
+_LIST_SPELLING_ROWS = (
+    "field.cross-web.list-spelling-targets-other-web",
+    "field.cross-web.list-spelling-resolves-remote-item",
+)
+_WEBID_SPELLING_ROWS = (
+    "field.cross-web.webid-spelling-targets-other-web",
+    "field.cross-web.webid-spelling-resolves-remote-item",
+)
+_CROSS_WEB_OBSERVATION_ROWS = (
+    "field.cross-web.createfieldasxml-other-web-refused",
+    "field.cross-web.webid-attribute-refused",
+    *_LIST_SPELLING_ROWS,
+    *_WEBID_SPELLING_ROWS,
+)
+#: The two same-web controls, which a cross-web row is only readable beside.
+_CROSS_WEB_CONTROL_ROWS = (
+    "field.cross-web.control-same-web-lookup-created",
+    "field.cross-web.control-same-web-webid-accepted",
+)
+#: The dependent-lookup arm's fill rows, which share the same fixture.
+_FILL_ROWS = (
+    "field.lookup.dependent-fill-live-label",
+    "field.lookup.dependent-fill-blank-label",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_healthy_run_records_both_controls_and_both_refusals() -> None:
+    """The control for every test below.
+
+    Without it, a change that made the arm record NOT ESTABLISHED for
+    everything would pass all of them, and this file would be measuring an
+    arm that had stopped measuring anything. It covers the dependent-lookup
+    arm as well, because those rows share this fixture and the guards below
+    can void them too.
+    """
+    rows = _run_cross_web_probe()
+
+    assert rows["field.cross-web.control-other-web-has-a-list"]["outcome"] == "PASS"
+    assert rows["field.cross-web.control-other-web-list-has-an-item"]["outcome"] == "PASS"
+    for control in _CROSS_WEB_CONTROL_ROWS:
+        assert rows[control]["outcome"] == "ACCEPTED", control
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "REFUSED"
+    assert rows["field.cross-web.webid-attribute-refused"]["outcome"] == "REFUSED"
+    # Nothing was created, so there is no field to read back and the question
+    # does not arise. That is not the same as unanswered.
+    for row in _LIST_SPELLING_ROWS + _WEBID_SPELLING_ROWS:
+        assert rows[row]["outcome"] == "NOT APPLICABLE", row
+    assert "The lookup list is in another web." in (
+        rows["field.cross-web.createfieldasxml-other-web-refused"]["evidence"]
+    )
+    # Every cross-web row names the pair of webs it was measured at, because a
+    # row quoted alone otherwise reads as a result about any two webs.
+    assert f"other web {CROSS_WEB_OTHER_WEB_ID}" in (
+        rows["field.cross-web.createfieldasxml-other-web-refused"]["evidence"]
+    )
+    assert rows["field.lookup.dependent-fieldref-accepted"]["outcome"] == "ACCEPTED"
+    assert rows["field.lookup.isdependentlookup-readback"]["outcome"] == "PASS"
+    assert rows["field.lookup.primary-lists-dependent"]["outcome"] == "PASS"
+    for row in _FILL_ROWS:
+        assert rows[row]["outcome"] == "PASS", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_site_with_no_subweb_voids_the_arm_rather_than_answering_it() -> None:
+    """A site with no subweb is one where the question cannot be asked.
+
+    Recording a refusal there would be the arm answering from the absence of
+    a fixture, which is the shape AGENTS.md warns about: the experiment
+    reporting a result it never measured.
+    """
+    rows = _run_cross_web_probe(webs=[])
+
+    control = rows["field.cross-web.control-other-web-has-a-list"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_same_web_control_voids_the_cross_web_rows() -> None:
+    """Without the control, a refusal says the method did not work here."""
+    rows = _run_cross_web_probe(creates={
+        "XwebControl": {"ok": False, "status": 500},
+        "XwebWebIdControl": {"ok": False, "status": 500},
+    })
+
+    assert rows["field.cross-web.control-same-web-lookup-created"]["outcome"] == "REFUSED"
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_web_control_left_by_an_earlier_run_is_not_this_run_s_control() -> None:
+    """CLEANUP ships false, so the second run finds its own control in place.
+
+    That run sent no create, so it has shown nothing about whether creates
+    work now. A run whose creates are all failing (a permission change,
+    throttling, an edited fixture) would otherwise read the leftover column
+    as an acceptance and file the cross-web refusals as findings.
+    """
+    rows = _run_cross_web_probe(
+        preexistingFields=["XwebControl", "XwebWebIdControl"],
+        creates={
+            "XwebList": {"ok": False, "status": 403, "error": "Access denied."},
+            "XwebListAndWeb": {"ok": False, "status": 403, "error": "Access denied."},
+        },
+    )
+
+    for control in _CROSS_WEB_CONTROL_ROWS:
+        assert rows[control]["outcome"] == "NOT ESTABLISHED", control
+        assert "sent no create" in rows[control]["evidence"], control
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert rows[row]["outcome"] != "REFUSED", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_web_control_that_does_not_read_back_is_not_an_acceptance() -> None:
+    """HTTP 200 and no column is the failure class, on the control itself."""
+    rows = _run_cross_web_probe(creates={
+        "XwebControl": {"ok": True, "vanish": True},
+        "XwebWebIdControl": {"ok": True, "vanish": True},
+    })
+
+    for control in _CROSS_WEB_CONTROL_ROWS:
+        assert rows[control]["outcome"] == "NOT ESTABLISHED", control
+        assert "did not read back" in rows[control]["evidence"], control
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_web_control_pointing_somewhere_else_is_not_an_acceptance() -> None:
+    """A column that landed at another list is not the control that was asked
+    for, and a refusal beside it would be about some other column."""
+    rows = _run_cross_web_probe(readback={
+        "XwebControl": {"LookupList": "{99999999-9999-9999-9999-999999999999}"},
+        "XwebWebIdControl": {"LookupList": "{99999999-9999-9999-9999-999999999999}"},
+    })
+
+    for control in _CROSS_WEB_CONTROL_ROWS:
+        assert rows[control]["outcome"] == "NOT ESTABLISHED", control
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_local_webid_voids_only_the_webid_observation() -> None:
+    """The WebId row asks about the web boundary, not about the attribute.
+
+    If createfieldasxml will not take `WebId` even when it names THIS web,
+    a cross-web refusal carrying `WebId` is a result about the spelling. The
+    bare-lookup control still passes there, which is why the WebId row needs
+    a control of its own; the List-only row is untouched and still answers.
+    """
+    rows = _run_cross_web_probe(creates={
+        "XwebWebIdControl": {"ok": False, "status": 400, "error": "Invalid attribute WebId."},
+    })
+
+    assert rows["field.cross-web.control-same-web-lookup-created"]["outcome"] == "ACCEPTED"
+    assert rows["field.cross-web.control-same-web-webid-accepted"]["outcome"] == "REFUSED"
+    assert rows["field.cross-web.webid-attribute-refused"]["state"] == "void"
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "REFUSED"
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["state"] == "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_create_that_repoints_at_this_web_is_not_a_cross_web_lookup() -> None:
+    """The whole reason the readback row exists.
+
+    HTTP 200 and a field that points at the local target list are exactly
+    what a silent repoint looks like. Reporting ACCEPTED alone would record
+    "SharePoint Online takes cross-web lookups" off a column that takes
+    values from this web.
+    """
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{44444444-4444-4444-4444-444444444444}",
+            "LookupWebId": CROSS_WEB_THIS_WEB_ID,
+        }},
+    )
+
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "ACCEPTED"
+    readback = rows["field.cross-web.list-spelling-targets-other-web"]
+    assert readback["outcome"] == "FAIL", (
+        "the create was accepted and the field points somewhere else, which is "
+        "the silent repoint this row exists to catch"
+    )
+    assert CROSS_WEB_OTHER_LIST_ID in readback["evidence"]
+    # The resolution row is asked anyway, and answers on values rather than on
+    # metadata: the column stores 41 and expands the row of THIS web numbered
+    # 41, which is not the row the id was read out of.
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "FAIL"
+    assert "not the Title on that row" in resolved["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_create_that_really_targets_the_other_web_passes() -> None:
+    """The opposite result, which no Microsoft page rules out.
+
+    Braces and case are normalised before the comparison, because SharePoint
+    returns `LookupList` wrapped in braces and `LookupWebId` bare.
+    """
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}, "XwebListAndWeb": {"ok": True}},
+        readback={
+            "XwebList": {
+                "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID.upper() + "}",
+                "LookupWebId": CROSS_WEB_OTHER_WEB_ID.upper(),
+            },
+            "XwebListAndWeb": {
+                "LookupList": CROSS_WEB_OTHER_LIST_ID,
+                "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+            },
+        },
+    )
+
+    assert rows["field.cross-web.webid-attribute-refused"]["outcome"] == "ACCEPTED"
+    # Both spellings were accepted, so both were exercised and each answers in
+    # a row of its own rather than through one verdict over the pair.
+    for row in _LIST_SPELLING_ROWS + _WEBID_SPELLING_ROWS:
+        assert rows[row]["outcome"] == "PASS", row
+    for row, name in (
+        (_LIST_SPELLING_ROWS[1], "XwebList"),
+        (_WEBID_SPELLING_ROWS[1], "XwebListAndWeb"),
+    ):
+        assert name in rows[row]["evidence"], row
+        assert str(CROSS_WEB_OTHER_ITEM_ID) in rows[row]["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_metadata_nobody_expected_does_not_stop_the_arm_asking_for_a_value() -> None:
+    """Metadata and resolution are two observations, not a control and a test.
+
+    A create that is accepted and reads back a LookupWebId nobody expected is
+    the case a value is most wanted for. Gating the stronger question on the
+    weaker one leaves the run unable to report that the lookup works, which is
+    the AGENTS.md corollary about a measurement asserting over its own
+    observations.
+    """
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {"LookupWebId": ""}},
+    )
+
+    assert rows["field.cross-web.list-spelling-targets-other-web"]["outcome"] == "FAIL"
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "PASS", (
+        "the column reads back a web id nobody expected and still carries the "
+        "row from over there, which is the answer this arm exists to find"
+    )
+    assert resolved["state"] == "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_expansion_of_a_row_of_this_web_is_not_a_remote_row_resolving() -> None:
+    """A lookup id is list-local, so a number alone proves nothing.
+
+    A column that reads back pointing at the other web and quietly resolves
+    against this one expands the row of this web carrying the same number. Any
+    nonempty title passes that, so the expansion is compared with the Title
+    read from the row the id came from.
+    """
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+        expandResolvesAs="this-web",
+    )
+
+    assert rows["field.cross-web.list-spelling-targets-other-web"]["outcome"] == "PASS"
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "FAIL", (
+        "the expansion carries a row of this web, which a test for any "
+        "nonempty title reports as a working cross-web lookup"
+    )
+    assert "not the Title on that row" in resolved["evidence"]
+
+
+def _fnv1a32(value: str) -> str:
+    """What the removed fingerprint would have published for a Title.
+
+    An exact length beside an unsalted 32-bit digest of a short human-written
+    string is recoverable by dictionary search, so the transcript may not carry
+    either, and this is the derivative the test looks for by name.
+    """
+    digest = 0x811C9DC5
+    for character in value:
+        digest = ((digest ^ ord(character)) * 0x01000193) & 0xFFFFFFFF
+    return f"{digest:08x}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_title_from_either_web_reaches_the_transcript() -> None:
+    """The transcript is pasted back into a public issue.
+
+    The arm's GUID-only guarantee covers the row it resolves as well, and it
+    covers derivatives of a Title as well as the Title: only the comparison
+    goes in the evidence, which is what the row rests on and carries none of
+    the value.
+    """
+    pointing_out = {"XwebList": {
+        "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+        "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+    }}
+    resolving, resolving_output = _cross_web_transcript(
+        creates={"XwebList": {"ok": True}}, readback=pointing_out,
+    )
+    misdirected, misdirected_output = _cross_web_transcript(
+        creates={"XwebList": {"ok": True}}, readback=pointing_out,
+        expandResolvesAs="this-web",
+    )
+
+    resolve_row = "field.cross-web.list-spelling-resolves-remote-item"
+    assert resolving[resolve_row]["outcome"] == "PASS"
+    assert misdirected[resolve_row]["outcome"] == "FAIL"
+    leaks = (
+        CROSS_WEB_REMOTE_TITLE,
+        CROSS_WEB_LOCAL_TITLE,
+        f"len={len(CROSS_WEB_REMOTE_TITLE)}",
+        f"len={len(CROSS_WEB_LOCAL_TITLE)}",
+        _fnv1a32(CROSS_WEB_REMOTE_TITLE),
+        _fnv1a32(CROSS_WEB_LOCAL_TITLE),
+        "fnv=",
+    )
+    for rows, output in ((resolving, resolving_output), (misdirected, misdirected_output)):
+        for leak in leaks:
+            assert leak not in output, leak
+            for row in rows.values():
+                assert leak not in row["evidence"], (row["id"], leak)
+    # The comparison is what is left, and it is the evidence the row rests on.
+    assert "the same as the Title on that row" in resolving[resolve_row]["evidence"]
+    assert "not the Title on that row" in misdirected[resolve_row]["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("only_row", [{"Id": CROSS_WEB_OTHER_ITEM_ID}, {
+    "Id": CROSS_WEB_OTHER_ITEM_ID, "Title": "",
+}])
+def test_a_remote_row_with_no_title_leaves_the_comparison_no_baseline(
+    only_row: dict[str, Any],
+) -> None:
+    """Nothing to compare an expansion with is not a column that resolved one.
+
+    An absent Title and a blank one are the same missing baseline. The list is
+    there, so the acceptance rows still answer; the rows resting on the
+    comparison are voided, and so is the control that supplies it.
+    """
+    rows = _run_cross_web_probe(
+        otherItems=[only_row],
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    control = rows["field.cross-web.control-other-web-list-has-an-item"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "nonempty Title" in control["evidence"]
+    assert rows["field.cross-web.list-spelling-targets-other-web"]["outcome"] == "PASS"
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["state"] == "void"
+    assert "nonempty Title" in resolved["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_two_blank_titles_are_not_a_baseline_that_can_tell_the_webs_apart() -> None:
+    """The collision a fallback to the first row reintroduces.
+
+    Every row in the other web's list is blank-titled, and so is the row of
+    THIS web carrying the same list-local id. A column that quietly repointed
+    resolves that local row, its blank expansion compares equal to the blank
+    baseline, and the run reports a working cross-web lookup. There is no
+    discriminating baseline here, so the row stays unestablished.
+    """
+    rows = _run_cross_web_probe(
+        otherItems=[{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": ""}],
+        localItems=[{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": ""}],
+        expandResolvesAs="this-web",
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "NOT ESTABLISHED", (
+        "the lookup resolved a row of this web and the two blank titles compare "
+        "equal, which a fallback baseline reports as PASS"
+    )
+    assert resolved["state"] == "void"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_row_carrying_a_title_is_preferred_as_the_comparison_baseline() -> None:
+    """Two blank titles compare equal, so a blank baseline is the weaker one."""
+    rows = _run_cross_web_probe(
+        otherItems=[
+            {"Id": 7, "Title": ""},
+            {"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_REMOTE_TITLE},
+        ],
+        creates={"XwebList": {"ok": True}},
+    )
+
+    control = rows["field.cross-web.control-other-web-list-has-an-item"]
+    assert f"row {CROSS_WEB_OTHER_ITEM_ID} " in control["evidence"]
+    assert "differs from the Title on row" in control["evidence"]
+    assert rows["field.cross-web.list-spelling-resolves-remote-item"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_remote_title_equal_to_the_local_row_at_that_id_is_not_a_baseline() -> None:
+    """Nonempty is not discriminating, which is what the baseline has to be.
+
+    The chosen remote row and the row of THIS web carrying the same list-local
+    id have the same Title. A column that quietly repointed expands that local
+    row, the comparison finds them equal, and the run records a working
+    cross-web lookup off a column that never left this web.
+    """
+    rows = _run_cross_web_probe(
+        otherItems=[{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_REMOTE_TITLE}],
+        localItems=[{"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_REMOTE_TITLE}],
+        expandResolvesAs="this-web",
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    control = rows["field.cross-web.control-other-web-list-has-an-item"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "the same Title as row" in control["evidence"]
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "NOT ESTABLISHED", (
+        "the lookup resolved the local row and the two Titles compare equal, "
+        "which a nonempty baseline reports as PASS"
+    )
+    assert resolved["state"] == "void"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_search_moves_on_to_a_row_that_can_tell_the_two_webs_apart() -> None:
+    """A colliding row is passed over rather than ending the search.
+
+    Row 41 carries the Title the local row at that id carries. Row 42 has no
+    local row at all, so a column that repointed there expands nothing, and it
+    is the baseline the arm takes.
+    """
+    rows = _run_cross_web_probe(
+        otherItems=[
+            {"Id": CROSS_WEB_OTHER_ITEM_ID, "Title": CROSS_WEB_LOCAL_TITLE},
+            {"Id": CROSS_WEB_OTHER_ITEM_ID + 1, "Title": CROSS_WEB_REMOTE_TITLE},
+        ],
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    control = rows["field.cross-web.control-other-web-list-has-an-item"]
+    assert control["outcome"] == "PASS"
+    assert f"row {CROSS_WEB_OTHER_ITEM_ID + 1} " in control["evidence"]
+    assert f"holds no row {CROSS_WEB_OTHER_ITEM_ID + 1}" in control["evidence"]
+    assert rows["field.cross-web.list-spelling-resolves-remote-item"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_local_row_that_did_not_read_back_leaves_the_baseline_unproven() -> None:
+    """A comparison this run cannot make is not a comparison it passed.
+
+    Without the local row the remote Title is only nonempty, which is the
+    baseline that cannot tell a repointed column from a working one.
+    """
+    rows = _run_cross_web_probe(
+        localItemsStatus=500,
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    control = rows["field.cross-web.control-other-web-list-has-an-item"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back (HTTP 500)" in control["evidence"]
+    # The list is there, so the acceptance rows still answer.
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "ACCEPTED"
+    assert rows["field.cross-web.list-spelling-resolves-remote-item"]["state"] == "void"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_metadata_that_persisted_is_not_a_column_that_resolves() -> None:
+    """The readback row's PASS is about properties, not about values.
+
+    A lookup that saves LookupList and LookupWebId, reads them back
+    byte-identical and then resolves nothing is exactly the failure this
+    repository exists to close, and status plus metadata cannot see it.
+    """
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+        expandResolvesAs="nothing",
+    )
+
+    assert rows["field.cross-web.list-spelling-targets-other-web"]["outcome"] == "PASS"
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "FAIL", (
+        "the properties persisted and the column resolved nothing, which the "
+        "metadata readback alone reports as a cross-web lookup that works"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_remote_row_the_column_refuses_to_store_is_a_resolve_failure() -> None:
+    """A column that will not take the id it points at does not resolve."""
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+        sourceRowStatus=400,
+    )
+
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "FAIL"
+    # The refused write is what the row rests on, so it has to be in the
+    # evidence: reaching FAIL through a read of a row that was never created
+    # reports the same verdict off nothing.
+    assert "answered HTTP 400" in resolved["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_expand_that_did_not_answer_leaves_the_resolve_row_open() -> None:
+    """A read that failed cannot tell a value that does not resolve from a
+    value this spelling cannot read, which is what run 1 found for the
+    dependent field's projected text."""
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+        expandStatus=400,
+    )
+
+    resolved = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert resolved["outcome"] == "NOT ESTABLISHED"
+    assert resolved["state"] != "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_empty_list_in_the_other_web_voids_the_resolve_row() -> None:
+    """With no row on the far side there is nothing to resolve to, and a
+    column that carries nothing is not a column that resolves nothing."""
+    rows = _run_cross_web_probe(
+        otherItems=[],
+        creates={"XwebList": {"ok": True}},
+        readback={"XwebList": {
+            "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+            "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+        }},
+    )
+
+    assert rows["field.cross-web.control-other-web-list-has-an-item"]["outcome"] == (
+        "NOT ESTABLISHED"
+    )
+    # The acceptance rows are still real: they need a list, not a row in it.
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "ACCEPTED"
+    assert rows["field.cross-web.list-spelling-targets-other-web"]["outcome"] == "PASS"
+    assert rows["field.cross-web.list-spelling-resolves-remote-item"]["state"] == "void"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_left_by_an_earlier_run_is_not_reported_as_this_run_s_answer() -> None:
+    """CLEANUP ships false, so a second run finds its own columns in place.
+
+    The create is then never sent, and ACCEPTED would report a request this
+    run did not make. The refusal in `_CROSS_WEB_HEALTHY` proves the row can say
+    REFUSED at all, so this is a real distinction rather than a row that
+    never answers.
+    """
+    rows = _run_cross_web_probe(listsExist=True, preexistingFields=["XwebList", "XwebListAndWeb"])
+
+    for row in ("field.cross-web.createfieldasxml-other-web-refused",
+                "field.cross-web.webid-attribute-refused"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert "already exists from an earlier run" in rows[row]["evidence"], row
+    # No create was sent, so nothing was accepted and there is nothing to
+    # read back or to set a value on either, for either spelling.
+    for row in _LIST_SPELLING_ROWS + _WEBID_SPELLING_ROWS:
+        assert rows[row]["outcome"] == "NOT APPLICABLE", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_create_that_left_no_column_is_not_a_resolution_failure() -> None:
+    """A column that is not there cannot be set to a value.
+
+    The create answered 200 and left nothing, so the write below it names a
+    lookup property no column carries. SharePoint refuses that for the name,
+    and reading the refusal as a cross-web verdict settles FAIL off a field
+    that never existed.
+    """
+    rows = _run_cross_web_probe(creates={"XwebList": {"ok": True, "vanish": True}})
+
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "ACCEPTED"
+    for row in _LIST_SPELLING_ROWS:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert rows[row]["state"] == "void", row
+        assert "did not read back" in rows[row]["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_repoint_one_spelling_shows_is_not_erased_by_the_other_being_unread() -> None:
+    """A conclusive negative is not a void.
+
+    One accepted column reads back pointing at this web, which disproves the
+    claim on its own; the other answered 200 and left no column to read. A row
+    covering both spellings reports NOT ESTABLISHED and discards the
+    observation that settled it.
+    """
+    rows = _run_cross_web_probe(
+        creates={
+            "XwebList": {"ok": True},
+            "XwebListAndWeb": {"ok": True, "vanish": True},
+        },
+        readback={"XwebList": {
+            "LookupList": "{44444444-4444-4444-4444-444444444444}",
+            "LookupWebId": CROSS_WEB_THIS_WEB_ID,
+        }},
+    )
+
+    repointed = rows["field.cross-web.list-spelling-targets-other-web"]
+    assert repointed["outcome"] == "FAIL"
+    assert repointed["state"] == "settled"
+    for row in _WEBID_SPELLING_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_resolution_failure_one_spelling_shows_is_not_erased_by_an_unread_expansion(
+) -> None:
+    """The same rule on the stronger question.
+
+    One accepted column stores the remote id and expands the row of THIS web
+    carrying that number, which disproves the claim; the other column's
+    expansion never answered, which settles nothing either way.
+    """
+    pointing_out = {
+        "LookupList": "{" + CROSS_WEB_OTHER_LIST_ID + "}",
+        "LookupWebId": CROSS_WEB_OTHER_WEB_ID,
+    }
+    rows = _run_cross_web_probe(
+        creates={"XwebList": {"ok": True}, "XwebListAndWeb": {"ok": True}},
+        readback={"XwebList": pointing_out, "XwebListAndWeb": pointing_out},
+        expandResolvesAs="this-web",
+        expandFailsFor={"XwebListAndWeb": 500},
+    )
+
+    misdirected = rows["field.cross-web.list-spelling-resolves-remote-item"]
+    assert misdirected["outcome"] == "FAIL"
+    assert misdirected["state"] == "settled"
+    unread = rows["field.cross-web.webid-spelling-resolves-remote-item"]
+    assert unread["outcome"] == "NOT ESTABLISHED"
+    assert unread["state"] == "void"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_arm_reports_which_pair_of_webs_it_measured() -> None:
+    """The rule this is parked against is broader than any one run.
+
+    It compares two `site_role` labels, which can be deployed to unrelated
+    site collections, while the arm measures one pair of webs. A row that did
+    not say which pair reads as a result about all of them.
+    """
+    rows = _run_cross_web_probe()
+
+    control = rows["field.cross-web.control-other-web-has-a-list"]
+    assert "found through web/webs" in control["evidence"]
+    assert f"THIS site collection {CROSS_WEB_THIS_SITE_ID}" in control["evidence"]
+    for row in ("field.cross-web.createfieldasxml-other-web-refused",
+                "field.cross-web.webid-attribute-refused"):
+        assert f"other web {CROSS_WEB_OTHER_WEB_ID}" in rows[row]["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_supplied_web_measures_that_pair_and_still_names_no_site() -> None:
+    """An operator can point the arm at another site collection.
+
+    `web/webs` answers with nothing here, so a run that still finds its target
+    found it through OTHER_WEB_URL. The two site ids differ and the row says
+    so, and the URL itself stays out of the transcript like every other site
+    identifier the arm handles.
+    """
+    rows, output = _cross_web_transcript(
+        CROSS_WEB_OTHER_WEB_URL, webs=[], otherSiteId=CROSS_WEB_FAR_SITE_ID,
+    )
+
+    control = rows["field.cross-web.control-other-web-has-a-list"]
+    assert control["outcome"] == "PASS"
+    assert "supplied through OTHER_WEB_URL" in control["evidence"]
+    assert f"ANOTHER site collection {CROSS_WEB_FAR_SITE_ID}" in control["evidence"]
+    assert rows["field.cross-web.createfieldasxml-other-web-refused"]["outcome"] == "REFUSED"
+    assert CROSS_WEB_OTHER_WEB_URL not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_supplied_url_that_resolves_to_this_web_voids_the_arm() -> None:
+    """The worst outcome this arm can produce, off its own operator knob.
+
+    A URL that names the web the page is on, or redirects to it, answers with
+    this web's Id. Every column below is then an ordinary same-web lookup:
+    both spellings are accepted, both read back where the arm expects, and
+    both resolve, so the run reports cross-web lookups working and the rule
+    the arm is parked against could be relaxed on the strength of it.
+    """
+    rows = _run_cross_web_probe(
+        CROSS_WEB_OTHER_WEB_URL,
+        webs=[],
+        otherWebId=CROSS_WEB_THIS_WEB_ID,
+        creates={"XwebList": {"ok": True}, "XwebListAndWeb": {"ok": True}},
+    )
+
+    control = rows["field.cross-web.control-other-web-has-a-list"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert f"THIS web ({CROSS_WEB_THIS_WEB_ID})" in control["evidence"]
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_this_web_id_that_did_not_read_back_voids_the_arm() -> None:
+    """Both ids are a dependency, so one of them missing settles nothing.
+
+    Without this web's Id no candidate can be shown to be a different web,
+    and a row that cannot say which two webs it measured is a row about
+    neither.
+    """
+    rows = _run_cross_web_probe(
+        thisWebStatus=500,
+        creates={"XwebList": {"ok": True}, "XwebListAndWeb": {"ok": True}},
+    )
+
+    control = rows["field.cross-web.control-other-web-has-a-list"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back (HTTP 500)" in control["evidence"]
+    for row in _CROSS_WEB_OBSERVATION_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+# --------------------------------------------------------------------------
+# The same probe's dependent-lookup arm, which shares the fixture and had the
+# same defect: rows recorded from a step that never answered.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_dependent_field_left_by_an_earlier_run_is_not_an_acceptance() -> None:
+    """The acceptance row is about a request createfieldasxml answered.
+
+    With CLEANUP false the column is already there on every run after the
+    first, and that run asked createfieldasxml nothing.
+    """
+    rows = _run_cross_web_probe(listsExist=True, preexistingFields=["RelatedRiskTitle"])
+
+    accepted = rows["field.lookup.dependent-fieldref-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert "sent no create" in accepted["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_dependent_create_that_leaves_no_column_is_not_an_acceptance() -> None:
+    """A status is not a column. The fill rows void with it, because an empty
+    projection off a column that is not there says nothing about auto-fill."""
+    rows = _run_cross_web_probe(creates={
+        "RelatedRiskTitle": {"ok": True, "vanish": True},
+    })
+
+    accepted = rows["field.lookup.dependent-fieldref-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back" in accepted["evidence"]
+    for row in _FILL_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_primary_that_did_not_read_back_cannot_report_the_linkage() -> None:
+    """FAIL there would say SharePoint did not link the dependent, off a read
+    that never answered. The existence check and the fixture readback are the
+    first two reads of the primary, so the linkage read is the third."""
+    rows = _run_cross_web_probe(primaryReadFailsAt=3)
+
+    linkage = rows["field.lookup.primary-lists-dependent"]
+    assert linkage["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back" in linkage["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_primary_served_without_the_linkage_property_is_not_an_empty_linkage() -> None:
+    """An absent property and an empty one are different answers."""
+    rows = _run_cross_web_probe(absentProperties=["DependentLookupInternalNames"])
+
+    linkage = rows["field.lookup.primary-lists-dependent"]
+    assert linkage["outcome"] == "NOT ESTABLISHED"
+    assert "no DependentLookupInternalNames property" in linkage["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_source_row_that_was_never_created_is_not_a_projection_that_did_not_fill() -> None:
+    """Nothing was set, so nothing can be read back as unset."""
+    rows = _run_cross_web_probe(sourceRowStatus=403)
+
+    for row in _FILL_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert "never created" in rows[row]["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_projected_id_read_that_did_not_answer_is_not_a_fill_failure() -> None:
+    """The read is the measurement. Recording FAIL from its HTTP status is the
+    probe reporting the failed read as SharePoint's answer."""
+    rows = _run_cross_web_probe(projectedIdStatus=500)
+
+    for row in _FILL_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert "did not read back" in rows[row]["evidence"], row

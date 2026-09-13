@@ -317,9 +317,13 @@ Ref: Action.RiskId > Risk.Id
 
 Refs become same-site Lookup columns. Self-references and reference
 cycles are handled by deferring those columns to a dedicated phase after
-all lists exist. SharePoint cannot span webs with a lookup; cross-site
-relationships use the mapping's `cross_site_reference_columns` pattern
-(a Choice + URL pair) instead.
+all lists exist. A lookup's target list must live in the same site.
+Microsoft's [lookup column
+guidance](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns)
+says so, and [SharePoint limits you must
+know](../concepts/sharepoint-limits.md) records how far that is sourced.
+Cross-site relationships use the mapping's `cross_site_reference_columns`
+pattern (a Choice + URL pair) instead.
 
 Every Ref also spends part of the per-view join budget and the target
 list's index budget. See [SharePoint limits you must
