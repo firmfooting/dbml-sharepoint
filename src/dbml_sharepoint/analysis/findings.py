@@ -183,7 +183,7 @@ class FindingCode(StrEnum):
     DISPLAY_COLUMN_NOT_RENDERED = "display_column_not_rendered", "error"
     DISPLAY_COLUMN_TYPE_UNINDEXABLE = "display_column_type_unindexable", "error"
     DISPLAY_TITLE_TOO_LONG = "display_title_too_long", "error"
-    DOCUMENT_LIBRARY_UNSUPPORTED = "document_library_unsupported", "error"
+    ENTITY_KIND_TEMPLATE_MISMATCH = "entity_kind_template_mismatch", "error"
     DUPLICATE_DISPLAY_TITLE = "duplicate_display_title", "error"
     COLUMN_COLLIDES_WITH_REPORT_COLUMN = (
         "column_collides_with_report_column", "error",

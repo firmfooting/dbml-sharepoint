@@ -56,6 +56,14 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "document_library_unsupported": (
+        "Retired 2026-09-13. It refused `kind: DocumentLibrary` outright "
+        "while the deploy had no file-identity vocabulary, no folder step "
+        "and no upload step (issue #14). Those now exist, so a library is "
+        "a supported kind and the rule that remains is the pairing one: "
+        "`entity_kind_template_mismatch` refuses a kind whose "
+        "`base_template` names the other container."
+    ),
     "invalid_condition": (
         "Retired 2026-08-23. It collapsed the condition grammar's distinct "
         "rejections into one message-only code. List validation now reports "
@@ -539,10 +547,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         f"A display title exceeds SharePoint's {MAX_DISPLAY_TITLE}-character "
         "bound."
     ),
-    FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED: (
-        "An entity declares `kind: DocumentLibrary`. A library's items "
-        "are files and this tool writes list rows, so the kind is "
-        "refused outright -- see issue #14."
+    FindingCode.ENTITY_KIND_TEMPLATE_MISMATCH: (
+        "An entity's `kind` and `base_template` name different containers: "
+        "`List` provisions BaseTemplate 100 and `DocumentLibrary` 101. The "
+        "create call sends the number and never the kind, so a mismatch "
+        "provisions one container while every other phase assumes the "
+        "other."
     ),
     FindingCode.DUPLICATE_COLUMN_NAME: (
         "A table declares the same column name twice."
@@ -1346,9 +1356,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "'<SiteTitle> ...'."
     ),
     FindingCode.UNSUPPORTED_BASE_TEMPLATE: (
-        "An entity's `base_template` is not 100. The create call sends "
-        "`BaseTemplate` and never sends `kind`, so any other number "
-        "provisions a list the rest of the build does not model."
+        "An entity's `base_template` is neither 100 (a generic list) nor "
+        "101 (a document library). The create call sends `BaseTemplate` "
+        "and never sends `kind`, so any other number provisions a "
+        "container the rest of the build does not model."
     ),
     FindingCode.VALIDATION_FORMULA_TOO_LONG: (
         "A rendered validation formula exceeds SharePoint's "

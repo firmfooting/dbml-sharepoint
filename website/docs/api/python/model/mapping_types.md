@@ -74,6 +74,7 @@ class EntityMapping:
     accept_unindexable_display_column: bool = False
     hide_from_all_items: tuple[str, ...] = ()
     renamed_from: tuple[str, ...] = ()
+    folders: tuple[str, ...] = ()
 ```
 
 SP physical mapping for one entity (kind, base template, site role).

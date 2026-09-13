@@ -108,6 +108,17 @@ class EntityMapping:
     # A previous title without that marker, or present beside the current
     # one, is refused at assessment and at preflight.
     renamed_from: tuple[str, ...] = ()
+    # Root-level folders a document library declares. The deploy creates each
+    # one through the folder endpoint, reads it back and refuses a file
+    # standing where a folder was declared; a redeploy verifies and skips.
+    # Library only: the validator refuses the key on a list.
+    folders: tuple[str, ...] = ()
+
+    @property
+    def is_library(self) -> bool:
+        """The one spelling of the kind test, so a generator and a check
+        cannot disagree about which entities are document libraries."""
+        return self.kind == "DocumentLibrary"
 
 
 @dataclass(frozen=True)
