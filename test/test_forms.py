@@ -93,7 +93,7 @@ def test_condition_is_parenthesised_inside_the_gate() -> None:
 AT = Location(Section.FORM_VISIBILITY, entity="X")
 
 
-def _findings(
+def _visibility_findings(
     *,
     column: str = "Note",
     new: bool = True,
@@ -129,23 +129,23 @@ def _findings(
 def test_required_and_hidden_from_new_is_an_error() -> None:
     """Statically provable: the gate is false on the New form whatever the
     condition says, so every create would fail its required check."""
-    found = _findings(new=False, required=True)[0]
+    found = _visibility_findings(new=False, required=True)[0]
     assert found.code is FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM
     assert "every save would fail" in found.message
 
 
 def test_required_with_a_default_hidden_from_new_is_fine() -> None:
-    assert _findings(new=False, required=True, has_default=True) == []
+    assert _visibility_findings(new=False, required=True, has_default=True) == []
 
 
 def test_hidden_everywhere_with_a_condition_is_an_error() -> None:
-    found = _findings(new=False, existing=False, when=WHEN)[0]
+    found = _visibility_findings(new=False, existing=False, when=WHEN)[0]
     assert found.code is FindingCode.FORM_VISIBILITY_CONDITION_UNREACHABLE
     assert "can never be reached" in found.message
 
 
 def test_calculated_columns_cannot_declare_visibility() -> None:
-    found = _findings(is_calculated=True)[0]
+    found = _visibility_findings(is_calculated=True)[0]
     assert found.code is FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN
     assert "calculated" in found.message
 
@@ -161,7 +161,7 @@ def test_a_condition_on_a_yes_no_column_is_refused() -> None:
     difference between an unbuildable mapping and a half-deployed site.
     """
     found = only(
-        _findings(column="Sighted", when=WHEN),
+        _visibility_findings(column="Sighted", when=WHEN),
         FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
     )
 
@@ -174,7 +174,7 @@ def test_a_yes_no_column_may_still_be_gated_per_form() -> None:
     property, so this is not obviously safe, but nothing has established
     that it fails, and a guard wider than the measurement refuses a
     declaration the platform may well accept."""
-    assert _findings(column="Sighted", new=False) == []
+    assert _visibility_findings(column="Sighted", new=False) == []
 
 
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
@@ -182,7 +182,7 @@ def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> Non
     statically. Every message came back as an "error", with the word
     "warning" buried in the prose, so the one genuinely conditional case
     the feature exists to express failed the build."""
-    findings = _findings(when=WHEN, required=True)
+    findings = _visibility_findings(when=WHEN, required=True)
     assert [f.severity for f in findings] == ["warning"]
     assert findings[0].code is FindingCode.REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION
     # And the severity is carried structurally, not spelled out in the text.
@@ -191,9 +191,9 @@ def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> Non
 
 def test_statically_provable_cases_stay_errors() -> None:
     for findings in (
-        _findings(new=False, required=True),
-        _findings(new=False, existing=False, when=WHEN),
-        _findings(is_calculated=True),
+        _visibility_findings(new=False, required=True),
+        _visibility_findings(new=False, existing=False, when=WHEN),
+        _visibility_findings(is_calculated=True),
     ):
         assert findings
         assert all(f.severity == "error" for f in findings), findings
@@ -207,12 +207,12 @@ def test_each_rule_here_has_its_own_code() -> None:
     suppressed, or looked up in the catalogue.
     """
     codes = [
-        _findings(is_calculated=True)[0].code,
-        _findings(column="Sighted", when=WHEN)[0].code,
-        _findings(new=False, existing=False, when=WHEN)[0].code,
-        _findings(new=False, required=True)[0].code,
-        _findings(when=WHEN, required=True)[0].code,
-        _findings(when=parse_condition(
+        _visibility_findings(is_calculated=True)[0].code,
+        _visibility_findings(column="Sighted", when=WHEN)[0].code,
+        _visibility_findings(new=False, existing=False, when=WHEN)[0].code,
+        _visibility_findings(new=False, required=True)[0].code,
+        _visibility_findings(when=WHEN, required=True)[0].code,
+        _visibility_findings(when=parse_condition(
             [{"field": "Nope", "op": "eq", "value": 1}], "w",
         ))[0].code,
     ]
@@ -403,7 +403,7 @@ def test_the_membership_spelling_is_the_only_one_a_view_filter_takes() -> None:
 
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:
     bad = parse_condition([{"field": "Nope", "op": "eq", "value": 1}], "w")
-    findings = _findings(when=bad)
+    findings = _visibility_findings(when=bad)
     # The condition grammar classifies its own problems, so the leaf's fault
     # keeps its identity instead of arriving as "the when is bad".
     f = only(findings, FindingCode.CONDITION_FIELD_NOT_RENDERED)

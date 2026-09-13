@@ -43,7 +43,7 @@ def _docs(kind: EntityKind = "DocumentLibrary", base_template: int = 101) -> Ent
     )
 
 
-def _findings(entity: EntityMapping, **sections: object) -> list[Finding]:
+def _library_findings(entity: EntityMapping, **sections: object) -> list[Finding]:
     schema = make_schema(make_table("Docs", make_column("Title", required=True)))
     bundle = make_bundle(entities={"Docs": entity}, **sections)  # type: ignore[arg-type]
     return validate_against_mapping(schema, bundle)
@@ -54,7 +54,7 @@ def test_a_library_view_and_header_may_name_the_file() -> None:
     document-library-probe.js: a library view carries FileLeafRef through
     REST and reads it back among its fields. The header half is the reviewed
     capture above."""
-    findings = _findings(
+    findings = _library_findings(
         _docs(),
         views={"Docs": [ViewDef(title="Files", fields=["FileLeafRef"], default=True)]},
         form_formatting={"Docs": FormFormatting(header=_FILE_NAME_HEADER)},
@@ -66,7 +66,7 @@ def test_a_library_view_and_header_may_name_the_file() -> None:
 def test_a_list_view_and_header_may_not_name_the_file() -> None:
     """The pair. A list item has no file, so the same declarations on a
     generic list name a column that is not rendered there."""
-    findings = _findings(
+    findings = _library_findings(
         _docs(kind="List", base_template=100),
         views={"Docs": [ViewDef(title="Files", fields=["FileLeafRef"], default=True)]},
         form_formatting={"Docs": FormFormatting(header=_FILE_NAME_HEADER)},
@@ -356,7 +356,7 @@ def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:
     """FileLeafRef is a system column the per-field deploy loop never
     writes, so a formatter declared on it would validate clean and deploy
     nothing. Same rule as Created or Author."""
-    findings = _findings(
+    findings = _library_findings(
         _docs(),
         column_formatting={"Docs": {"FileLeafRef": {"elmType": "div"}}},
     )

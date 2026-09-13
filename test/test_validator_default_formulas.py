@@ -56,7 +56,7 @@ def _schema() -> Schema:
     )
 
 
-def _findings(formulas: dict[str, str], **sections: object) -> list[Finding]:
+def _formula_findings(formulas: dict[str, str], **sections: object) -> list[Finding]:
     bundle = make_bundle(
         entities=["Saq"],
         default_formulas={"Saq": formulas},
@@ -76,11 +76,11 @@ def _own(findings: list[Finding]) -> list[Finding]:
 
 @pytest.mark.parametrize("col", ["PeriodYear", "Score", "Due", "Opened", "Ref"])
 def test_a_formula_on_a_measured_scalar_type_is_accepted(col: str) -> None:
-    assert _own(_findings({col: "=YEAR(TODAY())"})) == []
+    assert _own(_formula_findings({col: "=YEAR(TODAY())"})) == []
 
 
 def test_the_year_and_quarter_examples_are_accepted() -> None:
-    findings = _findings({
+    findings = _formula_findings({
         "PeriodYear": "=YEAR(TODAY())",
         "Quarter": '="Q"&ROUNDUP(MONTH(TODAY())/3,0)',
     })
@@ -89,7 +89,7 @@ def test_the_year_and_quarter_examples_are_accepted() -> None:
 
 def test_an_enum_column_is_accepted_with_a_warning_about_the_result() -> None:
     """Measured 2026-09-13: a non-member result is stored as a literal."""
-    findings = _own(_findings({"Quarter": '="Q"&ROUNDUP(MONTH(TODAY())/3,0)'}))
+    findings = _own(_formula_findings({"Quarter": '="Q"&ROUNDUP(MONTH(TODAY())/3,0)'}))
     warning = only(findings, FindingCode.DEFAULT_FORMULA_CHOICE_RESULT_UNCHECKED)
     assert warning.severity == "warning"
     assert "quarter" in warning.message
@@ -106,7 +106,10 @@ def test_the_section_is_optional() -> None:
 
 
 def test_a_formula_without_a_leading_equals_is_refused() -> None:
-    finding = only(_findings({"Due": "TODAY()"}), FindingCode.DEFAULT_FORMULA_MISSING_EQUALS)
+    finding = only(
+        _formula_findings({"Due": "TODAY()"}),
+        FindingCode.DEFAULT_FORMULA_MISSING_EQUALS,
+    )
     assert finding.location is not None
     assert finding.location.section is Section.DEFAULT_FORMULAS
     assert finding.location.entity == "Saq"
@@ -116,14 +119,14 @@ def test_a_formula_without_a_leading_equals_is_refused() -> None:
 @pytest.mark.parametrize("formula", ["=[Created]", "=YEAR([Due])", "=[Today]"])
 def test_a_formula_naming_a_column_is_refused(formula: str) -> None:
     finding = only(
-        _findings({"Due": formula}), FindingCode.DEFAULT_FORMULA_REFERENCES_A_COLUMN,
+        _formula_findings({"Due": formula}), FindingCode.DEFAULT_FORMULA_REFERENCES_A_COLUMN,
     )
     assert "before the row exists" in finding.message
 
 
 def test_bracket_text_inside_a_string_literal_is_not_a_reference() -> None:
     none_of(
-        _findings({"Ref": '="[not a column]"'}),
+        _formula_findings({"Ref": '="[not a column]"'}),
         FindingCode.DEFAULT_FORMULA_REFERENCES_A_COLUMN,
     )
 
@@ -134,7 +137,7 @@ def test_bracket_text_inside_a_string_literal_is_not_a_reference() -> None:
 )
 def test_a_function_outside_the_allowlist_is_refused(formula: str, refused: str) -> None:
     finding = only(
-        _findings({"Due": formula}), FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
+        _formula_findings({"Due": formula}), FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
     )
     assert f"calls {refused}," in finding.message
     assert "TODAY" in finding.message
@@ -143,7 +146,7 @@ def test_a_function_outside_the_allowlist_is_refused(formula: str, refused: str)
 def test_every_measured_function_is_accepted() -> None:
     """MEASURED 2026-09-13: one column per function, every one filled."""
     formula = "=" + "&".join(f"{name}(1)" for name in sorted(DEFAULT_FORMULA_FUNCTIONS))
-    assert _own(_findings({"Score": formula})) == []
+    assert _own(_formula_findings({"Score": formula})) == []
 
 
 def test_the_shipped_financial_year_pair_is_accepted() -> None:
@@ -153,7 +156,7 @@ def test_the_shipped_financial_year_pair_is_accepted() -> None:
     and `...quarter-fills` in default-formula-functions-probe.js: both
     formulas filled on a bare item create, as written here.
     """
-    findings = _own(_findings({
+    findings = _own(_formula_findings({
         "PeriodYear": "=YEAR(TODAY())+IF(MONTH(TODAY())>=7,1,0)",
         "Quarter": '="Q"&(MOD(ROUNDUP(MONTH(TODAY())/3,0)+1,4)+1)',
     }))
@@ -161,7 +164,7 @@ def test_the_shipped_financial_year_pair_is_accepted() -> None:
 
 
 def test_a_function_name_inside_a_string_literal_is_not_a_call() -> None:
-    assert _own(_findings({"Score": '="NOW("&"IF("&YEAR(TODAY())'})) == []
+    assert _own(_formula_findings({"Score": '="NOW("&"IF("&YEAR(TODAY())'})) == []
 
 
 def test_the_function_parser_reads_calls_outside_literals_only() -> None:
@@ -177,7 +180,7 @@ def test_the_function_parser_reads_calls_outside_literals_only() -> None:
 
 def test_a_column_the_entity_does_not_declare_is_refused() -> None:
     finding = only(
-        _findings({"Missing": "=TODAY()"}), FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN,
+        _formula_findings({"Missing": "=TODAY()"}), FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN,
     )
     assert "Missing" in finding.message
     assert finding.location is not None
@@ -185,7 +188,7 @@ def test_a_column_the_entity_does_not_declare_is_refused() -> None:
 
 
 def test_the_identity_column_is_not_one_the_deploy_creates() -> None:
-    only(_findings({"Id": "=1"}), FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN)
+    only(_formula_findings({"Id": "=1"}), FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN)
 
 
 def test_a_formula_beside_a_dbml_default_is_refused() -> None:
@@ -193,7 +196,7 @@ def test_a_formula_beside_a_dbml_default_is_refused() -> None:
     reads DefaultValue back null and fills from the formula. Declaring
     both discards the author's `default:` without saying so."""
     finding = only(
-        _findings({"Seeded": '="x"'}), FindingCode.DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE,
+        _formula_findings({"Seeded": '="x"'}), FindingCode.DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE,
     )
     assert "default: 'x'" in finding.message
     assert "drops the value" in finding.message
@@ -212,7 +215,7 @@ def test_a_formula_beside_a_dbml_default_is_refused() -> None:
 )
 def test_a_column_kind_that_cannot_take_a_formula_is_refused(col: str, reason: str) -> None:
     finding = only(
-        _findings({col: "=TODAY()"}), FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED,
+        _formula_findings({col: "=TODAY()"}), FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED,
     )
     assert reason in finding.message
     assert finding.location is not None
@@ -220,7 +223,7 @@ def test_a_column_kind_that_cannot_take_a_formula_is_refused(col: str, reason: s
 
 
 def test_a_cross_site_reference_column_is_refused_by_kind() -> None:
-    findings = _findings(
+    findings = _formula_findings(
         {"Parent": "=TODAY()"},
         cross_site_reference_columns=[CrossSiteRef(entity="Saq", column="Parent")],
     )
@@ -230,7 +233,7 @@ def test_a_cross_site_reference_column_is_refused_by_kind() -> None:
 
 def test_a_derived_cross_site_column_is_refused_by_kind() -> None:
     """The deploy creates ParentAbbreviation, so "unknown" would be false."""
-    findings = _findings(
+    findings = _formula_findings(
         {"ParentAbbreviation": "=TODAY()"},
         cross_site_reference_columns=[CrossSiteRef(entity="Saq", column="Parent")],
     )
@@ -242,19 +245,19 @@ def test_a_derived_cross_site_column_is_refused_by_kind() -> None:
 @pytest.mark.parametrize("col", ["Closed", "Notes"])
 def test_a_type_nothing_plans_to_measure_is_refused_outright(col: str) -> None:
     finding = only(
-        _findings({col: "=TODAY()"}), FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED,
+        _formula_findings({col: "=TODAY()"}), FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED,
     )
     assert "single-value enum" in finding.message
 
 
 def test_the_kind_rule_wins_over_the_type_rule() -> None:
     """A multi-value enum is refused by arity, not by its enum's name."""
-    findings = _own(_findings({"Tags": '="Q1"'}))
+    findings = _own(_formula_findings({"Tags": '="Q1"'}))
     assert codes(findings) == {FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED}
 
 
 def test_the_text_rules_and_the_column_rules_report_together() -> None:
-    findings = _own(_findings({"Notes": "NOW()"}))
+    findings = _own(_formula_findings({"Notes": "NOW()"}))
     assert codes(findings) == {
         FindingCode.DEFAULT_FORMULA_MISSING_EQUALS,
         FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED,
@@ -296,7 +299,7 @@ def test_widening_the_type_constant_is_the_whole_change(
     monkeypatch.setattr(
         _default_formulas, "DEFAULT_FORMULA_TYPES", DEFAULT_FORMULA_TYPES | {"longtext"},
     )
-    assert _own(_findings({"Notes": '="x"'})) == []
+    assert _own(_formula_findings({"Notes": '="x"'})) == []
 
 
 def test_widening_the_function_constant_is_the_whole_change(
@@ -306,4 +309,4 @@ def test_widening_the_function_constant_is_the_whole_change(
     monkeypatch.setattr(
         _default_formulas, "DEFAULT_FORMULA_FUNCTIONS", DEFAULT_FORMULA_FUNCTIONS | {"NOW"},
     )
-    assert _own(_findings({"Score": "=NOW()"})) == []
+    assert _own(_formula_findings({"Score": "=NOW()"})) == []
