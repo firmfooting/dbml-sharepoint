@@ -1,0 +1,321 @@
+{# test/manual/templates/list-identity-cache-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: DOES A BY-TITLE LIST READ GO STALE
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   A list is deleted and another is created under the same title, which is
+ *   what a rollback followed by a redeploy does. Does a by-title read then
+ *   answer the NEW list's Id, or the dead one's?
+ *
+ * MEASURED on two live runs 2026-09-13: Phase 3.1's filter-editor check
+ * compared the Id its write lane proved against the Id a second read
+ * resolved, and they disagreed. Once for a generic list, once for a document
+ * library, and 3 of 8 views passed the same check in the run where 5 failed,
+ * so it is neither every list nor a property of the container kind. A third
+ * read minutes later, by every spelling and cache-busted, agreed on an Id
+ * that was neither of the two, because the site had been rolled back and
+ * redeployed again in between. Every failing pair therefore spans a
+ * delete-and-recreate under one title.
+ *
+ * The two sides of that comparison ask the same question by DIFFERENT URLs:
+ *
+ *   the ownership survey   getbytitle('X')?$select=Id,Title,BaseTemplate,...
+ *   the filter-editor read getbytitle('X')?$select=Id
+ *
+ * Neither sends a cache directive, so they are separate cache entries and
+ * one can be stale while the other is not. That is a hypothesis about a
+ * TRANSPORT, not about a list, and it has never been measured here.
+ *
+ * The cache-busted rows are what make the answer actionable. If a plain read
+ * answers the dead Id and a busted one answers the live Id, the fix is to
+ * bust the cache on every by-title identity read. If BOTH answer the dead
+ * Id, no cache-buster helps and the fix is to stop addressing these reads by
+ * title at all.
+ *
+ * SCOPE AND QUESTIONS
+ *   transport.cache.fixture-list-created
+ *     A generic list is created and its Id recorded.
+ *   transport.cache.observed-response-headers
+ *     OBSERVATION: Cache-Control, ETag, Expires and Age as served on a
+ *     by-title list read. Printed, never asserted: it is what the browser
+ *     decides caching from, and a tenant that answers differently is a
+ *     finding rather than a failure.
+ *   transport.cache.control-repeat-read-unchanged
+ *     CONTROL: two identical reads with nothing written in between agree. If
+ *     they do not, this run cannot attribute any later disagreement to the
+ *     recreate.
+ *   transport.cache.id-select-after-recreate
+ *     The filter-editor read's spelling, after delete and recreate under the
+ *     same title. Does it answer the new list?
+ *   transport.cache.shape-select-after-recreate
+ *     The ownership survey's spelling, same moment, same question.
+ *   transport.cache.control-busted-after-recreate
+ *     CONTROL: the same read with a unique parameter appended. A cache is
+ *     only implicated if this one answers the live Id while a plain one does
+ *     not.
+ *   transport.cache.control-enumeration-after-recreate
+ *     CONTROL: web/lists enumerated, which is the authority on which Id the
+ *     title is on.
+ *   transport.cache.id-select-after-recreate-library
+ *     The same question on a document library, because the live evidence hit
+ *     one of each and neither kind may be assumed to answer for the other.
+ *
+ * OBSERVED, NEVER ASSERTED
+ *   The caching headers, and the Ids themselves. Which Id each read answers
+ *   IS the measurement; asserting one in advance would make the experiment
+ *   fail on exactly the tenant it was written to measure.
+ *
+ * NOT MEASURED HERE
+ *   Whether the staleness survives a reload, how long an entry lives, or
+ *   whether SharePoint or the browser holds it. The fix does not depend on
+ *   which: a read that must not be stale has to say so on the request.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   List creation and deletion over REST, and getbytitle:
+ *     "Working with lists and list items with REST"
+ *   The X-HTTP-Method DELETE spelling a rollback sends:
+ *     "Make a DELETE request" in the same article
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: the probe deletes what it creates, but check for a list and
+ * a library named below if it aborted part way.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe Cache Identity';
+  const LIB = 'dbmlsp Probe Cache Identity Library';
+
+  // The two spellings the deploy actually sends, and the Accept header it
+  // sends them under. A different Accept can key a different cache entry, so
+  // reproducing the transport means reproducing the header too.
+  const SHAPE_SELECT = [
+    'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled', 'Description',
+    'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit',
+    'ValidationFormula', 'ValidationMessage',
+  ].join(',');
+  const VERBOSE = { Accept: 'application/json;odata=verbose' };
+
+  const Q = {
+    fixture: 'A generic list is created and its Id recorded',
+    headers: 'OBSERVATION: which caching headers does a by-title list read carry',
+    repeat: 'CONTROL: do two identical by-title reads agree with nothing written between them',
+    idSelect: "After delete and recreate under one title, does ?$select=Id answer the NEW list",
+    shapeSelect: "After the same recreate, does the ownership survey's longer $select answer it",
+    busted: 'CONTROL: does the same read with a unique parameter answer the new list',
+    enumerated: 'CONTROL: which Id does the web/lists enumeration put the title on',
+    library: 'The same question on a document library',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a LIST '${LIST}', read its Id by two spellings, DELETE it,`);
+    log('INFO', 'create another list under the same title, and read again by both');
+    log('INFO', 'spellings plainly and with a cache-busting parameter.');
+    log('INFO', `The same delete-and-recreate is then done for a LIBRARY '${LIB}'.`);
+    log('INFO', 'Both are deleted at the end. Nothing else on the site is touched.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'transport.cache.observed-response-headers',
+    'transport.cache.control-repeat-read-unchanged',
+    'transport.cache.id-select-after-recreate',
+    'transport.cache.shape-select-after-recreate',
+    'transport.cache.control-busted-after-recreate',
+    'transport.cache.control-enumeration-after-recreate',
+    'transport.cache.id-select-after-recreate-library',
+  ];
+
+  expect('transport.cache.fixture-list-created', Q.fixture);
+  expect('transport.cache.observed-response-headers', Q.headers);
+  expect('transport.cache.control-repeat-read-unchanged', Q.repeat);
+  expect('transport.cache.id-select-after-recreate', Q.idSelect);
+  expect('transport.cache.shape-select-after-recreate', Q.shapeSelect);
+  expect('transport.cache.control-busted-after-recreate', Q.busted);
+  expect('transport.cache.control-enumeration-after-recreate', Q.enumerated);
+  expect('transport.cache.id-select-after-recreate-library', Q.library);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 200)}`;
+
+  // Read exactly the way the deploy reads, headers included, and hand back
+  // the response object too so its caching headers can be reported.
+  const readVerbose = async (suffix) => {
+    const res = await fetch(`${WEB}/_api/${suffix}`, {
+      headers: VERBOSE, credentials: 'same-origin',
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return {
+      ok: res.ok, status: res.status, text, res,
+      id: (parsed && parsed.d && parsed.d.Id) || null,
+    };
+  };
+
+  const titlePath = (title) => `web/lists/getbytitle('${String(title).replace(/'/g, "''")}')`;
+  const readId = (title) => readVerbose(`${titlePath(title)}?$select=Id`);
+  const readShape = (title) => readVerbose(`${titlePath(title)}?$select=${SHAPE_SELECT}`);
+  const readBusted = (title) => readVerbose(
+    `${titlePath(title)}?$select=Id&dbmlsp=${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+
+  const enumeratedId = async (title) => {
+    const r = await readVerbose(
+      `web/lists?$select=Id,Title&$top=500&dbmlsp=${Date.now()}`,
+    );
+    if (!r.ok) return { error: short(r) };
+    let parsed = null;
+    try { parsed = JSON.parse(r.text); } catch { return { error: 'the enumeration was not JSON' }; }
+    const rows = ((parsed.d && parsed.d.results) || []).filter((l) => l.Title === title);
+    if (rows.length !== 1) return { error: `${rows.length} lists are titled '${title}'` };
+    return { id: rows[0].Id };
+  };
+
+  const createList = async (title, template) => {
+    const digest = await getDigest();
+    return spPost('web/lists', {
+      Title: title,
+      BaseTemplate: template,
+      Description: 'dbml-sharepoint list identity cache probe. Safe to delete.',
+    }, digest);
+  };
+
+  // The hard DELETE a rollback sends, not a recycle: a recycled list keeps
+  // its Id in the bin and would answer a different question.
+  const deleteList = async (title) => {
+    const digest = await getDigest();
+    const res = await fetch(`${WEB}/_api/${titlePath(title)}`, {
+      method: 'POST',
+      headers: {
+        ...VERBOSE, 'X-RequestDigest': digest,
+        'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE',
+      },
+      credentials: 'same-origin',
+    });
+    return { ok: res.ok, status: res.status, text: await res.text() };
+  };
+
+  // ---- fixture ---------------------------------------------------------
+  await deleteList(LIST);
+  const first = await createList(LIST, 100);
+  if (!first.ok) {
+    record('transport.cache.fixture-list-created', Q.fixture, 'FAIL', short(first));
+    voidAll(IDS, 'the fixture list did not build, so nothing could be recreated under its title.');
+    return report();
+  }
+  const before = await readId(LIST);
+  const beforeShape = await readShape(LIST);
+  if (!before.id) {
+    record('transport.cache.fixture-list-created', Q.fixture, 'FAIL',
+           `the list was created but its Id did not read back: ${short(before)}`);
+    voidAll(IDS, 'the first Id was never established, so no later read can be compared to it.');
+    return report();
+  }
+  record('transport.cache.fixture-list-created', Q.fixture, 'PASS',
+         `'${LIST}' created on ${before.id}`);
+
+  record('transport.cache.observed-response-headers', Q.headers, 'OBSERVED',
+         ['Cache-Control', 'ETag', 'Expires', 'Age', 'Vary']
+           .map((name) => `${name}: ${JSON.stringify(before.res.headers.get(name))}`)
+           .join(', '));
+
+  {
+    const again = await readId(LIST);
+    record('transport.cache.control-repeat-read-unchanged', Q.repeat,
+           again.id === before.id ? 'PASS' : 'FAIL',
+           `first ${before.id}, second ${again.id}, shape-select read ${beforeShape.id}`);
+  }
+
+  // ---- delete, recreate under the same title ---------------------------
+  {
+    const gone = await deleteList(LIST);
+    const made = gone.ok ? await createList(LIST, 100) : null;
+    const live = made && made.ok ? await enumeratedId(LIST) : { error: 'the recreate failed' };
+    if (!gone.ok || !made || !made.ok || live.error) {
+      const why = !gone.ok ? `the delete failed: ${short(gone)}`
+        : !made || !made.ok ? `the recreate failed: ${short(made || gone)}`
+        : live.error;
+      voidAll(IDS.slice(2), `the delete-and-recreate did not complete: ${why}`);
+      return report();
+    }
+
+    record('transport.cache.control-enumeration-after-recreate', Q.enumerated,
+           live.id === before.id ? 'UNCHANGED' : 'NEW',
+           `the enumeration puts '${LIST}' on ${live.id}`
+           + ` (it was ${before.id} before the recreate)`);
+
+    const plainId = await readId(LIST);
+    record('transport.cache.id-select-after-recreate', Q.idSelect,
+           plainId.id === live.id ? 'FRESH' : plainId.id === before.id ? 'STALE' : 'UNEXPECTED',
+           `?$select=Id answered ${plainId.id}; live is ${live.id}, dead was ${before.id}`);
+
+    const plainShape = await readShape(LIST);
+    record('transport.cache.shape-select-after-recreate', Q.shapeSelect,
+           plainShape.id === live.id ? 'FRESH'
+             : plainShape.id === before.id ? 'STALE' : 'UNEXPECTED',
+           `the survey's $select answered ${plainShape.id};`
+           + ` live is ${live.id}, dead was ${before.id}`);
+
+    const busted = await readBusted(LIST);
+    record('transport.cache.control-busted-after-recreate', Q.busted,
+           busted.id === live.id ? 'FRESH' : busted.id === before.id ? 'STALE' : 'UNEXPECTED',
+           `the cache-busted read answered ${busted.id}; live is ${live.id}`);
+  }
+
+  // ---- the same question on a document library -------------------------
+  {
+    await deleteList(LIB);
+    const made = await createList(LIB, 101);
+    const firstLib = made.ok ? await readId(LIB) : null;
+    let ok = Boolean(made.ok && firstLib && firstLib.id);
+    let gone = null;
+    let again = null;
+    if (ok) {
+      gone = await deleteList(LIB);
+      again = gone.ok ? await createList(LIB, 101) : null;
+      ok = Boolean(gone.ok && again && again.ok);
+    }
+    if (!ok) {
+      record('transport.cache.id-select-after-recreate-library', Q.library, 'NOT ESTABLISHED',
+             'the library fixture could not be built and recreated under one title', 'void');
+    } else {
+      const live = await enumeratedId(LIB);
+      const plain = await readId(LIB);
+      record('transport.cache.id-select-after-recreate-library', Q.library,
+             live.error ? 'NOT ESTABLISHED'
+               : plain.id === live.id ? 'FRESH'
+               : plain.id === firstLib.id ? 'STALE' : 'UNEXPECTED',
+             live.error ? live.error
+               : `?$select=Id answered ${plain.id}; live is ${live.id},`
+                 + ` dead was ${firstLib.id}`,
+             live.error ? 'void' : undefined);
+    }
+  }
+
+  await deleteList(LIST);
+  await deleteList(LIB);
+  log('INFO', 'both scratch containers deleted.');
+
+  return report();
+})();

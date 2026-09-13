@@ -9452,6 +9452,85 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "list-identity-cache-probe.js",
+      "surface": "transport",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list and one scratch document library, each created, read by title, hard-deleted and created again under the same title so a by-title read can be asked whether it answers the new object or the dead one; both are deleted at the end"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "transport",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "transport.cache.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "transport.cache.observed-response-headers",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.control-repeat-read-unchanged",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.control-enumeration-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.id-select-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.shape-select-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.control-busted-after-recreate",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.id-select-after-recreate-library",
+              "depends_on": [
+                "transport.cache.fixture-list-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "transport.cache.fixture-list-created",
+            "transport.cache.control-repeat-read-unchanged",
+            "transport.cache.control-enumeration-after-recreate",
+            "transport.cache.control-busted-after-recreate"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

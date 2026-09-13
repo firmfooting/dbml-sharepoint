@@ -546,11 +546,16 @@ and `library-content-type-probe.js`, the four probes taking it out.
 The HTTP transport the emitted scripts ride on: OData `$batch` multipart
 encoding and whether batching is counted per request or per operation, how
 throttling is signalled (429/503 status versus a redirect to
-`/_layouts/15/Throttle.htm`), and `Retry-After` presence.
+`/_layouts/15/Throttle.htm`), and `Retry-After` presence. `cache` asks
+whether a repeated GET is answered from a cache rather than from the site,
+which is a property of the delivery and not of the object being read: the
+same question about the same list can be answered twice with two different
+Ids without the list having changed.
 
-Scopes: `batch`, `throttle`, `retry`
+Scopes: `batch`, `throttle`, `retry`, `cache`
 
-Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`
+Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`,
+`list-identity-cache-probe.js`
 
 ## Checks that file under a different surface than their probe
 
