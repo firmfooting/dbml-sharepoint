@@ -38,6 +38,8 @@ def test_a_legal_name_has_no_reason(name: str) -> None:
         ("a/b", "/"),
         ("a\\b", "\\"),
         ("a|b", "|"),
+        ("a#b", "#"),
+        ("a%b", "%"),
         (" lead", "leading"),
         ("trail ", "trailing"),
         ("", "empty"),

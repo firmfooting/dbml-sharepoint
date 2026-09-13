@@ -16,8 +16,12 @@ anything, so checks and generators can both read it.
 
 import re
 
-#: The characters Microsoft lists as not allowed in a file or folder name.
-INVALID_CHARACTERS = frozenset('"*:<>?/\\|')
+#: The characters Microsoft lists as not allowed in a file or folder name,
+#: plus `#` and `%`. Those two are on the same page as "not yet supported"
+#: until a tenant admin enables them, and both are URL metacharacters that
+#: the string-based REST paths this tool sends would misread, so a name
+#: carrying either is refused rather than sent.
+INVALID_CHARACTERS = frozenset('"*:<>?/\\|#%')
 
 #: Names refused outright, compared without regard to case. `forms` is
 #: refused only at a library root, which is where every declared folder and

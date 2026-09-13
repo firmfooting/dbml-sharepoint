@@ -1,0 +1,96 @@
+{# Phase body: create each document library's declared root folders, verify
+   each by read-back, and refuse a file standing where a folder was declared.
+   An existing folder is verified and skipped, and nothing inside a folder is
+   ever touched. Lists are skipped: only a library declares folders, and the
+   validator refuses the key elsewhere. #}
+  // === Phase {{ phase.number }}: declared folders ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  // MEASURED 2026-09-03, `library.folder.creation-path` in folder-probe.js:
+  // POST web/GetFolderByServerRelativeUrl('<root>')/folders/add(url='<name>')
+  // answered HTTP 200 and returned an SP.Folder (Name, ServerRelativeUrl,
+  // ItemCount, Exists, UniqueId); Files/add makes a file, never a folder.
+  // `library.folder.filesystem-object-type`, same run: the folder's own list
+  // item reads FileSystemObjectType 1 (Learn: File 0, Folder 1), which is
+  // the shape check below. `library.folder.creation-blocked-when-disabled`
+  // (2026-09-13, library-guards-probe.js): the endpoint answers with
+  // EnableFolderCreation off, so this phase needs no ordering against that
+  // switch.
+  const FOLDER_OBJECT_TYPE = 1;
+  // A server-relative path inside the quotes, spelled as the probes sent it:
+  // quotes doubled, slashes and spaces left for fetch to encode. NOT
+  // odataName, whose encodeURIComponent would turn every slash into %2F,
+  // which no probe has sent. Names that would need more than this (`#`,
+  // `%`) are refused at build by analysis/file_names.py.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  async function readFolder(serverRelativeUrl) {
+    const r = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(serverRelativeUrl)}')?$select=Exists,Name,ServerRelativeUrl`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      if (isAbsent400(r.status, text)) return null;
+      throw new Error(`folder read failed: HTTP ${r.status} ${spError(text)}`);
+    }
+    const j = await r.json();
+    return j && j.d && j.d.Exists ? j.d : null;
+  }
+  async function folderItemShape(listTitle, name) {
+    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    const rows = (j && j.d && j.d.results) || [];
+    return rows.length ? rows[0] : null;
+  }
+  for (const list of SCHEMA.lists.filter((l) => l.is_library && l.folders.length)) {
+    let rootUrl = null;
+    try {
+      const root = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/RootFolder?$select=ServerRelativeUrl`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!root.ok) throw new Error(`RootFolder read failed: HTTP ${root.status} ${spError(await root.text())}`);
+      const j = await root.json();
+      rootUrl = j && j.d && j.d.ServerRelativeUrl;
+      if (!rootUrl) throw new Error('RootFolder read back no ServerRelativeUrl');
+    } catch (err) {
+      log('ERROR', `Phase {{ phase.number }} folders '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '{{ phase.number }}', list: list.title, error: err.message });
+      continue;
+    }
+    for (const name of list.folders) {
+      const label = `${list.title}/${name}`;
+      try {
+        const folderUrl = `${rootUrl}/${name}`;
+        if (await readFolder(folderUrl)) {
+          // Present already: verify it is a folder and leave its contents alone.
+          const item = await folderItemShape(list.title, name);
+          if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
+          }
+          summary.foldersVerified.push(label);
+          continue;
+        }
+        const digest = await getDigest();
+        await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+        if (!(await readFolder(folderUrl))) {
+          throw new Error(`'${name}' did not read back after creation`);
+        }
+        const item = await folderItemShape(list.title, name);
+        if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+          throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
+        }
+        summary.foldersCreated.push(label);
+        logChange({ key: `folder: ${label}`, kind: 'create', target: list.title, oldValue: '', newValue: name });
+        log('OK', `Created folder '${name}' in '${list.title}'.`);
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} folders '${label}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: list.title, folder: name, error: err.message });
+      }
+    }
+  }
