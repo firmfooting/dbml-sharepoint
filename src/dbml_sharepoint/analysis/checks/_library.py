@@ -8,10 +8,11 @@ ceiling and a library rule should read as one function per question.
 """
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.model.mapping_types import EntityMapping, ViewDef
+from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping, ViewDef
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -20,6 +21,67 @@ def check(vc: ValidationContext) -> list[Finding]:
         findings += _folders(entity_name, entity)
         for view in vc.bundle.mapping.views.get(entity_name, []):
             findings += _view_scope(entity_name, entity, view)
+        for row in vc.bundle.mapping.demo_items.get(entity_name, []):
+            findings += _demo_file(entity_name, entity, row)
+    return findings
+
+
+def _demo_file(entity_name: str, entity: EntityMapping, row: DemoItem) -> list[Finding]:
+    """`demo_items[].file`: required on a library, refused on a list, and a
+    legal, marked name filed in a declared folder.
+
+    A library's items are files and a POST to /items is refused outright
+    (MEASURED 2026-07-29, `library.file-vs-item.fileless-item-post` in
+    document-library-probe.js), so the seeding script uploads the file
+    through Files/add and sets the row's values on its item
+    (`library.file.upload-path-files-add`, 2026-09-03). The file name is what
+    a view and the file panel show (`library.file.name-field-is-leafref`), so
+    it carries the sample-data notice a list row carries in its Title.
+    """
+    at = Location(Section.DEMO_ITEMS, entity=entity_name, sub=row.key)
+    ctx = f"demo_items[{entity_name}].{row.key}"
+    if row.file is None:
+        if not entity.is_library:
+            return []
+        return [Finding(
+            FindingCode.DEMO_FILE_REQUIRED_ON_LIBRARY,
+            f"{ctx}: {entity_name} is a DocumentLibrary and this row declares no "
+            f"file. A library's items are files, so declare "
+            f"file: {{ name, folder, content }} for it to upload.",
+            location=at,
+        )]
+    if not entity.is_library:
+        return [Finding(
+            FindingCode.DEMO_FILE_ON_A_LIST,
+            f"{ctx}: file is declared and {entity_name} is a {entity.kind}; a "
+            f"list row is created with a POST to /items and has nowhere to put "
+            f"a file. Remove the key.",
+            location=at,
+        )]
+    findings: list[Finding] = []
+    if not row.file.name.startswith(DEMO_TITLE_PREFIX):
+        findings.append(Finding(
+            FindingCode.DEMO_FILE_NAME_MISSING_MARKER,
+            f"{ctx}: file.name must start with '{DEMO_TITLE_PREFIX}' -- on a "
+            f"library the file name is the visible notice that identifies this "
+            f"row as sample data.",
+            location=at,
+        ))
+    reason = invalid_file_name_reason(row.file.name)
+    if reason is not None:
+        findings.append(Finding(
+            FindingCode.DEMO_FILE_NAME_INVALID,
+            f"{ctx}: {row.file.name!r} cannot be a file name: {reason}.",
+            location=at,
+        ))
+    if row.file.folder is not None and row.file.folder not in entity.folders:
+        findings.append(Finding(
+            FindingCode.DEMO_FILE_FOLDER_UNDECLARED,
+            f"{ctx}: file.folder {row.file.folder!r} is not one of "
+            f"{entity_name}'s declared folders "
+            f"({', '.join(entity.folders) or 'none declared'}).",
+            location=at,
+        ))
     return findings
 
 

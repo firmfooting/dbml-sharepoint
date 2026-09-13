@@ -601,22 +601,18 @@ def _docs_errors(
     return by_severity(validate_against_mapping(schema, bundle), "error")
 
 
-def test_demo_items_on_a_document_library_are_refused() -> None:
-    """A library's items ARE files. demo-data.js posts to /items, which asks
-    SharePoint to create a library row with nothing behind it.
-
-    This built GREEN until the policy-library uplift went looking: the
-    bundle would have shipped and failed at paste time, in front of whoever
-    was being shown the demo, which is the audience this tool's fail-closed
-    posture exists to protect.
-    """
+def test_a_library_demo_row_without_a_file_is_refused() -> None:
+    """A library's items ARE files. A POST to /items asks SharePoint to
+    create a library row with nothing behind it and is refused outright
+    (MEASURED 2026-07-29), so a library row has to say what to upload.
+    Its Title is not asked to carry the marker: the file name does."""
     errors = _docs_errors(
         _library(),
-        demo_items={"Docs": [DemoItem(key="d1", values={"Title": "[DEMO] A document"})]},
+        demo_items={"Docs": [DemoItem(key="d1", values={"Status": "Required"})]},
     )
-    f = only(errors, FindingCode.DEMO_ROWS_ON_DOCUMENT_LIBRARY)
-    # SharePoint's own words, quoted so the operator can search for them.
-    assert "SPFileCollection.Add()" in f.message
+    f = only(errors, FindingCode.DEMO_FILE_REQUIRED_ON_LIBRARY)
+    assert "file: { name, folder, content }" in f.message
+    none_of(errors, FindingCode.DEMO_TITLE_MISSING_MARKER)
 
 def test_a_document_library_with_its_own_template_is_accepted() -> None:
     """`kind: DocumentLibrary` with `base_template: 101` is a supported pair.
