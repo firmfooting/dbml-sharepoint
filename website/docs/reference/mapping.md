@@ -2303,11 +2303,11 @@ or the root when absent, finds it again by name within that folder, sets
 `values` on the file's item, and reads every literal value back before
 recording the row as created. A file already in its folder is skipped.
 
-The `[DEMO] ` prefix goes on `name`, because a file's Title is null after
-upload and the name is what every view and the file panel show; `Title` is
-not required in `values`. The name is held to Microsoft's file name rules,
-and `content` is the short text the file holds, defaulting to a one-line
-placeholder.
+The `[DEMO]` prefix and its trailing space go on `name`, because a file's
+Title is null after upload and the name is what every view and the file
+panel show; `Title` is not required in `values`. The name is held to
+Microsoft's file name rules, and `content` is the short text the file holds,
+defaulting to a one-line placeholder.
 
 ## `extensions`
 
