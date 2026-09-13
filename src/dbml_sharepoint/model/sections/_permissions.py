@@ -178,9 +178,16 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
         )
     _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
     kind = raw_principal.get("kind")
+    # An assignment with no principal reaches here as `{}`, so absent is a
+    # required key missing rather than a word this vocabulary declines.
+    if kind is None:
+        raise MappingShapeError(
+            f"{context}: principal 'kind' is required, one of "
+            f"{PRINCIPAL_KIND_LIST}",
+        )
     # isinstance first: a list or mapping is unhashable, so the membership
     # test below raises the TypeError the CLI deliberately does not catch.
-    if kind is not None and not isinstance(kind, str):
+    if not isinstance(kind, str):
         raise MappingShapeError(f"{context}: principal kind must be a string, got {kind!r}")
     if kind not in PRINCIPAL_KINDS:
         raise MappingValueError(

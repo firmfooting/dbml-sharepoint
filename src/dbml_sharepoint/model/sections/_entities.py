@@ -56,10 +56,19 @@ def read(sc: SectionContext) -> dict[str, Any]:
 def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     """The one admission gate for entity kinds: a typo'd kind must fail the
     build here, not flow into schema_json and silently miss downstream
-    comparisons like kind == "DocumentLibrary"."""
+    comparisons like kind == "DocumentLibrary".
+
+    An absent kind is the shape error the hierarchy names for a required key
+    with no value, rather than a word this vocabulary declines.
+    """
+    if raw_kind is None:
+        raise MappingShapeError(
+            f"{context}.kind is required, one of "
+            f"{', '.join(sorted(ENTITY_KINDS))}",
+        )
     # isinstance first: a list or mapping is unhashable, so the membership
     # test below raises the TypeError the CLI deliberately does not catch.
-    if raw_kind is not None and not isinstance(raw_kind, str):
+    if not isinstance(raw_kind, str):
         raise MappingShapeError(f"{context}.kind must be a string, got {raw_kind!r}")
     if raw_kind not in ENTITY_KINDS:
         raise MappingValueError(

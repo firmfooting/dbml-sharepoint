@@ -38,6 +38,24 @@ from dbml_sharepoint.model.sections import (
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
+def _refuses(path: Path, error: type[ValueError], match: str | None = None) -> ValueError:
+    """Assert loading `path` is refused by `error`, and return the exception.
+
+    The class is the stable fact and the sentence is not. Prose is reworded in
+    any commit, and a substring match is wide enough to pass on a refusal the
+    test was never written for, so `match` is given only where the message
+    carries what the class does not: which section, key, column or file.
+
+    `error` is typed `ValueError` rather than `MappingError` because style
+    specs are parsed by `analysis/styles.py`, which sits outside `model/` and
+    still raises a bare `ValueError`.
+    """
+    __tracebackhide__ = True
+    with pytest.raises(error, match=match) as err:
+        load_mapping(path)
+    return err.value
+
+
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
     """kind is a Literal-typed closed vocabulary; the loader is its one
     admission gate. A typo'd kind must fail the build here. Before this
@@ -47,10 +65,9 @@ def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
         entities:
           Policy: { kind: DocLibrary, base_template: 101, site_role: default }
     """)
-    with pytest.raises(ValueError) as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "entities.Policy.kind" in str(err.value)
-    assert "DocumentLibrary" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", MappingValueError)
+    assert "entities.Policy.kind" in str(err)
+    assert "DocumentLibrary" in str(err)
 
 
 def test_mapping_indexes_are_a_removed_section(tmp_path: Path) -> None:
@@ -58,8 +75,10 @@ def test_mapping_indexes_are_a_removed_section(tmp_path: Path) -> None:
         indexed_columns:
           Risk: [Status]
     """))
-    with pytest.raises(ValueError, match=r"indexed_columns.*DBML.*indexes"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(
+        tmp_path / "m.yaml", UnknownMappingKeyError,
+        r"indexed_columns.*DBML.*indexes",
+    )
 
 
 def test_prefix_registry_is_a_removed_key(tmp_path: Path) -> None:
@@ -68,8 +87,10 @@ def test_prefix_registry_is_a_removed_key(tmp_path: Path) -> None:
     write_mapping(tmp_path, blocks(entities("Risk"), """
         prefix_registry: docs/list-prefix-registry.md
     """))
-    with pytest.raises(ValueError, match=r"'prefix_registry' has been replaced by nothing"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(
+        tmp_path / "m.yaml", UnknownMappingKeyError,
+        "'prefix_registry' has been replaced by nothing",
+    )
 
 
 def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> None:
@@ -100,8 +121,8 @@ def test_style_theme_applies_and_rejects_unknown_tokens(tmp_path: Path) -> None:
         style_theme:
           shiny: { classes: [x] }
     """), name="bad.yaml")
-    with pytest.raises(ValueError, match="style_theme"):
-        load_mapping(tmp_path / "bad.yaml")
+    # Bare ValueError, not a MappingError: `analysis/styles.py` parses the spec.
+    _refuses(tmp_path / "bad.yaml", ValueError, "style_theme")
 
 
 def test_invalid_style_spec_is_a_load_error(tmp_path: Path) -> None:
@@ -110,8 +131,7 @@ def test_invalid_style_spec_is_a_load_error(tmp_path: Path) -> None:
           Risk:
             Status: { style: severity }
     """))
-    with pytest.raises(ValueError, match=r"column_formatting\.Risk\.Status"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", ValueError, r"column_formatting\.Risk\.Status")
 
 
 
@@ -170,8 +190,10 @@ def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
             require_empty_at_deploy: "false"
     """), name="mapping.yaml")
 
-    with pytest.raises(ValueError, match="require_empty_at_deploy must be a boolean"):
-        load_mapping(tmp_path / "mapping.yaml")
+    _refuses(
+        tmp_path / "mapping.yaml", MappingShapeError,
+        "require_empty_at_deploy must be a boolean",
+    )
 
 
 def test_a_group_can_declare_itself_the_enterprise_reader_target(
@@ -215,10 +237,10 @@ def test_enterprise_reader_enrolment_requires_boolean(tmp_path: Path) -> None:
             enroll_enterprise_reader: "false"
     """), name="mapping.yaml")
 
-    with pytest.raises(
-        ValueError, match="enroll_enterprise_reader must be a boolean",
-    ):
-        load_mapping(tmp_path / "mapping.yaml")
+    _refuses(
+        tmp_path / "mapping.yaml", MappingShapeError,
+        "enroll_enterprise_reader must be a boolean",
+    )
 
 
 def test_invalid_permission_reconcile_mode_is_rejected(tmp_path: Path) -> None:
@@ -228,8 +250,7 @@ def test_invalid_permission_reconcile_mode_is_rejected(tmp_path: Path) -> None:
             reconcile: best-effort
             assignments: []
     """), name="mapping.yaml")
-    with pytest.raises(ValueError, match="reconcile must be"):
-        load_mapping(tmp_path / "mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingValueError, r"list_permissions\.default\.reconcile")
 
 
 def test_exact_reconcile_requires_broken_inheritance(tmp_path: Path) -> None:
@@ -240,8 +261,7 @@ def test_exact_reconcile_requires_broken_inheritance(tmp_path: Path) -> None:
             reconcile: exact
             assignments: []
     """), name="mapping.yaml")
-    with pytest.raises(ValueError, match="requires break_inheritance: true"):
-        load_mapping(tmp_path / "mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingShapeError, "requires break_inheritance: true")
 
 
 def test_permissions_for_entity_returns_default() -> None:
@@ -346,10 +366,9 @@ def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
         tmp_path,
         blocks(entities("Project"), "retention_policies_source: retention.yaml"),
     )
-    with pytest.raises(ValueError, match="unknown key") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "policies.Standard7Y" in str(err.value)
-    assert "sp_labl" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert "policies.Standard7Y" in str(err)
+    assert "sp_labl" in str(err)
 
 
 def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
@@ -367,9 +386,8 @@ def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
         tmp_path,
         blocks(entities("Project"), "retention_policies_source: retention.yaml"),
     )
-    with pytest.raises(ValueError, match="retain_years") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "policies.Standard7Y" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", MappingShapeError, "retain_years")
+    assert "policies.Standard7Y" in str(err)
 
 
 def test_enum_sources_loads_choices_with_explicit_fragment(tmp_path: Path) -> None:
@@ -536,9 +554,8 @@ def test_a_default_formula_must_be_a_string(tmp_path: Path) -> None:
           Project:
             PeriodYear: 2026
     """))
-    with pytest.raises(ValueError, match=r"default_formulas\.Project\.PeriodYear") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "2026" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", MappingShapeError, r"default_formulas\.Project\.PeriodYear")
+    assert "2026" in str(err)
 
 
 def test_a_default_formulas_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
@@ -547,8 +564,7 @@ def test_a_default_formulas_entity_block_must_be_a_mapping(tmp_path: Path) -> No
           Project:
             - PeriodYear
     """))
-    with pytest.raises(ValueError, match=r"default_formulas\.Project"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"default_formulas\.Project")
 
 
 def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: Path) -> None:
@@ -657,8 +673,7 @@ def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
               fields: [Title]
               row_limit: yes
     """))
-    with pytest.raises(ValueError, match="row_limit"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "row_limit")
 
 
 def test_row_limit_refuses_a_non_integer(tmp_path: Path) -> None:
@@ -671,8 +686,7 @@ def test_row_limit_refuses_a_non_integer(tmp_path: Path) -> None:
               fields: [Title]
               row_limit: many
     """))
-    with pytest.raises(ValueError, match="row_limit"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "row_limit")
 
 
 def test_base_template_refuses_a_yaml_boolean(tmp_path: Path) -> None:
@@ -685,8 +699,7 @@ def test_base_template_refuses_a_yaml_boolean(tmp_path: Path) -> None:
         entities:
           Risk: { kind: List, base_template: true, site_role: default }
     """)
-    with pytest.raises(ValueError, match="base_template"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "base_template")
 
 
 def test_site_role_refuses_a_non_string(tmp_path: Path) -> None:
@@ -701,8 +714,7 @@ def test_site_role_refuses_a_non_string(tmp_path: Path) -> None:
         entities:
           Risk: { kind: List, base_template: 100, site_role: [default] }
     """)
-    with pytest.raises(ValueError, match="site_role"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "site_role")
 
 
 def test_views_optional_parts_default(tmp_path: Path) -> None:
@@ -723,8 +735,6 @@ def test_views_optional_parts_default(tmp_path: Path) -> None:
 
 
 def test_view_renamed_from_must_be_a_string_list(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -732,8 +742,7 @@ def test_view_renamed_from_must_be_a_string_list(tmp_path: Path) -> None:
               renamed_from: Active projects
               fields: [Title]
     """))
-    with pytest.raises(ValueError, match=r"renamed_from.*list"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"renamed_from.*list")
 
 
 def test_views_absent_defaults_empty() -> None:
@@ -742,27 +751,21 @@ def test_views_absent_defaults_empty() -> None:
 
 
 def test_view_requires_title_and_fields(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
             - fields: [Title]
     """))
-    with pytest.raises(ValueError, match="title"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "title")
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
             - title: No fields
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="fields"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingShapeError, "fields")
 
 
 def test_view_sort_direction_must_be_asc_or_desc(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -771,8 +774,7 @@ def test_view_sort_direction_must_be_asc_or_desc(tmp_path: Path) -> None:
               sort:
                 - { field: Title, direction: down }
     """))
-    with pytest.raises(ValueError, match=r"'asc' or 'desc'"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingValueError, "sort direction")
 
 
 def test_view_widths_parsed(tmp_path: Path) -> None:
@@ -801,8 +803,6 @@ def test_view_widths_default_empty(tmp_path: Path) -> None:
 
 
 def test_view_widths_values_must_be_integer_pixels(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -811,8 +811,7 @@ def test_view_widths_values_must_be_integer_pixels(tmp_path: Path) -> None:
               widths:
                 Title: wide
     """))
-    with pytest.raises(ValueError, match="integer pixel"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"widths\[Title\]")
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -820,8 +819,7 @@ def test_view_widths_values_must_be_integer_pixels(tmp_path: Path) -> None:
               fields: [Title]
               widths: [Title]
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="mapping of column name"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingShapeError, "'widths'")
 
 
 def test_demo_items_parsed(tmp_path: Path) -> None:
@@ -840,22 +838,18 @@ def test_demo_items_parsed(tmp_path: Path) -> None:
 
 
 def test_demo_items_require_key_and_values(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         demo_items:
           Project:
             - values: { Title: x }
     """))
-    with pytest.raises(ValueError, match="'key' is required"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "'key' is required")
     write_mapping(tmp_path, _views_yaml("""
         demo_items:
           Project:
             - key: p1
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="non-empty mapping"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingShapeError, "'values' must be a non-empty mapping")
 
 
 def test_view_url_slug_derivation() -> None:
@@ -897,14 +891,11 @@ def test_display_names_absent_defaults_off() -> None:
 
 
 def test_display_names_unknown_mode_rejected(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         display_names:
           mode: fancy
     """))
-    with pytest.raises(ValueError, match="auto"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingValueError, r"display_names\.mode")
 
 
 def test_auto_display_name_splits_pascal_case() -> None:
@@ -947,15 +938,12 @@ def test_column_formatting_absent_defaults_empty() -> None:
 
 
 def test_column_formatting_bad_path_and_bad_json(tmp_path: Path) -> None:
-    import pytest
-
     write_mapping(tmp_path, _views_yaml("""
         column_formatting:
           Project:
             Status: missing.json
     """))
-    with pytest.raises(ValueError, match=r"missing\.json"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingReferenceError, r"missing\.json")
 
     (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
     write_mapping(tmp_path, _views_yaml("""
@@ -963,16 +951,14 @@ def test_column_formatting_bad_path_and_bad_json(tmp_path: Path) -> None:
           Project:
             Status: bad.json
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match=r"bad\.json"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingValueError, r"bad\.json")
 
     write_mapping(tmp_path, _views_yaml("""
         column_formatting:
           Project:
             Status: 42
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match="Status"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", MappingShapeError, "Status")
 
 
 def test_view_formatting_parsed_inline_and_path(tmp_path: Path) -> None:
@@ -1015,8 +1001,7 @@ def test_form_formatting_parsed_and_requires_a_part(tmp_path: Path) -> None:
         form_formatting:
           Project: {}
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="at least one"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingShapeError, r"form_formatting\.Project")
 
 
 def test_a_declared_footer_reaches_the_parsed_form(tmp_path: Path) -> None:
@@ -1061,8 +1046,7 @@ def test_list_validation_parsed(tmp_path: Path) -> None:
             when:
               - { field: Title, op: is_not_null }
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="message"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", MappingShapeError, r"list_validation\.Project: 'message'")
 
 
 
@@ -1083,9 +1067,8 @@ def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
     write_mapping(
         tmp_path, "entities:\n" + entity("Membership", display_colum="DisplayName") + "\n",
     )
-    with pytest.raises(ValueError, match=r"entities\.Membership") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "display_colum" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, r"entities\.Membership")
+    assert "display_colum" in str(err)
 
 
 def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1096,17 +1079,15 @@ def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
           default:
             enable_versionin: false
     """))
-    with pytest.raises(ValueError, match=r"versioning\.default") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "enable_versionin" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, r"versioning\.default")
+    assert "enable_versionin" in str(err)
 
     write_mapping(tmp_path, _views_yaml("""
         versioning:
           overides:
             Project: {}
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="overides"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", UnknownMappingKeyError, "overides")
 
     write_mapping(tmp_path, _views_yaml("""
         versioning:
@@ -1114,8 +1095,7 @@ def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
             Project:
               enable_versionin: false
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", UnknownMappingKeyError, r"versioning\.overrides\.Project")
 
 
 def test_an_empty_versioning_default_block_loads_the_dataclass_defaults(
@@ -1218,8 +1198,7 @@ def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
               fields: [Title]
               deafult: true
     """))
-    with pytest.raises(ValueError, match="deafult"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "deafult")
 
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -1229,8 +1208,7 @@ def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
               wheres:
                 - { field: Status, op: neq, value: Closed }
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="wheres"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", UnknownMappingKeyError, "wheres")
 
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -1240,8 +1218,7 @@ def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
               sort:
                 - { field: Title, dirction: desc }
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match="dirction"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", UnknownMappingKeyError, "dirction")
 
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -1250,8 +1227,7 @@ def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
               fields: [Title]
               group_by: { field: Status, colapsed: true }
     """), name="m4.yaml")
-    with pytest.raises(ValueError, match="colapsed"):
-        load_mapping(tmp_path / "m4.yaml")
+    _refuses(tmp_path / "m4.yaml", UnknownMappingKeyError, "colapsed")
 
 
 def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1263,9 +1239,8 @@ def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
           - name: Register Editors
             require_empty_at_deployy: true
     """))
-    with pytest.raises(ValueError, match=r"groups\[0\]") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "require_empty_at_deployy" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, r"groups\[0\]")
+    assert "require_empty_at_deployy" in str(err)
 
 
 def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1276,8 +1251,7 @@ def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
           - name: Contribute No Delete
             base_permission: [ViewListItems]
     """))
-    with pytest.raises(ValueError, match="base_permission"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "base_permission")
 
 
 def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1289,8 +1263,7 @@ def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
             break_inheritence: true
             assignments: []
     """))
-    with pytest.raises(ValueError, match="break_inheritence"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "break_inheritence")
 
     write_mapping(tmp_path, _views_yaml("""
         list_permissions:
@@ -1298,8 +1271,7 @@ def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
             break_inheritance: true
             assignments: []
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match="defualt"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(tmp_path / "m2.yaml", UnknownMappingKeyError, "defualt")
 
     write_mapping(tmp_path, _views_yaml("""
         list_permissions:
@@ -1309,8 +1281,7 @@ def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
               - principal: { kind: group, nmae: Register Editors }
                 level: Contribute
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match="nmae"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", UnknownMappingKeyError, "nmae")
 
     write_mapping(tmp_path, _views_yaml("""
         list_permissions:
@@ -1320,8 +1291,7 @@ def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
               - principal: { kind: associated_owner_group }
                 levl: Contribute
     """), name="m4.yaml")
-    with pytest.raises(ValueError, match="levl"):
-        load_mapping(tmp_path / "m4.yaml")
+    _refuses(tmp_path / "m4.yaml", UnknownMappingKeyError, "levl")
 
 
 def test_demo_item_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1332,9 +1302,8 @@ def test_demo_item_sub_keys_are_checked(tmp_path: Path) -> None:
               values: { Title: '[DEMO] x' }
               colums: [Title]
     """))
-    with pytest.raises(ValueError, match=r"demo_items\.Project\[0\]") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "colums" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, r"demo_items\.Project\[0\]")
+    assert "colums" in str(err)
 
 
 def test_watched_lists_and_polymorphic_patterns_are_checked(tmp_path: Path) -> None:
@@ -1345,22 +1314,19 @@ def test_watched_lists_and_polymorphic_patterns_are_checked(tmp_path: Path) -> N
         watched_lists:
           - { entity: Project, colum: Status }
     """))
-    with pytest.raises(ValueError, match="colum"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, r"watched_lists\[0\]")
 
     write_mapping(tmp_path, _views_yaml("""
         polymorphic_patterns:
           - { list: Project, field: EntityId, discriminater: EntityType }
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match="discriminater"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", UnknownMappingKeyError, "discriminater")
 
     write_mapping(tmp_path, _views_yaml("""
         cross_site_reference_columns:
           - { entity: Project, colmn: OrgUnit }
     """), name="m4.yaml")
-    with pytest.raises(ValueError, match="colmn"):
-        load_mapping(tmp_path / "m4.yaml")
+    _refuses(tmp_path / "m4.yaml", UnknownMappingKeyError, "colmn")
 
 
 def test_display_names_sub_keys_are_checked(tmp_path: Path) -> None:
@@ -1370,8 +1336,7 @@ def test_display_names_sub_keys_are_checked(tmp_path: Path) -> None:
           overides:
             Project: {}
     """))
-    with pytest.raises(ValueError, match="overides"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "overides")
 
 
 # --- The top-level allow-list -----------------------------------------------
@@ -1386,9 +1351,8 @@ def test_unknown_top_level_section_is_a_load_error(tmp_path: Path) -> None:
           Project:
             columns: {}
     """))
-    with pytest.raises(ValueError, match="unknown mapping section") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "form_visibilty" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert "form_visibilty" in str(err)
 
 
 def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) -> None:
@@ -1409,9 +1373,8 @@ def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) ->
             reconcile: exact
             assignments: []
     """))
-    with pytest.raises(ValueError, match="unknown mapping section") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "permissions" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert "permissions" in str(err)
 
 
 def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: Path) -> None:
@@ -1423,9 +1386,8 @@ def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: P
             sp_label: Standard 7 Year
             retain_years: 7
     """))
-    with pytest.raises(ValueError, match="unknown mapping section") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "retention_policies" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert "retention_policies" in str(err)
 
 
 # The registry is the allow-list. KNOWN_SECTIONS is derived from
@@ -1635,6 +1597,40 @@ def test_the_three_other_vocabulary_readers_split_the_same_way(
         load_mapping(path)
 
 
+@pytest.mark.parametrize(("body", "message"), [
+    pytest.param(
+        "entities:\n  Project: { base_template: 100, site_role: default }\n",
+        r"entities\.Project\.kind is required",
+        id="entity-kind",
+    ),
+    pytest.param(
+        with_tail(entities("Project"), (
+            "list_permissions:\n  default:\n    break_inheritance: true\n"
+            "    assignments:\n      - principal: { name: Owners }\n"
+            "        level: Full Control\n"
+        )),
+        r"principal 'kind' is required",
+        id="principal-kind",
+    ),
+    pytest.param(
+        with_tail(entities("Project"), (
+            "display_names:\n  overrides:\n    Project:\n      Title: Heading\n"
+        )),
+        r"display_names\.mode is required",
+        id="display-names-mode",
+    ),
+])
+def test_a_closed_vocabulary_with_no_value_at_all_is_a_shape_error(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each of these read the key with `.get` and tested the vocabulary in one
+    condition, so an absent key was reported as a word this loader declines,
+    `got None`. `reading._require` is the reference: a required key with no
+    value is a shape error, and the fix is to supply the key rather than to
+    correct a word that was never written."""
+    _refuses(write_mapping(tmp_path, body), MappingShapeError, message)
+
+
 def test_identity_runs_before_permissions() -> None:
     """Permissions expand `{prefix}` through `sc.loaded`, so the registry
     order is part of the contract rather than a convenience."""
@@ -1697,8 +1693,7 @@ def test_quoted_break_inheritance_is_rejected_not_inverted(tmp_path: Path) -> No
             reconcile: exact
             assignments: []
     """))
-    with pytest.raises(ValueError, match="break_inheritance"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "break_inheritance")
 
 
 def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
@@ -1712,8 +1707,7 @@ def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
     ):
         # Left as a fragment: the payload is an f-string built inside a loop.
         write_mapping(tmp_path, _views_yaml(f'groups:\n  - name: Editors\n    {flag}: "false"\n'))
-        with pytest.raises(ValueError, match=flag):
-            load_mapping(tmp_path / "m.yaml")
+        _refuses(tmp_path / "m.yaml", MappingShapeError, flag)
 
 
 def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
@@ -1724,8 +1718,7 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
           default:
             enable_versioning: "false"
     """))
-    with pytest.raises(ValueError, match="enable_versioning"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"versioning\.default\.enable_versioning")
 
     write_mapping(tmp_path, _views_yaml("""
         versioning:
@@ -1733,8 +1726,11 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
             Project:
               enable_versioning: "false"
     """), name="m2.yaml")
-    with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
-        load_mapping(tmp_path / "m2.yaml")
+    _refuses(
+        tmp_path / "m2.yaml",
+        MappingShapeError,
+        r"versioning\.overrides\.Project\.enable_versioning",
+    )
 
     write_mapping(tmp_path, _views_yaml("""
         versioning:
@@ -1742,8 +1738,7 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
             Project:
               major_version_limit: many
     """), name="m3.yaml")
-    with pytest.raises(ValueError, match="major_version_limit"):
-        load_mapping(tmp_path / "m3.yaml")
+    _refuses(tmp_path / "m3.yaml", MappingShapeError, "major_version_limit")
 
 
 def test_quoted_attachments_is_rejected(tmp_path: Path) -> None:
@@ -1751,8 +1746,7 @@ def test_quoted_attachments_is_rejected(tmp_path: Path) -> None:
     deploy writes nothing and every list keeps taking attachments, while the
     author reads the mapping as having blocked them."""
     write_mapping(tmp_path, _views_yaml('attachments: "false"'))
-    with pytest.raises(ValueError, match="attachments"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "attachments")
 
 
 def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:
@@ -1765,8 +1759,7 @@ def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:
               fields: [Title]
               default: "false"
     """))
-    with pytest.raises(ValueError, match="default"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"views\.Project\[0\]\.default")
 
 
 def test_quoted_group_by_collapsed_is_rejected(tmp_path: Path) -> None:
@@ -1777,14 +1770,12 @@ def test_quoted_group_by_collapsed_is_rejected(tmp_path: Path) -> None:
               fields: [Title]
               group_by: { field: Status, collapsed: "false" }
     """))
-    with pytest.raises(ValueError, match="collapsed"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "collapsed")
 
 
 def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
     write_mapping(tmp_path, "entities:\n" + entity("Project", singleton='"false"') + "\n")
-    with pytest.raises(ValueError, match="singleton"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "singleton")
 
 
 @pytest.mark.parametrize("section", ["form_visibility", "column_validation"])
@@ -1795,8 +1786,7 @@ def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: st
           Project:
             columns: []
     """))
-    with pytest.raises(ValueError, match=r"columns.*mapping"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, rf"{section}\.Project\.columns")
 
 
 @pytest.mark.parametrize("empty_filter", ["[]", "{}"])
@@ -1810,8 +1800,7 @@ def test_views_reject_explicit_empty_filters(tmp_path: Path, empty_filter: str) 
               fields: [Title]
               where: {empty_filter}
     """))
-    with pytest.raises(ValueError, match=r"where.*(empty|expected)|empty group"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"views\.Project\[0\]\.where")
 
 
 # --- Migration messages -----------------------------------------------------
@@ -1834,9 +1823,8 @@ def test_removed_section_message_offers_an_example_that_loads(
     hit a second error."""
     # Left as a fragment: the section name is an f-string over the parameter.
     write_mapping(tmp_path, _views_yaml(f"{removed}:\n  Project: [Status]\n"))
-    with pytest.raises(ValueError) as err:
-        load_mapping(tmp_path / "m.yaml")
-    example = _example_from(str(err.value))
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    example = _example_from(str(err))
     assert "columns:" in example
     write_mapping(
         tmp_path,
@@ -1856,9 +1844,8 @@ def test_list_validation_formula_message_offers_an_example_that_loads(
             formula: '=[Status]<>""'
             message: Needs a status.
     """))
-    with pytest.raises(ValueError) as err:
-        load_mapping(tmp_path / "m.yaml")
-    example = _example_from(str(err.value))
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    example = _example_from(str(err))
     write_mapping(
         tmp_path,
         _views_yaml(example.replace("<Entity>", "Project").replace("<Column>", "Status")),
@@ -1887,9 +1874,8 @@ def test_site_role_on_a_permission_override_is_rejected(tmp_path: Path) -> None:
               site_role: default
               assignments: []
     """))
-    with pytest.raises(ValueError, match="site_role") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "list_permissions.overrides.Project" in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "site_role")
+    assert "list_permissions.overrides.Project" in str(err)
 
 
 def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> None:
@@ -1957,8 +1943,11 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
             OperationsStatus:
               reason: "gone"
     """), name="no-date.yaml")
-    with pytest.raises(ValueError, match=r"retired_columns\.Board\.OperationsStatus"):
-        load_mapping(tmp_path / "no-date.yaml")
+    _refuses(
+        tmp_path / "no-date.yaml",
+        MappingShapeError,
+        r"retired_columns\.Board\.OperationsStatus: 'retired'",
+    )
 
     write_mapping(tmp_path, _board_yaml("""
         retired_columns:
@@ -1967,8 +1956,11 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
               retired: 2026-09-01
               when: soon
     """), name="unknown-key.yaml")
-    with pytest.raises(ValueError, match="unknown key"):
-        load_mapping(tmp_path / "unknown-key.yaml")
+    _refuses(
+        tmp_path / "unknown-key.yaml",
+        UnknownMappingKeyError,
+        r"retired_columns\.Board\.OperationsStatus",
+    )
 
     write_mapping(tmp_path, _board_yaml("""
         retired_columns:
@@ -1977,15 +1969,16 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
               retired: 2026-09-01
               hide_existing: yep
     """), name="bad-bool.yaml")
-    with pytest.raises(ValueError, match="hide_existing must be a boolean"):
-        load_mapping(tmp_path / "bad-bool.yaml")
+    _refuses(
+        tmp_path / "bad-bool.yaml", MappingShapeError,
+        "hide_existing must be a boolean",
+    )
 
     write_mapping(tmp_path, _board_yaml("""
         retired_columns:
           Board: [123]
     """), name="bad-list.yaml")
-    with pytest.raises(ValueError, match="bare-list entries must be column names"):
-        load_mapping(tmp_path / "bad-list.yaml")
+    _refuses(tmp_path / "bad-list.yaml", MappingShapeError, r"retired_columns\.Board:")
 
 
 def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> None:
@@ -2167,8 +2160,7 @@ def test_field_sets_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
         field_sets:
           Board: [BoardDate, Chair]
     """))
-    with pytest.raises(ValueError, match=r"field_sets\.Board"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"field_sets\.Board")
 
 
 def test_field_set_must_be_a_list_of_column_names(tmp_path: Path) -> None:
@@ -2177,8 +2169,7 @@ def test_field_set_must_be_a_list_of_column_names(tmp_path: Path) -> None:
           Board:
             header: BoardDate
     """))
-    with pytest.raises(ValueError, match=r"field_sets\.Board\.header"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"field_sets\.Board\.header")
 
 
 def test_view_fields_expand_field_sets_in_declaration_order(tmp_path: Path) -> None:
@@ -2346,8 +2337,7 @@ def test_group_by_refuses_three_levels(tmp_path: Path) -> None:
               fields: [Title, A, B, C]
               group_by: { fields: [A, B, C] }
     """))
-    with pytest.raises(ValueError, match="two levels"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"views\.Project\[0\]\.group_by")
 
 
 def test_group_by_refuses_both_spellings_at_once(tmp_path: Path) -> None:
@@ -2359,8 +2349,7 @@ def test_group_by_refuses_both_spellings_at_once(tmp_path: Path) -> None:
               fields: [Title, A, B]
               group_by: { field: A, fields: [B] }
     """))
-    with pytest.raises(ValueError, match="exactly one of 'field'"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"views\.Project\[0\]\.group_by")
 
 
 def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
@@ -2371,8 +2360,7 @@ def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
               fields: [Title]
               group_by: { fields: [] }
     """))
-    with pytest.raises(ValueError, match="non-empty"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"views\.Project\[0\]\.group_by")
 
 
 # --- Declared view totals ---------------------------------------------------
@@ -2413,8 +2401,7 @@ def test_totals_refuse_an_unknown_function(tmp_path: Path) -> None:
               fields: [Title, SortOrder]
               totals: { SortOrder: median }
     """))
-    with pytest.raises(ValueError, match="median"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingValueError, "median")
 
 
 def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
@@ -2425,8 +2412,7 @@ def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
               fields: [Title, SortOrder]
               totals: [SortOrder]
     """))
-    with pytest.raises(ValueError, match="must be a mapping"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "'totals'")
 
 
 def test_accept_unindexable_display_column_defaults_false_and_parses(
@@ -2478,11 +2464,10 @@ def test_hide_from_all_items_refuses_a_bare_string(tmp_path: Path) -> None:
             site_role: default
             hide_from_all_items: Author
     """)
-    with pytest.raises(
-        ValueError,
-        match=r"entities\.Wide\.hide_from_all_items must be a list of strings",
-    ):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(
+        tmp_path / "m.yaml", MappingShapeError,
+        r"entities\.Wide\.hide_from_all_items must be a list of strings",
+    )
 
 
 def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None:
@@ -2494,8 +2479,7 @@ def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None
             site_role: default
             hide_from_all_items: [Author, 7]
     """)
-    with pytest.raises(ValueError, match=r"must be a list of strings, got 7"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"hide_from_all_items.*got 7")
 
 
 def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:
@@ -2509,8 +2493,9 @@ def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:
             site_role: default
             hide_from_all_item: [Author]
     """)
-    with pytest.raises(ValueError, match=r"entities\.Wide: unknown key\(s\)"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(
+        tmp_path / "m.yaml", UnknownMappingKeyError, r"entities\.Wide: unknown key\(s\)",
+    )
 
 
 def test_reconcile_rejects_a_value_that_is_neither_mode(tmp_path: Path) -> None:
@@ -2531,8 +2516,7 @@ def test_reconcile_rejects_a_value_that_is_neither_mode(tmp_path: Path) -> None:
             reconcile: bogus
             columns: {}
     """))
-    with pytest.raises(ValueError, match=r"reconcile.*exact.*declared"):
-        load_mapping(path)
+    _refuses(path, MappingValueError, r"form_visibility\.Risk\.reconcile")
 
 
 def test_a_validation_rule_without_a_message_is_refused(tmp_path: Path) -> None:
@@ -2550,8 +2534,7 @@ def test_a_validation_rule_without_a_message_is_refused(tmp_path: Path) -> None:
               Title:
                 when: { field: Title, op: is_not_null }
     """))
-    with pytest.raises(ValueError, match="'message' is required"):
-        load_mapping(path)
+    _refuses(path, MappingShapeError, r"column_validation\.Risk\.columns\.Title")
 
 
 #: Every top-level section the loader treats as a mapping of name -> block,
@@ -2597,8 +2580,7 @@ def test_a_section_of_the_wrong_shape_names_the_section(
     look like a bad mapping file, which is the worse trade.
     """
     path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
-    with pytest.raises(ValueError, match=section):
-        load_mapping(path)
+    _refuses(path, MappingShapeError, section)
 
 
 #: The same sections with an EMPTY list. Read as `(raw.get(name) or {})`,
@@ -2635,8 +2617,7 @@ def test_an_empty_list_where_a_mapping_belongs_is_refused(
     path = write_mapping(
         tmp_path, with_tail(entities("Project"), f"{section}: []\n"),
     )
-    with pytest.raises(ValueError, match=section):
-        load_mapping(path)
+    _refuses(path, MappingShapeError, section)
 
 
 #: Sections whose wrong shape survived the first pass of #141, each with a
@@ -2668,8 +2649,7 @@ def test_a_nested_section_of_the_wrong_shape_is_refused(
     original sweep was for.
     """
     path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
-    with pytest.raises(ValueError, match=section.split(".")[-1]):
-        load_mapping(path)
+    _refuses(path, MappingShapeError, section.split(".")[-1])
 
 
 def test_a_bare_entities_key_names_entities(tmp_path: Path) -> None:
@@ -2687,8 +2667,7 @@ def test_a_bare_entities_key_names_entities(tmp_path: Path) -> None:
     wrong-pointing one is not an improvement.
     """
     path = write_mapping(tmp_path, "entities:\n")
-    with pytest.raises(ValueError, match="entities"):
-        load_mapping(path)
+    _refuses(path, MappingShapeError, "entities")
 
 
 # --- reporting -------------------------------------------------------------
@@ -2718,8 +2697,7 @@ def test_reporting_unknown_key_rejected(tmp_path: Path) -> None:
         reporting:
           system_colums: true
     """))
-    with pytest.raises(ValueError, match="reporting"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", UnknownMappingKeyError, "system_colums")
 
 
 def test_reporting_switch_must_be_a_boolean(tmp_path: Path) -> None:
@@ -2729,8 +2707,7 @@ def test_reporting_switch_must_be_a_boolean(tmp_path: Path) -> None:
         reporting:
           system_columns: "yes"
     """))
-    with pytest.raises(ValueError, match="system_columns"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "system_columns")
 
 
 def test_reporting_users_table_parsed(tmp_path: Path) -> None:
@@ -2750,8 +2727,7 @@ def test_reporting_users_table_must_be_a_boolean(tmp_path: Path) -> None:
         reporting:
           users_table: 1
     """))
-    with pytest.raises(ValueError, match="users_table"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "users_table")
 
 
 def test_renamed_from_defaults_empty_and_parses(tmp_path: Path) -> None:
@@ -2778,8 +2754,7 @@ def test_renamed_from_refuses_a_bare_string(tmp_path: Path) -> None:
             site_role: default
             renamed_from: ProgramRisk
     """)
-    with pytest.raises(ValueError, match="renamed_from"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingShapeError, "renamed_from")
 
 
 def test_a_prefix_placeholder_in_group_and_level_names_expands_to_the_stem(tmp_path: Path) -> None:
@@ -2846,8 +2821,7 @@ def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None
           - name: "Handlers {prefix}"
             description: "Handlers."
     """)
-    with pytest.raises(ValueError, match="prefix"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingValueError, r"groups\[0\]\.name")
 
 
 def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
@@ -2867,23 +2841,27 @@ def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("declared", "why"),
+    ("declared", "error", "why"),
     [
-        ('"ADOPT_"', "must be a list"),
-        ('["GOV_"]', "current prefix"),
-        ('["", ""]', "twice"),
+        ('"ADOPT_"', MappingShapeError, "must be a list"),
+        ('["GOV_"]', MappingValueError, "current prefix"),
+        ('["", ""]', MappingValueError, "twice"),
     ],
     ids=["bare-string", "current-prefix", "duplicate"],
 )
-def test_previous_prefixes_refuse_a_bad_shape(tmp_path: Path, declared: str, why: str) -> None:
+def test_previous_prefixes_refuse_a_bad_shape(
+    tmp_path: Path, declared: str, error: type[MappingError], why: str,
+) -> None:
+    """A value that is not a list is a shape error; a list naming the current
+    prefix or the same prefix twice is a value error, so the class separates
+    the two without reading the sentence."""
     write_mapping(tmp_path, f"""
         prefix: "GOV_"
         previous_prefixes: {declared}
         entities:
           Risk: {{ kind: List, base_template: 100, site_role: default }}
     """)
-    with pytest.raises(ValueError, match=why):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", error, why)
 
 
 def test_groups_and_levels_compute_their_previous_names_over_every_stem(tmp_path: Path) -> None:
@@ -3009,24 +2987,28 @@ def test_an_item_security_override_merges_onto_the_default(tmp_path: Path) -> No
     assert mapping.declares_item_read_trimming() is True
 
 
-@pytest.mark.parametrize("fragment", [
-    "item_security:\n  default:\n    read: mine\n",
-    "item_security:\n  default:\n    write: creator\n",
-    "item_security:\n  overrides:\n    Project:\n      read: 2\n",
+@pytest.mark.parametrize(("fragment", "expected"), [
+    ("item_security:\n  default:\n    read: mine\n", MappingValueError),
+    ("item_security:\n  default:\n    write: creator\n", MappingValueError),
+    ("item_security:\n  overrides:\n    Project:\n      read: 2\n",
+     MappingShapeError),
 ])
 def test_an_unknown_item_security_scope_is_refused(
-    tmp_path: Path, fragment: str,
+    tmp_path: Path, fragment: str, expected: type[MappingError],
 ) -> None:
-    """Refused, not coerced.
+    """Refused, not coerced, and the class says which kind of wrong it is.
 
     `read: mine` is what somebody writes meaning `own`. Coercing it to the
     default would deploy a list with no trimming at all, which is the exact
     opposite of what the line asks for, on a surface where nothing later can
     tell.
+
+    `read: 2` is the shape error rather than the value error, because a
+    number is not a scope spelled wrongly. That is the split `scope` and
+    `totals` already make, and it is why this table carries the class.
     """
     path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
-    with pytest.raises(ValueError, match="item_security"):
-        load_mapping(path)
+    _refuses(path, expected, "item_security")
 
 
 def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
@@ -3035,8 +3017,7 @@ def test_an_unknown_item_security_key_is_refused(tmp_path: Path) -> None:
     path = write_mapping(tmp_path, with_tail(
         entities("Project"), "item_security:\n  defaults:\n    read: own\n",
     ))
-    with pytest.raises(ValueError, match=r"item_security: unknown key"):
-        load_mapping(path)
+    _refuses(path, UnknownMappingKeyError, "defaults")
 
 
 # --------------------------------------------- section pointers
@@ -3123,10 +3104,9 @@ def test_a_section_declared_twice_is_refused(
         tmp_path,
         blocks(entities("Risk"), f"{pointer}: side.yaml", body),
     )
-    with pytest.raises(ValueError, match="may not also be declared") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert section in str(err.value)
-    assert pointer in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", MappingShapeError)
+    assert section in str(err)
+    assert pointer in str(err)
 
 
 @pytest.mark.parametrize(("pointer", "section", "body"), _POINTED)
@@ -3140,10 +3120,9 @@ def test_the_pointed_file_may_hold_nothing_else(
         tmp_path,
         blocks(entities("Risk"), f"{pointer}: side.yaml"),
     )
-    with pytest.raises(ValueError, match="unknown key") as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert "views" in str(err.value)
-    assert section in str(err.value)
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert "views" in str(err)
+    assert section in str(err)
 
 
 @pytest.mark.parametrize("pointer", _POINTERS)
@@ -3155,8 +3134,7 @@ def test_an_unreadable_pointer_names_the_path(tmp_path: Path, pointer: str) -> N
         tmp_path,
         blocks(entities("Risk"), f"{pointer}: nope.yaml"),
     )
-    with pytest.raises(ValueError, match=rf"{pointer}: cannot read 'nope\.yaml'"):
-        load_mapping(tmp_path / "m.yaml")
+    _refuses(tmp_path / "m.yaml", MappingReferenceError, rf"{pointer}: cannot read 'nope\.yaml'")
 
 
 def test_pointed_sections_stay_optional_without_the_pointer(tmp_path: Path) -> None:
@@ -3231,10 +3209,10 @@ def test_a_named_loader_error_is_raised_by_the_path_it_names(
 
 
 def test_every_named_loader_error_is_still_a_value_error() -> None:
-    """`cli._CONFIG_ERRORS` lists `ValueError` and nothing narrower, and most
-    of this module's refusal tests match through
-    `pytest.raises(ValueError, ...)`. A subclass that stopped being one would
-    reach the operator as a traceback with no change visible anywhere else."""
+    """`cli._CONFIG_ERRORS` lists `ValueError` and nothing narrower, and this
+    module's refusal tests now name the subclass instead, so nothing else here
+    would notice. A subclass that stopped being one would reach the operator as
+    a traceback with no change visible anywhere else."""
     named = sorted(
         name for name, value in vars(errors).items()
         if isinstance(value, type) and issubclass(value, MappingError)

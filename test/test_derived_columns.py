@@ -26,6 +26,12 @@ from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.report_md import generate_data_dictionary
 from dbml_sharepoint.generators.report_sql import generate_sql_views
+from dbml_sharepoint.model.errors import (
+    MappingError,
+    MappingReferenceError,
+    MappingShapeError,
+    MappingValueError,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DerivedColumn,
@@ -392,50 +398,79 @@ def test_the_loader_refuses_a_kind_it_has_no_plan_for(tmp_path: Path) -> None:
         + "derived_columns:\n  Risk:\n    - kind: filter\n      m: 'true'\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="deliberately absent"):
+    with pytest.raises(MappingValueError, match="'filter'"):
         load_mapping(path)
 
 
-@pytest.mark.parametrize(("body", "message"), [
+@pytest.mark.parametrize(("body", "error", "message"), [
     (
         "    - kind: expr\n      name: X\n      type: guess\n      m: '1'\n",
+        MappingValueError,
         "type must be one of",
     ),
     (
         ("    - kind: count\n      from: Action\n      via: RelatedRisk\n"
          "      name: X\n      aggregate: min\n      type: date\n"),
+        MappingShapeError,
         "`column` is required",
     ),
     (
         ("    - kind: count\n      from: Action\n      via: RelatedRisk\n"
          "      name: X\n      aggregate: count\n      type: Int64\n"
          "      column: DueDate\n"),
+        MappingShapeError,
         "must be absent",
     ),
     (
         ("    - kind: lookup\n      from: Decision\n      via: A\n      key: B\n"
          "      pick: {X: Status}\n      types: {X: text}\n"),
+        MappingShapeError,
         "Exactly one",
     ),
     (
         ("    - kind: lookup\n      from: Decision\n      via: A\n"
-         "      pick: {X: Status}\n      types: {Y: text}\n"),
-        "must be one of",
+         "      pick: {X: Status}\n      types: {}\n"),
+        MappingShapeError,
+        r"types\.X is required",
+    ),
+    (
+        ("    - kind: lookup\n      from: Decision\n      via: A\n"
+         "      pick: {X: Status}\n      types: {X: guess}\n"),
+        MappingValueError,
+        r"types\.X must be one of",
+    ),
+    (
+        ("    - kind: lookup\n      from: Decision\n      via: A\n"
+         "      pick: {X: Status}\n      types: {X: text, Y: text}\n"),
+        MappingReferenceError,
+        r"types names Y, which pick does not produce",
+    ),
+    (
+        "    - name: X\n      type: text\n      m: '1'\n",
+        MappingShapeError,
+        "kind is required",
     ),
 ])
 def test_the_loader_refuses_a_malformed_declaration(
-    tmp_path: Path, body: str, message: str,
+    tmp_path: Path, body: str, error: type[MappingError], message: str,
 ) -> None:
     """Shape is the loader's; whether the names RESOLVE is the validator's.
     An aggregate with no column and a type nobody has decided both reach the
     query as `type any`, which loads as an Error value in every populated
-    cell while the refresh reports success."""
+    cell while the refresh reports success.
+
+    The three `types` cases are separate rows because they are three
+    different edits: no entry for a picked column is a missing required key,
+    an entry outside the vocabulary is a word to correct, and an entry `pick`
+    does not produce is a name that does not resolve. One input carrying two
+    of those defects only ever proves which check runs first.
+    """
     path = tmp_path / "mapping.yaml"
     path.write_text(
         _MINIMAL + f"derived_columns:\n  Risk:\n{body}",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(error, match=message):
         load_mapping(path)
 
 

@@ -16,6 +16,7 @@ from dbml_sharepoint.analysis.styles import (
     expand_style,
     parse_theme,
 )
+from dbml_sharepoint.model.errors import UnknownMappingKeyError
 
 
 def test_tokens_are_the_documented_severity_set() -> None:
@@ -271,14 +272,14 @@ def test_style_spec_unknown_keys_are_rejected(spec: dict[str, Any], typo: str) -
     typo'd `guard:` renders closed rows as overdue (a red flag on work
     that is finished) and `calculated: true` is documented as required for
     calculated columns while a misspelling of it changed nothing."""
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(UnknownMappingKeyError) as err:
         expand_style(spec, "column_formatting.T.C")
     assert "column_formatting.T.C" in str(err.value)
     assert typo in str(err.value)
 
 
 def test_theme_override_unknown_keys_are_rejected() -> None:
-    with pytest.raises(ValueError, match="icons"):
+    with pytest.raises(UnknownMappingKeyError, match="icons"):
         parse_theme({"good": {"classes": ["x"], "icons": "Emoji2"}}, "style_theme")
 
 

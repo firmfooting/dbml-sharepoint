@@ -4,7 +4,7 @@
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.errors import MappingValueError
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -31,6 +31,13 @@ def _parse_display_name_mode(section: Any) -> str | None:
         return None
     _reject_unknown_keys(section, {"mode", "overrides"}, "display_names")
     mode = section.get("mode")
+    # A section written for its overrides alone leaves the key missing, which
+    # is a key to add rather than the misspelled mode a value error means.
+    if mode is None:
+        raise MappingShapeError(
+            "display_names.mode is required and must be 'auto'; omit the "
+            "display_names section to leave display titles untouched",
+        )
     if mode != "auto":
         raise MappingValueError(
             f"display_names.mode must be 'auto' (got {mode!r}); omit the "

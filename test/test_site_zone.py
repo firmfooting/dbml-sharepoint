@@ -54,6 +54,7 @@ from dbml_sharepoint.generators.report_md import (
     generate_reporting_md,
 )
 from dbml_sharepoint.model.env_file import ENV_FILENAME, TIME_ZONE_KEY
+from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DerivedColumn,
@@ -208,7 +209,7 @@ def test_the_removed_mapping_key_is_refused_by_name(tmp_path: Path) -> None:
     """Hard load error naming the replacement, the same precedent as the
     removed `indexed_columns` section: no compatibility mode, and no
     generic unknown-key message that reads as a typo."""
-    with pytest.raises(ValueError, match=r"reporting\.time_zone has been replaced") as err:
+    with pytest.raises(UnknownMappingKeyError, match=r"reporting\.time_zone") as err:
         _load(tmp_path, f"reporting:\n  time_zone: {MELBOURNE}\n")
     message = str(err.value)
     assert message == REMOVED_TIME_ZONE_KEY_MESSAGE

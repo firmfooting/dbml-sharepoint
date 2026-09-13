@@ -93,9 +93,15 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
     """
     item = _require_mapping(item, where)
     kind = item.get("kind")
+    # A kind that is not there is a required key missing, not a word declined.
+    if kind is None:
+        raise MappingShapeError(
+            f"{where}: kind is required, one of "
+            f"{', '.join(sorted(_DERIVED_KEYS))}",
+        )
     # isinstance first: a list or mapping is unhashable, so the membership
     # test below raises the TypeError the CLI deliberately does not catch.
-    if kind is not None and not isinstance(kind, str):
+    if not isinstance(kind, str):
         raise MappingShapeError(f"{where}: kind must be a string, got {kind!r}")
     if kind not in _DERIVED_KEYS:
         raise MappingValueError(
@@ -145,14 +151,21 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
                     f"got {source!r}",
                 )
             declared = types.get(new_name)
+            # Every picked column is typed, so none can reach the query as
+            # `type any` and load as an Error in every populated cell.
+            if declared is None:
+                # No entry at all is a key to add, not a word to correct.
+                raise MappingShapeError(
+                    f"{where}.types.{new_name} is required: every column "
+                    f"`pick` produces is typed, one of "
+                    f"{', '.join(sorted(DERIVED_TYPES))}",
+                )
             # The shape before the word, for the same unhashable reason.
-            if declared is not None and not isinstance(declared, str):
+            if not isinstance(declared, str):
                 raise MappingShapeError(
                     f"{where}.types.{new_name} must be a string, got {declared!r}",
                 )
             if declared not in DERIVED_TYPES:
-                # Every picked column is typed, so none can reach the query
-                # as `type any` and load as an Error in every populated cell.
                 raise MappingValueError(
                     f"{where}.types.{new_name} must be one of "
                     f"{', '.join(sorted(DERIVED_TYPES))}, got {declared!r}",

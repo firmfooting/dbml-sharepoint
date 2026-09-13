@@ -35,6 +35,7 @@ from dbml_sharepoint.analysis.conditions import (
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
+from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
 
 def test_bare_list_is_all_of() -> None:
@@ -116,7 +117,7 @@ def test_operand_transforms_parse() -> None:
 def test_structural_errors(raw: object, match: str) -> None:
     """Shape problems are load errors naming the offending context, as
     everywhere else in the mapping loader."""
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(MappingShapeError, match=match):
         parse_condition(raw, "ctx")
 
 
@@ -124,7 +125,7 @@ def test_unknown_leaf_key_is_rejected() -> None:
     """A typo in a leaf key must not be silently ignored. The loader's
     fail-open handling of unknown keys is a known defect elsewhere and is
     not repeated here."""
-    with pytest.raises(ValueError, match="unknown key"):
+    with pytest.raises(UnknownMappingKeyError, match="vaule"):
         parse_condition([{"field": "A", "op": "eq", "vaule": 1}], "ctx")
 
 
@@ -1855,7 +1856,7 @@ def test_a_lookup_value_accessor_compares_as_text() -> None:
 
 
 def test_condition_accessors_must_be_strings() -> None:
-    with pytest.raises(ValueError, match=r"property.*string"):
+    with pytest.raises(MappingShapeError, match="property"):
         parse_condition(
             {"field": "Project", "property": ["lookupValue"], "op": "eq", "value": "Alpha"},
             "w",
