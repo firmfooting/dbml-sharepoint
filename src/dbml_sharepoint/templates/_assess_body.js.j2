@@ -11,10 +11,14 @@
             fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
             verdictLevel } = ctx;
     // Fail closed on a caller-built targets: a missing key is a bare TypeError
-    // several probes in, and every one of these is read below.
+    // several probes in, and every one of these is read below. The two
+    // ceilings are here because a missing one is worse than a TypeError: every
+    // comparison against NaN is false, so the item-count probe would report
+    // every list as comfortably under a threshold it could not read.
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
       'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
+      'list_view_threshold', 'index_change_ceiling',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
@@ -308,8 +312,74 @@
       }
     };
 
-    // Collision probe per declared list. Description rides along on a request
-    // already being made, so the marker check above costs no probe of its own.
+    // How full an EXISTING declared list already is, against the two list-size
+    // bands this pack reports on. A PROXIMITY SIGNAL and never a gate:
+    // ItemCount comes from a timer-job cache, and on a library it counts files
+    // and folders, so it says roughly how big a list is rather than exactly
+    // how many rows it holds. rollback.js.j2 records the same caveat where it
+    // refuses to treat the figure as an atomic gate.
+    //
+    // NEVER BLOCKED, at either band. Microsoft's troubleshooting page calls
+    // the larger number the limit for adding or removing an indexed column,
+    // and a Microsoft Q&A answer says the index is created in the background
+    // over that size instead. One source says refusal and the other says
+    // queue, so a BLOCKED verdict here would be a rule stronger than the
+    // evidence supports. What would license BLOCKED: a probe that creates an
+    // index on a list over the ceiling and reads the refusal back. The two
+    // sources are cited in full beside `limits.INDEX_CHANGE_CEILING`.
+    const LIST_VIEW_THRESHOLD = Number(TARGETS.list_view_threshold);
+    const INDEX_CHANGE_CEILING = Number(TARGETS.index_change_ceiling);
+    // Four fifths of the threshold: close enough that ordinary growth crosses
+    // it before the next deploy, and still early enough to index for it.
+    const ITEM_COUNT_WARN_AT = Math.floor(LIST_VIEW_THRESHOLD * 0.8);
+    // Grouped for reading. `toLocaleString` would answer differently per
+    // browser locale, and these numbers are quoted back in operator findings.
+    const grouped = (n) => String(n).replace(/\B(?=(\d{3})+$)/g, ',');
+    const CACHED = 'ItemCount is a cached figure, so read it as a size band rather than an exact total.';
+    const itemCountFinding = (title, count, countReported) => {
+      const key = `item_count:${title}`;
+      // A property the site did not return answered nothing, which is neither
+      // a pass nor a failure. Same separation as the marker check above.
+      //
+      // `count == null` is not redundant beside the finite test: `Number(null)`
+      // is 0, so a key present with a null value would otherwise report the
+      // list as holding nothing and pass it as comfortably small. That is the
+      // `reported()` convention at the top of this file, which reads `v == null`
+      // as "not reported" for exactly this reason.
+      if (!countReported || count == null || !Number.isFinite(Number(count))) {
+        finding(2, key, 'NOT-ASSESSABLE',
+          `'${title}' exists, but its ItemCount was not reported, so its size against the `
+          + 'list view threshold could not be assessed.');
+        return;
+      }
+      const held = Number(count);
+      const size = `'${title}' currently reports ${grouped(held)} item(s)`;
+      if (held >= INDEX_CHANGE_CEILING) {
+        finding(2, key, 'WARN',
+          `${size}, at or over the ${grouped(INDEX_CHANGE_CEILING)}-item mark Microsoft `
+          + 'documents for adding or removing an indexed column, and far past the '
+          + `${grouped(LIST_VIEW_THRESHOLD)}-item list view threshold. Views filtering or `
+          + 'sorting on an unindexed column fail against it, and index work this deploy '
+          + `performs may be refused or queued. ${CACHED}`);
+      } else if (held >= LIST_VIEW_THRESHOLD) {
+        finding(2, key, 'WARN',
+          `${size}, at or over the ${grouped(LIST_VIEW_THRESHOLD)}-item list view threshold. `
+          + 'Views filtering, sorting or grouping on an unindexed column fail against it. '
+          + `Index the columns the declared views read before deploying. ${CACHED}`);
+      } else if (held >= ITEM_COUNT_WARN_AT) {
+        finding(2, key, 'WARN',
+          `${size}, inside the ${grouped(ITEM_COUNT_WARN_AT)} to `
+          + `${grouped(LIST_VIEW_THRESHOLD)} band below the list view threshold. Index the `
+          + `columns the declared views filter and sort on before it crosses. ${CACHED}`);
+      } else {
+        finding(2, key, 'INFO',
+          `${size}, under the ${grouped(LIST_VIEW_THRESHOLD)}-item list view threshold.`);
+      }
+    };
+
+    // Collision probe per declared list. Description and ItemCount ride along
+    // on a request already being made, so the marker check above and the size
+    // check here cost no probe of their own.
     // Absence is read from the shared title enumeration, never a getbytitle
     // 404, so a first deploy does not paint the console red.
     const knownTitles = await assessListTitleSet();
@@ -319,7 +389,7 @@
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
         continue;
       }
-      const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
+      const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description,ItemCount`);
       if (!list.ok && list.status === 404) {
         // Enumeration refused (knownTitles null): a 404 still means absent,
         // not "could not probe".
@@ -330,6 +400,11 @@
           title,
           list.d.Description,
           Object.prototype.hasOwnProperty.call(list.d, 'Description'),
+        );
+        itemCountFinding(
+          title,
+          list.d.ItemCount,
+          Object.prototype.hasOwnProperty.call(list.d, 'ItemCount'),
         );
       } else {
         finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);

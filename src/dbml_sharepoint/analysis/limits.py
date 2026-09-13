@@ -421,3 +421,29 @@ LIST_VIEW_THRESHOLD = 5_000
 #: How many of the newest items a throttled, Metadata-Navigation-assisted query
 #: falls back to returning. See `LIST_VIEW_THRESHOLD`.
 LIST_VIEW_THRESHOLD_FALLBACK_ROWS = 1_250
+
+# -------------------------------------------- index changes on a large list
+
+#: The list size past which Microsoft documents adding or removing an indexed
+#: column as limited. A different surface from `LIST_VIEW_THRESHOLD` above:
+#: that one throttles what a VIEW may query, this one bounds an operation the
+#: deploy itself performs.
+#:
+#: DOCUMENTED, and CONTRADICTED by a second Microsoft source, which is why
+#: nothing built on it may print BLOCKED. Searched 2026-09-14.
+#:
+#: FOR a refusal: "The list limit to add or remove an indexed column is 20,000
+#: items."
+#: https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/fails-filtering-sharepoint-column
+#:
+#: AGAINST: a Microsoft Q&A answer on Learn, an answer rather than a doc page,
+#: describes a queue instead: automatic indexing during sorting in the modern
+#: experience is available only below this size, and over it "the index will
+#: be created in the background".
+#:
+#: One source says limit and the other says queue, so `assessgen` reports this
+#: band as a WARN that degrades the verdict and never as BLOCKED, which would
+#: be a rule stronger than the evidence supports. What would license BLOCKED:
+#: a probe that creates an index on a list over this ceiling and reads the
+#: refusal.
+INDEX_CHANGE_CEILING = 20_000

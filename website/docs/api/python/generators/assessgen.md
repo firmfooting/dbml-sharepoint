@@ -45,6 +45,11 @@ second spelling would let assess.js quietly disagree with deploy.js about
 the same list, reporting drift on a description the deploy considers
 correct (or, worse, staying silent on one it does not).
 
+`list_view_threshold` and `index_change_ceiling` are the two list-size
+ceilings the item-count probe reports against. They travel in the payload
+for the same reason: the emitted script quotes both numbers to the
+operator and reads them from `analysis.limits` rather than spelling them.
+
 ### `derive_requirements`
 
 ```python

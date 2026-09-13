@@ -13,6 +13,10 @@ from typing import Any
 
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.group_description import marker_for_group
+from dbml_sharepoint.analysis.limits import (
+    INDEX_CHANGE_CEILING,
+    LIST_VIEW_THRESHOLD,
+)
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
@@ -45,6 +49,11 @@ def assess_targets(
     second spelling would let assess.js quietly disagree with deploy.js about
     the same list, reporting drift on a description the deploy considers
     correct (or, worse, staying silent on one it does not).
+
+    `list_view_threshold` and `index_change_ceiling` are the two list-size
+    ceilings the item-count probe reports against. They travel in the payload
+    for the same reason: the emitted script quotes both numbers to the
+    operator and reads them from `analysis.limits` rather than spelling them.
     """
     prefix = bundle.mapping.prefix
     m = bundle.mapping
@@ -152,6 +161,11 @@ def assess_targets(
         "group_renames": group_renames,
         "base_templates": sorted(templates),
         "library_folders": library_folders,
+        # The two list-size ceilings the item-count probe reports against,
+        # carried in the payload so the template spells neither number and
+        # cannot disagree with `analysis.limits`.
+        "list_view_threshold": LIST_VIEW_THRESHOLD,
+        "index_change_ceiling": INDEX_CHANGE_CEILING,
         "declares_groups": bool(perms and perms.groups),
         "declares_seal": bool(m.seal_columns),
         "declares_prevent_deletion": bool(m.prevent_list_deletion),
@@ -186,6 +200,20 @@ def derive_requirements(
             f"collision:{title}",
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
             "BLOCKED",
+        ))
+    for title in t["list_titles"]:
+        # A requirement key, because only one can degrade the verdict: the
+        # verdict loop walks REQUIREMENTS and skips a key with no finding,
+        # which is also how an absent list reports no size at all.
+        #
+        # WARN and never BLOCKED. See `INDEX_CHANGE_CEILING` for the two
+        # Microsoft sources that disagree about what happens over the larger
+        # band, and for what would license BLOCKED.
+        reqs.append(Requirement(
+            f"item_count:{title}",
+            f"Existing list '{title}' is under the {LIST_VIEW_THRESHOLD:,}-item "
+            f"list view threshold",
+            "WARN",
         ))
     for title, folders in t["library_folders"]:
         # A file standing where a folder is declared stops the folder phase,
