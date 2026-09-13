@@ -120,7 +120,8 @@ Probes: `calculated-operand-probe.js`, `calculated-choice-operand.js`,
 `hyperlink-validation-operand-probe.js`, `datetime-sentinel-probe.js`,
 `today-semantics-probe.js`, `modified-clock-probe.js`,
 `list-modified-clock-probe.js`, `form-validation-probe.js`,
-`save-instant-paths-probe.js`, `today-source-probe.js`
+`save-instant-paths-probe.js`, `today-source-probe.js`,
+`blank-operand-probe.js`
 
 ### 2. `expression`: client-evaluated expressions
 
@@ -195,14 +196,17 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `list` (the list object the columns belong to), `default-formula` (a
 column's `DefaultFormula` property, what it fills at item create, and what
 `DefaultValue` reads back beside it), `unique` (a column's
-`EnforceUniqueValues` constraint and which writes it refuses)
+`EnforceUniqueValues` constraint and which writes it refuses), `sealed` (a
+column's `Sealed` flag, what SharePoint reports about deleting the column in
+each state, and what it does with a write of the read-only `CanBeDeleted`)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
 `lookup-showfield-probe.js`, `boolean-field-probe.js`,
 `title-rename-probe.js`, `title-seal-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
-`default-formula-functions-probe.js`, `unique-blanks-probe.js`
+`default-formula-functions-probe.js`, `unique-blanks-probe.js`,
+`field-sealed-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -213,6 +217,17 @@ transitions the reporting pack generates from the IANA database
 (`analysis/timezones.py`) with what `utctolocaltime` applies one minute
 before and at each sampled transition, and its offsets row is the check the
 emitted `Zone[resolved]` makes, asked of the platform directly.
+
+`sealed` is separate from `title` because the two ask opposite questions about
+the same flag. `title-seal-probe.js` asks whether the built-in Title column can
+be sealed at all, by three spellings of the write, and its subject is that one
+column. `field-sealed-probe.js` asks what sealing DOES to an ordinary custom
+column: whether `CanBeDeleted` follows the flag, whether unsealing restores it,
+and what SharePoint answers to a delete in each state. The maintenance scripts
+rest on the second question and nothing had measured it:
+`_maintain_list.js.j2` filters its column menu on
+`(f.CanBeDeleted !== false || f.Sealed === true)` and its delete path unseals,
+reads back and then deletes, both on the strength of one live observation.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -696,6 +711,10 @@ different questions and take different ids. They do not merge.
 | Is a group-by honoured on a single-value column | an unindexed column on the rendered page, beside the indexed one on the same library | `library.large-list.ui-group-by-unindexed-column-renders` |
 | Does the default view serve past the list view threshold | `RenderListDataAsStream` returning its first page of rows | `library.large-list.default-view-renders-first-page` |
 | Does the default view serve past the list view threshold | the modern library page rendering file rows a person can see | `library.large-list.ui-default-view-renders-past-threshold` |
+| Does a save rule refuse an item whose operand is blank | the rule stored on the column, where an operand type keeps it | `formula.validation.blank-omitted-under-bare-column-rule` |
+| Does a save rule refuse an item whose operand is blank | the same rule hoisted onto the list, which is where `analysis/save_rules.py` puts every clock comparison | `formula.validation.blank-omitted-under-bare-list-rule` |
+| Is a probe-created column sealed by a field MERGE and read back | on the list built for the Title experiment, where it is that probe's control | `field.title.seal-control-declared` |
+| Is a probe-created column sealed by a field MERGE and read back | on the list built for the CanBeDeleted measurement, where it is the dependency every observation rests on | `field.sealed.seal-write-readback` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
