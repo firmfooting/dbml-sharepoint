@@ -233,6 +233,82 @@ def test_an_unknown_scope_is_refused_at_load(tmp_path: Path) -> None:
         _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: sideways")
 
 
+def _demo(tmp_path: Path, kind: str, template: int, row: str) -> list[Finding]:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE, "Division nvarchar"),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: ["Clinical services"]
+            demo_items:
+              Docs:
+                - key: d1
+                  {row}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_a_library_demo_file_in_a_declared_folder_validates_clean(tmp_path: Path) -> None:
+    """MEASURED 2026-09-03, `library.file.upload-path-files-add`: a file
+    uploads through Files/add into a folder and its item carries the values
+    set on it. The marker rides on the file name, so Title is not required."""
+    findings = _demo(
+        tmp_path, "DocumentLibrary", 101,
+        'values: { Division: "Clinical services" }\n'
+        '                  file: { name: "[DEMO] Privacy.txt", folder: "Clinical services" }',
+    )
+    for code in (
+        FindingCode.DEMO_FILE_REQUIRED_ON_LIBRARY, FindingCode.DEMO_FILE_ON_A_LIST,
+        FindingCode.DEMO_FILE_FOLDER_UNDECLARED, FindingCode.DEMO_FILE_NAME_INVALID,
+        FindingCode.DEMO_FILE_NAME_MISSING_MARKER, FindingCode.DEMO_TITLE_MISSING_MARKER,
+    ):
+        none_of(findings, code)
+
+
+def test_a_demo_file_on_a_list_is_refused(tmp_path: Path) -> None:
+    findings = _demo(
+        tmp_path, "List", 100,
+        'values: { Title: "[DEMO] Row" }\n'
+        '                  file: { name: "[DEMO] Privacy.txt" }',
+    )
+    only(findings, FindingCode.DEMO_FILE_ON_A_LIST)
+
+
+def test_a_demo_file_in_an_undeclared_folder_is_refused(tmp_path: Path) -> None:
+    findings = _demo(
+        tmp_path, "DocumentLibrary", 101,
+        'values: { Division: "Clinical services" }\n'
+        '                  file: { name: "[DEMO] Privacy.txt", folder: "Archive" }',
+    )
+    f = only(findings, FindingCode.DEMO_FILE_FOLDER_UNDECLARED)
+    assert "Archive" in f.message and "Clinical services" in f.message
+
+
+def test_a_demo_file_name_needs_the_marker_and_legal_characters(tmp_path: Path) -> None:
+    findings = _demo(
+        tmp_path, "DocumentLibrary", 101,
+        'values: { Division: "Clinical services" }\n'
+        '                  file: { name: "Privacy:2026.txt" }',
+    )
+    only(findings, FindingCode.DEMO_FILE_NAME_MISSING_MARKER)
+    f = only(findings, FindingCode.DEMO_FILE_NAME_INVALID)
+    assert ":" in f.message
+
+
+def test_a_demo_file_needs_a_name_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="name"):
+        _demo(
+            tmp_path, "DocumentLibrary", 101,
+            'values: { Division: "Clinical services" }\n'
+            '                  file: { folder: "Clinical services" }',
+        )
+
+
 def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:
     """FileLeafRef is a system column the per-field deploy loop never
     writes, so a formatter declared on it would validate clean and deploy

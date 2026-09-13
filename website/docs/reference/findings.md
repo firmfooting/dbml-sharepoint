@@ -116,6 +116,11 @@ dbml-sharepoint explain unknown_column_type
 | `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
 | `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
 | `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
+| `demo_file_folder_undeclared` | error | A demo file names a `folder` the library does not declare in `entities.<name>.folders`. The folder phase creates only declared folders, so the upload would have nowhere to go. |
+| `demo_file_name_invalid` | error | A demo file's `name` breaks one of Microsoft's file and folder name rules: it contains one of `" * : < > ? / \ |`, leads or trails with a space, or is a reserved name. The message names the rule. |
+| `demo_file_name_missing_marker` | error | A demo file's `name` does not start with `[DEMO] `. On a library the file name is what every view and the file panel show, so it carries the sample-data notice a list row carries in its Title. |
+| `demo_file_on_a_list` | error | A demo row declares `file` on an entity that is not a `DocumentLibrary`. A list row is created with a POST to `/items` and has nowhere to put a file. |
+| `demo_file_required_on_library` | error | A demo row on a `DocumentLibrary` declares no `file`. A library's items are files: a POST to `/items` is refused outright (measured 2026-07-29), so the seeding script uploads the declared file and then sets the row's values on it. Declare `file: { name, folder, content }`. |
 | `demo_hyperlink_address_invalid` | error | A demo row's hyperlink address is not a non-empty string. Checked as a string, not stringified -- `str(None)` is `"None"`, which would deploy as a link pointing at the word None. |
 | `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
 | `demo_multi_value_duplicate_member` | error | A demo row repeats a member within one multi-value value. The write shape measured as M3 on 2026-08-17 is a collection of choices, and nothing has measured what a repeated member reads back as, so the row is refused rather than seeded into an unmeasured state. |
@@ -126,7 +131,6 @@ dbml-sharepoint explain unknown_column_type
 | `demo_ref_on_non_lookup` | error | A demo row uses `demo_ref` on a column that is not a lookup. |
 | `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
 | `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
-| `demo_rows_on_document_library` | error | `demo_items:` seeds a `DocumentLibrary`. A library's items are files and seeding posts to `/items`, which SharePoint refuses outright -- so the paste fails in front of whoever was being shown the demo. |
 | `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the visible notice used to identify declared sample data. Rollback requires per-list confirmation before every delete. |
 | `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
 | `derived_count_bad_source` | error | A derived `count` names a child entity that is not in the schema, or a `via` column on that child which does not point back at the entity being counted for. |

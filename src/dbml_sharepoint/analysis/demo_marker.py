@@ -29,7 +29,12 @@ no compatibility re-export because public names have one importable home.
 """
 
 #: The Title prefix every declared demo row carries. The trailing space is part
-#: of it: `[DEMO]Sample` is not marked sample data.
+#: of it: `[DEMO]Sample` is not marked sample data. On a document library the
+#: FILE NAME carries it instead (`demo_items[].file.name`): a file's Title is
+#: null after upload and the name is what every view and the file panel show.
+#: Square brackets are legal in a SharePoint file name (Microsoft's list of
+#: refused characters is `" * : < > ? / \ |`), which is what lets one prefix
+#: serve both containers.
 #:
 #: It is the in-record notice visible in every view and form. Per-row list-item
 #: comments were tried and withdrawn: the modern Comments() endpoint is an

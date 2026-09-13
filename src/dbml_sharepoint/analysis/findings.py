@@ -336,7 +336,11 @@ class FindingCode(StrEnum):
     LIST_VALIDATION_FORMULA_TOO_LONG = "list_validation_formula_too_long", "error"
 
     # --- checks/_demo.py: rows seeded by `--seed`
-    DEMO_ROWS_ON_DOCUMENT_LIBRARY = "demo_rows_on_document_library", "error"
+    DEMO_FILE_REQUIRED_ON_LIBRARY = "demo_file_required_on_library", "error"
+    DEMO_FILE_ON_A_LIST = "demo_file_on_a_list", "error"
+    DEMO_FILE_FOLDER_UNDECLARED = "demo_file_folder_undeclared", "error"
+    DEMO_FILE_NAME_INVALID = "demo_file_name_invalid", "error"
+    DEMO_FILE_NAME_MISSING_MARKER = "demo_file_name_missing_marker", "error"
     DUPLICATE_DEMO_KEY = "duplicate_demo_key", "error"
     DEMO_TITLE_MISSING_MARKER = "demo_title_missing_marker", "error"
     DEMO_COLUMN_NOT_WRITABLE = "demo_column_not_writable", "error"

@@ -359,18 +359,36 @@ class ViewDef:
 
 
 @dataclass(frozen=True)
+class DemoFile:
+    """The file a document library's demo row uploads (`demo_items[].file`).
+
+    `name` is the file name and carries the demo marker, since a file's
+    Title is null after upload; `folder` is one of the entity's declared
+    folders, or None for the library root; `content` is the short text the
+    file holds, so the upload is a real file rather than an empty one.
+    """
+
+    name: str
+    folder: str | None = None
+    content: str = "Sample document seeded by dbml-sharepoint. Delete before active use."
+
+
+@dataclass(frozen=True)
 class DemoItem:
     """One declared demo/sample row (mapping `demo_items:` section).
 
     `values` are authored with INTERNAL column names. The value grammar
     ("@me" (deploying operator) on person columns, "today+N"/"today-N" on
     date columns, {demo_ref: key} on lookups) is resolved by the generated
-    demo-data.js at RUN time; semantic rules live in the validator. Every
-    Title must start with the configured demo prefix so sample data is visible
-    in every view and form. Rollback requires per-list confirmation before every delete."""
+    demo-data.js at RUN time; semantic rules live in the validator. On a list
+    every Title must start with the configured demo prefix so sample data is
+    visible in every view and form; on a document library the file name
+    carries it instead, and `file` says what to upload. Rollback requires
+    per-list confirmation before every delete."""
 
     key: str
     values: dict[str, Any]
+    file: DemoFile | None = None
 
 
 @dataclass(frozen=True)
