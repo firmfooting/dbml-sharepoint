@@ -681,9 +681,13 @@
     // would stop the folder phase part-way through a paste, so it is a
     // BLOCKED finding here. MEASURED 2026-09-03,
     // `library.folder.filesystem-object-type` in folder-probe.js: a folder's
-    // list item reads FileSystemObjectType 1 (Learn: File 0, Folder 1), which
-    // is the shape read. Absence is read from the enumeration above, so a
-    // first deploy paints nothing red.
+    // list item reads FileSystemObjectType 1. This exact read, the items
+    // filter on FileLeafRef, served one row reading 0 for a file
+    // (`library.folder.item-shape-of-file-by-name`, 2026-09-13,
+    // folder-shape-probe.js), which is why the check asks the item shape
+    // rather than the folder endpoint: that one answers Exists false for a
+    // file and for nothing alike. Absence is read from the enumeration
+    // above, so a first deploy paints nothing red.
     for (const [title, folders] of (TARGETS.library_folders || [])) {
       const key = `folder_shape:${title}`;
       if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
