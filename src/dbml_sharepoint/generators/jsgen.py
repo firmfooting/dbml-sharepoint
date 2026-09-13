@@ -704,11 +704,22 @@ def build_schema_json(
                 )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 
-        if title_patch is None:
+        if title_patch is None and not (entity.is_library and title_display is None):
             # No DBML Title column: the built-in Title on a base-template list is
             # Required by default, which blocks programmatic inserts (a flow
             # creating a row without Title gets HTTP 400) and forces manual
             # entry. Patch it optional.
+            #
+            # Not on a library, where the patch would only clear Required.
+            # MEASURED 2026-09-13 on a live document library: the built-in
+            # Title reads Sealed true, and the maintenance unseal's MERGE of
+            # Sealed=false onto it is refused HTTP 400, so no property of it
+            # can be written. Clearing Required would buy nothing there in any
+            # case: a required column on a library is not enforced at REST
+            # upload, so a bare Files/add lands with Title empty either way.
+            # A declared Title RENAME still emits a patch, because nothing has
+            # measured whether that write is refused too, and a run that tries
+            # one fails closed and loudly rather than skipping it in silence.
             title_patch = {
                 "__metadata": {"type": "SP.FieldText"},
                 "Required": False,

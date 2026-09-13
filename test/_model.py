@@ -28,6 +28,7 @@ alias when a test needs both, as `test_model_contract.py` does.
 """
 
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypedDict, Unpack
 
@@ -324,3 +325,23 @@ def bundle(
         extension_configs=extension_configs if extension_configs is not None else {},
         source_paths=source_paths if source_paths is not None else {},
     )
+
+
+def as_library(
+    source: MappingBundle, entity: str, folders: tuple[str, ...] = (),
+) -> MappingBundle:
+    """`source` with `entity` redeclared as a document library.
+
+    Four modules needed the same three-deep `replace` over a loaded
+    fixture, and each spelled the base template out again. A library that
+    is a library everywhere except in one test's `base_template` is a
+    fixture that tests a shape the loader would refuse, so the number is
+    written once, here.
+    """
+    return replace(source, mapping=replace(source.mapping, entities={
+        **source.mapping.entities,
+        entity: replace(
+            source.mapping.entities[entity],
+            kind="DocumentLibrary", base_template=101, folders=folders,
+        ),
+    }))

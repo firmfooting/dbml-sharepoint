@@ -1474,6 +1474,58 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
     assert att["title_patch"]["Required"] is False
 
 
+def test_a_library_gets_no_title_patch_when_it_would_only_clear_required(
+    tmp_path: Path,
+) -> None:
+    """The same list as a library declares no patch at all.
+
+    MEASURED 2026-09-13 on a live document library: the built-in Title reads
+    Sealed true and the maintenance unseal's MERGE of Sealed=false is refused
+    HTTP 400, so the patch could never land and the run aborted before any
+    structural phase. It would buy nothing there in any case, because a
+    required column on a library is not enforced at REST upload.
+    """
+    from _model import as_library
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Attendance", ID_PK, "Notes nvarchar"),
+        mapping=entities("Attendance"),
+    )
+    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
+    assert att["title_patch"] is None
+
+
+def test_a_library_still_patches_title_for_a_declared_rename(
+    tmp_path: Path,
+) -> None:
+    """A rename is a different write, and nothing has measured it.
+
+    Only the Required-clearing patch is dropped above. Whether a rename of a
+    library's sealed Title is refused as the unseal was is unknown, so the
+    write stays declared: a run that tries one fails closed and says so,
+    rather than skipping it and leaving a column nobody renamed.
+    """
+    from _model import as_library
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Attendance", ID_PK, "Notes nvarchar"),
+        mapping=with_tail(entities("Attendance"), "\n".join([
+            "display_names:", "  mode: auto", "  overrides:", "    Attendance:",
+            "      Title: 'Session'",
+        ])),
+    )
+    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
+    assert att["title_patch"]["Title"] == "Session"
+
+
 def test_generated_js_contains_phase_0_and_phase_4() -> None:
     """deploy.js must include Phase 1.3 (level/group creation) and Phase 4.2
     (break inheritance + role assignments) markers and SP REST calls (R6)."""
