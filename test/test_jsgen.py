@@ -1335,7 +1335,10 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     js = _generate_simple_js()
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
-    assert _call_count(js, "assertListAdoptable") == 11
+    # 12 since the folder phase: it reads the library's shape to lift and put
+    # back the save rule that refuses a folder create, which is a list write
+    # region like any other and is held to the same wrapper.
+    assert _call_count(js, "assertListAdoptable") == 12
     # Two more than assertListAdoptable: reconcileListItemSecurity and
     # reconcileListAttachments are settings MERGEs on an already-adopted list,
     # so each re-proves ownership without a second adoptability pass, the same
@@ -4326,3 +4329,61 @@ def test_a_formula_referencing_title_is_rewritten_to_its_display_name(
     )
     live = next(f for f in risk["fields_phase1"] if f["title"] == "Live")
     assert live["body"]["Formula"] == '=CONCATENATE("x",[Risk Statement])'
+
+
+def test_a_lifted_save_rule_is_restored_on_every_exit_path() -> None:
+    """MEASURED 2026-09-13, `library.folder.add-with-list-validation` in
+    folder-under-schema-probe.js: a list save rule refuses a folder create on
+    a library, so the folder phase lifts it and puts it back.
+
+    The same guarantee the re-seal carries, and for the same reason: every
+    phase between the lift and the restore can return early by design, and
+    each of those returns would otherwise end the run with a library
+    accepting saves its declaration forbids. So the backstop sits on the exit
+    path, which is the only path every abort shares, and it is guarded
+    separately from the re-seal so neither can skip the other.
+    """
+    js = _generate_simple_js()
+
+    assert "const listValidationLiftedForRun = new Map();" in js
+    assert "listValidationLiftedForRun.set(" in js
+    assert "async function restoreLiftedListValidation()" in js
+    finally_block = js.rsplit("} finally {", 1)[1]
+    baseline = finally_block.index("const errorsBeforeCleanup = summary.errors.length;")
+    correction = finally_block.index("const cleanupErrors = summary.errors.length")
+    restore = finally_block.index("await restoreLiftedListValidation();")
+    assert baseline < restore < correction
+    assert "summary.errors.push({ phase: 'exit', error: `restore list save rules" in finally_block
+
+
+def test_a_lifted_save_rule_is_registered_before_the_lift_is_verified() -> None:
+    """The same ordering the unseal batch carries. A MERGE SharePoint commits
+    and whose response is lost has to be put back by exit cleanup, so the
+    registration is a fact about the request rather than about its answer."""
+    js = _generate_simple_js()
+    folders = next(
+        part for part in js.split("// === Phase ") if part.startswith(
+            f"{pn('folders')}: declared folders",
+        )
+    )
+    assert folders.index("listValidationLiftedForRun.set(") < folders.index(
+        "const cleared = await readListShape",
+    )
+
+
+def test_a_restored_save_rule_is_read_back_and_compared_canonically() -> None:
+    """SharePoint strips removable brackets on save, so `[Status]` is stored
+    and read back as `Status`. A byte comparison would report a restore that
+    landed as a restore that failed, and the operator would be sent to repair
+    a list that is already correct."""
+    js = _generate_simple_js()
+    restore = js.split("async function restoreListValidation", 1)[1].split(
+        "async function restoreLiftedListValidation", 1,
+    )[0]
+
+    patch = restore.index("await patchListById(")
+    readback = restore.index("const after = await readListShape", patch)
+    identity = restore.index("after.Id !== listId", readback)
+    compared = restore.index("canonicalFormula(after.ValidationFormula", identity)
+    cleared = restore.index("listValidationLiftedForRun.delete(listTitle)", compared)
+    assert patch < readback < identity < compared < cleared

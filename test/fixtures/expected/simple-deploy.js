@@ -2214,6 +2214,70 @@
   // restores exactly these fields and never seals one it found open.
   const fieldsUnsealedForRun = new Map();
 
+  // Every list whose save rule this run lifted to create a declared folder,
+  // with the identity and the exact text to put back. Same contract as the
+  // map above and for the same reason: a run that dies between the lift and
+  // the restore must not leave a list less guarded than it found it.
+  //
+  // MEASURED 2026-09-13, `library.folder.add-with-list-validation` in
+  // folder-under-schema-probe.js: a list's ValidationFormula is evaluated
+  // when a FOLDER is created on a document library, and one a blank item
+  // fails refuses the create outright with HTTP 500 "Cannot create folder".
+  // The folder phase has no way around it, so it lifts the rule for the
+  // creates. See that phase for the rest of the evidence.
+  const listValidationLiftedForRun = new Map();
+
+  // Put one list's save rule back and prove it went back. Shared by the
+  // folder phase's own restore and by exit cleanup, so the success path and
+  // the abort path write and verify identically rather than by two spellings
+  // that can drift.
+  async function restoreListValidation(listTitle, listId, formula, message) {
+    const digest = await getDigest();
+    await patchListById(listId, {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: formula,
+      ValidationMessage: message,
+    }, digest);
+    const after = await readListShape(listTitle, true);
+    if (!after) {
+      throw new Error(`list '${listTitle}' no longer exists`);
+    }
+    if (after.Id !== listId) {
+      throw new Error(`list '${listTitle}' changed identity before its save rule could be put back`);
+    }
+    // Canonically: SharePoint strips removable brackets on save, so
+    // `[Status]` is stored and read back as `Status`, and a byte comparison
+    // would report a restore that landed as a restore that failed.
+    if (canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(formula)) {
+      throw new Error(
+        `list '${listTitle}' did not retain its save rule `
+        + `(declared ${JSON.stringify(formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    listValidationLiftedForRun.delete(listTitle);
+  }
+
+  // The exit path's half, called from the finally in deploy.js.j2 for the
+  // reason restoreUnsealedFields is: every phase between the lift and the
+  // restore can return early by design, and each of those returns would
+  // otherwise end the run with a library accepting saves its declaration
+  // forbids. Empty on every run that never lifted one, which is every run
+  // that declares no folders and every redeploy whose folders all exist.
+  async function restoreLiftedListValidation() {
+    for (const [listTitle, [listId, formula, message]] of [...listValidationLiftedForRun.entries()]) {
+      try {
+        await restoreListValidation(listTitle, listId, formula, message);
+        log('WARN', `Put the save rule back on '${listTitle}' while exiting: the run lifted it to create a folder and did not reach the restore.`);
+      } catch (err) {
+        log('ERROR', `Could not put the save rule back on '${listTitle}': ${err.message}. `
+            + 'The library is accepting saves its declaration forbids; restore it in list settings before handing the site back.');
+        summary.errors.push({
+          phase: 'exit', list: listTitle, error: `restore the save rule: ${err.message}`,
+        });
+      }
+    }
+  }
+
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
   // return early by design (schema errors, lookup errors, ACL errors all
@@ -5400,50 +5464,131 @@
       summary.errors.push({ phase: '2.2', list: list.title, error: err.message });
       continue;
     }
+    // Which declared folders are actually missing. Asked for the whole list
+    // BEFORE anything is written, because the answer decides whether the
+    // library's save rule has to be lifted at all: a redeploy whose folders
+    // all exist writes nothing here and never touches the rule.
+    const missing = [];
     for (const name of list.folders) {
       const label = `${list.title}/${name}`;
       try {
-        const folderUrl = `${rootUrl}/${name}`;
-        if (await readFolder(folderUrl)) {
+        if (await readFolder(`${rootUrl}/${name}`)) {
           // Present already: verify it is a folder and leave its contents alone.
           const item = await folderItemShape(list.title, name);
           if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
             throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
           }
           summary.foldersVerified.push(label);
-          continue;
+        } else {
+          missing.push(name);
         }
-        const digest = await getDigest();
-        // MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`
-        // in folder-shape-probe.js: this call on a name a folder already holds
-        // answers HTTP 200 and returns that folder, so a re-paste that raced
-        // the read above creates nothing twice.
-        try {
-          await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
-        } catch (err) {
-          // Same run, `library.folder.add-under-existing-file-name`: with a
-          // FILE of that name in place the call answers HTTP 404 "File Not
-          // Found", which names the opposite of the problem. Ask the item
-          // shape and say what is actually standing there.
-          const blocking = await folderItemShape(list.title, name);
-          if (blocking && blocking.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
-            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${blocking.FileSystemObjectType}); nothing was written`);
-          }
-          throw err;
-        }
-        if (!(await readFolder(folderUrl))) {
-          throw new Error(`'${name}' did not read back after creation`);
-        }
-        const item = await folderItemShape(list.title, name);
-        if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
-          throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
-        }
-        summary.foldersCreated.push(label);
-        logChange({ key: `folder: ${label}`, kind: 'create', target: list.title, oldValue: '', newValue: name });
-        log('OK', `Created folder '${name}' in '${list.title}'.`);
       } catch (err) {
         log('ERROR', `Phase 2.2 folders '${label}': ${err.message}`);
         summary.errors.push({ phase: '2.2', list: list.title, folder: name, error: err.message });
+      }
+    }
+    if (missing.length === 0) continue;
+
+    // Lift the declared save rule for the creates, and put it back in the
+    // finally below whatever happens in between. The rule that is restored
+    // is the one READ here rather than the one declared, so a rule an owner
+    // has edited by hand comes back as it was rather than being quietly
+    // reconciled by a phase whose job is folders.
+    let listShape = null;
+    let lifted = null;
+    try {
+      listShape = await readListShape(list.title, true);
+      if (!listShape) throw new Error('the library disappeared before its folders could be created');
+      assertListAdoptable(list, listShape);
+      if ((listShape.ValidationFormula || '') !== '') {
+        lifted = [listShape.ValidationFormula || '', listShape.ValidationMessage || ''];
+        const digest = await getDigest();
+        await patchListById(listShape.Id, {
+          __metadata: { type: 'SP.List' },
+          ValidationFormula: '',
+          ValidationMessage: '',
+        }, digest);
+        // Registered only once the write has been sent, and before it is
+        // verified: a MERGE SharePoint commits and whose response is lost
+        // still has to be put back by exit cleanup.
+        listValidationLiftedForRun.set(list.title, [listShape.Id, lifted[0], lifted[1]]);
+        const cleared = await readListShape(list.title, true);
+        if (!cleared || cleared.Id !== listShape.Id) {
+          throw new Error('the library changed identity while its save rule was being lifted');
+        }
+        if ((cleared.ValidationFormula || '') !== '') {
+          throw new Error(
+            `the library's save rule did not lift (readback ${JSON.stringify(cleared.ValidationFormula)}); no folder was created`,
+          );
+        }
+        log('INFO', `Lifted the save rule on '${list.title}' to create ${missing.length} declared folder(s).`);
+      }
+    } catch (err) {
+      log('ERROR', `Phase 2.2 folders '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.2', list: list.title, error: err.message });
+      if (lifted !== null) {
+        try {
+          await restoreListValidation(list.title, listShape.Id, lifted[0], lifted[1]);
+        } catch (restoreErr) {
+          log('ERROR', `Could not put the save rule back on '${list.title}': ${restoreErr.message}. `
+              + 'The library is accepting saves its declaration forbids; restore it in list settings.');
+          summary.errors.push({ phase: '2.2', list: list.title, error: `restore the save rule: ${restoreErr.message}` });
+        }
+      }
+      continue;
+    }
+
+    try {
+      for (const name of missing) {
+        const label = `${list.title}/${name}`;
+        try {
+          const folderUrl = `${rootUrl}/${name}`;
+          const digest = await getDigest();
+          // MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`
+          // in folder-shape-probe.js: this call on a name a folder already holds
+          // answers HTTP 200 and returns that folder, so a re-paste that raced
+          // the read above creates nothing twice.
+          try {
+            await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+          } catch (err) {
+            // Same run, `library.folder.add-under-existing-file-name`: with a
+            // FILE of that name in place the call answers HTTP 404 "File Not
+            // Found", which names the opposite of the problem. Ask the item
+            // shape and say what is actually standing there.
+            const blocking = await folderItemShape(list.title, name);
+            if (blocking && blocking.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+              throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${blocking.FileSystemObjectType}); nothing was written`);
+            }
+            throw err;
+          }
+          if (!(await readFolder(folderUrl))) {
+            throw new Error(`'${name}' did not read back after creation`);
+          }
+          const item = await folderItemShape(list.title, name);
+          if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
+          }
+          summary.foldersCreated.push(label);
+          logChange({ key: `folder: ${label}`, kind: 'create', target: list.title, oldValue: '', newValue: name });
+          log('OK', `Created folder '${name}' in '${list.title}'.`);
+        } catch (err) {
+          log('ERROR', `Phase 2.2 folders '${label}': ${err.message}`);
+          summary.errors.push({ phase: '2.2', list: list.title, folder: name, error: err.message });
+        }
+      }
+    } finally {
+      // A folder create that threw must not carry the lifted rule out of
+      // this phase with it, so the restore is a finally rather than a line
+      // after the loop. Exit cleanup is the backstop for a failure HERE.
+      if (lifted !== null) {
+        try {
+          await restoreListValidation(list.title, listShape.Id, lifted[0], lifted[1]);
+          log('INFO', `Put the save rule back on '${list.title}'.`);
+        } catch (err) {
+          log('ERROR', `Could not put the save rule back on '${list.title}': ${err.message}. `
+              + 'The library is accepting saves its declaration forbids; restore it in list settings.');
+          summary.errors.push({ phase: '2.2', list: list.title, error: `restore the save rule: ${err.message}` });
+        }
       }
     }
   }
@@ -7434,6 +7579,16 @@
     } catch (err) {
       log('ERROR', `Could not restore field protection on exit: ${err.message}`);
       summary.errors.push({ phase: 'exit', error: `restore field protection: ${err.message}` });
+    }
+    // Beside the re-seal and for the same reason: the folder phase lifts a
+    // library's save rule to create a declared folder, and a run that dies
+    // in between must not leave the library accepting saves its declaration
+    // forbids. Guarded separately so neither restore can skip the other.
+    try {
+      await restoreLiftedListValidation();
+    } catch (err) {
+      log('ERROR', `Could not restore list save rules on exit: ${err.message}`);
+      summary.errors.push({ phase: 'exit', error: `restore list save rules: ${err.message}` });
     }
     try {
       await finishRunLog();

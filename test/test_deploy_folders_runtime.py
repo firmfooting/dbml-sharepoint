@@ -25,7 +25,7 @@ _ROOT = "/sites/test/APP_Doc"
 
 #: The helpers the partial reads from the deploy's enclosing scope, and a
 #: fetch that answers folder reads from `STATE` and records every request.
-_HARNESS = textwrap.dedent("""
+_HARNESS = textwrap.dedent(r"""
     const calls = [];
     const changes = [];
     const log = (level, msg) => console.log(`[${level}] ${msg}`);
@@ -94,6 +94,53 @@ _HARNESS = textwrap.dedent("""
       return r.json();
     }
     const summary = { errors: [], foldersCreated: [], foldersVerified: [] };
+
+    // The library's own shape, and the two list writes the phase makes to
+    // lift and put back the save rule that refuses a folder create. The
+    // restore helper is the deploy's, spelled here because the phase partial
+    // is rendered on its own; the emitted one is pinned by a static test.
+    const listState = {
+      Id: 'list-guid',
+      ValidationFormula: STATE.validationFormula,
+      ValidationMessage: STATE.validationMessage,
+    };
+    const listWrites = [];
+    const readListShape = async () => (STATE.listMissing ? null : { ...listState });
+    const assertListAdoptable = () => {};
+    const canonicalFormula = (value) => String(value == null ? '' : value)
+      .replace(/\[([A-Za-z0-9_]+)\]/g, '$1');
+    const patchListById = async (listId, body) => {
+      const clearing = body.ValidationFormula === '';
+      listWrites.push({
+        ValidationFormula: body.ValidationFormula,
+        ValidationMessage: body.ValidationMessage,
+      });
+      if (clearing && STATE.refuseLift) throw new Error('lift refused');
+      if (!clearing && STATE.refuseRestore) throw new Error('restore refused');
+      // liftDoesNothing: the MERGE answers 204 and the rule stays on, which
+      // is the silent failure the lift's own read-back exists to catch.
+      if (clearing && STATE.liftDoesNothing) return;
+      listState.ValidationFormula = body.ValidationFormula;
+      listState.ValidationMessage = body.ValidationMessage;
+    };
+    const listValidationLiftedForRun = new Map();
+    async function restoreListValidation(listTitle, listId, formula, message) {
+      const digest = await getDigest();
+      await patchListById(listId, {
+        __metadata: { type: 'SP.List' },
+        ValidationFormula: formula,
+        ValidationMessage: message,
+      }, digest);
+      const after = await readListShape(listTitle, true);
+      if (!after) throw new Error(`list '${listTitle}' no longer exists`);
+      if (after.Id !== listId) {
+        throw new Error(`list '${listTitle}' changed identity before the restore`);
+      }
+      if (canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(formula)) {
+        throw new Error(`list '${listTitle}' did not retain its save rule`);
+      }
+      listValidationLiftedForRun.delete(listTitle);
+    }
 """)
 
 
@@ -112,7 +159,8 @@ def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, 
         + _HARNESS
         + "(async () => {\n" + _render_phase() + "\n})().then(() => console.log("
         "'__RESULT__' + JSON.stringify({ summary, changes, "
-        "posts: calls.filter((c) => c.method === 'POST').map((c) => c.url) })));\n"
+        "posts: calls.filter((c) => c.method === 'POST').map((c) => c.url), "
+        "listWrites, stillLifted: [...listValidationLiftedForRun.keys()] })));\n"
     )
     output = run_node(script)
     line = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
@@ -127,8 +175,26 @@ def _state(**overrides: Any) -> dict[str, Any]:
     return {
         "root": _ROOT, "existing": [], "filesNamed": [], "rootMissing": False,
         "refuseCreate": False, "vanishAfterCreate": False, "createdAsFile": False,
-        "refuseShapeRead": False, **overrides,
+        "refuseShapeRead": False,
+        # The library's save rule, and the three ways the lift or the restore
+        # can go wrong. Empty formula is the ordinary list with no save rule.
+        "validationFormula": "", "validationMessage": "",
+        "refuseLift": False, "refuseRestore": False, "liftDoesNothing": False,
+        "listMissing": False,
+        **overrides,
     }
+
+
+#: A rule a folder cannot satisfy, which is every rule naming a declared
+#: column: a folder's item reads them all back null.
+_RULE = '=NOT(ISBLANK([Division]))'
+_RULE_MESSAGE = 'A division is required.'
+
+
+def _guarded(**overrides: Any) -> dict[str, Any]:
+    return _state(
+        validationFormula=_RULE, validationMessage=_RULE_MESSAGE, **overrides,
+    )
 
 
 def test_a_declared_folder_is_created_under_the_root_and_read_back() -> None:
@@ -238,3 +304,83 @@ def test_lists_and_libraries_without_folders_are_left_alone() -> None:
     )
     assert result["posts"] == []
     assert result["summary"] == {"errors": [], "foldersCreated": [], "foldersVerified": []}
+
+
+def test_a_library_with_no_save_rule_has_its_rule_left_alone() -> None:
+    """Nothing to lift, so nothing is written to the list at all."""
+    result = _run_phase(_state(), [_library("Clinical services")])
+    assert result["listWrites"] == []
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Clinical services"]
+
+
+def test_declared_folders_that_all_exist_never_touch_the_save_rule() -> None:
+    """The missing set is asked for BEFORE anything is written, so a
+    steady-state redeploy of a guarded library writes nothing here."""
+    result = _run_phase(
+        _guarded(existing=["Clinical services"]), [_library("Clinical services")],
+    )
+    assert result["listWrites"] == []
+    assert result["posts"] == []
+    assert result["summary"]["foldersVerified"] == ["APP_Doc/Clinical services"]
+
+
+def test_a_save_rule_is_lifted_for_the_create_and_put_straight_back() -> None:
+    """MEASURED 2026-09-13, `library.folder.add-with-list-validation` and the
+    three rows after it in folder-under-schema-probe.js: a list save rule
+    refuses a folder create outright, a cleared list accepts it, and the rule
+    goes back onto a library that now holds folders."""
+    result = _run_phase(_guarded(), [_library("Clinical services", "Corporate")])
+    assert result["summary"]["errors"] == []
+    assert result["summary"]["foldersCreated"] == [
+        "APP_Doc/Clinical services", "APP_Doc/Corporate",
+    ]
+    # Lifted once for both folders, not once each, and put back as it was.
+    assert result["listWrites"] == [
+        {"ValidationFormula": "", "ValidationMessage": ""},
+        {"ValidationFormula": _RULE, "ValidationMessage": _RULE_MESSAGE},
+    ]
+    assert result["stillLifted"] == []
+
+
+def test_a_save_rule_is_put_back_when_a_folder_create_fails() -> None:
+    """The restore is a finally: a create that throws must not carry the
+    lifted rule out of the phase with it."""
+    result = _run_phase(_guarded(refuseCreate=True), [_library("Clinical services")])
+    (error,) = result["summary"]["errors"]
+    assert error["folder"] == "Clinical services"
+    assert result["listWrites"][-1] == {
+        "ValidationFormula": _RULE, "ValidationMessage": _RULE_MESSAGE,
+    }
+    assert result["stillLifted"] == []
+
+
+def test_a_lift_that_does_not_take_creates_no_folder() -> None:
+    """The MERGE answers and the rule stays on. Without the read-back the
+    phase would go on to a create the rule refuses and report the folder
+    rather than the lift."""
+    result = _run_phase(_guarded(liftDoesNothing=True), [_library("Clinical services")])
+    (error,) = result["summary"]["errors"]
+    assert "did not lift" in error["error"]
+    assert "folder" not in error
+    assert result["posts"] == []
+    assert result["summary"]["foldersCreated"] == []
+
+
+def test_a_refused_lift_reports_the_list_and_creates_nothing() -> None:
+    result = _run_phase(_guarded(refuseLift=True), [_library("Clinical services")])
+    (error,) = result["summary"]["errors"]
+    assert "lift refused" in error["error"]
+    assert result["posts"] == []
+    assert result["summary"]["foldersCreated"] == []
+
+
+def test_a_refused_restore_is_reported_and_left_for_exit_cleanup() -> None:
+    """The folder is created and the rule will not go back. The phase says
+    so in the operator's own terms, and the list stays registered so the
+    finally in deploy.js.j2 tries again on the way out."""
+    result = _run_phase(_guarded(refuseRestore=True), [_library("Clinical services")])
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Clinical services"]
+    (error,) = result["summary"]["errors"]
+    assert error["error"].startswith("restore the save rule: ")
+    assert "restore refused" in error["error"]
+    assert result["stillLifted"] == ["APP_Doc"]

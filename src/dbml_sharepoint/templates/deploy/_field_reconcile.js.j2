@@ -63,6 +63,70 @@
   // restores exactly these fields and never seals one it found open.
   const fieldsUnsealedForRun = new Map();
 
+  // Every list whose save rule this run lifted to create a declared folder,
+  // with the identity and the exact text to put back. Same contract as the
+  // map above and for the same reason: a run that dies between the lift and
+  // the restore must not leave a list less guarded than it found it.
+  //
+  // MEASURED 2026-09-13, `library.folder.add-with-list-validation` in
+  // folder-under-schema-probe.js: a list's ValidationFormula is evaluated
+  // when a FOLDER is created on a document library, and one a blank item
+  // fails refuses the create outright with HTTP 500 "Cannot create folder".
+  // The folder phase has no way around it, so it lifts the rule for the
+  // creates. See that phase for the rest of the evidence.
+  const listValidationLiftedForRun = new Map();
+
+  // Put one list's save rule back and prove it went back. Shared by the
+  // folder phase's own restore and by exit cleanup, so the success path and
+  // the abort path write and verify identically rather than by two spellings
+  // that can drift.
+  async function restoreListValidation(listTitle, listId, formula, message) {
+    const digest = await getDigest();
+    await patchListById(listId, {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: formula,
+      ValidationMessage: message,
+    }, digest);
+    const after = await readListShape(listTitle, true);
+    if (!after) {
+      throw new Error(`list '${listTitle}' no longer exists`);
+    }
+    if (after.Id !== listId) {
+      throw new Error(`list '${listTitle}' changed identity before its save rule could be put back`);
+    }
+    // Canonically: SharePoint strips removable brackets on save, so
+    // `[Status]` is stored and read back as `Status`, and a byte comparison
+    // would report a restore that landed as a restore that failed.
+    if (canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(formula)) {
+      throw new Error(
+        `list '${listTitle}' did not retain its save rule `
+        + `(declared ${JSON.stringify(formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    listValidationLiftedForRun.delete(listTitle);
+  }
+
+  // The exit path's half, called from the finally in deploy.js.j2 for the
+  // reason restoreUnsealedFields is: every phase between the lift and the
+  // restore can return early by design, and each of those returns would
+  // otherwise end the run with a library accepting saves its declaration
+  // forbids. Empty on every run that never lifted one, which is every run
+  // that declares no folders and every redeploy whose folders all exist.
+  async function restoreLiftedListValidation() {
+    for (const [listTitle, [listId, formula, message]] of [...listValidationLiftedForRun.entries()]) {
+      try {
+        await restoreListValidation(listTitle, listId, formula, message);
+        log('WARN', `Put the save rule back on '${listTitle}' while exiting: the run lifted it to create a folder and did not reach the restore.`);
+      } catch (err) {
+        log('ERROR', `Could not put the save rule back on '${listTitle}': ${err.message}. `
+            + 'The library is accepting saves its declaration forbids; restore it in list settings before handing the site back.');
+        summary.errors.push({
+          phase: 'exit', list: listTitle, error: `restore the save rule: ${err.message}`,
+        });
+      }
+    }
+  }
+
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
   // return early by design (schema errors, lookup errors, ACL errors all
