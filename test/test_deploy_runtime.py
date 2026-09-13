@@ -425,7 +425,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // Indexed:true onto a Title and reads it back. Answering a fixed false
     // fails that read-back, which looks like a deploy defect.
     const TITLE_SETTINGS_KEYS = ['Sealed', 'Required', 'Description',
-      'DefaultValue', 'Indexed'];
+      'DefaultValue', 'DefaultFormula', 'Indexed'];
     // The display title is per LIST, so it is applied only on the by-name
     // branch below. Every list's Title shares one GUID in this mock, and the
     // by-GUID branch writes to all of them at once, which is right for the
@@ -441,7 +441,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // before then.
     const titleState = (listTitle) => (titles[listTitle] ||= {
       Sealed: true, Required: true, Description: '', DefaultValue: null,
-      Indexed: false, Title: 'Title',
+      DefaultFormula: null, Indexed: false, Title: 'Title',
     });
     const titleField = (listTitle) => ({
       Id: '11111111-1111-1111-1111-111111111111',
@@ -513,6 +513,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       ReadOnlyField: b.FieldTypeKind === 17,
       Sealed: false,
       DefaultValue: b.DefaultValue == null ? null : b.DefaultValue,
+      DefaultFormula: b.DefaultFormula == null ? null : b.DefaultFormula,
       CustomFormatter: b.CustomFormatter == null ? null : b.CustomFormatter,
       __body: b,
     });
@@ -776,7 +777,8 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             // both would hide a lookup by internal name that a live site
             // still answers.
             for (const k of ['Title', 'Description', 'Required', 'DefaultValue',
-                             'CustomFormatter', 'Indexed', 'EnforceUniqueValues']) {
+                             'DefaultFormula', 'CustomFormatter', 'Indexed',
+                             'EnforceUniqueValues']) {
               if (parsed[k] !== undefined) f[k] = parsed[k];
             }
             // Derived properties are read back off __body, not off the shape,
@@ -3710,6 +3712,127 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
             "a default part addresses the field by name, which a rebind can "
             "redirect; the write it replaces went by Id"
         )
+
+
+_DEFAULT_FORMULA_SECTION = """
+    default_formulas:
+      Escalation:
+        Due: "=TODAY()"
+"""
+
+
+def _default_formula_deploy_js(tmp_path: Path) -> str:
+    """deploy.js for a list whose one date column carries a default formula."""
+    return _declared_deploy_js(
+        tmp_path, _DEFAULT_FORMULA_SECTION, extra_lines=("Due date",),
+    )
+
+
+def _run_capturing_calls(
+    harness: str, js: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """(summary, calls, output) for one run of `js` under `harness`.
+
+    The body is wrapped rather than spliced: a declared run's script has
+    more than one `})();`, so a replace would rewrite a call inside a try.
+    """
+    body = js.rstrip()
+    assert body.endswith("})();")
+    script = (
+        f"{harness}\n({body[:-1]}).then(r => {{\n"
+        "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__CALLS__' + JSON.stringify(globalThis.__calls));\n"
+        "});\n"
+    )
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None)
+    assert line is not None, f"deploy.js did not return its call log:\n{output[-3000:]}"
+    return _summary_of(output), json.loads(line.removeprefix("__CALLS__")), output
+
+
+def _default_formula_bodies(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every field write whose body carries a DefaultFormula, decoded."""
+    return [
+        json.loads(call["body"])
+        for call in _field_writes(calls)
+        if call["body"] and "DefaultFormula" in call["body"]
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_default_formula_is_written_and_read_back(tmp_path: Path) -> None:
+    """The formula rides the create body and the field-defaults MERGE, and
+    both readbacks converge on a site that stores what it was sent."""
+    summary, calls, output = _run_capturing_calls(
+        _ADOPTED_HARNESS, _default_formula_deploy_js(tmp_path),
+    )
+    bodies = _default_formula_bodies(calls)
+    creates = [b for b in bodies if b.get("Title") == "Due" and "FieldTypeKind" in b]
+    assert [b["DefaultFormula"] for b in creates] == ["=TODAY()"], bodies
+    # The defaults phase MERGEs by Id, so its body names no Title and no kind.
+    merges = [b for b in bodies if "FieldTypeKind" not in b]
+    assert [b["DefaultFormula"] for b in merges] == ["=TODAY()"], bodies
+    assert "DefaultValue" not in merges[0], "a formula-only column had its DefaultValue touched"
+    assert "readback did not match" not in output, output[-3000:]
+    assert "did not retain" not in output, output[-3000:]
+    assert summary["errors"] == []
+    assert not summary.get("aborted")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_default_formula_the_site_drops_after_the_write_is_refused(tmp_path: Path) -> None:
+    """SharePoint answering 200 and holding a different formula is the
+    failure the readback exists to catch, and it has to be named.
+
+    Dropped at the defaults phase rather than at create: a drop at create is
+    repaired by the list wave's own reconcile, and a drop the wave cannot
+    repair aborts the run before this phase is reached.
+    """
+    anchor = "return { d: f };"
+    assert _ADOPTED_HARNESS.count(anchor) == 1
+    harness = _ADOPTED_HARNESS.replace(
+        anchor,
+        f"return {{ d: mockPhase === '{pn('defaults')}' ? {{ ...f, DefaultFormula: null }} : f }};",
+    )
+    summary, _calls, output = _run_capturing_calls(harness, _default_formula_deploy_js(tmp_path))
+    assert "DefaultFormula readback did not match the declared formula" in output, output[-3000:]
+    assert any(
+        error.get("column") == "Due" and "DefaultFormula" in error.get("error", "")
+        for error in summary["errors"]
+    ), summary["errors"]
+
+
+# A date column somebody has given a formula by hand since the last paste.
+# Its own Id, for the reason _SEALED_ADOPTION_HARNESS gives.
+_HAND_EDITED_FORMULA_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    {
+      const due = fieldShape('APP_Escalation', 'Due', {
+        FieldTypeKind: 4, DisplayFormat: 0, Required: false, Description: '',
+        DefaultFormula: '=TODAY()+7',
+      });
+      due.Id = '33333335-3333-3333-3333-333333333333';
+      created['APP_Escalation Due'] = due;
+    }
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_edited_default_formula_is_reverted_to_the_declaration(tmp_path: Path) -> None:
+    """A formula edited on the site is drift like a DefaultValue: MERGEd back
+    to the declaration by name and read back, on the next paste."""
+    summary, calls, output = _run_capturing_calls(
+        _HAND_EDITED_FORMULA_HARNESS, _default_formula_deploy_js(tmp_path),
+    )
+    reverts = [
+        json.loads(call["body"])
+        for call in _field_writes(calls, "APP_Escalation")
+        if "getbyinternalnameortitle('Due')" in call["url"]
+        and call["body"] and "DefaultFormula" in call["body"]
+    ]
+    assert [b["DefaultFormula"] for b in reverts] == ["=TODAY()"], reverts
+    assert "did not retain" not in output, output[-3000:]
+    assert "readback did not match" not in output, output[-3000:]
+    assert summary["errors"] == []
 
 
 def test_generated_deploy_js_carries_no_control_characters() -> None:

@@ -101,9 +101,11 @@
   // bypass the cache entirely (verification never trusts a cache). An
   // absent LIST yields an uncached empty result; the list may be created
   // later in this same run.
+  // DefaultFormula is a base SP.Field property like DefaultValue (CSOM
+  // Field.DefaultFormula), so it is selected on every subtype the same way.
   const _FIELD_SHAPE_SELECT = [
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
-    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter',
+    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter',
   ].join(',');
   let fieldShapesByList = Object.create(null);
   // No argument: full reset (phase starts). With a list name: drop only
@@ -217,6 +219,7 @@
         || typeof shape.ReadOnlyField !== 'boolean'
         || typeof shape.Sealed !== 'boolean'
         || !(shape.DefaultValue === null || typeof shape.DefaultValue === 'string')
+        || !(shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string')
         || !(shape.CustomFormatter == null || typeof shape.CustomFormatter === 'string')) {
       throw new Error(`Field '${listName}.${columnName}' shape probe returned an invalid response`);
     }

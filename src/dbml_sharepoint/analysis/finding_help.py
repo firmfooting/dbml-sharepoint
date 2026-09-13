@@ -461,6 +461,57 @@ FINDING_HELP: dict[FindingCode, str] = {
         "or a `via` column on that child which does not point back at the "
         "entity being counted for."
     ),
+    FindingCode.DEFAULT_FORMULA_BESIDE_A_DEFAULT_VALUE: (
+        "A column carries a default formula in the mapping and a `default:` "
+        "in the DBML. Nothing has measured which one SharePoint honours when "
+        "a field has both, so a column declares one or the other."
+    ),
+    FindingCode.DEFAULT_FORMULA_CHOICE_RESULT_UNCHECKED: (
+        "A default formula on a single-value enum column must produce a "
+        "member of the enum at run time, and the build cannot evaluate the "
+        "clock to check it. Measured 2026-09-13 (library-guards-probe.js "
+        "c445a55c, `field.default-formula.choice-non-member-result`): a "
+        "Choice formula whose result was not a member stored the literal "
+        "`Q13`. The field is not left blank; it holds a value outside the "
+        "choice set."
+    ),
+    FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED: (
+        "A default formula is declared on a column kind that cannot take one: "
+        "the built-in Title, a calculated, multi-value, Person, Hyperlink or "
+        "Lookup column, or a cross-site reference column."
+    ),
+    FindingCode.DEFAULT_FORMULA_FUNCTION_UNSUPPORTED: (
+        "A default formula calls a function outside the allowed set (TODAY, "
+        "YEAR, MONTH, DAY, ROUNDUP, ROUNDDOWN, MOD, TEXT, IF, AND, OR, with "
+        "the `&` operator). Names are matched as spelled; nothing has "
+        "measured what SharePoint does with any other."
+    ),
+    FindingCode.DEFAULT_FORMULA_MISSING_EQUALS: (
+        "A default formula does not start with `=`."
+    ),
+    FindingCode.DEFAULT_FORMULA_REFERENCES_A_COLUMN: (
+        "A default formula names a column in square brackets. It runs before "
+        "the row exists, so there is no column to read; compute from TODAY() "
+        "and constants."
+    ),
+    FindingCode.DEFAULT_FORMULA_TYPE_UNMEASURED: (
+        "A default formula is declared on a column type no live probe has "
+        "measured yet (`nvarchar`). The 2026-09-13 run of "
+        "library-guards-probe.js measured Number and Choice and not Text, so "
+        "the declaration is refused until the measurement lands, not because "
+        "the type is known to fail."
+    ),
+    FindingCode.DEFAULT_FORMULA_TYPE_UNSUPPORTED: (
+        "A default formula is declared on a column type it is not supported "
+        "on. Supported: `date`, `datetime`, `int`, `number` and a "
+        "single-value enum, each measured on a live site (date through "
+        "`field.date.dynamic-default-rest-fill`; the rest through "
+        "library-guards-probe.js c445a55c on 2026-09-13)."
+    ),
+    FindingCode.DEFAULT_FORMULA_UNKNOWN_COLUMN: (
+        "A default formula names a column the deploy does not create on that "
+        "entity."
+    ),
     FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER: (
         "A column's default is not a member of the enum it is typed as."
     ),

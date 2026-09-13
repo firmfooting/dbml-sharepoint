@@ -16,6 +16,7 @@ has already errored on it. Append rather than reorder.
 from collections.abc import Callable
 
 from dbml_sharepoint.analysis.checks import (
+    _default_formulas,
     _demo,
     _derived,
     _formatting,
@@ -45,4 +46,5 @@ CHECK_FAMILIES: tuple[Callable[[ValidationContext], list["Finding"]], ...] = (
     _renames.check,
     _derived.check,
     _library.check,
+    _default_formulas.check,
 )

@@ -142,6 +142,17 @@ def generate_manifest(
         ]
         return [*lst["fields_phase1"], *deferred]
 
+    # Every default formula beside the column it fills, from the bodies the
+    # deploy writes rather than from the mapping, for the same reason as the
+    # rules below: the manifest reports what the script does.
+    default_formulas = [
+        {"list": lst["title"], "column": f["title"], "formula": f["body"]["DefaultFormula"]}
+        for lst in schema_json["lists"]
+        for f in _written_fields(lst)
+        if f["body"].get("DefaultFormula") is not None
+    ]
+    counts["default_formulas"] = len(default_formulas)
+
     # Form behaviour, per list. The composed formula is printed in full:
     # an operator reading the manifest should be able to see what will be
     # written without inferring it from a declaration two files away.
@@ -319,6 +330,7 @@ def generate_manifest(
         indexed=schema_json["indexed_columns"],
         views=views,
         formatted_columns=formatted_columns,
+        default_formulas=default_formulas,
         retired_columns=retired_columns,
         form_visibility=form_visibility,
         column_validation=column_validation,

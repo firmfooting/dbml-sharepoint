@@ -548,6 +548,7 @@ class Mapping:
     permissions: PermissionsConfig | None = None
     previous_prefixes: tuple[str, ...] = ()
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
+    default_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     lookup_projections: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     derived_columns: dict[str, list['DerivedColumn']] = field(default_factory=dict)
     form_visibility: dict[str, dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.FormVisibility]] = field(default_factory=dict)

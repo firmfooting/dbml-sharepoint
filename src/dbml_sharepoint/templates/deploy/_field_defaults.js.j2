@@ -56,13 +56,19 @@
         for (const entry of entries) {
           // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
           // sends, so only the transport differs: still by-Id, still a MERGE.
+          // Each default rides only when declared: a column with a formula
+          // and no value must not have its DefaultValue touched here.
+          const defaultBody = { __metadata: { type: entry.fieldDefault.metadata_type } };
+          if (entry.fieldDefault.default_value != null) {
+            defaultBody.DefaultValue = entry.fieldDefault.default_value;
+          }
+          if (entry.fieldDefault.default_formula != null) {
+            defaultBody.DefaultFormula = entry.fieldDefault.default_formula;
+          }
           await defaultsBatch.add(
             'POST',
             fieldMergePath(entry.target.listId, entry.target.field.Id),
-            {
-              __metadata: { type: entry.fieldDefault.metadata_type },
-              DefaultValue: entry.fieldDefault.default_value,
-            },
+            defaultBody,
             FIELD_MERGE_HEADERS,
           );
         }
@@ -83,6 +89,15 @@
             || normalizeDefaultValue(actual.DefaultValue)
                !== normalizeDefaultValue(fieldDefault.default_value)) {
           throw new Error('DefaultValue readback did not match the declared value');
+        }
+        // Compared whether or not a formula is declared: a formula the site
+        // holds and the declaration does not is drift this phase must name.
+        if (normalizeDefaultFormula(actual.DefaultFormula)
+            !== normalizeDefaultFormula(fieldDefault.default_formula)) {
+          throw new Error(
+            'DefaultFormula readback did not match the declared formula '
+            + `(declared ${JSON.stringify(fieldDefault.default_formula)}; readback ${JSON.stringify(actual.DefaultFormula)})`,
+          );
         }
         // The readback resolves list and column by name, so it is only
         // evidence about the field just written if both still resolve to it.

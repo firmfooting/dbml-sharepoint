@@ -157,7 +157,7 @@ _HARNESS = textwrap.dedent(r"""
     const FIELD_DEFAULTS = {
       TypeAsString: 'Text', Description: '', Required: false,
       EnforceUniqueValues: false, Indexed: false, ReadOnlyField: false,
-      Sealed: false, DefaultValue: null, CustomFormatter: '', Hidden: false,
+      Sealed: false, DefaultValue: null, DefaultFormula: null, CustomFormatter: '', Hidden: false,
       ValidationFormula: null, ValidationMessage: '',
       ClientValidationFormula: null, ClientValidationMessage: '',
     };
