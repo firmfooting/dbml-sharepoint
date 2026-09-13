@@ -4510,3 +4510,81 @@ def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
     as_list = views_of("List", 100, tmp_path / "list")
     assert {v["title"] for v in as_list} == {"All Items", "By division"}
     assert not any(v["adopts_builtin_view"] for v in as_list)
+
+
+# --- A unique Title deploys its constraint -----------------------------------
+#
+# The failure this closes is the one AGENTS.md opens with. A DBML
+# `Title [unique]` produced no uniqueness constraint on the deployed list, saved,
+# read back clean and passed every deploy phase, because jsgen routes Title into
+# `title_patch` and `continue`s past the field-body builder where
+# `EnforceUniqueValues` is written (#307). `programme-governance` declares one,
+# so this was shipping.
+#
+# NOT a claim that SharePoint accepts the write. Nothing has measured a MERGE of
+# EnforceUniqueValues onto a BUILT-IN Title: `field.unique.*` is a column the
+# probe created and `field.title.*` never asked. The patch goes through
+# `reconcileDeclaredField` like every other column, so a refusal surfaces as a
+# named failure instead of a silent drop, which is the point.
+
+
+def _stakeholder_title_patch(tmp_path: Path, *, unique: bool) -> dict[str, Any]:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    declaration = "Title nvarchar [not null, unique]" if unique else TITLE
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Stakeholder", ID_PK, declaration),
+        mapping=entities("Stakeholder"),
+    )
+    sj = build_schema_json(schema, bundle, "default")
+    built = next(lst for lst in sj["lists"] if lst["title"] == "APP_Stakeholder")
+    patch = built["title_patch"]
+    assert patch is not None
+    return cast("dict[str, Any]", patch)
+
+
+def test_a_unique_title_patches_enforce_unique_values(tmp_path: Path) -> None:
+    """The declaration reaches the column instead of being dropped."""
+    patch = _stakeholder_title_patch(tmp_path, unique=True)
+    assert patch["EnforceUniqueValues"] is True
+
+
+def test_a_unique_title_is_indexed_with_the_constraint(tmp_path: Path) -> None:
+    """The pair the field-body builder writes together, written together here.
+
+    SharePoint will not enforce uniqueness on an unindexed column, so sending
+    one without the other is a constraint that cannot take.
+    """
+    patch = _stakeholder_title_patch(tmp_path, unique=True)
+    assert patch["Indexed"] is True
+
+
+def test_a_title_that_is_not_unique_declares_nothing_about_the_constraint(
+    tmp_path: Path,
+) -> None:
+    """ABSENT, not `False`, and the distinction is the whole safety of this.
+
+    `_field_reconcile.js.j2` reads `field.body.EnforceUniqueValues === true`
+    off this same patch. An explicit `False` is a declaration ABOUT the
+    property rather than silence about it, and it would make every family that
+    ships a plain Title start asserting the constraint is off.
+    """
+    patch = _stakeholder_title_patch(tmp_path, unique=False)
+    assert "EnforceUniqueValues" not in patch
+    assert "Indexed" not in patch
+
+
+def test_the_reconciler_reads_the_declared_title_shape_off_the_patch() -> None:
+    """The coupling that makes one edit close both halves of #307.
+
+    An operator who noticed the missing constraint and ticked the box in list
+    settings had it turned off again by the next paste, because the reconciler
+    builds the declared Title shape out of this same body and compared a live
+    `true` against a declared `false`. Pinned here because the fix relies on
+    it: if the reconciler ever stopped reading the patch, the deploy would
+    apply the constraint and the reconciler would go back to removing it, and
+    nothing else in the suite would notice.
+    """
+    js = _generate_simple_js()
+    assert "{ ...list.title_patch, FieldTypeKind: 2 }" in js
