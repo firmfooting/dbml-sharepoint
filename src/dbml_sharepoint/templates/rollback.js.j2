@@ -99,27 +99,33 @@
   // first is what makes that delete actually succeed under retention.
   async function recycleItems(name) {
     let total = 0;
-    for (;;) {
-      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Id&$top=200`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!r.ok) throw new Error(`item read failed: HTTP ${r.status}`);
-      const rows = ((await r.json()).d || {}).results || [];
-      if (rows.length === 0) break;
-      const digest = await getDigest();
-      for (const row of rows) {
-        const rec = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items(${row.Id})/recycle()`), {
-          method: 'POST',
-          headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+    // Reported in a finally, not after the loop: a drain that fails part way
+    // through has already moved rows to the recycle bin, and a run that says
+    // nothing about them leaves the operator no reason to restore them.
+    try {
+      for (;;) {
+        const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Id&$top=200`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
         });
-        if (!rec.ok) {
-          throw new Error(`recycle of item ${row.Id} failed: HTTP ${rec.status} ${spError(await rec.text())}`);
+        if (!r.ok) throw new Error(`item read failed: HTTP ${r.status}`);
+        const rows = ((await r.json()).d || {}).results || [];
+        if (rows.length === 0) break;
+        const digest = await getDigest();
+        for (const row of rows) {
+          const rec = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items(${row.Id})/recycle()`), {
+            method: 'POST',
+            headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+          });
+          if (!rec.ok) {
+            throw new Error(`recycle of item ${row.Id} failed: HTTP ${rec.status} ${spError(await rec.text())}`);
+          }
+          total += 1;
         }
-        total += 1;
+        if (total > 5000) throw new Error(`recycled ${total} items without draining '${name}'; aborting as a safety stop`);
       }
-      if (total > 5000) throw new Error(`recycled ${total} items without draining '${name}'; aborting as a safety stop`);
+    } finally {
+      log('INFO', `'${name}': recycled ${total} item(s) (restorable from the recycle bin).`);
     }
-    log('INFO', `'${name}': recycled ${total} item(s) (restorable from the recycle bin).`);
   }
 
   // AllowDeletion=false (deployed via prevent_list_deletion, or set by
@@ -175,8 +181,21 @@
     return { ours: description.indexOf(expectedMarker) !== -1, id };
   }
 
+  // FLAGGED, because the re-lock below has to keep this uncertainty: a list
+  // whose delete could not be settled is not one known to be still there.
+  const unsettled = (message) => {
+    const err = new Error(message);
+    err.deletionUnknown = true;
+    return err;
+  };
+
   for (const target of TARGET_LISTS) {
     const name = target.title;
+    // What this run has done to THIS list's deletion block: 'untouched' until
+    // it tries to take one off, 'unknown' from the moment the unlock is
+    // attempted, and 'off' once a readback proves the block came off. Out
+    // here because the re-lock that reads it runs in the catch below.
+    let unlock = 'untouched';
     try {
       const count = await itemCount(name);
       if (count === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
@@ -245,29 +264,47 @@
       await recycleItems(name);
       // Unlock only once deletion is authorised for THIS list; skipped
       // lists keep their protection untouched.
-      let unlockedForDelete = false;
       const allowDeletion = await readAllowDeletion(name);
       if (allowDeletion === null) {
         log('WARN', `${name}: AllowDeletion probe failed; attempting delete anyway.`);
       } else if (allowDeletion === false) {
+        // Recorded BEFORE the write, not after its readback: a MERGE that
+        // took effect and a readback that then failed leaves the block off
+        // with nothing to put it back, and the catch below is what does.
+        unlock = 'unknown';
         if (!(await setAllowDeletion(name, true))) {
           throw new Error('deletion-block unlock MERGE failed');
         }
-        if ((await readAllowDeletion(name)) !== true) {
+        const back = await readAllowDeletion(name);
+        if (back === false) {
+          // The one case needing no restore: the readback ANSWERED, and it
+          // says the write was discarded and the block is still on.
+          unlock = 'untouched';
           throw new Error('deletion-block unlock did not take effect');
         }
-        unlockedForDelete = true;
+        if (back !== true) {
+          throw new Error('deletion-block unlock could not be read back');
+        }
+        unlock = 'off';
         log('INFO', `${name}: deletion block cleared for this delete (AllowDeletion = true).`);
       }
       // Fetch a fresh digest per delete: FormDigestValue expires (~30 min), so
       // confirmation-prompt pauses or many-list runs can otherwise 403 mid-run
       // and leave the site partially rolled back.
       const digest = await getDigest();
-      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')`), {
-        method: 'POST',
-        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
-      });
-      if (!r.ok) {
+      // A request that never came back is not a delete that did not happen:
+      // the connection can drop after SharePoint has accepted it, so the
+      // by-id readback below settles it rather than the transport failure.
+      let r = null;
+      try {
+        r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')`), {
+          method: 'POST',
+          headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+        });
+      } catch (transport) {
+        log('WARN', `${name}: the DELETE never answered (${transport.message}); reading the list back by its id to settle whether it went.`);
+      }
+      if (r && !r.ok) {
         // Surface SharePoint's actual reason (live finding 2026-07-24: a
         // bare 'HTTP 500' left a blocked teardown undiagnosable).
         const detail = spError(await r.text());
@@ -278,12 +315,6 @@
           // which is compliance enforcement this script will never bypass.
           log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. After your per-list DELETE NON-EMPTY confirmation, rollback recycles any live items before deleting. If this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
         }
-        if (unlockedForDelete) {
-          // Best-effort re-lock: this run removed the protection and the
-          // delete did not go through; never strand the list unprotected.
-          const relocked = await setAllowDeletion(name, false).catch(() => false);
-          log(relocked ? 'INFO' : 'ERROR', `${name}: deletion block ${relocked ? 'restored' : 'could NOT be restored'} after failed delete.`);
-        }
         throw new Error(`HTTP ${r.status}${detail ? `, ${detail}` : ''}`);
       }
       // A 200 on the DELETE is not the list being gone, and this is the
@@ -291,20 +322,57 @@
       // By id, not by title, so a same-titled replacement created since does
       // not read as the list this run deleted. Same check `confirmDeleted`
       // makes in columns.js, which rollback did not have.
-      const gone = await fetchWithRetry(apiUrl(`web/lists(guid'${stillOwned.id}')?$select=Id`), {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (gone.ok) {
-        throw new Error(`the delete answered HTTP ${r.status} but the list still reads back by its id (${stillOwned.id}); it has NOT been deleted.`);
+      const what = r ? `answered HTTP ${r.status}` : 'never answered';
+      let gone;
+      try {
+        gone = await fetchWithRetry(apiUrl(`web/lists(guid'${stillOwned.id}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } catch (transport) {
+        // The readback rejects for the same reason the DELETE can, and a
+        // request that never answered settles nothing either way.
+        throw unsettled(`the delete ${what}, and the readback that would confirm it never answered (${transport.message}); whether '${name}' is gone is unknown.`);
       }
-      if (gone.status !== 404 && !isAbsent400(gone.status, await gone.text())) {
-        throw new Error(`the delete answered HTTP ${r.status}, and the readback that would confirm it failed with HTTP ${gone.status}; whether '${name}' is gone is unknown.`);
+      if (gone.ok) {
+        throw new Error(`the delete ${what} and the list still reads back by its id (${stillOwned.id}); it has NOT been deleted.`);
+      }
+      if (gone.status !== 404) {
+        let detail;
+        try {
+          detail = await gone.text();
+        } catch (body) {
+          // The status alone cannot say which 400 this is, so a body that
+          // never arrived leaves the readback as unable to settle it.
+          throw unsettled(`the delete ${what}, and the body of the HTTP ${gone.status} readback that would confirm it never arrived (${body.message}); whether '${name}' is gone is unknown.`);
+        }
+        if (!isAbsent400(gone.status, detail)) {
+          throw unsettled(`the delete ${what}, and the readback that would confirm it failed with HTTP ${gone.status}; whether '${name}' is gone is unknown.`);
+        }
       }
       summary.deleted.push(name);
       log('INFO', `Deleted ${name}, confirmed absent by list id.`);
     } catch (err) {
       summary.errors.push({ list: name, error: err.message });
       log('ERROR', `${name}: ${err.message}`);
+      // Best-effort re-lock: this run may have removed the protection and the
+      // delete did not go through; never strand the list unprotected. Here
+      // rather than on the refused-DELETE path alone, because a delete whose
+      // response never arrived, and one whose readback could not settle it,
+      // strand the list the same way.
+      //
+      // READ BACK, like the unlock that took it off: a MERGE SharePoint
+      // discarded answers exactly as one it applied does, so the MERGE's own
+      // status cannot tell an operator the protection is back. An unreadable
+      // answer reads as not restored, which is the same fail-closed posture
+      // every other readback here takes.
+      if (unlock !== 'untouched' && !summary.deleted.includes(name)) {
+        const after = err.deletionUnknown
+          ? 'a delete that could not be confirmed'
+          : (unlock === 'off' ? 'a failed delete' : 'an unlock that could not be read back');
+        const merged = await setAllowDeletion(name, false).catch(() => false);
+        const relocked = merged && (await readAllowDeletion(name).catch(() => null)) === false;
+        log(relocked ? 'INFO' : 'ERROR', `${name}: deletion block ${relocked ? 'restored (read back)' : 'could NOT be confirmed restored'} after ${after}.`);
+      }
     }
   }
   log('DONE', `Deleted ${summary.deleted.length}, skipped ${summary.skipped.length}, errors ${summary.errors.length}.`);

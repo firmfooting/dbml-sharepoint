@@ -1,9 +1,10 @@
-{# Shared list resolution for the two maintenance scripts (protection.js,
-   columns.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl,
+{# Shared list resolution for the three maintenance scripts (protection.js,
+   columns.js, list.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl,
    odataName, fetchWithRetry, spError, spHeaders and getDigest to be
    defined. Emits the ManageLists preflight, the by-URL list read that names
    what does exist on a miss, the guid-addressed list and field paths, the
-   custom column filter, and the MERGE helpers every write goes through.
+   custom column filter, the provenance grammar every script tests a
+   Description against, and the MERGE helpers every write goes through.
 
    RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the
    reason. LIST_TITLE is read back from the list here, so every message below
@@ -81,9 +82,30 @@
   // The one place a field URL is built as a literal, so the endpoint
   // inventory in test_template_lint.py sees the family it belongs to.
   const fieldUrl = (fieldId, query = '') => apiUrl(`web/lists(guid'${LIST_ID}')/fields(guid'${sharePointGuid(fieldId, 'field')}')${query}`);
-  // Reported, never gated on: the operator named this list by URL, and the
-  // typed confirmation is what makes each write deliberate.
-  const provisioned = String(list.Description || '').indexOf({{ marker_prefix | tojson }}) !== -1;
+  // The WHOLE marker grammar, not the opening words: a hand-written
+  // description that merely mentions this tool passed a prefix search, and in
+  // list.js that test is what stands in front of a permanent delete. Rendered
+  // from `analysis/provenance.py` the way identify.js renders it, never typed
+  // here, so these scripts and the deploy that writes the markers cannot
+  // drift. FAMILY-AGNOSTIC on purpose: a list the bundle no longer declares
+  // carries a marker naming a family and an entity it has no entry for, so the
+  // deploy's exact-marker comparison can never match one. SEARCHED, NOT
+  // ANCHORED, the read the deploy itself makes, so prose either side of a
+  // marker still reads as owned.
+  const MARKER_PREFIX = {{ marker_prefix | tojson }};
+  const MARKER_TERMINATOR = {{ marker_terminator | tojson }};
+  const MARKER_KINDS = {{ marker_kinds | tojson }};
+  const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const notTerminator = `[^${escapeRe(MARKER_TERMINATOR)}]+`;
+  const MARKER_RE = new RegExp(
+    `${escapeRe(MARKER_PREFIX)}(?: from ${notTerminator})? for `
+    + `(?:${MARKER_KINDS.map(escapeRe).join('|')}) ${notTerminator}${escapeRe(MARKER_TERMINATOR)}`,
+  );
+  const carriesMarker = (description) => MARKER_RE.test(String(description || ''));
+  // Reported by protection.js and columns.js, where the operator named the
+  // list by URL and the typed confirmation is what makes each write
+  // deliberate; refused on by list.js, which removes the list.
+  const provisioned = carriesMarker(list.Description);
   log(provisioned ? 'INFO' : 'WARN',
     `'${LIST_TITLE}' ${provisioned ? 'carries' : 'does NOT carry'} a dbml-sharepoint provenance marker.`);
 
