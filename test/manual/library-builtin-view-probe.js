@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: THE VIEW ALREADY SITTING ON AllItems.aspx
  *
- * REVISION: 340d722b
+ * REVISION: 6968c42f
  *
  * ONE QUESTION:
  *   A library ships with a built-in view. The deploy's generated All Items
@@ -318,7 +318,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 340d722b. Quote this when reporting results.');
+  log('INFO', 'probe revision 6968c42f. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Builtin View';
   const LIST = 'dbmlsp Probe Builtin View List';
@@ -475,9 +475,11 @@
   record('library.view.builtin-view-inventory', Q.inventory, 'OBSERVED',
          `${libViews.length} public view(s): ${libViews.map(describe).join('; ')}`);
 
-  const builtin = libViews.find(isAllItems) || libViews.find((v) => v.DefaultView) || null;
+  // Only the view actually on that URL. Falling back to the default view
+  // would aim every adoption write below at a page nobody asked about.
+  const builtin = libViews.find(isAllItems) || null;
   record('library.view.builtin-occupies-allitems', Q.occupies,
-         builtin && isAllItems(builtin) ? 'OCCUPIED' : 'FREE',
+         builtin ? 'OCCUPIED' : 'FREE',
          builtin ? `the view on that URL is ${describe(builtin)}`
                  : `no public view on a bare library reports ${SLUG}.aspx`);
 
@@ -526,16 +528,25 @@
       const after = await readViews(libPath);
       const mine = (after || []).find((v) => v.Title === SLUG) || null;
       const got = mine ? basename(mine) : null;
-      record('library.view.create-allitems-title-on-library', Q.collide,
-             mine && isAllItems(mine) ? 'LANDED' : 'SUFFIXED',
-             mine ? `a view titled '${SLUG}' was minted at ${got}`
-                  : 'the create answered OK but no view of that title read back');
+      // SUFFIXED is a basename this run SAW, so a create nothing read back
+      // answers nothing. The live adoption rule cites this row.
+      if (!got) {
+        record('library.view.create-allitems-title-on-library', Q.collide, 'NOT ESTABLISHED',
+               (after ? `the create answered OK but no view titled '${SLUG}' read back`
+                      : 'the create answered OK but the view collection did not read back')
+               + ', so no basename was observed');
+      } else {
+        record('library.view.create-allitems-title-on-library', Q.collide,
+               isAllItems(mine) ? 'LANDED' : 'SUFFIXED',
+               `a view titled '${SLUG}' was minted at ${got}`);
+      }
     }
   }
 
   if (!builtin) {
     voidAll(IDS.slice(4),
-            'no built-in view was identified, so none of the adoption writes could be aimed.');
+            `no public view holds ${SLUG}.aspx, so none of the adoption writes below had `
+            + 'the view this probe asks about to aim at.');
     return report();
   }
 
@@ -546,20 +557,28 @@
   };
 
   // ---- can the deploy adopt it? -----------------------------------------
+  // The getbytitle row below asks about a view under its NEW title, so a
+  // rename that never took leaves it measuring the unmet prerequisite.
+  let renamedTitle = false;
   {
     const merged = await postVerbose(builtinUrl,
       { __metadata: { type: 'SP.View' }, Title: DECLARED }, MERGE);
     const after = merged.ok ? await reread() : null;
     const moved = after && basename(after) !== basename(builtin);
+    renamedTitle = Boolean(merged.ok && after && after.Title === DECLARED);
     record('library.view.builtin-title-rename', Q.rename,
-           merged.ok && after && after.Title === DECLARED && !moved ? 'PASS' : 'FAIL',
+           renamedTitle && !moved ? 'PASS' : 'FAIL',
            !merged.ok ? short(merged)
              : !after ? 'the MERGE answered but the view did not read back'
              : `Title reads ${JSON.stringify(after.Title)}, URL ${basename(after)}`
                + ` (was ${basename(builtin)})`);
   }
 
-  {
+  if (!renamedTitle) {
+    record('library.view.builtin-getbytitle-after-rename', Q.getByTitle, 'NOT ESTABLISHED',
+           `the view did not read back under ${JSON.stringify(DECLARED)}, so a getbytitle `
+           + 'result here would report the failed rename rather than the lookup.', 'void');
+  } else {
     const r = await spGet(`${libPath}/views/getbytitle('${odataName(DECLARED)}')?${VIEW_SELECT}`);
     record('library.view.builtin-getbytitle-after-rename', Q.getByTitle,
            !readFailed(r) && r.body.Id === builtin.Id ? 'PASS' : 'FAIL',
@@ -580,33 +599,52 @@
   }
 
   {
+    const WANTED = ['FileLeafRef'];
     const cleared = await postVerbose(`${builtinUrl}/ViewFields/removeallviewfields`, null);
     const added = cleared.ok
-      ? await postVerbose(`${builtinUrl}/ViewFields/addviewfield('FileLeafRef')`, null)
+      ? await postVerbose(`${builtinUrl}/ViewFields/addviewfield('${WANTED[0]}')`, null)
       : null;
     const fields = await spGet(`${builtinUrl}/ViewFields?$select=Items`);
     const raw = readFailed(fields) ? null : fields.body.Items;
     const names = raw && raw.results ? raw.results : (Array.isArray(raw) ? raw : null);
+    // The names asked for, in that order. A count alone reads a surviving
+    // field as the one this run added.
+    const exact = Boolean(names) && names.length === WANTED.length
+      && WANTED.every((want, i) => names[i] === want);
     record('library.view.builtin-viewfields-replace', Q.viewFields,
-           cleared.ok && added && added.ok && names && names.length === 1 ? 'PASS' : 'FAIL',
+           cleared.ok && added && added.ok && exact ? 'PASS' : 'FAIL',
            !cleared.ok ? `removeallviewfields: ${short(cleared)}`
              : !added || !added.ok ? `addviewfield: ${short(added || cleared)}`
-             : `ViewFields now ${JSON.stringify(names)}`);
+             : `ViewFields now ${JSON.stringify(names)}`
+               + (exact ? '' : `, not the requested ${JSON.stringify(WANTED)}`));
   }
 
+  // The second hidden row starts from a visible view, so a restore that only
+  // answered OK would let that row read the state this one left behind.
+  let visibleAgain = true;
   {
     const merged = await postVerbose(builtinUrl,
       { __metadata: { type: 'SP.View' }, Hidden: true }, MERGE);
     const after = merged.ok ? await reread() : null;
+    const hidden = Boolean(merged.ok && after && after.Hidden === true);
+    // The question is Hidden WHILE default, so a view that stopped being the
+    // default answers the next row's question rather than this one's.
+    const stillDefault = Boolean(after && after.DefaultView === true);
     record('library.view.builtin-hidden-while-default', Q.hiddenDefault,
-           merged.ok && after && after.Hidden === true ? 'PASS' : 'REFUSED',
+           hidden && stillDefault ? 'PASS' : hidden ? 'NOT ESTABLISHED' : 'REFUSED',
            !merged.ok ? short(merged)
              : !after ? 'the MERGE answered but the view did not read back'
-             : `Hidden reads ${after.Hidden}, DefaultView ${after.DefaultView}`);
+             : `Hidden reads ${after.Hidden}, DefaultView ${after.DefaultView}`
+               + (hidden && !stillDefault
+                  ? '; the MERGE took but DefaultView moved off it, so this is not the'
+                    + ' state the question names'
+                  : ''));
     // Put it back, so the next row measures its own MERGE and not this one.
     if (merged.ok) {
-      await postVerbose(builtinUrl,
+      const back = await postVerbose(builtinUrl,
         { __metadata: { type: 'SP.View' }, Hidden: false }, MERGE);
+      const now = back.ok ? await reread() : null;
+      visibleAgain = Boolean(back.ok && now && now.Hidden === false);
     }
   }
 
@@ -638,26 +676,43 @@
       return report();
     }
 
-    const merged = await postVerbose(builtinUrl,
-      { __metadata: { type: 'SP.View' }, Hidden: true }, MERGE);
-    const after = merged.ok ? await reread() : null;
-    record('library.view.builtin-hidden-once-not-default', Q.hiddenNotDefault,
-           merged.ok && after && after.Hidden === true ? 'PASS' : 'REFUSED',
-           !merged.ok ? short(merged)
-             : !after ? 'the MERGE answered but the view did not read back'
-             : `Hidden reads ${after.Hidden}, DefaultView ${after.DefaultView}`);
+    if (!visibleAgain) {
+      record('library.view.builtin-hidden-once-not-default', Q.hiddenNotDefault,
+             'NOT ESTABLISHED',
+             'Hidden did not read back false after the row above, so a MERGE that did '
+             + 'nothing would still read back true here.', 'void');
+    } else {
+      const merged = await postVerbose(builtinUrl,
+        { __metadata: { type: 'SP.View' }, Hidden: true }, MERGE);
+      const after = merged.ok ? await reread() : null;
+      record('library.view.builtin-hidden-once-not-default', Q.hiddenNotDefault,
+             merged.ok && after && after.Hidden === true ? 'PASS' : 'REFUSED',
+             !merged.ok ? short(merged)
+               : !after ? 'the MERGE answered but the view did not read back'
+               : `Hidden reads ${after.Hidden}, DefaultView ${after.DefaultView}`);
+    }
   }
 
   // ---- last, because it destroys the subject of every row above ---------
   {
     const gone = await postVerbose(builtinUrl, null, DELETE);
-    const after = await reread();
+    // The status is kept rather than folded into reread()'s null, because
+    // absence is what proves a delete and a 500 or a throttle proves nothing.
+    const after = await spGet(`${builtinUrl}?${VIEW_SELECT}`);
+    const present = !readFailed(after);
+    const absent = after.status === 404;
     const views = await readViews(libPath);
     const stillThere = (views || []).some(isAllItems);
     record('library.view.builtin-delete-once-not-default', Q.del,
-           gone.ok && !after ? 'PASS' : 'REFUSED',
+           !gone.ok || present ? 'REFUSED'
+             : absent && views ? 'PASS'
+             : 'NOT ESTABLISHED',
            !gone.ok ? short(gone)
-             : after ? 'the DELETE answered OK but the view still reads back'
+             : present ? 'the DELETE answered OK but the view still reads back'
+             : !absent ? 'the DELETE answered OK but the view neither read back nor read '
+                         + `as absent (HTTP ${after.status}), so it was not observed to be gone`
+             : !views ? 'the view is gone, but the view collection did not read back, so '
+                        + `whether ${SLUG}.aspx is free was not observed`
              : `deleted; ${SLUG}.aspx is ${stillThere ? 'STILL occupied' : 'now free'}`);
   }
 

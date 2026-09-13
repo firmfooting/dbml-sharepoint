@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
  *
- * REVISION: 5a3e2ffa
+ * REVISION: 358dccd8
  *
  * ONE QUESTION:
  *   A document library's form header is stored and read back byte-identical
@@ -221,7 +221,7 @@
  *   4. Copy the RESULTS block back, THEN open the library, click the
  *      uploaded file, open its details panel and copy the header back too.
  *
- * WHEN FINISHED: delete the library it created.
+ * WHEN FINISHED: delete the library it created, then the lookup target list.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -447,7 +447,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 5a3e2ffa. Quote this when reporting results.');
+  log('INFO', 'probe revision 358dccd8. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Header Tokens';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -568,10 +568,11 @@
     log('INFO', `to point at ('${TARGET}').`);
     log('INFO', 'Then it asks you to open that file and copy the header back.');
     if (CLEANUP) {
-      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+      log('INFO', `CLEANUP is ON: '${LIB}' and '${TARGET}' would be RECYCLED first.`);
     } else {
       log('INFO', 'CLEANUP is off: an existing library would be reused, whose content');
-      log('INFO', 'type may already carry a header. Set CLEANUP = true.');
+      log('INFO', 'type may already carry a header, and so would an existing lookup');
+      log('INFO', 'target and its rows. Set CLEANUP = true.');
     }
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
@@ -588,12 +589,15 @@
   expect('library.form.header-typed-column-battery-renders', Q.typed);
   expect('library.form.header-expression-battery-renders', Q.expressions);
 
-  const IDS = [
-    'library.form.header-token-battery-stored',
+  // The three rows a person answers off the rendered form. Every one of them
+  // depends on the battery being the thing stored, so they are named once and
+  // voided together whenever that is not established.
+  const MANUAL_IDS = [
     'library.form.header-token-battery-renders',
     'library.form.header-typed-column-battery-renders',
     'library.form.header-expression-battery-renders',
   ];
+  const IDS = ['library.form.header-token-battery-stored', ...MANUAL_IDS];
   const voidAll = (ids, reason) => {
     for (const id of ids) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
@@ -623,6 +627,19 @@
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
     return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // Did a value survive the write? An empty read is never a match, since the
+  // whole point of the readback is to tell a value that is there from one the
+  // form will render blank. A date is compared as an INSTANT rather than as
+  // text: the server answers in its own ISO spelling, and a string compare
+  // would report a lost write on a value that is present.
+  const sameValue = (sent, got) => {
+    if (got === null || got === undefined || got === '') return false;
+    if (typeof sent === 'number' || typeof sent === 'boolean') return got === sent;
+    const instant = Date.parse(sent);
+    if (!Number.isNaN(instant)) return Date.parse(got) === instant;
+    return String(got) === String(sent);
   };
 
   // A COLUMN, explicitly. MEASURED 2026-09-13, revision b4c5ee75: the same
@@ -661,7 +678,12 @@
   // about the key being one SharePoint reads.
   const formatter = JSON.stringify({ headerJSONFormatter: header });
 
+  // Both lists, because the lookup target is as much this probe's fixture as
+  // the library is: a target left behind holds the row a later run would then
+  // reuse instead of creating. The library goes first, since it is the one
+  // holding the lookup that points at the target.
   await resetList(LIB);
+  await resetList(TARGET);
 
   // ---- fixture ---------------------------------------------------------
   {
@@ -690,6 +712,13 @@
 
   // A file, because a header with no item behind it renders every token
   // empty by construction and would answer the question wrongly.
+  //
+  // Its own item id is resolved FROM THE FILE, by the server-relative URL it
+  // was uploaded to. A reused library serves `/items` in no stated order and
+  // holds a row per folder as well as per file, so taking the first row there
+  // would write the typed values onto whatever else the library contains and
+  // leave the file the operator opens blank.
+  let fileItemId = null;
   {
     const root = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);
     if (readFailed(root)) {
@@ -697,6 +726,7 @@
       return report();
     }
     const digest = await getDigest();
+    const fileUrl = `${root.body.ServerRelativeUrl}/${FILE}`;
     const url = `web/GetFolderByServerRelativeUrl('${root.body.ServerRelativeUrl}')`
       + `/Files/add(url='${FILE}',overwrite=true)`;
     const res = await fetch(`${WEB}/_api/${url}`, {
@@ -709,6 +739,9 @@
       voidAll(IDS, `the probe file did not upload: HTTP ${res.status} ${(await res.text()).slice(0, 160)}`);
       return report();
     }
+    const item = await spGet(
+      `web/GetFileByServerRelativeUrl('${fileUrl}')/ListItemAllFields?$select=Id`);
+    fileItemId = readFailed(item) ? null : item.body.Id;
   }
 
   // ---- typed columns, and a value in each --------------------------------
@@ -808,13 +841,12 @@
       }
     }
 
-    // One MERGE onto the file's own item. A lookup is written by Id through
-    // its `...Id` companion, which is the spelling the deploy uses too.
-    const items = await spGet(`${libPath}/items?$select=Id&$top=5`);
-    const itemId = !readFailed(items) && (items.body.value || [])[0]
-      ? items.body.value[0].Id : null;
-    if (!itemId) {
-      typedNotes.push('no list item was served for the uploaded file, so no value was set');
+    // One MERGE onto the file's own item, resolved above. A lookup is written
+    // by Id through its `...Id` companion, which is the spelling the deploy
+    // uses too.
+    if (!fileItemId) {
+      typedNotes.push("the uploaded file's own list item could not be read, "
+                      + 'so no value was set');
     } else {
       const values = {};
       // A null in TYPED means the value is not a literal and is resolved
@@ -833,10 +865,30 @@
       }
       const shape = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
       const entity = readFailed(shape) ? null : shape.body.ListItemEntityTypeFullName;
-      const set = await postVerbose(`${libPath}/items(${itemId})`,
+      const set = await postVerbose(`${libPath}/items(${fileItemId})`,
         { __metadata: { type: entity || 'SP.ListItem' }, ...values },
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-      if (!set.ok) typedNotes.push(`the value MERGE was refused: ${short(set)}`);
+      if (!set.ok) {
+        typedNotes.push(`the value MERGE was refused: ${short(set)}`);
+      } else {
+        // A MERGE that answers 2xx can still have dropped or normalised a
+        // value away, and the blank that follows on the form would then be
+        // read as a token the header cannot resolve.
+        const names = Object.keys(values);
+        const back = await spGet(
+          `${libPath}/items(${fileItemId})?$select=${names.join(',')}`);
+        if (readFailed(back)) {
+          typedNotes.push(`the values did not read back (HTTP ${back.status}), `
+                          + 'so none of them is established on the file');
+        } else {
+          for (const name of names) {
+            if (sameValue(values[name], back.body[name])) continue;
+            typedNotes.push(`${name}: sent ${JSON.stringify(values[name])}, read back `
+                            + `${JSON.stringify(back.body[name] === undefined
+                                                ? null : back.body[name])}`);
+          }
+        }
+      }
     }
   }
 
@@ -860,23 +912,36 @@
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     if (!set.ok) {
       record('library.form.header-token-battery-stored', Q.stored, 'REFUSED', short(set));
-      voidAll(['library.form.header-token-battery-renders'],
+      voidAll(MANUAL_IDS,
               'the header was refused, so there is nothing on the form to look at.');
       return report();
     }
+    // Everything below this line is read off a form by a person, and every
+    // one of those observations is about THIS battery. A formatter that did
+    // not read back, or read back changed, leaves the form carrying something
+    // else, so the run stops rather than asking for evidence about a header
+    // nobody can name.
     const back = await spGet(
       `${libPath}/contenttypes('${idOf(ct)}')?$select=ClientFormCustomFormatter`);
     if (readFailed(back)) {
       record('library.form.header-token-battery-stored', Q.stored, 'NOT ESTABLISHED',
              `the read-back failed (HTTP ${back.status}), so storage is unconfirmed`, 'void');
-    } else {
-      const stored = back.body.ClientFormCustomFormatter;
-      record('library.form.header-token-battery-stored', Q.stored,
-             stored === formatter ? 'PASS' : 'CHANGED',
-             stored === formatter
-               ? `stored byte-identical on content type '${ct.Name}'`
-               : `wrote ${formatter.length} chars, read back ${JSON.stringify(String(stored).slice(0, 200))}`);
+      voidAll(MANUAL_IDS,
+              'storage was never confirmed, so a line read off the form cannot be '
+              + 'attributed to the battery this run submitted.');
+      return report();
     }
+    const stored = back.body.ClientFormCustomFormatter;
+    if (stored !== formatter) {
+      record('library.form.header-token-battery-stored', Q.stored, 'CHANGED',
+             `wrote ${formatter.length} chars, read back ${JSON.stringify(String(stored).slice(0, 200))}`);
+      voidAll(MANUAL_IDS,
+              'the form carries a header this run did not submit, so what renders '
+              + 'there answers a different experiment.');
+      return report();
+    }
+    record('library.form.header-token-battery-stored', Q.stored, 'PASS',
+           `stored byte-identical on content type '${ct.Name}'`);
   }
 
   record('library.form.header-token-battery-renders', Q.renders, 'MANUAL',
@@ -918,6 +983,8 @@
   console.log('  one bad expression discards the whole header, which is worth');
   console.log('  knowing on its own, and the battery gets split in two.');
   console.log('  answer: ______________________________________');
+  console.log('');
+  console.log(`  When finished, delete '${LIB}', then '${TARGET}'.`);
   console.log('=================================');
 
   return report();

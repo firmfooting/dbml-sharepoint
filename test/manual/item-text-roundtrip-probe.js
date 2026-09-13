@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A COLUMN DOES TO A STRING IT STORES
  *
- * REVISION: b451fb39
+ * REVISION: 3d78707c
  *
  * ONE QUESTION:
  *   A value written to an item's column and read straight back is compared
@@ -29,7 +29,11 @@
  * SCOPE AND QUESTIONS
  *   text.item-value.fixture-columns-created
  *     A scratch list with three columns: single-line Text, multi-line Note
- *     with RichText false, and multi-line Note with RichText true.
+ *     with RichText false, and multi-line Note with RichText true. Each
+ *     shape is READ BACK from the field before anything is written to it,
+ *     because every row below attributes an encoding to plain or to rich
+ *     text, and a column that only carries the right NAME cannot support
+ *     that attribution.
  *   text.item-value.single-line-roundtrip
  *     OBSERVATION: a battery of awkward characters written to a single-line
  *     Text column and read straight back, printed verbatim on both sides.
@@ -307,7 +311,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision b451fb39. Quote this when reporting results.');
+  log('INFO', 'probe revision 3d78707c. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Item Text';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -343,8 +347,9 @@
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first.`);
     } else {
-      log('INFO', "CLEANUP is off: an existing list's columns would be reused, which is");
-      log('INFO', 'harmless here, but its rows would accumulate. Set CLEANUP = true.');
+      log('INFO', "CLEANUP is off: an existing list's columns would be reused only if");
+      log('INFO', 'they read back with the declared shapes, and its rows would');
+      log('INFO', 'accumulate either way. Set CLEANUP = true.');
     }
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
@@ -444,20 +449,62 @@
         FieldTypeKind: 3, RichText: true, NumberOfLines: 6,
       }],
     ];
+    // The shapes every row below depends on, since each one attributes an
+    // encoding to plain or to rich text. NumberOfLines is declared and not
+    // compared: it changes what the form shows, not what the column stores.
+    const REQUIRED = {
+      [LINE]: { FieldTypeKind: 2 },
+      [PLAIN]: { FieldTypeKind: 3, RichText: false },
+      [RICH]: { FieldTypeKind: 3, RichText: true },
+    };
+    const spell = (name) => `${name} (`
+      + Object.entries(REQUIRED[name]).map(([prop, want]) => `${prop} ${want}`).join(', ')
+      + ')';
+    // A property the field does not carry is a failure, not a match: a shape
+    // this probe cannot see is one it cannot attribute a reading to.
+    const shapeWrong = (name, field) => {
+      const wrong = [];
+      for (const [prop, want] of Object.entries(REQUIRED[name])) {
+        if (field[prop] === undefined) {
+          wrong.push(`${prop} is absent from the field`);
+        } else if (field[prop] !== want) {
+          wrong.push(`${prop} is ${JSON.stringify(field[prop])}, not ${JSON.stringify(want)}`);
+        }
+      }
+      return wrong.length === 0 ? null : wrong.join(' and ');
+    };
+    const readField = (name) =>
+      spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
+
     const failures = [];
     for (const [name, body] of columns) {
-      const present = await spGet(
-        `${listPath}/fields/getbyinternalnameortitle('${name}')?$select=Id`);
-      if (present.ok) continue;
-      const made = await postVerbose(`${listPath}/fields`, { ...body, Title: name });
-      if (!made.ok) failures.push(`${name}: ${short(made)}`);
+      let got = await readField(name);
+      if (!got.ok) {
+        const made = await postVerbose(`${listPath}/fields`, { ...body, Title: name });
+        if (!made.ok) {
+          failures.push(`${name}: ${short(made)}`);
+          continue;
+        }
+        // A create that answered 200 is not the field's shape, only the
+        // server's word that it took the body.
+        got = await readField(name);
+      }
+      if (readFailed(got)) {
+        failures.push(`${name}: its shape did not read back: HTTP ${got.status}`);
+        continue;
+      }
+      const wrong = shapeWrong(name, got.body);
+      if (wrong !== null) failures.push(`${name}: ${wrong}`);
     }
     record('text.item-value.fixture-columns-created', Q.fixture,
            failures.length === 0 ? 'PASS' : 'FAIL',
-           failures.length === 0 ? `'${LIST}' carries ${LINE}, ${PLAIN} and ${RICH}`
+           failures.length === 0
+             ? `'${LIST}' carries ${[LINE, PLAIN, RICH].map(spell).join(', ')}, `
+               + 'each read back from the field itself'
              : failures.join('; '));
     if (failures.length > 0) {
-      voidAll(IDS, 'a declared column did not build, so no value could be written to it.');
+      voidAll(IDS, 'a declared column did not read back with the shape this run '
+                   + 'depends on, so no reading could be attributed to it.');
       return report();
     }
   }
