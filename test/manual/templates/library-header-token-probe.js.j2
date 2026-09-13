@@ -189,6 +189,15 @@
  *   its own declared columns. Which column TYPES a header can read is what
  *   this round asks.
  *
+ * REPORTED UPSTREAM
+ *   SharePoint/sp-dev-docs#11026, filed 2026-09-13 from rounds one to four:
+ *   the fourteen empty identity tokens, the lookup's raw `<id>;#<value>`, the
+ *   empty `.lookupValue`, and the custom date rendering `Invalid Date` while
+ *   `[$Modified]` renders correctly in the same header. It links this probe
+ *   at commit 4af91908 as the repro, and says round five's battery is
+ *   outstanding. Comment there with what round five measures, either way: a
+ *   working workaround changes what is worth fixing, and the issue says so.
+ *
  * MICROSOFT LEARN CITATIONS
  *   Form header, body and footer formatting, and the `[$Column]` syntax:
  *     "Configure the list form" (SharePoint list formatting)

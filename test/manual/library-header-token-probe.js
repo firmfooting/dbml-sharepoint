@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
  *
- * REVISION: 14c7186b
+ * REVISION: 5a3e2ffa
  *
  * ONE QUESTION:
  *   A document library's form header is stored and read back byte-identical
@@ -187,6 +187,15 @@
  *   header, and a family that wants a meaningful header has to build it from
  *   its own declared columns. Which column TYPES a header can read is what
  *   this round asks.
+ *
+ * REPORTED UPSTREAM
+ *   SharePoint/sp-dev-docs#11026, filed 2026-09-13 from rounds one to four:
+ *   the fourteen empty identity tokens, the lookup's raw `<id>;#<value>`, the
+ *   empty `.lookupValue`, and the custom date rendering `Invalid Date` while
+ *   `[$Modified]` renders correctly in the same header. It links this probe
+ *   at commit 4af91908 as the repro, and says round five's battery is
+ *   outstanding. Comment there with what round five measures, either way: a
+ *   working workaround changes what is worth fixing, and the issue says so.
  *
  * MICROSOFT LEARN CITATIONS
  *   Form header, body and footer formatting, and the `[$Column]` syntax:
@@ -438,7 +447,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 14c7186b. Quote this when reporting results.');
+  log('INFO', 'probe revision 5a3e2ffa. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Header Tokens';
   const libPath = `web/lists/getbytitle('${LIB}')`;
