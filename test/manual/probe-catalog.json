@@ -9531,6 +9531,83 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "item-text-roundtrip-probe.js",
+      "surface": "text",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list carrying a single-line Text column, a multi-line Note with RichText false and a multi-line Note with RichText true, and up to three items whose values are read straight back and compared with what was written"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "text",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "text.item-value.fixture-columns-created",
+              "depends_on": []
+            },
+            {
+              "id": "text.item-value.single-line-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.plain-note-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-roundtrip",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-colon",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            },
+            {
+              "id": "text.item-value.control-plain-note-colon",
+              "depends_on": [
+                "text.item-value.fixture-columns-created"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-decode-recovers",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            },
+            {
+              "id": "text.item-value.rich-note-encoding-idempotent",
+              "depends_on": [
+                "text.item-value.fixture-columns-created",
+                "text.item-value.rich-note-roundtrip"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "text.item-value.fixture-columns-created",
+            "text.item-value.control-plain-note-colon"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

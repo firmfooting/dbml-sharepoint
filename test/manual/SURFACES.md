@@ -222,10 +222,16 @@ length, read it back, compare), but the *slot* matters, because these results
 are famously not transferable between slots. That is what `scope` is for.
 
 Scopes: `list-desc`, `group-desc`, `role-desc`, `col-desc`, `field-title`,
-`view-title`, `valmsg`, `view-fmt`, `col-fmt`, `form-fmt`
+`view-title`, `valmsg`, `view-fmt`, `col-fmt`, `form-fmt`, `item-value`
+
+`item-value` is the slot a seed and a demo row write into, and the only one
+here whose string is the user's data rather than a setting about it. It is a
+slot like the rest: what a column does to a value it stores is not
+transferable from what a description does to one.
 
 Probes: `list-description-probe.js`, `group-description-probe.js`,
-`role-definition-probe.js`, `formatter-xml-probe.js`
+`role-definition-probe.js`, `formatter-xml-probe.js`,
+`item-text-roundtrip-probe.js`
 
 ### 8. `access`: identities, groups, permission levels, ACLs
 
