@@ -195,6 +195,22 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Gaps and remediation": "Act",
         "Ownership and cycle": "Govern",
     },
+    # The topic register collapses Assess: a topic is not rated, it is
+    # owned. The SAQ carries Identify -> Act -> Govern -> Govern, the last
+    # two being the executive's confirmation and the licence holder's
+    # recording, two acts by two roles. Nothing on either is auto-stamped,
+    # so no System section.
+    ("legal-compliance-register", "Topic"): {
+        "The topic": "Identify",
+        "Who owns it": "Act",
+        "Reporting and standing": "Govern",
+    },
+    ("legal-compliance-register", "SAQ"): {
+        "The SAQ": "Identify",
+        "Complete it": "Act",
+        "Confirm it": "Govern",
+        "Record in the portal": "Govern",
+    },
     # Two consecutive Act sections, which §1.2 permits and this register
     # depends on: "Ethics decision" and "Site authorisation" are two
     # authorities, two reference numbers and two sets of dates, and the form's
@@ -1813,12 +1829,24 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     neither carries a person column or a Lookup. Re-measuring surfaced that
     the entry above was already stale on two counts unrelated to this split
     -- band 4 was 20, not 21, and band 5 was 4, not 3 -- which this entry
-    corrects rather than propagates. The worst is unchanged at 9."""
+    corrects rather than propagates. The worst is unchanged at 9.
+
+    RE-MEASURED 2026-09-13 across 36 templates / 70 entities, when
+    legal-compliance-register joined the roster as the first family with a
+    document library: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 6, 8 -> 2, 9 -> 2.
+    Both of its entities land at 5: Topic (BusinessOwner,
+    ExecutiveResponsible, LicenceHolder, Author, Editor) and SAQ (the Topic
+    lookup, BusinessOwner, ExecutiveResponsible, Author, Editor). The same
+    pass stops this survey skipping a DocumentLibrary: since #14 closed the
+    generator builds All Items for a library too, leading with the file name,
+    and the validator counts it, so a survey that skipped one would be
+    measuring a view the deploy creates and the validator judges. The worst
+    is unchanged at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 35, (
-        f"{len(templates)} templates discovered, not the 35 this survey was "
+    assert len(templates) == 36, (
+        f"{len(templates)} templates discovered, not the 36 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1835,7 +1863,7 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
             by_entity.setdefault(ref.entity, set()).add(ref.column)
         for name, entity in bundle.mapping.entities.items():
             table = tables.get(name)
-            if table is None or entity.kind == "DocumentLibrary":
+            if table is None:
                 continue
             xcols = by_entity.get(name, set())
             counted += 1
@@ -1844,8 +1872,8 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 68, (
-        f"{counted} entities were surveyed, not the 68 the distribution above "
+    assert counted == 70, (
+        f"{counted} entities were surveyed, not the 70 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."

@@ -17,6 +17,7 @@ from _paths import FIXTURES, SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
 from dbml_sharepoint.analysis.reporting import plan as reporting_plan
 from dbml_sharepoint.analysis.reporting.plan import (
+    LIBRARY_REPORT_COLUMNS,
     ListPlan,
     build_plans,
     is_expand_queryable,
@@ -1285,7 +1286,12 @@ def _assert_declared_outputs_match(schema: Schema, bundle: MappingBundle) -> Non
             produced = _plan_typed_columns(plan) | {
                 out for _via, _t, _tc, out, _m in plan.key_joined
             }
-            assert set(plan.output_columns) == produced, plan.entity
+            # A library's file name and path are typed whether or not the
+            # switch is on. They are not declared fields either, so they
+            # sit beside the system columns, out of the renamed set.
+            library = set(LIBRARY_REPORT_COLUMNS) & produced
+            assert library <= set(plan.system_outputs), plan.entity
+            assert set(plan.output_columns) == produced - library, plan.entity
             # A duplicate would rename one column twice, so the list and the
             # set have to be the same size.
             assert len(plan.output_columns) == len(set(plan.output_columns))
