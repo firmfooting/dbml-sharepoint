@@ -90,6 +90,8 @@ MODULES: list[tuple[str, str]] = [
     ("bundle", "Packaging: the one emission sequence"),
     ("templating", "Packaging: the shared Jinja environment"),
     ("extension", "Packaging: the extension protocol"),
+    ("project", "Packaging: a project's inputs, found and loaded"),
+    ("pipeline", "Packaging: the library entry points behind the commands"),
     ("cli", "Packaging: the command-line interface"),
     ("catalogue", "Packaging: the shipped solution templates, as data"),
     ("wizard", "Packaging: the interactive template wizard"),

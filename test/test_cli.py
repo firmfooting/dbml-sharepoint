@@ -33,12 +33,11 @@ from dbml_sharepoint.catalogue import (
 from dbml_sharepoint.cli import (
     app,
     build,
-    execute_build,
-    execute_extraction,
     extract,
 )
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
+from dbml_sharepoint.pipeline import execute_build, execute_extraction
 
 runner = CliRunner()
 
@@ -722,7 +721,7 @@ def test_no_reader_flag_emits_no_enrolment(
     # is imported into `cli`'s namespace rather than defined there, and mypy
     # (under `strict`) flags `setattr(cli, "emit_bundle", ...)` as patching a
     # name the module does not explicitly re-export.
-    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+    monkeypatch.setattr("dbml_sharepoint.pipeline.emit_bundle", spy)
 
     out = tmp_path / "build"
     result = runner.invoke(app, [
@@ -762,7 +761,7 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
-    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+    monkeypatch.setattr("dbml_sharepoint.pipeline.emit_bundle", spy)
 
     out = tmp_path / "build"
     address = "svc-reporting@example.org"
@@ -839,7 +838,8 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
     early and lose the distinction before it reached here.
     """
     from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
-    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+    from dbml_sharepoint.pipeline import execute_build
+    from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED
 
     captured: dict[str, object] = {}
 
@@ -847,7 +847,7 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
-    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+    monkeypatch.setattr("dbml_sharepoint.pipeline.emit_bundle", spy)
 
     out = tmp_path / "build"
     execute_build(
@@ -989,7 +989,7 @@ def test_an_env_file_value_reaches_execute_build(
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
-    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+    monkeypatch.setattr("dbml_sharepoint.pipeline.emit_bundle", spy)
 
     env_path = _write_env_file(tmp_path / "custom.env")
     out = tmp_path / "build"
@@ -1048,7 +1048,8 @@ def test_the_declined_sentinel_beats_the_env_file(
     `test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value`, this
     calls `execute_build` directly."""
     from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
-    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+    from dbml_sharepoint.pipeline import execute_build
+    from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED
 
     captured: dict[str, object] = {}
 
@@ -1056,7 +1057,7 @@ def test_the_declined_sentinel_beats_the_env_file(
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
-    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+    monkeypatch.setattr("dbml_sharepoint.pipeline.emit_bundle", spy)
 
     file_address = "file-reader@example.org"
     env_path = _write_env_file(tmp_path / "custom.env", file_address)
@@ -1152,7 +1153,7 @@ def test_an_unwired_env_setting_refuses_instead_of_discarding(
     this, because it asserts a count, not that an unwired parameter is
     refused.
     """
-    from dbml_sharepoint import cli
+    from dbml_sharepoint import pipeline, project
     from dbml_sharepoint.model import env_file as env_file_module
     from dbml_sharepoint.model.env_file import EnvSetting
 
@@ -1161,13 +1162,13 @@ def test_an_unwired_env_setting_refuses_instead_of_discarding(
     )
     fake_settings = (*env_file_module.ENV_SETTINGS, fake_setting)
     monkeypatch.setattr(env_file_module, "ENV_SETTINGS", fake_settings)
-    monkeypatch.setattr(cli, "ENV_SETTINGS", fake_settings)
+    monkeypatch.setattr(project, "ENV_SETTINGS", fake_settings)
 
     env_path = tmp_path / "custom.env"
     env_path.write_text("DBMLSP_FAKE_SETTING=whatever\n", encoding="utf-8", newline="\n")
 
-    with pytest.raises(cli.UnwiredEnvSettingError, match="DBMLSP_FAKE_SETTING"):
-        cli.execute_build(
+    with pytest.raises(project.UnwiredEnvSettingError, match="DBMLSP_FAKE_SETTING"):
+        pipeline.execute_build(
             schema=FIXTURES / "simple.dbml",
             mapping=FIXTURES / "sharepoint-mapping.yaml",
             release=FIXTURES / "release.yaml",
@@ -1238,7 +1239,7 @@ def test_a_cross_drive_env_path_falls_back_to_the_path_as_given(tmp_path: Path) 
     `Z:`, is what the current directory is under pytest), and the fallback
     branch that catches it was otherwise unexercised by any test.
     """
-    from dbml_sharepoint.cli import _relative_env_path
+    from dbml_sharepoint.project import _relative_env_path
 
     assert not str(tmp_path).upper().startswith("Z:")
     env_file = Path("Z:/nowhere/dbml-sharepoint.env")
@@ -1424,7 +1425,7 @@ def test_build_rejects_extension_that_requires_project_cli(
         return ProjectOnlyExtension()
 
     monkeypatch.setattr(  # type: ignore[attr-defined]
-        "dbml_sharepoint.cli.resolve_extension",
+        "dbml_sharepoint.project.resolve_extension",
         resolve_project_only,
     )
     out = tmp_path / "build"

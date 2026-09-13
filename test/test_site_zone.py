@@ -47,7 +47,7 @@ from dbml_sharepoint.analysis.timezones import (
     zone_table,
 )
 from dbml_sharepoint.analysis.validator import validate_against_mapping
-from dbml_sharepoint.cli import app, validate_time_zone
+from dbml_sharepoint.cli import app
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.report_md import (
     generate_data_dictionary,
@@ -62,6 +62,7 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.sections._reporting import REMOVED_TIME_ZONE_KEY_MESSAGE
+from dbml_sharepoint.project import validate_time_zone
 
 MELBOURNE = "Australia/Melbourne"
 _UTC = dt.UTC

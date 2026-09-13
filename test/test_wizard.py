@@ -27,10 +27,10 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
-from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.prefix import previous_object_names
+from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
 
 
 @pytest.fixture(autouse=True)
@@ -294,14 +294,12 @@ def _capture_build(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     a successful build cannot distinguish -- `build` accepts a site role it
     was never asked about just as happily as the right one.
     """
-    from dbml_sharepoint import cli
-
     captured: dict[str, object] = {}
 
     def record(**kwargs: object) -> None:
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "execute_build", record)
+    monkeypatch.setattr(wizard, "execute_build", record)
     return captured
 
 
@@ -912,12 +910,10 @@ def test_a_refused_build_passes_its_exit_code_through(
     keying on the table mis-classify it."""
     import typer
 
-    from dbml_sharepoint import cli
-
     def refuse(**_: object) -> None:
         raise typer.Exit(code=2)
 
-    monkeypatch.setattr(cli, "execute_build", refuse)
+    monkeypatch.setattr(wizard, "execute_build", refuse)
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="y", seed="n"))
@@ -2903,12 +2899,10 @@ def test_a_build_refusing_with_bad_parameter_exits_two_not_a_traceback(
     """
     import typer
 
-    from dbml_sharepoint import cli
-
     def _refuse(**_kwargs: object) -> None:
         raise typer.BadParameter("the mapping declares no reader group")
 
-    monkeypatch.setattr(cli, "execute_build", _refuse)
+    monkeypatch.setattr(wizard, "execute_build", _refuse)
     destination = tmp_path / "proj"
     console = ScriptedConsole(
         _answers(destination, build="y", seed="n", reader=""), width=400,

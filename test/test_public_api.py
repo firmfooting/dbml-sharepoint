@@ -71,28 +71,19 @@ REQUIRED_SYMBOLS: tuple[Any, ...] = (
 #: Files still deferring an import into a function body. A RATCHET: entries
 #: come out, and one going in needs a reason in the pull request.
 #:
-#: BLOCKED ON #171, not on anybody writing a test. Nine of the fourteen are the
-#: `cli` import cycle, and breaking that is what #171 is: a deferral removed
-#: without it just moves the cycle. Reviewed 2026-09-12, when every ratchet in
-#: the suite that could be drained was.
-#:
 #: A magnitude ratchet rather than a membership one, which is why it does not
 #: go through `_ratchet.Ratchet`: an entry improves by its COUNT falling rather
 #: than by the key disappearing, and exact dict equality already says that.
 #:
-#: Not all of these are cycles. `wizard.py`'s five are, with `cli.py`, tracked
-#: by #171 (the fifth is `_ask_time_zone` borrowing `validate_time_zone`,
-#: the same way `_ask_site_url` borrows `validate_site_url`), and
-#: `extract/wizard.py`'s two are the same cycle in the same
-#: direction: `cli` imports both wizards at its top, so both defer their way
-#: back. Of `bundle.py`'s five, only the `reportgen` one is: that module
-#: imports `bundle` back. The other four are deliberate lazy loading so
-#: `bundle.py` stays importable for its packaging helpers, which its own
-#: comment states.
+#: The seven that were the `cli` cycle came out on 2026-09-14 with #171:
+#: `project.py` and `pipeline.py` now own the validators and the entry points,
+#: and neither imports a wizard, so both wizards import what they need at their
+#: top. What is left is not a cycle at all. Of `bundle.py`'s seven, only the
+#: `reportgen` one is, and that module imports `bundle` back; the others are
+#: deliberate lazy loading so `bundle.py` stays importable for its packaging
+#: helpers, which its own comment states.
 DEFERRED_IMPORTS: dict[str, int] = {
     "bundle.py": 7,
-    "wizard.py": 5,
-    "extract/wizard.py": 2,
 }
 
 #: How a deferred import is declared, since PLC0415 is enforced in `src/`.

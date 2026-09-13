@@ -79,6 +79,14 @@ from dbml_sharepoint.model.env_file import (
     read_env_file,
 )
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.pipeline import execute_build
+from dbml_sharepoint.project import (
+    ENTERPRISE_READER_DECLINED,
+    site_url_notice,
+    validate_enterprise_reader,
+    validate_site_url,
+    validate_time_zone,
+)
 
 #: Copied templates must not carry a previous build. These names are
 #: gitignored in the repository, so they exist only in a contributor's
@@ -177,7 +185,8 @@ class Answers:
 
     destination: Path
     site_url: str
-    #: The site's IANA zone, validated at the prompt by the CLI's own rule.
+    #: The site's IANA zone, validated at the prompt by the rule `build`
+    #: applies.
     #: A build input beside `site_url`, never a mapping fact.
     time_zone: str
     site_role: str
@@ -489,7 +498,7 @@ def _ask_prefix(console: Console, solution: Solution) -> str:
 
 
 def _ask_site_url(console: Console) -> str:
-    """Prompt until the URL passes the CLI's own validator.
+    """Prompt until the URL passes the validator a build applies.
 
     Calls `validate_site_url` rather than restating its rule, so the wizard
     cannot come to disagree with `--site-url` about what is acceptable.
@@ -505,13 +514,6 @@ def _ask_site_url(console: Console) -> str:
     removing it is the only fix. `test_no_wizard_default_for_a_named_input`
     holds this.
     """
-    # Deferred for a cycle: cli.py imports this module at its top, so this
-    # direction stays lazy until `validate_site_url` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import (  # noqa: PLC0415
-        _site_url_notice,
-        validate_site_url,
-    )
-
     # Shown rather than offered: the shape was the only thing the removed
     # default gave the operator, and a printed example cannot be pressed.
     console.print(f"[dim]  For example: {PLACEHOLDER_SITE_URL}[/dim]")
@@ -530,7 +532,7 @@ def _ask_site_url(console: Console) -> str:
         # Said out loud, because the operator is about to see this URL in the
         # Review panel and in the printed rebuild command, and a value that
         # silently differs from what they typed reads as a bug in those.
-        if notice := _site_url_notice(site_url, cleaned):
+        if notice := site_url_notice(site_url, cleaned):
             console.print(f"[dim]  {notice}[/dim]")
         return cleaned
 
@@ -564,9 +566,6 @@ def _ask_time_zone(
     zone the pack was built for, and the guidance names that so the
     operator knows what protects a wrong answer from being silent.
     """
-    # Deferred for the same cycle as `validate_site_url` above -- #171.
-    from dbml_sharepoint.cli import validate_time_zone  # noqa: PLC0415
-
     caught = (
         "Every list query in the reporting pack checks the site's own "
         "offsets against this zone at each refresh and reports "
@@ -643,7 +642,7 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
 @dataclass(frozen=True)
 class _EnvSuggestions:
     """What `dbml-sharepoint.env` offers the prompts: the file that was read,
-    and per key a value the CLI's own validator accepted, or None."""
+    and per key a value the build's own validator accepted, or None."""
 
     path: Path
     reader: str | None
@@ -673,12 +672,6 @@ def _consult_env_file(console: Console) -> _EnvSuggestions | None:
     `build`, a value here is only ever a suggestion, so whatever the
     operator answers is validated at the prompt regardless.
     """
-    # Deferred for the same cycle as `validate_site_url` above -- #171.
-    from dbml_sharepoint.cli import (  # noqa: PLC0415
-        validate_enterprise_reader,
-        validate_time_zone,
-    )
-
     path = Path(ENV_FILENAME)
     if not path.exists():
         return None
@@ -718,7 +711,7 @@ def _ask_enterprise_reader(
     console: Console,
     consulted: _EnvSuggestions | None,
 ) -> str:
-    """Prompt until the answer is blank or passes the CLI's own validator.
+    """Prompt until the answer is blank or passes the validator a build applies.
 
     `consulted` is `_consult_env_file`'s result, read by the caller so
     the file is still consulted where this prompt is never offered.
@@ -742,9 +735,6 @@ def _ask_enterprise_reader(
     LINE if you are tempted to simplify this into a `default=`. Accepting
     the suggestion means typing it; Enter always means nobody.
     """
-    # Deferred for the same cycle as `validate_site_url` above -- #171.
-    from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
-
     _guidance(
         console,
         "A service account enrolled read-only across every list this "
@@ -1575,13 +1565,6 @@ def _run(console: Console) -> int:
     if not build:
         console.print(_rebuild_command(answers))
         return 0
-
-    # Deferred for a cycle: cli.py imports this module at its top, so this
-    # direction stays lazy until `execute_build` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import (  # noqa: PLC0415
-        ENTERPRISE_READER_DECLINED,
-        execute_build,
-    )
 
     for template in answers.templates:
         root = _template_root(answers, template)

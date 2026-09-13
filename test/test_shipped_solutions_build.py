@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import dbml_sharepoint
-from dbml_sharepoint.cli import execute_build
+from dbml_sharepoint.pipeline import execute_build
 
 SOLUTIONS = Path(dbml_sharepoint.__file__).parent / "solutions"
 FAMILIES = sorted(p.parent.parent.name for p in SOLUTIONS.glob("*/10-design/schema.dbml"))
