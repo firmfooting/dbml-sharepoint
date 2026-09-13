@@ -1,0 +1,161 @@
+  markPhase('Phase 4.1: seal declared columns');
+  // === Phase 4.1: seal declared columns ===
+  // Re-seal after every field write (1/2/3/3b/3d): sealed columns block UI
+  // schema edits and deletion even for site admins, the strongest defense
+  // when team owners are unavoidably site collection admins. Friction, not
+  // enforcement: an admin can unseal via API, which is deliberate work, not
+  // an accident.
+  log('INFO', 'Group 4: PROTECTION');
+  log('INFO', 'Starting Phase 4.1: seal declared columns.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  {
+    const sealDeclared = [];
+    for (const list of SCHEMA.lists) {
+      for (const col of list.fields_phase1) {
+        if (col.seal) sealDeclared.push([list.title, col.title]);
+      }
+    }
+    for (const lookup of SCHEMA.phase2_lookups) {
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+      // Projections too. `_lookups.js.j2` creates each one read-only and then
+      // checks it for existence only, because a read-only field cannot drift.
+      // That is an argument about RECONCILIATION and was read as one about
+      // sealing, which answers a different question: whether a site owner can
+      // DELETE the column through the UI. Measured on a live site 2026-09-06,
+      // all seven projections read back Sealed:false CanBeDeleted:true while
+      // every declared and calculated column beside them read the opposite,
+      // and deleting one takes the view that shows it with no warning.
+      //
+      // Gated on the PRIMARY's seal flag: a projection exists only for its
+      // primary, so it is protected exactly when its primary is.
+      for (const proj of (lookup.projections || [])) {
+        if (lookup.field.seal) sealDeclared.push([lookup.list, proj.name]);
+      }
+    }
+    // Declared fields are already present above. Add the built-in Titles
+    // PREPARE opened; the tool does not otherwise own their seal state.
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (columnTitle === 'Title') sealDeclared.push([listTitle, columnTitle]);
+    }
+    let sealedCount = 0;
+    // One lane per list (field MERGEs on the same list race into save
+    // conflicts; lists are independent). After a lane's writes, ONE fresh
+    // per-list enumeration serves every column's verify readback; the
+    // per-field fresh GETs paid ~one round-trip per column for the same
+    // server evidence (live DEBUG timing: this phase alone was 13.3s of a
+    // 52s run). Verification still never trusts phase-start state: the
+    // per-list invalidation forces a post-write re-enumeration.
+    //
+    // The lane boundary is also the batch boundary, so one list's seals are
+    // one ChangeSet. NOT PROVEN: that SharePoint applies same-list field
+    // MERGEs in a ChangeSet without the save conflicts concurrent single
+    // writes hit. OData v3 says the order of requests within a ChangeSet is
+    // not significant and a service MAY process them in any order, and
+    // test/manual/throttle-batch-probe.js batches item creates rather than
+    // schema writes, so neither settles it. The per-column verify below is
+    // what turns a conflict into a named failure instead of a silent one.
+    const sealByList = new Map();
+    for (const [listTitle, columnTitle] of sealDeclared) {
+      if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
+      sealByList.get(listTitle).push(columnTitle);
+    }
+    // Sealing is a write, so it gets the same batch gate as every other
+    // post-schema write phase: prove ownership of every list first, and refuse
+    // the phase rather than seal the lists ahead of the failing one. Without
+    // it, a same-titled replacement dropped in after the structural phases
+    // would be sealed by this run, which hands it the tool's own protection.
+    const sealOwned = await surveyOwnedListsForWrites(
+      [...sealByList.keys()], '4.1', 'Seal',
+    );
+    if (!sealOwned) {
+      log('ERROR', 'Seal ownership survey failed; aborting before any column is sealed.');
+      return { ...summary, aborted: 'seal-ownership-errors' };
+    }
+    await mapLanes([...sealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, columns]) => {
+      const failed = new Set();
+      const writtenIds = new Map();
+      let laneListId;
+      try {
+        // Once per lane, not once per column: every write below addresses
+        // /lists(guid)/fields(guid), which no title rebind can redirect, so
+        // re-proving the list per column would buy nothing the by-Id address
+        // does not already give.
+        laneListId = (await ownedListIdentity(
+          listTitle, sealOwned.get(listTitle), `before sealing '${listTitle}'`,
+        )).Id;
+      } catch (err) {
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+        return;
+      }
+      // The lane's seals go out as ONE $batch rather than one MERGE per
+      // column. They are independent writes with nothing read between them,
+      // and the burst is the shape that got a nine-list run throttled mid
+      // phase (#401). fieldMergePath and FIELD_MERGE_HEADERS are the same
+      // address and headers patchFieldById sends, so only the transport
+      // changes; the ChangeSet still addresses /lists(guid)/fields(guid),
+      // which no title rebind can redirect.
+      const sealBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (!shape) throw new Error('declared column missing at seal time');
+          writtenIds.set(columnTitle, sharePointGuid(shape.Id, 'field'));
+          if (!shape.Sealed) {
+            await sealBatch.add(
+              'POST',
+              fieldMergePath(laneListId, writtenIds.get(columnTitle)),
+              { __metadata: { type: 'SP.Field' }, Sealed: true },
+              FIELD_MERGE_HEADERS,
+            );
+          }
+        } catch (err) {
+          failed.add(columnTitle);
+          log('ERROR', `Phase 4.1 seal '${listTitle}.${columnTitle}': ${err.message}`);
+          summary.errors.push({ phase: '4.1', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+      try {
+        await sealBatch.done();
+      } catch (err) {
+        // Recorded at lane level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back (Learn, "Make batch requests with
+        // the REST APIs"), so some of these writes may have landed. The
+        // verify pass below reads every column back and is the finer
+        // evidence about which ones did.
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+      }
+      // What the batch reports landed, not what the loop queued: a refused
+      // part must not be counted as a column this run sealed.
+      sealedCount += sealBatch.opsSent;
+      invalidateFieldShapes(listTitle);  // verify from post-write state
+      try {
+        // The verify readback resolves the list by title, so the title has to
+        // still answer with the identity that was written to.
+        await ownedListIdentity(listTitle, laneListId, `after sealing '${listTitle}'`);
+      } catch (err) {
+        log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);
+        summary.errors.push({ phase: '4.1', list: listTitle, error: err.message });
+        return;
+      }
+      for (const columnTitle of columns) {
+        if (failed.has(columnTitle)) continue;
+        try {
+          const verify = await readFieldShape(listTitle, columnTitle, null);
+          if (!verify || verify.Sealed !== true) {
+            throw new Error(`did not retain sealed state (readback ${verify && verify.Sealed})`);
+          }
+          if (verify.Id !== writtenIds.get(columnTitle)) {
+            throw new Error(`column changed identity across the seal write (was ${writtenIds.get(columnTitle)}, now ${verify.Id})`);
+          }
+        } catch (err) {
+          log('ERROR', `Phase 4.1 seal '${listTitle}.${columnTitle}': ${err.message}`);
+          summary.errors.push({ phase: '4.1', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+    }, 4);
+    if (sealDeclared.length > 0) {
+      log('INFO', `Phase 4.1 complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
+    }
+  }

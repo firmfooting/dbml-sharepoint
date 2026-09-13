@@ -1,0 +1,448 @@
+  markPhase('Phase 2.1: list creation');
+  // === Phase 2.1: lists + non-lookup columns + same-site lookups ===
+  log('INFO', 'Group 2: STRUCTURE');
+  log('INFO', `Starting Phase 2.1: list creation. Release ${RELEASE_TAG}.`);
+  invalidateFieldShapes();  // probes reflect phase-start state
+  let digest = await getDigest();
+  const listGuids = Object.create(null);
+  const earlyIsolationLists = new Set(SCHEMA.list_assignments
+    .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
+    .map(la => la.list));
+
+  // Wave 1 is sequential, in dependency order: list existence, declared
+  // list shape, GUID capture, early ACL isolation. Sequential because
+  // wave 2's same-site lookup fields need every target list's GUID.
+  const fieldWork = [];
+  const errorsBeforeWaveOne = summary.errors.length;
+  for (const list of SCHEMA.lists) {
+    try {
+      // Refresh the digest per list: a long Phase 2.1 (hundreds of field POSTs)
+      // can outlive a single FormDigestValue (~30 min), so re-fetch per list
+      // rather than reuse the one fetched before the loop.
+      digest = await getDigest();
+      let createdThisRun = false;
+      let listShape = await readListShape(list.title);
+      if (listShape) {
+        // The read-only preflight already rejected immutable template drift;
+        // re-read here to close the preflight/write race and then reconcile
+        // only the declared mutable list settings.
+        assertListAdoptable(list, listShape);
+        log('INFO', `List '${list.title}' is owned; validating and reconciling declared shape.`);
+        summary.listsSkipped.push(list.title);
+      } else {
+        log('INFO', `Creating list '${list.title}' (${list.kind})...`);
+        const body = {
+          __metadata: { type: 'SP.List' },
+          Title: list.title,
+          BaseTemplate: list.base_template,
+          // The create request carries ownership evidence from the first
+          // write. ReconcileListShape reads it back before any field work.
+          // Existing lists reach that function only after proving they already
+          // carry the exact marker; ordinary deploy never manufactures it.
+          Description: list.description || '',
+          ContentTypesEnabled: list.content_types_enabled,
+          EnableVersioning: list.enable_versioning,
+          EnableMinorVersions: list.enable_minor_versions,
+          MajorVersionLimit: list.major_version_limit,
+        };
+        const created = await postJson(apiUrl('web/lists'), body, digest);
+        if (!created.d || typeof created.d.Id !== 'string') {
+          throw new Error(`List '${list.title}' create returned an invalid response`);
+        }
+        createdThisRun = true;
+        invalidateListShapes();  // the enumeration no longer knows every list
+        summary.listsCreated.push(list.title);
+        logChange({ key: `list: ${list.title}`, kind: 'create', target: list.title,
+          oldValue: '', newValue: `created by ${RELEASE_TAG}` });
+      }
+      listShape = await reconcileListShape(list, digest);
+      listGuids[list.title] = listShape.Id;
+
+      // Close the provisioning window immediately for exact-mode lists. If
+      // the process crashes before Phase 4.2, an inheriting list would otherwise
+      // expose newly created fields/content to the site's inherited principals.
+      // copyRoleAssignments=false leaves only SharePoint's current-operator
+      // safety grant; clearSubscopes=false preserves every descendant scope.
+      if (earlyIsolationLists.has(list.title)) {
+        const aclResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=HasUniqueRoleAssignments`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!aclResp.ok) {
+          const text = await aclResp.text();
+          throw new Error(`early HasUniqueRoleAssignments probe failed: HTTP ${aclResp.status} ${text}`);
+        }
+        const aclJson = await aclResp.json();
+        if (!aclJson.d.HasUniqueRoleAssignments) {
+          digest = await getDigest();
+          const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
+            method: 'POST',
+            headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+          });
+          if (!breakResp.ok) {
+            const text = await breakResp.text();
+            throw new Error(`early breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
+          }
+          log('INFO', `[Phase 2.1] Broke inheritance early on exact-mode list '${list.title}'.`);
+        } else {
+          log('INFO', `[Phase 2.1] Exact-mode list '${list.title}' already has unique role assignments.`);
+        }
+
+        // BreakRoleInheritance is a separate REST call from list creation, so
+        // it cannot be atomic. Re-read ItemCount before adding fields: if a
+        // site principal raced that narrow window, fail closed and let the
+        // pre-seed gate prevent activation. Never delete the unexpected row.
+        if (createdThisRun) {
+          const countResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=ItemCount`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!countResp.ok) {
+            const text = await countResp.text();
+            throw new Error(`post-isolation ItemCount probe failed: HTTP ${countResp.status} ${text}`);
+          }
+          const countJson = await countResp.json();
+          const itemCount = countJson && countJson.d && countJson.d.ItemCount;
+          if (!Number.isInteger(itemCount) || itemCount < 0) {
+            throw new Error('post-isolation ItemCount probe returned an invalid response');
+          }
+          if (itemCount !== 0) {
+            throw new Error(`new exact-mode list '${list.title}' contains ${itemCount} item(s) after early isolation; review the raced content before rerunning`);
+          }
+          log('INFO', `[Phase 2.1] New exact-mode list '${list.title}' remains empty after early isolation.`);
+        }
+      }
+
+      fieldWork.push(list);
+    } catch (err) {
+      log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
+    }
+  }
+
+  if (summary.errors.length > errorsBeforeWaveOne) {
+    log('ERROR', 'Wave 1 list reconciliation failed; aborting before any field work.');
+    return { ...summary, aborted: 'wave-1-schema-errors' };
+  }
+
+  // Wave 1 can be long enough for an earlier list's ownership to change while
+  // later lists are reconciled. Re-survey every field-work list as one batch;
+  // no field write starts unless all still carry exact ownership and shape.
+  let fieldWaveOwnershipFailed = false;
+  await mapLanes(fieldWork, list => list.title, async (list) => {
+    try {
+      const actual = await readListShape(list.title, true);
+      if (!actual) throw new Error(`Declared list '${list.title}' disappeared before field work`);
+      assertListAdoptable(list, actual);
+      listGuids[list.title] = actual.Id;
+    } catch (err) {
+      fieldWaveOwnershipFailed = true;
+      log('ERROR', `Field-wave ownership recheck '${list.title}': ${err.message}`);
+      summary.errors.push({
+        phase: '2.1', list: list.title, error: err.message,
+      });
+    }
+  }, 4);
+  if (fieldWaveOwnershipFailed) {
+    log('ERROR', 'Field-wave ownership recheck failed; aborting before any field write.');
+    return { ...summary, aborted: 'field-wave-ownership-errors' };
+  }
+
+  // Wave 2 is field provisioning, one lane per list: every target GUID now
+  // exists, and concurrent schema writes to the SAME list race into save
+  // conflicts while different lists are independent, so each list's fields
+  // run sequentially inside a lane and the lanes run concurrently.
+  //
+  // Ownership loss inside the wave is phase-wide, not one field's business.
+  // The per-field catch below records an error and moves to the next column,
+  // which for a transient 403 is right and for a lost marker means writing on
+  // past a KNOWN ownership loss, in this lane and in every other one still
+  // running. So it is marked on the error, re-thrown past that catch, and
+  // latched here where every lane can see it.
+  let fieldWaveOwnershipLoss = null;
+  const stopFieldWave = (listName, err) => {
+    fieldWaveOwnershipLoss = fieldWaveOwnershipLoss
+      || { list: listName, error: err.message };
+    err.ownershipLoss = true;
+    return err;
+  };
+  await mapLanes(fieldWork, (list) => list.title, async (list) => {
+    try {
+      // The free half of the latch: no request, so it can be read between
+      // every column without costing one. A lane that has not failed itself
+      // stops here at the next column once any lane has lost ownership.
+      const assertWaveRunning = () => {
+        if (fieldWaveOwnershipLoss) {
+          throw stopFieldWave(list.title, new Error(
+            `field wave stopped by ownership loss on '${fieldWaveOwnershipLoss.list}'`,
+          ));
+        }
+      };
+      // The paying half: re-proves the marker live at each batch boundary.
+      const assertLaneOwnership = async () => {
+        assertWaveRunning();
+        try {
+          const owned = await assertDeclaredListOwnedNow(list.title);
+          listGuids[list.title] = owned.Id;
+        } catch (err) {
+          throw stopFieldWave(list.title, err);
+        }
+      };
+      const resolveTargetGuid = async (col) => {
+        if (!col.target_list) return null;
+        try {
+          const targetOwned = await assertDeclaredListOwnedNow(col.target_list);
+          listGuids[col.target_list] = targetOwned.Id;
+          return targetOwned.Id;
+        } catch (err) {
+          // The target is written to as surely as the lane's own list:
+          // its GUID becomes the LookupListId of every field created here.
+          throw stopFieldWave(col.target_list, err);
+        }
+      };
+      await assertLaneOwnership();
+      let laneDigest = await getDigest();
+      // MEASURED on a live tenant 2026-09-06, run 20260906T061322,
+      // test/manual/batch-field-create-probe.js. This loop used to refuse the
+      // port to BatchWriter on three unmeasured questions; all three are now
+      // recorded, and the lane boundary is the batch boundary as it is for the
+      // maintenance unseal (#448):
+      //   - changeset-creates-land: 40 field creates against ONE list as one
+      //     ChangeSet answered outer 200 with all 40 parts at 201 and all 40
+      //     columns present after, so same-list creates do not race into the
+      //     save conflicts the lane concurrency exists to prevent;
+      //   - changeset-create-then-merge: a create and its display-title MERGE
+      //     in one ChangeSet answered 201 then 204 with the column present
+      //     under its new title, so the rename rides its own create and the
+      //     readback it used to be built from is verification, not transport;
+      //   - changeset-function-post: createfieldasxml with a {parameters}
+      //     body answered 200 as a part with the column present, so the lookup
+      //     routes batch exactly as the plain one does.
+      // NOT measured: the order SharePoint applies parts within a ChangeSet
+      // in. A list with no declared form layout takes its default form order
+      // from field creation order, so that order now rests on the envelope
+      // being applied front to back. The create-then-rename pair is evidence
+      // for it over two parts, since a MERGE applied first would have answered
+      // 404 rather than 204, and not over a list's whole column set.
+      //
+      // The decide pass below reads each column back and queues the creates;
+      // the batch sends them as one request; the verify pass reads them back
+      // again. BatchWriter.flush() asks getDigest() for itself, and that is
+      // cached with its own expiry, so the digest refreshes per batch at no
+      // extra request.
+      //
+      // A calculated column stays out of the envelope. SharePoint resolves a
+      // formula's [Column] references when the field is CREATED, against the
+      // DISPLAY names the formula was rewritten to, so a calculated create is
+      // only valid after every column it names has been created AND renamed.
+      // Both of those are parts of this batch, and the measurement above
+      // covers a create and the rename directly behind it, not a create that
+      // reads a name two parts back. The predicate is the one
+      // _order_calculated_after_references sorts on, and that function already
+      // emits every plain column before every calculated one, so the split
+      // reproduces the creation order the generator chose rather than
+      // reordering it.
+      const isCalculated = (col) => col.body.Formula != null;
+      const batchedFields = list.fields_phase1.filter((col) => !isCalculated(col));
+      const calculatedFields = list.fields_phase1.filter(isCalculated);
+      const createBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      const verifyWork = [];
+      for (const col of batchedFields) {
+        // Guard each field independently: one field's failure (a transient
+        // 429/403, or a missing lookup target) must not abandon the list's
+        // remaining columns and its Title patch. Existing fields are never
+        // trusted by name alone: immutable identity is checked before safely
+        // mutable declared settings are reconciled and read back.
+        try {
+          assertWaveRunning();
+          laneDigest = await getDigest();
+          const targetGuid = await resolveTargetGuid(col);
+          if (await reconcileDeclaredField(
+            list.title, col, targetGuid, laneDigest, true,
+          )) {
+            summary.columnsSkipped += 1;
+            verifyWork.push({ col, created: false });
+            continue;
+          }
+          // SharePoint rejects POSTing an SP.FieldLookup directly to /fields
+          // ("Please use addfield to add a lookup field"), and refuses AddField
+          // outright for a multi-value one. All three routes live in
+          // declaredFieldCreateOp; properties none of them can carry are MERGEd
+          // and read back by the verify pass below.
+          const createOp = declaredFieldCreateOp(list.title, col, targetGuid);
+          await createBatch.add('POST', createOp.path, createOp.body);
+          // The rename is queued behind its own create rather than sent after
+          // the readback: it is the one MERGE whose body is known before the
+          // field exists, because it comes from the declaration and not from
+          // what SharePoint returned.
+          const renameOp = declaredFieldRenameOp(list.title, col);
+          if (renameOp) {
+            await createBatch.add('POST', renameOp.path, renameOp.body, FIELD_MERGE_HEADERS);
+          }
+          verifyWork.push({ col, created: true });
+        } catch (err) {
+          // Recorded per field and carried on, EXCEPT for ownership loss:
+          // that one leaves the lane, and the wave, without another write.
+          if (err.ownershipLoss) throw err;
+          // A refused ChangeSet is the LANE's failure, not this column's:
+          // SharePoint does not roll one back (Learn, "Make batch requests
+          // with the REST APIs"), so parts queued before it may have landed
+          // and nothing that follows can be attributed to one column.
+          if (err.batchFailure) {
+            log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
+            summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
+            break;
+          }
+          log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
+          summary.errors.push({
+            phase: '2.1', list: list.title, column: col.title, error: err.message,
+          });
+        }
+      }
+      try {
+        await createBatch.done();
+      } catch (err) {
+        log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
+        summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
+      }
+      invalidateFieldShapes();  // new fields: the next probe re-enumerates
+      // The single-write shape re-proved this list immediately before EVERY
+      // create, so a marker lost part-way through a list's columns aborted at
+      // the next one. One ChangeSet has no next one, so the re-prove moves to
+      // the batch boundary and runs before a single column is REPORTED
+      // created, which is what a rerun would otherwise trust.
+      await assertLaneOwnership();
+
+      for (const { col, created } of verifyWork) {
+        try {
+          assertWaveRunning();
+          laneDigest = await getDigest();
+          const hasProjections = !!(col.projections && col.projections.length);
+          let targetGuid = (created || hasProjections) ? await resolveTargetGuid(col) : null;
+          if (created) {
+            // Verification, and repair of what the create could not carry:
+            // for a plain column the rename already landed in the ChangeSet
+            // and this writes nothing, and for a lookup it applies the
+            // Description and Required neither create route accepts.
+            await reconcileDeclaredField(
+              list.title, col, targetGuid, laneDigest, false,
+            );
+            summary.columnsCreated += 1;
+          }
+          // Projected dependent fields, created after the primary lookup
+          // exists so its Id is known. Each is a read-only Lookup linked back
+          // by FieldRef and created via createfieldasxml, because the FieldRef
+          // linkage cannot be expressed through AddField. Read-only fields do
+          // not drift, so they are checked for existence only. See
+          // test/manual/projected-lookup-probe.js for the measured create shape.
+          if (hasProjections) {
+            const primaryShape = await readFieldShape(list.title, col.title, null, true);
+            for (const proj of col.projections) {
+              if (!(await readFieldShape(list.title, proj.name, null, true))) {
+                await assertLaneOwnership();
+                targetGuid = await resolveTargetGuid(col);
+                laneDigest = await getDigest();
+                const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+                  + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+                  + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+                await postJson(
+                  apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/fields/createfieldasxml`),
+                  { parameters: { SchemaXml: xml, Options: 8 } },
+                  laneDigest,
+                );
+                summary.columnsCreated += 1;
+              }
+              await verifyDependentField(list.title, proj.name, proj.show_field, primaryShape.Id, targetGuid);
+            }
+          }
+        } catch (err) {
+          if (err.ownershipLoss) throw err;
+          log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
+          summary.errors.push({
+            phase: '2.1', list: list.title, column: col.title, error: err.message,
+          });
+        }
+      }
+
+      // The built-in Title is renamed HERE, between the plain wave and the
+      // calculated tail, for the reason the tail's own comment gives about
+      // every other column: a formula names a column by its DISPLAY name, and
+      // the rename is what gives it that name.
+      //
+      // MEASURED on a live tenant 2026-09-07, test/manual/
+      // title-rename-probe.js revision 709c786d. With Title renamed, a
+      // calculated create whose formula said `[Title]` was refused HTTP 500,
+      // "The formula refers to a column that does not exist", while the same
+      // formula naming the new title was accepted. This write used to sit
+      // AFTER the tail, which is exactly the order that fails: Title was
+      // outside the loop and so outside the loop's rule.
+      //
+      // Not moved further forward, to the top of the lane. The plain wave's
+      // reads are what surface an ownership loss raised in another lane, and
+      // a write before any of them would be a write this lane could not yet
+      // know it had lost the right to make. No shipped family references
+      // Title from a client-validation or list-validation formula, and both
+      // of those are applied after this point anyway.
+      if (list.title_patch) {
+        await assertLaneOwnership();
+        laneDigest = await getDigest();
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
+      }
+
+      // The calculated tail, one write at a time, and each column renamed
+      // before the next is created: a calc-on-calc formula names the column
+      // ahead of it by the display title only the rename gives it. Every plain
+      // column of this list has been created and renamed by the time this
+      // runs, the built-in Title included. No lookup target and no projections
+      // reach here, because a calculated column has neither.
+      for (const col of calculatedFields) {
+        try {
+          await assertLaneOwnership();
+          laneDigest = await getDigest();
+          if (await reconcileDeclaredField(
+            list.title, col, null, laneDigest, true,
+          )) {
+            summary.columnsSkipped += 1;
+            continue;
+          }
+          const createOp = declaredFieldCreateOp(list.title, col, null);
+          await postJson(apiUrl(createOp.path), createOp.body, laneDigest);
+          invalidateFieldShapes();  // new field: the next probe re-enumerates
+          await assertLaneOwnership();
+          await reconcileDeclaredField(list.title, col, null, laneDigest, false);
+          summary.columnsCreated += 1;
+        } catch (err) {
+          if (err.ownershipLoss) throw err;
+          log('ERROR', `Phase 2.1 field '${list.title}.${col.title}': ${err.message}`);
+          summary.errors.push({
+            phase: '2.1', list: list.title, column: col.title, error: err.message,
+          });
+        }
+      }
+
+      laneDigest = await getDigest();
+      await assertLaneOwnership();
+      await reconcileListValidation(list, laneDigest);
+    } catch (err) {
+      // One named phase error for the whole wave, recorded after mapLanes:
+      // every lane stops on the same loss, and one per lane would report a
+      // site-wide refusal as a list-by-list failure.
+      if (err.ownershipLoss) return;
+      log('ERROR', `Phase 2.1 '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.1', list: list.title, error: err.message });
+    }
+  }, 4);
+
+  if (fieldWaveOwnershipLoss) {
+    log('ERROR', `Phase 2.1 lost ownership of '${fieldWaveOwnershipLoss.list}' mid-wave; aborting every lane before any further field write.`);
+    summary.errors.push({
+      phase: '2.1', list: fieldWaveOwnershipLoss.list,
+      error: fieldWaveOwnershipLoss.error,
+    });
+    return { ...summary, aborted: 'field-wave-ownership-loss' };
+  }
+
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
+    return { ...summary, aborted: 'phase-1-schema-errors' };
+  }

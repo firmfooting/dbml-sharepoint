@@ -1,0 +1,119 @@
+  // Flip to true for per-request timing diagnostics (method, URL, status,
+  // ms). Default false keeps the console readable; edit in the pasted
+  // script (no rebuild needed). deploy.js.txt additionally prints a per-phase
+  // seconds table before DONE when this is on.
+  const DEBUG = false;
+  const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
+  let requestCount = 0;
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  // SharePoint's REST error body carries the human-readable reason at
+  // error.message.value; fall back to (bounded) raw text. A bare HTTP
+  // status left a blocked run undiagnosable (live finding 2026-07-24).
+  const spError = (text) => {
+    let message = text;
+    try {
+      message = JSON.parse(text)?.error?.message?.value || text;
+    } catch {}
+    return String(message).slice(0, 300);
+  };
+
+  // SharePoint's by-name getters do not uniformly 404 for a missing item:
+  // fields/getbyinternalnameortitle ("Column 'X' does not exist") and
+  // views/getbytitle ("The specified view is invalid.") both throw
+  // System.ArgumentException as HTTP 400 with locale-invariant code
+  // -2147024809. Exactly that shape means "absent"; anything else stays
+  // fatal in the caller.
+  //
+  // Here rather than in deploy/_shape_probes.js.j2, where it was, because
+  // the maintenance sidecars need the same fact: columns.js.txt read its
+  // own successful delete as a failure for want of it (#383, live
+  // 2026-09-03). AGENTS.md: where both sides need the same fact, it lives
+  // in a shared module.
+  const isAbsent400 = (status, text) => {
+    if (status !== 400) return false;
+    let code = '';
+    try { code = String(JSON.parse(text)?.error?.code || ''); } catch { return false; }
+    return code.includes('-2147024809') && code.includes('System.ArgumentException');
+  };
+
+  // The page a throttled BROWSER is redirected to. Matched on the final URL
+  // rather than on the status, because the status is a property of OUR
+  // request: the page is HTML and every call here asks for JSON, so it
+  // arrives as 406 Not Acceptable. A caller that asked for something else
+  // would see a different status and the same throttle. Keying on 406 would
+  // also have retried every genuine content-negotiation refusal five times.
+  const THROTTLE_PAGE = /\/_layouts\/15\/throttle\.htm(\?|$)/i;
+  const isThrottled = (r) => r.status === 429 || r.status === 503
+    || THROTTLE_PAGE.test(r.url || '');
+
+  // ONE PAUSE FOR THE WHOLE RUN, not one per lane. `mapLanes` puts four
+  // workers through this helper at once, and Learn is explicit that
+  // "throttled requests count towards usage limits, so failure to honor
+  // Retry-After may result in more throttling" and that an application
+  // should "reduce concurrency after throttling". Four independent backoffs
+  // keep spending quota against a tenant that is already refusing, and then
+  // resume together. The first request to be refused opens this gate; every
+  // request waits on it before going out.
+  let throttleGate = null;
+  async function passThrottleGate() {
+    while (throttleGate) await throttleGate;
+  }
+  function holdEveryLane(seconds) {
+    if (!throttleGate) {
+      throttleGate = sleep(seconds * 1000).then(() => { throttleGate = null; });
+    }
+    return throttleGate;
+  }
+
+  // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
+  // else back off exponentially (capped), up to `attempts` before
+  // returning the final response to the caller's own error handling.
+  //
+  // The defaults are a JUDGEMENT, not a measurement: eight attempts capped at
+  // 60s is about four minutes of patience. The browser redirect carries no
+  // Retry-After -- it is an HTML page -- so on the path that prompted this
+  // there is nothing to honour and the backoff is all there is. Waiting four
+  // minutes on a paste is cheap; a deploy abandoned mid-Phase-4 leaves
+  // columns unsealed and needs the whole run again.
+  //
+  // `cache: 'no-store'` on every request, applied AFTER the caller's options
+  // so no caller can opt back in. A by-title list read can otherwise answer
+  // with a list that no longer exists. MEASURED 2026-09-13, revision
+  // c9c55b1f, `transport.cache.id-select-after-recreate` and
+  // `transport.cache.shape-select-after-recreate` in
+  // list-identity-cache-probe.js: after a hard delete and a create under the
+  // same title, which is a rollback then a redeploy, both by-title reads
+  // answered the DEAD list, under `Cache-Control: private, max-age=0` and
+  // `ETag: "1"`. The enumeration and a unique-parameter read answered the
+  // live one, and the same run with the browser's cache disabled was fresh
+  // throughout, so the entry is the browser's.
+  //
+  // Two reads that go stale TOGETHER agree with each other, and then an
+  // ownership guard passes while naming an object the run never saw. That is
+  // the failure this whole transport is guarded for, so the directive goes
+  // here rather than at the call sites that happen to know about it today.
+  // All three candidates measured fresh (`remedy-no-store`,
+  // `remedy-no-cache-header`, `remedy-reload`); no-store is the one that
+  // neither reads an entry nor leaves one.
+  async function fetchWithRetry(url, opts, attempts = 8) {
+    const t0 = Date.now();
+    const init = { ...(opts || {}), cache: 'no-store' };
+    for (let i = 0; ; i++) {
+      await passThrottleGate();
+      const r = await fetch(url, init);
+      requestCount += 1;
+      if (isThrottled(r) && i < attempts) {
+        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 60);
+        const how = THROTTLE_PAGE.test(r.url || '')
+          ? `redirected to the throttling page (HTTP ${r.status})`
+          : `HTTP ${r.status}`;
+        log('INFO', `Throttled, ${how}; every lane waits ${ra}s, retry ${i + 1}/${attempts}.`);
+        await holdEveryLane(ra);
+        continue;
+      }
+      dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}...` : url} -> ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
+      return r;
+    }
+  }
+

@@ -8081,7 +8081,7 @@ def test_a_cleanup_failure_corrects_the_count_it_arrived_after() -> None:
     This run aborts in Phase 2.1 rather than reaching [DONE], which is what
     lets the exit cleanup be reached with fields still open. That the
     correction sits after the [DONE] line on the success path is a source
-    ordering, pinned in test_jsgen.py.
+    ordering, pinned in test_jsgen_phases.py.
     """
     summary, output = _exit_cleanup_output()
 

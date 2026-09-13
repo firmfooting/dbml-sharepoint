@@ -1,0 +1,47 @@
+  markPhase('Phase 1.1: site assessment');
+  // Runs the site assessment and refuses a verdict the operator has not accepted.
+  log('INFO', 'Group 1: PREPARE');
+  log('INFO', 'Starting Phase 1.1: site assessment.');
+  let assessment;
+  // A throw is a broken probe, not a verdict, and every other phase hands back
+  // a structured summary when it aborts.
+  try {
+    assessment = await assessSite({
+      requirements: ASSESS_REQUIREMENTS, targets: ASSESS_TARGETS,
+      notAssessable: ASSESS_NOT_ASSESSABLE, log, web: WEB,
+      origin: window.location.origin, verdictLevel: 'INFO',
+      fetchWithRetry, apiUrl, odataName, getDigest, getContextWebInformation,
+    });
+  } catch (err) {
+    log('ERROR', `The assessment could not run (${err.message}); no deployment writes were attempted.`);
+    return { ...summary, aborted: 'assessment-failed' };
+  }
+  // Its own key: summary.errors.length gates the later phase aborts, and a
+  // finding is not a deployment error.
+  summary.assessment = assessment;
+  // Every blocking finding, not the first: the verdict keeps only one
+  // requirement, and a site blocked three ways would otherwise name one.
+  const assessBlocking = assessment.findings.filter(f => f.level === 'BLOCKED');
+  // The verdict alone, never assessBlocking.length: the verdict is the only
+  // thing that knows which findings THIS pack requires, and a BLOCKED finding
+  // it does not require must not stop a deploy the assessment calls deployable.
+  if (assessment.verdict === 'BLOCKED') {
+    // Re-stated at ERROR because the body logged the verdict at INFO, and a
+    // console filtered to errors would show the abort with nothing naming it.
+    for (const f of assessBlocking) log('ERROR', `  ${f.key}: ${f.detail}`);
+    log('ERROR', 'The assessment found a blocking condition; no deployment writes were attempted.');
+    return { ...summary, aborted: 'assessment-blocked' };
+  }
+  if (assessment.verdict === 'DEGRADED' && !ACKNOWLEDGE_DEGRADED) {
+    // Every level the verdict degrades on, not WARN alone: NOT-ASSESSABLE
+    // degrades it too, and a site degrading only that way named nothing here.
+    // BLOCKED is included because a blocking finding the pack does not require
+    // is still worth reading, and Tier 3 is not, because it is the same list on
+    // every site and would bury the findings that are about this one.
+    const degrading = new Set(['WARN', 'BLOCKED', 'NOT-ASSESSABLE']);
+    for (const f of assessment.findings.filter(f => f.tier !== 3 && degrading.has(f.level))) {
+      log('ERROR', `  ${f.key}: ${f.detail}`);
+    }
+    log('ERROR', 'The assessment found degrading conditions. Review them, set ACKNOWLEDGE_DEGRADED = true at the top of this script, and paste again.');
+    return { ...summary, aborted: 'assessment-degraded-unacknowledged' };
+  }

@@ -1,0 +1,126 @@
+  markPhase('Phase 2.5: field defaults');
+  // === Phase 2.5: reconcile declared field defaults ===
+  // Defaults are included in create-field bodies, but existing columns are
+  // skipped in Phase 2.1. Re-applying the declared value makes upgrades
+  // idempotent and lets a provisioned constant replace after-create flows.
+  log('INFO', 'Starting Phase 2.5: field defaults.');
+  {
+    // Post-schema, so the same batch gate as the other write phases: prove
+    // every target list before the first MERGE, and refuse the phase instead
+    // of writing defaults into the lists ahead of the failing one.
+    const defaultsOwned = SCHEMA.field_defaults.length > 0
+      ? await surveyOwnedListsForWrites(
+        SCHEMA.field_defaults.map(fieldDefault => fieldDefault.list),
+        '2.5', 'Field default',
+      )
+      : new Map();
+    if (!defaultsOwned) {
+      log('ERROR', 'Field-default ownership survey failed; aborting before any default is written.');
+      return { ...summary, aborted: 'default-ownership-errors' };
+    }
+    // Approving a target is a read, and every one of them happens before the
+    // first write: the MERGEs that follow depend on nothing between them, so
+    // they travel as ChangeSet parts rather than one POST each.
+    const defaultTargets = [];
+    for (const fieldDefault of SCHEMA.field_defaults) {
+      try {
+        defaultTargets.push({
+          fieldDefault,
+          target: await ownedFieldIdentity(
+            fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
+          ),
+        });
+      } catch (err) {
+        log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+        summary.errors.push({
+          list: fieldDefault.list,
+          column: fieldDefault.field,
+          error: err.message,
+        });
+      }
+    }
+    // One $batch per list, the boundary the seal phase draws: lists are
+    // independent, and same-list field writes are the ones that race into
+    // save conflicts, so no wider claim is made here than there.
+    const defaultsByList = new Map();
+    for (const entry of defaultTargets) {
+      const listTitle = entry.fieldDefault.list;
+      if (!defaultsByList.has(listTitle)) defaultsByList.set(listTitle, []);
+      defaultsByList.get(listTitle).push(entry);
+    }
+    for (const [listTitle, entries] of defaultsByList) {
+      const defaultsBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+      try {
+        for (const entry of entries) {
+          // fieldMergePath and FIELD_MERGE_HEADERS are what patchFieldById
+          // sends, so only the transport differs: still by-Id, still a MERGE.
+          // Each default rides only when declared: a column with a formula
+          // and no value must not have its DefaultValue touched here.
+          const defaultBody = { __metadata: { type: entry.fieldDefault.metadata_type } };
+          if (entry.fieldDefault.default_value != null) {
+            defaultBody.DefaultValue = entry.fieldDefault.default_value;
+          }
+          if (entry.fieldDefault.default_formula != null) {
+            defaultBody.DefaultFormula = entry.fieldDefault.default_formula;
+          }
+          await defaultsBatch.add(
+            'POST',
+            fieldMergePath(entry.target.listId, entry.target.field.Id),
+            defaultBody,
+            FIELD_MERGE_HEADERS,
+          );
+        }
+        await defaultsBatch.done();
+      } catch (err) {
+        // Recorded at list level and not attributed to a column: SharePoint
+        // does not roll a ChangeSet back, so some of these may have landed.
+        // The per-column readback below is the finer evidence, and it is what
+        // turns a part that never landed into a named failure.
+        log('ERROR', `Default ${listTitle}: ${err.message}`);
+        summary.errors.push({ list: listTitle, error: err.message });
+      }
+    }
+    for (const { fieldDefault, target } of defaultTargets) {
+      try {
+        const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+        // A formula-only column reads DefaultValue back null, so this
+        // comparison is about the value and not about the formula beside
+        // it (MEASURED 2026-09-13,
+        // `field.default-formula.default-value-beside-formula-on-create`
+        // and `field.default-formula.default-value-after-item-create` in
+        // default-formula-readback-probe.js: null on create, and still
+        // null after an item create had filled the column once).
+        if (!actual
+            || normalizeDefaultValue(actual.DefaultValue)
+               !== normalizeDefaultValue(fieldDefault.default_value)) {
+          throw new Error('DefaultValue readback did not match the declared value');
+        }
+        // Compared whether or not a formula is declared: a formula the site
+        // holds and the declaration does not is drift this phase must name.
+        if (normalizeDefaultFormula(actual.DefaultFormula)
+            !== normalizeDefaultFormula(fieldDefault.default_formula)) {
+          throw new Error(
+            'DefaultFormula readback did not match the declared formula '
+            + `(declared ${JSON.stringify(fieldDefault.default_formula)}; readback ${JSON.stringify(actual.DefaultFormula)})`,
+          );
+        }
+        // The readback resolves list and column by name, so it is only
+        // evidence about the field just written if both still resolve to it.
+        if (actual.Id !== target.field.Id) {
+          throw new Error(`column changed identity across the default write (was ${target.field.Id}, now ${actual.Id})`);
+        }
+        await ownedListIdentity(
+          fieldDefault.list, target.listId,
+          `after writing the default for '${fieldDefault.list}.${fieldDefault.field}'`,
+        );
+      } catch (err) {
+        log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+        summary.errors.push({
+          list: fieldDefault.list,
+          column: fieldDefault.field,
+          error: err.message,
+        });
+      }
+    }
+  }
+

@@ -22,8 +22,8 @@ leave them.
 
 | File | Enclosing function | Tail of the glued fragment |
 | --- | --- | --- |
-| `test_jsgen.py` | `_display_names_inputs` | `RiskScore: '=IF([MatrixVersion]="13.0",1,` |
-| `test_jsgen.py` | `test_view_rows_carry_formatting_and_template_reconciles_it` | `additionalRowClass: "=if([$Score] >= 20,` |
+| `test_jsgen_formatting.py` | `_display_names_inputs` | `RiskScore: '=IF([MatrixVersion]="13.0",1,` |
+| `test_jsgen_formatting.py` | `test_view_rows_carry_formatting_and_template_reconciles_it` | `additionalRowClass: "=if([$Score] >= 20,` |
 | `test_lookups.py` | `test_a_declared_display_column_wins` | `site_role: default,` |
 | `test_lookups.py` | `test_a_calculated_display_column_is_excluded` | `site_role: default,` |
 | `test_mapping_loader.py` | `test_entity_sub_keys_are_checked` | `site_role: default,` |
@@ -67,7 +67,7 @@ placeholder needle with no leading whitespace and is indentation-safe.
 
 Glued runs in messages, expected CAML, and expected Markdown. Not file payloads.
 
-`test_conditions.py` · `test_jsgen.py` (the `<Where>…`, `<GroupBy …>`,
+`test_conditions.py` · `test_jsgen_views.py` (the `<Where>…`, `<GroupBy …>`,
 `<Or><IsNull>…` expectations) · `test_rollbackgen.py` ·
 `test_template_lint.py` · `test_template_standard.py` ·
 `test_manifestgen.py` (retired-column table rows) ·

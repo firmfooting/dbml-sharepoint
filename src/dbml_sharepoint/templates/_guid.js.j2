@@ -8,8 +8,9 @@
 
    `deploy/_helpers.js.j2` carries the same function for the deploy bundle.
    The two are deliberately not shared yet: folding them together edits the
-   emitted deploy and moves `test/fixtures/expected/simple-deploy.js`, which
-   is a golden review of its own and does not belong in a maintenance fix. #}
+   emitted deploy and moves a piece of `test/fixtures/expected/simple-deploy/`,
+   which is a golden review of its own and does not belong in a maintenance
+   fix. #}
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const sharePointGuid = (value, label) => {
     const held = String(value || '');

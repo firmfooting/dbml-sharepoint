@@ -1,0 +1,756 @@
+  markPhase('Phase 3.1: views');
+  // === Phase 3.1: managed views ===
+  // Fields created through the REST field collection join no view, so a
+  // fresh list shows a Title-only default view. Every list gets a generated,
+  // unfiltered All Items recovery view containing its complete rendered
+  // schema; when an authored default exists the recovery view is hidden from
+  // the modern view bar. Authored views are managed alongside it. Other views
+  // are user content and are never touched (unlike exact-mode ACLs).
+  log('INFO', 'Group 3: PRESENTATION');
+  log('INFO', 'Starting Phase 3.1: views.');
+  // Readback normalization: SP collapses nothing between tags but DOES write
+  // self-closing tags with a space (`<FieldRef Name="X" />`); compare both
+  // sides with inter-tag whitespace and the pre-`/>` space collapsed.
+  const normalizeViewQuery = (value) => xmlDecode(String(value || '')).replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+  // The view CustomFormatter is stored in the view schema XML like
+  // ViewQuery, so its readback is XML-entity-encoded ('>=' returns as
+  // '&gt;='): decode before the canonical JSON comparison, both sides.
+  //
+  // That claim arrived with the initial public tree and carried no date or
+  // probe for a year. MEASURED at last on 2026-08-11 by
+  // test/manual/formatter-xml-probe.js, and it is correct: '>' is written
+  // back as '&gt;' and '>=' as '&gt;='.
+  //
+  // The same run establishes why the COLUMN formatter below is compared
+  // WITHOUT this decode, which reads like an oversight and is not. A column's
+  // CustomFormatter keeps '&', '<', '>' and both quotes literally -- it is not
+  // XML-stored. Decoding it would corrupt a formatter that legitimately
+  // contains '&amp;' as text.
+  const canonicalViewFormatter = (value) => canonicalJson(typeof value === 'string' ? xmlDecode(value) : value);
+  async function mergeView(viewUrl, body, viewDigest) {
+    const r = await fetchWithRetry(viewUrl, {
+      method: 'POST',
+      headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`view MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+  async function readViewShape(viewUrl) {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      if (isAbsent400(r.status, text)) return null;
+      throw new Error(`view shape probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    return j && j.d;
+  }
+  // Existence checks read ONE enumeration per list: views/getbytitle on an
+  // absent view answers HTTP 400, which the browser console paints red even
+  // though isAbsent400 handles it; operators read those lines as failures.
+  const viewShapesByList = {};
+  // Which live view each declaration on a list resolved to. One enumeration
+  // serves every declaration, so a title this phase has already changed is
+  // still in it under the old name: a later declaration claiming that old
+  // title matched the same view, saw a basename mismatch, and its URL
+  // migration deleted the view the earlier declaration had just verified.
+  // Both were then reported verified with one of them gone.
+  const claimedViewIds = {};
+  const claimView = (listPath, id, title) => {
+    const claimed = claimedViewIds[listPath] || (claimedViewIds[listPath] = new Map());
+    const owner = claimed.get(id);
+    if (owner !== undefined && owner !== title) {
+      throw new Error(`views '${owner}' and '${title}' on this list both resolved to the same live view; refusing to write either`);
+    }
+    claimed.set(id, title);
+  };
+  // Write a title this phase has just changed back into the enumeration, so
+  // the matchers above see the list as it now is rather than as it was read.
+  // The guard is what fails closed; this is what stops it firing on a rename
+  // the deployer itself performed.
+  const noteViewTitle = (listPath, id, title) => {
+    const cached = (viewShapesByList[listPath] || []).find((v) => v.Id === id);
+    if (cached) cached.Title = title;
+  };
+  async function listViewShapes(listPath) {
+    if (!(listPath in viewShapesByList)) {
+      // `$top=500`: a read with no explicit page size takes the server's,
+      // and a truncated enumeration reads as "that view does not exist",
+      // which is the one answer this function must never get wrong.
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=500`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`view enumeration failed: HTTP ${r.status} ${text}`);
+      }
+      const j = await r.json();
+      viewShapesByList[listPath] = (j && j.d && j.d.results) || [];
+    }
+    return viewShapesByList[listPath];
+  }
+  async function readViewFieldNames(viewUrl) {
+    const r = await fetchWithRetry(`${viewUrl}/viewfields`, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`view fields read failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    return (j && j.d && j.d.Items && j.d.Items.results) || [];
+  }
+  const deployView = async (view) => {
+    try {
+      // Lane-level rather than per-request, unlike the ACL phase. Every URL
+      // below hangs off the list title, and a view lane issues tens of them;
+      // one cache-bypassing list read per request would cost what the seal
+      // phase measured and removed. So the lane is bracketed: owned before
+      // the first read, and the title proved to still resolve to the same Id
+      // after the last write, before this view is reported verified.
+      const viewListId = viewsOwned.get(view.list);
+      await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
+      let viewDigest = await getDigest();
+      const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
+      // Kept as a path as well as a URL: apiUrl() is what a $batch part takes,
+      // so the batched field writes below address the view by the same
+      // spelling every single write here does rather than a second one.
+      const viewPath = `${listPath}/views/getbytitle('${odataName(view.title)}')`;
+      const viewUrl = apiUrl(viewPath);
+      const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);
+      const desiredBasename = `${view.url_slug}.aspx`;
+      const urlBasename = (v) => String(v && v.ServerRelativeUrl || '').split('/').pop();
+      // A view's .aspx name is fixed at creation from its Title, so creating
+      // with a spaced display title bakes %20 into the URL forever, while a
+      // Title rename never touches the URL. Create under the URL slug, then
+      // rename to the declared title (same trick as field display titles).
+      const createViewWithCleanUrl = async () => {
+        const createBody = {
+          __metadata: { type: 'SP.View' },
+          Title: view.url_slug,
+          PersonalView: false,
+          Hidden: view.hidden,
+          Paged: true,
+          ViewQuery: view.caml_query,
+        };
+        if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        // SP.View.Scope, on a document library's view only (the validator
+        // refuses the key on a list). MEASURED 2026-09-13,
+        // `library.view.scope-on-create-reads-back` in library-guards-probe.js:
+        // a view created with Scope 1 in its body answered HTTP 201 and read
+        // Scope back as 1.
+        if (view.scope != null) createBody.Scope = view.scope;
+        await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
+      };
+      const listedViews = await listViewShapes(listPath);
+      // FINDING a view matches case-insensitively, because SharePoint
+      // resolves views/getbytitle that way and will not let two views on
+      // one list differ only in case. Matching exactly here would read an
+      // existing 'open by score' as absent, then try to create the
+      // declared 'Open by score' beside it.
+      //
+      // The title DRIFT check further down stays exact on purpose: once
+      // the view is found, a casing difference is drift the deployer owns
+      // and renames, which is the opposite question.
+      let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
+      // A previous title is only interesting on a DIFFERENT view. Excluding
+      // the one already matched as current is what makes a casing-only
+      // rename possible: `title: Open` with `renamed_from: [open]` matches
+      // the same live view twice under case-insensitive comparison, and the
+      // conflict check below would then refuse to choose between a view and
+      // itself, on every run, so the rename could never land.
+      const previousMatches = listedViews.filter(
+        (v) => (!existing || v.Id !== existing.Id)
+          && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
+      );
+      if (previousMatches.length > 1) {
+        throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);
+      }
+      if (existing && previousMatches.length > 0) {
+        throw new Error(`both current view '${view.title}' and previous-title view '${previousMatches[0].Title}' exist; refusing to choose or delete either`);
+      }
+      if (!existing && previousMatches.length === 1) {
+        existing = previousMatches[0];
+        log('INFO', `[Phase 3.1] Adopting previous view title '${existing.Title}' on '${view.list}' as '${view.title}'.`);
+      }
+      // A slug-titled view already sitting on the clean URL is our own
+      // half-finished migration (we only ever create with Title=slug):
+      // adopt it instead of creating a second page. A FOREIGN view on that
+      // URL is never touched: the create below would get a suffixed .aspx
+      // and the URL drift gate fails the view closed.
+      const halfMigrated = listedViews.find(
+        (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
+      ) || null;
+      // The one view that may adopt a page it did not create. A library ships
+      // a built-in view on AllItems.aspx under a title of its own, so the
+      // matchers above read it as foreign and the create beside it is
+      // suffixed, which the URL drift gate then fails closed. MEASURED
+      // 2026-09-13 in library-builtin-view-probe.js: a bare library answers
+      // 'All Documents' on that URL (`library.view.builtin-occupies-allitems`)
+      // and a second view created under the slug is minted AllItems1.aspx
+      // (`library.view.create-allitems-title-on-library`), so nothing else can
+      // ever hold it. The generator sets this flag on a library's generated
+      // All Items and on no other view, so the foreign-view guard still stands
+      // everywhere a declared view could otherwise take over somebody's page.
+      //
+      // A basename match is not identity. The same probe measured that the
+      // built-in can be deleted and the URL then reads free
+      // (`library.view.builtin-delete-frees-url`), so a foreign public view
+      // can be sitting on AllItems.aspx. Nothing in the enumeration says
+      // "built-in", so adoption takes the shape that WAS measured: the list's
+      // default view, under a title no declaration claims. Anything else
+      // falls through to the create beside it, which the URL drift gate fails
+      // closed exactly as it did before libraries were supported.
+      if (!existing && view.adopts_builtin_view) {
+        const claimedByADeclaration = (title) => SCHEMA.views.some(
+          (other) => other.list === view.list
+            && (nameKey(other.title) === nameKey(title)
+              || (other.renamed_from || []).some((t) => nameKey(t) === nameKey(title))),
+        );
+        const onTheUrl = listedViews.find((v) => urlBasename(v) === desiredBasename) || null;
+        const builtin = onTheUrl
+          && onTheUrl.DefaultView === true
+          && !claimedByADeclaration(onTheUrl.Title)
+          ? onTheUrl
+          : null;
+        if (builtin) {
+          existing = builtin;
+          log('INFO', `[Phase 3.1] Adopting the built-in view '${builtin.Title}' on '${view.list}' as '${view.title}'.`);
+        } else if (onTheUrl) {
+          log('WARN', `[Phase 3.1] '${onTheUrl.Title}' holds ${desiredBasename} on '${view.list}' but is not this library's built-in view (default: ${onTheUrl.DefaultView === true}); not adopting it.`);
+        }
+      }
+      if (!existing) {
+        if (halfMigrated) {
+          log('INFO', `[Phase 3.1] Adopting half-migrated view '${view.url_slug}' on '${view.list}' as '${view.title}'.`);
+        } else {
+          log('INFO', `[Phase 3.1] Creating view '${view.title}' on '${view.list}' at ${desiredBasename}...`);
+          await createViewWithCleanUrl();
+        }
+        if (view.url_slug !== view.title) {
+          await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
+        }
+      } else {
+        // Before any write: two declarations resolving to one live view is
+        // the shape where one of them deletes what the other just verified.
+        claimView(listPath, existing.Id, view.title);
+        if (existing.PersonalView) {
+          throw new Error(`existing view '${view.title}' is a personal view; declared views must be public`);
+        }
+        if (urlBasename(existing) !== desiredBasename) {
+          // URL migration to the clean URL: renames cannot change the .aspx
+          // name, so the escaped-URL view is recreated. Declared views are
+          // deployer-owned: every setting is reasserted below; only
+          // bookmarks to the old URL break (one-time, noted in deploy.md).
+          log('INFO', `[Phase 3.1] Migrating view '${view.title}' on '${view.list}' from ${urlBasename(existing)} to ${desiredBasename}...`);
+          if (!halfMigrated) await createViewWithCleanUrl();
+          if (existing.DefaultView) {
+            // Transfer the flag first: SP refuses to delete a default view.
+            await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
+          }
+          // The one request in this phase that destroys an existing object,
+          // so it is rechecked on its own rather than riding the lane bracket.
+          await ownedListIdentity(view.list, viewListId, `before deleting the migrated view on '${view.list}'`);
+          const delResp = await fetchWithRetry(apiUrl(`${listPath}/views('${existing.Id}')`), {
+            method: 'POST',
+            headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+          });
+          if (!delResp.ok) {
+            const text = await delResp.text();
+            throw new Error(`old view delete during URL migration failed: HTTP ${delResp.status} ${text}`);
+          }
+          if (view.url_slug !== view.title) {
+            await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
+          }
+          // The enumeration still holds the view this migration just deleted.
+          // Leaving it there lets a later declaration match a title that no
+          // longer exists and resolve an Id that no longer does either.
+          const migrated = viewShapesByList[listPath] || [];
+          const stale = migrated.findIndex((v) => v.Id === existing.Id);
+          if (stale !== -1) migrated.splice(stale, 1);
+          existing = await readViewShape(viewUrl);
+          if (!existing) throw new Error('view disappeared during URL migration');
+        } else if (existing.Title !== view.title) {
+          // A rename whose old and new titles collapse to the same URL slug
+          // needs no page recreation; update by immutable view Id because
+          // getbytitle(new) cannot resolve until after this write.
+          const viewByIdUrl = apiUrl(`${listPath}/views('${existing.Id}')`);
+          await mergeView(
+            viewByIdUrl,
+            { __metadata: { type: 'SP.View' }, Title: view.title },
+            viewDigest,
+          );
+          noteViewTitle(listPath, existing.Id, view.title);
+          existing = await readViewShape(viewUrl);
+          if (!existing) throw new Error('view disappeared during title migration');
+        }
+        // Narrow MERGE: send only drifted declared settings.
+        const patchBody = { __metadata: { type: 'SP.View' } };
+        if (normalizeViewQuery(existing.ViewQuery) !== normalizeViewQuery(view.caml_query)) {
+          patchBody.ViewQuery = view.caml_query;
+        }
+        if (view.row_limit != null && existing.RowLimit !== view.row_limit) {
+          patchBody.RowLimit = view.row_limit;
+        }
+        if (existing.Hidden !== view.hidden) {
+          patchBody.Hidden = view.hidden;
+        }
+        // MEASURED 2026-09-13, `library.view.scope-on-merge-reads-back`: a
+        // stored view reading Scope 0 took MERGE Scope 1 (HTTP 204) and read
+        // back 1, so a scope edited by hand is put back here.
+        if (view.scope != null && existing.Scope !== view.scope) {
+          patchBody.Scope = view.scope;
+        }
+        // Declared totals only. A view with none keeps whatever is live,
+        if (Object.keys(patchBody).length > 1) {
+          await mergeView(viewUrl, patchBody, viewDigest);
+        }
+      }
+      // MEASURED on 2026-08-14 by test/manual/view-aggregations-probe.js,
+      // revisions aa79f6c4 and 96d0a67a on two sites, reproducing 2026-07-29:
+      // `seeded=ok mechanism=patch readback=ok rendered=yes`.
+      // Q5/Q6: internal names bound; two totals rendered in declaration order.
+      // An empty aggregated column renders no footer until a row carries a value.
+      // Declared totals. OUTSIDE the create/adopt branch above, like
+      // ViewFields, formatting and the default flag: createViewWithCleanUrl
+      // does not send Aggregations, so a newly created view would otherwise
+      // reach the verify below with none and fail its own first deploy.
+      //
+      // A view with no declaration keeps whatever is live, matching
+      // CustomFormatter and widths, so deleting a totals block does NOT
+      // clear a deployed total.
+      //
+      // normalizeViewQuery is required here, not tidiness: SP reads back
+      // `<FieldRef Name="X" Type="Sum" />` for the `...Type="Sum"/>` it was
+      // sent, which is the pre-`/>` space that normaliser exists for.
+      // Compared raw, a correct view drifts on every redeploy, rewrites,
+      // reads the same difference back and fails the phase closed.
+      //
+      // The status is part of the CONDITION, not just the payload: SP
+      // renders no figure when AggregationsStatus is Off, so a view whose
+      // XML already matched while the status read Off would be refused by
+      // the verify below and never repaired by this write.
+      if (view.aggregations) {
+        const beforeTotals = existing || await readViewShape(viewUrl);
+        if (!beforeTotals) throw new Error('view disappeared before totals reconciliation');
+        if (normalizeViewQuery(beforeTotals.Aggregations) !== normalizeViewQuery(view.aggregations)
+            || beforeTotals.AggregationsStatus !== 'On') {
+          await mergeView(viewUrl, {
+            __metadata: { type: 'SP.View' },
+            Aggregations: view.aggregations,
+            AggregationsStatus: 'On',
+          }, viewDigest);
+        }
+      }
+      // Declared column set and order, reconciled exactly when drifted.
+      // The initial read rides the enumeration ($expand=ViewFields); every
+      // read after a write stays live.
+      const actualFields = (existing && existing.ViewFields && existing.ViewFields.Items && existing.ViewFields.Items.results)
+        ? existing.ViewFields.Items.results
+        : await readViewFieldNames(viewUrl);
+      const sameFields = actualFields.length === view.view_fields.length
+        && actualFields.every((name, index) => name === view.view_fields[index]);
+      if (!sameFields) {
+        // One ChangeSet per view rather than one POST per column: the largest
+        // single bucket of requests in the whole deploy (445 of this phase's
+        // 1,221 on a ten-list family), and the deploy is throttle-bound, so
+        // the count is what costs.
+        //
+        // This depends on ORDER being preserved inside a ChangeSet, which
+        // OData v3 does not promise (it says order is "not significant" and a
+        // service MAY reorder) and which #410 deliberately left unproven for
+        // the phases whose writes commute. A view's column order is a
+        // declared, verified setting, so it was MEASURED instead: a live
+        // tenant, 2026-09-04, four runs, two scrambled orders per run that
+        // matched neither creation nor alphabetical order. removeallviewfields
+        // plus six addviewfield parts in ONE ChangeSet were accepted 7/7 and
+        // read back in the order sent, every run. Cost over twelve columns,
+        // same four runs: 0.33/0.46/0.47/0.36 s batched against
+        // 1.99/1.31/0.95/4.33 s sequential.
+        //
+        // Safe against that claim turning out to be tenant-specific: the
+        // readback below compares the column list position by position and
+        // fails this view closed, so a service that ever does reorder is
+        // reported rather than shipped.
+        const fieldBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+        await fieldBatch.add('POST', `${viewPath}/viewfields/removeallviewfields`, {});
+        for (const name of view.view_fields) {
+          await fieldBatch.add('POST', `${viewPath}/viewfields/addviewfield('${odataName(name)}')`, {});
+        }
+        await fieldBatch.done();
+      }
+      // Row formatting is a declared view setting; views without a
+      // declaration keep any hand-applied format.
+      if (view.formatting != null) {
+        // Phase-start shape decides (our own writes so far never touch
+        // CustomFormatter); the fail-closed verify below always reads fresh.
+        const current = existing || await readViewShape(viewUrl);
+        if (!current) throw new Error('view disappeared before formatting reconciliation');
+        if (canonicalViewFormatter(current.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
+          await mergeView(viewUrl, { __metadata: { type: 'SP.View' }, CustomFormatter: view.formatting }, viewDigest);
+        }
+      }
+      // Default flag last: SharePoint un-defaults the previous default view
+      // automatically, and only a declared default may claim it. The
+      // phase-start shape decides: nothing this lane writes clears a
+      // DefaultView (only ONE declared default exists per list, validated),
+      // and the fresh verify below fail-closes any surprise.
+      const preFlag = existing || await readViewShape(viewUrl);
+      if (!preFlag) throw new Error('view disappeared during reconciliation');
+      if (view.set_default && !preFlag.DefaultView) {
+        await mergeView(viewUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
+      }
+      // Read back every declared setting and fail closed on any miss. The
+      // readback rides ONE fresh GET: ViewFields is $expanded on the shape.
+      const actual = await readViewShape(viewUrl);
+      if (!actual) throw new Error('view readback failed after reconciliation');
+      const readbackFields = (actual.ViewFields && actual.ViewFields.Items && actual.ViewFields.Items.results)
+        || await readViewFieldNames(viewUrl);
+      const drifted = [];
+      if (normalizeViewQuery(actual.ViewQuery) !== normalizeViewQuery(view.caml_query)) {
+        drifted.push(`ViewQuery (declared ${JSON.stringify(view.caml_query)}; readback ${JSON.stringify(actual.ViewQuery)})`);
+      }
+      if (view.row_limit != null && actual.RowLimit !== view.row_limit) {
+        drifted.push(`RowLimit (declared ${view.row_limit}; readback ${actual.RowLimit})`);
+      }
+      if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
+      if (actual.Hidden !== view.hidden) {
+        drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
+      if (view.scope != null && actual.Scope !== view.scope) {
+        drifted.push(`Scope (declared ${view.scope}; readback ${actual.Scope})`);
+      }
+      if (view.formatting != null
+          && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
+        drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);
+      }
+      // Both halves are verified: SP renders nothing without the status,
+      // so an Aggregations that matched while the status read Off would be
+      // a view the deploy called correct and the reader sees no total on.
+      if (view.aggregations) {
+        if (normalizeViewQuery(actual.Aggregations) !== normalizeViewQuery(view.aggregations)) {
+          drifted.push(`Aggregations (declared ${JSON.stringify(view.aggregations)}; readback ${JSON.stringify(actual.Aggregations)})`);
+        }
+        if (actual.AggregationsStatus !== 'On') {
+          drifted.push(`AggregationsStatus (declared On; readback ${JSON.stringify(actual.AggregationsStatus)})`);
+        }
+      }
+      const fieldsMatch = readbackFields.length === view.view_fields.length
+        && readbackFields.every((name, index) => name === view.view_fields[index]);
+      if (!fieldsMatch) {
+        drifted.push(`ViewFields (declared ${JSON.stringify(view.view_fields)}; readback ${JSON.stringify(readbackFields)})`);
+      }
+      // Also catches SP auto-suffixing the .aspx name when a foreign view
+      // occupies the clean URL.
+      if (urlBasename(actual) !== desiredBasename) {
+        drifted.push(`Url (declared ${desiredBasename}; readback ${urlBasename(actual)})`);
+      }
+      if (drifted.length > 0) {
+        throw new Error(`did not retain declared view setting(s): ${drifted.join(', ')}`);
+      }
+      // Declared column widths ride SP's whole-document SetViewXml()
+      // surface, the call the modern Lists UI makes when saving a dragged
+      // width (live capture 2026-07-24). ColumnWidth FieldRefs bind by
+      // DISPLAY name; internal names are accepted and silently reset the
+      // widths. A property MERGE of ListViewXml is DESTRUCTIVE (treats the
+      // fragment as the whole definition), so the only safe shape is:
+      // read the server's full serialization, splice ONLY the ColumnWidth
+      // block, refuse the write if anything else would change, write the
+      // whole document back, and fail closed on readback drift. Runs after
+      // the reconcile above because ViewFields changes reset widths.
+      if (view.widths != null) {
+        const readListViewXml = async () => {
+          const r = await fetchWithRetry(`${viewUrl}?$select=ListViewXml`, {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!r.ok) {
+            const text = await r.text();
+            throw new Error(`view ListViewXml read failed: HTTP ${r.status} ${text}`);
+          }
+          const j = await r.json();
+          return String((j && j.d && j.d.ListViewXml) || '');
+        };
+        const xmlAttr = (value) => String(value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const columnWidthBlock = '<ColumnWidth>' + Object.entries(view.widths)
+          .map(([name, px]) => `<FieldRef Name="${xmlAttr(name)}" width="${px}"/>`).join('')
+          + '</ColumnWidth>';
+        const stripColumnWidth = (xml) => xml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, '');
+        const normalizeXml = (xml) => xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+        const currentXml = await readListViewXml();
+        if (!currentXml.includes('</View>')) {
+          throw new Error('view ListViewXml readback has no </View>; refusing widths write');
+        }
+        const nextXml = currentXml.includes('<ColumnWidth>')
+          ? currentXml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, columnWidthBlock)
+          : currentXml.replace('</View>', `${columnWidthBlock}</View>`);
+        if (stripColumnWidth(nextXml) !== stripColumnWidth(currentXml)) {
+          throw new Error('widths splice guard tripped: non-ColumnWidth content would change; refusing SetViewXml');
+        }
+        if (nextXml !== currentXml) {
+          viewDigest = await getDigest();
+          await postJson(`${viewUrl}/setviewxml()`, { viewXml: nextXml }, viewDigest);
+          const afterXml = await readListViewXml();
+          if (normalizeXml(stripColumnWidth(afterXml)) !== normalizeXml(stripColumnWidth(currentXml))) {
+            throw new Error('widths write altered view content beyond ColumnWidth; inspect the view before re-running');
+          }
+          const afterBlock = afterXml.match(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/);
+          if (!afterBlock || normalizeXml(afterBlock[0]) !== normalizeXml(columnWidthBlock)) {
+            throw new Error(`did not retain declared column widths (readback ${JSON.stringify(afterBlock ? afterBlock[0] : null)})`);
+          }
+        }
+      }
+      // Closes the lane bracket: the readbacks above resolved the list by
+      // title, so they are evidence about the owned list only if the title
+      // still answers with the Id this lane started from.
+      await ownedListIdentity(view.list, viewListId, `after writing views on '${view.list}'`);
+      log('INFO', `[Phase 3.1] View '${view.title}' on '${view.list}' verified.`);
+    } catch (err) {
+      log('ERROR', `Phase 3.1 view '${view.list}'.'${view.title}': ${err.message}`);
+      summary.errors.push({ phase: '3.1', list: view.list, view: view.title, error: err.message });
+    }
+  };
+  // Post-schema, so the same batch gate: prove every list carrying a declared
+  // view before the first one is written, and refuse the phase rather than
+  // reconcile the lists ahead of the failing one.
+  const viewsOwned = SCHEMA.views.length > 0
+    ? await surveyOwnedListsForWrites(
+      SCHEMA.views.map((view) => view.list), '3.1', 'View',
+    )
+    : new Map();
+  if (!viewsOwned) {
+    log('ERROR', 'View ownership survey failed; aborting before any view is written.');
+    return { ...summary, aborted: 'view-ownership-errors' };
+  }
+  // One lane per list: views live in the list schema, and concurrent schema
+  // writes to the same list race into save conflicts; different lists are
+  // independent, so their lanes run concurrently.
+  await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);
+
+  // ---- Confirm the editor still refuses the guard -----------------------
+  // The readback above proves each stored ViewQuery is the declared one. It
+  // cannot show whether this tenant's editor still refuses that shape, which
+  // is a property of SharePoint's UI on the day of the deploy. See #267.
+  //
+  // The editor's own form controls, as the `name` ATTRIBUTE the probe read.
+  // A bare substring would also match the word in page script, and would then
+  // report a protected view as editable and abort the run.
+  // Measured 2026-08-17, view-edit-page-probe.js `pinned-control-discriminates`
+  // and `second-control-agrees` (C1 and C2): both are present on an editable
+  // page and on an unfiltered one, and absent from a refused one. Two of them
+  // because C2's result is that they agree; disagreement is the signal that
+  // the markup moved.
+  const EDITOR_CONTROLS = ['name="FieldPicker1"', 'name="OperatorPicker1"'];
+  // `control-non-editor-page` (C6): a request for a view that does not exist
+  // answers HTTP 200 on this URL with no editor controls, and with `ViewEdit`
+  // and `ctl00` present and `ViewFilter` absent. So this is the only one of
+  // the three that can gate an absence test.
+  const EDITOR_PAGE_SENTINEL = 'ViewFilter';
+  // A response cut short after the sentinel and before the controls carries
+  // neither, and absence is the whole predicate, so a page that stopped early
+  // has to be told from one that renders no editor. C6 rejects a page that is
+  // not a view and records the truncated shape as still unmeasured, naming a
+  // length or completeness test as what would close it. Both are required
+  // here: the document closed (both closing tags, in order), and it is the
+  // size of a settings page. That page measured 501,773 characters on
+  // 2026-08-17, so this floor sits an order of magnitude under it and rejects
+  // a login stub or an error page without resting on a size SharePoint owns.
+  const EDITOR_PAGE_MIN_CHARS = 50000;
+
+  // Fail closed. A check that could not read the page is not evidence the
+  // view is unprotected, and it is not evidence that it is protected either.
+  // This is the only thing that asks, so an unanswered check is an error on
+  // the run rather than a warning under it: the alternative is a deployment
+  // reporting clean while the one property it could not verify is the one an
+  // operator destroys by pressing Save. Supersedes the ruling of 2026-08-17,
+  // which warned here.
+  const unverified = (why, view) => {
+    const message = 'could not confirm the filter editor refuses the emitted shape'
+      + ` (${why}), so the filter is unverified rather than protected`;
+    log('ERROR', `[Phase 3.1] ${message}`);
+    summary.errors.push({
+      phase: '3.1', list: view ? view.list : null,
+      view: view ? view.title : null, check: 'filter-editor-refusal', error: message,
+    });
+  };
+
+  const listIdByPath = {};
+  async function readListId(listPath) {
+    if (!(listPath in listIdByPath)) {
+      const r = await fetchWithRetry(apiUrl(`${listPath}?$select=Id`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`list read HTTP ${r.status}: ${spError(await r.text())}`);
+      const j = await r.json();
+      const id = j && j.d && j.d.Id;
+      if (!id) throw new Error('the list read carried no Id');
+      listIdByPath[listPath] = id;
+    }
+    return listIdByPath[listPath];
+  }
+
+  // Which of EDITOR_CONTROLS the view's settings page carries, or the reason
+  // the page could not be read. `present` is meaningful only when `why` is
+  // null: every other return says the question went unanswered.
+  //
+  // `ownedId` is the Id the write lane proved it owned for this view's list.
+  // Every read below addresses the list by TITLE and this runs after the
+  // lanes closed their brackets, so a same-titled replacement landing since
+  // would have its settings page read and reported under the owned list's
+  // name. Nothing downstream can see that the wrong list was asked, so the
+  // resolved Id is compared before anything else is read.
+  async function readEditorControls(view, ownedId) {
+    const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
+    let listId = null;
+    let viewId = null;
+    try {
+      listId = await readListId(listPath);
+      if (ownedId == null
+          || sharePointGuid(listId, 'list') !== sharePointGuid(ownedId, 'list')) {
+        return { present: null, why: `list '${view.list}' changed identity before the filter`
+          + ` editor was read for '${view.title}': the write lane owned`
+          + ` ${ownedId == null ? 'no proven Id' : ownedId}, and the title now resolves to`
+          + ` ${listId}` };
+      }
+      const shape = (await listViewShapes(listPath)).find((s) => s.Title === view.title);
+      viewId = shape && shape.Id;
+    } catch (err) {
+      // Surfaced, not swallowed. A discarded message here leaves an operator
+      // with "could not identify" and nothing to act on.
+      return { present: null, why: `could not identify '${view.title}' on '${view.list}':`
+        + ` ${(err && err.message) || String(err)}` };
+    }
+    if (!listId || !viewId) {
+      return { present: null,
+        why: `'${view.title}' is not among '${view.list}' views after deployment` };
+    }
+    const pageUrl = `${WEB}/_layouts/15/ViewEdit.aspx?List=${encodeURIComponent(`{${listId}}`)}`
+      + `&View=${encodeURIComponent(`{${viewId}}`)}`;
+    let res;
+    let body;
+    try {
+      // Through fetchWithRetry like every other request in this script: the
+      // settings page is throttled the same way, and a bare fetch would turn
+      // a 429 into "could not confirm" on a run that only needed to wait.
+      res = await fetchWithRetry(pageUrl, { credentials: 'same-origin' });
+      body = await res.text();
+    } catch (err) {
+      return { present: null,
+        why: `could not read the settings page for '${view.title}': ${err.message}` };
+    }
+    // A login or modern-settings redirect answers 200, so res.ok alone would
+    // hand the wrong HTML to the test below. A response carrying no final URL
+    // cannot show it came from the endpoint asked for, so it does not land.
+    const landed = res.ok && !res.redirected && String(res.url || '').includes('ViewEdit.aspx');
+    // The document closed when both closing tags arrived in their nesting
+    // order and nothing after the last one resumes the page. `endsWith` was
+    // wrong because SharePoint served trailing markup after the close on
+    // 2026-08-27 and read a whole 556 KB page as cut short; bare containment
+    // is wrong the dangerous way round, because an `</html>` literal in page
+    // script stands in for a document that never closed. The editor's
+    // controls live inside `<body>`, so a response cut before them cannot
+    // have closed it.
+    const bodyClose = body.lastIndexOf('</body>');
+    const htmlClose = body.lastIndexOf('</html>');
+    const afterClose = htmlClose < 0 ? '' : body.slice(htmlClose + '</html>'.length);
+    const closed = bodyClose >= 0 && bodyClose < htmlClose
+      && !['<input', '<body', '</body>', '<html'].some((m) => afterClose.includes(m));
+    const complete = closed && body.length >= EDITOR_PAGE_MIN_CHARS;
+    const sentinel = body.includes(EDITOR_PAGE_SENTINEL);
+    if (!landed || !complete || !sentinel) {
+      return { present: null, why: `the settings page for '${view.title}' on '${view.list}'`
+        + ` is not usable: HTTP ${res.status}, redirected=${res.redirected},`
+        + ` complete=${complete}, ${body.length} chars, sentinel=${sentinel}` };
+    }
+    return { present: EDITOR_CONTROLS.filter((control) => body.includes(control)), why: null };
+  }
+
+  const isFiltered = (view) => (view.caml_query || '').includes('<Where>');
+
+  async function confirmEditorRefusesTheGuard() {
+    const filtered = SCHEMA.views.filter(isFiltered);
+    if (filtered.length === 0) {
+      log('INFO', `[Phase 3.1] No filtered view declared, so nothing to confirm.`);
+      return;
+    }
+    // The cached enumerations were taken BEFORE this run's writes, so they
+    // hold no view this run created and a rename still under its old title.
+    // Dropped once, here: listViewShapes then reads each list exactly once
+    // more, and one lane per list keeps that read serial. views/getbytitle
+    // would paint the console red on a miss for operators to read as a
+    // failure.
+    for (const view of SCHEMA.views) {
+      delete viewShapesByList[`web/lists/getbytitle('${odataName(view.list)}')`];
+    }
+
+    // The CONTROL, and the reason absence can be read as refusal at all. A
+    // SharePoint revision that renamed both controls while leaving the
+    // sentinel in place would otherwise report every view protected, which is
+    // the one wrong answer nothing downstream can see. An unfiltered view is
+    // editable and carries both markers (measured 2026-08-17,
+    // view-edit-page-probe.js `pinned-control-discriminates` and
+    // `control-unfiltered-view`, C1 and F7), so it says whether the markers
+    // still exist on this tenant's build today.
+    const filteredLists = new Set(filtered.map((view) => view.list));
+    const unfiltered = SCHEMA.views.filter((view) => !isFiltered(view));
+    const control = unfiltered.find((view) => filteredLists.has(view.list)) || unfiltered[0];
+    if (!control) {
+      unverified('no unfiltered view is declared, so nothing establishes that the'
+        + " editor's control names still exist on this tenant", filtered[0]);
+      return;
+    }
+    const controlRead = await readEditorControls(control, viewsOwned.get(control.list));
+    if (controlRead.why) {
+      unverified(`the editable control read failed: ${controlRead.why}`, control);
+      return;
+    }
+    const missing = EDITOR_CONTROLS.filter((name) => !controlRead.present.includes(name));
+    if (missing.length > 0) {
+      unverified(`${missing.join(', ')} absent from '${control.title}' on '${control.list}',`
+        + ' which declares no filter and is editable, so absence on a guarded view is'
+        + ' marker drift rather than evidence of protection', control);
+      return;
+    }
+
+    // EVERY filtered view, not a sample. The guard is identical across them,
+    // but what the editor refuses is a property of the whole stored filter,
+    // and a view whose authored tree already refuses (30 of the 192 shipped
+    // views did before this change) answers only for itself. One settings
+    // page is roughly half a megabyte, so this is the expensive part of the
+    // phase and its size is stated rather than silently capped.
+    log('INFO', `[Phase 3.1] Reading ${filtered.length} view settings page(s)`
+      + ' to confirm the filter editor refuses each declared filter.');
+    let refused = 0;
+    await mapLanes(filtered, (view) => view.list, async (view) => {
+      const read = await readEditorControls(view, viewsOwned.get(view.list));
+      if (read.why) {
+        unverified(read.why, view);
+        return;
+      }
+      if (read.present.length > 0) {
+        // The page arrived and the editor is on it, so the filter is editable
+        // and an operator can truncate it. The check answered, so this fails
+        // the run on the determination rather than on the absence of one.
+        const message = `view '${view.title}' on '${view.list}' is still editable in the filter`
+          + ` editor (${read.present.join(', ')}), so its filter can be truncated by an operator`
+          + ' pressing Save';
+        log('ERROR', `[Phase 3.1] ${message}`);
+        summary.errors.push({
+          phase: '3.1', list: view.list, view: view.title,
+          check: 'filter-editor-refusal', error: message,
+        });
+        return;
+      }
+      refused += 1;
+    }, 4);
+    log('INFO', `[Phase 3.1] Filter editor refuses ${refused} of`
+      + ` ${filtered.length} declared filter(s), so those filters cannot be truncated`
+      + ' from view settings.');
+  }
+  await confirmEditorRefusesTheGuard();

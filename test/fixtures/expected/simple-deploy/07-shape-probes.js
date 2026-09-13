@@ -1,0 +1,308 @@
+  // SharePoint resolves a list title, a field name and a site group name
+  // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
+  // local index of those names must therefore match the same way: a
+  // case-sensitive Set reports an existing 'or_opportunity' absent when the
+  // mapping declares 'OR_Opportunity', and the run then tries to CREATE it
+  // and fails on a name collision it could have adopted.
+  const nameKey = (value) => String(value == null ? '' : value).toLowerCase();
+  const nameSet = (values) => new Set((values || []).map(nameKey));
+  const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
+
+  // Which list titles exist, from ONE enumeration. A by-title GET for a list
+  // that is not there answers 404, which the browser paints red and an
+  // operator reads as a failure; on a first deploy EVERY list probe is that
+  // 404. Enumerating once tells us absence locally, so a clean run stays
+  // clean. Null means "not yet known"; invalidateListShapes() after any
+  // list create or delete.
+  let knownListTitles = null;
+  const invalidateListShapes = () => { knownListTitles = null; };
+  async function ensureKnownListTitles(force = false) {
+    if (knownListTitles && !force) return knownListTitles;
+    const r = await fetchWithRetry(apiUrl('web/lists?$select=Title&$top=5000'), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    // Deliberately not fatal: if the enumeration is refused we fall back to
+    // per-list probing, which is noisier but still correct.
+    if (!r.ok) return null;
+    const j = await r.json();
+    knownListTitles = nameSet(
+      ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
+    );
+    return knownListTitles;
+  }
+
+  // The by-title read and its fail-closed shape gate, with nothing in front
+  // of it. Held apart from readListShape so a caller for whom an absent list
+  // is FATAL can spend one request rather than two: see
+  // assertDeclaredListOwnedNow, which argues why that is safe there.
+  async function probeListShapeByTitle(name) {
+    // Description rides along on a request already being made: it is a
+    // declared, reconciled setting (it carries the provenance marker), so
+    // reading it here is what lets reconcileListDescription compare without
+    // spending a probe of its own.
+    const select = [
+      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled', 'Description',
+      'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
+    ].join(',');
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=${select}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`List '${name}' shape probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    const shape = j && j.d;
+    if (!shape
+        || typeof shape.Id !== 'string'
+        || typeof shape.Title !== 'string'
+        || !Number.isInteger(shape.BaseTemplate)
+        || !(shape.Description == null || typeof shape.Description === 'string')
+        || typeof shape.ContentTypesEnabled !== 'boolean'
+        || typeof shape.EnableVersioning !== 'boolean'
+        || typeof shape.EnableMinorVersions !== 'boolean'
+        || !Number.isInteger(shape.MajorVersionLimit)
+        || !(shape.ValidationFormula == null || typeof shape.ValidationFormula === 'string')
+        || !(shape.ValidationMessage == null || typeof shape.ValidationMessage === 'string')) {
+      throw new Error(`List '${name}' shape probe returned an invalid response`);
+    }
+    return shape;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // The existence check runs first for every caller that comes through
+    // here, because asking getbytitle for an absent list answers 404, which
+    // the browser paints red and an operator reads as a failure. `fresh`
+    // re-enumerates rather than trusting the cache (a verification after a
+    // write must never have its own write confirmed by a cache); either way
+    // absence is learned from the enumeration, never a red 404.
+    const titles = await ensureKnownListTitles(fresh);
+    if (titles && !hasName(titles, name)) return null;
+    return probeListShapeByTitle(name);
+  }
+
+  // `isAbsent400` lives in _http.js.j2, which every script including this
+  // one already carries: the maintenance sidecars need the same fact.
+
+  // Base field shapes come from ONE fields enumeration per list, cached in a
+  // name -> shape map (keyed by InternalName AND display Title, matching
+  // getbyinternalnameortitle semantics). Two problems solved at once: the
+  // by-name getter answers HTTP 400 for an absent field, which browsers
+  // paint red and operators read as failures (seen live, twice); and bulk
+  // probe loops (preflight / unseal / reconcile / seal over ~52 columns)
+  // were paying one GET per column per phase. Freshness contract: probes
+  // reflect PHASE-START state; each field-touching phase opens with
+  // invalidateFieldShapes(); verify-after-write reads pass fresh=true and
+  // bypass the cache entirely (verification never trusts a cache). An
+  // absent LIST yields an uncached empty result; the list may be created
+  // later in this same run.
+  // DefaultFormula is a base SP.Field property like DefaultValue (CSOM
+  // Field.DefaultFormula), so it is selected on every subtype the same way.
+  const _FIELD_SHAPE_SELECT = [
+    'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
+    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter',
+  ].join(',');
+  // Spelled once, because the request and the truncation test below are wrong
+  // the moment they disagree about the page size.
+  const FIELD_PAGE_SIZE = 500;
+  // An enumeration holding a whole page may have ended before the list did.
+  //
+  // A FULL page is the tell, not a missing `__next`: `$top` is client-driven
+  // paging, and Learn's "PageSize, Top and MaxTop" says of it that "there is
+  // no nextLink that is returned"
+  // (https://learn.microsoft.com/odata/webapi/pagesize-top-maxtop), so an
+  // absent `__next` under a `$top` says nothing at all. The same page
+  // documents the other direction, a server paging BELOW the asked-for size,
+  // which does return one; both are read here and neither is followed.
+  const fieldPageTruncated = (rows, next) => rows.length >= FIELD_PAGE_SIZE
+    || (typeof next === 'string' && next !== '');
+  // What an absent list and a refused-as-absent enumeration both answer. No
+  // fields, and nothing unread: a list that is not there hid nothing.
+  const emptyFieldShapes = () => ({ get: () => undefined, size: 0, truncated: false });
+  let fieldShapesByList = Object.create(null);
+  // No argument: full reset (phase starts). With a list name: drop only
+  // that list's snapshot, so lanes refresh their own list after writes
+  // without thrashing the other lanes' caches.
+  const invalidateFieldShapes = (listName) => {
+    if (listName == null) { fieldShapesByList = Object.create(null); return; }
+    delete fieldShapesByList[listName];
+  };
+  async function listFieldShapes(listName) {
+    if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    // A list we already know is absent has no fields, and asking anyway
+    // costs a 404 the browser paints red: on a first deploy, once per
+    // declared list in maintenance unseal, before a single list exists.
+    // The enumeration is already in hand for exactly this reason; this
+    // just spends it here too.
+    const titles = await ensureKnownListTitles();
+    if (titles && !hasName(titles, listName)) {
+      const empty = emptyFieldShapes();
+      fieldShapesByList[listName] = empty;
+      return empty;
+    }
+    // `$top` for the same reason _verify_body.js.j2 carries it: with no
+    // explicit page size the page size is the server's, and this read is
+    // UNFILTERED, so an ordinary list's ~40 built-in fields plus its
+    // declared ones sit close to the default. A truncated map reads exactly
+    // like a list missing columns, and this map is what every phase's
+    // create-or-reconcile decision is made from, so the map carries whether
+    // it may be one (#577 is the sweep over the callers that still read a
+    // missing name as an absent column).
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=${FIELD_PAGE_SIZE}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      if (r.status === 404 || isAbsent400(r.status, text)) {
+        // Cache the ABSENCE too. Leaving it uncached made every column in a
+        // bulk loop re-enumerate an absent list: a first deploy paid one
+        // 404 per declared column per phase (88 red console lines in
+        // maintenance unseal alone), which is the exact cost this cache
+        // exists to remove. Safe because every field-touching phase opens
+        // with invalidateFieldShapes(), so a list created later in the run
+        // is re-read at the next phase boundary rather than staying absent.
+        const empty = emptyFieldShapes();
+        fieldShapesByList[listName] = empty;
+        return empty;
+      }
+      throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
+    // internal name first, so folding both into a single map lets one
+    // field's display Title shadow another field's InternalName whenever
+    // they match case-insensitively, and the loser is then read as an
+    // impostor by the immutable-shape check, aborting preflight over a
+    // field SharePoint can resolve perfectly well. First writer wins
+    // WITHIN each index; internal names win BETWEEN them, matching the
+    // endpoint this cache stands in for.
+    const byInternal = new Map();
+    const byTitle = new Map();
+    const rows = (j && j.d && j.d.results) || [];
+    for (const f of rows) {
+      if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
+        byInternal.set(nameKey(f.InternalName), f);
+      }
+      if (f.Title && !byTitle.has(nameKey(f.Title))) byTitle.set(nameKey(f.Title), f);
+    }
+    const shapes = {
+      get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
+      size: byInternal.size + byTitle.size,
+      // Read by a caller for whom a name this enumeration never saw is not a
+      // name the list lacks; `get` answering undefined is the same value
+      // either way.
+      truncated: fieldPageTruncated(rows, j && j.d && j.d.__next),
+    };
+    fieldShapesByList[listName] = shapes;
+    return shapes;
+  }
+
+  // getbyinternalnameortitle makes a renamed display Title repairable while
+  // still letting the immutable InternalName check reject a same-title
+  // impostor field. Shared so a batched read-back addresses a field by the
+  // same spelling the single-GET probe does rather than a second one that
+  // could drift from it.
+  const fieldShapePath = (listName, columnName) =>
+    `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+
+  async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
+    const fieldPath = fieldShapePath(listName, columnName);
+    let shape;
+    if (!fresh) {
+      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      if (!shape) return null;
+      // Cached entries were validated at enumeration time by the same checks
+      // below; re-validate anyway, one shared gate for both paths.
+    } else {
+      const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${_FIELD_SHAPE_SELECT}`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.status === 404) return null;
+      if (!r.ok) {
+        const text = await r.text();
+        if (isAbsent400(r.status, text)) return null;
+        throw new Error(`Field '${listName}.${columnName}' shape probe failed: HTTP ${r.status} ${text}`);
+      }
+      const j = await r.json();
+      shape = j && j.d;
+    }
+    if (!shape
+        || typeof shape.Id !== 'string'
+        || typeof shape.InternalName !== 'string'
+        || typeof shape.Title !== 'string'
+        || typeof shape.TypeAsString !== 'string'
+        || !(shape.Description === null || typeof shape.Description === 'string')
+        || typeof shape.Required !== 'boolean'
+        || typeof shape.EnforceUniqueValues !== 'boolean'
+        || typeof shape.Indexed !== 'boolean'
+        || typeof shape.ReadOnlyField !== 'boolean'
+        || typeof shape.Sealed !== 'boolean'
+        || !(shape.DefaultValue === null || typeof shape.DefaultValue === 'string')
+        || !(shape.DefaultFormula === null || typeof shape.DefaultFormula === 'string')
+        || !(shape.CustomFormatter == null || typeof shape.CustomFormatter === 'string')) {
+      throw new Error(`Field '${listName}.${columnName}' shape probe returned an invalid response`);
+    }
+    if (declaredField && declaredField.target_list) {
+      const lookupResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=LookupList,LookupField`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!lookupResp.ok) {
+        const text = await lookupResp.text();
+        throw new Error(`Lookup field '${listName}.${columnName}' target probe failed: HTTP ${lookupResp.status} ${text}`);
+      }
+      const lookupJson = await lookupResp.json();
+      const lookupShape = lookupJson && lookupJson.d;
+      if (!lookupShape
+          || typeof lookupShape.LookupList !== 'string'
+          || typeof lookupShape.LookupField !== 'string') {
+        throw new Error(`Lookup field '${listName}.${columnName}' target probe returned an invalid response`);
+      }
+      shape.LookupList = lookupShape.LookupList;
+      shape.LookupField = lookupShape.LookupField;
+    }
+
+    // Derived field properties are not safely selectable from every SP.Field
+    // subtype. Query only the properties this declaration actually owns, then
+    // reconcile/read them back with the matching concrete metadata type.
+    const body = (declaredField && declaredField.body) || {};
+    const derivedSelect = ["MaxLength", "RichText", "NumberOfLines", "AppendOnly", "Choices", "FillInChoice", "DisplayFormat", "SelectionMode", "Formula", "OutputType", "AllowMultipleValues"]
+      .filter(name => Object.prototype.hasOwnProperty.call(body, name));
+    if (derivedSelect.length > 0) {
+      const derivedResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${derivedSelect.join(',')}`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!derivedResp.ok) {
+        const text = await derivedResp.text();
+        throw new Error(`Field '${listName}.${columnName}' derived-shape probe failed: HTTP ${derivedResp.status} ${text}`);
+      }
+      const derivedJson = await derivedResp.json();
+      const derived = derivedJson && derivedJson.d;
+      if (!derived) {
+        throw new Error(`Field '${listName}.${columnName}' derived-shape probe returned an invalid response`);
+      }
+      const derivedKinds = new Map(Object.entries({"AllowMultipleValues": "boolean", "AppendOnly": "boolean", "Choices": "strings", "FillInChoice": "boolean", "Formula": "string", "RichText": "boolean"}));
+      for (const name of derivedSelect) {
+        const value = derived[name];
+        const kind = derivedKinds.get(name) || 'integer';
+        if (kind === 'strings') {
+          if (!value || !Array.isArray(value.results) || value.results.some(item => typeof item !== 'string')) {
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+          }
+        } else if (kind === 'boolean') {
+          if (typeof value !== 'boolean') {
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+          }
+        } else if (kind === 'string') {
+          if (typeof value !== 'string') {
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+          }
+        } else if (!Number.isInteger(value)) {
+          throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+        }
+        shape[name] = value;
+      }
+    }
+    return shape;
+  }
+

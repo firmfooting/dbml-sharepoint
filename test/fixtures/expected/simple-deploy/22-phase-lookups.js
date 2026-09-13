@@ -1,0 +1,93 @@
+  markPhase('Phase 2.3: deferred lookups');
+  // === Phase 2.3: deferred lookups ===
+  log('INFO', 'Starting Phase 2.3: deferred lookups.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  digest = await getDigest();
+
+  // listGuids is a title -> GUID map the field wave filled, and the field
+  // wave is long enough for a list to lose its marker after being read into
+  // it. Re-survey every deferred lookup's own list AND its target as one
+  // batch, refresh the map from that read, and abort the whole batch before
+  // any write if a single one no longer proves ownership.
+  let deferredOwnershipFailed = false;
+  const deferredOwnedLists = [...new Set(SCHEMA.phase2_lookups
+    .flatMap(lookup => [lookup.list, lookup.target_list]))];
+  await mapLanes(deferredOwnedLists, listName => listName, async (listName) => {
+    try {
+      const owned = await assertDeclaredListOwnedNow(listName);
+      listGuids[listName] = owned.Id;
+    } catch (err) {
+      deferredOwnershipFailed = true;
+      log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
+      summary.errors.push({
+        phase: '2.3', list: listName, error: err.message,
+      });
+    }
+  }, 4);
+  if (deferredOwnershipFailed) {
+    log('ERROR', 'Deferred-lookup ownership recheck failed; aborting before any lookup write.');
+    return { ...summary, aborted: 'deferred-lookup-ownership-errors' };
+  }
+
+  // NOT BATCHED, deliberately, as of 2026-09-06. Two reasons, and the volume
+  // one is the decisive one: across the 35 shipped solutions that build, this
+  // phase writes 6 deferred lookups and 6 projections in total, and no column
+  // carries more than one projection. A ChangeSet of one saves no request.
+  // The create-then-reconcile pair below also has the read-after-write shape
+  // that blocks the phase-1 field wave (see _lists.js.j2), so if the volume
+  // ever justifies a port, test/manual/batch-field-create-probe.js is the
+  // measurement it needs first.
+  for (const lookup of SCHEMA.phase2_lookups) {
+    try {
+      digest = await getDigest();  // refresh per item (digest lifetime)
+      const targetGuid = listGuids[lookup.target_list];
+      if (!targetGuid) throw new Error(`Lookup target ${lookup.target_list} missing.`);
+      if (await reconcileDeclaredField(
+        lookup.list, lookup.field, targetGuid, digest, true,
+      )) {
+        summary.columnsSkipped += 1;
+      } else {
+        await createDeclaredLookupField(lookup.list, lookup.field, targetGuid, digest);
+        invalidateFieldShapes();  // new field: next probe re-enumerates
+        await reconcileDeclaredField(
+          lookup.list, lookup.field, targetGuid, digest, false,
+        );
+        summary.columnsCreated += 1;
+      }
+      // Projected dependent fields, created after the primary exists so its
+      // Id is known. Each is a read-only Lookup linked back by FieldRef and
+      // created via createfieldasxml, because the FieldRef linkage cannot be
+      // expressed through AddField. Read-only fields do not drift, so they are
+      // checked for existence only, never reconciled. See the probe
+      // test/manual/projected-lookup-probe.js for the measured create shape.
+      if (lookup.projections && lookup.projections.length) {
+        digest = await getDigest();
+        const primaryShape = await readFieldShape(lookup.list, lookup.field.title, null, true);
+        for (const proj of lookup.projections) {
+          if (!(await readFieldShape(lookup.list, proj.name, null, true))) {
+            digest = await getDigest();
+            const xml = `<Field Type="Lookup" DisplayName="${proj.display_title}" `
+              + `Name="${proj.name}" List="{${targetGuid}}" ShowField="${proj.show_field}" `
+              + `FieldRef="{${primaryShape.Id}}" ReadOnly="TRUE"/>`;
+            await postJson(
+              apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/createfieldasxml`),
+              { parameters: { SchemaXml: xml, Options: 8 } },
+              digest,
+            );
+            summary.columnsCreated += 1;
+          }
+          await verifyDependentField(lookup.list, proj.name, proj.show_field, primaryShape.Id, targetGuid);
+        }
+      }
+    } catch (err) {
+      log('ERROR', `Phase 2.3 ${lookup.list}.${lookup.field.title}: ${err.message}`);
+      summary.errors.push({
+        phase: '2.3', list: lookup.list, column: lookup.field.title, error: err.message,
+      });
+    }
+  }
+
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Phase 2.3 lookup reconciliation failed; aborting before indexes and ACL work.');
+    return { ...summary, aborted: 'phase-2-schema-errors' };
+  }
