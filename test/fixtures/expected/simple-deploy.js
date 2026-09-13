@@ -5328,6 +5328,27 @@
   // spelling lands too. So the refusal is not the call, not the name and not
   // that switch, and what remains is what this run applies to the library
   // before this phase. folder-under-schema-probe.js asks that.
+  //
+  // THE CAUSE, MEASURED 2026-09-13 in folder-under-schema-probe.js, walking
+  // one library through the states this run applies to it in order. Broken
+  // role inheritance is innocent (`library.folder.add-with-broken-inheritance`),
+  // so is a REQUIRED column with no default, and so is a ValidationFormula on
+  // that column: a folder lands under both and reads its own item back with
+  // the column null, so neither is evaluated for it. The LIST's
+  // ValidationFormula is not innocent. With one set that a blank item fails,
+  // `library.folder.add-with-list-validation` answered HTTP 500 "Cannot
+  // create folder", the same error and the same SPException code the live
+  // run produced. Neither other spelling escapes it: the ResourcePath call
+  // is refused identically (`library.folder.add-using-path-under-validation`)
+  // and an items POST is refused as "To add an item to a document library,
+  // use SPFileCollection.Add()" (`library.folder.add-as-list-item-under-validation`),
+  // which is the items endpoint declining libraries outright rather than a
+  // way around the formula.
+  //
+  // So a declared save rule and a declared folder are in direct conflict on
+  // a library, and this phase cannot create a folder while the rule is on.
+  // The fix has to open the list, create the folders and close it again. The
+  // last four rows of that probe measure whether that shape is safe.
   const FOLDER_OBJECT_TYPE = 1;
   // A server-relative path inside the quotes, spelled as the probes sent it:
   // quotes doubled, slashes and spaces left for fetch to encode. NOT

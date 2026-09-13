@@ -8937,7 +8937,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch document library, walked through broken role inheritance, a required column, a column validation formula and a list validation formula, with one folder created after each step by three spellings of the folder create call"
+        "one scratch document library, walked through broken role inheritance, a required column, a column validation formula and a list validation formula, with one folder created after each step by three spellings of the folder create call; the list validation formula is then cleared, a further folder created and the formula put back"
       ],
       "cleanup": {
         "policy": "manual"
@@ -8999,6 +8999,38 @@
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
                 "library.folder.control-add-on-bare-library"
+              ]
+            },
+            {
+              "id": "library.folder.clear-list-validation-to-create",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-add-on-bare-library",
+                "library.folder.add-with-list-validation"
+              ]
+            },
+            {
+              "id": "library.folder.restore-list-validation-after-folders",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-add-on-bare-library",
+                "library.folder.add-with-list-validation"
+              ]
+            },
+            {
+              "id": "library.folder.folder-survives-restored-validation",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-add-on-bare-library",
+                "library.folder.add-with-list-validation"
+              ]
+            },
+            {
+              "id": "library.folder.control-restored-validation-refuses-a-folder",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-add-on-bare-library",
+                "library.folder.add-with-list-validation"
               ]
             }
           ],

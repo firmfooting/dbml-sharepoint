@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH DECLARED SETTING REFUSES A FOLDER
  *
- * REVISION: f31aa573
+ * REVISION: 465027e8
  *
  * ONE QUESTION:
  *   folders/add is accepted on a bare library and refused on one the deploy
@@ -33,6 +33,11 @@
  * if one of them creates a folder a validated library refuses, that is the
  * fix.
  *
+ * If none of them does, the only shape left is to open the library, create
+ * the declared folders and close it again, which is what Phase 1.8 and
+ * Phase 4.1 already do for a sealed column. The last four rows measure
+ * whether that shape is safe rather than assuming it.
+ *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
  *     A document library is created (BaseTemplate 101). Same question
@@ -58,6 +63,19 @@
  *   library.folder.add-as-list-item-under-validation
  *     In that final state, a folder created as an ITEM: a POST to items
  *     carrying FileSystemObjectType 1 and FileLeafRef.
+ *   library.folder.clear-list-validation-to-create
+ *     With the list formula cleared again, is the create accepted? This is
+ *     the first half of the only shape a fix can take.
+ *   library.folder.restore-list-validation-after-folders
+ *     Is the formula accepted back onto a library that now holds folders,
+ *     and does it read back?
+ *   library.folder.folder-survives-restored-validation
+ *     Does the folder created in that window still read back afterwards?
+ *   library.folder.control-restored-validation-refuses-a-folder
+ *     CONTROL: does the restored formula refuse a NEW folder again? A
+ *     restore that silently did nothing would make the three rows above
+ *     pass while leaving the library unguarded, and they would then be
+ *     evidence about the wrong list.
  *
  * OBSERVED, NEVER ASSERTED
  *   After each create that lands, the folder item's own Id,
@@ -318,7 +336,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f31aa573. Quote this when reporting results.');
+  log('INFO', 'probe revision 465027e8. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Folder Schema';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -334,6 +352,8 @@
     listValidation: 'dbmlsp list validation state',
     usingPath: 'dbmlsp using path state',
     listItem: 'dbmlsp list item state',
+    window: 'dbmlsp cleared window state',
+    afterRestore: 'dbmlsp after restore state',
   };
 
   const Q = {
@@ -345,13 +365,18 @@
     listValidation: 'Is folders/add still accepted once the LIST carries a ValidationFormula a blank item fails',
     usingPath: 'Does Folders/AddUsingPath(decodedurl=) create a folder in that final state',
     listItem: 'Does an items POST carrying FileSystemObjectType 1 and FileLeafRef create a folder in that final state',
+    cleared: 'With the list ValidationFormula cleared again, is folders/add accepted',
+    restored: 'Is the list ValidationFormula accepted back onto a library that now holds folders, and does it read back',
+    survives: 'Does the folder created while the formula was cleared still read back after it is restored',
+    controlRestored: 'CONTROL: does the restored formula refuse a NEW folder again, which is what says the restore took effect',
   };
 
   if (!CONFIRMED) {
     log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB}, then walk it through`);
     log('INFO', 'broken inheritance, a required column, a column validation formula and a list');
     log('INFO', 'validation formula, creating one differently named folder after each step.');
-    log('INFO', 'Two further spellings are then tried in the final state.');
+    log('INFO', 'Two further spellings are then tried in the final state, and then the');
+    log('INFO', 'formula is cleared, a folder created, and the formula put back.');
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
     } else {
@@ -375,6 +400,10 @@
     'library.folder.add-with-list-validation',
     'library.folder.add-using-path-under-validation',
     'library.folder.add-as-list-item-under-validation',
+    'library.folder.clear-list-validation-to-create',
+    'library.folder.restore-list-validation-after-folders',
+    'library.folder.folder-survives-restored-validation',
+    'library.folder.control-restored-validation-refuses-a-folder',
   ];
 
   expect('library.doc-lib.fixture-library-created', Q.fixture);
@@ -385,6 +414,10 @@
   expect('library.folder.add-with-list-validation', Q.listValidation);
   expect('library.folder.add-using-path-under-validation', Q.usingPath);
   expect('library.folder.add-as-list-item-under-validation', Q.listItem);
+  expect('library.folder.clear-list-validation-to-create', Q.cleared);
+  expect('library.folder.restore-list-validation-after-folders', Q.restored);
+  expect('library.folder.folder-survives-restored-validation', Q.survives);
+  expect('library.folder.control-restored-validation-refuses-a-folder', Q.controlRestored);
 
   const voidAll = (ids, reason) => {
     for (const id of ids) {
@@ -612,6 +645,85 @@
                ? `HTTP ${res.status} as ${itemType}, and ${await folderItem(NAMES.listItem)}`
                : `${short(res)} (as ${itemType})`);
     }
+  }
+
+  // ---- the shape of the fix: clear, create, restore --------------------
+  // If a list formula is what refuses a folder, the deploy has to open the
+  // library, create its declared folders and close it again, which is the
+  // shape Phase 1.8 and Phase 4.1 already use for a sealed column. Three
+  // things have to hold for that to be safe, and none is measured: the
+  // cleared list accepts the create, the formula goes back onto a library
+  // that now holds folders, and the folder survives the restore. The fourth
+  // row is the control that says the restore actually took effect, because
+  // a restore that silently did nothing would make the three above pass
+  // while leaving the library unguarded.
+  const CLEARED_REASON = 'the list validation formula never landed, so there is nothing to clear.';
+  const RESTORE_IDS = [
+    'library.folder.clear-list-validation-to-create',
+    'library.folder.restore-list-validation-after-folders',
+    'library.folder.folder-survives-restored-validation',
+    'library.folder.control-restored-validation-refuses-a-folder',
+  ];
+  if (!listValidated) {
+    voidAll(RESTORE_IDS, CLEARED_REASON);
+    return report();
+  }
+
+  const setListFormula = (formula, message) => postVerbose(libPath, {
+    __metadata: { type: 'SP.List' },
+    ValidationFormula: formula,
+    ValidationMessage: message,
+  }, MERGE);
+
+  const cleared = await setListFormula('', '');
+  if (!cleared.ok) {
+    voidAll(RESTORE_IDS, `the list validation formula could not be cleared (${short(cleared)}), `
+            + 'so the clear-create-restore shape could not be tried at all.');
+    return report();
+  }
+  const madeInWindow = await addFolder(
+    'library.folder.clear-list-validation-to-create', Q.cleared, NAMES.window);
+
+  const restored = await setListFormula(
+    `=[${GUARD}]="ok"`, 'dbmlsp probe: this item must read ok.');
+  const readBack = await spGet(`${libPath}?$select=ValidationFormula`);
+  const formulaBack = readFailed(readBack) ? null : readBack.body.ValidationFormula;
+  const restoredOk = restored.ok && typeof formulaBack === 'string' && formulaBack.includes(GUARD);
+  record('library.folder.restore-list-validation-after-folders', Q.restored,
+         restoredOk ? 'PASS' : restored.ok ? 'FAIL' : isRefusal(restored.status) ? 'REFUSED' : 'FAIL',
+         restored.ok
+           ? `HTTP ${restored.status}, and ValidationFormula reads back ${JSON.stringify(formulaBack)}`
+           : short(restored));
+
+  if (!madeInWindow) {
+    record('library.folder.folder-survives-restored-validation', Q.survives, 'NOT ESTABLISHED',
+           'no folder was created while the formula was cleared, so nothing could survive the restore.');
+  } else {
+    const still = await spGet(`web/GetFolderByServerRelativeUrl('${pathLiteral(`${rootUrl}/${NAMES.window}`)}')?$select=Exists,ServerRelativeUrl`);
+    const exists = !readFailed(still) && still.body.Exists === true;
+    record('library.folder.folder-survives-restored-validation', Q.survives,
+           exists ? 'PASS' : 'FAIL',
+           exists
+             ? `the folder still reads back at ${still.body.ServerRelativeUrl}`
+             : `the folder did not read back after the restore (HTTP ${still.status})`);
+  }
+
+  if (!restoredOk) {
+    record('library.folder.control-restored-validation-refuses-a-folder', Q.controlRestored,
+           'NOT ESTABLISHED',
+           'the formula did not read back after the restore, so a refusal here would say nothing '
+           + 'about whether a restored guard is in force.');
+  } else {
+    const digest = await getDigest();
+    const after = await spPost(
+      `web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(NAMES.afterRestore)}')`,
+      {}, digest);
+    record('library.folder.control-restored-validation-refuses-a-folder', Q.controlRestored,
+           after.ok ? 'FAIL' : isRefusal(after.status) ? 'PASS' : 'FAIL',
+           after.ok
+             ? `HTTP ${after.status}: the create was ACCEPTED, so the restored formula is not in force `
+               + 'and the three rows above are about an unguarded library'
+             : short(after));
   }
 
   return report();
