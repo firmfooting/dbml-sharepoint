@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH DECLARED SETTING REFUSES A FOLDER
  *
- * REVISION: b13242c0
+ * REVISION: f31aa573
  *
  * ONE QUESTION:
  *   folders/add is accepted on a bare library and refused on one the deploy
@@ -318,7 +318,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision b13242c0. Quote this when reporting results.');
+  log('INFO', 'probe revision f31aa573. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Folder Schema';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -395,6 +395,30 @@
   const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
 
+  // A field subtype and a list MERGE both need the verbose spelling: the
+  // harness posts `odata=nometadata`, under which the server reads a create
+  // body as a bare SP.Field and refuses SP.FieldText's own properties. The
+  // deploy sends `__metadata` on both writes, so the probe does too, and
+  // what is measured is the state and not a transport this project never
+  // uses.
+  const VERBOSE = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+  };
+  const postVerbose = async (path, body, extraHeaders = {}) => {
+    const digest = await getDigest();
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: { ...VERBOSE, 'X-RequestDigest': digest, ...extraHeaders },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+  const MERGE = { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' };
+
   await resetList(LIB);
 
   // ---- fixture ---------------------------------------------------------
@@ -431,13 +455,22 @@
 
   // The folder's own item, for the evidence line. A folder that lands with
   // the required column blank says something the refusal alone does not.
+  // The guard column is selected only once it exists: naming an absent column
+  // in $select answers HTTP 400, which reads in the evidence as "no item"
+  // and would hide the observation this line is here to make.
+  let guardExists = false;
   const folderItem = async (name) => {
     const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-    const r = await spGet(`${libPath}/items?$select=Id,FileSystemObjectType,FileLeafRef,${GUARD}&$filter=${filter}&$top=2`);
-    const rows = (!readFailed(r) && r.body.value) || [];
+    const select = `Id,FileSystemObjectType,FileLeafRef${guardExists ? `,${GUARD}` : ''}`;
+    const r = await spGet(`${libPath}/items?$select=${select}&$filter=${filter}&$top=2`);
+    if (readFailed(r)) return `the item read failed (HTTP ${r.status})`;
+    const rows = r.body.value || [];
     if (!rows.length) return 'no list item was served for that name';
     const row = rows[0];
-    return `item ${row.Id}, FileSystemObjectType ${row.FileSystemObjectType}, ${GUARD} ${JSON.stringify(row[GUARD] === undefined ? null : row[GUARD])}`;
+    const guard = guardExists
+      ? `, ${GUARD} ${JSON.stringify(row[GUARD] === undefined ? null : row[GUARD])}`
+      : '';
+    return `item ${row.Id}, FileSystemObjectType ${row.FileSystemObjectType}${guard}`;
   };
 
   const addFolder = async (id, question, name) => {
@@ -477,11 +510,16 @@
   // ---- state 2: a required column with no default ----------------------
   let guardMade = false;
   {
-    const digest = await getDigest();
-    const made = await spPost(`${libPath}/fields`, {
-      Title: GUARD, FieldTypeKind: 2, Required: true, MaxLength: 64,
-    }, digest);
+    const made = await postVerbose(`${libPath}/fields`, {
+      __metadata: { type: 'SP.FieldText' },
+      Title: GUARD,
+      FieldTypeKind: 2,
+      MaxLength: 64,
+      Required: true,
+      Description: 'dbmlsp folder under schema probe guard column.',
+    });
     guardMade = made.ok;
+    guardExists = made.ok;
     if (!made.ok) {
       record('library.folder.add-with-required-column', Q.required, 'NOT ESTABLISHED',
              `the required column could not be created (${short(made)}), so this state was never entered.`);
@@ -495,14 +533,14 @@
     record('library.folder.add-with-column-validation', Q.columnValidation, 'NOT ESTABLISHED',
            'the required column was never created, so no column validation could be set on it.');
   } else {
-    const digest = await getDigest();
-    const set = await spPost(
+    const set = await postVerbose(
       `${libPath}/fields/getbyinternalnameortitle('${GUARD}')`,
       {
+        __metadata: { type: 'SP.FieldText' },
         ValidationFormula: `=[${GUARD}]="ok"`,
         ValidationMessage: 'dbmlsp probe: this column must read ok.',
       },
-      digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      MERGE);
     if (!set.ok) {
       record('library.folder.add-with-column-validation', Q.columnValidation, 'NOT ESTABLISHED',
              `the column validation formula was refused at the field set (${short(set)}), so this state was never entered.`);
@@ -513,12 +551,17 @@
 
   // ---- state 4: the list carries a validation formula ------------------
   let listValidated = false;
-  {
-    const digest = await getDigest();
-    const set = await spPost(libPath, {
+  if (!guardMade) {
+    record('library.folder.add-with-list-validation', Q.listValidation, 'NOT ESTABLISHED',
+           'the guard column was never created, so a list formula naming it could only be '
+           + 'refused for the column being absent, which is not the question.');
+  } else {
+    // The deploy's own spelling: SP.List metadata, both properties together.
+    const set = await postVerbose(libPath, {
+      __metadata: { type: 'SP.List' },
       ValidationFormula: `=[${GUARD}]="ok"`,
       ValidationMessage: 'dbmlsp probe: this item must read ok.',
-    }, digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    }, MERGE);
     listValidated = set.ok;
     if (!set.ok) {
       record('library.folder.add-with-list-validation', Q.listValidation, 'NOT ESTABLISHED',
@@ -547,14 +590,28 @@
   if (finalStateReason) {
     record('library.folder.add-as-list-item-under-validation', Q.listItem, 'NOT ESTABLISHED', finalStateReason);
   } else {
-    const digest = await getDigest();
-    const res = await spPost(`${libPath}/items`, {
-      FileSystemObjectType: 1,
-      FileLeafRef: NAMES.listItem,
-    }, digest);
-    record('library.folder.add-as-list-item-under-validation', Q.listItem,
-           res.ok ? 'PASS' : isRefusal(res.status) ? 'REFUSED' : 'FAIL',
-           res.ok ? `HTTP ${res.status}, and ${await folderItem(NAMES.listItem)}` : short(res));
+    // An item create names the list's OWN entity type, which is per-list and
+    // read rather than spelled: `SP.Data.<something>Item` is derived from the
+    // library's URL and guessing it returns a refusal about the type, which
+    // would be recorded as an answer about folders.
+    const typeRead = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
+    const itemType = readFailed(typeRead) ? null : typeRead.body.ListItemEntityTypeFullName;
+    if (!itemType) {
+      record('library.folder.add-as-list-item-under-validation', Q.listItem, 'NOT ESTABLISHED',
+             `the list's ListItemEntityTypeFullName did not read back (HTTP ${typeRead.status}), `
+             + 'so an item create could not be addressed.');
+    } else {
+      const res = await postVerbose(`${libPath}/items`, {
+        __metadata: { type: itemType },
+        FileSystemObjectType: 1,
+        FileLeafRef: NAMES.listItem,
+      });
+      record('library.folder.add-as-list-item-under-validation', Q.listItem,
+             res.ok ? 'PASS' : isRefusal(res.status) ? 'REFUSED' : 'FAIL',
+             res.ok
+               ? `HTTP ${res.status} as ${itemType}, and ${await folderItem(NAMES.listItem)}`
+               : `${short(res)} (as ${itemType})`);
+    }
   }
 
   return report();
