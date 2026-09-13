@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A BY-TITLE LIST READ GO STALE
  *
- * REVISION: d346f6af
+ * REVISION: c9c55b1f
  *
  * ONE QUESTION:
  *   A list is deleted and another is created under the same title, which is
@@ -33,6 +33,23 @@
  * Id, no cache-buster helps and the fix is to stop addressing these reads by
  * title at all.
  *
+ * ROUND ONE ANSWERED IT, revision d346f6af, 2026-09-13. Both by-title reads
+ * came back STALE, each naming the DEAD list, while the unique-parameter
+ * read and the enumeration both named the live one. Served under
+ * `Cache-Control: private, max-age=0` and `ETag: "1"`. The same run with the
+ * browser's cache disabled answered FRESH on every row, which is the control
+ * that rules out SharePoint itself holding the stale answer.
+ *
+ * So the transport is the cause, and a by-title identity read can name a
+ * list that no longer exists. That cuts both ways and the dangerous way is
+ * the quiet one: two reads that go stale TOGETHER agree with each other, so
+ * the ownership guard passes while naming an object the run never saw.
+ *
+ * ROUND TWO asks which request-side directive fixes it, because the answer
+ * decides the size of the change. A directive costs one line in
+ * fetchWithRetry; a unique parameter on every URL does not, and it would
+ * also make each read uncacheable for the rest of the session.
+ *
  * SCOPE AND QUESTIONS
  *   transport.cache.fixture-list-created
  *     A generic list is created and its Id recorded.
@@ -60,6 +77,24 @@
  *   transport.cache.id-select-after-recreate-library
  *     The same question on a document library, because the live evidence hit
  *     one of each and neither kind may be assumed to answer for the other.
+ *   transport.cache.remedy-no-store
+ *     ROUND TWO: the same stale URL read under `cache: 'no-store'`. Measured
+ *     before the other two because no-store is specified not to write the
+ *     entry back, so it cannot repair what the rows after it are reading.
+ *   transport.cache.remedy-no-cache-header
+ *     ROUND TWO: the same URL under a `Cache-Control: no-cache` REQUEST
+ *     header. Expected to be the weak one: it forces revalidation rather
+ *     than a fresh fetch, and a recreated list is served ETag "1" just as
+ *     the dead one was, so a 304 would hand back the stale body. Measured
+ *     rather than reasoned, and measured precisely so that nobody later
+ *     fixes this the cheap way and ships a guard that still lies.
+ *   transport.cache.remedy-reload
+ *     ROUND TWO: the same URL under `cache: 'reload'`. Last, because reload
+ *     does update the entry.
+ *   transport.cache.plain-read-after-reload
+ *     ROUND TWO: an ordinary read once reload has run, which says whether
+ *     one cache-defeating read per URL repairs the entry for the reads
+ *     after it, or whether every read has to carry the directive itself.
  *
  * OBSERVED, NEVER ASSERTED
  *   The caching headers, and the Ids themselves. Which Id each read answers
@@ -67,9 +102,10 @@
  *   fail on exactly the tenant it was written to measure.
  *
  * NOT MEASURED HERE
- *   Whether the staleness survives a reload, how long an entry lives, or
- *   whether SharePoint or the browser holds it. The fix does not depend on
- *   which: a read that must not be stale has to say so on the request.
+ *   How long an entry lives. Round one's cache-disabled control settled that
+ *   the browser holds it rather than SharePoint, and round two settles
+ *   whether a reload repairs it, so what is left open is only duration,
+ *   which no fix here depends on.
  *
  * MICROSOFT LEARN CITATIONS
  *   List creation and deletion over REST, and getbytitle:
@@ -310,7 +346,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision d346f6af. Quote this when reporting results.');
+  log('INFO', 'probe revision c9c55b1f. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Cache Identity';
   const LIB = 'dbmlsp Probe Cache Identity Library';
@@ -334,12 +370,17 @@
     busted: 'CONTROL: does the same read with a unique parameter answer the new list',
     enumerated: 'CONTROL: which Id does the web/lists enumeration put the title on',
     library: 'The same question on a document library',
+    noStore: "ROUND TWO: does the same stale URL read fresh under cache: 'no-store'",
+    noCacheHeader: 'ROUND TWO: does a Cache-Control: no-cache REQUEST header read it fresh',
+    reload: "ROUND TWO: does the same URL read fresh under cache: 'reload'",
+    afterReload: 'ROUND TWO: once reload has run, does an ORDINARY read answer the live list',
   };
 
   if (!CONFIRMED) {
     log('INFO', `Would create a LIST '${LIST}', read its Id by two spellings, DELETE it,`);
     log('INFO', 'create another list under the same title, and read again by both');
-    log('INFO', 'spellings plainly and with a cache-busting parameter.');
+    log('INFO', 'spellings plainly, with a cache-busting parameter, and under each of');
+    log('INFO', "cache: 'no-store', a no-cache request header and cache: 'reload'.");
     log('INFO', `The same delete-and-recreate is then done for a LIBRARY '${LIB}'.`);
     log('INFO', 'Both are deleted at the end. Nothing else on the site is touched.');
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
@@ -359,6 +400,10 @@
     'transport.cache.control-busted-after-recreate',
     'transport.cache.control-enumeration-after-recreate',
     'transport.cache.id-select-after-recreate-library',
+    'transport.cache.remedy-no-store',
+    'transport.cache.remedy-no-cache-header',
+    'transport.cache.remedy-reload',
+    'transport.cache.plain-read-after-reload',
   ];
 
   expect('transport.cache.fixture-list-created', Q.fixture);
@@ -369,6 +414,10 @@
   expect('transport.cache.control-busted-after-recreate', Q.busted);
   expect('transport.cache.control-enumeration-after-recreate', Q.enumerated);
   expect('transport.cache.id-select-after-recreate-library', Q.library);
+  expect('transport.cache.remedy-no-store', Q.noStore);
+  expect('transport.cache.remedy-no-cache-header', Q.noCacheHeader);
+  expect('transport.cache.remedy-reload', Q.reload);
+  expect('transport.cache.plain-read-after-reload', Q.afterReload);
 
   const voidAll = (ids, reason) => {
     for (const id of ids) {
@@ -380,9 +429,12 @@
 
   // Read exactly the way the deploy reads, headers included, and hand back
   // the response object too so its caching headers can be reported.
-  const readVerbose = async (suffix) => {
+  const readVerbose = async (suffix, init = {}) => {
+    const { headers: extraHeaders, ...rest } = init;
     const res = await fetch(`${WEB}/_api/${suffix}`, {
-      headers: VERBOSE, credentials: 'same-origin',
+      headers: { ...VERBOSE, ...(extraHeaders || {}) },
+      credentials: 'same-origin',
+      ...rest,
     });
     const text = await res.text();
     let parsed = null;
@@ -501,6 +553,38 @@
     record('transport.cache.control-busted-after-recreate', Q.busted,
            busted.id === live.id ? 'FRESH' : busted.id === before.id ? 'STALE' : 'UNEXPECTED',
            `the cache-busted read answered ${busted.id}; live is ${live.id}`);
+
+    // ---- round two: which directive on the SAME url reads it fresh ------
+    // Ordered by what each one does to the entry, not by preference.
+    // no-store neither reads nor writes it, so it leaves the following rows
+    // measuring what they were written to measure; the no-cache header only
+    // revalidates; reload refetches AND rewrites, so it goes last and
+    // `afterReload` reads what it left behind.
+    const verdict = (r) => (r.id === live.id ? 'FRESH'
+      : r.id === before.id ? 'STALE' : 'UNEXPECTED');
+    const say = (label, r) => `${label} answered ${r.id};`
+      + ` live is ${live.id}, dead was ${before.id}`;
+
+    const noStore = await readVerbose(`${titlePath(LIST)}?$select=Id`, { cache: 'no-store' });
+    record('transport.cache.remedy-no-store', Q.noStore,
+           verdict(noStore), say("cache: 'no-store'", noStore));
+
+    const noCacheHeader = await readVerbose(`${titlePath(LIST)}?$select=Id`,
+                                            { headers: { 'Cache-Control': 'no-cache' } });
+    record('transport.cache.remedy-no-cache-header', Q.noCacheHeader,
+           verdict(noCacheHeader), say('a no-cache request header', noCacheHeader));
+
+    const reloaded = await readVerbose(`${titlePath(LIST)}?$select=Id`, { cache: 'reload' });
+    record('transport.cache.remedy-reload', Q.reload,
+           verdict(reloaded), say("cache: 'reload'", reloaded));
+
+    const afterReload = await readId(LIST);
+    record('transport.cache.plain-read-after-reload', Q.afterReload,
+           verdict(afterReload),
+           say('an ordinary read after reload', afterReload)
+           + (afterReload.id === live.id
+             ? '. So one cache-defeating read repairs the entry for the reads after it'
+             : '. So repairing the entry once is not enough and every read must carry it'));
   }
 
   // ---- the same question on a document library -------------------------

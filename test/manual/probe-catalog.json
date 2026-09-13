@@ -9459,7 +9459,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch generic list and one scratch document library, each created, read by title, hard-deleted and created again under the same title so a by-title read can be asked whether it answers the new object or the dead one; both are deleted at the end"
+        "one scratch generic list and one scratch document library, each created, read by title, hard-deleted and created again under the same title so a by-title read can be asked whether it answers the new object or the dead one, and so the same stale URL can be re-read under each candidate cache directive; both are deleted at the end"
       ],
       "cleanup": {
         "policy": "after"
@@ -9518,6 +9518,39 @@
               "id": "transport.cache.id-select-after-recreate-library",
               "depends_on": [
                 "transport.cache.fixture-list-created"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-no-store",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-no-cache-header",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.remedy-reload",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate"
+              ]
+            },
+            {
+              "id": "transport.cache.plain-read-after-reload",
+              "depends_on": [
+                "transport.cache.fixture-list-created",
+                "transport.cache.control-enumeration-after-recreate",
+                "transport.cache.id-select-after-recreate",
+                "transport.cache.remedy-reload"
               ]
             }
           ],
