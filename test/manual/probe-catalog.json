@@ -8802,6 +8802,79 @@
       ]
     },
     {
+      "file": "unique-blanks-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with one unique, indexed Text column and up to six items on it: two carrying the same value, two omitting the column, two sending it as an empty string"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.unique.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.unique.control-missing-column-refused",
+              "depends_on": [
+                "field.unique.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.unique.fixture-unique-text-column",
+              "depends_on": [
+                "field.unique.fixture-list-created",
+                "field.unique.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.unique.control-duplicate-value-refused",
+              "depends_on": [
+                "field.unique.fixture-list-created",
+                "field.unique.control-missing-column-refused",
+                "field.unique.fixture-unique-text-column"
+              ]
+            },
+            {
+              "id": "field.unique.blank-values-coexist",
+              "depends_on": [
+                "field.unique.fixture-list-created",
+                "field.unique.control-missing-column-refused",
+                "field.unique.fixture-unique-text-column",
+                "field.unique.control-duplicate-value-refused"
+              ]
+            },
+            {
+              "id": "field.unique.empty-string-values-coexist",
+              "depends_on": [
+                "field.unique.fixture-list-created",
+                "field.unique.control-missing-column-refused",
+                "field.unique.fixture-unique-text-column",
+                "field.unique.control-duplicate-value-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.unique.fixture-list-created",
+            "field.unique.control-missing-column-refused",
+            "field.unique.fixture-unique-text-column",
+            "field.unique.control-duplicate-value-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-guards-probe.js",
       "surface": "library",
       "harness": "shared-v1",

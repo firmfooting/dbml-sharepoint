@@ -1,0 +1,251 @@
+{# test/manual/templates/unique-blanks-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   On a single-line text column with EnforceUniqueValues, do two items that
+ *   leave the column blank both land, or is the second refused as a
+ *   duplicate of the first?
+ *
+ * A `[unique]` column without `[not null]` is a shape the validator warns on
+ * (`unique_without_not_null`: "uniqueness enforced only on populated
+ * values") and a shipped family relies on: legal-compliance-register's
+ * `Topic.ExternalRef` is unique and its note says to leave it blank when the
+ * portal export has no identifier. That wording is a claim about what the
+ * platform does with two blanks under the constraint, and nothing has
+ * measured it. SQL Server, which backs the content database, treats two
+ * NULLs as equal under a UNIQUE constraint (Learn: "Unique constraints and
+ * check constraints"), so the plausible answer and the assumed answer
+ * disagree, which is exactly the case the evidence rule exists for.
+ *
+ * The write shapes are the deploy's. The column is created by a POST to
+ * /fields carrying __metadata, FieldTypeKind 2, EnforceUniqueValues and
+ * Indexed together, which is how generators/jsgen.py builds a [unique] Text
+ * column. Items are created by a POST to /items, once omitting the column
+ * and once sending it as an empty string, because a form save and a seeded
+ * row can spell "blank" either way.
+ *
+ * SCOPE AND QUESTIONS
+ *   field.unique.fixture-list-created
+ *     A generic list is created (BaseTemplate 100).
+ *   field.unique.control-missing-column-refused
+ *     NEGATIVE CONTROL: an item POST naming a column that does not exist is
+ *     REFUSED. Without it, an accepted write below could be the server
+ *     ignoring the column.
+ *   field.unique.fixture-unique-text-column
+ *     A Text column created with EnforceUniqueValues and Indexed reads both
+ *     back true. Every row below is about that constraint, so a column
+ *     without it answers nothing.
+ *   field.unique.control-duplicate-value-refused
+ *     POSITIVE CONTROL: a second item carrying the same non-blank value is
+ *     REFUSED. Without it, two blanks landing could mean the constraint is
+ *     not enforced at all.
+ *   field.unique.blank-values-coexist
+ *     Two items that OMIT the column: do both land?
+ *   field.unique.empty-string-values-coexist
+ *     Two items that send the column as "": do both land?
+ *
+ * NOT MEASURED HERE
+ *   What the form shows when it refuses a duplicate, and whether Quick edit
+ *   sends a cleared cell as an omission or as an empty string. Those are
+ *   rendered surfaces and need a capture.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   EnforceUniqueValues and Indexed (CSOM):
+ *     "Field.EnforceUniqueValues Property", "Field.Indexed Property"
+ *   List creation via POST to `web/lists` and item creation via `items`:
+ *     "Working with lists and list items with REST"
+ *   Field creation via POST to `fields`:
+ *     "Fields REST API reference", dn600182(v=office.15)
+ *   Two NULLs are equal under a SQL Server UNIQUE constraint:
+ *     "Unique constraints and check constraints" (SQL Server)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the list it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe Unique List';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+  // Internal name equals display name: created through the same POST to
+  // /fields the deploy uses, so it carries no _x0020_ encoding.
+  const COL = 'UniqueRef';
+  const VALUE = 'dbmlsp-unique-1';
+
+  const Q = {
+    fixture: 'A generic list is created (BaseTemplate 100)',
+    control: 'NEGATIVE CONTROL: an item POST naming a column that does not exist is refused',
+    column: 'A Text column created with EnforceUniqueValues and Indexed reads both back true',
+    duplicate: 'POSITIVE CONTROL: a second item carrying the same non-blank value is refused',
+    blanks: 'Do two items that omit the unique column both land',
+    empties: 'Do two items that send the unique column as an empty string both land',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a LIST '${LIST}' on ${WEB} with one unique, indexed Text column,`);
+    log('INFO', 'then create up to six items: two with the same value, two omitting the column, two sending it empty.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing list would be reused, and items from a previous run');
+      log('INFO', 'would make the duplicate control refuse on the FIRST write. Set CLEANUP = true.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'field.unique.control-missing-column-refused',
+    'field.unique.fixture-unique-text-column',
+    'field.unique.control-duplicate-value-refused',
+    'field.unique.blank-values-coexist',
+    'field.unique.empty-string-values-coexist',
+  ];
+
+  expect('field.unique.fixture-list-created', Q.fixture);
+  expect('field.unique.control-missing-column-refused', Q.control);
+  expect('field.unique.fixture-unique-text-column', Q.column);
+  expect('field.unique.control-duplicate-value-refused', Q.duplicate);
+  expect('field.unique.blank-values-coexist', Q.blanks);
+  expect('field.unique.empty-string-values-coexist', Q.empties);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // __metadata is a VERBOSE OData construct, so the field create carrying
+  // it overrides the harness's default nometadata content type.
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
+
+  const readField = async (name) =>
+    spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')?$select=Title,TypeAsString,EnforceUniqueValues,Indexed`);
+
+  // Two writes, reported as one row: the head says whether the second
+  // landed, and the evidence quotes both answers so a first-write failure
+  // is visible as what it is rather than as a refusal.
+  const twoWrites = async (id, question, body, describe) => {
+    let digest = await getDigest();
+    const first = await spPost(`${listPath}/items`, { Title: `${describe} 1`, ...body }, digest);
+    if (!first.ok) {
+      record(id, question, 'NOT ESTABLISHED',
+             `the FIRST item ${describe} was not accepted (${short(first)}), so there was nothing for a second to collide with`);
+      return;
+    }
+    digest = await getDigest();
+    const second = await spPost(`${listPath}/items`, { Title: `${describe} 2`, ...body }, digest);
+    let head = 'NOT ESTABLISHED';
+    if (second.ok) head = 'BOTH LAND';
+    else if (isRefusal(second.status)) head = 'SECOND REFUSED';
+    record(id, question, head,
+           `first item ${describe} answered HTTP ${first.status}; second answered ${short(second)}`);
+  };
+
+  await resetList(LIST);
+
+  let digest = await getDigest();
+  const haveList = await spGet(listPath);
+  if (haveList.ok) {
+    record('field.unique.fixture-list-created', Q.fixture, 'ALREADY PRESENT',
+           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
+  } else {
+    const made = await spPost('web/lists', {
+      Title: LIST, BaseTemplate: 100,
+      Description: 'dbml-sharepoint unique-blanks probe list. Safe to delete.',
+    }, digest);
+    record('field.unique.fixture-list-created', Q.fixture,
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIST}'` : short(made));
+    if (!made.ok) {
+      voidAll(IDS, `fixture incomplete: list creation failed (HTTP ${made.status})`);
+      return report();
+    }
+  }
+
+  // ---- NEGATIVE CONTROL: an item POST naming a missing column -----------
+  digest = await getDigest();
+  const junk = await spPost(`${listPath}/items`,
+    { Title: 'dbmlsp unique control', dbmlspNoSuchColumn: 'x' }, digest);
+  const controlHeld = !junk.ok && isRefusal(junk.status);
+  record('field.unique.control-missing-column-refused', Q.control,
+         controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
+         controlHeld ? `refused with ${short(junk)}`
+           : (junk.ok ? 'the item POST naming a missing column was ACCEPTED, so an accepted write '
+                        + 'below cannot be told from a column the server ignored'
+                      : `the item POST failed with non-refusal ${short(junk)}`));
+  if (!controlHeld) {
+    voidAll(IDS.slice(1),
+            `negative control did not hold (HTTP ${junk.status}), so an accepted write below could `
+            + 'not be told from any other server answer');
+    return report();
+  }
+
+  // ---- The unique, indexed Text column: the deploy's create shape --------
+  const have = await readField(COL);
+  let made = { ok: true, status: have.status, text: 'already present' };
+  if (!have.ok) {
+    digest = await getDigest();
+    made = await spPost(`${listPath}/fields`, {
+      __metadata: { type: 'SP.FieldText' }, Title: COL, FieldTypeKind: 2,
+      EnforceUniqueValues: true, Indexed: true,
+    }, digest, VERBOSE);
+  }
+  const back = await readField(COL);
+  const constrained = !readFailed(back) && back.body.EnforceUniqueValues === true && back.body.Indexed === true;
+  record('field.unique.fixture-unique-text-column', Q.column,
+         constrained ? 'PASS' : 'FAIL',
+         `POST fields with EnforceUniqueValues:true and Indexed:true answered ${short(made)}; `
+         + (readFailed(back)
+           ? `the column did not read back (HTTP ${back.status})`
+           : `reads back TypeAsString=${back.body.TypeAsString}, EnforceUniqueValues=${back.body.EnforceUniqueValues}, Indexed=${back.body.Indexed}`));
+  if (!constrained) {
+    voidAll(IDS.slice(2), 'the column does not carry the constraint, so nothing below is about it');
+    return report();
+  }
+
+  // ---- POSITIVE CONTROL: the same value twice ---------------------------
+  digest = await getDigest();
+  const firstValue = await spPost(`${listPath}/items`, { Title: 'dbmlsp unique value 1', [COL]: VALUE }, digest);
+  if (!firstValue.ok) {
+    record('field.unique.control-duplicate-value-refused', Q.duplicate, 'NOT ESTABLISHED',
+           `the FIRST item carrying ${JSON.stringify(VALUE)} was refused (${short(firstValue)}). `
+           + 'A previous run left the value behind: set CLEANUP = true and run again');
+    voidAll(IDS.slice(3), 'the positive control could not be asked, so a blank landing below is unproven');
+    return report();
+  }
+  digest = await getDigest();
+  const secondValue = await spPost(`${listPath}/items`, { Title: 'dbmlsp unique value 2', [COL]: VALUE }, digest);
+  const duplicateRefused = !secondValue.ok && isRefusal(secondValue.status);
+  record('field.unique.control-duplicate-value-refused', Q.duplicate,
+         duplicateRefused ? 'PASS' : (secondValue.ok ? 'FAIL' : 'NOT ESTABLISHED'),
+         `first item carrying ${JSON.stringify(VALUE)} answered HTTP ${firstValue.status}; `
+         + `second carrying the same value answered ${short(secondValue)}`
+         + (secondValue.ok ? '. The duplicate was ACCEPTED, so the constraint is not enforced on this write path' : ''));
+  if (!duplicateRefused) {
+    voidAll(IDS.slice(3), 'the positive control did not hold, so two blanks landing would say nothing about the constraint');
+    return report();
+  }
+
+  // ---- The question, spelled both ways a blank arrives ------------------
+  await twoWrites('field.unique.blank-values-coexist', Q.blanks, {}, 'omitting the column');
+  await twoWrites('field.unique.empty-string-values-coexist', Q.empties, { [COL]: '' }, 'sending the column as ""');
+
+  return report();
+})();

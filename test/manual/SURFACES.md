@@ -194,14 +194,15 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `boolean`, `title` (the built-in Title column, which the tool never creates),
 `list` (the list object the columns belong to), `default-formula` (a
 column's `DefaultFormula` property, what it fills at item create, and what
-`DefaultValue` reads back beside it)
+`DefaultValue` reads back beside it), `unique` (a column's
+`EnforceUniqueValues` constraint and which writes it refuses)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
 `lookup-showfield-probe.js`, `boolean-field-probe.js`,
 `title-rename-probe.js`, `title-seal-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
-`default-formula-functions-probe.js`
+`default-formula-functions-probe.js`, `unique-blanks-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is

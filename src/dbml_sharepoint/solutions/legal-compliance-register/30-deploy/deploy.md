@@ -91,6 +91,12 @@ to the recycle bin.
       plus the unique index on `ExternalRef` and the automatic one on
       `Title` as the lookup's display column. The build manifest lists the
       same.
+- [ ] If a second topic has no portal identifier, create it and confirm it
+      saves. `ExternalRef` is unique and its note tells you to leave it
+      blank, and nothing has measured whether the constraint treats two
+      blank values as duplicates. Should the second be refused, give each
+      topic a placeholder identifier rather than leaving it blank, and say
+      so on the issue.
 - [ ] The New form on the register shows **The topic**, **Who owns it** and
       **Reporting and standing**. The file panel on the library shows
       **The SAQ**, **Complete it**, **Confirm it** and **Record in the
