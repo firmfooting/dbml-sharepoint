@@ -27,9 +27,13 @@ def generate_rollback_js(
     # Children before parents: reverse of the deploy creation order.
     target_lists = []
     for name in reversed(site_tables_in_order(schema, bundle.mapping.entities, site_role)):
+        # The confirmation names what is really being deleted: a library's
+        # items are files, and the operator should read that word.
+        is_library = bundle.mapping.entities[name].is_library
         target_lists.append({
             "title": bundle.mapping.prefix + name,
             "expected_marker": marker_for(family, name),
+            "is_library": is_library,
         })
         # A site not yet migrated still carries the previous titles, and
         # each is gated by the marker its own name produces.
@@ -37,6 +41,7 @@ def generate_rollback_js(
             target_lists.append({
                 "title": title,
                 "expected_marker": marker_for(family, previous_name),
+                "is_library": is_library,
             })
     template = env.get_template("rollback.js.j2")
     return template.render(

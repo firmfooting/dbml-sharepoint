@@ -1,0 +1,267 @@
+{# test/manual/templates/folder-create-refusal-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   folders/add(url=) is measured working. On a live deploy it answered
+ *   HTTP 500 "Cannot create folder" for every declared folder. Which of the
+ *   two things that changed since the measurement is responsible?
+ *
+ * `library.folder.creation-path` (2026-09-03, folder-probe.js) measured the
+ * call as accepted, and templates/deploy/_folders.js.j2 rests on it. That
+ * measurement created a folder named `dbmlsp-folder-probe` in a library
+ * created by POSTing `{Title, BaseTemplate: 101, Description}`. What the
+ * deploy sends differs in two ways at once, and either could be the cause:
+ *
+ *   1. The folder NAME carries spaces. Every folder the shipped
+ *      legal-compliance-register declares does ("Clinical services"), and no
+ *      probe has created a folder whose name is not a single hyphenated word.
+ *   2. The LIBRARY was created with `ContentTypesEnabled: false`, which
+ *      generators/jsgen.py sets on every list it declares and which no probe
+ *      has put on a library before creating a folder in it.
+ *
+ * So this is a two by two over those variables, with the measured
+ * combination as the control. A single run says which cell refuses.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     Two document libraries are created (BaseTemplate 101), one with the
+ *     content types switch left alone and one with it off. The same question
+ *     folder-probe.js asks, by the same method, so it keeps the same id.
+ *   library.folder.control-plain-name-default-library
+ *     CONTROL: folders/add(url='dbmlsp-plain-name') on the library built the
+ *     way the 2026-09-03 run built one. This is that measurement, repeated
+ *     here. If this cell refuses, the cause is neither variable and nothing
+ *     below can be read as evidence about either.
+ *   library.folder.spaced-name-default-library
+ *     The name varied alone: folders/add(url='dbmlsp spaced name') on the
+ *     same library.
+ *   library.folder.plain-name-content-types-disabled
+ *     The library varied alone: the hyphenated name on the library created
+ *     with ContentTypesEnabled false.
+ *   library.folder.spaced-name-content-types-disabled
+ *     Both varied, which is exactly what the deploy sends and what answered
+ *     HTTP 500.
+ *   library.folder.add-using-path-spaced-name
+ *     The documented ResourcePath spelling for the same write, on the same
+ *     library: web/Folders/AddUsingPath(decodedurl='<root>/<spaced name>').
+ *     Asked whatever the cells above say, because a spelling that works
+ *     everywhere is worth knowing about even when the legacy one does too.
+ *
+ * OBSERVED, NEVER ASSERTED
+ *   Each library's ContentTypesEnabled, EnableFolderCreation and
+ *   BaseTemplate as they read back after creation, and each created folder's
+ *   ServerRelativeUrl. These are recorded in the evidence of the rows above.
+ *   Asserting a value this probe did not set would make the experiment fail
+ *   the moment the tenant's defaults differ, which looks identical to the
+ *   refusal being measured.
+ *
+ * NOT MEASURED HERE
+ *   A name carrying characters analysis/file_names.py already refuses (`#`,
+ *   `%`), a name longer than the path budget, and whether the switch can be
+ *   turned back on after creation. Nothing here changes a setting after a
+ *   library is made.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   Folder creation via `Folders/add(url=)`:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   Folder creation via `Folders/AddUsingPath(decodedurl=)`, and the
+ *   ResourcePath APIs generally:
+ *     "Supporting % and # in files and folders with the ResourcePath API"
+ *   List creation via POST to `web/lists`, and ContentTypesEnabled:
+ *     "Working with lists and list items with REST", "List.ContentTypesEnabled
+ *     Property" (CSOM)
+ *   EnableFolderCreation:
+ *     "List.EnableFolderCreation Property" (CSOM)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the two libraries it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
+  const LIB_NOCT = 'dbmlsp Probe Folder NoCT';
+  const PLAIN = 'dbmlsp-plain-name';
+  const SPACED = 'dbmlsp spaced name';
+  const PATH_SPACED = 'dbmlsp spaced path name';
+
+  const listPath = (title) => `web/lists/getbytitle('${title}')`;
+
+  const Q = {
+    fixture: 'Two document libraries are created (BaseTemplate 101), one with ContentTypesEnabled left alone and one with it false',
+    control: 'CONTROL: does folders/add(url=<hyphenated name>) still answer on a library created the way the 2026-09-03 run created one',
+    spacedDefault: 'Does folders/add(url=<name with spaces>) answer on that same library',
+    plainNoCt: 'Does folders/add(url=<hyphenated name>) answer on a library created with ContentTypesEnabled false',
+    spacedNoCt: 'Does folders/add(url=<name with spaces>) answer on a library created with ContentTypesEnabled false, which is what the deploy sends',
+    addUsingPath: 'Does the documented Folders/AddUsingPath(decodedurl=) spelling create a spaced name on that library',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create two DOCUMENT LIBRARIES on ${WEB}: '${LIB_DEFAULT}' with the`);
+    log('INFO', `content types switch left alone, and '${LIB_NOCT}' with ContentTypesEnabled false.`);
+    log('INFO', `Would then attempt folders/add for '${PLAIN}' and '${SPACED}' in each,`);
+    log('INFO', `and Folders/AddUsingPath for '${PATH_SPACED}' in '${LIB_NOCT}'.`);
+    if (CLEANUP) {
+      log('INFO', 'CLEANUP is ON: both libraries would be RECYCLED first.');
+    } else {
+      log('INFO', 'CLEANUP is off: existing libraries and their contents would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'library.folder.control-plain-name-default-library',
+    'library.folder.spaced-name-default-library',
+    'library.folder.plain-name-content-types-disabled',
+    'library.folder.spaced-name-content-types-disabled',
+    'library.folder.add-using-path-spaced-name',
+  ];
+
+  expect('library.doc-lib.fixture-library-created', Q.fixture);
+  expect('library.folder.control-plain-name-default-library', Q.control);
+  expect('library.folder.spaced-name-default-library', Q.spacedDefault);
+  expect('library.folder.plain-name-content-types-disabled', Q.plainNoCt);
+  expect('library.folder.spaced-name-content-types-disabled', Q.spacedNoCt);
+  expect('library.folder.add-using-path-spaced-name', Q.addUsingPath);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
+  // Quotes doubled, slashes and spaces left for fetch to encode. The deploy's
+  // own spelling, so what is measured here is the endpoint and not a second
+  // encoding this project does not send.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+
+  await resetList(LIB_DEFAULT);
+  await resetList(LIB_NOCT);
+
+  // ---- fixture: the two libraries --------------------------------------
+  const makeLibrary = async (title, extra) => {
+    const existing = await spGet(listPath(title));
+    if (existing.ok) return { made: true, reused: true };
+    const digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: title,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint folder create refusal probe. Safe to delete.',
+      ...extra,
+    }, digest);
+    return { made: made.ok, reused: false, detail: made.ok ? null : short(made) };
+  };
+
+  const libDefault = await makeLibrary(LIB_DEFAULT, {});
+  const libNoCt = await makeLibrary(LIB_NOCT, { ContentTypesEnabled: false });
+  if (!libDefault.made || !libNoCt.made) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL',
+           `'${LIB_DEFAULT}': ${libDefault.made ? 'ok' : libDefault.detail}; `
+           + `'${LIB_NOCT}': ${libNoCt.made ? 'ok' : libNoCt.detail}`);
+    voidAll(IDS, 'the library fixtures did not both build, so no cell can be compared with another.');
+    return report();
+  }
+
+  // Read back what each library actually is. OBSERVED, not asserted: the
+  // tenant's defaults are what this probe is trying to learn, so a mismatch
+  // here is a finding to print rather than a reason to stop.
+  const describe = async (title) => {
+    const r = await spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
+    if (readFailed(r)) return `'${title}' did not read back (HTTP ${r.status})`;
+    return `'${title}' BaseTemplate ${r.body.BaseTemplate}, ContentTypesEnabled ${r.body.ContentTypesEnabled}, EnableFolderCreation ${r.body.EnableFolderCreation}`;
+  };
+  const shapes = `${await describe(LIB_DEFAULT)}; ${await describe(LIB_NOCT)}`;
+  record('library.doc-lib.fixture-library-created', Q.fixture, 'PASS',
+         `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
+         + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'. ${shapes}`);
+
+  const rootOf = async (title) => {
+    const r = await spGet(`${listPath(title)}/RootFolder?$select=ServerRelativeUrl`);
+    return readFailed(r) ? null : r.body.ServerRelativeUrl;
+  };
+  const rootDefault = await rootOf(LIB_DEFAULT);
+  const rootNoCt = await rootOf(LIB_NOCT);
+  if (!rootDefault || !rootNoCt) {
+    voidAll(IDS, 'a library RootFolder did not read back, so no folder path could be built.');
+    return report();
+  }
+
+  // ---- one cell of the two by two --------------------------------------
+  // Recorded as PASS when the call is accepted AND the folder reads back,
+  // because a 200 that leaves nothing behind is the silent failure this
+  // project exists to catch.
+  const addFolder = async (id, question, title, root, name) => {
+    const digest = await getDigest();
+    const res = await spPost(
+      `web/GetFolderByServerRelativeUrl('${pathLiteral(root)}')/folders/add(url='${pathLiteral(name)}')`,
+      {}, digest);
+    if (!res.ok) {
+      record(id, question, isRefusal(res.status) ? 'REFUSED' : 'FAIL', short(res));
+      return false;
+    }
+    const back = await spGet(`web/GetFolderByServerRelativeUrl('${pathLiteral(`${root}/${name}`)}')?$select=Exists,Name,ServerRelativeUrl`);
+    const exists = !readFailed(back) && back.body.Exists === true;
+    record(id, question, exists ? 'PASS' : 'FAIL',
+           exists
+             ? `HTTP ${res.status}, and the folder reads back at ${back.body.ServerRelativeUrl}`
+             : `HTTP ${res.status} accepted the write, but the folder did not read back (HTTP ${back.status})`);
+    return exists;
+  };
+
+  const controlHeld = await addFolder(
+    'library.folder.control-plain-name-default-library', Q.control,
+    LIB_DEFAULT, rootDefault, PLAIN);
+  if (!controlHeld) {
+    voidAll(IDS.slice(1),
+            'the control cell refused, so this run cannot attribute a refusal to the name or to the '
+            + 'content types switch. Something outside both variables is blocking folder creation here.');
+    return report();
+  }
+
+  await addFolder('library.folder.spaced-name-default-library', Q.spacedDefault,
+                  LIB_DEFAULT, rootDefault, SPACED);
+  await addFolder('library.folder.plain-name-content-types-disabled', Q.plainNoCt,
+                  LIB_NOCT, rootNoCt, PLAIN);
+  await addFolder('library.folder.spaced-name-content-types-disabled', Q.spacedNoCt,
+                  LIB_NOCT, rootNoCt, SPACED);
+
+  // ---- the documented ResourcePath spelling ----------------------------
+  {
+    const digest = await getDigest();
+    const res = await spPost(
+      `web/Folders/AddUsingPath(decodedurl='${pathLiteral(`${rootNoCt}/${PATH_SPACED}`)}')`,
+      {}, digest);
+    if (!res.ok) {
+      record('library.folder.add-using-path-spaced-name', Q.addUsingPath,
+             isRefusal(res.status) ? 'REFUSED' : 'FAIL', short(res));
+    } else {
+      const back = await spGet(`web/GetFolderByServerRelativeUrl('${pathLiteral(`${rootNoCt}/${PATH_SPACED}`)}')?$select=Exists,ServerRelativeUrl`);
+      const exists = !readFailed(back) && back.body.Exists === true;
+      record('library.folder.add-using-path-spaced-name', Q.addUsingPath,
+             exists ? 'PASS' : 'FAIL',
+             exists
+               ? `HTTP ${res.status}, and the folder reads back at ${back.body.ServerRelativeUrl}`
+               : `HTTP ${res.status} accepted the write, but the folder did not read back (HTTP ${back.status})`);
+    }
+  }
+
+  return report();
+})();

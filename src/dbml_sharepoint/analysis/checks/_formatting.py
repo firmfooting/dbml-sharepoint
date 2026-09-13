@@ -19,9 +19,9 @@ from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_MESSAGE,
 )
 from dbml_sharepoint.analysis.rendered_columns import (
-    SYSTEM_COLUMNS,
     UNDEPLOYABLE_DECLARATION_COLUMNS,
     rendered_columns,
+    system_columns_for,
     undeployable,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
@@ -71,7 +71,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = rendered_columns(fmt_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = (
+            rendered_columns(fmt_table, xcols)
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
+        )
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             at = Location(
@@ -114,7 +117,10 @@ def check(vc: ValidationContext) -> list[Finding]:
         if spec_table is None:
             continue  # unknown entity already reported above
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = rendered_columns(spec_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = (
+            rendered_columns(spec_table, xcols)
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
+        )
         # Not the declared columns alone: the generator provisions the Title
         # and the cross-site expansion pair too, and a style spec may name one.
         types_by_col = effective_column_types(
@@ -278,7 +284,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = rendered_columns(form_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = (
+            rendered_columns(form_table, xcols)
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
+        )
         for part_name, part_json in (
             ("header", form.header), ("body", form.body), ("footer", form.footer),
         ):

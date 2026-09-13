@@ -43,6 +43,26 @@ def test_rollback_includes_typed_confirmation_and_target_lists() -> None:
     assert "site leaf" in js.lower()
 
 
+def test_rollback_names_a_library_and_its_files_in_the_confirmation() -> None:
+    """The operator reads the word for what is really being deleted. A
+    library's items are files and folders, and recycling a folder takes its
+    children with it (MEASURED 2026-09-03, `library.folder.delete-recycles`)."""
+    from dbml_sharepoint.model.mapping_types import EntityMapping
+
+    schema, bundle, release = _load_fixtures()
+    bundle.mapping.entities["Project"] = EntityMapping(
+        name="Project", kind="DocumentLibrary", base_template=101, site_role="default",
+    )
+    js = generate_rollback_js(schema=schema, bundle=bundle, release=release, **_COMMON_ARGS)
+    match = re.search(r"const TARGET_LISTS = (\[.*?\]);", js, re.DOTALL)
+    assert match is not None
+    targets = {t["title"]: t for t in json.loads(match.group(1))}
+    assert targets["APP_Project"]["is_library"] is True
+    assert targets["APP_Task"]["is_library"] is False
+    assert "is a document library currently reporting" in js
+    assert "DELETE NON-EMPTY to delete THIS library AND every file and folder in it" in js
+
+
 def test_rollback_prompts_per_list() -> None:
     """A6: each list requires its own DELETE NON-EMPTY confirmation.
     The old single global `allowNonEmpty` latch (one confirmation authorised
@@ -423,6 +443,12 @@ def test_rollback_targets_previous_titles_with_their_own_markers() -> None:
     targets = json.loads(m.group(1))
     family = family_for(schema)
     assert targets == [
-        {"title": "APP_Risk", "expected_marker": marker_for(family, "Risk")},
-        {"title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk")},
+        {
+            "title": "APP_Risk", "expected_marker": marker_for(family, "Risk"),
+            "is_library": False,
+        },
+        {
+            "title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk"),
+            "is_library": False,
+        },
     ]

@@ -528,6 +528,87 @@ def test_document_library_template_101_reaches_shape_gate() -> None:
     assert project["base_template"] == 101
 
 
+def _library_schema_json(
+    tmp_path: Path, kind: str, template: int, tail: str = "",
+) -> dict[str, Any]:
+    """One `Doc` entity of the given kind, with an optional mapping tail."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    tmp_path.mkdir(exist_ok=True)
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Doc", ID_PK, TITLE, "Division nvarchar"),
+        mapping=f"""
+            entities:
+              Doc:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                {tail}
+        """,
+    )
+    return build_schema_json(schema, bundle, "default")
+
+
+def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> None:
+    """The folder phase and the seeding script key on these two fields."""
+    schema_json = _library_schema_json(
+        tmp_path, "DocumentLibrary", 101, 'folders: ["Clinical services", "Corporate"]',
+    )
+    doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
+    assert doc["is_library"] is True
+    assert doc["folders"] == ["Clinical services", "Corporate"]
+    as_list = _library_schema_json(tmp_path / "list", "List", 100)
+    plain = next(lst for lst in as_list["lists"] if lst["title"] == "APP_Doc")
+    assert plain["is_library"] is False
+    assert plain["folders"] == []
+
+
+def test_a_library_all_items_leads_with_the_file_name_and_flattens_folders(
+    tmp_path: Path,
+) -> None:
+    """A file's Title is null after upload (MEASURED 2026-07-29,
+    `library.file-vs-item.title-after-upload`), so the recovery view names
+    the file first and is recursive so every folder's files reach it."""
+    schema_json = _library_schema_json(tmp_path, "DocumentLibrary", 101)
+    all_items = next(
+        v for v in schema_json["views"] if v["list"] == "APP_Doc" and v["title"] == "All Items"
+    )
+    assert all_items["view_fields"][:3] == ["ID", "FileLeafRef", "Title"]
+    assert "Division" in all_items["view_fields"]
+    assert all_items["scope"] == 1
+    as_list = _library_schema_json(tmp_path / "list", "List", 100)
+    plain = next(
+        v for v in as_list["views"] if v["list"] == "APP_Doc" and v["title"] == "All Items"
+    )
+    assert "FileLeafRef" not in plain["view_fields"]
+    assert plain["scope"] is None
+
+
+def test_a_declared_scope_emits_its_number_and_no_scope_emits_null(tmp_path: Path) -> None:
+    """SP.View.Scope Recursive is 1 and DefaultValue is 0 (Learn, CSOM
+    ViewScope). A declared `default` must reach the site as 0, so a view
+    somebody flipped to Recursive by hand is put back; only a view with no
+    scope emits null, which leaves the live property alone."""
+    tail = """folders: []
+            views:
+              Doc:
+                - title: "Flat"
+                  default: true
+                  fields: [FileLeafRef]
+                  scope: recursive
+                - title: "Folders"
+                  fields: [FileLeafRef]
+                  scope: default
+                - title: "Here"
+                  fields: [FileLeafRef]"""
+    schema_json = _library_schema_json(tmp_path, "DocumentLibrary", 101, tail)
+    by_title = {v["title"]: v for v in schema_json["views"] if v["list"] == "APP_Doc"}
+    assert by_title["Flat"]["scope"] == 1
+    assert by_title["Folders"]["scope"] == 0
+    assert by_title["Here"]["scope"] is None
+
+
 def test_boolean_default_only_emitted_when_declared() -> None:
     """Regression: the Boolean branch must only emit ``DefaultValue`` when the
     DBML column actually declares a default. Previously it unconditionally
@@ -1254,7 +1335,10 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     js = _generate_simple_js()
 
     assert _call_count(js, "assertFieldImmutableShape") == 3
-    assert _call_count(js, "assertListAdoptable") == 11
+    # 12 since the folder phase: it reads the library's shape to lift and put
+    # back the save rule that refuses a folder create, which is a list write
+    # region like any other and is held to the same wrapper.
+    assert _call_count(js, "assertListAdoptable") == 12
     # Two more than assertListAdoptable: reconcileListItemSecurity and
     # reconcileListAttachments are settings MERGEs on an already-adopted list,
     # so each re-proves ownership without a second adoptability pass, the same
@@ -1391,6 +1475,58 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"] is not None
     assert att["title_patch"]["Required"] is False
+
+
+def test_a_library_gets_no_title_patch_when_it_would_only_clear_required(
+    tmp_path: Path,
+) -> None:
+    """The same list as a library declares no patch at all.
+
+    MEASURED 2026-09-13 on a live document library: the built-in Title reads
+    Sealed true and the maintenance unseal's MERGE of Sealed=false is refused
+    HTTP 400, so the patch could never land and the run aborted before any
+    structural phase. It would buy nothing there in any case, because a
+    required column on a library is not enforced at REST upload.
+    """
+    from _model import as_library
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Attendance", ID_PK, "Notes nvarchar"),
+        mapping=entities("Attendance"),
+    )
+    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
+    assert att["title_patch"] is None
+
+
+def test_a_library_still_patches_title_for_a_declared_rename(
+    tmp_path: Path,
+) -> None:
+    """A rename is a different write, and nothing has measured it.
+
+    Only the Required-clearing patch is dropped above. Whether a rename of a
+    library's sealed Title is refused as the unseal was is unknown, so the
+    write stays declared: a run that tries one fails closed and says so,
+    rather than skipping it and leaving a column nobody renamed.
+    """
+    from _model import as_library
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Attendance", ID_PK, "Notes nvarchar"),
+        mapping=with_tail(entities("Attendance"), "\n".join([
+            "display_names:", "  mode: auto", "  overrides:", "    Attendance:",
+            "      Title: 'Session'",
+        ])),
+    )
+    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
+    assert att["title_patch"]["Title"] == "Session"
 
 
 def test_generated_js_contains_phase_0_and_phase_4() -> None:
@@ -2202,6 +2338,8 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
             f"{CAML_VIEW_FILTER_GUARD}</And></Where>"
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
+        # No scope declared on a list view: null leaves the live property alone.
+        "scope": None,
         # No totals declared: the empty string is what the deploy reads as
         # "never touch the live Aggregations property".
         "aggregations": "",
@@ -2255,6 +2393,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
             "Created", "Modified", "Author", "Editor",
         ],
         "caml_query": "",
+        "scope": None,
         "aggregations": "",
         "row_limit": None,
         "set_default": True,
@@ -3628,6 +3767,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     from dbml_sharepoint.analysis.rendered_columns import (
         SYSTEM_COLUMNS,
         rendered_columns,
+        system_columns_for,
     )
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
@@ -3643,6 +3783,9 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
                 "Parent int [ref: > Task.Id]",
                 "Notes nvarchar",
             ),
+            # A library: both sides carry a kind term, and only a library in
+            # the fixture turns a dropped kind term on either side red.
+            table("Docs", ID_PK, TITLE, "Reviewer person", "Summary nvarchar"),
         ),
         mapping="""
             entities:
@@ -3652,6 +3795,11 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
                 base_template: 100
                 site_role: default
                 hide_from_all_items: [Owner]
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                hide_from_all_items: [Reviewer]
             cross_site_reference_columns:
               - { entity: Task, column: Elsewhere }
         """,
@@ -3685,6 +3833,23 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     assert (
         joining_fields(generated, join_bearing_columns(task, xcols))
         == all_items_joining_fields(task, task_entity, xcols)
+    )
+
+    # The same two assertions for the library, whose All Items leads with
+    # FileLeafRef: the kind term on each side is what this pair pins.
+    generated_docs = next(
+        v for v in schema_json["views"]
+        if v["title"] == "All Items" and v["list"] == "APP_Docs"
+    )["view_fields"]
+    docs = next(t for t in schema.tables if t.name == "Docs")
+    docs_entity = bundle.mapping.entities["Docs"]
+    assert set(generated_docs) == (
+        rendered_columns(docs, set()) | {"Title"} | system_columns_for("DocumentLibrary")
+    ) - all_items_hidden(docs_entity)
+    assert "FileLeafRef" in generated_docs and "FileLeafRef" not in generated
+    assert (
+        joining_fields(generated_docs, join_bearing_columns(docs, set()))
+        == all_items_joining_fields(docs, docs_entity, set())
     )
 
 
@@ -4164,3 +4329,61 @@ def test_a_formula_referencing_title_is_rewritten_to_its_display_name(
     )
     live = next(f for f in risk["fields_phase1"] if f["title"] == "Live")
     assert live["body"]["Formula"] == '=CONCATENATE("x",[Risk Statement])'
+
+
+def test_a_lifted_save_rule_is_restored_on_every_exit_path() -> None:
+    """MEASURED 2026-09-13, `library.folder.add-with-list-validation` in
+    folder-under-schema-probe.js: a list save rule refuses a folder create on
+    a library, so the folder phase lifts it and puts it back.
+
+    The same guarantee the re-seal carries, and for the same reason: every
+    phase between the lift and the restore can return early by design, and
+    each of those returns would otherwise end the run with a library
+    accepting saves its declaration forbids. So the backstop sits on the exit
+    path, which is the only path every abort shares, and it is guarded
+    separately from the re-seal so neither can skip the other.
+    """
+    js = _generate_simple_js()
+
+    assert "const listValidationLiftedForRun = new Map();" in js
+    assert "listValidationLiftedForRun.set(" in js
+    assert "async function restoreLiftedListValidation()" in js
+    finally_block = js.rsplit("} finally {", 1)[1]
+    baseline = finally_block.index("const errorsBeforeCleanup = summary.errors.length;")
+    correction = finally_block.index("const cleanupErrors = summary.errors.length")
+    restore = finally_block.index("await restoreLiftedListValidation();")
+    assert baseline < restore < correction
+    assert "summary.errors.push({ phase: 'exit', error: `restore list save rules" in finally_block
+
+
+def test_a_lifted_save_rule_is_registered_before_the_lift_is_verified() -> None:
+    """The same ordering the unseal batch carries. A MERGE SharePoint commits
+    and whose response is lost has to be put back by exit cleanup, so the
+    registration is a fact about the request rather than about its answer."""
+    js = _generate_simple_js()
+    folders = next(
+        part for part in js.split("// === Phase ") if part.startswith(
+            f"{pn('folders')}: declared folders",
+        )
+    )
+    assert folders.index("listValidationLiftedForRun.set(") < folders.index(
+        "const cleared = await readListShape",
+    )
+
+
+def test_a_restored_save_rule_is_read_back_and_compared_canonically() -> None:
+    """SharePoint strips removable brackets on save, so `[Status]` is stored
+    and read back as `Status`. A byte comparison would report a restore that
+    landed as a restore that failed, and the operator would be sent to repair
+    a list that is already correct."""
+    js = _generate_simple_js()
+    restore = js.split("async function restoreListValidation", 1)[1].split(
+        "async function restoreLiftedListValidation", 1,
+    )[0]
+
+    patch = restore.index("await patchListById(")
+    readback = restore.index("const after = await readListShape", patch)
+    identity = restore.index("after.Id !== listId", readback)
+    compared = restore.index("canonicalFormula(after.ValidationFormula", identity)
+    cleared = restore.index("listValidationLiftedForRun.delete(listTitle)", compared)
+    assert patch < readback < identity < compared < cleared

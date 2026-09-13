@@ -1,0 +1,35 @@
+// A fixture family with one list and one document library, for the tests
+// that build a library end to end. Not a shipped template.
+Project library_fixture { database_type: 'SharePoint Online Lists' }
+
+Enum division {
+  "Clinical services"
+  "Corporate services"
+}
+
+Enum doc_status {
+  "Required"
+  "Complete"
+}
+
+Table Topic {
+  Id       int        [pk, increment]
+  Title    nvarchar   [not null, note: 'The topic name']
+  Division division   [not null, note: 'The division that owns this topic']
+
+  Note: 'The topics a document answers.'
+}
+
+Table Doc {
+  Id       int        [pk, increment]
+  Topic    int        [ref: > Topic.Id, note: 'The topic this document answers']
+  Division division   [note: 'File the document in the matching folder']
+  DueDate  date       [note: 'When the document is due back']
+  Status   doc_status [not null, default: 'Required', note: 'Where the document is in its cycle']
+
+  indexes {
+    Status
+  }
+
+  Note: 'One file per topic per period, with its cycle on the file.'
+}

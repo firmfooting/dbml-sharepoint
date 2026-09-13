@@ -40,7 +40,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -118,6 +118,12 @@
           ViewQuery: view.caml_query,
         };
         if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        // SP.View.Scope, on a document library's view only (the validator
+        // refuses the key on a list). MEASURED 2026-09-13,
+        // `library.view.scope-on-create-reads-back` in library-guards-probe.js:
+        // a view created with Scope 1 in its body answered HTTP 201 and read
+        // Scope back as 1.
+        if (view.scope != null) createBody.Scope = view.scope;
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
@@ -223,6 +229,12 @@
         }
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
+        }
+        // MEASURED 2026-09-13, `library.view.scope-on-merge-reads-back`: a
+        // stored view reading Scope 0 took MERGE Scope 1 (HTTP 204) and read
+        // back 1, so a scope edited by hand is put back here.
+        if (view.scope != null && existing.Scope !== view.scope) {
+          patchBody.Scope = view.scope;
         }
         // Declared totals only. A view with none keeps whatever is live,
         if (Object.keys(patchBody).length > 1) {
@@ -339,6 +351,9 @@
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
       if (actual.Hidden !== view.hidden) {
         drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
+      if (view.scope != null && actual.Scope !== view.scope) {
+        drifted.push(`Scope (declared ${view.scope}; readback ${actual.Scope})`);
       }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {

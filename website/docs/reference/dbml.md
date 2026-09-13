@@ -416,6 +416,15 @@ list reaches 18 of its 20 for that reason.
 - `note: '...'` → the column description operators see; also feeds the
   data dictionary.
 
+### System columns you may name without declaring
+
+Every provisioned list carries `ID`, `Created`, `Modified`, `Author` and
+`Editor` without a DBML column for them, and a document library adds
+`FileLeafRef`, the file name, because an uploaded file's `Title` is null.
+Views, field sets and formatters may name them; nothing else may, and a
+per-column declaration on one is refused because the deploy never writes
+it.
+
 ## Constraints SharePoint imposes
 
 Surfaced at build time by the validator, not discovered at deploy time:

@@ -203,7 +203,7 @@ Runs the site assessment and refuses a verdict the operator has not accepted.
 
 ### `deploy/_field_defaults.js.j2`
 
-*Phase 2.4 (STRUCTURE): field defaults*
+*Phase 2.5 (STRUCTURE): field defaults*
 
 Defaults are included in create-field bodies, but existing columns are skipped in Phase 2.1. Re-applying the declared value makes upgrades idempotent and lets a provisioned constant replace after-create flows.
 
@@ -212,6 +212,12 @@ Defaults are included in create-field bodies, but existing columns are skipped i
 Included by: `deploy.js.j2`
 
 Shared field machinery for the structure phases: immutable-shape verification (type kind, lookup target, formula) before an existing field is adopted, and narrow MERGE reconciliation of mutable settings (title, description, required, choices, defaults) with readback verification. Fail closed: shape mismatch aborts the field, never mutates it.
+
+### `deploy/_folders.js.j2`
+
+*Phase 2.2 (STRUCTURE): declared folders*
+
+Phase body: create each document library's declared root folders, verify each by read-back, and refuse a file standing where a folder was declared. An existing folder is verified and skipped, and nothing inside a folder is ever touched. Lists are skipped: only a library declares folders, and the validator refuses the key elsewhere.
 
 ### `deploy/_forms.js.j2`
 
@@ -227,7 +233,7 @@ Bounded per-lane parallelism. SharePoint stores fields and views in the list sch
 
 ### `deploy/_indexes.js.j2`
 
-*Phase 2.3 (STRUCTURE): indexed columns*
+*Phase 2.4 (STRUCTURE): indexed columns*
 
 Phase body: assert Indexed=true on every declared indexed column, verified by readback. SharePoint builds the index asynchronously; the flag is the deployer's contract.
 
@@ -245,7 +251,7 @@ Phase body: decide where this run's record goes, ensure whatever that answer nee
 
 ### `deploy/_lookups.js.j2`
 
-*Phase 2.2 (STRUCTURE): deferred lookups*
+*Phase 2.3 (STRUCTURE): deferred lookups*
 
 Phase body: add the deferred lookup columns (self-references and members of reference cycles) now that every target list exists.
 

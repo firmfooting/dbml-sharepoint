@@ -14,6 +14,7 @@ Nothing here may import from `analysis/checks/`, which imports this, or from
 move the cycle rather than close it.
 """
 
+from dbml_sharepoint.model.mapping_types import EntityKind
 from dbml_sharepoint.model.parser import Table
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
@@ -22,6 +23,26 @@ from dbml_sharepoint.model.parser import Table
 # display_names) stay strict, as do list-validation formulas (SP support
 # for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
+
+# The file-identity column a document library has and a list does not. An
+# uploaded file's Title is null (MEASURED 2026-07-29,
+# `library.file-vs-item.title-after-upload` in document-library-probe.js) and
+# its name is FileLeafRef (`library.file.name-field-is-leafref` in
+# file-operations-probe.js, same day), a view may carry it
+# (`library.doc-lib.view-fileleafref`, document-library-probe.js), and a
+# header whose title line reads [$FileLeafRef] renders on the file panel
+# (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03).
+LIBRARY_COLUMNS = frozenset({"FileLeafRef"})
+
+
+def system_columns_for(kind: EntityKind) -> frozenset[str]:
+    """The system columns a container of this kind renders.
+
+    Kind-aware so a library's views and formatters may name FileLeafRef,
+    where it has been measured; a list keeps refusing it, unmeasured.
+    """
+    return SYSTEM_COLUMNS | LIBRARY_COLUMNS if kind == "DocumentLibrary" else SYSTEM_COLUMNS
+
 
 # Columns that never reach the per-field deploy loop, so a per-field
 # declaration on one is validated, reported and never written.
@@ -36,7 +57,7 @@ SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 # Supporting Title properly means threading the formulas through the patch
 # path, a larger change than the calculated-formula and formatter sections
 # warrant. Fail closed instead, and say why.
-UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS
+UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS | LIBRARY_COLUMNS
 
 
 def undeployable(context: str, column: str) -> str:

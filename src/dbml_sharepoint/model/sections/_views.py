@@ -13,13 +13,20 @@ from typing import Any, cast
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.conditions import parse_condition
-from dbml_sharepoint.model.mapping_types import SortDirection, ViewDef, ViewGroupBy, ViewSort
+from dbml_sharepoint.model.mapping_types import (
+    VIEW_SCOPES,
+    SortDirection,
+    ViewDef,
+    ViewGroupBy,
+    ViewScope,
+    ViewSort,
+)
 from dbml_sharepoint.model.reading import load_json_value, optional_bool, optional_int
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _VIEW_KEYS = frozenset({
     "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
-    "row_limit", "formatting", "widths", "totals",
+    "row_limit", "formatting", "widths", "totals", "scope",
 })
 
 
@@ -120,6 +127,16 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                     f"width, got {px!r}",
                 )
             widths[str(col)] = px
+    raw_scope = raw_view.get("scope")
+    # isinstance first: a list or mapping is unhashable, and `in` over a
+    # frozenset would raise the TypeError the CLI does not catch.
+    if raw_scope is not None and (
+        not isinstance(raw_scope, str) or raw_scope not in VIEW_SCOPES
+    ):
+        raise ValueError(
+            f"{context}: scope must be one of {', '.join(sorted(VIEW_SCOPES))}, "
+            f"got {raw_scope!r}",
+        )
     raw_totals = raw_view.get("totals")
     totals: dict[str, str] = {}
     if raw_totals is not None:
@@ -151,6 +168,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         ),
         widths=widths,
         totals=totals,
+        scope=cast("ViewScope | None", raw_scope),
     )
 
 

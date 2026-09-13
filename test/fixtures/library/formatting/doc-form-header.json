@@ -1,0 +1,21 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": { "padding": "12px" },
+  "children": [
+    {
+      "elmType": "div",
+      "attributes": { "iconName": "DocumentApproval", "class": "ms-fontSize-42" }
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-fontSize-16 ms-fontWeight-bold" },
+      "txtContent": "=if([$FileLeafRef] == '', 'New document', [$FileLeafRef])"
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-fontSize-12" },
+      "txtContent": "One topic, one period, one file."
+    }
+  ]
+}

@@ -66,8 +66,9 @@ entities:
 
 | Key | Meaning |
 | --- | --- |
-| `kind` | `List` or `HubOnlyList`. `DocumentLibrary` is **refused** (see below) |
-| `base_template` | SP base template id. **Must be `100`**, the generic list; anything else fails the build |
+| `kind` | `List`, `HubOnlyList` or `DocumentLibrary` (see [Document libraries](#document-libraries) below) |
+| `base_template` | SP base template id, paired with the kind: `100` (the generic list) for `List` and `HubOnlyList`, `101` for `DocumentLibrary`. The create call sends the number and never the kind, so a mismatch is refused, and so is any other number |
+| `folders` | Optional, library only; the root-level folders the deploy creates and verifies, by name. Each name is held to Microsoft's file and folder name rules |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** (a picker cannot enumerate an unindexed column past 5,000 items) so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
@@ -188,36 +189,54 @@ filter) or a smaller curated target list. Neither is expressible in
 `mapping.yaml`, and this tool will not pretend otherwise.
 :::
 
-:::danger `kind: DocumentLibrary` is refused at build time
+### Document libraries
 
-A library's items **are files**, and this tool writes list rows. The gap is
-not cosmetic, and each part of it was observed on a live tenant
-(`test/manual/document-library-probe.js`):
+```yaml
+entities:
+  SAQ:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    folders:
+      - "Clinical services"
+      - "Corporate services"
+```
 
-- a POST to a library's `/items` is refused outright (*"To add an item to
-  a document library, use SPFileCollection.Add()"*) so seeded demo data
-  cannot exist;
-- an uploaded file reads back with `Title: null`, the name living in
-  `FileLeafRef`, so a form header built on `[$Title]` renders blank on
-  every document;
-- nothing in the deploy uploads a file, which is the feature seeding a
-  library would actually need.
+A library's items **are files**. Each fact below was measured on a live
+tenant, and the deploy relies on nothing about a library that was not:
 
-Half-support (a library that provisions but carries no usable header, no
-view naming its files and no demo rows) reads as a bug in every
-direction, so the kind fails the build instead.
+- An uploaded file reads back with `Title: null`; its name is `FileLeafRef`
+  (`test/manual/document-library-probe.js`, 2026-07-29). So a library's
+  views, field sets, column formatters and form header may name
+  `FileLeafRef`, and the family standard asks a library header's title line
+  to read `[$FileLeafRef]` rather than `[$Title]`. A list's may not name
+  it: no list item has a file.
+- Declared `folders` are created under the library's root through the
+  folder endpoint, read back, and checked to be folders rather than files
+  of the same name, in their own deploy phase right after list creation
+  (`folder-probe.js`, 2026-09-03). A redeploy verifies and skips them and
+  never touches what they hold.
+- A view may declare `scope: recursive` to show every file at any depth,
+  which is what lets a filtered view find a file whichever folder it was
+  filed in (`library-nesting-probe.js`, 2026-09-08). The generated
+  `All Items` on a library is recursive and leads with the file name.
+- Breaking inheritance, role assignments, indexes, choice, lookup and
+  calculated columns, list validation, column formatting, versioning and
+  sealing all behave as on a list, each with its own probe under
+  `test/manual/` (`library-access-probe.js`, `library-columns-probe.js`,
+  `library-guards-probe.js` and their neighbours). The one difference the
+  deploy handles: after the break a library's inheritance flag reads true
+  on the second read rather than the first, so the ACL phase waits for it.
 
-**What to do instead:** model the metadata as a `List`, and keep the
-documents in a library you manage separately, linked from each row with a
-hyperlink column. That is the shape every shipped template uses.
+Not reconciled, and left to the operator by the family's deploy notes:
+column default values per folder, the Document ID feature, a default
+retention label, `DefaultItemOpen`, content type management beyond the
+default content type, and hiding the New Folder command.
 
-**Change `base_template` too.** Changing only `kind` and leaving
-`base_template: 101` behind used to build green and provision a real
-library anyway: the create call sends `BaseTemplate` and never sends
-`kind`, while every library guard in the build keys on `kind`. Any
-`base_template` other than `100` is now refused for that reason.
-
-:::
+**Change `base_template` with `kind`.** The create call sends
+`BaseTemplate` and never sends `kind`, so a kind whose number names the
+other container would provision that container while every later phase
+assumed the declared one. The build refuses the pair in both directions.
 
 Site roles are the multi-site story: one schema, several mappings of
 entities to site types, one build per site.
@@ -291,6 +310,11 @@ views:
         RiskScore: 140
 ```
 
+- `scope`, on a document library's view only, is `recursive` (every file
+  at any depth, SharePoint's `Recursive`) or `default` (the folder being
+  viewed). Absent, the live property is never touched. A recursive view
+  that groups by a column warns: past the list view threshold a root-scoped
+  grouping is refused and only a folder-scoped one is served.
 - `where` takes the shared [condition grammar](../api/conditions.md):
   typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...),
   `includes` / `not_includes` for a

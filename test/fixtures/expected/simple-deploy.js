@@ -187,6 +187,9 @@
     levelsRenamed: [],
     groupsRenamed: [],
     listsSkipped: [],
+    // Declared library folders, labelled `<list>/<folder>`, by outcome.
+    foldersCreated: [],
+    foldersVerified: [],
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
@@ -1925,6 +1928,8 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2000,6 +2005,8 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2027,6 +2034,8 @@
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "fields_phase1": [],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2070,6 +2079,7 @@
       "list": "APP_Project",
       "renamed_from": [],
       "row_limit": 100,
+      "scope": null,
       "set_default": true,
       "title": "Open projects",
       "url_slug": "OpenProjects",
@@ -2088,6 +2098,7 @@
       "list": "APP_Project",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": false,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -2111,6 +2122,7 @@
       "list": "APP_Task",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": true,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -2134,6 +2146,7 @@
       "list": "APP_Task",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": false,
       "title": "Due soon",
       "url_slug": "DueSoon",
@@ -2152,6 +2165,7 @@
       "list": "APP_AppSettings",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": true,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -2199,6 +2213,70 @@
   // the pair while the key makes repeat encounters idempotent. Exit cleanup
   // restores exactly these fields and never seals one it found open.
   const fieldsUnsealedForRun = new Map();
+
+  // Every list whose save rule this run lifted to create a declared folder,
+  // with the identity and the exact text to put back. Same contract as the
+  // map above and for the same reason: a run that dies between the lift and
+  // the restore must not leave a list less guarded than it found it.
+  //
+  // MEASURED 2026-09-13, `library.folder.add-with-list-validation` in
+  // folder-under-schema-probe.js: a list's ValidationFormula is evaluated
+  // when a FOLDER is created on a document library, and one a blank item
+  // fails refuses the create outright with HTTP 500 "Cannot create folder".
+  // The folder phase has no way around it, so it lifts the rule for the
+  // creates. See that phase for the rest of the evidence.
+  const listValidationLiftedForRun = new Map();
+
+  // Put one list's save rule back and prove it went back. Shared by the
+  // folder phase's own restore and by exit cleanup, so the success path and
+  // the abort path write and verify identically rather than by two spellings
+  // that can drift.
+  async function restoreListValidation(listTitle, listId, formula, message) {
+    const digest = await getDigest();
+    await patchListById(listId, {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: formula,
+      ValidationMessage: message,
+    }, digest);
+    const after = await readListShape(listTitle, true);
+    if (!after) {
+      throw new Error(`list '${listTitle}' no longer exists`);
+    }
+    if (after.Id !== listId) {
+      throw new Error(`list '${listTitle}' changed identity before its save rule could be put back`);
+    }
+    // Canonically: SharePoint strips removable brackets on save, so
+    // `[Status]` is stored and read back as `Status`, and a byte comparison
+    // would report a restore that landed as a restore that failed.
+    if (canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(formula)) {
+      throw new Error(
+        `list '${listTitle}' did not retain its save rule `
+        + `(declared ${JSON.stringify(formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    listValidationLiftedForRun.delete(listTitle);
+  }
+
+  // The exit path's half, called from the finally in deploy.js.j2 for the
+  // reason restoreUnsealedFields is: every phase between the lift and the
+  // restore can return early by design, and each of those returns would
+  // otherwise end the run with a library accepting saves its declaration
+  // forbids. Empty on every run that never lifted one, which is every run
+  // that declares no folders and every redeploy whose folders all exist.
+  async function restoreLiftedListValidation() {
+    for (const [listTitle, [listId, formula, message]] of [...listValidationLiftedForRun.entries()]) {
+      try {
+        await restoreListValidation(listTitle, listId, formula, message);
+        log('WARN', `Put the save rule back on '${listTitle}' while exiting: the run lifted it to create a folder and did not reach the restore.`);
+      } catch (err) {
+        log('ERROR', `Could not put the save rule back on '${listTitle}': ${err.message}. `
+            + 'The library is accepting saves its declaration forbids; restore it in list settings before handing the site back.');
+        summary.errors.push({
+          phase: 'exit', list: listTitle, error: `restore the save rule: ${err.message}`,
+        });
+      }
+    }
+  }
 
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
@@ -5285,9 +5363,238 @@
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
     return { ...summary, aborted: 'phase-1-schema-errors' };
   }
-  markPhase('Phase 2.2: deferred lookups');
-  // === Phase 2.2: deferred lookups ===
-  log('INFO', 'Starting Phase 2.2: deferred lookups.');
+  markPhase('Phase 2.2: declared folders');
+  // === Phase 2.2: declared folders ===
+  log('INFO', 'Starting Phase 2.2: declared folders.');
+  // MEASURED 2026-09-03, `library.folder.creation-path` in folder-probe.js:
+  // POST web/GetFolderByServerRelativeUrl('<root>')/folders/add(url='<name>')
+  // answered HTTP 200 and returned an SP.Folder (Name, ServerRelativeUrl,
+  // ItemCount, Exists, UniqueId); Files/add makes a file, never a folder.
+  // `library.folder.filesystem-object-type`, same run: the folder's own list
+  // item reads FileSystemObjectType 1, and a file's reads 0
+  // (`library.folder.item-shape-of-file-by-name`, 2026-09-13,
+  // folder-shape-probe.js), which is the shape check below.
+  // `library.folder.creation-blocked-when-disabled`
+  // (2026-09-13, library-guards-probe.js): the endpoint answers with
+  // EnableFolderCreation off, so this phase needs no ordering against that
+  // switch.
+  //
+  // A live run of this phase answered HTTP 500 "Cannot create folder" for
+  // every declared folder, and folder-create-refusal-probe.js was written to
+  // find out why. MEASURED 2026-09-13, all four cells of
+  // `library.folder.control-plain-name-default-library`,
+  // `library.folder.spaced-name-default-library`,
+  // `library.folder.plain-name-content-types-disabled` and
+  // `library.folder.spaced-name-content-types-disabled`: the call is accepted
+  // and the folder reads back whether the name carries spaces or not, and
+  // whether or not the library was created with ContentTypesEnabled false.
+  // `library.folder.add-using-path-spaced-name`, same run: the ResourcePath
+  // spelling lands too. So the refusal is not the call, not the name and not
+  // that switch, and what remains is what this run applies to the library
+  // before this phase. folder-under-schema-probe.js asks that.
+  //
+  // THE CAUSE, MEASURED 2026-09-13 in folder-under-schema-probe.js, walking
+  // one library through the states this run applies to it in order. Broken
+  // role inheritance is innocent (`library.folder.add-with-broken-inheritance`),
+  // so is a REQUIRED column with no default, and so is a ValidationFormula on
+  // that column: a folder lands under both and reads its own item back with
+  // the column null, so neither is evaluated for it. The LIST's
+  // ValidationFormula is not innocent. With one set that a blank item fails,
+  // `library.folder.add-with-list-validation` answered HTTP 500 "Cannot
+  // create folder", the same error and the same SPException code the live
+  // run produced. Neither other spelling escapes it: the ResourcePath call
+  // is refused identically (`library.folder.add-using-path-under-validation`)
+  // and an items POST is refused as "To add an item to a document library,
+  // use SPFileCollection.Add()" (`library.folder.add-as-list-item-under-validation`),
+  // which is the items endpoint declining libraries outright rather than a
+  // way around the formula.
+  //
+  // So a declared save rule and a declared folder are in direct conflict on
+  // a library, and this phase cannot create a folder while the rule is on.
+  // The fix has to open the list, create the folders and close it again. The
+  // last four rows of that probe measure whether that shape is safe.
+  const FOLDER_OBJECT_TYPE = 1;
+  // A server-relative path inside the quotes, spelled as the probes sent it:
+  // quotes doubled, slashes and spaces left for fetch to encode. NOT
+  // odataName, whose encodeURIComponent would turn every slash into %2F,
+  // which no probe has sent. Names that would need more than this (`#`,
+  // `%`) are refused at build by analysis/file_names.py.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // Absent and "a file stands here" are the SAME answer from this read.
+  // MEASURED 2026-09-13, `library.folder.folder-read-on-file-path` in
+  // folder-shape-probe.js: the read on a file's own path answered HTTP 200
+  // with Exists false, exactly as it does for a path holding nothing
+  // (`library.folder.control-missing-path-read`). So a null here means only
+  // "no folder", and what is really there is asked for at the create.
+  async function readFolder(serverRelativeUrl) {
+    const r = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(serverRelativeUrl)}')?$select=Exists,Name,ServerRelativeUrl`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      if (isAbsent400(r.status, text)) return null;
+      throw new Error(`folder read failed: HTTP ${r.status} ${spError(text)}`);
+    }
+    const j = await r.json();
+    return j && j.d && j.d.Exists ? j.d : null;
+  }
+  async function folderItemShape(listTitle, name) {
+    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    const rows = (j && j.d && j.d.results) || [];
+    return rows.length ? rows[0] : null;
+  }
+  for (const list of SCHEMA.lists.filter((l) => l.is_library && l.folders.length)) {
+    let rootUrl = null;
+    try {
+      const root = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/RootFolder?$select=ServerRelativeUrl`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!root.ok) throw new Error(`RootFolder read failed: HTTP ${root.status} ${spError(await root.text())}`);
+      const j = await root.json();
+      rootUrl = j && j.d && j.d.ServerRelativeUrl;
+      if (!rootUrl) throw new Error('RootFolder read back no ServerRelativeUrl');
+    } catch (err) {
+      log('ERROR', `Phase 2.2 folders '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.2', list: list.title, error: err.message });
+      continue;
+    }
+    // Which declared folders are actually missing. Asked for the whole list
+    // BEFORE anything is written, because the answer decides whether the
+    // library's save rule has to be lifted at all: a redeploy whose folders
+    // all exist writes nothing here and never touches the rule.
+    const missing = [];
+    for (const name of list.folders) {
+      const label = `${list.title}/${name}`;
+      try {
+        if (await readFolder(`${rootUrl}/${name}`)) {
+          // Present already: verify it is a folder and leave its contents alone.
+          const item = await folderItemShape(list.title, name);
+          if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
+          }
+          summary.foldersVerified.push(label);
+        } else {
+          missing.push(name);
+        }
+      } catch (err) {
+        log('ERROR', `Phase 2.2 folders '${label}': ${err.message}`);
+        summary.errors.push({ phase: '2.2', list: list.title, folder: name, error: err.message });
+      }
+    }
+    if (missing.length === 0) continue;
+
+    // Lift the declared save rule for the creates, and put it back in the
+    // finally below whatever happens in between. The rule that is restored
+    // is the one READ here rather than the one declared, so a rule an owner
+    // has edited by hand comes back as it was rather than being quietly
+    // reconciled by a phase whose job is folders.
+    let listShape = null;
+    let lifted = null;
+    try {
+      listShape = await readListShape(list.title, true);
+      if (!listShape) throw new Error('the library disappeared before its folders could be created');
+      assertListAdoptable(list, listShape);
+      if ((listShape.ValidationFormula || '') !== '') {
+        lifted = [listShape.ValidationFormula || '', listShape.ValidationMessage || ''];
+        const digest = await getDigest();
+        await patchListById(listShape.Id, {
+          __metadata: { type: 'SP.List' },
+          ValidationFormula: '',
+          ValidationMessage: '',
+        }, digest);
+        // Registered only once the write has been sent, and before it is
+        // verified: a MERGE SharePoint commits and whose response is lost
+        // still has to be put back by exit cleanup.
+        listValidationLiftedForRun.set(list.title, [listShape.Id, lifted[0], lifted[1]]);
+        const cleared = await readListShape(list.title, true);
+        if (!cleared || cleared.Id !== listShape.Id) {
+          throw new Error('the library changed identity while its save rule was being lifted');
+        }
+        if ((cleared.ValidationFormula || '') !== '') {
+          throw new Error(
+            `the library's save rule did not lift (readback ${JSON.stringify(cleared.ValidationFormula)}); no folder was created`,
+          );
+        }
+        log('INFO', `Lifted the save rule on '${list.title}' to create ${missing.length} declared folder(s).`);
+      }
+    } catch (err) {
+      log('ERROR', `Phase 2.2 folders '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.2', list: list.title, error: err.message });
+      if (lifted !== null) {
+        try {
+          await restoreListValidation(list.title, listShape.Id, lifted[0], lifted[1]);
+        } catch (restoreErr) {
+          log('ERROR', `Could not put the save rule back on '${list.title}': ${restoreErr.message}. `
+              + 'The library is accepting saves its declaration forbids; restore it in list settings.');
+          summary.errors.push({ phase: '2.2', list: list.title, error: `restore the save rule: ${restoreErr.message}` });
+        }
+      }
+      continue;
+    }
+
+    try {
+      for (const name of missing) {
+        const label = `${list.title}/${name}`;
+        try {
+          const folderUrl = `${rootUrl}/${name}`;
+          const digest = await getDigest();
+          // MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`
+          // in folder-shape-probe.js: this call on a name a folder already holds
+          // answers HTTP 200 and returns that folder, so a re-paste that raced
+          // the read above creates nothing twice.
+          try {
+            await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+          } catch (err) {
+            // Same run, `library.folder.add-under-existing-file-name`: with a
+            // FILE of that name in place the call answers HTTP 404 "File Not
+            // Found", which names the opposite of the problem. Ask the item
+            // shape and say what is actually standing there.
+            const blocking = await folderItemShape(list.title, name);
+            if (blocking && blocking.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+              throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${blocking.FileSystemObjectType}); nothing was written`);
+            }
+            throw err;
+          }
+          if (!(await readFolder(folderUrl))) {
+            throw new Error(`'${name}' did not read back after creation`);
+          }
+          const item = await folderItemShape(list.title, name);
+          if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
+          }
+          summary.foldersCreated.push(label);
+          logChange({ key: `folder: ${label}`, kind: 'create', target: list.title, oldValue: '', newValue: name });
+          log('OK', `Created folder '${name}' in '${list.title}'.`);
+        } catch (err) {
+          log('ERROR', `Phase 2.2 folders '${label}': ${err.message}`);
+          summary.errors.push({ phase: '2.2', list: list.title, folder: name, error: err.message });
+        }
+      }
+    } finally {
+      // A folder create that threw must not carry the lifted rule out of
+      // this phase with it, so the restore is a finally rather than a line
+      // after the loop. Exit cleanup is the backstop for a failure HERE.
+      if (lifted !== null) {
+        try {
+          await restoreListValidation(list.title, listShape.Id, lifted[0], lifted[1]);
+          log('INFO', `Put the save rule back on '${list.title}'.`);
+        } catch (err) {
+          log('ERROR', `Could not put the save rule back on '${list.title}': ${err.message}. `
+              + 'The library is accepting saves its declaration forbids; restore it in list settings.');
+          summary.errors.push({ phase: '2.2', list: list.title, error: `restore the save rule: ${err.message}` });
+        }
+      }
+    }
+  }
+  markPhase('Phase 2.3: deferred lookups');
+  // === Phase 2.3: deferred lookups ===
+  log('INFO', 'Starting Phase 2.3: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
 
@@ -5307,7 +5614,7 @@
       deferredOwnershipFailed = true;
       log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
       summary.errors.push({
-        phase: '2.2', list: listName, error: err.message,
+        phase: '2.3', list: listName, error: err.message,
       });
     }
   }, 4);
@@ -5367,20 +5674,20 @@
         }
       }
     } catch (err) {
-      log('ERROR', `Phase 2.2 ${lookup.list}.${lookup.field.title}: ${err.message}`);
+      log('ERROR', `Phase 2.3 ${lookup.list}.${lookup.field.title}: ${err.message}`);
       summary.errors.push({
-        phase: '2.2', list: lookup.list, column: lookup.field.title, error: err.message,
+        phase: '2.3', list: lookup.list, column: lookup.field.title, error: err.message,
       });
     }
   }
 
   if (summary.errors.length > 0) {
-    log('ERROR', 'Phase 2.2 lookup reconciliation failed; aborting before indexes and ACL work.');
+    log('ERROR', 'Phase 2.3 lookup reconciliation failed; aborting before indexes and ACL work.');
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-  markPhase('Phase 2.3: indexed columns');
-  // === Phase 2.3: indexed columns ===
-  log('INFO', 'Starting Phase 2.3: indexed columns.');
+  markPhase('Phase 2.4: indexed columns');
+  // === Phase 2.4: indexed columns ===
+  log('INFO', 'Starting Phase 2.4: indexed columns.');
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -5388,7 +5695,7 @@
     // batch rather than index the lists ahead of it and refuse the rest.
     const indexOwned = SCHEMA.indexed_columns.length > 0
       ? await surveyOwnedListsForWrites(
-        SCHEMA.indexed_columns.map(idx => idx.list), '2.3', 'Index',
+        SCHEMA.indexed_columns.map(idx => idx.list), '2.4', 'Index',
       )
       : new Map();
     if (!indexOwned) {
@@ -5457,7 +5764,7 @@
       // the field through the list TITLE, so a replacement answers with a
       // different field Id, or with none, and fails that column's comparison.
       const verifyOwned = await surveyOwnedListsForWrites(
-        indexTargets.map(entry => entry.idx.list), '2.3', 'Index readback',
+        indexTargets.map(entry => entry.idx.list), '2.4', 'Index readback',
       );
       let shapes = null;
       try {
@@ -5508,12 +5815,12 @@
     }
   }
 
-  markPhase('Phase 2.4: field defaults');
-  // === Phase 2.4: reconcile declared field defaults ===
+  markPhase('Phase 2.5: field defaults');
+  // === Phase 2.5: reconcile declared field defaults ===
   // Defaults are included in create-field bodies, but existing columns are
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
   // idempotent and lets a provisioned constant replace after-create flows.
-  log('INFO', 'Starting Phase 2.4: field defaults.');
+  log('INFO', 'Starting Phase 2.5: field defaults.');
   {
     // Post-schema, so the same batch gate as the other write phases: prove
     // every target list before the first MERGE, and refuse the phase instead
@@ -5521,7 +5828,7 @@
     const defaultsOwned = SCHEMA.field_defaults.length > 0
       ? await surveyOwnedListsForWrites(
         SCHEMA.field_defaults.map(fieldDefault => fieldDefault.list),
-        '2.4', 'Field default',
+        '2.5', 'Field default',
       )
       : new Map();
     if (!defaultsOwned) {
@@ -5653,7 +5960,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -5731,6 +6038,12 @@
           ViewQuery: view.caml_query,
         };
         if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        // SP.View.Scope, on a document library's view only (the validator
+        // refuses the key on a list). MEASURED 2026-09-13,
+        // `library.view.scope-on-create-reads-back` in library-guards-probe.js:
+        // a view created with Scope 1 in its body answered HTTP 201 and read
+        // Scope back as 1.
+        if (view.scope != null) createBody.Scope = view.scope;
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
@@ -5836,6 +6149,12 @@
         }
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
+        }
+        // MEASURED 2026-09-13, `library.view.scope-on-merge-reads-back`: a
+        // stored view reading Scope 0 took MERGE Scope 1 (HTTP 204) and read
+        // back 1, so a scope edited by hand is put back here.
+        if (view.scope != null && existing.Scope !== view.scope) {
+          patchBody.Scope = view.scope;
         }
         // Declared totals only. A view with none keeps whatever is live,
         if (Object.keys(patchBody).length > 1) {
@@ -5952,6 +6271,9 @@
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
       if (actual.Hidden !== view.hidden) {
         drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
+      if (view.scope != null && actual.Scope !== view.scope) {
+        drifted.push(`Scope (declared ${view.scope}; readback ${actual.Scope})`);
       }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
@@ -6762,6 +7084,33 @@
                 throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
               }
             });
+            // MEASURED 2026-09-09, `library.access.unique-permissions-library`
+            // in library-access-probe.js: on a document library the break
+            // answered HTTP 200 and HasUniqueRoleAssignments read false on the
+            // first read and true on the second, within 10 s, exactly as on a
+            // generic list once settled. So a library is re-read until the flag
+            // turns, and refused if it never does: an exact-mode allowlist
+            // written onto a list that still inherits would be a no-op the
+            // verify below could not tell from success.
+            const aclIsLibrary = (SCHEMA.lists.find((l) => l.title === la.list) || {}).is_library === true;
+            if (aclIsLibrary) {
+              const LIBRARY_ACL_SETTLE_MS = 2000;
+              let unique = false;
+              for (let attempt = 0; attempt < 5 && !unique; attempt += 1) {
+                if (attempt > 0) await sleep(LIBRARY_ACL_SETTLE_MS);
+                const again = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')?$select=HasUniqueRoleAssignments`), {
+                  headers: { 'Accept': 'application/json;odata=verbose' },
+                });
+                if (!again.ok) {
+                  const text = await again.text();
+                  throw new Error(`HasUniqueRoleAssignments re-read failed: HTTP ${again.status} ${text}`);
+                }
+                unique = Boolean((await again.json()).d.HasUniqueRoleAssignments);
+              }
+              if (!unique) {
+                throw new Error(`'${la.list}' still reads HasUniqueRoleAssignments=false after breakroleinheritance; refusing to write an allowlist onto a library that inherits`);
+              }
+            }
             log('INFO', `[Phase 4.2] Broke inheritance on '${la.list}'.`);
           } else {
             log('INFO', `[Phase 4.2] '${la.list}' already has unique role assignments, reconciling existing bindings.`);
@@ -7230,6 +7579,16 @@
     } catch (err) {
       log('ERROR', `Could not restore field protection on exit: ${err.message}`);
       summary.errors.push({ phase: 'exit', error: `restore field protection: ${err.message}` });
+    }
+    // Beside the re-seal and for the same reason: the folder phase lifts a
+    // library's save rule to create a declared folder, and a run that dies
+    // in between must not leave the library accepting saves its declaration
+    // forbids. Guarded separately so neither restore can skip the other.
+    try {
+      await restoreLiftedListValidation();
+    } catch (err) {
+      log('ERROR', `Could not restore list save rules on exit: ${err.message}`);
+      summary.errors.push({ phase: 'exit', error: `restore list save rules: ${err.message}` });
     }
     try {
       await finishRunLog();

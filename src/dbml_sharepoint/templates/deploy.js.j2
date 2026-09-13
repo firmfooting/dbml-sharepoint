@@ -42,6 +42,9 @@
     levelsRenamed: [],
     groupsRenamed: [],
     listsSkipped: [],
+    // Declared library folders, labelled `<list>/<folder>`, by outcome.
+    foldersCreated: [],
+    foldersVerified: [],
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
@@ -200,6 +203,16 @@
     } catch (err) {
       log('ERROR', `Could not restore field protection on exit: ${err.message}`);
       summary.errors.push({ phase: 'exit', error: `restore field protection: ${err.message}` });
+    }
+    // Beside the re-seal and for the same reason: the folder phase lifts a
+    // library's save rule to create a declared folder, and a run that dies
+    // in between must not leave the library accepting saves its declaration
+    // forbids. Guarded separately so neither restore can skip the other.
+    try {
+      await restoreLiftedListValidation();
+    } catch (err) {
+      log('ERROR', `Could not restore list save rules on exit: ${err.message}`);
+      summary.errors.push({ phase: 'exit', error: `restore list save rules: ${err.message}` });
     }
     try {
       await finishRunLog();

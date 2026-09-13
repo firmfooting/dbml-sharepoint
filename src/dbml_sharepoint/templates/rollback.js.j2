@@ -190,7 +190,14 @@
       // zero or arrive after enumeration. The same phrase therefore
       // authorises this list and any items present when recycling starts.
       // Re-prompt PER list so one answer never authorises another target.
-      const override = prompt(`'${name}' currently reports ${count} items. Type DELETE NON-EMPTY to delete THIS list AND any items present (recycled first, restorable; you will be asked again for every list), or anything else to skip:`);
+      // A library's items are files and folders, and recycling a folder
+      // takes its children with it, recoverably (MEASURED 2026-09-03,
+      // `library.folder.delete-recycles` in folder-probe.js: /recycle
+      // answered HTTP 200, the folder and its child read back absent, and
+      // the bin held the returned id).
+      const override = prompt(target.is_library
+        ? `'${name}' is a document library currently reporting ${count} files and folders. Type DELETE NON-EMPTY to delete THIS library AND every file and folder in it (recycled first, restorable from the site recycle bin; you will be asked again for every list), or anything else to skip:`
+        : `'${name}' currently reports ${count} items. Type DELETE NON-EMPTY to delete THIS list AND any items present (recycled first, restorable; you will be asked again for every list), or anything else to skip:`);
       if (override !== 'DELETE NON-EMPTY') {
         summary.skipped.push({
           list: name,

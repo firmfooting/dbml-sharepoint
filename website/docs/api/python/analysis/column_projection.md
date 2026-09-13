@@ -44,6 +44,20 @@ site. The absence is pinned by a test, because it reads like an oversight.
 SYSTEM_COLUMN_TYPES = {'ID': 'int', 'Created': 'datetime', 'Modified': 'datetime', 'Author': 'person', 'Editor': 'person'}
 ```
 
+### `LIBRARY_COLUMN_TYPES`
+
+```python
+LIBRARY_COLUMN_TYPES = {'FileLeafRef': 'nvarchar'}
+```
+
+### `system_column_types_for`
+
+```python
+def system_column_types_for(kind: str) -> dict[str, str]
+```
+
+`SYSTEM_COLUMN_TYPES`, plus the file-identity column on a library.
+
 ### `effective_column_types`
 
 ```python

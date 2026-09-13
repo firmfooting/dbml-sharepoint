@@ -618,51 +618,48 @@ def test_demo_items_on_a_document_library_are_refused() -> None:
     # SharePoint's own words, quoted so the operator can search for them.
     assert "SPFileCollection.Add()" in f.message
 
-def test_a_document_library_entity_is_refused_outright() -> None:
-    """`kind: DocumentLibrary` fails the build, with or without demo rows.
+def test_a_document_library_with_its_own_template_is_accepted() -> None:
+    """`kind: DocumentLibrary` with `base_template: 101` is a supported pair.
 
-    A library's items are files and this tool writes list rows. Probed on a
-    tenant (test/manual/document-library-probe.js, 2026-07-29): SharePoint
-    answers a POST to a library's /items with "To add an item to a document
-    library, use SPFileCollection.Add()", and an uploaded file reads back
-    with `Title: null`, so the standard form header renders blank.
-
-    Half-support (a library that provisions but carries no usable header,
-    no view naming its files and no demo rows) reads as a bug in every
-    direction, so the kind is refused until that work is done. The message
-    must offer the way round, because an adopter hitting this needs to know
-    a List plus a hyperlink column is the supported shape.
+    The kind was refused outright until issue #14 closed: a library's items
+    are files, its Title is null after an upload and nothing uploaded a file.
+    The vocabulary, the folder step and the upload step now exist, so the
+    only rule left on the declaration is the pairing one below.
     """
-    f = only(_docs_errors(_library()), FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
-    assert f.location == Location(Section.ENTITIES, entity="Docs")
-    assert "List" in f.message, "the message must name the supported shape"
-
-def test_a_list_declaring_a_non_generic_base_template_is_refused() -> None:
-    """The refusal above says "model the metadata as a 'List'". An author who
-    changes only `kind` and leaves `base_template: 101` behind got a GREEN
-    build that provisioned a real document library: the create body sends
-    BaseTemplate and never `kind`, while every library guard in the build
-    keys on `kind` and so does not fire.
-
-    Checked as an allowlist rather than a denylist on 101. `base_template` is
-    an unconstrained int taken straight from YAML, so a denylist would close
-    one integer and leave 109, 119, 851 and the rest one keystroke from the
-    same defect. This states what the tool builds, which needs no claim about
-    SharePoint: every declaration in the repo is 100.
-    """
-    for template in (101, 109, 119):
-        errors = _docs_errors(_library(kind="List", base_template=template))
-        f = only(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
-        assert f.location == Location(Section.ENTITIES, entity="Docs")
-        assert str(template) in f.message, f"the refused number must be named: {f.message}"
-
-def test_a_document_library_reports_the_kind_not_the_base_template() -> None:
-    """The two checks are one `elif`, so `kind: DocumentLibrary` with its
-    matching 101 gets the message that explains the actual problem rather
-    than a second one about the integer it was always going to carry."""
     errors = _docs_errors(_library())
-    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
+    none_of(errors, FindingCode.ENTITY_KIND_TEMPLATE_MISMATCH)
     none_of(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
+
+
+def test_a_kind_paired_with_the_other_containers_template_is_refused() -> None:
+    """The create body sends BaseTemplate and never `kind`, so an author who
+    changes one and leaves the other behind would get a green build that
+    provisioned the wrong container while every later phase assumed the
+    declared one. Both directions are refused, with the same code."""
+    crossed: tuple[tuple[EntityKind, int], ...] = (("List", 101), ("DocumentLibrary", 100))
+    for kind, template in crossed:
+        errors = _docs_errors(_library(kind=kind, base_template=template))
+        f = only(errors, FindingCode.ENTITY_KIND_TEMPLATE_MISMATCH)
+        assert f.location == Location(Section.ENTITIES, entity="Docs")
+        assert str(template) in f.message, f"the declared number must be named: {f.message}"
+        assert kind in f.message, f"the declared kind must be named: {f.message}"
+        none_of(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
+
+
+def test_a_base_template_this_tool_does_not_build_is_refused() -> None:
+    """Checked as an allowlist rather than a denylist. `base_template` is an
+    unconstrained int taken straight from YAML, so a denylist would close a
+    few integers and leave 109, 119, 851 and the rest one keystroke from the
+    same defect. Stating what the tool builds needs no claim about SharePoint.
+    """
+    kinds: tuple[EntityKind, ...] = ("List", "DocumentLibrary")
+    for kind in kinds:
+        for template in (109, 119):
+            errors = _docs_errors(_library(kind=kind, base_template=template))
+            f = only(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
+            assert f.location == Location(Section.ENTITIES, entity="Docs")
+            assert str(template) in f.message, f"the refused number must be named: {f.message}"
+            none_of(errors, FindingCode.ENTITY_KIND_TEMPLATE_MISMATCH)
 
 
 def test_attachments_off_beside_a_document_library_is_refused() -> None:
@@ -676,15 +673,13 @@ def test_attachments_off_beside_a_document_library_is_refused() -> None:
     the refusal keeps a paste from stopping half-way through, and the message
     is pinned to that answer rather than to what seems likely.
 
-    Reported beside the kind refusal rather than instead of it, on the
-    `demo_items` precedent above: an author who lifts the kind refusal still
-    needs to see this one.
+    Reported on its own: it is about the setting, not the entity, and a
+    library is an accepted kind.
     """
     errors = _docs_errors(_library(), attachments=False)
     f = only(errors, FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY)
     assert f.location == Location(Section.ENTITIES, entity="Docs")
     assert "Docs" in f.message, "the message must name the offending entity"
-    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
 
 
 def test_attachments_off_on_a_generic_list_is_accepted() -> None:
@@ -832,9 +827,7 @@ def test_a_document_library_is_not_told_the_pair_will_fail() -> None:
     `library.doc-lib.minor-versions-sticks` in the 2026-09-06 run wrote the
     same pair to a document library and it STUCK (HTTP 204, read back true).
     Firing here would tell an author that a write observed to succeed will
-    fail, which is the opposite of the evidence rule. Nothing is let through:
-    the kind is refused outright, and that refusal is asserted here so the
-    skip can never become a hole.
+    fail, which is the opposite of the evidence rule.
     """
     errors = _docs_errors(
         _library(),
@@ -843,7 +836,6 @@ def test_a_document_library_is_not_told_the_pair_will_fail() -> None:
         ),
     )
     none_of(errors, FindingCode.MINOR_VERSIONS_WITHOUT_VERSIONING)
-    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
 
 
 # The measured number, spelled as a LITERAL here on purpose. Deriving the
