@@ -1,0 +1,50 @@
+prefix: "LIB_"
+
+entities:
+  Topic: { kind: List, base_template: 100, site_role: default }
+  Doc:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    folders:
+      - "Clinical services"
+      - "Corporate services"
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 50
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+field_sets:
+  Doc:
+    identity: [FileLeafRef, Topic, Division, Status]
+
+views:
+  Topic:
+    - title: "Topics"
+      default: true
+      fields: [Title, Division]
+  Doc:
+    - title: "Pending"
+      default: true
+      scope: recursive
+      fields: ["@identity", DueDate]
+      where:
+        - { field: Status, op: eq, value: "Required" }
+      sort:
+        - { field: DueDate, direction: asc }
+    - title: "By division"
+      scope: recursive
+      fields: ["@identity"]
+      group_by: { field: Division, collapsed: true }
+
+form_formatting:
+  Doc:
+    header: formatting/doc-form-header.json

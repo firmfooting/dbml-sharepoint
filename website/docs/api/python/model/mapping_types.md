@@ -21,6 +21,12 @@ parser to find out.
 ENTITY_KINDS = frozenset({'DocumentLibrary', 'HubOnlyList', 'List'})
 ```
 
+### `VIEW_SCOPES`
+
+```python
+VIEW_SCOPES = frozenset({'default', 'recursive'})
+```
+
 ### `PRINCIPAL_KINDS`
 
 ```python
@@ -74,6 +80,7 @@ class EntityMapping:
     accept_unindexable_display_column: bool = False
     hide_from_all_items: tuple[str, ...] = ()
     renamed_from: tuple[str, ...] = ()
+    folders: tuple[str, ...] = ()
 ```
 
 SP physical mapping for one entity (kind, base template, site role).
@@ -271,6 +278,7 @@ class ViewDef:
     formatting: dict[str, typing.Any] | None = None
     widths: dict[str, int] = field(default_factory=dict)
     totals: dict[str, str] = field(default_factory=dict)
+    scope: ViewScope | None = None
     expanded_sets: list[str] = field(default_factory=list)
 ```
 

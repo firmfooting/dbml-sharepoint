@@ -1,0 +1,262 @@
+{# test/manual/templates/folder-shape-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: WHAT THE FOLDER STEP SEES WHEN A FILE IS IN THE WAY
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   When a FILE stands at the path where the deploy declared a folder, what
+ *   does each read and write the folder step makes answer?
+ *
+ * templates/deploy/_folders.js.j2 reads each declared folder through
+ * GetFolderByServerRelativeUrl, treats 404, an absent-400 and Exists=false
+ * as "not there", verifies a present folder's list item by filtering the
+ * library on FileLeafRef and requiring FileSystemObjectType 1, and creates
+ * an absent one through folders/add. Every one of those calls was measured
+ * on a folder (library.folder.* in folder-probe.js). None was measured with
+ * a file at the path, and the step refuses a file where a folder was
+ * declared on the strength of what it assumes those answers are. This probe
+ * uploads one file and asks each call about it.
+ *
+ * The write shapes are the deploy's: the same GetFolderByServerRelativeUrl
+ * read with $select=Exists,Name,ServerRelativeUrl, the same items filter,
+ * and the same folders/add(url=) POST.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101).
+ *   library.folder.control-missing-path-read
+ *     CONTROL: a folder read on a path nothing occupies answers 404, an
+ *     absent-400 or Exists=false, which is what the deploy takes as "not
+ *     there". If a missing path reads as present, nothing below can be
+ *     told apart.
+ *   library.folder.folder-read-on-file-path
+ *     A folder read on the uploaded FILE's path: absent, present, or
+ *     refused?
+ *   library.folder.item-shape-of-file-by-name
+ *     The items filter FileLeafRef eq '<file>': is the file's item served,
+ *     and does it read FileSystemObjectType 0?
+ *   library.folder.add-under-existing-file-name
+ *     folders/add(url='<file>') with the file already there: refused, or
+ *     accepted, and what stands at the path afterwards?
+ *   library.folder.add-under-existing-folder-name
+ *     folders/add(url='<folder>') with the folder already there: refused,
+ *     or accepted as a no-op?
+ *
+ * NOT MEASURED HERE
+ *   A file INSIDE the declared folder, which the deploy never touches, and
+ *   what the library page shows for any of these states.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   Folder read, folder creation and file upload:
+ *     "Files and folders REST API reference", dn450841(v=office.15)
+ *   FileSystemObjectType values (Invalid -1, File 0, Folder 1, Web 2):
+ *     "FileSystemObjectType enumeration" (CSOM)
+ *   List creation via POST to `web/lists` and items via `items`:
+ *     "Working with lists and list items with REST"
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the library it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe Shape Library';
+  const libPath = `web/lists/getbytitle('${LIB}')`;
+  const FILE = 'dbmlsp-shape-probe.txt';
+  const FOLDER = 'dbmlsp-shape-folder';
+  const MISSING = 'dbmlsp-shape-nothing-here';
+
+  const Q = {
+    fixture: 'A document library is created (BaseTemplate 101)',
+    control: 'CONTROL: does a folder read on a path nothing occupies answer as absent (404, absent-400 or Exists=false)',
+    fileRead: 'What does a folder read on the path of a FILE answer',
+    fileShape: 'Does the items filter FileLeafRef eq <file> serve the file, and with FileSystemObjectType 0',
+    addOverFile: 'Is folders/add(url=<file>) refused when a file of that name is already there, and what stands at the path after',
+    addOverFolder: 'Is folders/add(url=<folder>) refused when the folder is already there',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB}, upload '${FILE}' to its root,`);
+    log('INFO', `create the folder '${FOLDER}' beside it, then attempt folders/add under both names.`);
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library and its contents would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'library.folder.control-missing-path-read',
+    'library.folder.folder-read-on-file-path',
+    'library.folder.item-shape-of-file-by-name',
+    'library.folder.add-under-existing-file-name',
+    'library.folder.add-under-existing-folder-name',
+  ];
+
+  expect('library.doc-lib.fixture-library-created', Q.fixture);
+  expect('library.folder.control-missing-path-read', Q.control);
+  expect('library.folder.folder-read-on-file-path', Q.fileRead);
+  expect('library.folder.item-shape-of-file-by-name', Q.fileShape);
+  expect('library.folder.add-under-existing-file-name', Q.addOverFile);
+  expect('library.folder.add-under-existing-folder-name', Q.addOverFolder);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
+  const show = (v) => JSON.stringify(v === undefined ? null : v);
+  // Quotes doubled, slashes left raw: the deploy's own path spelling.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+
+  const rawPost = async (path, body, digest) => {
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json;odata=nometadata', 'X-RequestDigest': digest },
+        body,
+      });
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* plain text response */ }
+      return { ok: res.ok, status: res.status, body: parsed, text };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: String(err) };
+    }
+  };
+
+  // The deploy's folder read, and how it classifies the answer.
+  const readFolder = async (serverRelativeUrl) =>
+    spGet(`web/GetFolderByServerRelativeUrl('${pathLiteral(serverRelativeUrl)}')?$select=Exists,Name,ServerRelativeUrl`);
+  const classifyRead = (r) => {
+    if (r.status === 404) return 'ABSENT (404)';
+    if (r.ok && r.body && r.body.Exists === true) return 'PRESENT (Exists true)';
+    if (r.ok && r.body && r.body.Exists === false) return 'ABSENT (Exists false)';
+    if (r.ok) return 'ANSWERED WITHOUT Exists';
+    return isRefusal(r.status) ? `REFUSED (HTTP ${r.status})` : 'NOT ESTABLISHED';
+  };
+  const describeRead = (r) =>
+    `HTTP ${r.status}, ${r.body ? `Exists=${show(r.body.Exists)}, Name=${show(r.body.Name)}` : `body ${show(r.text ? r.text.slice(0, 160) : null)}`}`;
+  // The deploy's shape probe: the library filtered on FileLeafRef.
+  const itemShape = async (name) => {
+    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+    const r = await spGet(`${libPath}/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`);
+    const rows = (r.ok && r.body && Array.isArray(r.body.value)) ? r.body.value : [];
+    return { r, rows };
+  };
+  const addFolder = async (rootUrl, name) => {
+    const digest = await getDigest();
+    return spPost(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`, {}, digest);
+  };
+
+  await resetList(LIB);
+
+  let digest = await getDigest();
+  const haveLib = await spGet(libPath);
+  if (haveLib.ok) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
+           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
+  } else {
+    const made = await spPost('web/lists', {
+      Title: LIB, BaseTemplate: 101,
+      Description: 'dbml-sharepoint folder shape probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created', Q.fixture,
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : short(made));
+    if (!made.ok) {
+      voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+      return report();
+    }
+  }
+
+  const root = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);
+  const rootUrl = (root.ok && root.body) ? root.body.ServerRelativeUrl : null;
+  if (!rootUrl) {
+    voidAll(IDS, `the library RootFolder did not read back (HTTP ${root.status})`);
+    return report();
+  }
+
+  // ---- CONTROL: a path nothing occupies -----------------------------------
+  const missing = await readFolder(`${rootUrl}/${MISSING}`);
+  const missingHead = classifyRead(missing);
+  const controlHeld = missingHead.startsWith('ABSENT');
+  record('library.folder.control-missing-path-read', Q.control,
+         controlHeld ? 'PASS' : (missingHead.startsWith('PRESENT') ? 'FAIL' : 'NOT ESTABLISHED'),
+         `GetFolderByServerRelativeUrl on '${MISSING}' answered ${describeRead(missing)} (${missingHead})`);
+  if (!controlHeld) {
+    voidAll(IDS.slice(1),
+            `the control did not hold (${missingHead}), so an answer below could not be told from a missing path`);
+    return report();
+  }
+
+  // ---- The file, and each call the deploy would make about it ------------
+  digest = await getDigest();
+  const up = await rawPost(
+    `web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/Files/add(url='${FILE}',overwrite=true)`,
+    'dbmlsp folder shape probe file', digest);
+  if (!up.ok) {
+    voidAll(IDS.slice(1, 4), `Files/add failed (${short(up)}), so no file stood at the path`);
+  } else {
+    const onFile = await readFolder(`${rootUrl}/${FILE}`);
+    record('library.folder.folder-read-on-file-path', Q.fileRead, classifyRead(onFile),
+           `Files/add answered HTTP ${up.status}; GetFolderByServerRelativeUrl on the file's path answered ${describeRead(onFile)}`);
+
+    const { r: shapeRead, rows } = await itemShape(FILE);
+    let shapeHead = 'NOT ESTABLISHED';
+    if (shapeRead.ok && rows.length === 0) shapeHead = 'NOT SERVED';
+    else if (shapeRead.ok && rows.length) shapeHead = rows[0].FileSystemObjectType === 0 ? 'FILE (0)' : `SERVED AS ${show(rows[0].FileSystemObjectType)}`;
+    else if (isRefusal(shapeRead.status)) shapeHead = 'REFUSED';
+    record('library.folder.item-shape-of-file-by-name', Q.fileShape, shapeHead,
+           `items?$filter=FileLeafRef eq '${FILE}' answered HTTP ${shapeRead.status} with ${rows.length} row(s)`
+           + (rows.length ? `; first row FileSystemObjectType=${show(rows[0].FileSystemObjectType)}, FileLeafRef=${show(rows[0].FileLeafRef)}` : ''));
+
+    const addOver = await addFolder(rootUrl, FILE);
+    const afterAdd = await readFolder(`${rootUrl}/${FILE}`);
+    const { rows: afterRows } = await itemShape(FILE);
+    let addHead = 'NOT ESTABLISHED';
+    if (!addOver.ok && isRefusal(addOver.status)) addHead = 'REFUSED';
+    else if (addOver.ok) {
+      const kinds = afterRows.map((row) => row.FileSystemObjectType);
+      addHead = kinds.includes(1) ? (kinds.includes(0) ? 'ACCEPTED, FILE AND FOLDER BOTH SERVED' : 'ACCEPTED, FOLDER REPLACED THE FILE') : 'ACCEPTED, FILE STILL THE ONLY ITEM';
+    }
+    record('library.folder.add-under-existing-file-name', Q.addOverFile, addHead,
+           `folders/add(url='${FILE}') with the file in place answered ${short(addOver)}; `
+           + `the folder read after answered ${describeRead(afterAdd)}; the items filter served ${afterRows.length} row(s) `
+           + `with FileSystemObjectType ${show(afterRows.map((row) => row.FileSystemObjectType))}`);
+  }
+
+  // ---- A folder, then folders/add under its name again -------------------
+  const madeFolder = await addFolder(rootUrl, FOLDER);
+  const folderRead = await readFolder(`${rootUrl}/${FOLDER}`);
+  if (!(madeFolder.ok && classifyRead(folderRead).startsWith('PRESENT'))) {
+    voidAll([IDS[4]], `the folder to collide with was not created (${short(madeFolder)}; read ${describeRead(folderRead)})`);
+    return report();
+  }
+  const again = await addFolder(rootUrl, FOLDER);
+  const readAgain = await readFolder(`${rootUrl}/${FOLDER}`);
+  record('library.folder.add-under-existing-folder-name', Q.addOverFolder,
+         again.ok ? 'ACCEPTED' : (isRefusal(again.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+         `folders/add(url='${FOLDER}') created the folder (HTTP ${madeFolder.status}); the same call again answered ${short(again)}; `
+         + `the folder read after answered ${describeRead(readAgain)}`);
+
+  return report();
+})();

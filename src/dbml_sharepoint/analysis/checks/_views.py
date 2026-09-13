@@ -3,8 +3,8 @@
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import (
-    SYSTEM_COLUMN_TYPES,
     effective_column_types,
+    system_column_types_for,
 )
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.condition_rendering import (
@@ -34,7 +34,7 @@ from dbml_sharepoint.analysis.limits import (
     MAX_FILTER_EDITOR_CONDITIONS,
     MAX_VIEW_ROW_LIMIT,
 )
-from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
 from dbml_sharepoint.analysis.typemap import (
     NUMBER_TYPES,
     NUMERIC_ONLY_TOTALS,
@@ -470,7 +470,7 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
                 set_table, cross_site_by_entity.get(entity_name, set()),
                 vc.projected_columns(entity_name),
             )
-            | {"Title"} | SYSTEM_COLUMNS
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
         )
         # A set is "referenced" if some view on this entity actually
         # expanded it. ViewDef.expanded_sets is the loader's record of
@@ -557,7 +557,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # separate on purpose; do not fold this into that helper.
         view_rendered = (
             rendered_columns(view_table, xcols, vc.projected_columns(entity_name))
-            | {"Title"} | SYSTEM_COLUMNS
+            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
         )
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
@@ -738,7 +738,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # rejections as distinct finding codes and locations: an
                 # unrenderable operator is not flattened into the same result
                 # as an unknown column.
-                where_types = {**SYSTEM_COLUMN_TYPES, **types_by_col}
+                where_types = {
+                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
+                }
                 where_findings = condition_findings(
                     view.where,
                     target=CAML,
@@ -757,7 +759,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # System columns are dropped before anything is decided. They
                 # are filterable but not declarable, so they can neither carry
                 # a DBML index nor be reported as missing one.
-                filtered = condition_fields(view.where) - SYSTEM_COLUMNS
+                filtered = (
+                    condition_fields(view.where)
+                    - system_columns_for(vc.kind_of(entity_name))
+                )
                 # Do not layer an index warning on top of an unknown-field
                 # error. Once every field resolves, assess the whole
                 # dependency set without pretending to understand AND/OR
@@ -1018,13 +1023,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at_view,
                     ))
                     continue
-                # SYSTEM_COLUMN_TYPES for the same reason the `where` check
-                # merges it: ID, Created, Modified, Author and Editor are
+                # The kind's system columns for the same reason the `where`
+                # check merges them: ID, Created, Modified, Author and Editor are
                 # renderable in a view without being DBML columns, and
                 # without their types they report as the empty string,
                 # which made Author escape the arithmetic rule and produced
                 # a message reading "is ." on every system column.
-                col_type = {**SYSTEM_COLUMN_TYPES, **types_by_col}.get(total_col, "")
+                col_type = {
+                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
+                }.get(total_col, "")
                 if func != "count" and total_col in entity_lookups:
                     # A lookup is int-typed in DBML, so without this it
                     # walks straight through the numeric rule. SharePoint
@@ -1067,12 +1074,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         at_hide = Location(
             Section.ENTITIES, entity=entity_name, sub="hide_from_all_items",
         )
-        # The kind guard mirrors the `entity.kind != "DocumentLibrary"` guard in
-        # generators/jsgen.py, which builds All Items for everything except a
-        # DocumentLibrary. Counting one here would
-        # refuse a schema over a view the generator never creates. An entity
-        # with no table is already reported by _structure; a second message
-        # would not help.
+        # An entity with no table is already reported by _structure; a second
+        # message would not help. A document library is NOT skipped: since #14
+        # closed, generators/jsgen.py builds All Items for a library too,
+        # leading with FileLeafRef and flattening the folders, and counting it
+        # here is what keeps the validator and the generator agreeing.
         #
         # But a hide_from_all_items key on an entity this loop SKIPS must still
         # be refused, or the loop silently accepts a key that can never do
@@ -1081,7 +1087,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # is answered here, BEFORE the continue: there is no generated view yet
         # for `all_items_joining_fields` to measure, so nothing downstream
         # could ever tell the key was honoured.
-        if table is None or entity.kind == "DocumentLibrary":
+        if table is None:
             for col_name in entity.hide_from_all_items:
                 findings.append(Finding(
                     FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
@@ -1107,7 +1113,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         # undetected; see `all_items_rendered`'s docstring in joins.py and
         # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
         # test/test_validator_joins.py.
-        rendered = all_items_rendered(table, xcols, vc.projected_columns(entity_name))
+        rendered = all_items_rendered(
+            table, xcols, vc.projected_columns(entity_name), entity.kind,
+        )
         bearing = join_bearing_columns(table, xcols)
         shown_joins = all_items_joining_fields(
             table, entity, xcols, vc.projected_columns(entity_name),
@@ -1128,8 +1136,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # would report as a typo and the author would go looking for one.
         #
         # `hide_ctx` is ALREADY BOUND at the top of this loop, above the
-        # `continue` that skips a DocumentLibrary or a table-less entity. The
-        # skipped case refuses the key there. Do not re-assign it here.
+        # `continue` that skips a table-less entity. The skipped case refuses
+        # the key there. Do not re-assign it here.
         for col_name in entity.hide_from_all_items:
             if col_name in xcols:
                 findings.append(Finding(

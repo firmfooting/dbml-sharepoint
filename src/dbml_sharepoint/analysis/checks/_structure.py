@@ -36,7 +36,7 @@ from dbml_sharepoint.analysis.typemap import (
     map_column,
     unsupported_index_reason,
 )
-from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityMapping
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, EntityKind, EntityMapping
 from dbml_sharepoint.model.parser import Column, Schema, Table
 
 # Calculated fields accept only a subset of column types as operands.
@@ -76,16 +76,15 @@ _SUPPORTED_CALCULATED_OPERANDS = (
     "calculated column"
 )
 
-# The generic list. It is the only BaseTemplate this tool builds for, and
-# every declaration in the repository is this value.
-#
-# Checked as an ALLOWLIST rather than a denylist on 101. `base_template` is
-# an unconstrained int read straight from the mapping and posted straight to
-# SharePoint, so refusing only the library template would close one integer
-# and leave 109, 119, 851 and the rest one keystroke from the same defect.
-# Stating what this tool builds needs no claim about SharePoint's behaviour,
-# which refusing a specific list of templates would.
-_GENERIC_LIST_TEMPLATE = 100
+# The BaseTemplate each kind provisions, as an allowlist: `_lists.js.j2`
+# sends the number and never the kind, so the pair is checked here. 101 is
+# the document library (MEASURED 2026-07-29,
+# `library.doc-lib.fixture-library-created` in document-library-probe.js).
+TEMPLATE_BY_KIND: dict[EntityKind, int] = {
+    "List": 100,
+    "HubOnlyList": 100,
+    "DocumentLibrary": 101,
+}
 
 
 
@@ -294,73 +293,52 @@ def _entities(
 
 
 def _entity_kind(entity_name: str, entity: EntityMapping) -> list[Finding]:
-    """Refuse a document library, and every BaseTemplate but the generic list.
+    """Refuse a kind whose base template is not the one it provisions.
 
-    `kind: DocumentLibrary` is REFUSED, and refused here so that it fails at
-    build rather than part-way through a paste.
+    A document library is a supported kind since #14 closed. Its items are
+    files, its Title is null after an upload (MEASURED 2026-07-29,
+    `library.file-vs-item.title-after-upload` in document-library-probe.js),
+    the name lives in FileLeafRef (`library.file.name-field-is-leafref` in
+    file-operations-probe.js, same day), and a
+    header whose title line reads [$FileLeafRef] renders on the file panel
+    (reviewed capture `library.doc-lib.header-fileleafref`, 2026-09-03). The
+    vocabulary that lets a view, a formatter and that header name the file
+    is `rendered_columns.system_columns_for`; the folder and seeding steps
+    are `templates/deploy/_folders.js.j2` and `generators/demogen.py`.
 
-    A library's items are files, and this tool writes list rows. The gap is not
-    cosmetic: SharePoint answers a POST to a library's /items with HTTP 500,
-    "To add an item to a document library, use SPFileCollection.Add()", so
-    seeded demo data cannot exist; a library's Title is null after an upload,
-    with the name in FileLeafRef, so the standard form header renders blank on
-    every document; and the deploy has no upload step to offer instead. Each of
-    those was observed on a tenant on 2026-07-29
-    (test/manual/document-library-probe.js).
-
-    THE HEADER HALF OF THAT IS NOW ANSWERED, and it is the one #14 left open.
-    A content-type header whose title line reads [$FileLeafRef] does RENDER on
-    a library's file panel, showing the file name while the Title field beside
-    it sits visibly empty. Reviewed capture `library.doc-lib.header-fileleafref`,
-    verdict confirmed, 2026-09-03. So the header is a solved problem waiting on
-    a vocabulary, not an open question: what a library still cannot do is NAME
-    FileLeafRef, because it is absent from `column_projection.SYSTEM_COLUMN_TYPES`
-    and every rendered-column check therefore refuses it.
-
-    Half-support (a library that provisions but can carry no view naming its
-    files, no usable header and no demo rows) reads as a bug in every
-    direction. Refusing stays the honest state until the rest of issue #14 is
-    done: a file-upload step in the deploy, and the file-identity column
-    vocabulary that lets a view, a formatter and that header name the file.
+    What remains here is the pairing. `_lists.js.j2` sends BaseTemplate and
+    never sends `kind`, so an author who changes one and leaves the other
+    behind would get a green build that provisioned the wrong container
+    while every later phase assumed the declared one.
     """
-    if entity.kind == "DocumentLibrary":
+    expected = TEMPLATE_BY_KIND[entity.kind]
+    if entity.base_template == expected:
+        return []
+    if entity.base_template in TEMPLATE_BY_KIND.values():
+        other = next(
+            kind for kind, template in TEMPLATE_BY_KIND.items()
+            if template == entity.base_template and kind != "HubOnlyList"
+        )
         return [Finding(
-            FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED,
-            f"entities[{entity_name}]: kind 'DocumentLibrary' is not supported. "
-            f"A library's items are files and this tool writes list rows, so a "
-            f"library cannot carry seeded demo data (SharePoint refuses a POST to "
-            f"/items outright), its Title is empty after an upload so the standard "
-            f"form header renders blank, and nothing here uploads a file. Model the "
-            f"metadata as a 'List' and keep the documents in a library you manage "
-            f"separately, linking to it with a hyperlink column. See issue #14 for "
-            f"the measurements behind this and what support would require.",
+            FindingCode.ENTITY_KIND_TEMPLATE_MISMATCH,
+            f"entities[{entity_name}]: kind '{entity.kind}' provisions BaseTemplate "
+            f"{expected}, but base_template is {entity.base_template}, which is a "
+            f"'{other}'. The create call sends BaseTemplate and never sends kind, "
+            f"so SharePoint would provision a {other} while the rest of the build "
+            f"treats {entity_name} as a {entity.kind}. Change one to match the "
+            f"other.",
             location=Location(Section.ENTITIES, entity=entity_name),
         )]
-
-    # Returned above rather than reported beside it, so a DocumentLibrary
-    # reports the kind rather than a second complaint about the 101 it was
-    # always going to carry.
-    #
-    # This is the door the message above holds open. An author told to
-    # "model the metadata as a 'List'" who changes `kind` and leaves
-    # `base_template: 101` behind got a GREEN build that provisioned a
-    # real library: `_lists.js.j2` sends BaseTemplate and never sends
-    # `kind`, while every library guard in the build keys on `kind` and
-    # so does not fire. The refusal above would have been bypassed by
-    # the very edit it recommends.
-    if entity.base_template != _GENERIC_LIST_TEMPLATE:
-        return [Finding(
-            FindingCode.UNSUPPORTED_BASE_TEMPLATE,
-            f"entities[{entity_name}]: base_template {entity.base_template} is not "
-            f"supported; this tool builds generic lists (BaseTemplate "
-            f"{_GENERIC_LIST_TEMPLATE}). The create call sends BaseTemplate and "
-            f"never sends 'kind', so SharePoint would provision whatever this "
-            f"number names while the rest of the build treats {entity_name} as a "
-            f"'{entity.kind}'. If you meant a document library, that kind is "
-            f"refused outright -- see issue #14.",
-            location=Location(Section.ENTITIES, entity=entity_name),
-        )]
-    return []
+    return [Finding(
+        FindingCode.UNSUPPORTED_BASE_TEMPLATE,
+        f"entities[{entity_name}]: base_template {entity.base_template} is not "
+        f"supported; this tool builds generic lists (BaseTemplate 100) and "
+        f"document libraries (BaseTemplate 101). The create call sends "
+        f"BaseTemplate and never sends 'kind', so SharePoint would provision "
+        f"whatever this number names while the rest of the build treats "
+        f"{entity_name} as a '{entity.kind}'.",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
 
 
 def _attachments_are_measurable(
@@ -394,12 +372,11 @@ def _attachments_are_measurable(
     on which happens: either way the mapping declares a setting the container
     does not have.
 
-    Reported beside DOCUMENT_LIBRARY_UNSUPPORTED rather than instead of it, on
-    the DEMO_ROWS_ON_DOCUMENT_LIBRARY precedent: the kind refusal is about the
-    entity, this is about the setting, and an author who lifts the first still
-    needs to see the second.
+    Reported on its own rather than folded into the pairing rule: that one
+    is about the entity, this is about the setting, and an author who fixes
+    one still needs to see the other.
     """
-    if entity.kind != "DocumentLibrary" or vc.bundle.mapping.attachments:
+    if not entity.is_library or vc.bundle.mapping.attachments:
         return []
     return [Finding(
         FindingCode.ATTACHMENTS_ON_DOCUMENT_LIBRARY,
@@ -445,11 +422,10 @@ def _minor_versions_need_versioning(
     an oversight. `library.doc-lib.minor-versions-sticks` in the same run wrote
     the same pair to a library and it STUCK (HTTP 204, read back true), so this
     is a generic-list constraint and not an ordering rule for both containers.
-    Nothing is let through by skipping: `kind: DocumentLibrary` is refused
-    outright one rule earlier. What the skip avoids is telling an author that a
-    write observed to succeed will fail.
+    What the skip avoids is telling an author that a write observed to succeed
+    will fail.
     """
-    if entity.kind == "DocumentLibrary":
+    if entity.is_library:
         return []
     versioning = vc.bundle.mapping.versioning_for(entity_name)
     if not versioning.enable_minor_versions or versioning.enable_versioning:

@@ -8570,6 +8570,300 @@
           "surface": "field"
         }
       ]
+    },
+    {
+      "file": "library-guards-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list and one scratch document library, each with a Number, two Choice and a date column carrying a DefaultFormula; one bare item in the list; one bare file upload into the library; a seal and unseal of one library column; EnableFolderCreation switched off, one folder attempted, and the switch restored; two views on the library, one created with Scope 1 and one MERGEd to it"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.default-formula.fixture-list-created",
+              "depends_on": []
+            },
+            {
+              "id": "field.default-formula.control-missing-column-refused",
+              "depends_on": [
+                "field.default-formula.fixture-list-created"
+              ]
+            },
+            {
+              "id": "field.default-formula.number-property-reads-back",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.choice-property-reads-back",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.control-date-fills-on-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.number-fills-on-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.choice-fills-on-item-create",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "field.default-formula.choice-non-member-result",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.field.control-missing-column-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-number-reads-back",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-choice-reads-back",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-date-fills-on-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-number-fills-on-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-choice-fills-on-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.field.default-formula-choice-non-member-on-upload",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.seal-declared-column-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.column.seal-declared-column-unseals",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.doc-lib.folder-creation-disabled-sticks",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.folder.creation-blocked-when-disabled",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.scope-on-create-reads-back",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            },
+            {
+              "id": "library.view.scope-on-merge-reads-back",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.field.control-missing-column-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.default-formula.fixture-list-created",
+            "field.default-formula.control-missing-column-refused",
+            "library.doc-lib.fixture-library-created",
+            "library.field.control-missing-column-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "view-scope-revert-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library with two views: one created with Scope 0, one created with Scope 1 and then MERGEd to Scope 0"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.view.control-missing-view-read-refused",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.view.scope-zero-on-create-reads-back",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-view-read-refused"
+              ]
+            },
+            {
+              "id": "library.view.scope-merge-back-to-default",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.view.control-missing-view-read-refused"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.view.control-missing-view-read-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "folder-shape-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library with one file uploaded to its root and one folder created beside it; one folder create attempted under the file's name"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.folder.control-missing-path-read",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.folder.folder-read-on-file-path",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-missing-path-read"
+              ]
+            },
+            {
+              "id": "library.folder.item-shape-of-file-by-name",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-missing-path-read"
+              ]
+            },
+            {
+              "id": "library.folder.add-under-existing-file-name",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-missing-path-read"
+              ]
+            },
+            {
+              "id": "library.folder.add-under-existing-folder-name",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.folder.control-missing-path-read"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.folder.control-missing-path-read"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

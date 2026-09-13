@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, assert_never
 
 from dbml_sharepoint.analysis.column_projection import (
-    SYSTEM_COLUMN_TYPES,
     effective_column_types,
+    system_column_types_for,
 )
 from dbml_sharepoint.analysis.column_refs import (
     formula_column_refs,
@@ -71,6 +71,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     MappingBundle,
     ViewDef,
+    ViewScope,
     view_url_slug,
 )
 from dbml_sharepoint.model.parser import Schema
@@ -354,10 +355,30 @@ def _view_aggregations(view: ViewDef) -> str:
     )
 
 
-def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
+# SP.View.Scope per declared value. Learn, CSOM ViewScope: DefaultValue 0,
+# Recursive 1, RecursiveAll 2, FilesOnly 3, and the View element's Scope
+# attribute "corresponds to the Scope property of the SPView class".
+# Recursive rather than RecursiveAll because RecursiveAll adds subfolder rows
+# a grouped view would count (MEASURED 2026-09-08,
+# `library.folder.view-flattens-depth` in library-nesting-probe.js). Scope 1
+# sticks on a stored view whether sent on create or by MERGE from 0
+# (`library.view.scope-on-create-reads-back`,
+# `library.view.scope-on-merge-reads-back`, 2026-09-13, library-guards-probe.js).
+# A MERGE from 1 back to 0 is the subject of view-scope-revert-probe.js and is
+# not yet measured; the view phase reads Scope back after every write, so a 0
+# that did not stick is reported as drift rather than passed over.
+# Keyed by the loader's vocabulary, so a value it admits and this table does
+# not name fails here rather than deploying as "leave the property alone".
+_VIEW_SCOPE_VALUES: dict[ViewScope, int] = {"recursive": 1, "default": 0}
+
+
+def _view_caml_query(
+    view: ViewDef, column_types: dict[str, str], kind: str = "List",
+) -> str:
     """Render a declared view's ViewQuery inner XML: <GroupBy>, then <Where>
     from the shared condition grammar, then <OrderBy> (ascending is CAML's
-    default; only descending carries the attribute)."""
+    default; only descending carries the attribute). `kind` decides which
+    system columns a <Where> may type: FileLeafRef only on a library."""
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
@@ -369,7 +390,7 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
         # System columns are renderable in a view but never declared in
         # DBML; without their types a Created comparison would render as
         # Type="Text" and the view would answer with the wrong rows.
-        types = {**SYSTEM_COLUMN_TYPES, **column_types}
+        types = {**system_column_types_for(kind), **column_types}
         # Guarded, so the filter editor refuses to open it: an editor that
         # opens a filter writes back only the ten conditions it renders. #267.
         parts.append(f"<Where>{to_caml_protected(view.where, types)}</Where>")
@@ -697,6 +718,11 @@ def build_schema_json(
             "title": list_title,
             "kind": entity.kind,
             "base_template": entity.base_template,
+            # The folder phase and the ACL settle loop key on these rather
+            # than on the kind string, so a third kind cannot be mistaken for
+            # a library by a string test in JavaScript.
+            "is_library": entity.is_library,
+            "folders": list(entity.folders),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
@@ -806,75 +832,79 @@ def build_schema_json(
         )
         declared_views = bundle.mapping.views.get(table_name, [])
         views_to_render = list(declared_views)
-        if entity.kind != "DocumentLibrary":
-            emitted_fields = [field["title"] for field in fields_phase1]
-            emitted_fields.extend(
-                lookup["field"]["title"]
-                for lookup in phase2
-                if lookup["list"] == list_title
-            )
-            # Projected dependent fields are provisioned too (read-only,
-            # FieldRef-linked), so All Items renders them beside their primary.
-            emitted_fields.extend(
-                projection["name"]
-                for field in fields_phase1
-                for projection in field.get("projections", [])
-            )
-            emitted_fields.extend(
-                projection["name"]
-                for lookup in phase2
-                if lookup["list"] == list_title
-                for projection in lookup.get("projections", [])
-            )
-            system_fields = list(SYSTEM_COLUMN_TYPES)
-            # The list view LOOKUP threshold. All Items renders every column,
-            # which past 12 join-bearing ones is a view SharePoint returns
-            # blank at ANY list size, so an entity may name the columns it
-            # cannot afford. Author and Editor are appended here without being
-            # asked for and are the usual answer.
-            #
-            # The validator counts this same view, but from its OWN derivation
-            # (analysis/joins.py::all_items_joining_fields, called from the
-            # entity loop in analysis/checks/_views.py::check), NOT this code.
-            # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
-            # hide_from_all_items are all genuinely shared via
-            # analysis/joins.py; the actual FIELD LIST this block builds is
-            # not. The two field lists are held equal by ONE test:
-            # test_the_validator_and_the_generator_agree_on_what_all_items_renders
-            # in test/test_jsgen.py. If you change what this list renders,
-            # that test is what tells you the validator disagrees.
-            #
-            # DECLARED views are untouched: they keep every field they declare.
-            hidden_here = all_items_hidden(entity)
-            all_items = ViewDef(
-                title="All Items",
-                fields=[
-                    name
-                    for name in (
-                        "ID", "Title", *emitted_fields,
-                        *(
-                            sys_name for sys_name in system_fields
-                            if sys_name != "ID"
-                        ),
-                    )
-                    if name not in hidden_here
-                ],
-                default=not any(view.default for view in declared_views),
-            )
-            # A live list's built-in All Items may still hold DefaultView.
-            # SharePoint will not reliably hide the current default, so an
-            # authored default must be reconciled first. A recovery view that
-            # is itself the default stays first and visible.
-            if all_items.default:
-                views_to_render.insert(0, all_items)
-            else:
-                views_to_render.append(all_items)
+        emitted_fields = [field["title"] for field in fields_phase1]
+        emitted_fields.extend(
+            lookup["field"]["title"]
+            for lookup in phase2
+            if lookup["list"] == list_title
+        )
+        # Projected dependent fields are provisioned too (read-only,
+        # FieldRef-linked), so All Items renders them beside their primary.
+        emitted_fields.extend(
+            projection["name"]
+            for field in fields_phase1
+            for projection in field.get("projections", [])
+        )
+        emitted_fields.extend(
+            projection["name"]
+            for lookup in phase2
+            if lookup["list"] == list_title
+            for projection in lookup.get("projections", [])
+        )
+        # A library's recovery view leads with the file name, because a file's
+        # Title is null after upload (MEASURED 2026-07-29,
+        # `library.file-vs-item.title-after-upload`), and it flattens the
+        # folders so every file is reachable from the one view.
+        leading = ["ID", "FileLeafRef", "Title"] if entity.is_library else ["ID", "Title"]
+        system_fields = [
+            name for name in system_column_types_for(entity.kind) if name not in leading
+        ]
+        # The list view LOOKUP threshold. All Items renders every column,
+        # which past 12 join-bearing ones is a view SharePoint returns
+        # blank at ANY list size, so an entity may name the columns it
+        # cannot afford. Author and Editor are appended here without being
+        # asked for and are the usual answer.
+        #
+        # The validator counts this same view, but from its OWN derivation
+        # (analysis/joins.py::all_items_joining_fields, called from the
+        # entity loop in analysis/checks/_views.py::check), NOT this code.
+        # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
+        # hide_from_all_items are all genuinely shared via
+        # analysis/joins.py; the actual FIELD LIST this block builds is
+        # not. The two field lists are held equal by ONE test:
+        # test_the_validator_and_the_generator_agree_on_what_all_items_renders
+        # in test/test_jsgen.py. If you change what this list renders,
+        # that test is what tells you the validator disagrees.
+        #
+        # DECLARED views are untouched: they keep every field they declare.
+        hidden_here = all_items_hidden(entity)
+        all_items = ViewDef(
+            title="All Items",
+            fields=[
+                name
+                for name in (*leading, *emitted_fields, *system_fields)
+                if name not in hidden_here
+            ],
+            default=not any(view.default for view in declared_views),
+            scope="recursive" if entity.is_library else None,
+        )
+        # A live list's built-in All Items may still hold DefaultView.
+        # SharePoint will not reliably hide the current default, so an
+        # authored default must be reconciled first. A recovery view that
+        # is itself the default stays first and visible.
+        if all_items.default:
+            views_to_render.insert(0, all_items)
+        else:
+            views_to_render.append(all_items)
         for view in views_to_render:
             views_out.append({
                 "list": list_title,
                 "title": view.title,
                 "view_fields": list(view.fields),
-                "caml_query": _view_caml_query(view, column_types),
+                "caml_query": _view_caml_query(view, column_types, entity.kind),
+                # SP.View.Scope, or null when no scope is declared, which
+                # leaves the live property alone.
+                "scope": None if view.scope is None else _VIEW_SCOPE_VALUES[view.scope],
                 "aggregations": _view_aggregations(view),
                 "row_limit": view.row_limit,
                 "set_default": view.default,

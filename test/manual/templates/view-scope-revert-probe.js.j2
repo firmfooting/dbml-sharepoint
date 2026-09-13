@@ -1,0 +1,206 @@
+{# test/manual/templates/view-scope-revert-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE: DOES A STORED VIEW'S Scope MERGE BACK TO 0
+ *
+ * REVISION: {{ revision }}
+ *
+ * ONE QUESTION:
+ *   Can the deploy put a stored view's Scope back to 0 (DefaultValue, folder
+ *   scoped) after it has been 1 (Recursive), by the same MERGE that set it?
+ *
+ * library-guards-probe.js measured Scope 1 sticking on a create and by a
+ * MERGE from 0 (library.view.scope-on-create-reads-back,
+ * library.view.scope-on-merge-reads-back). The view phase reconciles a
+ * declared `scope: default` by MERGEing Scope 0 onto a view somebody has
+ * flipped to Recursive by hand, and nothing has measured that direction. 0
+ * is the enum's DefaultValue, and a property MERGEd to its default is the
+ * shape most likely to be accepted and left alone, which the view phase's
+ * read-back would report as drift on every paste. The create with an
+ * explicit 0 is measured beside it, because a declared default is created
+ * that way rather than by leaving the property out.
+ *
+ * The write shapes are the deploy's: a POST to /views carrying __metadata,
+ * Title, PersonalView and Scope, and a MERGE of Scope to the stored view,
+ * which is what templates/deploy/_views.js.j2 sends.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101).
+ *   library.view.control-missing-view-read-refused
+ *     NEGATIVE CONTROL: a view read naming a view that does not exist is
+ *     REFUSED. Without it, a Scope read below could be any server answer.
+ *   library.view.scope-zero-on-create-reads-back
+ *     A view created with Scope 0 in its body: does Scope read back 0?
+ *   library.view.scope-merge-back-to-default
+ *     A view created with Scope 1, then MERGEd to Scope 0: does it read
+ *     back 0?
+ *
+ * NOT MEASURED HERE
+ *   What the view's page renders under either scope. library-nesting-probe.js
+ *   measured what each scope returns through a query.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   View scope:
+ *     "View.Scope Property" and "ViewScope Enum" (CSOM), "View element
+ *     (List)" for the attribute's correspondence to the property
+ *   List creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   View creation and update:
+ *     "Views REST API reference", dn499819(v=office.15)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the library it created.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe Scope Library';
+  const libPath = `web/lists/getbytitle('${LIB}')`;
+  const ZERO_VIEW = 'dbmlsp scope zero';
+  const REVERT_VIEW = 'dbmlsp scope revert';
+  const DEFAULT_SCOPE = 0;
+  const RECURSIVE = 1;
+
+  const Q = {
+    fixture: 'A document library is created (BaseTemplate 101)',
+    control: 'NEGATIVE CONTROL: a view read naming a view that does not exist is refused',
+    zeroOnCreate: 'Does a view created with Scope 0 in its body read back Scope 0',
+    revert: 'Does a view created with Scope 1 and then MERGEd to Scope 0 read back Scope 0',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB} with two views,`);
+    log('INFO', 'one created with Scope 0 and one created with Scope 1 and then MERGEd to 0.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library and its views would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'library.view.control-missing-view-read-refused',
+    'library.view.scope-zero-on-create-reads-back',
+    'library.view.scope-merge-back-to-default',
+  ];
+
+  expect('library.doc-lib.fixture-library-created', Q.fixture);
+  expect('library.view.control-missing-view-read-refused', Q.control);
+  expect('library.view.scope-zero-on-create-reads-back', Q.zeroOnCreate);
+  expect('library.view.scope-merge-back-to-default', Q.revert);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // __metadata is a VERBOSE OData construct, so every write carrying it
+  // overrides the harness's default nometadata content type.
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+  const MERGE = { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' };
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
+
+  const readView = async (title) =>
+    spGet(`${libPath}/views/getbytitle('${title}')?$select=Title,Scope`);
+  const scopeOf = (r) => ((r.ok && r.body) ? r.body.Scope : `(read failed HTTP ${r.status})`);
+  const ensureView = async (title, scope) => {
+    const have = await readView(title);
+    if (have.ok) return { ok: true, status: have.status, text: 'already present' };
+    const digest = await getDigest();
+    return spPost(`${libPath}/views`,
+      { __metadata: { type: 'SP.View' }, Title: title, PersonalView: false, Scope: scope },
+      digest, VERBOSE);
+  };
+
+  await resetList(LIB);
+
+  let digest = await getDigest();
+  const haveLib = await spGet(libPath);
+  if (haveLib.ok) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
+           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
+  } else {
+    const made = await spPost('web/lists', {
+      Title: LIB, BaseTemplate: 101,
+      Description: 'dbml-sharepoint view scope revert probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created', Q.fixture,
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : short(made));
+    if (!made.ok) {
+      voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+      return report();
+    }
+  }
+
+  // ---- NEGATIVE CONTROL: a view read naming a missing view --------------
+  const junk = await readView('dbmlspNoSuchView');
+  const controlHeld = !junk.ok && isRefusal(junk.status);
+  record('library.view.control-missing-view-read-refused', Q.control,
+         controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
+         controlHeld ? `refused with HTTP ${junk.status}`
+           : (junk.ok ? 'the view read naming a missing view was ACCEPTED, so a Scope read '
+                        + 'below cannot be told from any other server answer'
+                      : `the view read failed with non-refusal HTTP ${junk.status}`));
+  if (!controlHeld) {
+    voidAll(IDS.slice(1),
+            `negative control did not hold (HTTP ${junk.status}), so a Scope read below could `
+            + 'not be told from any other server answer');
+    return report();
+  }
+
+  // ---- Created with Scope 0 in the body ----------------------------------
+  const madeZero = await ensureView(ZERO_VIEW, DEFAULT_SCOPE);
+  const zeroRead = madeZero.ok ? await readView(ZERO_VIEW) : null;
+  const zeroScope = zeroRead ? scopeOf(zeroRead) : null;
+  record('library.view.scope-zero-on-create-reads-back', Q.zeroOnCreate,
+         madeZero.ok
+           ? (zeroScope === DEFAULT_SCOPE ? 'STICKS' : 'ACCEPTED BUT DIFFERENT')
+           : (isRefusal(madeZero.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+         `POST views with Scope ${DEFAULT_SCOPE} answered ${short(madeZero)}; `
+         + `Scope reads back ${JSON.stringify(zeroScope)}`);
+
+  // ---- Created with Scope 1, then MERGEd to 0 ------------------------------
+  const madeRecursive = await ensureView(REVERT_VIEW, RECURSIVE);
+  const before = madeRecursive.ok ? await readView(REVERT_VIEW) : null;
+  if (!madeRecursive.ok || !before || scopeOf(before) !== RECURSIVE) {
+    voidAll([IDS[2]], madeRecursive.ok
+      ? `the view to revert read Scope ${JSON.stringify(before ? scopeOf(before) : null)} rather than ${RECURSIVE}, so there was nothing to revert`
+      : `the view to revert was not created (${short(madeRecursive)})`);
+    return report();
+  }
+  digest = await getDigest();
+  const merged = await spPost(`${libPath}/views/getbytitle('${REVERT_VIEW}')`,
+    { __metadata: { type: 'SP.View' }, Scope: DEFAULT_SCOPE }, digest, MERGE);
+  const after = await readView(REVERT_VIEW);
+  const afterScope = scopeOf(after);
+  let head = 'NOT ESTABLISHED';
+  if (merged.ok && after.ok) {
+    if (afterScope === DEFAULT_SCOPE) head = 'REVERTS';
+    else if (afterScope === RECURSIVE) head = 'ACCEPTED BUT STAYS';
+    else head = 'ACCEPTED BUT DIFFERENT';
+  } else if (!merged.ok && isRefusal(merged.status)) {
+    head = 'REFUSED';
+  }
+  record('library.view.scope-merge-back-to-default', Q.revert, head,
+         `Scope read ${RECURSIVE} before; MERGE Scope ${DEFAULT_SCOPE} answered ${short(merged)}; `
+         + `Scope reads back ${JSON.stringify(afterScope)}`);
+
+  return report();
+})();

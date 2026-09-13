@@ -528,6 +528,87 @@ def test_document_library_template_101_reaches_shape_gate() -> None:
     assert project["base_template"] == 101
 
 
+def _library_schema_json(
+    tmp_path: Path, kind: str, template: int, tail: str = "",
+) -> dict[str, Any]:
+    """One `Doc` entity of the given kind, with an optional mapping tail."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    tmp_path.mkdir(exist_ok=True)
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Doc", ID_PK, TITLE, "Division nvarchar"),
+        mapping=f"""
+            entities:
+              Doc:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                {tail}
+        """,
+    )
+    return build_schema_json(schema, bundle, "default")
+
+
+def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> None:
+    """The folder phase and the seeding script key on these two fields."""
+    schema_json = _library_schema_json(
+        tmp_path, "DocumentLibrary", 101, 'folders: ["Clinical services", "Corporate"]',
+    )
+    doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
+    assert doc["is_library"] is True
+    assert doc["folders"] == ["Clinical services", "Corporate"]
+    as_list = _library_schema_json(tmp_path / "list", "List", 100)
+    plain = next(lst for lst in as_list["lists"] if lst["title"] == "APP_Doc")
+    assert plain["is_library"] is False
+    assert plain["folders"] == []
+
+
+def test_a_library_all_items_leads_with_the_file_name_and_flattens_folders(
+    tmp_path: Path,
+) -> None:
+    """A file's Title is null after upload (MEASURED 2026-07-29,
+    `library.file-vs-item.title-after-upload`), so the recovery view names
+    the file first and is recursive so every folder's files reach it."""
+    schema_json = _library_schema_json(tmp_path, "DocumentLibrary", 101)
+    all_items = next(
+        v for v in schema_json["views"] if v["list"] == "APP_Doc" and v["title"] == "All Items"
+    )
+    assert all_items["view_fields"][:3] == ["ID", "FileLeafRef", "Title"]
+    assert "Division" in all_items["view_fields"]
+    assert all_items["scope"] == 1
+    as_list = _library_schema_json(tmp_path / "list", "List", 100)
+    plain = next(
+        v for v in as_list["views"] if v["list"] == "APP_Doc" and v["title"] == "All Items"
+    )
+    assert "FileLeafRef" not in plain["view_fields"]
+    assert plain["scope"] is None
+
+
+def test_a_declared_scope_emits_its_number_and_no_scope_emits_null(tmp_path: Path) -> None:
+    """SP.View.Scope Recursive is 1 and DefaultValue is 0 (Learn, CSOM
+    ViewScope). A declared `default` must reach the site as 0, so a view
+    somebody flipped to Recursive by hand is put back; only a view with no
+    scope emits null, which leaves the live property alone."""
+    tail = """folders: []
+            views:
+              Doc:
+                - title: "Flat"
+                  default: true
+                  fields: [FileLeafRef]
+                  scope: recursive
+                - title: "Folders"
+                  fields: [FileLeafRef]
+                  scope: default
+                - title: "Here"
+                  fields: [FileLeafRef]"""
+    schema_json = _library_schema_json(tmp_path, "DocumentLibrary", 101, tail)
+    by_title = {v["title"]: v for v in schema_json["views"] if v["list"] == "APP_Doc"}
+    assert by_title["Flat"]["scope"] == 1
+    assert by_title["Folders"]["scope"] == 0
+    assert by_title["Here"]["scope"] is None
+
+
 def test_boolean_default_only_emitted_when_declared() -> None:
     """Regression: the Boolean branch must only emit ``DefaultValue`` when the
     DBML column actually declares a default. Previously it unconditionally
@@ -2202,6 +2283,8 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
             f"{CAML_VIEW_FILTER_GUARD}</And></Where>"
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
+        # No scope declared on a list view: null leaves the live property alone.
+        "scope": None,
         # No totals declared: the empty string is what the deploy reads as
         # "never touch the live Aggregations property".
         "aggregations": "",
@@ -2255,6 +2338,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
             "Created", "Modified", "Author", "Editor",
         ],
         "caml_query": "",
+        "scope": None,
         "aggregations": "",
         "row_limit": None,
         "set_default": True,
@@ -3628,6 +3712,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     from dbml_sharepoint.analysis.rendered_columns import (
         SYSTEM_COLUMNS,
         rendered_columns,
+        system_columns_for,
     )
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
@@ -3643,6 +3728,9 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
                 "Parent int [ref: > Task.Id]",
                 "Notes nvarchar",
             ),
+            # A library: both sides carry a kind term, and only a library in
+            # the fixture turns a dropped kind term on either side red.
+            table("Docs", ID_PK, TITLE, "Reviewer person", "Summary nvarchar"),
         ),
         mapping="""
             entities:
@@ -3652,6 +3740,11 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
                 base_template: 100
                 site_role: default
                 hide_from_all_items: [Owner]
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                hide_from_all_items: [Reviewer]
             cross_site_reference_columns:
               - { entity: Task, column: Elsewhere }
         """,
@@ -3685,6 +3778,23 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     assert (
         joining_fields(generated, join_bearing_columns(task, xcols))
         == all_items_joining_fields(task, task_entity, xcols)
+    )
+
+    # The same two assertions for the library, whose All Items leads with
+    # FileLeafRef: the kind term on each side is what this pair pins.
+    generated_docs = next(
+        v for v in schema_json["views"]
+        if v["title"] == "All Items" and v["list"] == "APP_Docs"
+    )["view_fields"]
+    docs = next(t for t in schema.tables if t.name == "Docs")
+    docs_entity = bundle.mapping.entities["Docs"]
+    assert set(generated_docs) == (
+        rendered_columns(docs, set()) | {"Title"} | system_columns_for("DocumentLibrary")
+    ) - all_items_hidden(docs_entity)
+    assert "FileLeafRef" in generated_docs and "FileLeafRef" not in generated
+    assert (
+        joining_fields(generated_docs, join_bearing_columns(docs, set()))
+        == all_items_joining_fields(docs, docs_entity, set())
     )
 
 

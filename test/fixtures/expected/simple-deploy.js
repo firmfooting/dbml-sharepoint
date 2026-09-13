@@ -187,6 +187,9 @@
     levelsRenamed: [],
     groupsRenamed: [],
     listsSkipped: [],
+    // Declared library folders, labelled `<list>/<folder>`, by outcome.
+    foldersCreated: [],
+    foldersVerified: [],
     columnsCreated: 0,
     columnsSkipped: 0,
     errors: [],
@@ -1925,6 +1928,8 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2000,6 +2005,8 @@
           "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2027,6 +2034,8 @@
       "enable_versioning": true,
       "expected_marker": "Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "fields_phase1": [],
+      "folders": [],
+      "is_library": false,
       "item_security": null,
       "kind": "List",
       "major_version_limit": 500,
@@ -2070,6 +2079,7 @@
       "list": "APP_Project",
       "renamed_from": [],
       "row_limit": 100,
+      "scope": null,
       "set_default": true,
       "title": "Open projects",
       "url_slug": "OpenProjects",
@@ -2088,6 +2098,7 @@
       "list": "APP_Project",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": false,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -2111,6 +2122,7 @@
       "list": "APP_Task",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": true,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -2134,6 +2146,7 @@
       "list": "APP_Task",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": false,
       "title": "Due soon",
       "url_slug": "DueSoon",
@@ -2152,6 +2165,7 @@
       "list": "APP_AppSettings",
       "renamed_from": [],
       "row_limit": null,
+      "scope": null,
       "set_default": true,
       "title": "All Items",
       "url_slug": "AllItems",
@@ -5285,9 +5299,98 @@
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
     return { ...summary, aborted: 'phase-1-schema-errors' };
   }
-  markPhase('Phase 2.2: deferred lookups');
-  // === Phase 2.2: deferred lookups ===
-  log('INFO', 'Starting Phase 2.2: deferred lookups.');
+  markPhase('Phase 2.2: declared folders');
+  // === Phase 2.2: declared folders ===
+  log('INFO', 'Starting Phase 2.2: declared folders.');
+  // MEASURED 2026-09-03, `library.folder.creation-path` in folder-probe.js:
+  // POST web/GetFolderByServerRelativeUrl('<root>')/folders/add(url='<name>')
+  // answered HTTP 200 and returned an SP.Folder (Name, ServerRelativeUrl,
+  // ItemCount, Exists, UniqueId); Files/add makes a file, never a folder.
+  // `library.folder.filesystem-object-type`, same run: the folder's own list
+  // item reads FileSystemObjectType 1 (Learn: File 0, Folder 1), which is
+  // the shape check below. `library.folder.creation-blocked-when-disabled`
+  // (2026-09-13, library-guards-probe.js): the endpoint answers with
+  // EnableFolderCreation off, so this phase needs no ordering against that
+  // switch.
+  const FOLDER_OBJECT_TYPE = 1;
+  // A server-relative path inside the quotes, spelled as the probes sent it:
+  // quotes doubled, slashes and spaces left for fetch to encode. NOT
+  // odataName, whose encodeURIComponent would turn every slash into %2F,
+  // which no probe has sent. Names that would need more than this (`#`,
+  // `%`) are refused at build by analysis/file_names.py.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  async function readFolder(serverRelativeUrl) {
+    const r = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(serverRelativeUrl)}')?$select=Exists,Name,ServerRelativeUrl`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      if (isAbsent400(r.status, text)) return null;
+      throw new Error(`folder read failed: HTTP ${r.status} ${spError(text)}`);
+    }
+    const j = await r.json();
+    return j && j.d && j.d.Exists ? j.d : null;
+  }
+  async function folderItemShape(listTitle, name) {
+    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
+    const j = await r.json();
+    const rows = (j && j.d && j.d.results) || [];
+    return rows.length ? rows[0] : null;
+  }
+  for (const list of SCHEMA.lists.filter((l) => l.is_library && l.folders.length)) {
+    let rootUrl = null;
+    try {
+      const root = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/RootFolder?$select=ServerRelativeUrl`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!root.ok) throw new Error(`RootFolder read failed: HTTP ${root.status} ${spError(await root.text())}`);
+      const j = await root.json();
+      rootUrl = j && j.d && j.d.ServerRelativeUrl;
+      if (!rootUrl) throw new Error('RootFolder read back no ServerRelativeUrl');
+    } catch (err) {
+      log('ERROR', `Phase 2.2 folders '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: '2.2', list: list.title, error: err.message });
+      continue;
+    }
+    for (const name of list.folders) {
+      const label = `${list.title}/${name}`;
+      try {
+        const folderUrl = `${rootUrl}/${name}`;
+        if (await readFolder(folderUrl)) {
+          // Present already: verify it is a folder and leave its contents alone.
+          const item = await folderItemShape(list.title, name);
+          if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
+          }
+          summary.foldersVerified.push(label);
+          continue;
+        }
+        const digest = await getDigest();
+        await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+        if (!(await readFolder(folderUrl))) {
+          throw new Error(`'${name}' did not read back after creation`);
+        }
+        const item = await folderItemShape(list.title, name);
+        if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+          throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
+        }
+        summary.foldersCreated.push(label);
+        logChange({ key: `folder: ${label}`, kind: 'create', target: list.title, oldValue: '', newValue: name });
+        log('OK', `Created folder '${name}' in '${list.title}'.`);
+      } catch (err) {
+        log('ERROR', `Phase 2.2 folders '${label}': ${err.message}`);
+        summary.errors.push({ phase: '2.2', list: list.title, folder: name, error: err.message });
+      }
+    }
+  }
+  markPhase('Phase 2.3: deferred lookups');
+  // === Phase 2.3: deferred lookups ===
+  log('INFO', 'Starting Phase 2.3: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
   digest = await getDigest();
 
@@ -5307,7 +5410,7 @@
       deferredOwnershipFailed = true;
       log('ERROR', `Deferred-lookup ownership recheck '${listName}': ${err.message}`);
       summary.errors.push({
-        phase: '2.2', list: listName, error: err.message,
+        phase: '2.3', list: listName, error: err.message,
       });
     }
   }, 4);
@@ -5367,20 +5470,20 @@
         }
       }
     } catch (err) {
-      log('ERROR', `Phase 2.2 ${lookup.list}.${lookup.field.title}: ${err.message}`);
+      log('ERROR', `Phase 2.3 ${lookup.list}.${lookup.field.title}: ${err.message}`);
       summary.errors.push({
-        phase: '2.2', list: lookup.list, column: lookup.field.title, error: err.message,
+        phase: '2.3', list: lookup.list, column: lookup.field.title, error: err.message,
       });
     }
   }
 
   if (summary.errors.length > 0) {
-    log('ERROR', 'Phase 2.2 lookup reconciliation failed; aborting before indexes and ACL work.');
+    log('ERROR', 'Phase 2.3 lookup reconciliation failed; aborting before indexes and ACL work.');
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-  markPhase('Phase 2.3: indexed columns');
-  // === Phase 2.3: indexed columns ===
-  log('INFO', 'Starting Phase 2.3: indexed columns.');
+  markPhase('Phase 2.4: indexed columns');
+  // === Phase 2.4: indexed columns ===
+  log('INFO', 'Starting Phase 2.4: indexed columns.');
   {
     // Index writes are the first mutation after schema reconciliation ends,
     // so the ownership it proved is no longer current. Survey every source
@@ -5388,7 +5491,7 @@
     // batch rather than index the lists ahead of it and refuse the rest.
     const indexOwned = SCHEMA.indexed_columns.length > 0
       ? await surveyOwnedListsForWrites(
-        SCHEMA.indexed_columns.map(idx => idx.list), '2.3', 'Index',
+        SCHEMA.indexed_columns.map(idx => idx.list), '2.4', 'Index',
       )
       : new Map();
     if (!indexOwned) {
@@ -5457,7 +5560,7 @@
       // the field through the list TITLE, so a replacement answers with a
       // different field Id, or with none, and fails that column's comparison.
       const verifyOwned = await surveyOwnedListsForWrites(
-        indexTargets.map(entry => entry.idx.list), '2.3', 'Index readback',
+        indexTargets.map(entry => entry.idx.list), '2.4', 'Index readback',
       );
       let shapes = null;
       try {
@@ -5508,12 +5611,12 @@
     }
   }
 
-  markPhase('Phase 2.4: field defaults');
-  // === Phase 2.4: reconcile declared field defaults ===
+  markPhase('Phase 2.5: field defaults');
+  // === Phase 2.5: reconcile declared field defaults ===
   // Defaults are included in create-field bodies, but existing columns are
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
   // idempotent and lets a provisioned constant replace after-create flows.
-  log('INFO', 'Starting Phase 2.4: field defaults.');
+  log('INFO', 'Starting Phase 2.5: field defaults.');
   {
     // Post-schema, so the same batch gate as the other write phases: prove
     // every target list before the first MERGE, and refuse the phase instead
@@ -5521,7 +5624,7 @@
     const defaultsOwned = SCHEMA.field_defaults.length > 0
       ? await surveyOwnedListsForWrites(
         SCHEMA.field_defaults.map(fieldDefault => fieldDefault.list),
-        '2.4', 'Field default',
+        '2.5', 'Field default',
       )
       : new Map();
     if (!defaultsOwned) {
@@ -5653,7 +5756,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -5731,6 +5834,12 @@
           ViewQuery: view.caml_query,
         };
         if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        // SP.View.Scope, on a document library's view only (the validator
+        // refuses the key on a list). MEASURED 2026-09-13,
+        // `library.view.scope-on-create-reads-back` in library-guards-probe.js:
+        // a view created with Scope 1 in its body answered HTTP 201 and read
+        // Scope back as 1.
+        if (view.scope != null) createBody.Scope = view.scope;
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
@@ -5836,6 +5945,12 @@
         }
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
+        }
+        // MEASURED 2026-09-13, `library.view.scope-on-merge-reads-back`: a
+        // stored view reading Scope 0 took MERGE Scope 1 (HTTP 204) and read
+        // back 1, so a scope edited by hand is put back here.
+        if (view.scope != null && existing.Scope !== view.scope) {
+          patchBody.Scope = view.scope;
         }
         // Declared totals only. A view with none keeps whatever is live,
         if (Object.keys(patchBody).length > 1) {
@@ -5952,6 +6067,9 @@
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
       if (actual.Hidden !== view.hidden) {
         drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
+      if (view.scope != null && actual.Scope !== view.scope) {
+        drifted.push(`Scope (declared ${view.scope}; readback ${actual.Scope})`);
       }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
@@ -6762,6 +6880,33 @@
                 throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
               }
             });
+            // MEASURED 2026-09-09, `library.access.unique-permissions-library`
+            // in library-access-probe.js: on a document library the break
+            // answered HTTP 200 and HasUniqueRoleAssignments read false on the
+            // first read and true on the second, within 10 s, exactly as on a
+            // generic list once settled. So a library is re-read until the flag
+            // turns, and refused if it never does: an exact-mode allowlist
+            // written onto a list that still inherits would be a no-op the
+            // verify below could not tell from success.
+            const aclIsLibrary = (SCHEMA.lists.find((l) => l.title === la.list) || {}).is_library === true;
+            if (aclIsLibrary) {
+              const LIBRARY_ACL_SETTLE_MS = 2000;
+              let unique = false;
+              for (let attempt = 0; attempt < 5 && !unique; attempt += 1) {
+                if (attempt > 0) await sleep(LIBRARY_ACL_SETTLE_MS);
+                const again = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')?$select=HasUniqueRoleAssignments`), {
+                  headers: { 'Accept': 'application/json;odata=verbose' },
+                });
+                if (!again.ok) {
+                  const text = await again.text();
+                  throw new Error(`HasUniqueRoleAssignments re-read failed: HTTP ${again.status} ${text}`);
+                }
+                unique = Boolean((await again.json()).d.HasUniqueRoleAssignments);
+              }
+              if (!unique) {
+                throw new Error(`'${la.list}' still reads HasUniqueRoleAssignments=false after breakroleinheritance; refusing to write an allowlist onto a library that inherits`);
+              }
+            }
             log('INFO', `[Phase 4.2] Broke inheritance on '${la.list}'.`);
           } else {
             log('INFO', `[Phase 4.2] '${la.list}' already has unique role assignments, reconciling existing bindings.`);

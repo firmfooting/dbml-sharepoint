@@ -281,6 +281,22 @@ printed in the transcript, so copy anything you need before pasting. A list
 without the exact marker is refused before this replacement; deploy never
 manufactures ownership by writing it.
 
+## Phase {{ phase_num['folders'] }}: declared folders
+
+{% set foldered = lists | selectattr('folders') | list %}
+{% if foldered %}
+Each folder is created under its library's root folder, read back, and
+checked to be a folder rather than a file of the same name. On a redeploy an
+existing folder is verified and skipped; nothing inside a folder is touched.
+
+{% for l in foldered %}
+- **{{ l.title }}**: {% for f in l.folders %}{{ f }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endfor %}
+{% else %}
+_(none; no document library declares folders)_
+{% endif %}
+
 ## Phase {{ phase_num['lookups'] }}: deferred lookups
 
 {% if phase2 %}

@@ -280,15 +280,14 @@ that view exists as soon as the script finishes.
 **No exceptions.** Every entity in every template declares its views, its
 form header and its demo rows, and a test over every template says so.
 
-There is no document library in the library, and `kind: DocumentLibrary`
-is refused at build time. A library's items are files and this tool writes
-list rows: SharePoint answers a POST to a library's `/items` with *"To add
-an item to a document library, use SPFileCollection.Add()"*, so demo data
-cannot exist; an uploaded file's `Title` is empty, with the name in
-`FileLeafRef`, so the standard header renders blank on every document; and
-nothing here uploads a file. To manage controlled documents, model the
-metadata as a `List` and keep the documents in a library you manage
-separately, linked with a hyperlink column.
+A document library is a supported kind. A library's items are files, so a
+library entity names the file through `FileLeafRef` in its views and its
+header, declares the folders the deploy creates, and flattens them with a
+recursive view; the measurements behind each of those are cited beside the
+code that relies on them. No shipped template holds a library yet. To
+manage controlled documents in the meantime, model the metadata as a
+`List` and keep the documents in a library you manage separately, linked
+with a hyperlink column.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,

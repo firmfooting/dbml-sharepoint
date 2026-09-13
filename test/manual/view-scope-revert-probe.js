@@ -1,0 +1,426 @@
+/**
+ * dbml-sharepoint PROBE: DOES A STORED VIEW'S Scope MERGE BACK TO 0
+ *
+ * REVISION: 3eed7b83
+ *
+ * ONE QUESTION:
+ *   Can the deploy put a stored view's Scope back to 0 (DefaultValue, folder
+ *   scoped) after it has been 1 (Recursive), by the same MERGE that set it?
+ *
+ * library-guards-probe.js measured Scope 1 sticking on a create and by a
+ * MERGE from 0 (library.view.scope-on-create-reads-back,
+ * library.view.scope-on-merge-reads-back). The view phase reconciles a
+ * declared `scope: default` by MERGEing Scope 0 onto a view somebody has
+ * flipped to Recursive by hand, and nothing has measured that direction. 0
+ * is the enum's DefaultValue, and a property MERGEd to its default is the
+ * shape most likely to be accepted and left alone, which the view phase's
+ * read-back would report as drift on every paste. The create with an
+ * explicit 0 is measured beside it, because a declared default is created
+ * that way rather than by leaving the property out.
+ *
+ * The write shapes are the deploy's: a POST to /views carrying __metadata,
+ * Title, PersonalView and Scope, and a MERGE of Scope to the stored view,
+ * which is what templates/deploy/_views.js.j2 sends.
+ *
+ * SCOPE AND QUESTIONS
+ *   library.doc-lib.fixture-library-created
+ *     A document library is created (BaseTemplate 101).
+ *   library.view.control-missing-view-read-refused
+ *     NEGATIVE CONTROL: a view read naming a view that does not exist is
+ *     REFUSED. Without it, a Scope read below could be any server answer.
+ *   library.view.scope-zero-on-create-reads-back
+ *     A view created with Scope 0 in its body: does Scope read back 0?
+ *   library.view.scope-merge-back-to-default
+ *     A view created with Scope 1, then MERGEd to Scope 0: does it read
+ *     back 0?
+ *
+ * NOT MEASURED HERE
+ *   What the view's page renders under either scope. library-nesting-probe.js
+ *   measured what each scope returns through a query.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   View scope:
+ *     "View.Scope Property" and "ViewScope Enum" (CSOM), "View element
+ *     (List)" for the attribute's correspondence to the property
+ *   List creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *   View creation and update:
+ *     "Views REST API reference", dn499819(v=office.15)
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: delete the library it created.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  log('INFO', 'probe revision 3eed7b83. Quote this when reporting results.');
+
+  const LIB = 'dbmlsp Probe Scope Library';
+  const libPath = `web/lists/getbytitle('${LIB}')`;
+  const ZERO_VIEW = 'dbmlsp scope zero';
+  const REVERT_VIEW = 'dbmlsp scope revert';
+  const DEFAULT_SCOPE = 0;
+  const RECURSIVE = 1;
+
+  const Q = {
+    fixture: 'A document library is created (BaseTemplate 101)',
+    control: 'NEGATIVE CONTROL: a view read naming a view that does not exist is refused',
+    zeroOnCreate: 'Does a view created with Scope 0 in its body read back Scope 0',
+    revert: 'Does a view created with Scope 1 and then MERGEd to Scope 0 read back Scope 0',
+  };
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a DOCUMENT LIBRARY '${LIB}' on ${WEB} with two views,`);
+    log('INFO', 'one created with Scope 0 and one created with Scope 1 and then MERGEd to 0.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIB}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off: an existing library and its views would be reused.');
+      log('INFO', 'Set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  const IDS = [
+    'library.view.control-missing-view-read-refused',
+    'library.view.scope-zero-on-create-reads-back',
+    'library.view.scope-merge-back-to-default',
+  ];
+
+  expect('library.doc-lib.fixture-library-created', Q.fixture);
+  expect('library.view.control-missing-view-read-refused', Q.control);
+  expect('library.view.scope-zero-on-create-reads-back', Q.zeroOnCreate);
+  expect('library.view.scope-merge-back-to-default', Q.revert);
+
+  const voidAll = (ids, reason) => {
+    for (const id of ids) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // __metadata is a VERBOSE OData construct, so every write carrying it
+  // overrides the harness's default nometadata content type.
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+  const MERGE = { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' };
+  const short = (r) => `HTTP ${r.status}: ${(r.text || '').slice(0, 220)}`;
+
+  const readView = async (title) =>
+    spGet(`${libPath}/views/getbytitle('${title}')?$select=Title,Scope`);
+  const scopeOf = (r) => ((r.ok && r.body) ? r.body.Scope : `(read failed HTTP ${r.status})`);
+  const ensureView = async (title, scope) => {
+    const have = await readView(title);
+    if (have.ok) return { ok: true, status: have.status, text: 'already present' };
+    const digest = await getDigest();
+    return spPost(`${libPath}/views`,
+      { __metadata: { type: 'SP.View' }, Title: title, PersonalView: false, Scope: scope },
+      digest, VERBOSE);
+  };
+
+  await resetList(LIB);
+
+  let digest = await getDigest();
+  const haveLib = await spGet(libPath);
+  if (haveLib.ok) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
+           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
+  } else {
+    const made = await spPost('web/lists', {
+      Title: LIB, BaseTemplate: 101,
+      Description: 'dbml-sharepoint view scope revert probe library. Safe to delete.',
+    }, digest);
+    record('library.doc-lib.fixture-library-created', Q.fixture,
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `created '${LIB}'` : short(made));
+    if (!made.ok) {
+      voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+      return report();
+    }
+  }
+
+  // ---- NEGATIVE CONTROL: a view read naming a missing view --------------
+  const junk = await readView('dbmlspNoSuchView');
+  const controlHeld = !junk.ok && isRefusal(junk.status);
+  record('library.view.control-missing-view-read-refused', Q.control,
+         controlHeld ? 'PASS' : (junk.ok ? 'FAIL' : 'NOT ESTABLISHED'),
+         controlHeld ? `refused with HTTP ${junk.status}`
+           : (junk.ok ? 'the view read naming a missing view was ACCEPTED, so a Scope read '
+                        + 'below cannot be told from any other server answer'
+                      : `the view read failed with non-refusal HTTP ${junk.status}`));
+  if (!controlHeld) {
+    voidAll(IDS.slice(1),
+            `negative control did not hold (HTTP ${junk.status}), so a Scope read below could `
+            + 'not be told from any other server answer');
+    return report();
+  }
+
+  // ---- Created with Scope 0 in the body ----------------------------------
+  const madeZero = await ensureView(ZERO_VIEW, DEFAULT_SCOPE);
+  const zeroRead = madeZero.ok ? await readView(ZERO_VIEW) : null;
+  const zeroScope = zeroRead ? scopeOf(zeroRead) : null;
+  record('library.view.scope-zero-on-create-reads-back', Q.zeroOnCreate,
+         madeZero.ok
+           ? (zeroScope === DEFAULT_SCOPE ? 'STICKS' : 'ACCEPTED BUT DIFFERENT')
+           : (isRefusal(madeZero.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+         `POST views with Scope ${DEFAULT_SCOPE} answered ${short(madeZero)}; `
+         + `Scope reads back ${JSON.stringify(zeroScope)}`);
+
+  // ---- Created with Scope 1, then MERGEd to 0 ------------------------------
+  const madeRecursive = await ensureView(REVERT_VIEW, RECURSIVE);
+  const before = madeRecursive.ok ? await readView(REVERT_VIEW) : null;
+  if (!madeRecursive.ok || !before || scopeOf(before) !== RECURSIVE) {
+    voidAll([IDS[2]], madeRecursive.ok
+      ? `the view to revert read Scope ${JSON.stringify(before ? scopeOf(before) : null)} rather than ${RECURSIVE}, so there was nothing to revert`
+      : `the view to revert was not created (${short(madeRecursive)})`);
+    return report();
+  }
+  digest = await getDigest();
+  const merged = await spPost(`${libPath}/views/getbytitle('${REVERT_VIEW}')`,
+    { __metadata: { type: 'SP.View' }, Scope: DEFAULT_SCOPE }, digest, MERGE);
+  const after = await readView(REVERT_VIEW);
+  const afterScope = scopeOf(after);
+  let head = 'NOT ESTABLISHED';
+  if (merged.ok && after.ok) {
+    if (afterScope === DEFAULT_SCOPE) head = 'REVERTS';
+    else if (afterScope === RECURSIVE) head = 'ACCEPTED BUT STAYS';
+    else head = 'ACCEPTED BUT DIFFERENT';
+  } else if (!merged.ok && isRefusal(merged.status)) {
+    head = 'REFUSED';
+  }
+  record('library.view.scope-merge-back-to-default', Q.revert, head,
+         `Scope read ${RECURSIVE} before; MERGE Scope ${DEFAULT_SCOPE} answered ${short(merged)}; `
+         + `Scope reads back ${JSON.stringify(afterScope)}`);
+
+  return report();
+})();
