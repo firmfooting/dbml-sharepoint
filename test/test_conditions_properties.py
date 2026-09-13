@@ -24,6 +24,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 import pytest
+from _conditions import kinds
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -94,12 +95,6 @@ def conditions(max_leaves: int = 4) -> st.SearchStrategy[Condition]:
     )
 
 
-def _kinds(node: Condition) -> list[str]:
-    if isinstance(node, Leaf):
-        return []
-    return [node.kind, *(k for child in node.children for k in _kinds(child))]
-
-
 @given(conditions())
 def test_normalise_eliminates_none_of(condition: Condition) -> None:
     """`none_of` is accepted from authors but never survives normalisation.
@@ -109,7 +104,7 @@ def test_normalise_eliminates_none_of(condition: Condition) -> None:
     `none_of` reaching it would be a KeyError or, worse, a silently wrong
     formula.
     """
-    assert "none_of" not in _kinds(normalise(condition))
+    assert "none_of" not in kinds(normalise(condition))
 
 
 @given(conditions())
@@ -181,7 +176,7 @@ def test_double_negation_normalises_to_the_positive_shape(condition: Condition) 
     """
     doubled = Group("none_of", (Group("none_of", (condition,)),))
     assert condition_fields(normalise(doubled)) == condition_fields(normalise(condition))
-    assert "none_of" not in _kinds(normalise(doubled))
+    assert "none_of" not in kinds(normalise(doubled))
 
 
 @given(conditions())

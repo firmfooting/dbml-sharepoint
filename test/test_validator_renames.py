@@ -28,20 +28,20 @@ def _entity(name: str, *previous: str) -> EntityMapping:
     )
 
 
-def _findings(entities: dict[str, EntityMapping]) -> list[Finding]:
+def _rename_findings(entities: dict[str, EntityMapping]) -> list[Finding]:
     schema = make_schema(*(make_table(n, "Title", note=f"{n} note") for n in entities))
     return validate_against_mapping(schema, make_bundle(entities=entities))
 
 
 def test_a_clean_rename_declaration_is_silent() -> None:
-    found = _findings({"Risk": _entity("Risk", "ProgramRisk", "ProjectRisk")})
+    found = _rename_findings({"Risk": _entity("Risk", "ProgramRisk", "ProjectRisk")})
     none_of(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
     none_of(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
     none_of(found, FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT)
 
 
 def test_a_previous_name_that_is_still_declared_errors() -> None:
-    found = _findings({
+    found = _rename_findings({
         "Risk": _entity("Risk", "Issue"),
         "Issue": _entity("Issue"),
     })
@@ -51,12 +51,12 @@ def test_a_previous_name_that_is_still_declared_errors() -> None:
 
 
 def test_an_entity_renamed_from_itself_errors() -> None:
-    found = _findings({"Risk": _entity("Risk", "Risk")})
+    found = _rename_findings({"Risk": _entity("Risk", "Risk")})
     only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
 
 
 def test_a_previous_name_claimed_by_two_entities_errors() -> None:
-    found = _findings({
+    found = _rename_findings({
         "Risk": _entity("Risk", "ProgramRisk"),
         "Hazard": _entity("Hazard", "ProgramRisk"),
     })
@@ -66,14 +66,14 @@ def test_a_previous_name_claimed_by_two_entities_errors() -> None:
 
 
 def test_a_previous_name_listed_twice_on_one_entity_errors() -> None:
-    found = _findings({"Risk": _entity("Risk", "ProgramRisk", "ProgramRisk")})
+    found = _rename_findings({"Risk": _entity("Risk", "ProgramRisk", "ProgramRisk")})
     only(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
 
 
 def test_a_previous_name_with_reserved_text_errors() -> None:
     """The old marker is computed from the previous name exactly as the
     current one is from the entity name, so the same grammar applies."""
-    found = _findings({"Risk": _entity("Risk", "Program.Risk")})
+    found = _rename_findings({"Risk": _entity("Risk", "Program.Risk")})
     f = only(found, FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT)
     assert "previous name" in f.message and "'Program.Risk'" in f.message
 

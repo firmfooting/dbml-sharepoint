@@ -4,6 +4,7 @@
 import datetime as dt
 
 import pytest
+from _conditions import kinds
 from _findings import messages, none_of, only
 from _paths import MANUAL
 
@@ -215,12 +216,6 @@ def test_double_negation_restores_the_original() -> None:
     assert normalise(condition) == Group("all_of", (Group("any_of", (Leaf("A", "eq", 1),)),))
 
 
-def _kinds(node: Condition) -> list[str]:
-    if isinstance(node, Group):
-        return [node.kind, *[k for child in node.children for k in _kinds(child)]]
-    return []
-
-
 def test_normalise_leaves_no_none_of() -> None:
     """The renderers' contract: they never meet a negated group, which is
     why CAML (which cannot express one) is a viable target."""
@@ -233,7 +228,7 @@ def test_normalise_leaves_no_none_of() -> None:
         },
         "ctx",
     )
-    assert "none_of" not in _kinds(normalise(condition))
+    assert "none_of" not in kinds(normalise(condition))
 
 
 def test_normalise_preserves_operand_transforms() -> None:
@@ -490,7 +485,7 @@ def test_in_and_not_in_diagnose_now_on_a_date_column_identically(
     Parametrised over every target so the CAML-only loop cannot drift from the
     three that recurse.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Due", op, ["now"]),)),
         target=target,
         types={"Due": "date"},
@@ -505,7 +500,7 @@ def test_a_bad_date_among_good_ones_is_still_caught_per_member() -> None:
     """The mirror. The per-member sentinel check must not displace the
     per-member literal check that CAML's `not_in` loop already had -- one bad
     literal among good ones used to walk straight past it."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Due", "not_in", ["2026-07-29", "banana"]),)),
         target=CAML,
         types={"Due": "date"},
@@ -1554,7 +1549,7 @@ def test_none_of_round_a_positive_text_operator_is_still_refused() -> None:
         {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]}, "w",
     )
 
-    findings = _findings(condition, types={"Note": "nvarchar"})
+    findings = _condition_findings_for(condition, types={"Note": "nvarchar"})
 
     assert only(
         findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE,
@@ -1568,7 +1563,7 @@ def test_a_bare_negative_text_operator_is_still_refused() -> None:
         [{"field": "Note", "op": "not_contains", "value": "x"}], "w",
     )
 
-    findings = _findings(condition, types={"Note": "nvarchar"})
+    findings = _condition_findings_for(condition, types={"Note": "nvarchar"})
 
     assert only(
         findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
@@ -1595,7 +1590,7 @@ def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
         {"none_of": [{"field": "Due", "op": "gt", "value": "banana"}]}, "w",
     )
 
-    findings = _findings(condition, types={"Due": "date"})
+    findings = _condition_findings_for(condition, types={"Due": "date"})
 
     assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
     none_of(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE)
@@ -1622,7 +1617,7 @@ def test_the_exemption_stays_narrow_for_an_operator_the_target_renders() -> None
         {"none_of": [{"field": "Due", "op": "begins_with", "value": "x"}]}, "w",
     )
 
-    findings = _findings(condition, types={"Due": "date"})
+    findings = _condition_findings_for(condition, types={"Due": "date"})
 
     assert only(
         findings, FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
@@ -1660,7 +1655,7 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
         "w",
     )
 
-    findings = _findings(condition, types=types)
+    findings = _condition_findings_for(condition, types=types)
 
     assert only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).severity == "error"
     # Same answer without the sibling, so the finding is about the empty
@@ -1669,7 +1664,7 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
         {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]}, "w",
     )
     assert only(
-        _findings(alone, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
+        _condition_findings_for(alone, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
     ).severity == "error"
     # And the renderer does refuse, which is what makes reporting nothing a
     # traceback rather than a permissive build.
@@ -1702,7 +1697,7 @@ def test_an_empty_member_name_is_refused_on_a_multi_value_column() -> None:
         condition = parse_condition({"field": "Evt", "op": op, "value": ""}, "w")
 
         assert only(
-            _findings(condition, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
+            _condition_findings_for(condition, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
         ).severity == "error"
         # The renderer refuses too, so reporting nothing would be a traceback
         # at generation rather than a permissive build.
@@ -1713,7 +1708,7 @@ def test_an_empty_member_name_is_refused_on_a_multi_value_column() -> None:
     # renders. Without this the test would pass just as well against a rule
     # that refused every `includes`.
     named = parse_condition({"field": "Evt", "op": "includes", "value": "View"}, "w")
-    assert _findings(named, types=types) == []
+    assert _condition_findings_for(named, types=types) == []
     assert "View" in to_caml(named, types)
 
 
@@ -1735,7 +1730,7 @@ def test_one_bad_operand_under_none_of_is_one_finding_not_two() -> None:
         {"none_of": [{"field": "Note", "op": "contains", "value": ""}]}, "w",
     )
 
-    findings = _findings(condition, target=EXPRESSION, types=types)
+    findings = _condition_findings_for(condition, target=EXPRESSION, types=types)
 
     # The operator the AUTHOR wrote, not the one normalisation made.
     assert "'contains'" in only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).message
@@ -1767,7 +1762,7 @@ def test_two_broken_leaves_on_one_column_are_two_findings() -> None:
         "w",
     )
 
-    findings = _findings(condition, target=CAML, types=types)
+    findings = _condition_findings_for(condition, target=CAML, types=types)
 
     empty = messages(findings, FindingCode.CONDITION_NEEDLE_EMPTY)
     assert len(empty) == 2, empty
@@ -1796,7 +1791,7 @@ def test_one_leaf_object_used_at_both_polarities_is_judged_at_both() -> None:
     shared = Leaf("Note", "not_contains", "x")
     condition = Group("all_of", (shared, Group("none_of", (shared,))))
 
-    findings = _findings(condition, target=CAML, types={"Note": "nvarchar"})
+    findings = _condition_findings_for(condition, target=CAML, types={"Note": "nvarchar"})
 
     # The bare occurrence is emitted as written and CAML has no <NotContains>.
     only(findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE)
@@ -2062,7 +2057,7 @@ def test_a_person_comparison_still_needs_an_accessor() -> None:
 # checks use; driving it directly is the smallest thing that reaches these.
 
 
-def _findings(
+def _condition_findings_for(
     condition: Condition,
     *,
     target: str = CAML,
@@ -2082,7 +2077,9 @@ def _findings(
 
 
 def test_a_measure_other_than_length_is_refused() -> None:
-    findings = _findings(Group("all_of", (Leaf("Status", "eq", "x", measure="size"),)))
+    findings = _condition_findings_for(
+        Group("all_of", (Leaf("Status", "eq", "x", measure="size"),)),
+    )
 
     assert only(findings, FindingCode.CONDITION_MEASURE_UNKNOWN).severity == "error"
 
@@ -2090,7 +2087,7 @@ def test_a_measure_other_than_length_is_refused() -> None:
 def test_in_with_a_scalar_value_is_refused() -> None:
     """`in` is a membership test, so a bare scalar is a declaration mistake
     rather than a set of one."""
-    findings = _findings(Group("all_of", (Leaf("Status", "in", "Open"),)))
+    findings = _condition_findings_for(Group("all_of", (Leaf("Status", "in", "Open"),)))
 
     assert only(findings, FindingCode.CONDITION_VALUE_NOT_A_LIST).severity == "error"
 
@@ -2102,7 +2099,7 @@ def test_a_condition_nested_past_the_depth_ceiling_is_refused() -> None:
     for _ in range(MAX_DEPTH):
         node = Group("all_of", (node,))
 
-    assert only(_findings(node), FindingCode.CONDITION_TOO_DEEP).severity == "error"
+    assert only(_condition_findings_for(node), FindingCode.CONDITION_TOO_DEEP).severity == "error"
 
 
 @pytest.mark.parametrize("column_type", ["date", "datetime", "calculated_date"])
@@ -2129,7 +2126,7 @@ def test_a_substring_test_against_a_sentinel_names_the_sentinel(
     sentinel would reach the formula as its own spelling rather than as a
     date".
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Due", op, "today"),)), types={"Due": column_type},
     )
 
@@ -2153,7 +2150,7 @@ def test_a_substring_test_on_a_text_column_is_not_a_sentinel_test() -> None:
 def test_a_validation_formula_cannot_read_a_lookup() -> None:
     """Lookups are int-typed in DBML, so the type map alone cannot see them;
     the lookup set is what tells the check they are not really numbers."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Project", "eq", 1),)),
         target=VALIDATION,
         types={"Project": "int"},
@@ -2184,7 +2181,7 @@ def test_a_membership_test_on_a_multi_value_lookup_is_accepted(
     """
     value = "Alpha" if accessor == "lookupValue" else 3
 
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Parties", op, value, property=accessor),)),
         types={"Parties": "int[]"},
         lookups={"Parties"},
@@ -2202,7 +2199,7 @@ def test_a_null_test_on_a_multi_value_lookup_needs_no_accessor(op: str) -> None:
     only by the evidence rule. Measured on 2026-09-04 (L4 for `<IsNull>`, L1 +
     L2 + L3 for `<IsNotNull>`), so it renders.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Parties", op),)),
         types={"Parties": "int[]"},
         lookups={"Parties"},
@@ -2215,7 +2212,7 @@ def test_a_comparison_against_a_multi_value_lookup_still_needs_an_accessor() -> 
     """What the measurement settled is the OPERAND SPELLING, not the deadlock
     that made one necessary. A lookup still has no defensible default between
     the item's title and the item's id, so the author names one."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Parties", "includes", "Alpha"),)),
         types={"Parties": "int[]"},
         lookups={"Parties"},
@@ -2233,7 +2230,7 @@ def test_a_single_value_lookup_comparison_is_still_refused_on_caml() -> None:
     this tool emits, so removing `[]` puts the accessor back out of CAML's
     reach. A null test remains the one filter a single-value lookup can express.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Parties", "eq", 3, property="lookupId"),)),
         types={"Parties": "int"},
         lookups={"Parties"},
@@ -2246,7 +2243,7 @@ def test_a_single_value_lookup_filter_is_still_accepted() -> None:
     """The arity control. Removing `[]` leaves the one lookup filter a view can
     express: a null test, exempt from the accessor requirement because
     emptiness is a property of the field rather than of a name or an id."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Parties", "is_null"),)),
         types={"Parties": "int"},
         lookups={"Parties"},
@@ -2259,7 +2256,7 @@ def test_a_multi_value_choice_filter_is_still_accepted() -> None:
     """The ref control. A multi-value column with no ref at all takes no
     accessor: `property` applies to person and lookup columns only, and the
     lookup dialects must not start being demanded of a Choice."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", "includes", "View"),)), types=MULTI_TYPES,
     )
 
@@ -2289,7 +2286,7 @@ def test_an_operator_withheld_pending_a_probe_is_refused(
         rendering, "DISABLED_PENDING_PROBE", {CAML: frozenset({"contains"})},
     )
 
-    findings = _findings(Group("all_of", (Leaf("Status", "contains", "x"),)))
+    findings = _condition_findings_for(Group("all_of", (Leaf("Status", "contains", "x"),)))
 
     assert only(findings, FindingCode.CONDITION_OPERATOR_UNVERIFIED).severity == "error"
 
@@ -2304,7 +2301,7 @@ def test_an_operator_the_target_cannot_render_is_refused(
         CAPABILITIES, CAML, frozenset(CAPABILITIES[CAML] - {"eq"}),
     )
 
-    findings = _findings(Group("all_of", (Leaf("Status", "eq", "Open"),)))
+    findings = _condition_findings_for(Group("all_of", (Leaf("Status", "eq", "Open"),)))
 
     assert only(findings, FindingCode.CONDITION_OPERATOR_UNRENDERABLE).severity == "error"
 
@@ -2412,7 +2409,7 @@ def test_a_scalar_operator_on_a_multi_value_column_is_refused(op: str) -> None:
     """
     value = ["View"] if op in ("in", "not_in") else "View"
 
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", op, value),)), types=MULTI_TYPES,
     )
 
@@ -2436,7 +2433,7 @@ def test_a_substring_operator_on_a_multi_value_column_is_refused(op: str) -> Non
     and Note columns only, which makes both of these undocumented as well as
     unmeasured.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", op, "View"),)), types=MULTI_TYPES,
     )
 
@@ -2457,7 +2454,7 @@ def test_a_delimited_value_is_refused_rather_than_testing_the_whole_set() -> Non
     comparison is order-sensitive, so the same set declared in another order
     would match nothing.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", "includes", "View;#Edit"),)), types=MULTI_TYPES,
     )
 
@@ -2474,7 +2471,7 @@ def test_membership_on_a_single_value_column_is_refused(op: str) -> None:
     scalar Choice and mean equality -- the same word meaning two things, just
     approached from the other side.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Status", op, "Open"),)), types=MULTI_TYPES,
     )
 
@@ -2499,7 +2496,7 @@ def test_the_array_remedy_names_a_form_rather_than_this_column_s_type(
     a schema declaring `Enum nvarchar`. So the sentence claims nothing about
     this column and names the shape instead, which is true for every type.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Col", "includes", "x"),)), types={"Col": declared},
     )
 
@@ -2521,7 +2518,7 @@ def test_membership_has_no_rendering_on_the_formula_targets(target: str) -> None
     is the more actionable of the two true sentences, since `includes` does not
     exist on that target for any column at all.
     """
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", "includes", "View"),)),
         target=target,
         types=MULTI_TYPES,
@@ -2660,7 +2657,7 @@ def test_the_lookup_dialects_do_not_leak_onto_a_multi_value_choice() -> None:
 def test_the_multi_value_operand_refusal_still_covers_the_formula_targets() -> None:
     """#158's refusal is not weakened by the operator gate landing beside it: a
     formula target still refuses the COLUMN, whatever is asked of it."""
-    findings = _findings(
+    findings = _condition_findings_for(
         Group("all_of", (Leaf("Events", "eq", "View"),)),
         target=VALIDATION,
         types=MULTI_TYPES,
