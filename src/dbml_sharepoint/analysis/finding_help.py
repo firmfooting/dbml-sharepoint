@@ -1434,7 +1434,12 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.UNIQUE_WITHOUT_NOT_NULL: (
         "`[unique]` without `not null`, so uniqueness is enforced only "
-        "on populated values."
+        "on populated values. MEASURED 2026-09-13 "
+        "(`field.unique.blank-values-coexist`, "
+        "`field.unique.empty-string-values-coexist` in "
+        "unique-blanks-probe.js): two items that omit the column both "
+        "land, and so do two that send it as an empty string, while a "
+        "second item repeating a populated value is refused."
     ),
     FindingCode.UNKNOWN_BASE_PERMISSION: (
         "A `permission_levels` entry names a base permission bit "

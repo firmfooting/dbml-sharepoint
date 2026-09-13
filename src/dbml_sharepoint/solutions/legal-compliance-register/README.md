@@ -69,11 +69,9 @@ replace them with `PeriodYear: "=YEAR(TODAY())+IF(MONTH(TODAY())>=7,1,0)"`
 (the year the financial year ends in) and
 `Quarter: "=\"Q\"&(MOD(ROUNDUP(MONTH(TODAY())/3,0)+1,4)+1)"` (July to
 September is Q1), and change the `Quarter` column note and the file naming
-convention in `40-adopt/staff-guide.md` to match. The build refuses that
-pair today: no live run has evaluated `IF` or `MOD` in a default formula,
-so both are held pending rather than assumed to work. Run
-`dbml-sharepoint explain default_formula_function_unmeasured` for what is
-outstanding. The number
+convention in `40-adopt/staff-guide.md` to match. Both formulas were run on
+a live site on 2026-09-13, exactly as written here, and each filled its
+column on a bare upload. The number
 of licence holders is a fact about your portal subscription, not about this
 family; `LicenceHolder` on each topic records which named login records
 its results.

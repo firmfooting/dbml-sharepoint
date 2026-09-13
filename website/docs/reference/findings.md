@@ -280,7 +280,7 @@ dbml-sharepoint explain unknown_column_type
 | `undeployable_declaration_column` | error | A per-column declaration sits on Title or a SharePoint system column, which the deploy never writes these properties to. It would validate clean and deploy nothing. |
 | `unindexed_filter_columns` | warning | A view's `where` filters on columns with no effective index, so past the list view threshold SharePoint may silently return a truncated answer. |
 | `unique_unsupported_for_type` | error | `[unique]` is declared on a type SharePoint cannot enforce it for. |
-| `unique_without_not_null` | warning | `[unique]` without `not null`, so uniqueness is enforced only on populated values. |
+| `unique_without_not_null` | warning | `[unique]` without `not null`, so uniqueness is enforced only on populated values. MEASURED 2026-09-13 (`field.unique.blank-values-coexist`, `field.unique.empty-string-values-coexist` in unique-blanks-probe.js): two items that omit the column both land, and so do two that send it as an empty string, while a second item repeating a populated value is refused. |
 | `unknown_base_permission` | error | A `permission_levels` entry names a base permission bit SharePoint does not have. |
 | `unknown_column_type` | error | A column's DBML type is not one the typemap knows. |
 | `unknown_entity` | error | A mapping section names an entity the mapping does not declare. |
