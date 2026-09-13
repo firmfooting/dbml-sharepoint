@@ -38,6 +38,46 @@ entities:
     folders: ["Clinical services"]
 """
 
+#: A declared view whose previous title is the one a bare library ships on
+#: AllItems.aspx. Nothing refuses this at build time: 'All Documents' is not
+#: another declared title, so the checks in `_views.py` have nothing to see.
+_CLAIMS_THE_BUILTIN_TITLE = _LIBRARY_ENTITY + """
+views:
+  Escalation:
+    - title: "Docs"
+      default: true
+      fields: [FileLeafRef, Note]
+      scope: recursive
+      renamed_from: ["All Documents"]
+"""
+
+#: Two declared views, neither claiming anything of the other's. The
+#: collision the runtime guard refuses is spliced into the emitted SCHEMA
+#: afterwards, because no mapping can express it.
+_TWO_VIEWS = _LIBRARY_ENTITY + """
+views:
+  Escalation:
+    - title: "Alpha"
+      default: true
+      fields: [FileLeafRef, Note]
+    - title: "Beta"
+      fields: [FileLeafRef, Note]
+"""
+
+#: 'Alpha' adopts the live 'Gamma' and renames it. The second claim on
+#: 'Gamma' is spliced into the emitted SCHEMA afterwards, because
+#: `PREVIOUS_TITLE_CLAIMED_TWICE` refuses two declarations claiming one.
+_RENAME_THEN_CLAIM = _LIBRARY_ENTITY + """
+views:
+  Escalation:
+    - title: "Alpha"
+      default: true
+      fields: [FileLeafRef, Note]
+      renamed_from: ["Gamma"]
+    - title: "Beta"
+      fields: [FileLeafRef, Note]
+"""
+
 _RECURSIVE_VIEW = _LIBRARY_ENTITY + """
 views:
   Escalation:
@@ -178,10 +218,68 @@ _VIEW_MERGE_BY_ID_JS = (
 )
 
 
+#: The shared harness keys its view state on the RAW title out of the URL,
+#: so `getbytitle('All%20Items')` and the seeded 'All Items' are two views to
+#: it and a read after a write lands on an empty second one. Decoding the way
+#: `listOf` already does gives one view one key. Paired with the re-key below,
+#: because a rename moves the key a later read resolves by.
+_VIEW_KEY_DECODE_OLD_JS = (
+    "const viewOf = (url) => {\n"
+    "  const match = url.match(/\\/views\\/getbytitle\\('([^']+)'\\)/);\n"
+    "  return match && match[1];\n"
+    "};\n"
+)
+
+_VIEW_KEY_DECODE_JS = (
+    "const viewOf = (url) => {\n"
+    "  const match = url.match(/\\/views\\/getbytitle\\('(.*?)'\\)/);\n"
+    "  return match == null ? match"
+    " : decodeURIComponent(match[1]).replace(/''/g, \"'\");\n"
+    "};\n"
+)
+
+#: A rename through getbytitle, which is how a view created under its URL
+#: slug takes its declared title. SharePoint resolves the new title on the
+#: next call; without this the mock still answers only to the old one, and
+#: every setting the create body carried reads back absent.
+_VIEW_RENAME_REKEY_OLD_JS = (
+    "          if (parsed[key] !== undefined) state[key] = parsed[key];\n"
+    "        }\n"
+)
+
+_VIEW_RENAME_REKEY_JS = _VIEW_RENAME_REKEY_OLD_JS + (
+    "        if (parsed.Title !== undefined) {\n"
+    "          delete views[`${listOf(u)} ${viewOf(u)}`];\n"
+    "          views[`${listOf(u)} ${parsed.Title}`] = state;\n"
+    "        }\n"
+)
+
+#: A response is a snapshot. The shared harness hands its own state objects
+#: to the caller, so the view enumeration the phase caches silently follows
+#: every later write to the mock, and a phase that reads a stale cache reads
+#: a fresh one here instead. Serialising is what a fetch does.
+_RESPONSE_SNAPSHOT_JS = (
+    "    json: async () => JSON.parse(JSON.stringify(payload)),\n"
+)
+
+#: Views the mock seeds beside the built-in, at a .aspx of their own and
+#: never as the default. A live library can hold views the deployer did not
+#: create, and two of the view phase's guards only run when one is there.
+_SEED_EXTRA_VIEWS_JS = (
+    "    viewState(listTitle);\n"
+    "    for (const [seededTitle, base] of Object.entries(__EXTRA_VIEWS__)) {\n"
+    "      const seeded = viewState(listTitle, seededTitle);\n"
+    "      seeded.DefaultView = false;\n"
+    "      seeded.ServerRelativeUrl = `/sites/test/Lists/${listTitle}/${base}`;\n"
+    "    }\n"
+)
+
+
 def _library_harness(
     *, scope_sticks: bool = True, unique_after: int | None = None,
     unique_fail: bool = False, declared_folder: bool = False,
-    builtin_view_title: str | None = None,
+    builtin_view_title: str | None = None, builtin_is_default: bool = True,
+    extra_views: dict[str, str] | None = None,
 ) -> str:
     """The view-guard harness (per-view identity, view creates) with the one
     list answering as a library and the level marker carrying this pack's
@@ -196,6 +294,10 @@ def _library_harness(
     ships; a live library ships 'All Documents' there
     (`library.view.builtin-occupies-allitems`, 2026-09-13), and that title is
     the whole reason the view phase needs to adopt by URL.
+
+    `builtin_is_default` clears DefaultView on the seeded view, which is the
+    shape a foreign view on a freed AllItems.aspx has. `extra_views` maps a
+    title to a .aspx basename and seeds each one beside the built-in.
     """
     harness = _view_guard_harness({}).replace("simple-test", "t")
     for what, old, new in (
@@ -206,13 +308,25 @@ def _library_harness(
          _VIEW_MERGE_BY_ID_JS
          + "  if ((opts.method || 'GET') === 'POST'"
            " && u.includes('/views/getbytitle')) {\n"),
+        ("response snapshot",
+         "    json: async () => payload,\n", _RESPONSE_SNAPSHOT_JS),
+        ("view key decode", _VIEW_KEY_DECODE_OLD_JS, _VIEW_KEY_DECODE_JS),
+        ("view rename re-key", _VIEW_RENAME_REKEY_OLD_JS, _VIEW_RENAME_REKEY_JS),
         ("built-in view title",
          "(listTitle, title = 'All Items') =>",
          f"(listTitle, title = {json.dumps(builtin_view_title)}) =>"),
+        ("built-in default flag",
+         "Title: title, DefaultView: true,", "Title: title, DefaultView: false,"),
+        ("extra views", "    viewState(listTitle);\n",
+         _SEED_EXTRA_VIEWS_JS.replace("__EXTRA_VIEWS__", json.dumps(extra_views or {}))),
     ):
         if what == "scope write" and not scope_sticks:
             continue
         if what == "built-in view title" and builtin_view_title is None:
+            continue
+        if what == "built-in default flag" and builtin_is_default:
+            continue
+        if what == "extra views" and not extra_views:
             continue
         spliced = harness.replace(old, new)
         assert spliced != harness, f"{what} was not spliced into the harness"
@@ -240,19 +354,32 @@ def _library_harness(
     )
 
 
-def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
-    """The summary, the recorded calls, and how often the inheritance flag
-    was read (counted by the spliced handler, which answers before the
-    harness records the call)."""
+def _run_output(harness: str, deploy_js: str) -> str:
+    """The whole Node transcript, which carries the operator's log lines as
+    well as the markers `_run` parses its three values out of."""
     body = deploy_js.rstrip()
     assert body.endswith("})();")
-    output = run_node(
+    return run_node(
         f"{harness}\n({body[:-1]}).then((r) => {{\n"
         "  console.log('__RESULT__' + JSON.stringify(r));\n"
         "  console.log('__CALLS__' + JSON.stringify(globalThis.__calls));\n"
         "  console.log('__UNIQUE__' + JSON.stringify(globalThis.__uniqueReads || 0));\n"
         "});\n",
     )
+
+
+def _calls_of(output: str) -> list[dict[str, Any]]:
+    """The recorded calls out of a transcript `_run_output` returned."""
+    line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
+    calls: list[dict[str, Any]] = json.loads(line.removeprefix("__CALLS__"))
+    return calls
+
+
+def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+    """The summary, the recorded calls, and how often the inheritance flag
+    was read (counted by the spliced handler, which answers before the
+    harness records the call)."""
+    output = _run_output(harness, deploy_js)
     calls_line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
     unique_line = next(ln for ln in output.splitlines() if ln.startswith("__UNIQUE__"))
     return (
@@ -460,8 +587,176 @@ def test_a_library_whose_builtin_view_is_already_all_items_is_adopted_by_title(
     assert _titles_merged_by_id(calls) == []
 
 
-def _schema_lists(deploy_js: str) -> list[dict[str, Any]]:
-    """The SCHEMA.lists the emitted script carries."""
+def test_a_foreign_view_holding_the_builtin_url_is_not_adopted(
+    tmp_path: Path,
+) -> None:
+    """A basename match is not identity. MEASURED 2026-09-13,
+    `library.view.builtin-delete-frees-url` in library-builtin-view-probe.js:
+    the built-in can be deleted and AllItems.aspx then reads free, so a custom
+    public view can afterwards hold it. Adopting on the basename alone would
+    rename that view and replace its query, fields and formatting.
+
+    Nothing in the view enumeration says "built-in", so adoption is restricted
+    to the shape that was measured: the page is the list's default view. A view
+    on the URL that is not takes nothing, and the operator is told why.
+    """
+    output = _run_output(
+        _library_harness(builtin_view_title="Team docs", builtin_is_default=False),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW),
+    )
+    calls = _calls_of(output)
+    assert _titles_merged_by_id(calls) == [], (
+        "the foreign view on AllItems.aspx was renamed, which is the defect"
+    )
+    assert "AllItems" in _view_titles_created(calls), (
+        "All Items fell through to the create beside it, which is what the "
+        "URL drift gate then fails closed on a real library"
+    )
+    assert any(
+        "WARN" in line and "'Team docs' holds AllItems.aspx" in line
+        and "(default: false)" in line
+        for line in output.splitlines()
+    ), output[-3000:]
+
+
+def test_a_builtin_view_another_declaration_claims_is_not_adopted(
+    tmp_path: Path,
+) -> None:
+    """The second half of the same guard. A declaration whose `renamed_from`
+    names the built-in's title owns that view, and no mapping check can see
+    the collision: 'All Documents' is a live title, not a declared one.
+
+    Here that declaration refuses to act (its current and previous titles both
+    exist), so the built-in is still on the URL when the generated All Items
+    reaches it. Adopting it there would rename the very view the run has just
+    declined to choose between.
+    """
+    output = _run_output(
+        _library_harness(
+            builtin_view_title="All Documents", extra_views={"Docs": "Docs.aspx"},
+        ),
+        _library_deploy_js(tmp_path, _CLAIMS_THE_BUILTIN_TITLE),
+    )
+    summary, calls = _summary_of(output), _calls_of(output)
+    assert [e["error"] for e in summary["errors"]] == [
+        ("both current view 'Docs' and previous-title view 'All Documents' "
+         "exist; refusing to choose or delete either"),
+    ], summary["errors"]
+    assert _titles_merged_by_id(calls) == [], (
+        "the built-in was adopted and renamed out from under 'Docs'"
+    )
+    assert any(
+        "WARN" in line and "'All Documents' holds AllItems.aspx" in line
+        and "(default: true)" in line
+        for line in output.splitlines()
+    ), output[-3000:]
+
+
+def _declare_previous_title(deploy_js: str, title: str, previous: str) -> str:
+    """Put `previous` on the declared view `title` in the emitted SCHEMA.
+
+    No mapping can say this: `PREVIOUS_TITLE_IS_A_CURRENT_TITLE` refuses a
+    previous title that is another declared view's current one, which is the
+    only schema-level route to two declarations resolving to one live view.
+    The runtime guard is the layer under that, so reaching it means writing
+    the SCHEMA the check would have refused.
+    """
+    blob = _schema_blob(deploy_js)
+    schema = json.loads(blob)
+    matched = [v for v in schema["views"] if v["title"] == title]
+    assert len(matched) == 1, f"{title!r} is not one declared view: {matched}"
+    matched[0]["renamed_from"] = [previous]
+    return deploy_js.replace(blob, json.dumps(schema), 1)
+
+
+def test_two_declarations_resolving_to_one_live_view_write_neither(
+    tmp_path: Path,
+) -> None:
+    """'Alpha' matches the live view by title and verifies it. 'Beta' then
+    matches the same view by previous title, sees a basename that is not its
+    own, and migrates: create, transfer the default flag, DELETE the old view.
+    The view 'Alpha' was reported verified on is gone, and both were reported
+    verified.
+
+    The phase records which live view each declaration resolved to and refuses
+    the second claim instead, before any write.
+    """
+    deploy_js = _declare_previous_title(
+        _library_deploy_js(tmp_path, _TWO_VIEWS), "Beta", "Alpha",
+    )
+    summary, calls, _reads = _run(
+        _library_harness(
+            builtin_view_title="All Documents", extra_views={"Alpha": "Alpha.aspx"},
+        ),
+        deploy_js,
+    )
+    assert [e["error"] for e in summary["errors"]] == [
+        ("views 'Alpha' and 'Beta' on this list both resolved to the same "
+         "live view; refusing to write either"),
+    ], summary["errors"]
+    assert "Beta" not in _view_titles_created(calls), (
+        "the migration that deletes Alpha's view had already started"
+    )
+
+
+def test_a_rename_this_phase_performed_does_not_trip_the_claim_guard(
+    tmp_path: Path,
+) -> None:
+    """One enumeration serves every declaration on a list, so it still shows
+    'Gamma' after 'Alpha' has renamed it. A later declaration claiming 'Gamma'
+    would match a title that no longer exists, resolve the Id behind it, and be
+    refused as a second claim on a view nothing else is using.
+
+    The phase writes the new title back into the enumeration, so the matchers
+    read the list as it now is. The guard fails closed; this is what keeps it
+    from firing on the deployer's own work.
+    """
+    deploy_js = _declare_previous_title(
+        _library_deploy_js(tmp_path, _RENAME_THEN_CLAIM), "Beta", "Gamma",
+    )
+    summary, calls, _reads = _run(
+        _library_harness(
+            builtin_view_title="All Documents", extra_views={"Gamma": "Alpha.aspx"},
+        ),
+        deploy_js,
+    )
+    assert summary["errors"] == [], summary["errors"]
+    assert "Alpha" in _titles_merged_by_id(calls), (
+        "'Gamma' was never renamed, so nothing was there to trip the guard"
+    )
+    assert "Beta" in _view_titles_created(calls), (
+        "'Beta' resolved to a live view instead of being created"
+    )
+
+
+def test_a_view_this_phase_deleted_is_dropped_from_the_enumeration(
+    tmp_path: Path,
+) -> None:
+    """The same list read, and the other thing a declaration does to it. A
+    migration to the clean URL recreates the page and DELETES the old view, so
+    the enumeration now names a view that is gone; a later declaration
+    claiming its title would resolve an Id that no longer resolves.
+
+    Identical to the rename above except for where 'Gamma' lives, which is
+    what chooses the migration between them.
+    """
+    deploy_js = _declare_previous_title(
+        _library_deploy_js(tmp_path, _RENAME_THEN_CLAIM), "Beta", "Gamma",
+    )
+    summary, calls, _reads = _run(
+        _library_harness(
+            builtin_view_title="All Documents", extra_views={"Gamma": "Gamma.aspx"},
+        ),
+        deploy_js,
+    )
+    assert summary["errors"] == [], summary["errors"]
+    created = _view_titles_created(calls)
+    assert "Alpha" in created, "'Gamma' was never migrated off Gamma.aspx"
+    assert "Beta" in created, "'Beta' resolved to the view the migration deleted"
+
+
+def _schema_blob(deploy_js: str) -> str:
+    """The SCHEMA literal out of the emitted script, brace-balanced."""
     blob = deploy_js.split("const SCHEMA = ", 1)[1]
     depth = 0
     for index, char in enumerate(blob):
@@ -470,9 +765,13 @@ def _schema_lists(deploy_js: str) -> list[dict[str, Any]]:
         elif char == "}":
             depth -= 1
             if depth == 0:
-                blob = blob[: index + 1]
-                break
-    lists: list[dict[str, Any]] = json.loads(blob)["lists"]
+                return blob[: index + 1]
+    raise AssertionError("the emitted SCHEMA literal never closed")
+
+
+def _schema_lists(deploy_js: str) -> list[dict[str, Any]]:
+    """The SCHEMA.lists the emitted script carries."""
+    lists: list[dict[str, Any]] = json.loads(_schema_blob(deploy_js))["lists"]
     return lists
 
 
