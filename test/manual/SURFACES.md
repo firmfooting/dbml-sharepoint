@@ -196,7 +196,8 @@ Scopes: `multichoice`, `multilookup`, `lookup`, `person`, `note`, `date`,
 `list` (the list object the columns belong to), `default-formula` (a
 column's `DefaultFormula` property, what it fills at item create, and what
 `DefaultValue` reads back beside it), `unique` (a column's
-`EnforceUniqueValues` constraint and which writes it refuses), `sealed` (a
+`EnforceUniqueValues` constraint, which writes it refuses, and what adding it
+to a column that already holds items does), `sealed` (a
 column's `Sealed` flag, what SharePoint reports about deleting the column in
 each state, and what it does with a write of the read-only `CanBeDeleted`),
 `cross-web` (a Lookup whose target list is in another web)
@@ -207,7 +208,7 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `title-rename-probe.js`, `title-seal-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
-`field-sealed-probe.js`
+`unique-transition-probe.js`, `field-sealed-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is

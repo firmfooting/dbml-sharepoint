@@ -163,6 +163,7 @@
     "APP_Task",
     "APP_AppSettings"
   ],
+  "list_unique_columns": [],
   "list_view_threshold": 5000,
   "requires_manage_permissions": true,
   "uses_today": true
@@ -1156,15 +1157,50 @@
     }
 
     // One request for the column enumerations of every declared list, where
-    // this was one per list.
-    const displayLists = (TARGETS.list_display_titles || []).filter(
-      ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
-    const displayShapes = await readMany(displayLists.map(([title]) =>
-      `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title&$top=500`));
-    for (let position = 0; position < displayLists.length; position += 1) {
-      const [title, columns] = displayLists[position];
+    // this was one per list. Two checks read it, so the titles are the union
+    // of the lists each one asks about and the select carries both their
+    // properties. An array, not a Set or an object, so a list titled
+    // `__proto__` keeps its own entry.
+    const columnListTitles = [];
+    for (const [title] of [
+      ...(TARGETS.list_display_titles || []), ...(TARGETS.list_unique_columns || []),
+    ]) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+      if (!columnListTitles.includes(title)) columnListTitles.push(title);
+    }
+    // Spelled once, because the request and the truncation test below are
+    // wrong the moment they disagree about the page size.
+    const COLUMN_PAGE_SIZE = 500;
+    const columnShapes = new Map();
+    {
+      const rows = await readMany(columnListTitles.map((title) =>
+        `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title,EnforceUniqueValues&$top=${COLUMN_PAGE_SIZE}`));
+      for (let at = 0; at < columnListTitles.length; at += 1) columnShapes.set(columnListTitles[at], rows[at]);
+    }
+    const columnShapeOf = (title) => columnShapes.get(title)
+      || { ok: false, error: 'the batched read did not queue this list' };
+    // Whether this page may have left columns unread, which is what decides
+    // if a column missing from it is a column the list does not hold.
+    //
+    // A FULL page is the tell, not a missing `__next`: `$top` is
+    // client-driven paging, and Learn's "PageSize, Top and MaxTop" says of it
+    // that "there is no nextLink that is returned"
+    // (https://learn.microsoft.com/odata/webapi/pagesize-top-maxtop), so an
+    // absent `__next` under a `$top` says nothing at all. The same page
+    // documents the other direction, a server paging BELOW the asked-for
+    // size, which does return one; both are read here and neither is
+    // followed. A batch part is one request, and asking for the declared
+    // fields directly instead would put a 404 per unprovisioned column into
+    // an envelope BatchReader refuses whole, which is a first deploy.
+    const columnsTruncated = (live) => {
+      const next = live.d && live.d.__next;
+      return ((live.d && live.d.results) || []).length >= COLUMN_PAGE_SIZE
+        || (typeof next === 'string' && next !== '');
+    };
+    for (const [title, columns] of (TARGETS.list_display_titles || [])) {
+      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
       const key = `display_titles:${title}`;
-      const live = displayShapes[position] || { ok: false, error: 'the batched read did not queue this list' };
+      const live = columnShapeOf(title);
       if (!live.ok) {
         // Absent is not drifted. The collision loop above already reported
         // whether this list exists, so staying quiet here avoids two
@@ -1179,8 +1215,15 @@
         byInternal.set(String(f.InternalName), f.Title);
       }
       const drifted = [];
+      const unseen = [];
+      const truncated = columnsTruncated(live);
       for (const [internal, declaredTitle] of columns) {
-        if (!byInternal.has(internal)) continue;  // not provisioned yet
+        if (!byInternal.has(internal)) {
+          // Not provisioned yet, unless the page it is missing from may have
+          // ended before the whole list did.
+          if (truncated) unseen.push(internal);
+          continue;
+        }
         const actual = byInternal.get(internal);
         if (actual !== declaredTitle) {
           drifted.push(`${internal} displays as ${JSON.stringify(actual)}, declared ${JSON.stringify(declaredTitle)}`);
@@ -1188,6 +1231,76 @@
       }
       if (drifted.length > 0) {
         finding(2, key, 'INFO', `'${title}': ${drifted.length} column display title(s) differ from the mapping and the next deploy will put them back -- ${drifted.join('; ')}.`);
+      }
+      if (unseen.length > 0) {
+        // Said rather than passed over in silence: this check reports drift
+        // it saw, and a column it could not see is not a column that matches.
+        finding(2, key, 'INFO', `'${title}': ${unseen.length} declared column(s) were not in a column enumeration that came back at its ${COLUMN_PAGE_SIZE}-row page size -- ${unseen.join(', ')}. Whether they display under the declared titles was not compared.`);
+      }
+    }
+
+    // Columns declared unique that the site holds unconstrained. #550 made a
+    // declared `unique` actually deploy its constraint, so a list provisioned
+    // before that fix gains it over data that never carried it.
+    //
+    // Deliberately the same comparison deploy's preflight makes, in the same
+    // declaration order. Preflight says it before any write but does not stop
+    // the run, so by the time the field phase asks, the rename, security,
+    // logging and list phases have written; this script is read before the
+    // paste. Two places on purpose, like the preflight and the field phase.
+    for (const [title, columns] of (TARGETS.list_unique_columns || [])) {
+      const key = `pending_unique:${title}`;
+      const live = columnShapeOf(title);
+      // Absent is not unconstrained. A 404 is the same fact when the title
+      // enumeration was refused and nothing could be filtered on it.
+      const absent = (knownTitles && !knownTitles.has(String(title).toLowerCase()))
+        || (!live.ok && live.status === 404);
+      if (absent) {
+        finding(2, key, 'PASS', `'${title}' absent; its ${columns.length} declared unique column(s) are provisioned carrying the constraint, not given one over existing data.`);
+        continue;
+      }
+      if (!live.ok) {
+        // NOT-ASSESSABLE rather than PASS: a read that did not answer did not
+        // say these columns are constrained.
+        finding(2, key, 'NOT-ASSESSABLE', `Could not read the columns of '${title}' (${live.status ? `HTTP ${live.status}` : live.error}); whether its declared unique column(s) already carry EnforceUniqueValues was not established.`);
+        continue;
+      }
+      const byInternal = new Map();
+      for (const f of ((live.d && live.d.results) || [])) {
+        byInternal.set(String(f.InternalName), f);
+      }
+      const pending = [];
+      const unread = [];
+      const unseen = [];
+      const truncated = columnsTruncated(live);
+      for (const internal of columns) {
+        const row = byInternal.get(internal);
+        if (row === undefined) {
+          // Not provisioned yet, unless the page it is missing from may have
+          // ended before the whole list did, which establishes no absence.
+          if (truncated) unseen.push(internal);
+          continue;
+        }
+        // A property the site did not report is not a false one.
+        if (typeof row.EnforceUniqueValues !== 'boolean') unread.push(internal);
+        else if (!row.EnforceUniqueValues) pending.push(internal);
+      }
+      if (unread.length > 0 || unseen.length > 0) {
+        const why = [];
+        if (unread.length > 0) why.push(`the site reported no EnforceUniqueValues for ${unread.join(', ')}`);
+        if (unseen.length > 0) why.push(`${unseen.join(', ')} did not appear in a column enumeration that came back at its ${COLUMN_PAGE_SIZE}-row page size, and missing from a page that may be truncated is not missing from the list`);
+        const named = [...unread, ...unseen];
+        const alsoPending = pending.length > 0
+          ? ` ${pending.length} other(s) did read back false: ${pending.join(', ')}.`
+          : '';
+        finding(2, key, 'NOT-ASSESSABLE', `'${title}': ${why.join('; ')}. Whether the next deploy asks for a constraint on ${named.length > 1 ? 'those columns' : 'that column'} was not established.${alsoPending}`);
+      } else if (pending.length > 0) {
+        // NOT ESTABLISHED: what SharePoint does with this transition over
+        // existing duplicates. `unique-transition-probe.js` asks it and has
+        // not been run, so this says only what was measured here.
+        finding(2, key, 'WARN', `'${title}': ${pending.length} column(s) declared unique read back EnforceUniqueValues false -- ${pending.join(', ')}. The next deploy's field phase will ask SharePoint to set it on each. This assessment did not count duplicate values in them, so it cannot say whether the request will be accepted; a refused write is reported with the reason SharePoint gave and stops the run.`);
+      } else {
+        finding(2, key, 'PASS', `'${title}': every declared unique column it already holds carries EnforceUniqueValues.`);
       }
     }
 

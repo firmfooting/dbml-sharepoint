@@ -1,7 +1,10 @@
 {# Shared read-only shape probes: readListShape / readFieldShape with
    per-list caching and invalidateFieldShapes(listName?) so concurrent
    lanes never thrash each other's caches. Absence answers (404 and the
-   documented absent-field 400) return null rather than throwing. #}
+   documented absent-field 400) return null rather than throwing, and
+   listFieldShapes(list).truncated says whether the one enumeration behind
+   those nulls may have ended before the list did, so a caller can tell a
+   column the list does not hold from one this read never saw. #}
   // SharePoint resolves a list title, a field name and a site group name
   // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
   // local index of those names must therefore match the same way: a
@@ -107,6 +110,23 @@
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
     'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter',
   ].join(',');
+  // Spelled once, because the request and the truncation test below are wrong
+  // the moment they disagree about the page size.
+  const FIELD_PAGE_SIZE = 500;
+  // An enumeration holding a whole page may have ended before the list did.
+  //
+  // A FULL page is the tell, not a missing `__next`: `$top` is client-driven
+  // paging, and Learn's "PageSize, Top and MaxTop" says of it that "there is
+  // no nextLink that is returned"
+  // (https://learn.microsoft.com/odata/webapi/pagesize-top-maxtop), so an
+  // absent `__next` under a `$top` says nothing at all. The same page
+  // documents the other direction, a server paging BELOW the asked-for size,
+  // which does return one; both are read here and neither is followed.
+  const fieldPageTruncated = (rows, next) => rows.length >= FIELD_PAGE_SIZE
+    || (typeof next === 'string' && next !== '');
+  // What an absent list and a refused-as-absent enumeration both answer. No
+  // fields, and nothing unread: a list that is not there hid nothing.
+  const emptyFieldShapes = () => ({ get: () => undefined, size: 0, truncated: false });
   let fieldShapesByList = Object.create(null);
   // No argument: full reset (phase starts). With a list name: drop only
   // that list's snapshot, so lanes refresh their own list after writes
@@ -124,17 +144,19 @@
     // just spends it here too.
     const titles = await ensureKnownListTitles();
     if (titles && !hasName(titles, listName)) {
-      const empty = { get: () => undefined, size: 0 };
+      const empty = emptyFieldShapes();
       fieldShapesByList[listName] = empty;
       return empty;
     }
-    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: with
-    // no explicit page size the page size is the server's, and this read is
+    // `$top` for the same reason _verify_body.js.j2 carries it: with no
+    // explicit page size the page size is the server's, and this read is
     // UNFILTERED, so an ordinary list's ~40 built-in fields plus its
     // declared ones sit close to the default. A truncated map reads exactly
     // like a list missing columns, and this map is what every phase's
-    // create-or-reconcile decision is made from.
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=500`), {
+    // create-or-reconcile decision is made from, so the map carries whether
+    // it may be one (#577 is the sweep over the callers that still read a
+    // missing name as an absent column).
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}&$top=${FIELD_PAGE_SIZE}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) {
@@ -147,7 +169,7 @@
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
-        const empty = { get: () => undefined, size: 0 };
+        const empty = emptyFieldShapes();
         fieldShapesByList[listName] = empty;
         return empty;
       }
@@ -164,7 +186,8 @@
     // endpoint this cache stands in for.
     const byInternal = new Map();
     const byTitle = new Map();
-    for (const f of (j && j.d && j.d.results) || []) {
+    const rows = (j && j.d && j.d.results) || [];
+    for (const f of rows) {
       if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
         byInternal.set(nameKey(f.InternalName), f);
       }
@@ -173,6 +196,10 @@
     const shapes = {
       get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
       size: byInternal.size + byTitle.size,
+      // Read by a caller for whom a name this enumeration never saw is not a
+      // name the list lacks; `get` answering undefined is the same value
+      // either way.
+      truncated: fieldPageTruncated(rows, j && j.d && j.d.__next),
     };
     fieldShapesByList[listName] = shapes;
     return shapes;
