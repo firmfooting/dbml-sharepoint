@@ -343,6 +343,19 @@ _HARNESS = textwrap.dedent(r"""
         state.items[created.Title] = state.items[created.Title] || [];
         return reply(201, { d: shapeOf(created) });
       }
+      // A list MERGE addressed by GUID, which is what patchListById sends.
+      // Modelled because `prevent_list_deletion` goes out that way and this
+      // mock only ever answered a by-title MERGE, so the AllowDeletion
+      // readback found the flag unchanged and aborted wave 1. Matched only
+      // when the GUID ends the path, so the field route below still wins.
+      const listById = /web\/lists\(guid'([^']+)'\)(\?[^/]*)?$/.exec(u);
+      if (listById && verb === 'MERGE') {
+        const list = Object.values(state.lists).find((l) => l.Id === listById[1]);
+        if (!list) return notFound();
+        const { __metadata, ...settings } = body || {};
+        Object.assign(list, settings);
+        return reply(204, {});
+      }
       // A field MERGE addresses the field by GUID, so the Indexed assertion
       // has to be found by id rather than by the list path.
       const fieldById = /web\/lists\(guid'([^']+)'\)\/fields\(guid'([^']+)'\)/.exec(u);
@@ -439,10 +452,18 @@ _HARNESS = textwrap.dedent(r"""
 """) + BATCH_MOCK
 
 
-def _deploy_js() -> str:
-    """A one-list deploy with both sidecars on and a central log named."""
+def _deploy_js(*, protect: bool = False) -> str:
+    """A one-list deploy with both sidecars on and a central log named.
+
+    `protect` turns on the two family settings the sidecars now honour
+    (#465). Both default to False in the mapping, so the sidecars are
+    unsealed and deletable unless a family asked otherwise, and the default
+    here keeps every pre-existing assertion in this module unchanged.
+    """
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
-    bundle = make_bundle(entities=["Risk"])
+    bundle = make_bundle(
+        entities=["Risk"], seal_columns=protect, prevent_list_deletion=protect,
+    )
     js = generate_deploy_js(
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
         site_url=SITE_URL, site_role="default",
@@ -497,6 +518,7 @@ def _run_deploy(
     fail_central_change_fields: bool = False,
     seeded_central_rows: bool = False,
     seeded_foreign_application: bool = False,
+    protect: bool = False,
 ) -> dict[str, Any]:
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
@@ -624,7 +646,7 @@ def _run_deploy(
         harness = _substitute(
             harness, "const SEED_ITEMS = {};", f"const SEED_ITEMS = {seeded};",
         )
-    body = _deploy_js().rstrip()
+    body = _deploy_js(protect=protect).rstrip()
     assert body.endswith("})();")
     script = (
         f"{harness}\n({body[:-1]}).then((r) => {{\n"
@@ -1360,3 +1382,131 @@ def test_the_stamped_deployer_version_is_not_doubled() -> None:
     assert not any("DeployerVersion" in r for r in run["state"]["centralChanges"]), (
         "a change row carried DeployerVersion, which only stamps declare"
     )
+# --- The sidecars take the family's protection too -------------------------
+#
+# They were the only tool-owned lists shipping unsealed and deletable.
+# MEASURED live 2026-09-06 with identify-script: 15 unsealed columns across
+# the two, on a site where every declared list had taken both settings (#465).
+#
+# These assertions read the MOCK's stored state rather than the call list on
+# purpose. This phase degrades rather than aborting, so a write that went out
+# and was refused leaves the run green, and only the read-back state tells a
+# seal that stuck from one that did not.
+
+
+def _sidecar_fields(state: dict[str, Any], title: str) -> list[dict[str, Any]]:
+    """Every column the run left on one sidecar."""
+    fields = state["fields"].get(title) or []
+    assert fields, f"'{title}' carries no columns at all, so nothing was sealed"
+    return fields
+
+
+#: SharePoint's own columns, on every list on the site. Not this tool's to
+#: seal: sealing them would be a change nobody asked for and rollback does not
+#: undo. `_seal.js.j2` draws the same line for a declared list.
+_BUILT_IN_COLUMNS = frozenset({"Title", "ID", "Created", "Modified", "Author", "Editor"})
+
+
+def _sealed_state(state: dict[str, Any], title: str) -> dict[str, bool]:
+    return {
+        f["InternalName"]: f.get("Sealed") is True
+        for f in _sidecar_fields(state, title)
+    }
+
+
+def test_the_run_log_declared_columns_are_sealed() -> None:
+    sealed = _sealed_state(_run_deploy(central_absent=True, protect=True)["state"],
+                           RUN_LOG_TITLE)
+    declared = {n: ok for n, ok in sealed.items() if n not in _BUILT_IN_COLUMNS}
+    assert declared, "the run log carries no declared columns to seal"
+    unsealed = sorted(n for n, ok in declared.items() if not ok)
+    assert not unsealed, f"the run log shipped unsealed columns: {unsealed}"
+
+
+def test_the_change_log_declared_columns_are_sealed() -> None:
+    sealed = _sealed_state(_run_deploy(central_absent=True, protect=True)["state"],
+                           CHANGE_LOG_TITLE)
+    declared = {n: ok for n, ok in sealed.items() if n not in _BUILT_IN_COLUMNS}
+    assert declared, "the change log carries no declared columns to seal"
+    unsealed = sorted(n for n, ok in declared.items() if not ok)
+    assert not unsealed, f"the change log shipped unsealed columns: {unsealed}"
+
+
+def test_sharepoints_own_columns_are_left_alone() -> None:
+    """The other half, and the one a wrong loop would silently get wrong.
+
+    Title, Created and Author exist on every list on the site. Sealing them
+    from inside a logging phase would be a change nobody asked for, on
+    objects this family does not own, that rollback has no step to undo.
+    """
+    state = _run_deploy(central_absent=True, protect=True)["state"]
+    for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
+        sealed = _sealed_state(state, title)
+        touched = sorted(n for n in _BUILT_IN_COLUMNS if sealed.get(n))
+        assert touched == [], f"'{title}': sealed SharePoint's own columns {touched}"
+
+
+def test_sealing_off_leaves_the_sidecars_alone() -> None:
+    """An operator who turned sealing off gets it off here too.
+
+    The sidecars take the FAMILY's settings rather than settings of their
+    own. A log the tool locks against its owner's stated wish is worse than
+    one it leaves open.
+    """
+    state = _run_deploy(central_absent=True)["state"]
+    for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
+        sealed = _sealed_state(state, title)
+        assert not any(sealed.values()), f"'{title}' was sealed without being asked"
+        assert state["lists"][title].get("AllowDeletion") is not False, (
+            f"'{title}' was locked without being asked"
+        )
+
+
+def test_both_sidecars_are_locked_against_deletion() -> None:
+    """A log an operator can delete by hand is a log with no history."""
+    run = _run_deploy(central_absent=True, protect=True)
+    for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
+        stored = run["state"]["lists"].get(title)
+        assert stored is not None, f"'{title}' was never created"
+        assert stored.get("AllowDeletion") is False, (
+            f"'{title}' can still be deleted from list settings"
+        )
+
+
+def test_the_seal_is_read_back_rather_than_assumed() -> None:
+    """A seal that did not stick and one never attempted look identical after.
+
+    The MERGE alone is not evidence. AGENTS.md: anything that writes must read
+    back and verify.
+    """
+    run = _run_deploy(central_absent=True, protect=True)
+    readbacks = [
+        c for c in run["calls"]
+        if "$select=Sealed" in c["url"] and RUN_LOG_TITLE in c["url"]
+    ]
+    assert readbacks, "the run log's seal was written and never read back"
+
+
+def test_the_deletion_lock_is_read_back_rather_than_assumed() -> None:
+    run = _run_deploy(central_absent=True, protect=True)
+    readbacks = [
+        c for c in run["calls"]
+        if "$select=AllowDeletion" in c["url"] and CHANGE_LOG_TITLE in c["url"]
+    ]
+    assert readbacks, "the change log's deletion lock was written and never read back"
+
+
+def test_protecting_the_sidecars_records_no_failure_of_its_own() -> None:
+    """The phase's posture, unchanged: a log that records the run beats none.
+
+    Every other failure here degrades to a warning, and protection is not
+    more important than the logging it protects. Asserted on this phase's own
+    failure list rather than on the run's verdict, because a later phase this
+    module's mock does not model (views, 3.1) stops the run well after 1.7
+    has finished.
+    """
+    run = _run_deploy(central_absent=True, protect=True)
+    failures = run["summary"].get("loggingFailures") or []
+    blamed = [f for f in failures if "sealing" in str(f) or "locking" in str(f)]
+    assert blamed == [], f"protecting the sidecars failed: {blamed}"
+    assert run["unhandled"] == []

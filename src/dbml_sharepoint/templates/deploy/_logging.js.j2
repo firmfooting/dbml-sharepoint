@@ -91,6 +91,11 @@
     const RUN_LOG_TITLE = {{ sidecar_run_log_title | tojson }};
     const RUN_LOG_MARKER = {{ sidecar_run_log_marker | tojson }};
     const CHANGE_LOG_TITLE = {{ sidecar_change_log_title | tojson }};
+    // The family's own protection settings, not settings of their own: see
+    // protectSidecar below for why these lists take what every declared list
+    // takes, and why an operator who turned either off still gets it off.
+    const SEAL_SIDECAR_COLUMNS = {{ sidecar_seal_columns | tojson }};
+    const PREVENT_SIDECAR_DELETION = {{ sidecar_prevent_deletion | tojson }};
     const CHANGE_LOG_MARKER = {{ sidecar_change_log_marker | tojson }};
     const SIDECARS_ENABLED = RUN_LOG_TITLE !== null;
     // Empty string: no external log was named, so no probing either. The two
@@ -513,9 +518,11 @@
     // Every column write is read back before the first event.
     let changeLogReady = false;
     let entityTypeFullName = null;
+    let changeLogFieldMap = null;
     if (changeLogId) {
       try {
         const back = await ensureFields(CHANGE_LOG_TITLE, CHANGE_FIELDS);
+        changeLogFieldMap = back;
         // The declared indexes, asserted after the read-back. Recorded and
         // carried past rather than thrown: an unindexed key column costs
         // the type-2 close its 5,000-item headroom, which is a problem for
@@ -547,9 +554,10 @@
     // degrades to Title alone rather than losing the stamp entirely, the
     // same philosophy the central log's stamp already follows.
     let runLogStructured = false;
+    let runLogFieldMap = null;
     if (runLogId) {
       try {
-        await ensureFields(RUN_LOG_TITLE, RUN_LOG_FIELDS);
+        runLogFieldMap = await ensureFields(RUN_LOG_TITLE, RUN_LOG_FIELDS);
         runLogStructured = true;
       } catch (err) {
         // On loggingFailures, not on the abort bus: a run log that can only
@@ -559,6 +567,104 @@
         log('WARN', `Run log '${RUN_LOG_TITLE}' has no stamp columns and they could not be `
           + `created (${err.message}); this run's stamps carry Title only.`);
       }
+    }
+
+    // ---- Protect the sidecars the way every other list is protected -----
+    // These were the only tool-owned lists shipping unsealed and deletable.
+    // MEASURED live 2026-09-06 with identify-script: 15 unsealed columns
+    // across the two sidecars, on a site where every declared list had taken
+    // both settings. Nothing chose that; the logging phase simply predates
+    // the protection work and nobody came back to it (#465).
+    //
+    // They take the FAMILY's settings rather than settings of their own. An
+    // operator who turned sealing off did so for a reason, and a log the
+    // tool locks against its owner's stated wish is worse than one it leaves
+    // open.
+    //
+    // Degrading, never aborting, which is this phase's whole posture: a run
+    // log that could not be sealed still records that the run happened, and
+    // that is what the list is for. Every write is read back, because a seal
+    // that did not stick and a seal that was never attempted look identical
+    // afterwards.
+    //
+    // Sealing LAST, after ensureFields has run for both. Safe because
+    // `Sealed` is per FIELD and ensureFields only ever creates columns that
+    // are absent: it skips on `present.has(...)` and never reshapes one. So
+    // a later release adding a column to either sidecar still creates it
+    // beside the sealed ones, and this step then seals the new one too. If
+    // ensureFields ever starts reshaping an existing column, it will have to
+    // unseal first, and this comment is the reason why.
+    const protectSidecar = async (title, listId, fieldMap, declared) => {
+      if (!listId) return;
+      if (SEAL_SIDECAR_COLUMNS && fieldMap) {
+        // The DECLARED columns, not everything the list carries. A sidecar
+        // has SharePoint's own built-ins on it too, and Title, Created and
+        // Author are not this tool's to seal: they exist on every list on the
+        // site and sealing them would be a change nobody asked for that
+        // rollback does not undo. Same rule `_seal.js.j2` follows for a
+        // declared list.
+        for (const fieldBody of declared) {
+          const internalName = fieldBody.Title;
+          const shape = fieldMap.get(internalName);
+          if (!shape) continue;  // refused at create; already recorded above
+          if (shape.Sealed === true) continue;
+          try {
+            const digestS = await getDigest();
+            const merge = await fetchWithRetry(
+              apiUrl(fieldMergePath(listId, shape.Id)),
+              {
+                method: 'POST',
+                headers: spHeaders(digestS, FIELD_MERGE_HEADERS),
+                body: JSON.stringify({ __metadata: { type: 'SP.Field' }, Sealed: true }),
+              },
+            );
+            if (!merge.ok) {
+              throw new Error(`HTTP ${merge.status} ${spError(await merge.text())}`);
+            }
+            const verify = await fetchWithRetry(apiUrl(
+              `web/lists/getbytitle('${odataName(title)}')/fields`
+              + `/getbyinternalnameortitle('${odataName(internalName)}')?$select=Sealed`
+            ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+            const sealed = verify.ok
+              && (((await verify.json()).d || {}).Sealed === true);
+            if (!sealed) {
+              throw new Error('the seal did not read back');
+            }
+          } catch (err) {
+            recordFailure(`sealing '${title}.${internalName}'`, err);
+          }
+        }
+      }
+      if (PREVENT_SIDECAR_DELETION) {
+        try {
+          const digestD = await getDigest();
+          const merge = await fetchWithRetry(
+            apiUrl(`web/lists/getbytitle('${odataName(title)}')`),
+            {
+              method: 'POST',
+              headers: spHeaders(digestD, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+              body: JSON.stringify({ __metadata: { type: 'SP.List' }, AllowDeletion: false }),
+            },
+          );
+          if (!merge.ok) {
+            throw new Error(`HTTP ${merge.status} ${spError(await merge.text())}`);
+          }
+          const verify = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(title)}')?$select=AllowDeletion`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          const locked = verify.ok
+            && (((await verify.json()).d || {}).AllowDeletion === false);
+          if (!locked) {
+            throw new Error('the deletion lock did not read back');
+          }
+        } catch (err) {
+          recordFailure(`locking '${title}' against deletion`, err);
+        }
+      }
+    };
+    if (useSidecars) {
+      await protectSidecar(RUN_LOG_TITLE, runLogId, runLogFieldMap, RUN_LOG_FIELDS);
+      await protectSidecar(CHANGE_LOG_TITLE, changeLogId, changeLogFieldMap, CHANGE_FIELDS);
     }
 
     // ---- The type-2 change writer, local --------------------------------

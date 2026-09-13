@@ -191,6 +191,13 @@ def generate_deploy_js(
         sidecar_change_log_title=sidecar_change_log_title,
         sidecar_change_log_marker=sidecar_change_log_marker,
         sidecar_change_fields=sidecar_change_fields or [],
+        # The sidecars take the family's own protection settings rather than
+        # settings of their own. They were the only tool-owned lists shipping
+        # unsealed and deletable (#465, measured live 2026-09-06: 15 unsealed
+        # columns across the two), while every declared list took both. An
+        # operator who asked for neither still gets neither here.
+        sidecar_seal_columns=bundle.mapping.seal_columns,
+        sidecar_prevent_deletion=bundle.mapping.prevent_list_deletion,
         deployment_log_list=deployment_log_list,
         # The CENTRAL Changes list, probed and written independently of the
         # Deployments list above: this run's stamps do not depend on it, and
