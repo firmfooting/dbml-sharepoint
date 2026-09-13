@@ -13,8 +13,10 @@
   // answered HTTP 200 and returned an SP.Folder (Name, ServerRelativeUrl,
   // ItemCount, Exists, UniqueId); Files/add makes a file, never a folder.
   // `library.folder.filesystem-object-type`, same run: the folder's own list
-  // item reads FileSystemObjectType 1 (Learn: File 0, Folder 1), which is
-  // the shape check below. `library.folder.creation-blocked-when-disabled`
+  // item reads FileSystemObjectType 1, and a file's reads 0
+  // (`library.folder.item-shape-of-file-by-name`, 2026-09-13,
+  // folder-shape-probe.js), which is the shape check below.
+  // `library.folder.creation-blocked-when-disabled`
   // (2026-09-13, library-guards-probe.js): the endpoint answers with
   // EnableFolderCreation off, so this phase needs no ordering against that
   // switch.
@@ -25,6 +27,12 @@
   // which no probe has sent. Names that would need more than this (`#`,
   // `%`) are refused at build by analysis/file_names.py.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // Absent and "a file stands here" are the SAME answer from this read.
+  // MEASURED 2026-09-13, `library.folder.folder-read-on-file-path` in
+  // folder-shape-probe.js: the read on a file's own path answered HTTP 200
+  // with Exists false, exactly as it does for a path holding nothing
+  // (`library.folder.control-missing-path-read`). So a null here means only
+  // "no folder", and what is really there is asked for at the create.
   async function readFolder(serverRelativeUrl) {
     const r = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(serverRelativeUrl)}')?$select=Exists,Name,ServerRelativeUrl`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
@@ -77,7 +85,23 @@
           continue;
         }
         const digest = await getDigest();
-        await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+        // MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`
+        // in folder-shape-probe.js: this call on a name a folder already holds
+        // answers HTTP 200 and returns that folder, so a re-paste that raced
+        // the read above creates nothing twice.
+        try {
+          await postJson(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(rootUrl)}')/folders/add(url='${pathLiteral(name)}')`), {}, digest);
+        } catch (err) {
+          // Same run, `library.folder.add-under-existing-file-name`: with a
+          // FILE of that name in place the call answers HTTP 404 "File Not
+          // Found", which names the opposite of the problem. Ask the item
+          // shape and say what is actually standing there.
+          const blocking = await folderItemShape(list.title, name);
+          if (blocking && blocking.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${blocking.FileSystemObjectType}); nothing was written`);
+          }
+          throw err;
+        }
         if (!(await readFolder(folderUrl))) {
           throw new Error(`'${name}' did not read back after creation`);
         }

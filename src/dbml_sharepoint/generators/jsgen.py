@@ -364,9 +364,12 @@ def _view_aggregations(view: ViewDef) -> str:
 # sticks on a stored view whether sent on create or by MERGE from 0
 # (`library.view.scope-on-create-reads-back`,
 # `library.view.scope-on-merge-reads-back`, 2026-09-13, library-guards-probe.js).
-# A MERGE from 1 back to 0 is the subject of view-scope-revert-probe.js and is
-# not yet measured; the view phase reads Scope back after every write, so a 0
-# that did not stick is reported as drift rather than passed over.
+# A MERGE from 1 back to 0 reverts a view somebody flipped by hand, and a 0
+# sent on create sticks (MEASURED 2026-09-13,
+# `library.view.scope-merge-back-to-default` and
+# `library.view.scope-zero-on-create-reads-back` in view-scope-revert-probe.js).
+# The view phase reads Scope back after every write anyway, so a 0 that did not
+# stick would be reported as drift rather than passed over.
 # Keyed by the loader's vocabulary, so a value it admits and this table does
 # not name fails here rather than deploying as "leave the property alone".
 _VIEW_SCOPE_VALUES: dict[ViewScope, int] = {"recursive": 1, "default": 0}

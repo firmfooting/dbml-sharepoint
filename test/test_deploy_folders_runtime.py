@@ -44,6 +44,11 @@ _HARNESS = textwrap.dedent("""
       if (url.includes('folders/add(url=')) {
         const name = decodeURIComponent(url.split("folders/add(url='")[1].split("')")[0]);
         if (STATE.refuseCreate) return [500, { error: 'refused' }];
+        // MEASURED 2026-09-13, `library.folder.add-under-existing-file-name`:
+        // with a file of that name in place the call answers 404 File Not Found.
+        if (STATE.filesNamed.includes(name)) {
+          return [404, { error: { message: { value: 'File Not Found.' } } }];
+        }
         createdByRun.add(name);
         // vanishAfterCreate: the create answers 200 and the folder never appears.
         if (!STATE.vanishAfterCreate) created.add(name);
@@ -53,7 +58,11 @@ _HARNESS = textwrap.dedent("""
         const quoted = url.split("GetFolderByServerRelativeUrl('")[1];
         const path = decodeURIComponent(quoted.split("')")[0]);
         const name = path.slice(STATE.root.length + 1);
-        return [200, { d: { Exists: created.has(name), Name: name, ServerRelativeUrl: path } }];
+        // `library.folder.folder-read-on-file-path`, same run: a file's own
+        // path reads Exists false, exactly as an empty path does. So a file
+        // never reaches the "present already" branch.
+        const exists = created.has(name) && !STATE.filesNamed.includes(name);
+        return [200, { d: { Exists: exists, Name: name, ServerRelativeUrl: path } }];
       }
       if (url.includes('FileSystemObjectType')) {
         if (STATE.refuseShapeRead) return [500, { error: 'refused' }];
@@ -142,7 +151,13 @@ def test_a_declared_folder_is_created_under_the_root_and_read_back() -> None:
 
 def test_an_existing_folder_is_verified_and_not_recreated() -> None:
     """A redeploy: the folder is there, so nothing is written and its
-    contents are never touched."""
+    contents are never touched.
+
+    The read is what guarantees that, not the endpoint. MEASURED 2026-09-13,
+    `library.folder.add-under-existing-folder-name`: a create on a name a
+    folder already holds answers HTTP 200 and returns that folder, so a read
+    that raced one would cost nothing either.
+    """
     result = _run_phase(_state(existing=["Clinical services"]), [_library("Clinical services")])
     assert result["summary"]["errors"] == []
     assert result["summary"]["foldersCreated"] == []
@@ -151,16 +166,18 @@ def test_an_existing_folder_is_verified_and_not_recreated() -> None:
 
 
 def test_a_file_where_a_folder_was_declared_is_refused_and_nothing_is_written() -> None:
-    """The shape check: a file of the declared name reads back
-    FileSystemObjectType 0, and the deploy must not create beside it."""
+    """MEASURED 2026-09-13, folder-shape-probe.js: a folder read on a file's
+    own path answers Exists false, so the file never reaches the "present
+    already" branch, and the create that follows answers HTTP 404 "File Not
+    Found". The phase must name the file rather than repeat that.
+    """
     result = _run_phase(
-        _state(existing=["Clinical services"], filesNamed=["Clinical services"]),
-        [_library("Clinical services")],
+        _state(filesNamed=["Clinical services"]), [_library("Clinical services")],
     )
-    assert result["posts"] == []
     (error,) = result["summary"]["errors"]
     assert error["list"] == "APP_Doc" and error["folder"] == "Clinical services"
     assert "a file where a folder was declared" in error["error"]
+    assert "File Not Found" not in error["error"]
 
 
 def test_a_root_that_does_not_read_back_fails_the_library_not_the_run() -> None:
