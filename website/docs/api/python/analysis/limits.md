@@ -61,6 +61,24 @@ named ceiling cannot move silently; authority for the value remains the
 separate evidence question tracked in #291 wherever no source or direct
 boundary probe is yet recorded beside the constant.
 
+**SEARCHED 2026-09-14: the four uncited constants now each carry their
+result.** One gained a citation and three did not, and the negative results
+are recorded beside the constants deliberately, because a dated failed search
+is evidence too: it stops the next person repeating it, and it is what decides
+which of these needs a probe rather than a reading.
+
+    MAX_INTERNAL_NAME       NOT DOCUMENTED; and the surface TRUNCATES
+    MAX_FIELD_DESCRIPTION   NOT DOCUMENTED; and this code truncates
+    MAX_TEXT_FIELD_LENGTH   PARTIALLY, on two surfaces that are not this one,
+                            with a third documenting a different number
+    MAX_VIEW_ROW_LIMIT      NOT DOCUMENTED; may not be a platform ceiling
+
+Each comment names the probe row that would settle it, and none of the three
+was changed on the strength of the search. That is the parking rule this
+module's evidence question was filed under: research may proceed without a
+live run, and an unresolved boundary stays parked rather than being loosened
+or tightened from inference.
+
 **Run the sweep with four deselects.** `scripts/mutate_limits.py` carries them
 and is the supported way to run it.
 

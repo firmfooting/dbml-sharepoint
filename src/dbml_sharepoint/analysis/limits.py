@@ -53,6 +53,24 @@ named ceiling cannot move silently; authority for the value remains the
 separate evidence question tracked in #291 wherever no source or direct
 boundary probe is yet recorded beside the constant.
 
+**SEARCHED 2026-09-14: the four uncited constants now each carry their
+result.** One gained a citation and three did not, and the negative results
+are recorded beside the constants deliberately, because a dated failed search
+is evidence too: it stops the next person repeating it, and it is what decides
+which of these needs a probe rather than a reading.
+
+    MAX_INTERNAL_NAME       NOT DOCUMENTED; and the surface TRUNCATES
+    MAX_FIELD_DESCRIPTION   NOT DOCUMENTED; and this code truncates
+    MAX_TEXT_FIELD_LENGTH   PARTIALLY, on two surfaces that are not this one,
+                            with a third documenting a different number
+    MAX_VIEW_ROW_LIMIT      NOT DOCUMENTED; may not be a platform ceiling
+
+Each comment names the probe row that would settle it, and none of the three
+was changed on the strength of the search. That is the parking rule this
+module's evidence question was filed under: research may proceed without a
+live run, and an unresolved boundary stays parked rather than being loosened
+or tightened from inference.
+
 **Run the sweep with four deselects.** `scripts/mutate_limits.py` carries them
 and is the supported way to run it.
 
@@ -102,6 +120,17 @@ MAX_DISPLAY_TITLE = 255
 #: SharePoint's bound on a field's INTERNAL name. A different surface from
 #: `MAX_DISPLAY_TITLE`. Internal names are what formulas and `[$Field]`
 #: references resolve against, and they are immutable after creation.
+#:
+#: NOT DOCUMENTED. Searched Microsoft Learn 2026-09-14 (#291). "Field element
+#: (Field)", the page that carries the DisplayName sentence cited above,
+#: documents `Name` with no length at all, and `StaticName` likewise. Nothing
+#: on Learn states this number.
+#:
+#: What that page DOES say changes the shape of the question: SharePoint
+#: "will amend the value if necessary", so this surface truncates rather than
+#: refusing, and a probe recording the boundary as accepted-or-refused would
+#: read a truncating surface as a passing one. PARKED until
+#: `field.ceiling.internal-name-at-32` and `-at-33` run.
 MAX_INTERNAL_NAME = 32
 
 #: The bound `typemap.format_description` truncates a DBML column note to
@@ -110,6 +139,15 @@ MAX_INTERNAL_NAME = 32
 #: A THIRD 255, and not the display-title one: this is the Description
 #: property, not the Title. Truncation rather than refusal is deliberate. A
 #: note is documentation, so losing its tail is better than failing a build.
+#:
+#: NOT DOCUMENTED. Searched Microsoft Learn 2026-09-14 (#291). The
+#: `Description` attribute on "Field element (Field)" gives no length.
+#:
+#: Because this truncates, the boundary has THREE answers at one over and not
+#: two: refused, truncated by the server, or stored whole. Truncating is right
+#: under the first two and wrong under the third, where it discards a tail
+#: SharePoint would have kept. PARKED until `text.col-desc.at-255` and
+#: `-at-256` run.
 MAX_FIELD_DESCRIPTION = 255
 
 # ---------------------------------------------------------------- groups
@@ -172,6 +210,27 @@ MAX_ROLE_DEFINITION_DESCRIPTION = 512
 #:
 #: A FOURTH 255, and again a different surface: this bounds the DATA a text
 #: column can hold, not the length of any name.
+#:
+#: PARTIALLY DOCUMENTED, and the sources disagree by surface. Searched
+#: Microsoft Learn 2026-09-14 (#291).
+#:
+#: FOR, and inclusive: "Store and query container metadata", on the SharePoint
+#: Embedded container column API, says text `maxLength` "must be less than or
+#: equal to 255".
+#: https://learn.microsoft.com/sharepoint/dev/embedded/build/container-metadata
+#:
+#: FOR, on the Lists UI: "Overview of autofill columns" says single-line and
+#: multi-line text default to 255, and that Allow unlimited length raises it.
+#:
+#: AGAINST, on a third surface: the Graph `textColumn` resource's own JSON
+#: example carries a maxLength of 300.
+#: https://learn.microsoft.com/graph/api/resources/textcolumn
+#:
+#: So the number is documented for the container API and the Lists UI default,
+#: and NOT for `SP.FieldText.MaxLength` over `_api/web/lists/.../fields`,
+#: which is what this project writes. The container API's inclusive wording is
+#: not transferable to it, by the same rule that keeps the four 255s apart.
+#: PARKED until `field.ceiling.text-maxlength-at-255` and `-at-256` run.
 MAX_TEXT_FIELD_LENGTH = 255
 
 # ---------------------------------------------------------------- formulas
@@ -277,6 +336,18 @@ INDEX_WARN_AT = 18
 #: list-size threshold. They share a value and nothing else, and folding them
 #: into one constant would tie a page size to a throttling limit it has no
 #: reason to track.
+#:
+#: NOT DOCUMENTED. Searched Microsoft Learn 2026-09-14 (#291). "RowLimit
+#: element (List)" documents only the `Paged` attribute. "View element (List)"
+#: describes `RowLimit` as the maximum rows to render on one page and says the
+#: default is 50 when it is unspecified. Neither states a ceiling. The 5,000
+#: on the software-boundaries pages is the list view threshold, which is the
+#: conflation the paragraph above already refuses.
+#:
+#: So this may be a guard this project chose rather than a ceiling the
+#: platform enforces. If the probe reads one over accepted, that is what the
+#: comment has to say, and the constant becomes a declared policy with its
+#: reason beside it. PARKED until `view.row-limit.at-5000` and `-at-5001` run.
 MAX_VIEW_ROW_LIMIT = 5000
 
 # ------------------------------------------------------- view filter editor
