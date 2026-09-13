@@ -176,6 +176,17 @@ def generate_demo_js(
                 # A None plan is an omitted field, which is how an empty
                 # multi-value column stays unset.
                 "fields": [field for field in planned if field is not None],
+                # A library row is a file: uploaded into its folder, then the
+                # fields above are set on the file's item. The validator has
+                # already required it on a library and refused it on a list.
+                "file": (
+                    None if item.file is None
+                    else {
+                        "name": item.file.name,
+                        "folder": item.file.folder,
+                        "content": item.file.content,
+                    }
+                ),
             })
 
     template = env.get_template("demo.js.j2")
