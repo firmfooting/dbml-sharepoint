@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision aef1f690. Not yet run live.
+ * Library sharing probe, revision c0228c4d. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -11,11 +11,15 @@
  * 3. Put test.txt in each folder. Use ordinary accounts A and B, each enrolled
  *    only in its division group, plus an excluded site Owners-group account
  *    if available. None of these test accounts should be site administrators.
+ *    Record each division group's numeric SharePoint ID as administrator.
+ *    Exclude administration, platform-owner and other division memberships.
  * 4. Paste on a page in this SharePoint web. Confirm the printed site by setting
  *    CONFIRMED=true, then run as administrator, A and B in separate sessions.
  *    Enter the same library title and decoded server-relative paths each time:
  *    the two folders and their two files, separated by newlines. Do not paste
  *    sharing links or Forms/AllItems.aspx URLs. Label each run before or after.
+ *    Enter the prepared division group ID for A or B; leave it blank for an
+ *    administrator snapshot. Extra group memberships void division findings.
  * 5. Confirm A can open and save its file, but cannot open B's folder/file.
  *    Confirm B cannot open A's folder/file before the sharing attempt.
  * 6. As A, try granting B access to A's folder using Share > Specific people,
@@ -35,7 +39,8 @@
  * Administrators must first confirm each target exists. UI and recipient
  * access are required to establish the outcome. Group enumeration does not
  * expand nested Entra groups. Confirm the prepared accounts have no nested
- * Owners membership. Failed or incomplete group reads void sharing findings.
+ * privileged memberships or direct grants outside the prepared division.
+ * Failed or incomplete group reads void sharing findings.
  * This is a targeted snapshot, not a full audit.
  *
  * Sources:
@@ -89,7 +94,7 @@
     log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
   expect('access.effective-perms.control-current-identity', 'the current account and its site-administrator status are readable');
-  expect('access.effective-perms.control-ordinary-actor', 'the observer is not a site administrator and complete group reads exclude associated Owners membership');
+  expect('access.effective-perms.control-ordinary-actor', 'the non-administrator belongs only to the prepared division group, which is not associated Owners');
   expect('library.access.permission-snapshot', 'library, folder and file ACL and effective-permission responses are captured');
   expect('library.access.control-own-file-edit', 'the ordinary division account opens, edits and saves its own test file');
   expect('library.access.control-recipient-denied', 'the intended recipient cannot open the test object before each sharing attempt');
@@ -116,7 +121,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision aef1f690; core v2; results v1.`);
+  log('INFO', `probe revision c0228c4d; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -233,7 +238,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: 'aef1f690', capturedAt: new Date().toISOString(),
+    revision: 'c0228c4d', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };
@@ -261,6 +266,9 @@
     if (!entered?.trim()) throw new Error('CANCELLED: target paths required');
     const paths = [...new Set(entered.split(/\r?\n/).map(value => value.trim()).filter(Boolean))];
     if (paths.length > 8) throw new Error('TOO_MANY_TARGETS: maximum 8');
+    const divisionInput = window.prompt('Intended division SharePoint group ID, confirmed by the administrator (blank for snapshot only):')?.trim() ?? '';
+    report.expectedDivisionGroupId = /^[1-9]\d*$/.test(divisionInput) && Number.isSafeInteger(Number(divisionInput))
+      ? Number(divisionInput) : null;
     const literal = value => "'" + encodeURIComponent(value.replace(/'/g, "''")).replace(/'/g, '%27') + "'";
     const read = async path => {
       try {
@@ -322,20 +330,23 @@
       !groupBody['odata.nextLink'] && !groupBody['@odata.nextLink'] && !groupBody.__next;
     const ownersId = entries[3].body?.Id;
     const ownersKnown = entries[3].ok && validId(ownersId);
+    const onlyDivision = groupsKnown && validId(report.expectedDivisionGroupId) &&
+      groups.length === 1 && groups[0].Id === report.expectedDivisionGroupId;
     const ordinary = identityKnown && entries[0].body.IsSiteAdmin === false &&
-      groupsKnown && ownersKnown && !groups.some(group => group.Id === ownersId);
+      onlyDivision && ownersKnown && report.expectedDivisionGroupId !== ownersId;
     record('access.effective-perms.control-current-identity', 'current identity', identityKnown ? 'PASS' : 'FAIL', JSON.stringify(entries[0]));
     if (!identityKnown) {
       voidDependants('access.effective-perms.control-current-identity');
     } else {
       record('access.effective-perms.control-ordinary-actor', 'ordinary observer', ordinary ? 'PASS' : 'FAIL',
-        JSON.stringify({ IsSiteAdmin: entries[0].body.IsSiteAdmin, groupsKnown, ownersKnown, ownersId }));
+        JSON.stringify({ IsSiteAdmin: entries[0].body.IsSiteAdmin, groupsKnown, ownersKnown, ownersId,
+          expectedDivisionGroupId: report.expectedDivisionGroupId, onlyDivision }));
       if (!ordinary) {
         for (const row of results) {
           if (row.id === 'library.access.permission-snapshot' || row.state !== 'open') continue;
           row.observed = 'VOID';
           row.state = 'void';
-          row.detail = 'ordinary actor not established: requires non-administrator and complete group reads excluding associated Owners';
+          row.detail = 'ordinary actor not established: requires non-administrator belonging only to the prepared division group, not associated Owners';
         }
       }
     }

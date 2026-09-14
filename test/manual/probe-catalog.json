@@ -10400,7 +10400,8 @@
       },
       "prerequisites": [
         "Disposable library with unique library and division-folder ACLs",
-        "Administrator and two ordinary division accounts outside the associated Owners group",
+        "Administrator-confirmed division group IDs and accounts belonging only to their own division group",
+        "No nested privileged memberships or direct grants outside the prepared division",
         "Successful complete actor-group and associated Owners-group reads before sharing observations",
         "Manual edit/share/recipient-open observations before and after each attempt"
       ],

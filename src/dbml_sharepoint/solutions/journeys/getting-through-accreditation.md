@@ -18,11 +18,13 @@ solutions:
 `compliance-obligations` is the spine: every legislative, accreditation and
 funding obligation with an owner, its evidence and a review date.
 `legal-compliance-register` is its neighbour for duties that arrive as a
-portal-issued questionnaire cycle rather than as standing obligations: the
-obligations register holds a duty, its owner and its evidence permanently,
-while this family holds one SAQ file per topic per quarter, with the
-compliance portal as the external system of record and the library as the
-working record where named people complete and confirm each one.
+vendor-issued questionnaire. The library holds downloaded SAQs and supporting
+REG reference files. The quarter and year identify the vendor issue, not an
+assessment cycle; a new SAQ for the same topic has a new issuance period.
+The platform owner assigns an executive by division, the executive assigns a
+business owner, and the business owner completes the SAQ in Excel. Executive
+review is optional. The platform owner uploads the result to the compliance
+platform and records that handoff in the library metadata.
 `audit-actions` carries recommendations to closure against a stated
 closure-evidence standard.
 

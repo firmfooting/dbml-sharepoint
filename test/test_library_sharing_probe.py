@@ -12,6 +12,8 @@ from _paths import MANUAL
     "owner", "groups-denied", "owners-denied", "groups-malformed", "owners-malformed",
     "groups-partial", "groups-partial-odata", "groups-partial-verbose", "groups-verbose",
     "group-id-malformed",
+    "extra-administrator", "extra-division", "wrong-division", "no-groups",
+    "division-missing", "division-malformed", "division-unsafe", "division-is-owners",
 ])
 def test_sharing_snapshot_preserves_observations_without_claiming_enforcement(
     scenario: str,
@@ -23,7 +25,9 @@ def test_sharing_snapshot_preserves_observations_without_claiming_enforcement(
     assert node is not None
     harness = r"""
 const vm = require('node:vm');
-const prompts = ['Probe', 'division A before', '/sites/probe/Probe/A/test.txt'];
+const division = { 'division-missing': '', 'division-malformed': '8junk',
+  'division-unsafe': '9007199254740993', 'division-is-owners': '7' }[scenario] ?? '8';
+const prompts = ['Probe', 'division A before', '/sites/probe/Probe/A/test.txt', division];
 const calls = [];
 let captured;
 const window = {
@@ -44,6 +48,13 @@ const fetch = async (url, options) => {
   }
   else if (url.includes('currentuser/groups?')) {
     body = { value: [{ Id: scenario === 'owner' ? 7 : 8 }] };
+    if (scenario === 'extra-administrator') {
+      body.value.push({ Id: 9, Title: 'dbml List Administrators' });
+    }
+    if (scenario === 'extra-division') body.value.push({ Id: 10, Title: 'Division B' });
+    if (scenario === 'wrong-division') body = { value: [{ Id: 10 }] };
+    if (scenario === 'no-groups') body = { value: [] };
+    if (scenario === 'division-is-owners') body = { value: [{ Id: 7 }] };
     if (scenario === 'groups-denied') status = 403;
     if (scenario === 'groups-malformed') body = {};
     if (scenario === 'group-id-malformed') body = { value: [{}] };
