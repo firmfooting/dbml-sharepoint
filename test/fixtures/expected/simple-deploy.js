@@ -393,6 +393,177 @@
   };
   const utf8Bytes = (text) => new TextEncoder().encode(String(text)).length;
 
+  // The read companion. A $batch envelope carries query parts at the TOP
+  // level, outside any ChangeSet, and each answers with its own status line
+  // and JSON body, so a phase that verifies N objects can read them all in
+  // one request instead of N.
+  //
+  // MEASURED on a live tenant 2026-09-04, on the same site the index phase
+  // runs against: 58 field GETs sent as one $batch answered HTTP 200 with 58
+  // part statuses at 200 in 371 ms, where the same 58 GETs issued one at a
+  // time took 14.7 s. The outer request still needs X-RequestDigest even
+  // though every part is a read: without it the identical envelope came back
+  // HTTP 403, "The security validation for this page is invalid".
+  //
+  // Reads are counted separately from writes and never mixed into one
+  // envelope. BatchWriter reads its part statuses by counting every
+  // 'HTTP/1.1 nnn' in the response, which a query part's JSON body could
+  // otherwise contribute to.
+  class BatchReader {
+    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
+      this.getDigest = getDigest;
+      this.fetchWithRetry = fetchWithRetry;
+      this.apiUrl = apiUrl;
+      this.log = log;
+      this.bodyBudgetBytes = bodyBudgetBytes;
+      this.origin = window.location.origin;
+      this.pending = [];
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      this.requests = 0;
+      // Every answered part, in the order add() queued them, across as many
+      // requests as the budget forced. A caller compares by position, so a
+      // flush must never renumber what came before it.
+      this.results = [];
+    }
+
+    // `path` is what apiUrl() takes, so a read is spelled here exactly as it
+    // would be for a single GET.
+    async add(path) {
+      const op = { url: `${this.origin}${this.apiUrl(path)}` };
+      const cost = utf8Bytes(this._part(op, BATCH_BOUNDARY_SAMPLE));
+      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
+        await this.flush();
+      }
+      this.pending.push(op);
+      this.pendingBytes += cost;
+    }
+
+    // One top-level application/http part. No digest and no Content-Type: a
+    // query part carries no body, and the Accept is what makes the answer
+    // verbose OData, the same annotation the single-GET helpers ask for.
+    _part(op, outer) {
+      return `--${outer}\r\n`
+        + 'Content-Type: application/http\r\n'
+        + 'Content-Transfer-Encoding: binary\r\n'
+        + '\r\n'
+        + `GET ${op.url} HTTP/1.1\r\n`
+        + 'Accept: application/json;odata=verbose\r\n'
+        + '\r\n';
+    }
+
+    _encode(ops, outer) {
+      return ops.map((op) => this._part(op, outer)).join('') + `--${outer}--\r\n`;
+    }
+
+    // Each part's status and body, in order. The boundary is read off the
+    // response's own first line rather than its Content-Type header, because
+    // that is the one place it is spelled identically whatever the header
+    // casing, and a body that does not open with one is not a multipart
+    // answer at all.
+    _parts(text) {
+      const opening = String(text).split('\r\n', 1)[0].trim();
+      if (!opening.startsWith('--')) return null;
+      const boundary = opening.slice(2).replace(/--$/, '');
+      const parts = [];
+      for (const chunk of String(text).split(`--${boundary}`)) {
+        const at = chunk.indexOf('HTTP/1.1 ');
+        if (at === -1) continue;
+        const headEnd = chunk.indexOf('\r\n\r\n', at);
+        parts.push({
+          status: Number(chunk.slice(at + 9, at + 12)),
+          body: headEnd === -1 ? '' : chunk.slice(headEnd + 4).replace(/\r\n$/, ''),
+        });
+      }
+      return parts;
+    }
+
+    _refuse(message, detail) {
+      this.log('ERROR', message);
+      const failure = new Error(message);
+      Object.assign(failure, detail, { batchFailure: true });
+      return failure;
+    }
+
+    async flush() {
+      if (!this.pending.length) return { requests: 0, answered: 0 };
+      const ops = this.pending.splice(0);
+      this.pendingBytes = BATCH_ENVELOPE_BYTES;
+      const digest = await this.getDigest();
+      const outer = batchBoundary('batch');
+      const body = this._encode(ops, outer);
+      // No Accept on the outer request, for #401's reason: a JSON Accept
+      // turns the throttling-page redirect into a 406 only its URL names.
+      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/mixed; boundary=${outer}`,
+          'X-RequestDigest': digest,
+        },
+        body,
+      });
+      this.requests += 1;
+      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
+      if (isThrottled(response)) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was throttled (HTTP ${response.status}) and none answered`,
+          { throttled: true, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      if (!response.ok) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) was refused: HTTP ${response.status} ${spError(text)}`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const parts = this._parts(text);
+      if (!parts || parts.length !== ops.length) {
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s) answered HTTP ${response.status} with `
+          + `${parts ? parts.length : 0} part status(es), so the reads cannot be accounted for`,
+          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+        );
+      }
+      const refused = parts.filter((part) => !(part.status >= 200 && part.status < 300));
+      if (refused.length) {
+        const throttledParts = refused.filter((part) => part.status === 429 || part.status === 503);
+        throw this._refuse(
+          `$batch of ${ops.length} query part(s): ${parts.length - refused.length} answered, `
+          + `${refused.length} refused (part statuses ${parts.map((part) => part.status).join(', ')})`,
+          {
+            throttled: throttledParts.length > 0,
+            sent: ops.length, answered: parts.length - refused.length, refused: refused.length,
+          },
+        );
+      }
+      for (const part of parts) {
+        // The verbose envelope, unwrapped to the payload a single GET returns
+        // as `d`. A part that answered 2xx with something unparseable is a
+        // read that did not happen, so it refuses rather than yielding null.
+        let payload;
+        try {
+          payload = JSON.parse(part.body);
+        } catch {
+          throw this._refuse(
+            `$batch of ${ops.length} query part(s) answered a part that is not JSON, `
+            + 'so the reads cannot be accounted for',
+            { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
+          );
+        }
+        this.results.push(payload && Object.prototype.hasOwnProperty.call(payload, 'd')
+          ? payload.d : payload);
+      }
+      dbg(`$batch read ${ops.length} query part(s) in ${utf8Bytes(body)} bytes; all answered.`);
+      return { requests: 1, answered: ops.length };
+    }
+
+    // Flushes what is left and hands back every part's payload in the order
+    // it was queued.
+    async done() {
+      await this.flush();
+      return this.results;
+    }
+  }
+
   // Collapses many single writes into one $batch request. The JS equivalent
   // of a context manager, since a script pasted into a console has no
   // `with`: add() accumulates, flush() sends, done() sends what is left.
@@ -577,177 +748,6 @@
     }
   }
 
-  // The read companion. A $batch envelope carries query parts at the TOP
-  // level, outside any ChangeSet, and each answers with its own status line
-  // and JSON body, so a phase that verifies N objects can read them all in
-  // one request instead of N.
-  //
-  // MEASURED on a live tenant 2026-09-04, on the same site the index phase
-  // runs against: 58 field GETs sent as one $batch answered HTTP 200 with 58
-  // part statuses at 200 in 371 ms, where the same 58 GETs issued one at a
-  // time took 14.7 s. The outer request still needs X-RequestDigest even
-  // though every part is a read: without it the identical envelope came back
-  // HTTP 403, "The security validation for this page is invalid".
-  //
-  // Reads are counted separately from writes and never mixed into one
-  // envelope. BatchWriter reads its part statuses by counting every
-  // 'HTTP/1.1 nnn' in the response, which a query part's JSON body could
-  // otherwise contribute to.
-  class BatchReader {
-    constructor({ getDigest, fetchWithRetry, apiUrl, log, bodyBudgetBytes = BATCH_BODY_BUDGET_BYTES }) {
-      this.getDigest = getDigest;
-      this.fetchWithRetry = fetchWithRetry;
-      this.apiUrl = apiUrl;
-      this.log = log;
-      this.bodyBudgetBytes = bodyBudgetBytes;
-      this.origin = window.location.origin;
-      this.pending = [];
-      this.pendingBytes = BATCH_ENVELOPE_BYTES;
-      this.requests = 0;
-      // Every answered part, in the order add() queued them, across as many
-      // requests as the budget forced. A caller compares by position, so a
-      // flush must never renumber what came before it.
-      this.results = [];
-    }
-
-    // `path` is what apiUrl() takes, so a read is spelled here exactly as it
-    // would be for a single GET.
-    async add(path) {
-      const op = { url: `${this.origin}${this.apiUrl(path)}` };
-      const cost = utf8Bytes(this._part(op, BATCH_BOUNDARY_SAMPLE));
-      if (this.pending.length && this.pendingBytes + cost > this.bodyBudgetBytes) {
-        await this.flush();
-      }
-      this.pending.push(op);
-      this.pendingBytes += cost;
-    }
-
-    // One top-level application/http part. No digest and no Content-Type: a
-    // query part carries no body, and the Accept is what makes the answer
-    // verbose OData, the same annotation the single-GET helpers ask for.
-    _part(op, outer) {
-      return `--${outer}\r\n`
-        + 'Content-Type: application/http\r\n'
-        + 'Content-Transfer-Encoding: binary\r\n'
-        + '\r\n'
-        + `GET ${op.url} HTTP/1.1\r\n`
-        + 'Accept: application/json;odata=verbose\r\n'
-        + '\r\n';
-    }
-
-    _encode(ops, outer) {
-      return ops.map((op) => this._part(op, outer)).join('') + `--${outer}--\r\n`;
-    }
-
-    // Each part's status and body, in order. The boundary is read off the
-    // response's own first line rather than its Content-Type header, because
-    // that is the one place it is spelled identically whatever the header
-    // casing, and a body that does not open with one is not a multipart
-    // answer at all.
-    _parts(text) {
-      const opening = String(text).split('\r\n', 1)[0].trim();
-      if (!opening.startsWith('--')) return null;
-      const boundary = opening.slice(2).replace(/--$/, '');
-      const parts = [];
-      for (const chunk of String(text).split(`--${boundary}`)) {
-        const at = chunk.indexOf('HTTP/1.1 ');
-        if (at === -1) continue;
-        const headEnd = chunk.indexOf('\r\n\r\n', at);
-        parts.push({
-          status: Number(chunk.slice(at + 9, at + 12)),
-          body: headEnd === -1 ? '' : chunk.slice(headEnd + 4).replace(/\r\n$/, ''),
-        });
-      }
-      return parts;
-    }
-
-    _refuse(message, detail) {
-      this.log('ERROR', message);
-      const failure = new Error(message);
-      Object.assign(failure, detail, { batchFailure: true });
-      return failure;
-    }
-
-    async flush() {
-      if (!this.pending.length) return { requests: 0, answered: 0 };
-      const ops = this.pending.splice(0);
-      this.pendingBytes = BATCH_ENVELOPE_BYTES;
-      const digest = await this.getDigest();
-      const outer = batchBoundary('batch');
-      const body = this._encode(ops, outer);
-      // No Accept on the outer request, for #401's reason: a JSON Accept
-      // turns the throttling-page redirect into a 406 only its URL names.
-      const response = await this.fetchWithRetry(this.apiUrl('$batch'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': `multipart/mixed; boundary=${outer}`,
-          'X-RequestDigest': digest,
-        },
-        body,
-      });
-      this.requests += 1;
-      const text = await response.text().catch((err) => `body unreadable: ${String(err).slice(0, 200)}`);
-      if (isThrottled(response)) {
-        throw this._refuse(
-          `$batch of ${ops.length} query part(s) was throttled (HTTP ${response.status}) and none answered`,
-          { throttled: true, sent: ops.length, answered: 0, refused: ops.length },
-        );
-      }
-      if (!response.ok) {
-        throw this._refuse(
-          `$batch of ${ops.length} query part(s) was refused: HTTP ${response.status} ${spError(text)}`,
-          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
-        );
-      }
-      const parts = this._parts(text);
-      if (!parts || parts.length !== ops.length) {
-        throw this._refuse(
-          `$batch of ${ops.length} query part(s) answered HTTP ${response.status} with `
-          + `${parts ? parts.length : 0} part status(es), so the reads cannot be accounted for`,
-          { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
-        );
-      }
-      const refused = parts.filter((part) => !(part.status >= 200 && part.status < 300));
-      if (refused.length) {
-        const throttledParts = refused.filter((part) => part.status === 429 || part.status === 503);
-        throw this._refuse(
-          `$batch of ${ops.length} query part(s): ${parts.length - refused.length} answered, `
-          + `${refused.length} refused (part statuses ${parts.map((part) => part.status).join(', ')})`,
-          {
-            throttled: throttledParts.length > 0,
-            sent: ops.length, answered: parts.length - refused.length, refused: refused.length,
-          },
-        );
-      }
-      for (const part of parts) {
-        // The verbose envelope, unwrapped to the payload a single GET returns
-        // as `d`. A part that answered 2xx with something unparseable is a
-        // read that did not happen, so it refuses rather than yielding null.
-        let payload;
-        try {
-          payload = JSON.parse(part.body);
-        } catch {
-          throw this._refuse(
-            `$batch of ${ops.length} query part(s) answered a part that is not JSON, `
-            + 'so the reads cannot be accounted for',
-            { throttled: false, sent: ops.length, answered: 0, refused: ops.length },
-          );
-        }
-        this.results.push(payload && Object.prototype.hasOwnProperty.call(payload, 'd')
-          ? payload.d : payload);
-      }
-      dbg(`$batch read ${ops.length} query part(s) in ${utf8Bytes(body)} bytes; all answered.`);
-      return { requests: 1, answered: ops.length };
-    }
-
-    // Flushes what is left and hands back every part's payload in the order
-    // it was queued.
-    async done() {
-      await this.flush();
-      return this.results;
-    }
-  }
-
   let cachedDigest = null;
   let digestExpiresAt = 0;
   // The one place any script parses a contextinfo response; a second copy of that parse is what reported #282 as a TypeError.
@@ -824,6 +824,11 @@
       'getDigest', 'getContextWebInformation',
     ].filter((k) => typeof ctx[k] !== 'function');
     if (missingCollaborators.length) throw new Error(`assess-context-incomplete: ctx is missing ${missingCollaborators.join(', ')}`);
+    // BatchReader comes off the enclosing scope rather than out of ctx, because
+    // both hosts include the partial that declares it and neither call site can
+    // be changed by a pack. Named here for the same reason as the two checks
+    // above: without it the first batched read reports the site as unreadable.
+    if (typeof BatchReader !== 'function') throw new Error('assess-transport-incomplete: BatchReader is not in scope; the host script must include _http_batch_read.js.j2');
     const findings = [];
     let verdict = null;
     const finding = (tier, key, level, detail) => {
@@ -833,6 +838,13 @@
     // A property the site did not return is not a value. Printing it as one
     // put the literal word `undefined` in operator-facing lines.
     const reported = (v, fallback = '(not reported)') => (v == null ? fallback : v);
+    // The three requirement keys one list read feeds, spelled once. The
+    // verdict loop walks REQUIREMENTS and skips a key nothing filed a finding
+    // for, so a key spelled two ways here is a requirement that silently
+    // passes. `assessgen.derive_requirements` builds the same three.
+    const collisionKey = (title) => `collision:${title}`;
+    const markerKey = (title) => `provenance_marker:${title}`;
+    const sizeKey = (title) => `item_count:${title}`;
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
     async function probeGet(suffix) {
@@ -849,6 +861,48 @@
       } catch (err) {
         return { ok: false, error: err.message };
       }
+    }
+
+    // probeGet for many paths at once: one OData $batch of top-level query
+    // parts, answered in the order they were queued and in probeGet's shape,
+    // where this script used to make one request per declared list and per
+    // declared folder. On a large family that is the whole cost of tier 2.
+    //
+    // The refusal is all-or-nothing ON PURPOSE. BatchReader reads the
+    // PER-OPERATION status and refuses the envelope on any non-2xx part or a
+    // part count that does not match, because the outer request answers HTTP
+    // 200 either way (measured 2026-09-04: 1000 operations came back 200 with
+    // 363 of them failed inside the body). A refusal therefore reports every
+    // path in that envelope as unanswered, and every caller below records
+    // NOT-ASSESSABLE for it rather than a value. Losing the parts that did
+    // answer is the price of never recording a finding from a read that
+    // cannot be accounted for.
+    //
+    // Null, not an array of failures, for the one transport failure that says
+    // nothing about the paths: the outer $batch request needs X-RequestDigest
+    // even though every part is a read (measured 2026-09-04, without it the
+    // identical envelope came back HTTP 403), so a site that refuses
+    // contextinfo cannot be batched at all and its reads go out singly
+    // instead of being reported unassessable.
+    async function probeMany(paths) {
+      if (!paths.length) return [];
+      let payloads;
+      try {
+        const reader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const path of paths) await reader.add(path);
+        payloads = await reader.done();
+      } catch (err) {
+        if (err.digestFailure) return null;
+        return paths.map(() => ({ ok: false, error: `batched read refused (${err.message})` }));
+      }
+      // The same shape test probeGet makes, plus a missing entry: a part
+      // count BatchReader let through is still not a payload per path.
+      return paths.map((_path, at) => {
+        const d = payloads[at];
+        return (d === null || typeof d !== 'object')
+          ? { ok: false, error: 'non-object payload' }
+          : { ok: true, d };
+      });
     }
 
     // Which list titles exist, from ONE enumeration, answered
@@ -1072,7 +1126,7 @@
     // then returned silently on a list whose marker was missing.
     const LIST_MARKERS = new Map(TARGETS.list_markers);
     const markerFinding = (title, description, descriptionReported) => {
-      const key = `provenance_marker:${title}`;
+      const key = markerKey(title);
       const expected = LIST_MARKERS.get(title);
       if (!LIST_MARKERS.has(title)
           || typeof expected !== 'string'
@@ -1127,7 +1181,7 @@
     const grouped = (n) => String(n).replace(/\B(?=(\d{3})+$)/g, ',');
     const CACHED = 'ItemCount is a cached figure, so read it as a size band rather than an exact total.';
     const itemCountFinding = (title, count, countReported) => {
-      const key = `item_count:${title}`;
+      const key = sizeKey(title);
       // A property the site did not return answered nothing, which is neither
       // a pass nor a failure. Same separation as the marker check above.
       //
@@ -1173,13 +1227,52 @@
     // Absence is read from the shared title enumeration, never a getbytitle
     // 404, so a first deploy does not paint the console red.
     const knownTitles = await assessListTitleSet();
+
+    // Every tier-2 read below goes through here, so this script costs one
+    // request per LOOP rather than one per declared list and per declared
+    // folder. Batched only when the enumeration answered: BatchReader refuses
+    // a whole envelope on any non-2xx part, and a first deploy is nothing but
+    // absent lists, so one 404 would take every other read down with it. With
+    // the enumeration refused nothing is known to exist, so the reads go out
+    // one at a time as they always did and a 404 still reads as absence.
+    //
+    // `batchedReadsOff` is set once a batched read has found the digest
+    // refused, so the rest of the run stops asking for one the site has
+    // already said no to.
+    let batchedReadsOff = false;
+    const readMany = async (paths) => {
+      if (knownTitles && !batchedReadsOff) {
+        const batched = await probeMany(paths);
+        if (batched) return batched;
+        batchedReadsOff = true;
+        log('INFO', 'The site refused a request digest, so reads are not batched; this assessment makes one request per declared list.');
+      }
+      const rows = [];
+      for (const path of paths) rows.push(await probeGet(path));
+      return rows;
+    };
+
+    // The set the loop below actually probes: what the enumeration named, or
+    // every declared title when it was refused. The two conditions are exact
+    // complements of the `continue` inside the loop, so every title it reads
+    // was queued here.
+    const listShapePath = (title) => `web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description,ItemCount`;
+    const probedTitles = TARGETS.list_titles.filter(
+      (title) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
+    const listShapes = new Map();
+    {
+      const rows = await readMany(probedTitles.map(listShapePath));
+      for (let at = 0; at < probedTitles.length; at += 1) listShapes.set(probedTitles[at], rows[at]);
+    }
     for (const title of TARGETS.list_titles) {
-      const key = `collision:${title}`;
+      const key = collisionKey(title);
       if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
         finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
         continue;
       }
-      const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description,ItemCount`);
+      // Fails closed into the unread arm below rather than throwing, if the
+      // queue above and this loop ever disagree about what was probed.
+      const list = listShapes.get(title) || { ok: false, error: 'the batched read did not queue this list' };
       if (!list.ok && list.status === 404) {
         // Enumeration refused (knownTitles null): a 404 still means absent,
         // not "could not probe".
@@ -1197,7 +1290,18 @@
           Object.prototype.hasOwnProperty.call(list.d, 'ItemCount'),
         );
       } else {
-        finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
+        // NOT-ASSESSABLE, and for all three keys this one read feeds. A list
+        // that did not answer is not a list reported present or absent, and
+        // the verdict loop skips a requirement key nothing filed a finding
+        // for, so naming the collision alone let ownership and size pass
+        // unspoken. A refused batch reports every list in it this way.
+        const why = list.status ? `HTTP ${list.status}` : list.error;
+        finding(2, key, 'NOT-ASSESSABLE',
+          `Could not probe '${title}' (${why}), so whether it already exists was not established.`);
+        finding(2, markerKey(title), 'NOT-ASSESSABLE',
+          `'${title}' could not be read (${why}), so its ownership marker was not checked.`);
+        finding(2, sizeKey(title), 'NOT-ASSESSABLE',
+          `'${title}' could not be read (${why}), so its size against the list view threshold was not assessed.`);
       }
     }
 
@@ -1224,23 +1328,49 @@
     // rather than the folder endpoint: that one answers Exists false for a
     // file and for nothing alike. Absence is read from the enumeration
     // above, so a first deploy paints nothing red.
+    const folderShapePath = (title, name) => {
+      const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
+      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`;
+    };
+    // Every declared folder of every declared library in one request, where
+    // this was one request per folder. Handed back per library in declaration
+    // order, so the loop below reads each library's own answers.
+    const folderLibraries = (TARGETS.library_folders || []).filter(
+      ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
+    const folderShapes = new Map();
+    {
+      const queue = [];
+      for (const [title, folders] of folderLibraries) {
+        for (const name of folders) queue.push(folderShapePath(title, name));
+      }
+      const rows = await readMany(queue);
+      let at = 0;
+      for (const [title, folders] of folderLibraries) {
+        folderShapes.set(title, rows.slice(at, at + folders.length));
+        at += folders.length;
+      }
+    }
     for (const [title, folders] of (TARGETS.library_folders || [])) {
       const key = `folder_shape:${title}`;
       if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
         finding(2, key, 'PASS', `'${title}' absent; its ${folders.length} declared folder(s) will be created.`);
         continue;
       }
+      const shapes = folderShapes.get(title) || [];
       const files = [];
       let unreadable = null;
-      for (const name of folders) {
-        const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-        const rows = await probeGet(`web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`);
-        if (!rows.ok) { unreadable = rows.status || rows.error; break; }
+      for (let at = 0; at < folders.length; at += 1) {
+        const rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
+        if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
         const row = ((rows.d && rows.d.results) || [])[0];
-        if (row && Number(row.FileSystemObjectType) !== 1) files.push(name);
+        if (row && Number(row.FileSystemObjectType) !== 1) files.push(folders[at]);
       }
       if (unreadable !== null) {
-        finding(2, key, 'WARN', `Could not read '${title}' for its declared folders (HTTP ${unreadable}).`);
+        // NOT-ASSESSABLE rather than WARN. The question is whether a file
+        // stands where a folder is declared, and a read that did not answer
+        // did not answer it. Both levels degrade the verdict; this one says
+        // which way.
+        finding(2, key, 'NOT-ASSESSABLE', `Could not read '${title}' for its declared folders (${unreadable}); whether a file stands where a folder is declared was not established.`);
       } else if (files.length) {
         finding(2, key, 'BLOCKED', `'${title}' holds a FILE where a folder is declared: ${files.join(', ')}. Rename or move it; the folder phase refuses to create beside it.`);
       } else {
@@ -1248,11 +1378,16 @@
       }
     }
 
-    for (const [title, columns] of (TARGETS.list_display_titles || [])) {
-      if (knownTitles && !knownTitles.has(String(title).toLowerCase())) continue;
+    // One request for the column enumerations of every declared list, where
+    // this was one per list.
+    const displayLists = (TARGETS.list_display_titles || []).filter(
+      ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
+    const displayShapes = await readMany(displayLists.map(([title]) =>
+      `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title&$top=500`));
+    for (let position = 0; position < displayLists.length; position += 1) {
+      const [title, columns] = displayLists[position];
       const key = `display_titles:${title}`;
-      const live = await probeGet(
-        `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title&$top=500`);
+      const live = displayShapes[position] || { ok: false, error: 'the batched read did not queue this list' };
       if (!live.ok) {
         // Absent is not drifted. The collision loop above already reported
         // whether this list exists, so staying quiet here avoids two
@@ -1283,15 +1418,38 @@
     // its own marker while the current title is absent is the only shape
     // deploy renames; everything else blocks, because a guess here is a
     // list adopted or created over somebody else's.
-    for (const [title, previousTitles] of (TARGETS.list_renames || [])) {
+    // One request for every previous title of every renamed list, where this
+    // was one per previous title. Filtered first so the queue and the loop
+    // walk the same entries in the same order.
+    const renameTargets = (TARGETS.list_renames || []).map(([title, previousTitles]) => [
+      title,
+      previousTitles.filter(([oldTitle]) => !knownTitles || knownTitles.has(String(oldTitle).toLowerCase())),
+    ]);
+    const renameShapes = new Map();
+    {
+      const queue = [];
+      for (const [, previousTitles] of renameTargets) {
+        for (const [oldTitle] of previousTitles) {
+          queue.push(`web/lists/getbytitle('${odataName(oldTitle)}')?$select=Title,Description`);
+        }
+      }
+      const rows = await readMany(queue);
+      let at = 0;
+      for (const [title, previousTitles] of renameTargets) {
+        renameShapes.set(title, rows.slice(at, at + previousTitles.length));
+        at += previousTitles.length;
+      }
+    }
+    for (const [title, previousTitles] of renameTargets) {
       const key = `rename:${title}`;
       const present = [];
       let unprobed = null;
-      for (const [oldTitle, oldMarker] of previousTitles) {
-        if (knownTitles && !knownTitles.has(String(oldTitle).toLowerCase())) continue;
-        const old = await probeGet(`web/lists/getbytitle('${odataName(oldTitle)}')?$select=Title,Description`);
+      const shapes = renameShapes.get(title) || [];
+      for (let at = 0; at < previousTitles.length; at += 1) {
+        const [oldTitle, oldMarker] = previousTitles[at];
+        const old = shapes[at] || { ok: false, error: 'the batched read did not queue this title' };
         if (!old.ok && old.status === 404) continue;
-        if (!old.ok) { unprobed = `HTTP ${old.status || old.error} on '${oldTitle}'`; continue; }
+        if (!old.ok) { unprobed = `${old.status ? `HTTP ${old.status}` : old.error} on '${oldTitle}'`; continue; }
         const held = typeof old.d.Description === 'string' ? old.d.Description : '';
         present.push({ title: oldTitle, marker: oldMarker, carries: held.includes(oldMarker) });
       }
@@ -1361,7 +1519,9 @@
     // the site's own lists: 200 PASS, non-200 WARN.
     {
       let probeList = null;
-      const surfaceTitles = await assessListTitleSet();
+      // The enumeration already read above, rather than a second identical
+      // request: it answers the same question and this one is per run.
+      const surfaceTitles = knownTitles;
       if (surfaceTitles) {
         probeList = TARGETS.list_titles.find((t) => surfaceTitles.has(String(t).toLowerCase())) || null;
       } else {

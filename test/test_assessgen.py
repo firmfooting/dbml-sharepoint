@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _batch_mock import BATCH_MOCK
 from _model import as_library, column
 from _model import bundle as make_bundle
 from _model import schema as make_schema
@@ -254,13 +255,37 @@ def test_simple_assess_js_matches_golden() -> None:
 
 
 def test_assess_is_read_only() -> None:
+    """The no-write property, read off the emitted text.
+
+    The script POSTs to `$batch` as well now, because an OData batch is a POST
+    whatever its parts hold, so the POST audit on its own would also pass a
+    script that batched WRITES. What rules that out is which transport partial
+    assess includes: `_http_batch_read.js.j2` and not `_http_batch.js.j2`, so
+    BatchWriter, `spHeaders` and the ChangeSet encoding are absent and the one
+    request line this script can spell opens with GET.
+    """
     js = _assess_js()
     assert "'X-HTTP-Method'" not in js and '"X-HTTP-Method"' not in js
     posts = re.findall(r"method:\s*'POST'", js)
     for m in re.finditer(r"method:\s*'POST'", js):
         window = js[max(0, m.start() - 400): m.start() + 400]
-        assert any(tok in window for tok in ("contextinfo", "ProcessQuery")), window
+        assert any(
+            tok in window for tok in ("contextinfo", "ProcessQuery", "$batch")
+        ), window
     assert posts, "expected at least the contextinfo POST"
+    # Spelled with the paren where one exists, so the assertion is about a
+    # definition or a call rather than about the word appearing in a comment
+    # that explains why the write half is absent.
+    for absent in ("class BatchWriter", "spHeaders(", "${op.method}", "boundary=${inner}"):
+        assert absent not in js, (
+            f"the read-only assessment gained {absent!r}, which only the write "
+            f"half of the batch transport carries. It must include "
+            f"_http_batch_read.js.j2, never _http_batch.js.j2."
+        )
+    assert js.count("`GET ${op.url} HTTP/1.1\\r\\n`") == 1, (
+        "the batch transport no longer spells every part GET, so the envelope "
+        "this script sends is no longer auditable as read-only"
+    )
 
 
 def test_assess_tier1_probes_present() -> None:
@@ -529,6 +554,7 @@ def _run_assess(
     harness: str = _ASSESS_HARNESS,
     js: str | None = None,
     item_counts: Mapping[str, int] | None = None,
+    wrap: str = "",
 ) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
@@ -536,8 +562,10 @@ def _run_assess(
     `harness` swaps the mocked site for a variant, such as a locked one, and
     `js` for a script generated from another pack. `item_counts` sets what a
     list reports as its size, per title, where the default empty list is what
-    the size checks read as comfortably under the threshold. Returns the
-    summary the script resolves with.
+    the size checks read as comfortably under the threshold. `wrap` is spliced
+    in OUTSIDE the batch mock, which is the only place a test can damage a
+    `$batch` answer the mock has already assembled. Returns the summary the
+    script resolves with.
     """
     held = (
         dict.fromkeys(_declared_descriptions(), list_description)
@@ -556,7 +584,10 @@ def _run_assess(
         )
         assert counted != mocked, "the item counts were not spliced in"
         mocked = counted
-    script = mocked + "\n" + js.replace(
+    # Outermost, so the site mock underneath answers each unpacked part as
+    # the single GET it stands for. Without it every batched read is one
+    # opaque POST the harness cannot answer and the whole tier degrades.
+    script = mocked + BATCH_MOCK + wrap + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(script)
@@ -719,13 +750,160 @@ def test_assess_passes_declared_folders_of_a_library_not_yet_created() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_assess_warns_when_a_library_s_folders_cannot_be_read() -> None:
+def test_a_library_whose_folders_cannot_be_read_is_not_assessable() -> None:
+    """NOT-ASSESSABLE, not WARN, and not a shape reported from no answer.
+
+    The question is whether a file stands where a folder is declared. A read
+    that did not answer did not answer it, and these reads now travel as one
+    $batch, so a refusal covers every declared folder of the library at once.
+    Both levels degrade the verdict; only this one says which way.
+    """
     summary = _run_assess(
         _library_markers(), harness=_folder_harness(None, unreadable=True),
         js=_library_assess_js(),
     )
     finding = _folder_finding(summary)
-    assert finding["level"] == "WARN" and "Could not read" in finding["detail"]
+    assert finding["level"] == "NOT-ASSESSABLE", finding
+    assert "Could not read" in finding["detail"], finding
+    assert summary["verdict"] in {"DEGRADED", "BLOCKED"}, summary["verdict"]
+
+
+# === A batched read that did not answer =====================================
+#
+# Tier 2 reads every declared list and every declared folder through one
+# `$batch` request each. The outer request answers HTTP 200 even when
+# individual parts fail (measured 2026-09-04: 1000 operations came back 200
+# with 363 of them failed inside the body), so the three refusals BatchReader
+# makes are the only thing standing between a refused read and a finding
+# recorded as settled. Each of these damages the answer a different way and
+# asserts the same thing: nothing is reported, and the verdict degrades.
+
+#: What each sabotage does to the `$batch` answer the batch mock assembled.
+#: The mock spells every part status `HTTP/1.1 <n> Mocked` and separates parts
+#: with `--batchresponse_1`, which is what these rewrite.
+_BATCH_SABOTAGE = {
+    # One part answers 404 while the envelope still says 200.
+    "a part answers non-2xx": """
+        const text = (await r.text()).replace('HTTP/1.1 200 Mocked', 'HTTP/1.1 404 Mocked');
+        return { ...r, text: async () => text };
+    """,
+    # One part is dropped, so the answers can no longer be paired with the
+    # paths that asked for them.
+    "the part count does not match": """
+        const parts = (await r.text()).split('--batchresponse_1');
+        const text = [parts[0], ...parts.slice(2)].join('--batchresponse_1');
+        return { ...r, text: async () => text };
+    """,
+    # The request itself is refused, so there is no envelope at all.
+    "the request is refused outright": """
+        return {
+          ok: false, status: 500, url: String(url),
+          headers: { get: () => null },
+          json: async () => ({}),
+          text: async () => '{"error":{"message":{"value":"Batch refused"}}}',
+        };
+    """,
+}
+
+
+def _sabotaged_batch(how: str) -> str:
+    """A wrapper that damages every `$batch` answer the way `how` says.
+
+    Installed outside the batch mock, so the mock still unpacks and answers
+    the envelope and only its ANSWER is damaged. Non-batch requests pass
+    through untouched, which is what keeps the rest of the assessment a
+    control rather than a second variable.
+    """
+    return """
+{
+  const _batched = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const r = await _batched(url, opts);
+    if (!/\\/_api\\/\\$batch$/.test(String(url))) return r;
+    __SABOTAGE__
+  };
+}
+""".replace("__SABOTAGE__", _BATCH_SABOTAGE[how])
+
+
+def _levels(summary: dict[str, Any]) -> dict[str, str]:
+    """Finding level by key. The last wins, as the operator's console shows."""
+    return {f["key"]: f["level"] for f in summary["findings"]}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("how", sorted(_BATCH_SABOTAGE))
+def test_a_batched_read_that_did_not_answer_settles_nothing(how: str) -> None:
+    """The site is healthy, so every one of these keys would otherwise pass.
+
+    `test_a_healthy_site_is_compatible` is the control: the same harness with
+    the batch answers intact reaches COMPATIBLE. Damage the answer and the
+    three findings that one read feeds must all read NOT-ASSESSABLE, because
+    a list that did not answer is neither present, nor absent, nor of a known
+    size. Recording any of them from this read is the failure these guards
+    exist to prevent, and the verdict must degrade rather than pass.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(), wrap=_sabotaged_batch(how),
+    )
+    levels = _levels(summary)
+    for title in _declared_descriptions():
+        for key in (f"collision:{title}", f"provenance_marker:{title}", f"item_count:{title}"):
+            assert levels.get(key) == "NOT-ASSESSABLE", (
+                f"{how}: '{key}' was recorded as {levels.get(key)!r} from a read "
+                f"that did not answer"
+            )
+    assert summary["verdict"] == "DEGRADED", (
+        f"{how}: the verdict is {summary['verdict']!r}. A site whose declared "
+        f"lists could not be read is not a site reported compatible."
+    )
+
+
+#: contextinfo refused, spliced in outside the batch mock so the outer $batch
+#: request BatchReader would send is the one thing that cannot go out.
+_REFUSE_DIGEST = """
+{
+  const _under = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (!String(url).includes('contextinfo')) return _under(url, opts);
+    return {
+      ok: false, status: 403, url: String(url),
+      headers: { get: () => null },
+      json: async () => ({}),
+      text: async () => '{"error":{"message":{"value":"Access denied."}}}',
+    };
+  };
+}
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_digest_reads_one_at_a_time_rather_than_reporting_nothing() -> None:
+    """The one transport failure that says nothing about the paths.
+
+    BatchReader's outer request needs X-RequestDigest even though every part
+    is a read (measured 2026-09-04: without it the identical envelope came
+    back HTTP 403), so a site that refuses contextinfo cannot be batched at
+    all. That is a fact about the site rather than about its lists, and
+    reporting every declared list unassessable over it would turn one refused
+    POST into a whole degraded assessment. The reads fall back to one at a
+    time, and every finding they feed still stands.
+    """
+    summary = _run_assess(
+        _declared_descriptions(), harness=_healthy_harness(), wrap=_REFUSE_DIGEST,
+    )
+    levels = _levels(summary)
+    for title in _declared_descriptions():
+        assert levels.get(f"collision:{title}") == "INFO", (
+            f"'{title}' was not read after the digest was refused: "
+            f"{levels.get(f'collision:{title}')!r}"
+        )
+        assert levels.get(f"provenance_marker:{title}") == "PASS", (
+            f"'{title}' carries its marker, and the read that would prove it "
+            f"was never made: {levels.get(f'provenance_marker:{title}')!r}"
+        )
+    refused = [f for f in summary["findings"] if "batched read refused" in str(f["detail"])]
+    assert not refused, f"a $batch went out without a usable digest: {refused}"
 
 
 def _fields_harness(fields: list[dict[str, str]]) -> str:
@@ -1695,7 +1873,11 @@ def _refused_contextinfo_harness() -> str:
         };
         globalThis.__calls = calls;
     """).replace("__DENIED__", json.dumps(_ACCESS_DENIED))
-    return _ASSESS_HARNESS + wrapper
+    # The batch mock goes UNDER the log, so the log records the $batch POST
+    # itself as well as every part redispatched through it. A log that only
+    # saw the envelope could not tell a read-only assessment from a writing
+    # one, which is the whole point of the test that reads it.
+    return _ASSESS_HARNESS + BATCH_MOCK + wrapper
 
 
 def _run_assess_refused(harness: str) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
@@ -1776,7 +1958,7 @@ def _refused_enumeration_harness() -> str:
         };
         globalThis.__calls = calls;
     """).replace("__DENIED__", json.dumps(_ACCESS_DENIED))
-    return _ASSESS_HARNESS + wrapper
+    return _ASSESS_HARNESS + BATCH_MOCK + wrapper
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
