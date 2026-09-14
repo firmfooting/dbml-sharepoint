@@ -1,0 +1,496 @@
+# test/test_jsgen_security.py
+"""Permission levels, site groups, ACLs, and the markers that identify them.
+
+A matching name is not evidence that this tool made the object, so the
+deploy adopts a level or a group by the marker in its description and fails
+closed otherwise. The same phases break inheritance, reconcile exact-mode
+allowlists and enrol the operator, and every one of them is a write against
+somebody's live site.
+"""
+
+from pathlib import Path
+from typing import Any
+
+from _packs import blocks, write_mapping
+from _paths import FIXTURES
+from test_jsgen import _generate_simple_js, _schema_json_for
+
+from dbml_sharepoint.analysis.group_description import marker_for_group
+from dbml_sharepoint.analysis.list_description import family_for
+from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
+from dbml_sharepoint.analysis.role_definition_description import marker_for_level
+from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.model.release import load_release
+
+
+def test_schema_json_has_permission_keys() -> None:
+    """SCHEMA literal in generated JS must include permission_levels, groups,
+    list_assignments keys (R5)."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    assert "permission_levels" in schema_json
+    assert "groups" in schema_json
+    assert "list_assignments" in schema_json
+
+    # Fixture has one custom level and one group.
+    assert len(schema_json["permission_levels"]) == 1
+    assert schema_json["permission_levels"][0]["name"] == "Schema Manager"
+    assert "high" in schema_json["permission_levels"][0]["base_permissions"]
+    assert "low" in schema_json["permission_levels"][0]["base_permissions"]
+
+    assert len(schema_json["groups"]) == 1
+    assert schema_json["groups"][0]["name"] == "List Maintainer"
+    assert schema_json["groups"][0]["require_empty_at_deploy"] is True
+
+    # All default-role lists should have assignments.
+    assert len(schema_json["list_assignments"]) == 3
+    assert all(
+        item["reconcile_mode"] == "exact"
+        for item in schema_json["list_assignments"]
+    )
+    list_names = {la["list"] for la in schema_json["list_assignments"]}
+    assert "APP_Project" in list_names
+    assert "APP_Task" in list_names
+    assert "APP_AppSettings" in list_names
+
+    # The single boolean deploy.js's own preflight and the manifest both
+    # key off (#166 item 5) -- this fixture declares levels, groups AND
+    # assignments, so it must be True regardless of which one drove it.
+    assert schema_json["requires_manage_permissions"] is True
+
+
+def _schema_json_for_risk_register() -> dict[str, Any]:
+    """Build SCHEMA for the shipped risk-register family, whose mapping
+    declares all three group shapes: a family-owned group and both
+    tool-owned ones."""
+    return _schema_json_for("risk-register")
+
+
+def test_every_emitted_group_description_carries_the_marker() -> None:
+    """#211: nothing on a group recorded that this tool made it."""
+    schema_json = _schema_json_for_risk_register()
+    groups = schema_json["groups"]
+    assert groups, "fixture declares no groups; the assertion would be vacuous"
+    for grp in groups:
+        assert MARKER_PREFIX in grp["description"], grp["name"]
+
+
+def test_the_shared_group_marker_names_no_family() -> None:
+    schema_json = _schema_json_for_risk_register()
+    shared = next(g for g in schema_json["groups"] if g["name"] == "dbml Enterprise Readers")
+    assert shared["description"].endswith(
+        "Provisioned by dbml-sharepoint for group dbml Enterprise Readers."
+    )
+
+
+def test_a_family_group_marker_names_its_family() -> None:
+    schema_json = _schema_json_for_risk_register()
+    owned = next(g for g in schema_json["groups"] if g["name"] == "RR Risk Managers")
+    assert owned["description"].endswith(
+        "Provisioned by dbml-sharepoint from risk-register for group RR Risk Managers.",
+    )
+
+
+def test_each_group_carries_its_own_expected_marker() -> None:
+    """The deploy gate compares this per group, not the shared prefix every
+    family's marker happens to start with."""
+    schema_json = _schema_json_for_risk_register()
+    for grp in schema_json["groups"]:
+        assert grp["expected_marker"] == marker_for_group(grp["name"], "risk-register")
+
+
+def test_every_emitted_level_description_carries_the_marker() -> None:
+    """risk-register declares no permission levels, so this loads
+    change-register, which declares 'CH Submit Only'."""
+    schema_json = _schema_json_for("change-register")
+    levels = schema_json["permission_levels"]
+    assert levels, "fixture declares no permission levels; the assertion would be vacuous"
+    for lvl in levels:
+        assert lvl["description"].endswith(
+            "Provisioned by dbml-sharepoint from change-register for level " + lvl["name"] + ".",
+        ), lvl["name"]
+
+
+def test_each_level_carries_its_own_expected_marker() -> None:
+    schema_json = _schema_json_for("change-register")
+    levels = schema_json["permission_levels"]
+    assert levels, "fixture declares no permission levels; the assertion would be vacuous"
+    for lvl in levels:
+        assert lvl["expected_marker"] == marker_for_level("change-register", lvl["name"])
+
+
+def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
+    """Exact mode is a real allowlist, not just stale-level cleanup for the
+    principals that happen to be declared in the mapping."""
+    js = _generate_simple_js()
+    assert "reconcile_mode" in js
+    assert "roleassignments?$expand=Member,RoleDefinitionBindings" in js
+    assert "const expected = new Set" in js
+    assert "removeBinding(principalId, binding.Id, 'unlisted')" in js
+    assert "binding.Name === 'Limited Access'" in js
+    assert "while (assignmentsUrl)" in js
+    assert "allJson.d.__next" in js
+    assert "cannot resolve desired assignment" in js
+    assert js.index("addroleassignment") < js.index(
+        "Exact mode treats the mapping as an allowlist",
+    )
+    assert "failed before reconciliation" in js
+    assert "desiredPresent" in js
+
+
+def test_role_assignment_reads_use_positional_getbyprincipalid() -> None:
+    """SharePoint's REST read method is positional; add/remove remain named."""
+    js = _generate_simple_js()
+
+    positional = "getbyprincipalid(${resolved.principalId})"
+    assert js.count(positional) == 2
+    assert "getbyprincipalid(principalid=" not in js
+    assert "addroleassignment(principalid=${resolved.principalId}" in js
+    assert "removeroleassignment(principalid=${principalId}" in js
+
+
+# === New tests for Feature A (owner verification) and Feature B (Phase 5.1 seed) ===
+
+
+def test_deploy_js_hardens_permission_and_role_checks() -> None:
+    """Template hardening guards:
+    - permission preflight demands ManagePermissions only when the schema has
+      ACL work (needsPermissions), not unconditionally;
+    - Phase 1.3 role-definition / site-group existence probes surface non-404
+      responses as errors rather than treating them as "already exists";
+    - Phase 4.2 addroleassignment / breakroleinheritance and the Phase 1.3 group
+      owner reads all validate the HTTP result (fetch does not throw on 4xx/5xx).
+      The adds travel as one $batch, so the status each part came back with is
+      what BatchWriter inspects, and its refusal has to stay fatal here.
+    """
+    js = _generate_simple_js()
+    assert "needsPermissions" in js
+    assert "Probe for permission level" in js
+    assert "Probe for site group" in js
+    assert "addroleassignment batch failed before reconciliation" in js
+    assert "failed before reconciliation" in js
+    assert "breakroleinheritance failed" in js
+    assert "/owner?$select=Id,Title,PrincipalType" in js
+    assert "Cannot read owner for group" in js
+
+
+def test_group_owner_is_verified_read_only_and_mismatch_fails_closed() -> None:
+    """Never write read-only OwnerTitle or guess a REST Owner POST payload."""
+    js = _generate_simple_js()
+
+    assert "Manual owner action required for group" in js
+    assert f"Phase {pn('lists')} will not start while this mismatch exists" in js
+    assert "owner verified as" in js
+    assert "OwnerTitle:" not in js
+    assert "owner MERGE failed" not in js
+    assert js.index("Manual owner action required for group") < js.index(
+        "phase-0-security-errors",
+    )
+
+
+def test_deploy_js_reconciles_named_security_objects_and_fails_closed() -> None:
+    """A matching name is not sufficient security evidence.
+
+    Existing custom role definitions and groups must have their declared
+    permissions/membership controls reconciled. Any Phase 1.3 failure must stop
+    before list creation, and any later schema/ACL failure must stop before a
+    seed row can make a partial deployment appear activated.
+    """
+    js = _generate_simple_js()
+
+    assert "Permission level '${lvl.name}' MERGE failed" in js
+    assert "declared permissions reconciled" in js
+    assert "Group '${grp.name}' settings MERGE failed" in js
+    assert "declared membership controls reconciled" in js
+    assert "phase-0-security-errors" in js
+    assert js.index("phase-0-security-errors") < js.index(f"Starting Phase {pn('lists')}")
+    assert "pre-seed-errors" in js
+    assert js.index("pre-seed-errors") < js.index(f"Starting Phase {pn('seeds')}")
+
+
+def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
+    """The optional bootstrap gate observes membership without mutating it."""
+    js = _generate_simple_js()
+
+    assert '"require_empty_at_deploy": true' in js
+    assert "/users?$select=Id&$top=5000" in js
+    assert "while (membersUrl)" in js
+    assert "membersJson.d.__next" in js
+    assert "requires empty membership at deploy" in js
+    assert "membership enumeration failed" in js
+    assert "is empty as required for deployment" in js
+    assert js.index("const currentOwner =") < js.index(
+        "if (grp.require_empty_at_deploy)",
+    )
+    assert js.index("while (membersUrl)") < js.index("phase-0-security-errors")
+    assert js.index("phase-0-security-errors") < js.index(f"Starting Phase {pn('lists')}")
+    # The gate itself observes without mutating: no member removal between
+    # the gate's guard and its success log. (Member removal DOES exist
+    # elsewhere in the script, the run-scoped operator self-enrolment
+    # cleanup, which never touches pre-existing members.)
+    gate_block = js[
+        js.index("if (grp.require_empty_at_deploy)"):js.index("is empty as required for deployment")
+    ]
+    assert "/users/removebyid" not in gate_block
+    assert "/users/removebyloginname" not in js
+    # Two now, both unconditional: the operator's run-scoped cleanup and the
+    # enterprise-reader drain, which deploy.js.j2 declares regardless of
+    # whether --enterprise-reader was passed (task 6, security-phase
+    # atomicity) so it exists on every build, not just one that emits the
+    # reader-enrolment phase itself.
+    assert js.count("/users/removebyid(") == 2
+    assert js.index("removeSelfEnrollments") < js.index("/users/removebyid(")
+    assert "removeReaderEnrollments" in js
+
+
+def test_exact_lists_break_inheritance_immediately_in_phase_1() -> None:
+    """Exact-mode lists must not inherit Team rights until the ACL phase."""
+    js = _generate_simple_js()
+    phase1 = js.split(f"Starting Phase {pn('lists')}")[1].split(
+        f"Starting Phase {pn('lookups')}")[0]
+
+    assert "earlyIsolationLists" in phase1
+    assert "la.break_inheritance && la.reconcile_mode === 'exact'" in phase1
+    assert "early HasUniqueRoleAssignments probe failed" in phase1
+    assert "early breakroleinheritance failed" in phase1
+    break_call = (
+        "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    )
+    assert break_call in phase1
+    assert js.count(break_call) == 2  # early isolation plus full Phase 4.2 guard
+    assert "clearSubscopes=true" not in phase1
+    # The batched field wave opens with the decide pass, so that loop is still
+    # the first thing in the phase that touches a declared column: nothing is
+    # queued, sent or read back before it, and the calculated tail is behind it.
+    assert phase1.index("listGuids[list.title] = listShape.Id") < phase1.index(
+        "if (earlyIsolationLists.has(list.title))",
+    ) < phase1.index("for (const col of batchedFields)")
+
+
+def test_new_exact_list_must_remain_empty_after_early_isolation() -> None:
+    """A row raced into the create/break gap must block fields and seeding."""
+    js = _generate_simple_js()
+    phase1 = js.split(f"Starting Phase {pn('lists')}")[1].split(
+        f"Starting Phase {pn('lookups')}")[0]
+
+    assert "let createdThisRun = false" in phase1
+    assert "createdThisRun = true" in phase1
+    assert "$select=ItemCount" in phase1
+    assert "post-isolation ItemCount probe failed" in phase1
+    assert "post-isolation ItemCount probe returned an invalid response" in phase1
+    assert "contains ${itemCount} item(s) after early isolation" in phase1
+    assert "remains empty after early isolation" in phase1
+    assert "summary.errors.push({ phase: '2.1'" in phase1
+    assert phase1.index("early breakroleinheritance failed") < phase1.index(
+        "$select=ItemCount",
+    ) < phase1.index("for (const col of batchedFields)")
+    assert js.index("contains ${itemCount} item(s) after early isolation") < js.index(
+        "pre-seed-errors",
+    )
+
+
+def test_singleton_seed_existing_row_must_match_exactly() -> None:
+    """Seed idempotency verifies the singleton; it never trusts any row."""
+    js = _generate_simple_js()
+    phase5 = js.split(f"Starting Phase {pn('seeds')}")[1]
+
+    assert "exactSeedValueEqual" in phase5
+    assert "actual === null && expected === ''" in phase5
+    assert "do not coerce any other scalar values" in phase5
+    assert "key !== '__metadata'" in phase5
+    assert "readSeedSingleton" in phase5
+    assert "?$top=2&$select=${selectFields}" in phase5
+    assert "Object.prototype.hasOwnProperty.call(existing, field)" in phase5
+    assert "does not exactly match declared field(s)" in phase5
+    assert "contains multiple rows" in phase5
+    assert "Verified existing singleton row" in phase5
+    assert "Seeded and verified" in phase5
+    assert "phase-5-seed-errors" in phase5
+    assert "deployment is not activation-ready" in phase5
+    assert phase5.count("await readSeedSingleton(seed)") == 2
+    assert "already has a row, skipping seed" not in phase5
+    assert "not present (HTTP" not in phase5
+
+
+def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
+    """Exact list ACLs must not conceal stale item/folder permission scopes.
+
+    The deployer enumerates all items (including document-library folders/files)
+    before any break/reconciliation, follows paging, uses
+    clearSubscopes=false, and fails closed for explicit operator review.
+    """
+    js = _generate_simple_js()
+
+    assert "$select=Id,HasUniqueRoleAssignments&$top=5000" in js
+    assert "while (itemsUrl)" in js
+    assert "itemsJson.d.__next" in js
+    assert "item/folder unique permission scope(s) remain" in js
+    assert "never erase" in js
+    assert (
+        "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)" in js
+    )
+    assert (
+        "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)" not in js
+    )
+    descendant_probe = "await findDescendantUniqueScopeIds(la.list)"
+    assert js.count(descendant_probe) == 2
+    break_call = "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
+    assert phase4.index(descendant_probe) < phase4.index(break_call)
+
+
+def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
+    """Regression: with a role-scoped default policy, a build for another role
+    must emit NO list_assignments for that role's lists (previously the default fell
+    back onto every entity, re-ACLing them with the other role's groups)."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    assert bundle.mapping.permissions is not None
+    assert bundle.mapping.permissions.default_policy_site_role == "default"
+    bundle.mapping.entities["Task"] = EntityMapping(
+        name="Task", kind="HubOnlyList", base_template=100, site_role="admin",
+    )
+
+    hub_json = build_schema_json(schema, bundle, "admin")
+    assert [lst["title"] for lst in hub_json["lists"]] == ["APP_Task"]
+    assert hub_json["list_assignments"] == []
+
+    default_json = build_schema_json(schema, bundle, "default")
+    assert {la["list"] for la in default_json["list_assignments"]} == {
+        "APP_Project", "APP_AppSettings",
+    }
+
+
+def test_permission_level_probe_uses_filter_not_getbyname() -> None:
+    """SP's roledefinitions/getbyname returns HTTP 500 (not 404) for a missing
+    role definition, so a getbyname existence probe fails Phase 1.3 on every
+    clean site (first real-tenant paste). The probe must use the $filter form,
+    which returns 200 + empty results when absent; getbyname remains only on
+    the MERGE path for an existing level. Description is selected alongside
+    Id: #224's adoption gate reads it, and Id alone would give that gate
+    nothing to test."""
+    js = _generate_simple_js()
+    assert "web/roledefinitions?$select=Id,Description&$filter=Name eq" in js
+
+
+def test_group_management_automation_rendered(tmp_path: Path) -> None:
+    """The generated script must carry (a) the CSOM ProcessQuery owner-set
+    fallback for mismatched group owners and (b) the operator self-enrolment
+    machinery keyed by groups[].enroll_operator_during_deploy."""
+    mapping_path = write_mapping(
+        tmp_path,
+        blocks((FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8"), """
+            groups:
+              - name: GH List Administrators
+                description: Test admin group
+                owner_group: Site Owners
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: false
+                enroll_operator_during_deploy: true
+        """),
+        # The fixture already declares its own `prefix:`.
+        prefix=None,
+    )
+    schema = parse_dbml(FIXTURES / "calculated.dbml")
+    bundle = load_mapping(mapping_path)
+    release = load_release(FIXTURES / "release.yaml")
+    js = generate_deploy_js(
+        schema=schema, bundle=bundle, release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="calculated.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert '"enroll_operator_during_deploy": true' in js
+    assert "ProcessQuery" in js          # owner-set fallback endpoint
+    assert "SetProperty" in js           # CSOM payload
+    assert "removeSelfEnrollments" in js # end-of-run cleanup helper
+
+
+def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
+    """List ACLs can LOOK correct while the signed-in operator still deletes
+    happily. Site collection admins and Full Control holders bypass list
+    ACLs entirely (seen live: the deploying owner could delete despite a
+    no-delete working level). After self-enrolment cleanup the script probes
+    the operator's EffectiveBasePermissions per ACL'd list and logs
+    delete/manage rights with the bypass explanation, so the operator knows
+    member-level verification needs an ordinary member account."""
+    js = _generate_simple_js()
+    assert "/effectivebasepermissions" in js
+    assert "Operator effective rights on" in js
+    assert "bypass list ACLs" in js
+    assert "ordinary member account" in js
+    # Group-connected sites make every group owner a site collection admin
+    # (invisible in Check Permissions, bypasses every list ACL). Say so.
+    assert "_spPageContextInfo.isSiteAdmin" in js
+    assert "site collection admin = " in js
+    assert "owners of a group-connected site are site collection admins" in js
+    # After cleanup, before DONE, since enrolment would otherwise inflate rights.
+    diagnostic = js.index("Operator effective rights on")
+    assert js.rfind("await removeSelfEnrollments()", 0, diagnostic) >= 0
+    assert diagnostic < js.index("Deployment complete.")
+
+
+def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
+    """A list's roleassignments/getbyprincipalid answers 404 for a principal
+    with no assignment yet (every declared principal, on a first deploy),
+    and the browser paints that red whatever the script does with it.
+
+    Asserted on the generated source rather than by running it: the mock in
+    test_deploy_runtime never resolves a principal Id, so its run never
+    reaches these calls, and a runtime assertion would pass while testing
+    nothing.
+    """
+    js = _generate_simple_js()
+    enumerate_at = js.index("roleassignments?$expand=Member,RoleDefinitionBindings")
+    probe_at = js.index("roleassignments/getbyprincipalid")
+    assert enumerate_at < probe_at, (
+        "the one-shot enumeration must come before any per-principal probe, "
+        "or the probe is what an operator sees painted red"
+    )
+    # Every probe site must be reachable only when the enumeration failed.
+    assert js.count("bindingsFor(resolved.principalId)") == 2, (
+        "both the add check and the stale-level pass must consult the "
+        "enumeration first and fall back to probing only when it is null"
+    )
+
+
+def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path) -> None:
+    """Each previous name pairs with the marker its own name produces, so the
+    security phase adopts a previous name only when the site holds the
+    marker that name would have been stamped with."""
+    write_mapping(tmp_path, """
+        prefix: "GOV_"
+        previous_prefixes: ["ADOPT_"]
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: default }
+        permission_levels:
+          - name: "{prefix} Submit Only"
+            description: "Add and read."
+            base_permissions: [AddListItems]
+        groups:
+          - name: "{prefix} Programme Leads"
+            description: "Leads."
+            renamed_from: ["{prefix} Program Governance"]
+    """)
+    bundle = load_mapping(tmp_path / "m.yaml")
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    family = family_for(schema)
+    built = build_schema_json(schema, bundle, "default")
+    level = marker_for_level(family, "ADOPT Submit Only")
+    assert built["permission_levels"][0]["previous_names"] == [
+        {"name": "ADOPT Submit Only", "expected_marker": level},
+    ]
+    assert built["groups"][0]["previous_names"] == [
+        {"name": name, "expected_marker": marker_for_group(name, family)}
+        for name in ("ADOPT Programme Leads", "GOV Program Governance", "ADOPT Program Governance")
+    ]

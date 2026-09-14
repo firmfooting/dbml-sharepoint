@@ -153,7 +153,7 @@ Resolve one list by its server-relative URL rather than by its title. Expects `a
 
 Included by: `_maintain_list.js.j2`, `extract.js.j2`, `identify.js.j2`
 
-A GUID SharePoint returned, checked before it is spliced into a URL. Every id here comes back from the API and is then interpolated into a path like `web/lists(guid'<id>')`, so the shape is asserted rather than trusted: an id that is not a GUID means the read did not return what was asked for, and the failure should say so at the read rather than as a malformed URL two calls later. `deploy/_helpers.js.j2` carries the same function for the deploy bundle. The two are deliberately not shared yet: folding them together edits the emitted deploy and moves `test/fixtures/expected/simple-deploy.js`, which is a golden review of its own and does not belong in a maintenance fix.
+A GUID SharePoint returned, checked before it is spliced into a URL. Every id here comes back from the API and is then interpolated into a path like `web/lists(guid'<id>')`, so the shape is asserted rather than trusted: an id that is not a GUID means the read did not return what was asked for, and the failure should say so at the read rather than as a malformed URL two calls later. `deploy/_helpers.js.j2` carries the same function for the deploy bundle. The two are deliberately not shared yet: folding them together edits the emitted deploy and moves a piece of `test/fixtures/expected/simple-deploy/`, which is a golden review of its own and does not belong in a maintenance fix.
 
 ### `_http.js.j2`
 

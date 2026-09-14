@@ -1,0 +1,184 @@
+  markPhase('Phase 1.8: maintenance unseal');
+  // === Maintenance unseal (declared-seal columns) ===
+  // Sealed columns reject UI schema edits even for site admins; the ONLY
+  // legitimate maintenance path is this script. Unseal declared fields so
+  // the run's write phases work unchanged; Phase 4.1 re-seals and
+  // verifies after every field write is done.
+  log('INFO', 'Starting Phase 1.8: maintenance unseal.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  {
+    const sealDeclared = [];
+    for (const list of SCHEMA.lists) {
+      for (const col of list.fields_phase1) {
+        if (col.seal) sealDeclared.push([list.title, col]);
+      }
+    }
+    for (const lookup of SCHEMA.phase2_lookups) {
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field]);
+    }
+    // The built-in Title is not a declared column, so it was never in this
+    // set, and Phase 1 writes list.title_patch to it. A Title sealed by
+    // anything other than this tool therefore made the run un-completable
+    // and un-repairable: the write failed, and the only maintenance path
+    // that can unseal walked declared columns only. Probed unconditionally
+    // (the loop below writes ONLY if it finds Sealed true), so a normal
+    // site pays one read and nothing changes.
+    //
+    // WHERE A SEALED TITLE ACTUALLY COMES FROM, measured 2026-09-07 by
+    // test/manual/title-seal-probe.js over two sites. It is not something
+    // anyone does to a list. On a generic list every route was refused: both
+    // MERGE spellings with HTTP 400 "Operation is not valid due to the
+    // current state of the object", and a SchemaXml carrying Sealed="TRUE"
+    // answered 204 and changed nothing, which is the silent kind of failure
+    // and the reason that row asserts the readback rather than the status.
+    // The site collection's own Title site column reads Sealed=false, so
+    // nothing descends.
+    //
+    // What the census found, reading all 33 lists of one site: 8 sealed
+    // Titles, every one of them BaseTemplate 101, and all 24 BaseTemplate 100
+    // lists unsealed. The correlation is with 101 specifically rather than
+    // with libraries in general: the site's one BaseTemplate 119 page library
+    // reads unsealed too.
+    //
+    // So this branch is unreachable today, and shut twice over: kind
+    // 'DocumentLibrary' is refused by `document_library_unsupported`, and
+    // `unsupported_base_template` allows only 100, which is the guard that
+    // closes the door the first refusal's own advice would otherwise open.
+    // It stops being unreachable the day issue #14 lands library support.
+    // Keep it. Deleting it would delete the handling for the one template
+    // where a sealed Title is the norm rather than the exception.
+    for (const list of SCHEMA.lists) {
+      if (list.title_patch) sealDeclared.push([list.title, syntheticTitleField(list)]);
+    }
+    if (sealDeclared.length > 0) {
+      // One lane per list: same-list field MERGEs race into save conflicts;
+      // different lists unseal concurrently. The lane boundary is also the
+      // batch boundary, so one list's unseals are one ChangeSet.
+      const unsealByList = new Map();
+      for (const [listTitle, field] of sealDeclared) {
+        if (!unsealByList.has(listTitle)) unsealByList.set(listTitle, []);
+        unsealByList.get(listTitle).push(field);
+      }
+      // Preflight ownership can change before this first list mutation. Re-read
+      // every list this phase may touch and gate the whole unseal batch before
+      // opening one field. An absent list is a clean first-provision target,
+      // so the survey tolerates absence here; the identities it does capture
+      // are carried into the write lane below, which refuses a list that has
+      // become a different object since.
+      const unsealOwned = await surveyOwnedListsForWrites(
+        [...unsealByList.keys()],
+        '1.8', 'Maintenance ownership recheck', true,
+      );
+      if (!unsealOwned) {
+        log('ERROR', 'Maintenance ownership recheck failed; aborting before any field is unsealed or structural phase begins.');
+        return { ...summary, aborted: 'maintenance-ownership-errors' };
+      }
+      log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
+      let unsealedCount = 0;
+      const errorsBeforeUnseal = summary.errors.length;
+      await mapLanes([...unsealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, fields]) => {
+        let currentList;
+        try {
+          const list = SCHEMA.lists.find(candidate => candidate.title === listTitle);
+          if (!list) throw new Error(`No declaration found for list '${listTitle}'`);
+          // A list the survey found is required to still be the same object;
+          // one it did not find may still be absent, since this phase runs
+          // before the structural phases create it.
+          const surveyedId = unsealOwned.get(listTitle);
+          if (surveyedId == null) {
+            currentList = await readListShape(listTitle, true);
+            if (!currentList) return;
+            assertListAdoptable(list, currentList);
+          } else {
+            currentList = await ownedListIdentity(
+              listTitle, surveyedId, 'before maintenance unseal',
+            );
+          }
+        } catch (err) {
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
+          return;
+        }
+        // The lane's unseals go out as ONE $batch rather than one MERGE per
+        // column: the inverse of the seal phase that re-closes them, and the
+        // same shape, independent MERGEs of one property with nothing read
+        // between them. This phase runs before every structural phase, so on a
+        // maintained site its per-column burst was the first thing a redeploy
+        // paid for. fieldMergePath and FIELD_MERGE_HEADERS are the same address
+        // and headers patchFieldById sends, so only the transport changes; the
+        // ChangeSet still addresses /lists(guid)/fields(guid), which no title
+        // rebind can redirect.
+        const unsealBatch = new BatchWriter({ getDigest, fetchWithRetry, apiUrl, log });
+        for (const field of fields) {
+          try {
+            const shape = await readFieldShape(listTitle, field.title, field, true);
+            // A partial first provision may not have created this deferred
+            // lookup yet. With no live field there is nothing to unseal, and its
+            // target is allowed to remain absent until the structural phases.
+            if (!shape) continue;
+            let targetGuid = null;
+            if (field.target_list) {
+              const target = SCHEMA.lists.find(candidate => candidate.title === field.target_list);
+              if (!target) throw new Error(`No declaration found for lookup target '${field.target_list}'`);
+              const targetShape = await readListShape(target.title, true);
+              if (!targetShape) throw new Error(`Lookup target '${target.title}' disappeared before maintenance unseal`);
+              assertListAdoptable(target, targetShape);
+              targetGuid = targetShape.Id;
+            }
+            await assertFieldImmutableShape(listTitle, field, shape, targetGuid);
+            if (shape.Sealed) {
+              // Record before the part is queued, for the reason the single
+              // write recorded before sending: if SharePoint commits the MERGE
+              // but the response is lost, exit cleanup must still re-seal it. A
+              // redundant Sealed=true write is safe when the MERGE never landed.
+              fieldsUnsealedForRun.set(
+                `${listTitle}\u0000${field.title}`,
+                [listTitle, field.title, currentList.Id, shape.Id],
+              );
+              await unsealBatch.add(
+                'POST',
+                fieldMergePath(currentList.Id, shape.Id),
+                { __metadata: { type: 'SP.Field' }, Sealed: false },
+                FIELD_MERGE_HEADERS,
+              );
+            }
+          } catch (err) {
+            log('ERROR', `Maintenance unseal '${listTitle}.${field.title}': ${err.message}`);
+            summary.errors.push({ phase: '1.8', list: listTitle, column: field.title, error: err.message });
+          }
+        }
+        try {
+          await unsealBatch.done();
+        } catch (err) {
+          // Recorded at lane level and not attributed to a column: SharePoint
+          // does not roll a ChangeSet back (Learn, "Make batch requests with
+          // the REST APIs"), so some of these parts may have landed. Every
+          // field queued is already in fieldsUnsealedForRun, so exit cleanup
+          // re-seals whichever ones did.
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
+        }
+        // What the batch reports landed, not what the loop queued: a refused
+        // part must not be counted as a column this run opened.
+        unsealedCount += unsealBatch.opsSent;
+        try {
+          // The single-write shape re-proved this list immediately before EVERY
+          // field MERGE, so a marker lost part-way through a list's columns
+          // aborted at the next one. One ChangeSet has no next one, so the
+          // re-prove moves to the batch boundary: a marker lost while the
+          // envelope was in flight still aborts the phase, before any
+          // structural phase begins and while every column this lane opened is
+          // still recorded for exit cleanup to re-seal.
+          await ownedListIdentity(listTitle, currentList.Id, 'across the maintenance unseal');
+        } catch (err) {
+          log('ERROR', `Maintenance unseal '${listTitle}': ${err.message}`);
+          summary.errors.push({ phase: '1.8', list: listTitle, error: err.message });
+        }
+      }, 4);
+      if (summary.errors.length > errorsBeforeUnseal) {
+        log('ERROR', 'Maintenance unseal failed; aborting before any structural phase begins. Exit cleanup will re-seal fields this run may have opened.');
+        return { ...summary, aborted: 'maintenance-unseal-errors' };
+      }
+      log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
+    }
+  }

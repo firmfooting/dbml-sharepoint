@@ -1,8 +1,11 @@
 """Domain objects for tests, without going through text and the filesystem.
 
-391 of 877 test functions took `tmp_path` and 382 obtained their inputs by
-writing DBML/YAML to disk and parsing it back, to test pure functions. The
-text was never the subject: it was the only way to get a `Schema`.
+When this module was added, 391 of 877 test functions took `tmp_path` and 382
+obtained their inputs by writing DBML/YAML to disk and parsing it back, to
+test pure functions. The text was never the subject: it was the only way to
+get a `Schema`. Those counts are the reason this module exists and are
+deliberately not re-measured, because the number this module drove down is
+the number that would move.
 
 Text still belongs in the tests that are ABOUT the text -- `test_parser.py`,
 `test_mapping_loader.py` -- and in `test_model_contract.py`, which proves

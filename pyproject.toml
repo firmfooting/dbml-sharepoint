@@ -180,9 +180,9 @@ ban-relative-imports = "all"
 max-complexity = 57
 
 [tool.ruff.lint.per-file-ignores]
-# S101: pytest asserts. PLC0415: RE-MEASURED 2026-09-14, 314 function-level
-# imports in the test tree, 109 of them in test_jsgen.py -- a mechanical
-# cleanup tracked in #172, not a gate. PLC0415 IS enforced in src/, where the
+# S101: pytest asserts. PLC0415: RE-MEASURED 2026-09-14 after the jsgen
+# split, 197 function-level imports left in the test tree and none in the
+# jsgen family -- a mechanical cleanup tracked in #172, not a gate. PLC0415 IS enforced in src/, where the
 # fourteen remaining sites each carry a `noqa` and a reason: five in
 # `wizard.py` and two in `extract/wizard.py` break a genuine cycle with
 # `cli.py` (#171), and seven in `bundle.py` keep that module importable for its

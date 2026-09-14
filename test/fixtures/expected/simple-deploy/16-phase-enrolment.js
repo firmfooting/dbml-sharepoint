@@ -1,0 +1,55 @@
+  markPhase('Phase 1.5: operator self-enrolment');
+  // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
+  // Some mappings route all list administration through an empty-by-default
+  // admin group (Owners hold only Contribute on the lists). Later phases
+  // (field reconciliation, indexes, ACL work) then need the operator to hold
+  // that group's grants, so the script enrols the operator for the duration
+  // of the run and removes them at the end. An operator who was ALREADY a
+  // member is left untouched. Only principals who can already manage the
+  // group (its Site-Owners owner) can benefit; this adds no new authority.
+  log('INFO', 'Starting Phase 1.5: operator self-enrolment.');
+  {
+    const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
+    for (const grp of enrollGroups) {
+      try {
+        const meResp = await fetchWithRetry(apiUrl('web/currentuser?$select=Id,LoginName,Title'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!meResp.ok) throw new Error(`current-user probe failed: HTTP ${meResp.status}`);
+        const me = (await meResp.json()).d;
+        const grpResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!grpResp.ok) throw new Error(`group probe failed: HTTP ${grpResp.status}`);
+        const groupId = (await grpResp.json()).d.Id;
+        const memberResp = await fetchWithRetry(apiUrl(`web/sitegroups(${groupId})/users?$filter=Id eq ${me.Id}&$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!memberResp.ok) throw new Error(`membership probe failed: HTTP ${memberResp.status}`);
+        const alreadyMember = ((await memberResp.json()).d.results || []).length > 0;
+        if (alreadyMember) {
+          log('INFO', `Operator already a member of '${grp.name}'; membership left untouched.`);
+          continue;
+        }
+        const digestE = await getDigest();
+        const addResp = await fetchWithRetry(apiUrl(`web/sitegroups(${groupId})/users`), {
+          method: 'POST',
+          headers: spHeaders(digestE),
+          body: JSON.stringify({ __metadata: { type: 'SP.User' }, LoginName: me.LoginName }),
+        });
+        if (!addResp.ok) {
+          const text = await addResp.text();
+          throw new Error(`enrolment failed: HTTP ${addResp.status} ${text}`);
+        }
+        selfEnrollments.push({ groupId, groupName: grp.name, userId: me.Id });
+        log('INFO', `Enrolled operator '${me.Title}' into '${grp.name}' for this run; removed automatically at the end.`);
+      } catch (err) {
+        log('ERROR', `Operator self-enrolment for '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.5', group: grp.name, error: err.message });
+      }
+    }
+  }
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
+    return { ...summary, aborted: 'operator-enrolment-errors' };
+  }

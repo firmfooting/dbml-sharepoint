@@ -1,0 +1,941 @@
+  markPhase('Phase 1.4: permission levels and site groups');
+  // === Phase 1.4: custom permission levels + site groups ===
+  log('INFO', 'Starting Phase 1.4: permission levels and site groups.');
+  {
+    // A digest the phase takes for itself is outside every per-object catch, so a refusal rejected the deploy (#282).
+    async function phaseDigest() {
+      try {
+        return await getDigest();
+      } catch (err) {
+        log('ERROR', `Phase 1.4: ${err.message}`);
+        summary.errors.push({ phase: '1.4', error: err.message });
+        return null;
+      }
+    }
+    let digest0 = await phaseDigest();
+
+    // A built-in owner group always exists (it is the site's own associated
+    // group), so resolveGroupOwner's Associated*Group branches never 404.
+    // Used below to decide whether an adopt-path owner resolve is safe
+    // during survey, or must be deferred to apply.
+    const BUILTIN_OWNER_GROUPS = new Set(['Site Owners', 'Site Members', 'Site Visitors']);
+
+    // Existence probe via $filter: getbyname returns HTTP 500 (not 404) for
+    // a missing role definition, so a getbyname probe cannot distinguish
+    // "absent" from a real failure. The filter form returns 200 with empty
+    // results when absent. getbyname is still used below for the MERGE,
+    // where the level is known to exist. Description is selected alongside
+    // Id because the adoption gate below reads it; selecting Id alone would
+    // give the gate nothing to test. Shared with the create path's Id
+    // fallback, so both ask SharePoint the identical question.
+    //
+    // OPEN QUESTION, 2026-08-15: whether $filter=Name eq '...' matches
+    // case-sensitively is not documented on Microsoft Learn and was not one
+    // of the ten questions test/manual/role-definition-probe.js asked. If it
+    // is case-sensitive, a site level named 'schema manager' reads as absent
+    // against a declared 'Schema Manager', so this probe returns no rows,
+    // the create path runs, and the adoption gate below never sees the
+    // existing level. That is NOT a gate fail-open: nothing is written to
+    // the existing level, which is the same behaviour as before this
+    // branch. The residual is real, though: the create either collides with
+    // the existing level and errors, or leaves two case-variant levels in
+    // place, and _acls.js.j2's resolveRoleDefId, which resolves a level by
+    // name through its own getbyname call, then binds whichever one
+    // SharePoint's name resolution picks. The group path further below in
+    // this file was given nameSet/hasName for exactly this hazard, at the
+    // site-group enumeration; this path has no equivalent, because it is
+    // not yet known whether one is needed. A question for the next
+    // test/manual/role-definition-probe.js run.
+    async function probeLevelExistence(name) {
+      const resp = await fetchWithRetry(apiUrl(`web/roledefinitions?$select=Id,Description&$filter=Name eq '${odataName(name)}'`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Probe for permission level '${name}' failed: HTTP ${resp.status} ${text}`);
+      }
+      const json = await resp.json();
+      const rows = json?.d?.results;
+      if (!Array.isArray(rows)) {
+        throw new Error(`Probe for permission level '${name}' returned an invalid response`);
+      }
+      return rows;
+    }
+
+    // WEB SCOPE ONLY, and this count NEVER decides whether to adopt. This
+    // tool assigns its levels at LIST scope through _acls.js.j2, and
+    // access.role-def.web-assignments-enumerable of role-definition-probe.js
+    // measured web scope alone, so a zero here does not mean unused. It is
+    // reported to tell the operator what they are looking at.
+    async function countWebAssignmentsUsing(levelId) {
+      let total = 0;
+      let url = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
+      while (url) {
+        const resp = await fetchWithRetry(url, { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`Role assignment enumeration failed: HTTP ${resp.status} ${text}`);
+        }
+        const json = await resp.json();
+        if (!json || !json.d || !Array.isArray(json.d.results)) {
+          throw new Error('Role assignment enumeration returned an invalid response');
+        }
+        for (const row of json.d.results) {
+          // Verbose is expected to render an expanded navigation property as
+          // `{ results: [...] }`. That is inferred from _acls.js.j2's own
+          // expanded reads under verbose, not measured here:
+          // access.role-def.web-assignments-enumerable probed this same URL
+          // under odata=nometadata, whose shape differs. Tolerating a bare array
+          // too, like the probe's own bindingsOf, means a wrong inference
+          // only degrades the refusal message below; an unreadable row still
+          // throws rather than counting as clean.
+          const raw = row.RoleDefinitionBindings;
+          const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
+          if (!Array.isArray(bindings)) {
+            // A row whose bindings cannot be read is usage this cannot see.
+            // access.role-def.web-assignments-enumerable took the same
+            // position and recorded NOT ESTABLISHED rather than counting it
+            // as clean.
+            throw new Error('A role assignment returned bindings this script cannot read; the usage report would be incomplete');
+          }
+          if (bindings.some((b) => String(b.Id) === String(levelId))) total += 1;
+        }
+        url = json.d.__next || null;
+      }
+      return total;
+    }
+
+    // access.role-def.basepermissions-readback
+    // (test/manual/role-definition-probe.js, 2026-08-14): Description and
+    // both bitmap halves round-trip exactly as written, so this compare is
+    // exact rather than fuzzy. Bitmap halves are compared as strings: the
+    // tenant represents SP.BasePermissions.High/Low as Int64, which OData
+    // verbose serialises as a string, and the declared value already is one
+    // (analysis.permissions.HighLow).
+    async function verifyLevelSettings(lvl, levelId) {
+      const resp = await fetchWithRetry(
+        apiUrl(`web/roledefinitions(${levelId})?$select=Id,Description,BasePermissions`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Permission level '${lvl.name}' read-back failed: HTTP ${resp.status} ${text}`);
+      }
+      const got = (await resp.json()).d || {};
+      const gotPerms = got.BasePermissions || {};
+      const mismatches = [];
+      if (got.Description !== lvl.description) {
+        mismatches.push(`Description: sent ${JSON.stringify(lvl.description)}, stored ${JSON.stringify(got.Description)}`);
+      }
+      if (String(gotPerms.High) !== String(lvl.base_permissions.high)) {
+        mismatches.push(`BasePermissions.High: sent ${lvl.base_permissions.high}, stored ${gotPerms.High}`);
+      }
+      if (String(gotPerms.Low) !== String(lvl.base_permissions.low)) {
+        mismatches.push(`BasePermissions.Low: sent ${lvl.base_permissions.low}, stored ${gotPerms.Low}`);
+      }
+      if (mismatches.length) {
+        throw new Error(
+          `Permission level '${lvl.name}' did not store what was written. The request was accepted, `
+          + `so this is a silent divergence rather than an error the tenant reported. `
+          + mismatches.join('; '));
+      }
+    }
+
+    // Decision shape: { kind: 'create'|'adopt'|'refuse', object: 'level'|'group', name, reason?, ...state }.
+    // A refusal is returned as data, not thrown, so a later caller can act on
+    // every survey before any write happens. A genuine failure (unreadable
+    // response, enumeration error) still throws.
+    async function surveyLevel(lvl) {
+      const existingLevels = await probeLevelExistence(lvl.name);
+      if (existingLevels.length === 0) {
+        return { kind: 'create', object: 'level', name: lvl.name, lvl };
+      }
+      const existingId = existingLevels[0].Id;
+      const existingDescription = typeof existingLevels[0].Description === 'string'
+        ? existingLevels[0].Description
+        : '';
+      // #224. A role definition is SITE-SCOPED: adopting one this tool
+      // did not create would overwrite its bitmap for every list it is
+      // already assigned on, including lists this deploy never reads.
+      // MARKER ONLY, deliberately, and a usage count never clears this
+      // gate: `_acls.js.j2` assigns every level at LIST scope, and only
+      // web-scope usage can be measured
+      // (access.role-def.web-assignments-enumerable), so a web-scope zero
+      // does not mean the level is unused.
+      if (typeof lvl.expected_marker !== 'string' || lvl.expected_marker === '') {
+        return {
+          kind: 'refuse',
+          object: 'level',
+          name: lvl.name,
+          reason: `SCHEMA.permission_levels['${lvl.name}'].expected_marker is missing or empty; refusing to adopt any level against it.`,
+        };
+      }
+      if (existingDescription.indexOf(lvl.expected_marker) === -1) {
+        // MARKER ONLY, deliberately. A usage count cannot clear this gate
+        // because usage cannot be measured completely: assignments live at
+        // LIST scope and only web scope was measured.
+        const atWebScope = await countWebAssignmentsUsing(existingId);
+        return {
+          kind: 'refuse',
+          object: 'level',
+          name: lvl.name,
+          reason: `Permission level '${lvl.name}' already exists and carries no '${lvl.expected_marker}' marker, `
+            + `so it was not created by this declaration. A permission level is site-wide, and reconciling it `
+            + `would change what it grants everywhere it is assigned, including lists this deploy does not `
+            + `manage and never reads. It is used by ${atWebScope} role assignment(s) AT WEB SCOPE; `
+            + `assignments on individual lists are not counted, so treat that as a floor rather than a total. `
+            + `Nothing has been written to this level. Rename the level in your mapping so this deploy creates `
+            + `its own.`,
+        };
+      }
+      return { kind: 'adopt', object: 'level', name: lvl.name, lvl, existingId };
+    }
+
+    async function applyLevelDecision(decision) {
+      const lvl = decision.lvl;
+      if (decision.kind === 'create') {
+        log('INFO', `Creating permission level '${lvl.name}'...`);
+        const createResp = await postJson(apiUrl('web/roledefinitions'), {
+          __metadata: { type: 'SP.RoleDefinition' },
+          Name: lvl.name,
+          Description: lvl.description,
+          BasePermissions: {
+            __metadata: { type: 'SP.BasePermissions' },
+            High: lvl.base_permissions.high,
+            Low: lvl.base_permissions.low,
+          },
+          Order: 100,
+        }, digest0);
+        let newLevelId = createResp?.d?.Id;
+        if (!Number.isInteger(newLevelId)) {
+          // The create response carried no Id. Resolve it by name through
+          // the same $filter probe rather than skip verification silently.
+          // test/manual/role-definition-probe.js hit exactly this case and
+          // carries the same fallback.
+          const resolved = await probeLevelExistence(lvl.name);
+          if (resolved.length !== 1 || !Number.isInteger(resolved[0].Id)) {
+            throw new Error(`Permission level '${lvl.name}' was created but its Id could not be resolved for verification`);
+          }
+          newLevelId = resolved[0].Id;
+          log('INFO', `Create returned no Id for '${lvl.name}'; resolved it by name to verify it.`);
+        }
+        await verifyLevelSettings(lvl, newLevelId);
+        log('INFO', `Permission level '${lvl.name}' created.`);
+      } else {
+        // A same-name role definition is not proof that its permissions are
+        // still the declared permissions. Reconcile the security-sensitive
+        // fields on every run so a drifted level cannot silently retain
+        // edit/delete rights.
+        digest0 = await getDigest();
+        const mergeResp = await fetchWithRetry(apiUrl(`web/roledefinitions/getbyname('${odataName(lvl.name)}')`), {
+          method: 'POST',
+          headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
+            __metadata: { type: 'SP.RoleDefinition' },
+            Description: lvl.description,
+            BasePermissions: {
+              __metadata: { type: 'SP.BasePermissions' },
+              High: lvl.base_permissions.high,
+              Low: lvl.base_permissions.low,
+            },
+          }),
+        });
+        if (!mergeResp.ok) {
+          const text = await mergeResp.text();
+          throw new Error(`Permission level '${lvl.name}' MERGE failed: HTTP ${mergeResp.status} ${text}`);
+        }
+        await verifyLevelSettings(lvl, decision.existingId);
+        log('INFO', `Permission level '${lvl.name}' already exists; declared permissions reconciled.`);
+      }
+    }
+
+    // Every object below (level or group) is surveyed before ANY of them is
+    // applied. decisions collects only the decisions that CAN be applied
+    // ('create'/'adopt'); a 'refuse' is turned into a thrown error right
+    // here, on the same per-object catch a genuine survey failure already
+    // used, so both land in summary.errors identically and the gate further
+    // down treats them alike.
+    // === Renames in place, before any survey ===
+    // A level or group found under a previous name carrying that name's own
+    // marker, with the current name absent, is retitled by id and read
+    // back. Every rename is planned read-only first, and one refusal
+    // anywhere aborts before any of them is written.
+    const verbose = { headers: { 'Accept': 'application/json;odata=verbose' } };
+    const principalRenames = [];
+    // Counted apart from summary.errors: a refused phase digest is already
+    // recorded above, belongs to the phase's own gate, and must not read
+    // as a rename refusal.
+    let renameFailures = 0;
+    if (summary.errors.length === 0) {
+      const refusals = [];
+      // "Restore that marker" sends an operator to the obvious UI route, and
+      // for a site group that route fails SILENTLY. MEASURED 2026-09-04:
+      // editing a group's description through Site permissions, the group,
+      // Settings changed what that page displays and did NOT change
+      // `SP.Group.Description`, which is the property this deploy reads and
+      // writes. The two held different opening sentences, different family
+      // slugs and different group names, so they are separate stored values
+      // rather than one value read two ways.
+      //
+      // The operator then believes the repair worked and the next deploy
+      // refuses identically, which cost about an hour the first time. Lists
+      // and permission levels do not have this problem: their settings pages
+      // edit the property the deploy reads, so this sentence is attached to
+      // the group branch and to nothing else.
+      //
+      // It says what was observed and no more. Which store the page writes
+      // to, and whether any UI path reaches `SP.Group.Description`, is not
+      // known and is not claimed here.
+      const GROUP_MARKER_REMEDY = ' The marker lives in `SP.Group.Description`.'
+        + " Editing the group's description through its settings page does not"
+        + ' change that property (measured 2026-09-04), so a repair made there'
+        + ' will look right on the page and leave this refusal unchanged. Send'
+        + ' a MERGE to web/sitegroups(<id>) with __metadata type SP.Group and'
+        + ' the Description, then read it back with $select=Description.';
+      const decide = (label, current, currentExists, found, remedy = '') => {
+        const names = found.map((f) => `'${f.name}'`).join(', ');
+        if (found.length === 0) return null;
+        if (currentExists) {
+          return `${label} '${current}' exists and so does its previous name ${names}; deploy cannot tell a rename from a collision. Remove or retitle one of them by hand.`;
+        }
+        if (found.length > 1) {
+          return `more than one previous name of ${label} '${current}' exists (${names}); deploy cannot choose which to rename. Remove or retitle all but one by hand.`;
+        }
+        if (!found[0].carries) {
+          return `${label} '${found[0].name}' exists but does not carry the exact provenance marker for its previous name ("${found[0].marker}"). Deploy will not adopt or rename it; restore that marker only if this tool created it.${remedy}`;
+        }
+        return null;
+      };
+      const carries = (description, marker) => typeof description === 'string' && marker.length > 0 && description.indexOf(marker) !== -1;
+      try {
+        for (const lvl of SCHEMA.permission_levels) {
+          if (!(lvl.previous_names || []).length) continue;
+          const found = [];
+          for (const previous of lvl.previous_names) {
+            for (const row of await probeLevelExistence(previous.name)) {
+              found.push({ name: previous.name, marker: previous.expected_marker, id: row.Id, carries: carries(row.Description, previous.expected_marker) });
+            }
+          }
+          if (found.length === 0) continue;
+          const currentExists = (await probeLevelExistence(lvl.name)).length > 0;
+          const refusal = decide('permission level', lvl.name, currentExists, found);
+          if (refusal) refusals.push(refusal);
+          else principalRenames.push({ object: 'level', from: found[0].name, to: lvl.name, id: found[0].id, marker: found[0].marker, description: lvl.description });
+        }
+        if (SCHEMA.groups.some((g) => (g.previous_names || []).length)) {
+          // One enumeration with descriptions, so the marker check costs no
+          // probe per previous name.
+          const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Id,Title,Description&$top=5000'), verbose);
+          if (!r.ok) throw new Error(`site group enumeration for renames failed: HTTP ${r.status} ${spError(await r.text())}`);
+          const rows = (((await r.json()) || {}).d || {}).results || [];
+          const byName = (name) => rows.filter((g) => nameKey(g.Title) === nameKey(name));
+          for (const grp of SCHEMA.groups) {
+            if (!(grp.previous_names || []).length) continue;
+            const found = [];
+            for (const previous of grp.previous_names) {
+              for (const row of byName(previous.name)) {
+                found.push({ name: previous.name, marker: previous.expected_marker, id: row.Id, carries: carries(row.Description, previous.expected_marker) });
+              }
+            }
+            if (found.length === 0) continue;
+            const refusal = decide(
+              'site group', grp.name, byName(grp.name).length > 0, found,
+              GROUP_MARKER_REMEDY,
+            );
+            if (refusal) refusals.push(refusal);
+            else principalRenames.push({ object: 'group', from: found[0].name, to: grp.name, id: found[0].id, marker: found[0].marker, description: grp.description });
+          }
+        }
+      } catch (err) {
+        refusals.push(`rename planning failed: ${err.message}`);
+      }
+      for (const reason of refusals) {
+        log('ERROR', `Phase 1.4 rename: ${reason}`);
+        summary.errors.push({ phase: '1.4', error: reason });
+        renameFailures += 1;
+      }
+      if (refusals.length === 0) {
+        for (const plan of principalRenames) {
+          const label = plan.object === 'level' ? 'permission level' : 'site group';
+          const nameKeyOf = plan.object === 'level' ? 'Name' : 'Title';
+          // Two literal shapes rather than one interpolated path, so the
+          // endpoint inventory in test_template_lint.py can see both.
+          const renameUrl = (q = '') => (plan.object === 'level'
+            ? apiUrl(`web/roledefinitions(${plan.id})${q}`)
+            : apiUrl(`web/sitegroups(${plan.id})${q}`));
+          try {
+            // Re-read at write time: the plan is not authority over an object
+            // something else may have touched since.
+            const before = await fetchWithRetry(renameUrl(`?$select=Id,${nameKeyOf},Description`), verbose);
+            if (!before.ok) throw new Error(`could not re-read ${label} '${plan.from}' before the rename: HTTP ${before.status}`);
+            const held = (((await before.json()) || {}).d || {});
+            if (nameKey(held[nameKeyOf]) !== nameKey(plan.from) || !carries(held.Description, plan.marker)) {
+              throw new Error(`${label} '${plan.from}' no longer carries the marker for its previous name, or is no longer the object the plan read; nothing was renamed.`);
+            }
+            const digest = await getDigest();
+            const body = plan.object === 'level'
+              ? { __metadata: { type: 'SP.RoleDefinition' }, Name: plan.to, Description: plan.description }
+              : { __metadata: { type: 'SP.Group' }, Title: plan.to, Description: plan.description };
+            const merged = await fetchWithRetry(renameUrl(), {
+              method: 'POST',
+              headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+              body: JSON.stringify(body),
+            });
+            if (!merged.ok) throw new Error(`rename MERGE failed: HTTP ${merged.status} ${spError(await merged.text())}`);
+            const after = await fetchWithRetry(renameUrl(`?$select=Id,${nameKeyOf},Description`), verbose);
+            if (!after.ok) throw new Error(`readback after the rename failed: HTTP ${after.status}`);
+            const back = (((await after.json()) || {}).d || {});
+            if (back[nameKeyOf] !== plan.to || back.Description !== plan.description) {
+              throw new Error(`${label} '${plan.from}' read back as '${back[nameKeyOf]}' with Description ${JSON.stringify(back.Description)} after writing '${plan.to}'; the rename did not take.`);
+            }
+            (plan.object === 'level' ? summary.levelsRenamed : summary.groupsRenamed).push({ from: plan.from, to: plan.to });
+            logChange({ key: `${plan.object}: ${plan.from}`, kind: 'rename',
+              target: plan.from, oldValue: plan.from, newValue: plan.to });
+            log('INFO', `Renamed ${label} '${plan.from}' to '${plan.to}' in place (read back by id).`);
+          } catch (err) {
+            log('ERROR', `Phase 1.4 rename '${plan.from}' -> '${plan.to}': ${err.message}`);
+            summary.errors.push({ phase: '1.4', error: err.message });
+            renameFailures += 1;
+            break;
+          }
+        }
+      }
+    }
+    if (renameFailures > 0) {
+      log('ERROR', 'Phase 1.4 rename planning or rename failed; aborting before any level or group is surveyed.');
+      return { ...summary, aborted: 'phase-0-rename-errors' };
+    }
+
+    const decisions = [];
+
+    for (const lvl of SCHEMA.permission_levels) {
+      try {
+        const decision = await surveyLevel(lvl);
+        if (decision.kind === 'refuse') throw new Error(decision.reason);
+        decisions.push(decision);
+      } catch (err) {
+        log('ERROR', `Phase 1.4 permission level '${lvl.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.4', permissionLevel: lvl.name, error: err.message });
+      }
+    }
+
+    // Which groups exist, from ONE enumeration. A by-name GET for a group
+    // that is not there answers 404, which the browser paints red and an
+    // operator reads as a failure, and on a first deploy EVERY declared
+    // group is that 404. Same treatment the list and view probes already
+    // get: enumerate once, answer absence locally, keep a clean run clean.
+    // Not fatal if refused; we fall back to probing, which is noisier and
+    // still correct.
+    let knownGroupNames = null;
+    {
+      const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Title&$top=5000'), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        // nameSet/hasName: SharePoint group names are unique and resolved
+        // case-insensitively, so an existing 'or list administrators'
+        // must not read as absent against a declared 'OR List
+        // Administrators'; that turns an adoptable group into a create
+        // that fails on a name collision.
+        knownGroupNames = nameSet(
+          ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
+        );
+      }
+    }
+
+    // Enumerate every page. A group larger than one page would otherwise read
+    // as smaller than it is, and both callers fail closed on the count.
+    async function countGroupMembers(groupName) {
+      let total = 0;
+      let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(groupName)}')/users?$select=Id&$top=5000`);
+      while (membersUrl) {
+        const membersResp = await fetchWithRetry(membersUrl, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!membersResp.ok) {
+          const text = await membersResp.text();
+          throw new Error(`Group '${groupName}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
+        }
+        const membersJson = await membersResp.json();
+        if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+          throw new Error(`Group '${groupName}' membership enumeration returned an invalid response`);
+        }
+        total += membersJson.d.results.length;
+        membersUrl = membersJson.d.__next || null;
+      }
+      return total;
+    }
+
+    // MEASURED by test/manual/group-description-probe.js, 2026-08-13 and
+    // 2026-08-14: Description round-trips byte-identically, so this compare
+    // is exact rather than fuzzy. The $select projection itself is not
+    // measured; every question in that probe read the group back
+    // unprojected. It is inferred from the owner-verification calls below,
+    // which already project a site group with $select=Id,Title,PrincipalType.
+    // Id is unused here, kept only so this GET's URL shape matches theirs
+    // exactly, which is what test_a_first_deploy_probes_no_absent_group_or_field_by_name
+    // excludes as "already resolved, not a probe for something absent."
+    async function verifyGroupSettings(grp) {
+      const select = 'Id,Description,AllowMembersEditMembership,AllowRequestToJoinLeave'
+        + ',AutoAcceptRequestToJoinLeave,OnlyAllowMembersViewMembership';
+      const resp = await fetchWithRetry(
+        apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=${select}`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Group '${grp.name}' read-back failed: HTTP ${resp.status} ${text}`);
+      }
+      const got = (await resp.json()).d || {};
+      // The tenant forces auto-accept off when requests-to-join is off,
+      // measured against a contradictory pair sent deliberately
+      // (test/manual/group-description-probe.js,
+      // text.group-desc.membership-flags-merge, then confirmed
+      // non-ambiguous by text.group-desc.autoaccept-prerequisite,
+      // 2026-08-13/14), so the expected value is the coerced one, not
+      // the one sent.
+      const expectedAutoAccept = grp.allow_request_to_join_leave
+        ? grp.auto_accept_request_to_join_leave
+        : false;
+      const mismatches = [];
+      if (got.Description !== grp.description) {
+        mismatches.push(`Description: sent ${JSON.stringify(grp.description)}, stored ${JSON.stringify(got.Description)}`);
+      }
+      if (got.AllowMembersEditMembership !== grp.allow_members_edit_membership) {
+        mismatches.push(`AllowMembersEditMembership: sent ${grp.allow_members_edit_membership}, stored ${got.AllowMembersEditMembership}`);
+      }
+      if (got.AllowRequestToJoinLeave !== grp.allow_request_to_join_leave) {
+        mismatches.push(`AllowRequestToJoinLeave: sent ${grp.allow_request_to_join_leave}, stored ${got.AllowRequestToJoinLeave}`);
+      }
+      if (got.AutoAcceptRequestToJoinLeave !== expectedAutoAccept) {
+        mismatches.push(`AutoAcceptRequestToJoinLeave: expected ${expectedAutoAccept}, stored ${got.AutoAcceptRequestToJoinLeave}`);
+      }
+      if (got.OnlyAllowMembersViewMembership !== grp.only_allow_members_view_membership) {
+        mismatches.push(`OnlyAllowMembersViewMembership: sent ${grp.only_allow_members_view_membership}, stored ${got.OnlyAllowMembersViewMembership}`);
+      }
+      if (mismatches.length) {
+        throw new Error(
+          `Site group '${grp.name}' did not store what was written. The request was accepted, `
+          + `so this is a silent divergence rather than an error the tenant reported. `
+          + mismatches.join('; '));
+      }
+    }
+
+    // Owner verification, with automated correction. Plain REST cannot MERGE
+    // Group.Owner (read-only through that surface), but the documented CSOM
+    // protocol (MS-CSOM ProcessQuery, the same mechanism PnP's Set-PnPGroup
+    // uses) can set it. Both the target and the governed group must already
+    // exist, so this reads on an adopt decision (survey) and after the
+    // create (apply); either way, by the time it runs the group is there.
+    async function resolveGroupOwner(grp) {
+      let targetOwnerResp;
+      if (grp.owner_group === 'Site Owners') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedOwnerGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else if (grp.owner_group === 'Site Members') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedMemberGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else if (grp.owner_group === 'Site Visitors') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedVisitorGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else {
+        targetOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.owner_group)}')?$select=Id,Title,PrincipalType`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      }
+      if (!targetOwnerResp.ok) {
+        throw new Error(`Cannot resolve declared owner group '${grp.owner_group}' for '${grp.name}' (HTTP ${targetOwnerResp.status})`);
+      }
+      const targetOwner = (await targetOwnerResp.json()).d;
+
+      const governedGroupResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!governedGroupResp.ok) {
+        throw new Error(`Cannot resolve governed group '${grp.name}' for owner verification (HTTP ${governedGroupResp.status})`);
+      }
+      const governedGroup = (await governedGroupResp.json()).d;
+      const currentOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!currentOwnerResp.ok) {
+        throw new Error(`Cannot read owner for group '${grp.name}' (HTTP ${currentOwnerResp.status})`);
+      }
+      const currentOwner = (await currentOwnerResp.json()).d;
+      const ownerShapeValid = Number.isInteger(targetOwner.Id)
+        && Number.isInteger(targetOwner.PrincipalType)
+        && typeof targetOwner.Title === 'string'
+        && Number.isInteger(currentOwner.Id)
+        && Number.isInteger(currentOwner.PrincipalType)
+        && typeof currentOwner.Title === 'string';
+      if (!ownerShapeValid) {
+        throw new Error(`Owner verification for group '${grp.name}' returned an invalid principal response`);
+      }
+      const ownerMismatch = currentOwner.Id !== targetOwner.Id
+        || currentOwner.PrincipalType !== targetOwner.PrincipalType;
+      return { targetOwner, governedGroup, currentOwner, ownerMismatch };
+    }
+
+    // The correction itself is a write (CSOM ProcessQuery, then a re-verify
+    // through the documented read-only /owner resource), so unlike the read
+    // above, this always belongs to the apply, never the survey.
+    async function correctGroupOwner(grp, ownerState) {
+      const { targetOwner, governedGroup, currentOwner, ownerMismatch } = ownerState;
+      if (!ownerMismatch) {
+        log('INFO', `Site group '${grp.name}' owner verified as '${targetOwner.Title}'.`);
+        return;
+      }
+      let ownerCorrected = false;
+      // Automated correction only targets site-group owners (type 8): every
+      // declared owner_group resolves to a site group.
+      if (targetOwner.PrincipalType === 8) {
+        log('INFO', `Group '${grp.name}' owner is '${currentOwner.Title}'; attempting automated correction to '${targetOwner.Title}' via CSOM ProcessQuery...`);
+        digest0 = await getDigest();
+        const csomXml =
+          '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint">'
+          + '<Actions>'
+          + '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
+          + '<Method Name="Update" Id="11" ObjectPathId="3" />'
+          + '</Actions>'
+          + '<ObjectPaths>'
+          + '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
+          + '<Property Id="1" ParentId="0" Name="Web" />'
+          + '<Property Id="2" ParentId="1" Name="SiteGroups" />'
+          + `<Method Id="3" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${governedGroup.Id}</Parameter></Parameters></Method>`
+          + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`
+          + '</ObjectPaths>'
+          + '</Request>';
+        const pqResp = await fetchWithRetry(apiUrl('ProcessQuery'), {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json;odata=verbose',
+            'Content-Type': 'text/xml',
+            'X-RequestDigest': digest0,
+          },
+          body: csomXml,
+        });
+        if (pqResp.ok) {
+          let pqJson = null;
+          try { pqJson = await pqResp.json(); } catch { pqJson = null; }
+          const pqError = Array.isArray(pqJson) && pqJson.length > 0 && pqJson[0] && pqJson[0].ErrorInfo;
+          if (!pqError) {
+            // Re-verify through the same documented read-only probe: the
+            // CSOM response alone is not trusted as success evidence.
+            const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (reReadResp.ok) {
+              const reRead = (await reReadResp.json()).d;
+              ownerCorrected = reRead
+                && reRead.Id === targetOwner.Id
+                && reRead.PrincipalType === targetOwner.PrincipalType;
+            }
+          } else {
+            log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError.ErrorMessage || 'unknown error'}.`);
+          }
+        }
+      }
+      if (!ownerCorrected) {
+        throw new Error(
+          `Manual owner action required for group '${grp.name}': current owner '${currentOwner.Title}' `
+          + `(Id ${currentOwner.Id}, type ${currentOwner.PrincipalType}) does not match declared owner `
+          + `'${targetOwner.Title}' (Id ${targetOwner.Id}, type ${targetOwner.PrincipalType}) and automated `
+          + `correction did not take effect. Set the group owner in SharePoint Site permissions, then rerun `
+          + `this same script; Phase 2.1 will not start while this mismatch exists.`,
+        );
+      }
+      log('INFO', `Site group '${grp.name}' owner corrected to '${targetOwner.Title}'.`);
+    }
+
+    // Optional clean-provision/activation gate. Membership remains an
+    // operator-owned concern: enumerate every page and fail closed rather
+    // than silently removing an unexpected user or directory group. Read-only,
+    // so like the owner resolve above it runs on an adopt decision (survey)
+    // and after the create (apply).
+    async function ensureGroupEmptyIfRequired(grp) {
+      if (!grp.require_empty_at_deploy) return;
+      const memberCount = await countGroupMembers(grp.name);
+      if (memberCount > 0) {
+        throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
+      }
+    }
+
+    // Decision shape: { kind: 'create'|'adopt'|'refuse', object: 'level'|'group', name, reason?, ...state }.
+    // Unlike surveyLevel, an adopt decision here also carries ownerState and
+    // has already run the empty-membership gate: both need the group to
+    // exist, which on an adopt decision it already does. A create decision
+    // does neither; owner resolution and the empty check 404 for a group
+    // that is not there yet, so they are owed to applyGroupDecision, after
+    // the create.
+    async function surveyGroup(grp, decidedCreates) {
+      // decidedCreates covers a name this same pass already decided to
+      // create, which the one-time enumeration in knownGroupNames cannot
+      // see. SharePoint resolves site group names case-insensitively, so
+      // two declarations differing only in case are ONE group to the
+      // tenant: the group named by decidedCreates does not exist yet, so a
+      // probe for it still answers 404 and would survey a SECOND 'create'
+      // decision, colliding with the first once both are applied. Refuse
+      // here instead, before any probe or write.
+      if (hasName(decidedCreates, grp.name)) {
+        return {
+          kind: 'refuse',
+          object: 'group',
+          name: grp.name,
+          reason: `Site group '${grp.name}' matches a name this same declaration already decided to create, differing only in case. SharePoint resolves site group names case-insensitively, so these are one group to the tenant; the second create would collide with the first once applied. Nothing has been written for either. Rename one of them so this deploy creates only one group.`,
+        };
+      }
+      // null status means "known absent without asking".
+      const isKnown = knownGroupNames && hasName(knownGroupNames, grp.name);
+      const checkResp = knownGroupNames && !isKnown
+        ? { status: 404, ok: false }
+        : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      if (checkResp.status === 404) {
+        return { kind: 'create', object: 'group', name: grp.name, grp };
+      }
+      if (!checkResp.ok) {
+        throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
+      }
+
+      // #209. This branch adopts a group by NAME and the ACL phase then
+      // grants it whatever the mapping declares, which for the
+      // administrators group is Full Control on every list. Adopt only a
+      // group this tool created, or one holding nobody.
+      //
+      // PROVENANCE, NOT AUTHENTICATION, 2026-08-14: the marker is evidence
+      // this tool wrote the group, not a secret. Anyone who can edit a
+      // site group's Description can satisfy it, and editing a site
+      // group already needs site-owner rights on the target site, which
+      // this gate assumes rather than re-checks.
+      //
+      // EXACT MARKER, NOT A SHARED PREFIX. Every family's marker starts
+      // with the same "Provisioned by dbml-sharepoint" text, so testing
+      // that shared text let a group ANY family stamped pass the gate
+      // for EVERY family. Comparing the exact marker this declaration
+      // expects (grp.expected_marker) closes that: a group family B
+      // declares cannot be satisfied by a marker family A left on it.
+      // The tool-owned groups still work here, because every family
+      // computes the same expected_marker for them.
+      //
+      // Empty expected_marker would make indexOf('') return 0 for every
+      // description below, adopting every group unmarked. undefined
+      // already fails closed there; only the empty string is dangerous.
+      // jsgen always sets a value, so this only matters for a
+      // hand-edited bundle.
+      if (typeof grp.expected_marker !== 'string' || grp.expected_marker === '') {
+        return {
+          kind: 'refuse',
+          object: 'group',
+          name: grp.name,
+          reason: `Site group '${grp.name}' has no expected_marker; refusing to adopt any group against it.`,
+        };
+      }
+      const existingJson = await checkResp.json();
+      const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
+        ? existingJson.d.Description
+        : '';
+      // SUBSTRING SEARCH, NOT A PREFIX TEST. group_description() appends
+      // the marker AFTER any declared text, so a composed description
+      // does not START with it. indexOf finds the marker anywhere in the
+      // string; changing this to startsWith would refuse every group
+      // that also carries a declared description.
+      if (existingDescription.indexOf(grp.expected_marker) === -1) {
+        const memberCount = await countGroupMembers(grp.name);
+        if (memberCount > 0) {
+          return {
+            kind: 'refuse',
+            object: 'group',
+            name: grp.name,
+            reason: `Site group '${grp.name}' already exists, carries no '${grp.expected_marker}' `
+              + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
+              + `adopting it would grant those members the access this family declares for the group. `
+              + `Nothing has been written to this group. Either empty the group, or rename it so `
+              + `this deploy creates its own.`,
+          };
+        }
+      }
+
+      // ensureGroupEmptyIfRequired only reads the governed group, already
+      // proven to exist on this path, so it is always safe here. Owner
+      // resolution reads a SECOND group: grp.owner_group can name a custom
+      // group this same declaration decided to create, and every survey in
+      // this phase runs before every create, so that group may not exist on
+      // the site yet. Resolving it now would 404 and abort the whole phase
+      // for a group this deploy is about to create anyway: the same class
+      // as decidedCreates above, one level deeper. Resolve now only when
+      // the owner group is a built-in or is already known to exist from
+      // the one-time enumeration; otherwise defer to
+      // applyGroupDecision, which runs after every create in this phase has
+      // applied. Do not "tidy" this back to an unconditional resolve.
+      const ownerGroupKnownToExist = BUILTIN_OWNER_GROUPS.has(grp.owner_group)
+        || (knownGroupNames !== null && hasName(knownGroupNames, grp.owner_group));
+      const ownerState = ownerGroupKnownToExist ? await resolveGroupOwner(grp) : null;
+      await ensureGroupEmptyIfRequired(grp);
+
+      return { kind: 'adopt', object: 'group', name: grp.name, grp, ownerState };
+    }
+
+    async function applyGroupDecision(decision) {
+      const grp = decision.grp;
+      if (decision.kind === 'create') {
+        log('INFO', `Creating site group '${grp.name}'...`);
+        await postJson(apiUrl('web/sitegroups'), {
+          __metadata: { type: 'SP.Group' },
+          Title: grp.name,
+          Description: grp.description,
+          AllowMembersEditMembership: grp.allow_members_edit_membership,
+          AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
+          AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
+          OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
+        }, digest0);
+        log('INFO', `Site group '${grp.name}' created.`);
+        await verifyGroupSettings(grp);
+
+        // Owed to here from the survey: both need the group to exist, and
+        // before this line it did not.
+        const ownerState = await resolveGroupOwner(grp);
+        await correctGroupOwner(grp, ownerState);
+        await ensureGroupEmptyIfRequired(grp);
+        if (grp.require_empty_at_deploy) {
+          log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
+        }
+      } else {
+        // Group membership controls are part of the security boundary. A
+        // pre-existing group with the right name but permissive flags must
+        // not be accepted as compliant.
+        digest0 = await getDigest();
+        const mergeResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+          method: 'POST',
+          headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
+            __metadata: { type: 'SP.Group' },
+            Description: grp.description,
+            AllowMembersEditMembership: grp.allow_members_edit_membership,
+            AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
+            AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
+            OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
+          }),
+        });
+        if (!mergeResp.ok) {
+          const text = await mergeResp.text();
+          throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
+        }
+        log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
+        await verifyGroupSettings(grp);
+
+        // decision.ownerState is null when the survey deferred the resolve
+        // (see surveyGroup): grp.owner_group named a custom group not yet
+        // known to exist, most likely because this same pass decided to
+        // create it. Every create in the phase has applied by the time this
+        // line runs, so the resolve is safe here. When ownerState WAS read
+        // by the survey, it was read before every other object in this
+        // phase was written, so on the no-mismatch path below the 'owner
+        // verified' log reports evidence that may have aged by the time
+        // this line runs. The mismatch path is unaffected either way: it
+        // re-reads the owner after its own CSOM write, rather than trusting
+        // this state.
+        const ownerState = decision.ownerState || await resolveGroupOwner(grp);
+        await correctGroupOwner(grp, ownerState);
+        if (grp.require_empty_at_deploy) {
+          log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
+        }
+      }
+    }
+
+    // decidedCreates: the write-side knownGroupNames.add() this replaces
+    // (formerly here, after a create) mutated a snapshot a later iteration
+    // read. All-surveys-before-all-creates would destroy that, so instead
+    // each iteration folds its own 'create' decision into this set before
+    // moving on, and surveyGroup consults it to refuse a later case-variant
+    // declaration outright. The build already refuses two declarations
+    // differing only in case within one mapping, so this only protects a
+    // mapping built before that rule existed.
+    const decidedCreates = new Set();
+    for (const grp of SCHEMA.groups) {
+      try {
+        const decision = await surveyGroup(grp, decidedCreates);
+        if (decision.kind === 'create') decidedCreates.add(nameKey(grp.name));
+        if (decision.kind === 'refuse') throw new Error(decision.reason);
+        decisions.push(decision);
+      } catch (err) {
+        log('ERROR', `Phase 1.4 site group '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '1.4', group: grp.name, error: err.message });
+      }
+    }
+
+    // The decision table (#32): every object BOTH loops above decided to
+    // create or adopt, printed before any of them is applied. A refusal
+    // already logged its own ERROR line in the survey loop that found it,
+    // so this table reads the same whether the run goes on to apply or
+    // aborts on the gate below -- a clean run shows create/adopt for
+    // everything, a refusing run shows this table for whatever DID survey
+    // successfully, interleaved with the refusals that already printed.
+    // This phase decides no list and no ACL, so neither appears here.
+    if (decisions.length > 0) {
+      log('INFO', `Phase 1.4 decisions (nothing applied yet):`);
+      for (const decision of decisions) {
+        const label = decision.object === 'level' ? 'permission level' : 'site group';
+        const verb = decision.kind === 'create' ? 'create' : 'adopt';
+        log('INFO', `  ${verb} ${label} '${decision.name}'.`);
+      }
+    }
+
+    // Gate: apply only if every survey above succeeded and nothing refused.
+    // A refused or unsurveyable object is not a decision to proceed on, and
+    // this is what stops one refusal from letting every OTHER object still
+    // get written before the run reports it.
+    //
+    // This buys atomicity of DECISION, not of effect. SharePoint offers no
+    // transaction: the site can still change between this gate and the
+    // apply loop below, and an apply can still fail part way through even
+    // when every survey passed. A refusal here is also not a promise the
+    // site stays untouched by everything this run does afterward;
+    // correctGroupOwner's manual-action refusal happens during apply and is
+    // unsurveyable by construction.
+    if (summary.errors.length === 0) {
+      // digest0 was captured near the top of this phase, before every level
+      // probe, the group enumeration, and every adopt-path owner read and
+      // membership count -- survey work that did not exist between the
+      // fetch and the first write before this phase split decision from
+      // effect. FormDigestValue expires after ~30 minutes (_seeds.js.j2,
+      // 'Fresh digest per seed'), so the apply pass takes its own fresh one
+      // here, before its first write, rather than trusting whatever the
+      // survey left behind.
+      digest0 = await phaseDigest();
+    }
+    // Re-tested after that fetch: a refused digest is recorded rather than thrown, and there is nothing to write with.
+    if (summary.errors.length === 0) {
+      for (const decision of decisions) {
+        try {
+          if (decision.object === 'level') {
+            await applyLevelDecision(decision);
+          } else {
+            await applyGroupDecision(decision);
+          }
+        } catch (err) {
+          // Continue after object errors, but a digest failure makes every later write unsafe.
+          const label = decision.object === 'level' ? 'permission level' : 'site group';
+          log('ERROR', `Phase 1.4 ${label} '${decision.name}': ${err.message}`);
+          if (decision.object === 'level') {
+            summary.errors.push({ phase: '1.4', permissionLevel: decision.name, error: err.message });
+          } else {
+            summary.errors.push({ phase: '1.4', group: decision.name, error: err.message });
+          }
+          if (err && err.digestFailure) break;
+        }
+      }
+    }
+  }
+
+  // Permission-level or group failures make every later ACL assertion
+  // untrustworthy. Stop before creating content-bearing lists or seed rows.
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Phase 1.4 security reconciliation failed; aborting before list creation.');
+    return { ...summary, aborted: 'phase-0-security-errors' };
+  }
+

@@ -129,9 +129,10 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
   back empty. Note `git status` can also report a file modified from a stale
   stat cache alone; if `git diff` is empty for it there is no real change.
 - **The deploy.js.txt golden.** Template changes fail
-  `test_simple_deploy_js_matches_golden` until the fixture under
-  `test/fixtures/expected/` is deliberately regenerated. Review the fixture diff
-  like code. It is.
+  `test_simple_deploy_js_matches_golden`, and the per-piece case for whichever
+  template moved, until the fixture under `test/fixtures/expected/` is
+  deliberately regenerated: `uv run python test/regen_golden.py` writes every
+  piece. Review the fixture diff like code. It is.
 - **Regenerate the API reference** when Python signatures, docstrings or template
   contract comments change: `uv run python website/scripts/generate_api.py`, then
   commit the real diff.

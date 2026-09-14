@@ -281,7 +281,7 @@ def test_a_view_declaring_a_field_set_counts_the_join_columns_it_expands_to(
 def test_a_declared_view_counts_every_join_it_declares_even_when_hidden() -> None:
     """`hide_from_all_items` must not reach the DECLARED-view count.
 
-    The generator-side half of this rule is tested in test_jsgen.py; this is the
+    The generator-side half of this rule is tested in test_jsgen_views.py; this is the
     VALIDATOR-side half, and without it a plausible 'consistency' edit (both
     derivations sit in the same entity loop, so subtracting `all_items_hidden`
     from the per-view count looks tidy) would quietly stop erroring on a view
