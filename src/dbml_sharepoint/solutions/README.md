@@ -284,8 +284,8 @@ form header and its demo rows, and a test over every template says so.
 One family, `legal-compliance-register`, deploys a single document library,
 and the library is held to the same standard as every list:
 declared views (recursive, so a file is found whichever folder it was filed
-in), a form header that names the file through `FileLeafRef` rather than
-the empty `Title`, demo files uploaded into declared folders under `--seed`,
+in), a form header that displays the ordinary `TopicName` field because file
+identity tokens render empty, demo files uploaded into declared folders under `--seed`,
 and folders created and verified by the deploy. A library is accepted only
 as `kind: DocumentLibrary` with `base_template: 101`, each of its demo items
 names a file, and the settings the deploy does not make (the Document ID

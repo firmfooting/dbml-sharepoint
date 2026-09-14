@@ -2503,6 +2503,9 @@ def _legal_rule_accepts(row: dict[str, Any]) -> bool | None:
     ({"ReviewRequirement": "Required", "ExternalRecorded": "today"}, False),
     ({"ReviewRequirement": "Required", "ReviewedDate": "today", "ExternalRecorded": "today"}, True),
     ({"CompletedDate": None}, False),
+    ({"Status": None}, False),
+    ({"ReviewRequirement": None}, False),
+    ({"ReviewRequirement": None, "ReviewedDate": "today", "ExternalRecorded": "today"}, False),
     ({"Status": "In progress", "ExternalRecorded": "today"}, False),
     ({"Status": "In progress", "ReviewedDate": "today"}, False),
     ({"CompletedDate": "today+1"}, False),
@@ -2519,6 +2522,23 @@ def test_legal_reference_and_cancelled_files_need_no_assessment_dates() -> None:
     assert _legal_rule_accepts({"ItemType": "REG"}) is True
     assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "No longer required"}) is True
     assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "Required"}) is True
+
+
+def test_legal_blank_workflow_fields_are_allowed_only_outside_active_handoffs() -> None:
+    assert _legal_rule_accepts({"ItemType": "SAQ"}) is False
+    assert _legal_rule_accepts({
+        "ItemType": "REG", "Status": None, "ReviewRequirement": None,
+    }) is True
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="In progress", ReviewRequirement=None,
+    )) is True
+
+
+def test_legal_date_order_remains_a_governance_check() -> None:
+    assert _legal_rule_accepts(_legal_assessment(
+        CompletedDate="today", ReviewedDate="today-1", ExternalRecorded="today-2",
+        ReviewRequirement="Required",
+    )) is True
 
 
 @pytest.mark.parametrize(("changes", "ready", "awaiting_review"), [

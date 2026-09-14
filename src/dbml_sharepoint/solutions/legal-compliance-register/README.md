@@ -85,8 +85,7 @@ library. It creates `LC_Document`; it does not convert, delete or migrate
 those existing containers. Keep them until files, ownership and history
 have been reconciled with the new library. See [deployment](30-deploy/deploy.md).
 
-The supplied tracking workbook is current-state source data. Import only
-identity, assignment and tracking metadata; assessment answers and findings
-stay in the workbooks. Resolve duplicate topic rows and missing owners before
-assigning records. No organisation-specific sample files or identities are
-included in the shipped template.
+During migration, transfer only identity, assignment and tracking metadata.
+Assessment answers and findings stay in the SAQ files. Resolve duplicate topics
+and missing owners before assigning records. No organisation-specific sample
+files or identities are included in the shipped template.

@@ -345,6 +345,7 @@ list_validation:
       any_of:
         - {field: ItemType, op: eq, value: REG}
         - all_of:
+            - {field: Status, op: is_not_null}
             - any_of:
                 - {field: Status, op: not_in, value: [In progress, Complete]}
                 - all_of:
@@ -352,7 +353,9 @@ list_validation:
                     - {field: Division, op: is_not_null}
             - any_of:
                 - {field: Status, op: neq, value: Complete}
-                - {field: CompletedDate, op: is_not_null}
+                - all_of:
+                    - {field: CompletedDate, op: is_not_null}
+                    - {field: ReviewRequirement, op: is_not_null}
             - any_of:
                 - {field: ReviewedDate, op: is_null}
                 - all_of:
@@ -376,9 +379,9 @@ list_validation:
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
                 - {field: ExternalRecorded, op: leq, value: today}
-    message: SAQs in progress or complete need a topic and division. Complete
-      needs a completion date. Review and portal recording need Complete; requested review must precede
-      recording. Completion, review and recording dates cannot be in the future.
+    message: SAQs need status. In progress/complete need topic and division. Complete needs a completion
+      date and review choice. Review/recording need Complete. Recording needs a review date when review
+      is required. Dates cannot be in the future.
 
 # Synthetic files exercise both review routes and successive vendor periods.
 

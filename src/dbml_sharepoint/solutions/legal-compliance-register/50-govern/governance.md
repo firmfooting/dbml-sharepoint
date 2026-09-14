@@ -41,15 +41,21 @@ owner; the review date belongs to the executive.
 
 The declared SAQ save rule requires:
 
+- A nonblank status.
 - Topic name and division when *In progress*
   or *Complete*.
-- A completion date when *Complete*.
+- A completion date and review decision when *Complete*.
 - *Complete* and a completion date before entering a review or recording date.
-- A review date before recording when review is requested.
+- A populated review date when recording an assessment with requested review.
 - Completion, review and recording dates that are not in the future.
 
 REGs bypass the assessment rule. The separate issuance-year rule accepts
 blank values or a four-digit year, including publisher files older than 2024.
+
+Date order is a governance and reporting check, not enforced by the save rule.
+Check that completion is no later than review or recording, and that a requested
+review is no later than recording. The rule checks populated dates and rejects
+future dates; it does not compare one milestone date with another.
 
 Person assignments are governance checks: the platform owner checks the
 executive field; the executive checks the business owner.

@@ -8,7 +8,8 @@ paste the deploy script, then verify the resulting library.
 
 - [ ] Confirm that the new `LC_Document` library name is available.
 - [ ] Customise the DBML `division` enum and `entities.Document.folders` in the
-      mapping together. They must name the same executive divisions.
+      mapping together. Update every `demo_items.Document` entry's `file.folder`
+      and `values.Division` to the same divisions before building with `--seed`.
 - [ ] Identify the platform owners, division executives and business owners.
       The platform owner assigns the executive manually based on the folder;
       the executive then assigns the business owner.
@@ -62,6 +63,8 @@ logging sidecars are not wanted.
 - [ ] Try moving an SAQ to *In progress* without its topic or division.
       The save rule refuses the change.
 - [ ] Try *Complete* without a completed date. The save rule refuses it.
+- [ ] Clear **Status** on an SAQ, or clear **Review requirement** on a Complete
+      SAQ. The save rule refuses both; REGs can leave these fields blank.
 - [ ] Complete an SAQ with review *Not required*. It appears in **To record
       in the portal** without a reviewed date.
 - [ ] Complete one with review *Required*. It appears in **Awaiting review**
@@ -94,7 +97,7 @@ are not reconciled by redeployment.
 Populate **LC Compliance Coordinators** and **LC Assessment Owners**. Remove
 the synthetic demonstration files before filing production assessments.
 
-## Moving from version 1 or the tracking workbook
+## Moving from version 1
 
 Version 2 is a new `LC_Document` library, not an in-place conversion of
 `LC_Topic` and `LC_SAQ`. The deploy does not remove old containers or copy
@@ -108,12 +111,11 @@ source records rather than copying the old date into both new dates.
 Similarly, determine issuance from the publisher file, not the old period
 columns, which were intended as assessment periods.
 
-For the current tracking spreadsheet, match topics to publisher files and
-resolve duplicate topic rows and missing assignments.
-Transfer identity, assignment and tracking dates only. Keep responses,
-ratings, risk, controls and gaps in Excel. Upload each new vendor-issued SAQ
-and retain its supporting REG. Migration automation is maintained
-separately from this public solution family.
+During migration, resolve duplicate topics and missing assignments. Transfer
+identity, assignment and tracking dates only. Keep responses, ratings, risk,
+controls and gaps in Excel. Upload each new vendor-issued SAQ and retain its
+supporting REG. Migration automation is maintained separately from this public
+solution family.
 
 ## Redeploying
 
