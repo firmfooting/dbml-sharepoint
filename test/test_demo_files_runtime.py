@@ -105,6 +105,10 @@ _HARNESS = textwrap.dedent(r"""
           uploaded = true;
           payload = { d: {} };
         }
+      } else if (Object.hasOwn(STATE.filePages || {}, u)) {
+        const page = STATE.filePages[u];
+        status = page.status || 200;
+        payload = page.payload;
       } else if (u.includes('FileLeafRef%20eq')) {
         payload = { d: { results: uploaded && !STATE.vanishAfterUpload
           ? [{ Id: 9, FileLeafRef: STATE.name, FileDirRef: STATE.root + '/' + STATE.folder }]
@@ -240,18 +244,84 @@ def test_a_malformed_file_probe_never_seeds_or_merges(
     assert len(_posts(calls, "Files/add(")) == int(after_upload)
 
 
-@pytest.mark.parametrize("count,next_link", [(50, None), (0, "next-page"), (1, "next-page")])
-def test_an_incomplete_file_probe_cannot_establish_absence_or_identity(
-    count: int, next_link: str | None,
+def _file_row(identity: int = 9, folder: str = _FOLDER) -> dict[str, Any]:
+    return {"Id": identity, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/{folder}"}
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_many_same_named_files_elsewhere_do_not_block_seeding(present: bool) -> None:
+    rows = [_file_row(n + 10, f"other-{n}") for n in range(51)]
+    if present:
+        rows.append(_file_row())
+    summary, calls = _seed(beforeFileProbe={"d": {"results": rows}})
+    assert summary["errors"] == []
+    assert len(summary["skipped"]) == int(present)
+    assert len(summary["created"]) == int(not present)
+    assert len(_posts(calls, "Files/add(")) == int(not present)
+    assert not any("$top=" in c["url"] for c in calls if "FileLeafRef%20eq" in c["url"])
+
+
+@pytest.mark.parametrize("after_upload", [False, True])
+@pytest.mark.parametrize("empty_first", [False, True])
+def test_file_identity_on_a_later_page_is_found(after_upload: bool, empty_first: bool) -> None:
+    key = "afterFileProbe" if after_upload else "beforeFileProbe"
+    summary, calls = _seed(**{
+        key: {"d": {"results": [] if empty_first else [_file_row(10, "other")],
+                    "__next": "next-page"}},
+        "filePages": {"next-page": {"payload": {"d": {"results": [_file_row()]}}}},
+    })
+    assert summary["errors"] == []
+    assert len(summary["created"]) == int(after_upload)
+    assert len(summary["skipped"]) == int(not after_upload)
+    assert len(_posts(calls, "Files/add(")) == int(after_upload)
+
+
+def test_complete_paged_absence_allows_upload() -> None:
+    summary, calls = _seed(
+        beforeFileProbe={"d": {"results": [_file_row(10, "other")], "__next": "next-page"}},
+        filePages={"next-page": {"payload": {"d": {"results": []}}}},
+    )
+    assert summary["errors"] == [] and len(summary["created"]) == 1
+    page_index = next(n for n, c in enumerate(calls) if c["url"] == "next-page")
+    upload_index = next(n for n, c in enumerate(calls) if "Files/add(" in c["url"])
+    assert page_index < upload_index
+
+
+@pytest.mark.parametrize("page,error", [
+    ({"payload": None}, "invalid response"),
+    ({"payload": {"d": {"results": [None]}}}, "invalid response"),
+    ({"payload": {"d": {"results": [_file_row(0)]}}}, "invalid response"),
+    ({"payload": {"d": {"results": [], "__next": False}}}, "invalid response"),
+    ({"status": 403}, "HTTP 403"),
+    ({"payload": {"d": {"results": [], "__next": "next-page"}}}, "pagination cycle"),
+    ({"payload": {"d": {"results": [_file_row(10)]}}}, "ambiguous matches"),
+])
+@pytest.mark.parametrize("after_upload", [False, True])
+def test_later_file_pages_must_establish_unique_identity(
+    page: dict[str, Any], error: str, after_upload: bool,
 ) -> None:
-    rows = [
-        {"Id": n + 1, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/other-{n}"}
-        for n in range(count)
-    ]
-    summary, calls = _seed(beforeFileProbe={"d": {"results": rows, "__next": next_link}})
-    assert "incomplete collection" in summary["errors"][0]["error"]
-    assert _posts(calls, "Files/add(") == []
+    key = "afterFileProbe" if after_upload else "beforeFileProbe"
+    summary, calls = _seed(**{
+        key: {"d": {"results": [_file_row()], "__next": "next-page"}},
+        "filePages": {"next-page": page},
+    })
+    assert error in summary["errors"][0]["error"]
     assert summary["created"] == [] and summary["skipped"] == []
+    assert len(_posts(calls, "Files/add(")) == int(after_upload)
+    assert _posts(calls, "/items(9)") == []
+
+
+def test_file_pagination_limit_fails_before_upload() -> None:
+    pages = {
+        f"page-{n}": {"payload": {"d": {"results": [], "__next": f"page-{n + 1}"}}}
+        for n in range(1, 101)
+    }
+    summary, calls = _seed(
+        beforeFileProbe={"d": {"results": [], "__next": "page-1"}}, filePages=pages,
+    )
+    assert "page limit" in summary["errors"][0]["error"]
+    assert _posts(calls, "Files/add(") == []
+    assert not any(c["url"] == "page-100" for c in calls)
 
 
 def test_duplicate_file_matches_are_refused() -> None:

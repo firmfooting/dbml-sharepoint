@@ -684,18 +684,24 @@ def _library_markers() -> dict[str, str]:
     return dict(assess_targets(schema, bundle, "default")["list_markers"])
 
 
-def _folder_harness(object_type: int | None, *, unreadable: bool = False) -> str:
+def _folder_harness(
+    object_type: int | None, *, unreadable: bool = False, root_url: str = "/sites/test/APP_Task",
+) -> str:
     """`_ASSESS_HARNESS` answering the folder shape read with one row of
     `object_type` (1 a folder, 0 a file), no row, or a refusal, and Task
     as a library."""
     rows = (
         "[]" if object_type is None
         else f"[{{ Id: 7, FileSystemObjectType: {object_type}, "
-        "FileLeafRef: 'Clinical services' }]"
+        "FileLeafRef: 'Clinical services', "
+        f"FileRef: {json.dumps(root_url + '/Clinical services')} }}]"
     )
     body_head = "const body = (url) => {\n"
     shape_read = (
-        f"{body_head}  if (url.includes('FileSystemObjectType')) {{\n"
+        f"{body_head}  if (url.includes('/RootFolder?')) {{\n"
+        f"    return {{ d: {{ ServerRelativeUrl: {json.dumps(root_url)} }} }};\n"
+        "  }\n"
+        "  if (url.includes('FileSystemObjectType')) {\n"
         f"    return {{ d: {{ results: {rows} }} }};\n"
         "  }\n"
     )
@@ -1431,7 +1437,9 @@ def test_malformed_folder_collections_do_not_establish_absence(payload: Any) -> 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("types", [[1, 0], [0, 1]])
 def test_folder_assessment_checks_every_returned_match(types: list[int]) -> None:
-    rows = [{"FileSystemObjectType": value} for value in types]
+    rows = [{"FileSystemObjectType": value,
+             "FileRef": "/sites/test/APP_Task/" + ("Nested/" if value == 1 else "")
+             + "Clinical services"} for value in types]
     harness = _folder_harness(None).replace(
         "    return { d: { results: [] } };",
         f"    return {{ d: {{ results: {json.dumps(rows)} }} }};", 1,
@@ -1441,16 +1449,109 @@ def test_folder_assessment_checks_every_returned_match(types: list[int]) -> None
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-@pytest.mark.parametrize("payload", [
-    {"results": [{"FileSystemObjectType": 1}] * 2},
-    {"results": [], "__next": "next-page"},
-])
-def test_incomplete_folder_collections_do_not_pass(payload: Any) -> None:
+def test_unreadable_folder_continuation_does_not_pass() -> None:
+    payload = {"results": [], "__next": "https://example.sharepoint.com/sites/test/_api/next-page"}
     harness = _folder_harness(None).replace(
         "    return { d: { results: [] } };",
         f"    return {{ d: {json.dumps(payload)} }};", 1,
     )
+    harness = harness.replace(
+        "  return respond(200, body(u));",
+        "  if (u.endsWith('/next-page')) return respond(500, {});\n"
+        "  return respond(200, body(u));",
+    )
     summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _levels(summary)["folder_shape:APP_Task"] == "NOT-ASSESSABLE"
+
+
+def _folder_pages_assessment(pages: list[dict[str, Any]]) -> dict[str, Any]:
+    root = "/sites/test/Original Library Slug"
+    next_base = "https://example.sharepoint.com/sites/test/_api/folder-page/"
+    served = [dict(page) for page in pages]
+    for index, page in enumerate(served[:-1]):
+        page.setdefault("__next", f"{next_base}{index + 1}?opaque=keep%2fnext")
+    harness = _folder_harness(None, root_url=root).replace(
+        "    return { d: { results: [] } };",
+        f"    return {{ d: {json.dumps(served[0])} }};", 1,
+    )
+    wrapper = r"""
+const folderPages = PAGES;
+const folderFetch = globalThis.fetch;
+globalThis.fetch = async (url, options) => {
+  const path = String(url);
+  if (path.includes('/folder-page/')) {
+    const match = path.match(/\/folder-page\/(\d+)\?opaque=keep%2fnext$/);
+    const page = match && folderPages[Number(match[1])];
+    const status = page ? (page.status || 200) : 404;
+    return {ok: status === 200, status, json: async () => ({d: page}),
+      text: async () => JSON.stringify({d: page})};
+  }
+  if (path.includes('FileSystemObjectType')) {
+    const response = await folderFetch(url, options);
+    const payload = await response.json();
+    const query = new URL(path, 'https://example.sharepoint.com').searchParams;
+    const selected = (query.get('$select') || '').split(',');
+    if (Array.isArray(payload.d.results)) {
+      payload.d.results = payload.d.results.map(row => row && Object.fromEntries(
+        Object.entries(row).filter(([key]) => selected.includes(key))));
+      if (query.has('$top')) {
+        payload.d.results = payload.d.results.slice(0, Number(query.get('$top')));
+        delete payload.d.__next;
+      }
+    }
+    return {...response, json: async () => payload, text: async () => JSON.stringify(payload)};
+  }
+  return folderFetch(url, options);
+};
+""".replace("PAGES", json.dumps(served))
+    return _run_assess(
+        _library_markers(), harness=harness, js=_library_assess_js(), wrap=wrapper,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("root_type", [None, 0, 1])
+@pytest.mark.parametrize("paged", [False, True])
+def test_folder_assessment_uses_the_actual_root_path_across_pages(
+    root_type: int | None, paged: bool,
+) -> None:
+    root = "/sites/test/Original Library Slug"
+    nested = [{"FileRef": f"{root}/Nested{index}/Clinical services",
+               "FileSystemObjectType": index % 2} for index in range(5)]
+    target = ([] if root_type is None else
+              [{"FileRef": f"{root}/Clinical services", "FileSystemObjectType": root_type}])
+    pages = ([{"results": nested}, {"results": target}] if paged
+             else [{"results": nested + target}])
+    summary = _folder_pages_assessment(pages)
+    assert _levels(summary)["folder_shape:APP_Task"] == ("BLOCKED" if root_type == 0 else "PASS")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("page", [
+    {"status": 500}, {}, {"results": None}, {"results": [{}]},
+    {"results": [{"FileRef": "relative/path", "FileSystemObjectType": 1}]},
+    *[{"results": [], "__next": value} for value in [False, 0, {}, []]],
+])
+def test_folder_assessment_does_not_discard_unreadable_later_pages(page: dict[str, Any]) -> None:
+    summary = _folder_pages_assessment([
+        {"results": [{"FileRef": "/sites/test/Original Library Slug/Clinical services",
+                      "FileSystemObjectType": 1}]}, page,
+    ])
+    assert _levels(summary)["folder_shape:APP_Task"] == "NOT-ASSESSABLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("failure", ["duplicate", "cycle", "limit"])
+def test_folder_assessment_refuses_ambiguous_or_unfinished_paging(failure: str) -> None:
+    row = {"FileRef": "/sites/test/Original Library Slug/Clinical services",
+           "FileSystemObjectType": 1}
+    pages: list[dict[str, Any]] = [{"results": [row]}, {"results": [row]}]
+    if failure == "cycle":
+        pages = [{"results": []}, {"results": [], "__next":
+                 "https://example.sharepoint.com/sites/test/_api/folder-page/1?opaque=keep%2fnext"}]
+    elif failure == "limit":
+        pages = [{"results": []} for _ in range(101)]
+    summary = _folder_pages_assessment(pages)
     assert _levels(summary)["folder_shape:APP_Task"] == "NOT-ASSESSABLE"
 
 

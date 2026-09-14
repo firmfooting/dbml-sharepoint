@@ -49,9 +49,9 @@
     const sizeKey = (title) => `item_count:${title}`;
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
-    async function probeGet(suffix) {
+    async function probeGet(suffix, continuation = false) {
       try {
-        const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        const r = await fetchWithRetry(continuation ? suffix : apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!r.ok) return { ok: false, status: r.status };
         const j = await r.json();
         const d = (j && j.d !== undefined) ? j.d : j;
@@ -542,16 +542,21 @@
     // rather than the folder endpoint: that one answers Exists false for a
     // file and for nothing alike. Absence is read from the enumeration
     // above, so a first deploy paints nothing red.
-    const FOLDER_PAGE_SIZE = 2;
     const folderShapePath = (title, name) => {
       const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=${FOLDER_PAGE_SIZE}`;
+      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef,FileRef&$filter=${filter}`;
     };
     // Every declared folder of every declared library in one request, where
     // this was one request per folder. Handed back per library in declaration
     // order, so the loop below reads each library's own answers.
     const folderLibraries = (TARGETS.library_folders || []).filter(
       ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
+    const folderRoots = new Map();
+    {
+      const roots = await readMany(folderLibraries.map(([title]) =>
+        `web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`));
+      for (let at = 0; at < folderLibraries.length; at += 1) folderRoots.set(folderLibraries[at][0], roots[at]);
+    }
     const folderShapes = new Map();
     {
       const queue = [];
@@ -574,17 +579,40 @@
       const shapes = folderShapes.get(title) || [];
       const files = [];
       let unreadable = null;
+      const root = folderRoots.get(title);
+      const rootUrl = root && root.ok && root.d.ServerRelativeUrl;
+      if (typeof rootUrl !== 'string' || !rootUrl.startsWith('/') || rootUrl.endsWith('/')) {
+        unreadable = 'missing or malformed library root URL';
+      }
       for (let at = 0; at < folders.length; at += 1) {
-        const rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
-        if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
-        if (malformedNextPage(rows.d) || !Array.isArray(rows.d.results) || rows.d.results.some((row) =>
-          !row || ![0, 1].includes(row.FileSystemObjectType))) {
-          unreadable = 'missing or malformed folder collection'; break;
+        if (unreadable !== null) break;
+        let rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
+        const seen = new Set([apiUrl(folderShapePath(title, folders[at]))]);
+        let pages = 0;
+        let matched = null;
+        while (true) {
+          if (++pages > 100) { unreadable = 'folder collection exceeded the 100-page safety limit'; break; }
+          if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
+          if (malformedNextPage(rows.d) || !Array.isArray(rows.d.results) || rows.d.results.some((row) =>
+            !row || typeof row !== 'object' || Array.isArray(row)
+            || ![0, 1].includes(row.FileSystemObjectType) || typeof row.FileRef !== 'string'
+            || !row.FileRef.startsWith('/') || row.FileRef.endsWith('/'))) {
+            unreadable = 'missing or malformed folder collection'; break;
+          }
+          // FileRef: https://learn.microsoft.com/en-us/openspecs/sharepoint_protocols/ms-wssts/bac496c6-c19e-4243-94e0-4f92477b6e82
+          for (const row of rows.d.results) {
+            if (row.FileRef.slice(0, row.FileRef.lastIndexOf('/')) !== rootUrl) continue;
+            if (matched !== null) { unreadable = 'ambiguous matches at the declared root path'; break; }
+            matched = row;
+          }
+          if (unreadable !== null || !rows.d.__next) break;
+          const next = rows.d.__next;
+          if (seen.has(next)) { unreadable = 'folder collection repeated a continuation URL'; break; }
+          if (pages >= 100) { unreadable = 'folder collection exceeded the 100-page safety limit'; break; }
+          seen.add(next);
+          rows = await probeGet(next, true);
         }
-        if (rows.d.results.some((row) => row.FileSystemObjectType === 0)) files.push(folders[at]);
-        else if (rows.d.results.length >= FOLDER_PAGE_SIZE || rows.d.__next) {
-          unreadable = 'incomplete folder collection'; break;
-        }
+        if (unreadable === null && matched && matched.FileSystemObjectType === 0) files.push(folders[at]);
       }
       if (unreadable !== null) {
         // NOT-ASSESSABLE rather than WARN. The question is whether a file

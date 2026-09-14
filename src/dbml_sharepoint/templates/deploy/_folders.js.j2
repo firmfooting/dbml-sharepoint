@@ -81,27 +81,38 @@
     const j = await r.json();
     return j && j.d && j.d.Exists ? j.d : null;
   }
-  const FOLDER_PAGE_SIZE = 2;
-  async function folderItemShape(listTitle, name) {
+  async function folderItemShape(listTitle, rootUrl, name) {
     const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=${FOLDER_PAGE_SIZE}`), {
-      headers: { 'Accept': 'application/json;odata=verbose' },
-    });
-    if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
-    const j = await r.json();
-    const page = j && j.d;
-    if (!page || !Array.isArray(page.results) || page.results.some((row) =>
-      !row || ![0, FOLDER_OBJECT_TYPE].includes(row.FileSystemObjectType))) {
-      throw new Error('folder item probe failed: missing or malformed folder collection');
+    let url = apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef,FileRef&$filter=${filter}`);
+    const visited = new Set();
+    let match = null;
+    while (url) {
+      if (visited.has(url) || visited.size >= 100) {
+        throw new Error('folder item probe failed: incomplete folder collection');
+      }
+      visited.add(url);
+      const r = await fetchWithRetry(url, {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
+      const j = await r.json();
+      const page = j && j.d;
+      if (!page || !Array.isArray(page.results) || page.results.some((row) =>
+        !row || typeof row !== 'object' || Array.isArray(row)
+        || ![0, FOLDER_OBJECT_TYPE].includes(row.FileSystemObjectType)
+        || typeof row.FileRef !== 'string' || !row.FileRef.startsWith('/')
+        || row.FileRef.endsWith('/'))) {
+        throw new Error('folder item probe failed: missing or malformed folder collection');
+      }
+      url = validatedNextPage(page, 'folder item probe');
+      // FileRef: https://learn.microsoft.com/en-us/openspecs/sharepoint_protocols/ms-wssts/bac496c6-c19e-4243-94e0-4f92477b6e82
+      for (const row of page.results) {
+        if (row.FileRef.slice(0, row.FileRef.lastIndexOf('/')) !== rootUrl) continue;
+        if (match) throw new Error('folder item probe failed: ambiguous root folder collection');
+        match = row;
+      }
     }
-    const next = validatedNextPage(page, 'folder item probe');
-    // Assessment uses the same collection rule; row order cannot change a collision.
-    const file = page.results.find((row) => row.FileSystemObjectType === 0);
-    if (file) return file;
-    if (page.results.length >= FOLDER_PAGE_SIZE || next) {
-      throw new Error('folder item probe failed: incomplete folder collection');
-    }
-    return page.results.length ? page.results[0] : null;
+    return match;
   }
   for (const list of SCHEMA.lists.filter((l) => l.is_library && l.folders.length)) {
     let rootUrl = null;
@@ -112,7 +123,9 @@
       if (!root.ok) throw new Error(`RootFolder read failed: HTTP ${root.status} ${spError(await root.text())}`);
       const j = await root.json();
       rootUrl = j && j.d && j.d.ServerRelativeUrl;
-      if (!rootUrl) throw new Error('RootFolder read back no ServerRelativeUrl');
+      if (typeof rootUrl !== 'string' || !rootUrl.startsWith('/') || rootUrl.endsWith('/')) {
+        throw new Error('RootFolder read back no valid ServerRelativeUrl');
+      }
     } catch (err) {
       log('ERROR', `Phase {{ phase.number }} folders '${list.title}': ${err.message}`);
       summary.errors.push({ phase: '{{ phase.number }}', list: list.title, error: err.message });
@@ -126,7 +139,7 @@
     for (const name of list.folders) {
       const label = `${list.title}/${name}`;
       try {
-        const item = await folderItemShape(list.title, name);
+        const item = await folderItemShape(list.title, rootUrl, name);
         if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
           throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
         }
@@ -212,7 +225,7 @@
             // FILE of that name in place the call answers HTTP 404 "File Not
             // Found", which names the opposite of the problem. Ask the item
             // shape and say what is actually standing there.
-            const blocking = await folderItemShape(list.title, name);
+            const blocking = await folderItemShape(list.title, rootUrl, name);
             if (blocking && blocking.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
               throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${blocking.FileSystemObjectType}); nothing was written`);
             }
@@ -221,7 +234,7 @@
           if (!(await readFolder(folderUrl))) {
             throw new Error(`'${name}' did not read back after creation`);
           }
-          const item = await folderItemShape(list.title, name);
+          const item = await folderItemShape(list.title, rootUrl, name);
           if (!item || item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
             throw new Error(`'${name}' read back as FileSystemObjectType ${item && item.FileSystemObjectType}, not a folder`);
           }

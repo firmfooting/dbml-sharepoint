@@ -38,6 +38,9 @@ _HARNESS = textwrap.dedent(r"""
     const created = new Set(STATE.existing);
     const createdByRun = new Set();
     const answer = (url, method) => {
+      if (STATE.shapePages && Object.hasOwn(STATE.shapePages, url)) {
+        return STATE.shapePages[url];
+      }
       if (url.includes('RootFolder')) {
         return STATE.rootMissing ? [500, {}] : [200, { d: { ServerRelativeUrl: STATE.root } }];
       }
@@ -66,6 +69,7 @@ _HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('FileSystemObjectType')) {
         if (STATE.refuseShapeRead) return [500, { error: 'refused' }];
+        if (STATE.firstShapePage && !createdByRun.size) return STATE.firstShapePage;
         // encodeURIComponent leaves the apostrophes bare, so the name sits
         // between two literal quotes with its spaces as %20.
         const name = decodeURIComponent(url.split("FileLeafRef%20eq%20'")[1].split("'")[0]);
@@ -74,7 +78,8 @@ _HARNESS = textwrap.dedent(r"""
           || (STATE.createdAsFile && createdByRun.has(name));
         const type = asFile ? 0 : 1;
         return [200, { d: { results: created.has(name) || STATE.filesNamed.includes(name)
-          ? [{ Id: 7, FileSystemObjectType: type, FileLeafRef: name }] : [] } }];
+          ? [{ Id: 7, FileSystemObjectType: type, FileLeafRef: name,
+               FileRef: `${STATE.root}/${name}` }] : [] } }];
       }
       return [200, { d: { results: [] } }];
     };
@@ -164,6 +169,7 @@ def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, 
         + "(async () => {\n" + _render_phase() + "\n})().then(() => console.log("
         "'__RESULT__' + JSON.stringify({ summary, changes, "
         "posts: calls.filter((c) => c.method === 'POST').map((c) => c.url), "
+        "gets: calls.filter((c) => c.method === 'GET').map((c) => c.url), "
         "listWrites, stillLifted: [...listValidationLiftedForRun.keys()] })));\n"
     )
     output = run_node(script)
@@ -388,3 +394,77 @@ def test_a_refused_restore_is_reported_and_left_for_exit_cleanup() -> None:
     assert error["error"].startswith("restore the save rule: ")
     assert "restore refused" in error["error"]
     assert result["stillLifted"] == ["APP_Doc"]
+
+
+@pytest.mark.parametrize("root_type", [None, 0, 1])
+def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) -> None:
+    root = "/sites/test/OriginalLibrarySlug"
+    name = "Clinical services"
+    next_url = "https://example.sharepoint.com/sites/test/_api/folder-items-page2"
+    nested = [
+        {"FileSystemObjectType": kind, "FileRef": f"{root}/Nested{index}/{name}"}
+        for index, kind in enumerate([0, 1, 1, 0])
+    ]
+    matches = [] if root_type is None else [
+        {"FileSystemObjectType": root_type, "FileRef": f"{root}/{name}"},
+    ]
+    result = _run_phase(_state(
+        root=root, existing=[name] if root_type == 1 else [],
+        firstShapePage=[200, {"d": {"results": nested, "__next": next_url}}],
+        shapePages={next_url: [200, {"d": {"results": matches}}]},
+    ), [_library(name)])
+    queries = [url for url in result["gets"] if "FileSystemObjectType" in url]
+    assert queries
+    assert all("$top=" not in url for url in queries)
+    assert all("FileRef" in url.split("$select=")[1].split("&")[0].split(",") for url in queries)
+    if root_type == 0:
+        assert "a file where a folder was declared" in result["summary"]["errors"][0]["error"]
+        assert result["posts"] == []
+    else:
+        assert result["summary"]["errors"] == []
+        key = "foldersCreated" if root_type is None else "foldersVerified"
+        assert result["summary"][key] == [f"APP_Doc/{name}"]
+        assert len(result["posts"]) == int(root_type is None)
+
+
+@pytest.mark.parametrize("later_page", [
+    [500, {}],
+    [200, {"d": {"results": [], "__next": "https://example.sharepoint.com/sites/test/_api/page2"}}],
+    [200, {"d": {"results": [], "__next": False}}],
+    *[[200, {"d": {"results": [{"FileSystemObjectType": 1, "FileRef": path}]}}]
+      for path in [None, "relative/name", "/sites/test/", 42]],
+    [200, {"d": {"results": [
+        {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Clinical services"},
+    ]}}],
+])
+def test_folder_shape_later_page_refusals_precede_writes(later_page: Any) -> None:
+    next_url = "https://example.sharepoint.com/sites/test/_api/page2"
+    result = _run_phase(_guarded(
+        firstShapePage=[200, {"d": {"results": [
+            {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Clinical services"},
+        ], "__next": next_url}}],
+        shapePages={next_url: later_page},
+    ), [_library("Clinical services")])
+    assert "folder item probe" in result["summary"]["errors"][0]["error"]
+    assert result["summary"]["foldersCreated"] == []
+    assert result["summary"]["foldersVerified"] == []
+    assert result["posts"] == []
+    assert result["listWrites"] == []
+
+
+def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
+    pages = {
+        f"https://example.sharepoint.com/sites/test/_api/page{index}": [200, {"d": {
+            "results": [],
+            "__next": f"https://example.sharepoint.com/sites/test/_api/page{index + 1}",
+        }}]
+        for index in range(1, 101)
+    }
+    result = _run_phase(_guarded(
+        firstShapePage=[200, {"d": {
+            "results": [], "__next": "https://example.sharepoint.com/sites/test/_api/page1",
+        }}], shapePages=pages,
+    ), [_library("Clinical services")])
+    assert "incomplete folder collection" in result["summary"]["errors"][0]["error"]
+    assert result["posts"] == []
+    assert result["listWrites"] == []

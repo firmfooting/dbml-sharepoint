@@ -167,7 +167,8 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
   }
   if (requested.includes('FileSystemObjectType')) {
     const rows = globalThis.__folderCreated
-      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services' }] : [];
+      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services',
+          FileRef: '/sites/test/APP_Escalation/Clinical services' }] : [];
     return folderAnswer({ d: { results: rows } });
   }
 """
@@ -493,7 +494,12 @@ def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> Non
 def test_folder_deploy_checks_every_match_before_creating_or_adopting(
     tmp_path: Path, types: list[int], exists: bool,
 ) -> None:
-    rows = [{"FileSystemObjectType": value} for value in types]
+    rows = [
+        {"FileSystemObjectType": value,
+         "FileRef": "/sites/test/APP_Escalation/"
+         + ("Nested/Clinical services" if value else "Clinical services")}
+        for value in types
+    ]
     harness = _library_harness(declared_folder=True).replace(
         "return folderAnswer({ d: { results: rows } });",
         f"return folderAnswer({{ d: {{ results: {json.dumps(rows)} }} }});",
@@ -513,7 +519,7 @@ def test_folder_deploy_checks_every_match_before_creating_or_adopting(
 @pytest.mark.parametrize("payload", [
     {}, {"results": None}, {"results": [None]}, {"results": [{}]},
     {"results": [{"FileSystemObjectType": 1}] * 2},
-    *[{"results": [], "__next": value} for value in [False, True, 0, 1, [], {}, "next"]],
+    *[{"results": [], "__next": value} for value in [False, True, 0, 1, [], {}]],
 ])
 @pytest.mark.parametrize("after_create", [False, True])
 def test_folder_deploy_refuses_unestablished_item_collections(
