@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision 96817d26. Not yet run live.
+ * Library sharing probe, revision aef1f690. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -34,7 +34,9 @@
  * ACL read is not a denied document read; a 404 can also mean a wrong path.
  * Administrators must first confirm each target exists. UI and recipient
  * access are required to establish the outcome. Group enumeration does not
- * expand nested Entra groups. This is a targeted snapshot, not a full audit.
+ * expand nested Entra groups. Confirm the prepared accounts have no nested
+ * Owners membership. Failed or incomplete group reads void sharing findings.
+ * This is a targeted snapshot, not a full audit.
  *
  * Sources:
  * https://learn.microsoft.com/en-us/sharepoint/dev/sp-add-ins/set-custom-permissions-on-a-list-by-using-the-rest-interface
@@ -87,7 +89,7 @@
     log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
   expect('access.effective-perms.control-current-identity', 'the current account and its site-administrator status are readable');
-  expect('access.effective-perms.control-ordinary-actor', 'the sharing observer is not a site collection administrator');
+  expect('access.effective-perms.control-ordinary-actor', 'the observer is not a site administrator and complete group reads exclude associated Owners membership');
   expect('library.access.permission-snapshot', 'library, folder and file ACL and effective-permission responses are captured');
   expect('library.access.control-own-file-edit', 'the ordinary division account opens, edits and saves its own test file');
   expect('library.access.control-recipient-denied', 'the intended recipient cannot open the test object before each sharing attempt');
@@ -114,7 +116,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 96817d26; core v2; results v1.`);
+  log('INFO', `probe revision aef1f690; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -231,7 +233,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: '96817d26', capturedAt: new Date().toISOString(),
+    revision: 'aef1f690', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };
@@ -313,18 +315,27 @@
       report.reads[key] = entries[index];
     });
     const identityKnown = entries[0].ok && typeof entries[0].body?.IsSiteAdmin === 'boolean';
+    const groupBody = entries[1].body;
+    const groups = groupBody?.value ?? groupBody?.results;
+    const validId = value => Number.isSafeInteger(value) && value > 0;
+    const groupsKnown = entries[1].ok && Array.isArray(groups) && groups.every(group => validId(group?.Id)) &&
+      !groupBody['odata.nextLink'] && !groupBody['@odata.nextLink'] && !groupBody.__next;
+    const ownersId = entries[3].body?.Id;
+    const ownersKnown = entries[3].ok && validId(ownersId);
+    const ordinary = identityKnown && entries[0].body.IsSiteAdmin === false &&
+      groupsKnown && ownersKnown && !groups.some(group => group.Id === ownersId);
     record('access.effective-perms.control-current-identity', 'current identity', identityKnown ? 'PASS' : 'FAIL', JSON.stringify(entries[0]));
     if (!identityKnown) {
       voidDependants('access.effective-perms.control-current-identity');
     } else {
-      const ordinary = entries[0].body.IsSiteAdmin === false;
-      record('access.effective-perms.control-ordinary-actor', 'ordinary observer', ordinary ? 'PASS' : 'FAIL', `IsSiteAdmin=${entries[0].body.IsSiteAdmin}`);
+      record('access.effective-perms.control-ordinary-actor', 'ordinary observer', ordinary ? 'PASS' : 'FAIL',
+        JSON.stringify({ IsSiteAdmin: entries[0].body.IsSiteAdmin, groupsKnown, ownersKnown, ownersId }));
       if (!ordinary) {
         for (const row of results) {
           if (row.id === 'library.access.permission-snapshot' || row.state !== 'open') continue;
           row.observed = 'VOID';
           row.state = 'void';
-          row.detail = 'site-administrator run cannot answer ordinary-user behaviour';
+          row.detail = 'ordinary actor not established: requires non-administrator and complete group reads excluding associated Owners';
         }
       }
     }
@@ -362,7 +373,7 @@
     }
     if (identityKnown) {
       record('library.access.permission-snapshot', 'targeted permission responses', 'CAPTURED', 'see reads and targets; HTTP errors and partial ACL pages remain explicit; this is not a sharing verdict');
-      if (entries[0].body.IsSiteAdmin === false) {
+      if (ordinary) {
         record('library.access.control-own-file-edit', 'own file edit', 'MANUAL', 'capture successful save and reopen as the ordinary division editor');
         record('library.access.control-recipient-denied', 'recipient baseline', 'MANUAL', 'capture recipient denied access immediately before each sharing attempt');
         record('library.access.division-isolation', 'division isolation', 'MANUAL', 'capture own-division success and other-division denial with administrator-confirmed paths');

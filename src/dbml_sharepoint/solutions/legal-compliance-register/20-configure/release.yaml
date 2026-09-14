@@ -1,7 +1,7 @@
-release: "2.1.1"
+release: "2.1.2"
 date: "2026-09-15"
 deployer_version: "dbml-sharepoint/0.6.0"
-schema_version: "2.1.1"
+schema_version: "2.1.2"
 notes: |
   Breaking redesign: one Document library replaces the Topic list and SAQ library.
   SAQs are vendor downloads; a new SAQ for the same topic has a new period.
@@ -9,3 +9,5 @@ notes: |
   Deploy a new library and migrate deliberately; existing containers are not removed.
   Remove platform-owner assignment, synthetic assessment references and due dates.
   Require SAQ status and a review decision at completion; clarify governance checks.
+  Reject stale completion dates on reopened SAQs and remove assessment defaults.
+  Show recently recorded assessments first.

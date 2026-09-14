@@ -9,6 +9,9 @@ from _paths import MANUAL
 
 @pytest.mark.parametrize("scenario", [
     "normal", "library-denied", "throttled", "malformed", "administrator", "identity-denied",
+    "owner", "groups-denied", "owners-denied", "groups-malformed", "owners-malformed",
+    "groups-partial", "groups-partial-odata", "groups-partial-verbose", "groups-verbose",
+    "group-id-malformed",
 ])
 def test_sharing_snapshot_preserves_observations_without_claiming_enforcement(
     scenario: str,
@@ -38,6 +41,21 @@ const fetch = async (url, options) => {
   if (url.includes('currentuser?')) {
     if (scenario === 'identity-denied') status = 403;
     else body = { IsSiteAdmin: scenario === 'administrator' };
+  }
+  else if (url.includes('currentuser/groups?')) {
+    body = { value: [{ Id: scenario === 'owner' ? 7 : 8 }] };
+    if (scenario === 'groups-denied') status = 403;
+    if (scenario === 'groups-malformed') body = {};
+    if (scenario === 'group-id-malformed') body = { value: [{}] };
+    if (scenario === 'groups-partial') body['@odata.nextLink'] = 'next-page';
+    if (scenario === 'groups-partial-odata') body['odata.nextLink'] = 'next-page';
+    if (scenario === 'groups-partial-verbose') body = { d: { results: [], __next: 'next-page' } };
+    if (scenario === 'groups-verbose') body = { d: { results: [{ Id: 8 }] } };
+  }
+  else if (url.includes('AssociatedOwnerGroup?')) {
+    body = { Id: 7 };
+    if (scenario === 'owners-denied') status = 403;
+    if (scenario === 'owners-malformed') body = {};
   }
   else if (url.includes('RoleAssignments?')) {
     status = 403;
@@ -78,7 +96,7 @@ const fetch = async (url, options) => {
     assert report["sharingVerdict"].startswith("NOT ESTABLISHED")
     assert {call["method"] for call in result["calls"]} == {"GET"}
     target = report["targets"][0]
-    if scenario in {"normal", "library-denied", "administrator", "identity-denied"}:
+    if scenario not in {"throttled", "malformed"}:
         assert target["kind"] == "file"
         assert target["scope"]["assignments"]["status"] == 403
         assert target["scope"]["inheritance"]["body"]["HasUniqueRoleAssignments"] is False
@@ -93,10 +111,19 @@ const fetch = async (url, options) => {
     if scenario == "throttled":
         assert target["fileRead"]["status"] == 429
     findings = {row["id"]: row for row in report["results"]}
-    sharing_state = (
-        "void" if scenario in {"administrator", "identity-denied"} else "awaiting-capture"
-    )
-    assert findings["library.access.folder-resharing"]["state"] == sharing_state
-    assert findings["library.access.file-resharing"]["state"] == sharing_state
+    ordinary = scenario in {
+        "normal", "library-denied", "throttled", "malformed", "groups-verbose",
+    }
+    sharing_state = "awaiting-capture" if ordinary else "void"
+    for finding in (
+        "control-own-file-edit", "control-recipient-denied", "division-isolation",
+        "folder-resharing", "file-resharing",
+    ):
+        assert findings[f"library.access.{finding}"]["state"] == sharing_state
     if scenario == "identity-denied":
         assert findings["library.access.permission-snapshot"]["state"] == "void"
+    else:
+        assert findings["library.access.permission-snapshot"]["observed"] == "CAPTURED"
+        assert findings["access.effective-perms.control-ordinary-actor"]["observed"] == (
+            "PASS" if ordinary else "FAIL"
+        )

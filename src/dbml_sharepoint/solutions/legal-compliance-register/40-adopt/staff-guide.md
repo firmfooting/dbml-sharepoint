@@ -16,7 +16,7 @@ compliance ratings, risk or gaps into library properties.
    year** and **Issued quarter** from the publisher's file. The issuance
    period is not your assessment period and is not filled automatically.
 3. Set **Division** and **Executive responsible**. The executive assignment is
-   a manual step based on the folder's division. Leave **Status** at *Required*.
+   a manual step based on the folder's division. Set **Status** to *Required*.
 4. Upload the supporting REG with **Type** set to *REG* and matching topic
    metadata. Its assessment properties are hidden and it stays out of the
    assessment worklists.
@@ -32,12 +32,14 @@ assignment, even when the file has otherwise saved successfully.
 
 Open **My accountability** and assign **Business owner**. Set **Review
 requirement** to *Required* if you want to review the completed SAQ before
-it goes to the compliance platform; otherwise leave it *Not required*.
+it goes to the compliance platform; otherwise choose *Not required*.
 Decide this when assigning the work so the platform owner knows the route.
 
 Completed SAQs needing review appear in **Awaiting review**. Open the Excel
 file, check the answers and set **Reviewed date**. If further work is needed,
-clear the completion and review dates, then return **Status** to *In progress*.
+clear the completion and review dates and return **Status** to *In progress*
+in the same save. The save rule rejects a completion date on *Required* or
+*In progress* SAQs.
 A correction to a file already recorded in the portal must be coordinated
 across the workbook and the platform record.
 

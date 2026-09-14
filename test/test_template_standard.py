@@ -2530,8 +2530,18 @@ def test_legal_blank_workflow_fields_are_allowed_only_outside_active_handoffs() 
         "ItemType": "REG", "Status": None, "ReviewRequirement": None,
     }) is True
     assert _legal_rule_accepts(_legal_assessment(
-        Status="In progress", ReviewRequirement=None,
+        Status="In progress", CompletedDate=None, ReviewRequirement=None,
     )) is True
+
+
+@pytest.mark.parametrize("status", ["Required", "In progress"])
+def test_legal_reopened_assessment_must_clear_completion_date(status: str) -> None:
+    assert _legal_rule_accepts(_legal_assessment(Status=status)) is False
+    assert _legal_rule_accepts(_legal_assessment(Status=status, CompletedDate=None)) is True
+
+
+def test_legal_cancelled_assessment_can_retain_completion_history() -> None:
+    assert _legal_rule_accepts(_legal_assessment(Status="No longer required")) is True
 
 
 def test_legal_date_order_remains_a_governance_check() -> None:
@@ -2583,6 +2593,9 @@ def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None
     assert all(c.ref is None for t in loaded.schema.tables for c in t.columns)
     assert not loaded.mapping.default_formulas
     assert not loaded.mapping.derived_columns
+    columns = {c.name: c for t in loaded.schema.tables for c in t.columns}
+    assert columns["Status"].default is None
+    assert columns["ReviewRequirement"].default is None
     types = loaded.column_types("Document")
     assert {"IssuedYear", "IssuedQuarter"} <= types.keys()
     assert not {"PlatformOwner", "AssessmentRef", "DueDate"} & types.keys()

@@ -44,9 +44,9 @@ Table Document {
   Division             division           [note: 'The executive division whose folder holds this file']
   ExecutiveResponsible person             [note: 'Assigned by the platform owner according to the executive division folder; assigns the business owner and may review the completed SAQ']
   BusinessOwner        person             [note: 'Assigned by the executive to complete this assessment in Excel']
-  Status               assessment_status  [default: 'Required', note: 'SAQ progress only. Complete means the business owner has finished; portal recording is tracked separately']
+  Status               assessment_status  [note: 'SAQ progress only. Complete means the business owner has finished; portal recording is tracked separately']
   CompletedDate        date               [note: 'When the business owner completed the SAQ in Excel']
-  ReviewRequirement    review_requirement [default: 'Not required', note: 'The executive requests a review before portal recording. Choose Not required when executive review is not needed']
+  ReviewRequirement    review_requirement [note: 'The executive requests a review before portal recording. Choose Not required when executive review is not needed']
   ReviewedDate         date               [note: 'When the executive reviewed the completed SAQ. Optional unless review was requested']
   ExternalRecorded     date               [note: 'When the platform owner recorded this assessment in the compliance platform']
   // MEASURED 2026-09-13: Notes collides with a built-in library field.

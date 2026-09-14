@@ -244,7 +244,7 @@ views:
         - {field: Status, op: eq, value: Complete}
         - {field: ExternalRecorded, op: is_not_null}
       sort:
-        - {field: ExternalRecorded, direction: asc}
+        - {field: ExternalRecorded, direction: desc}
       widths:
         FileLeafRef: 300
         TopicName: 220
@@ -347,6 +347,9 @@ list_validation:
         - all_of:
             - {field: Status, op: is_not_null}
             - any_of:
+                - {field: Status, op: not_in, value: [Required, In progress]}
+                - {field: CompletedDate, op: is_null}
+            - any_of:
                 - {field: Status, op: not_in, value: [In progress, Complete]}
                 - all_of:
                     - {field: TopicName, op: is_not_null}
@@ -379,9 +382,9 @@ list_validation:
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
                 - {field: ExternalRecorded, op: leq, value: today}
-    message: SAQs need status. In progress/complete need topic and division. Complete needs a completion
-      date and review choice. Review/recording need Complete. Recording needs a review date when review
-      is required. Dates cannot be in the future.
+    message: SAQs need status. Required/In progress need blank completion dates. In progress/Complete
+      need topic and division. Complete needs a date and review choice. Review/recording need Complete;
+      requested reviews need a date to record. Dates cannot be future.
 
 # Synthetic files exercise both review routes and successive vendor periods.
 

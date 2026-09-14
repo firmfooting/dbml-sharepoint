@@ -42,6 +42,7 @@ owner; the review date belongs to the executive.
 The declared SAQ save rule requires:
 
 - A nonblank status.
+- A blank completion date when *Required* or *In progress*.
 - Topic name and division when *In progress*
   or *Complete*.
 - A completion date and review decision when *Complete*.

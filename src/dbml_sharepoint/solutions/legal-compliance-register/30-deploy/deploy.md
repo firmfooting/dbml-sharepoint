@@ -65,6 +65,10 @@ logging sidecars are not wanted.
 - [ ] Try *Complete* without a completed date. The save rule refuses it.
 - [ ] Clear **Status** on an SAQ, or clear **Review requirement** on a Complete
       SAQ. The save rule refuses both; REGs can leave these fields blank.
+- [ ] Reopen a completed SAQ as *In progress* without clearing its completion
+      date. The save rule refuses it; clear the date in the same save.
+- [ ] Upload a REG and classify it as *REG*. **Status** and **Review requirement**
+      have no defaults and stay blank. Choose these values explicitly for SAQs.
 - [ ] Complete an SAQ with review *Not required*. It appears in **To record
       in the portal** without a reviewed date.
 - [ ] Complete one with review *Required*. It appears in **Awaiting review**
@@ -123,6 +127,10 @@ Bump `schema_version` for DBML or mapping changes, rebuild and re-paste.
 Declared library settings, views and folders are reconciled; file contents
 are not rewritten. Undeclared legacy containers require a separate retirement
 decision after migration.
+
+For libraries deployed before 2.1.2, review existing REG metadata and clear
+assessment-only values through the flat **Platform owner** view. Removing
+defaults does not clear stored file metadata.
 
 ## Enterprise reporting access
 
