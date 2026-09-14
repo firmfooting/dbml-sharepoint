@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: IS ENFORCEUNIQUEVALUES REFUSED ON EXISTING DUPLICATES
  *
- * REVISION: c8102232
+ * REVISION: 94ce0434
  *
  * ONE QUESTION:
  *   A single-line text column already holds items, and two of them carry the
@@ -327,7 +327,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c8102232. Quote this when reporting results.');
+  log('INFO', 'probe revision 94ce0434. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique Transition';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -413,6 +413,9 @@
   // compares unequal to everything, which looks exactly like a wrong value.
   const propertyFault = (read, name, want) => {
     if (readFailed(read)) return `${name} could not be read (HTTP ${read.status})`;
+    if (typeof read.body !== 'object' || Array.isArray(read.body)) {
+      return `${name} readback payload is not an object`;
+    }
     if (!(name in read.body)) return `the readback payload carries no ${name}`;
     if (read.body[name] !== want) {
       return `${name} reads back ${JSON.stringify(read.body[name])}, not ${JSON.stringify(want)}`;

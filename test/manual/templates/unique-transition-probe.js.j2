@@ -193,6 +193,9 @@
   // compares unequal to everything, which looks exactly like a wrong value.
   const propertyFault = (read, name, want) => {
     if (readFailed(read)) return `${name} could not be read (HTTP ${read.status})`;
+    if (typeof read.body !== 'object' || Array.isArray(read.body)) {
+      return `${name} readback payload is not an object`;
+    }
     if (!(name in read.body)) return `the readback payload carries no ${name}`;
     if (read.body[name] !== want) {
       return `${name} reads back ${JSON.stringify(read.body[name])}, not ${JSON.stringify(want)}`;

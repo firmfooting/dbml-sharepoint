@@ -6791,6 +6791,7 @@ _SCRATCH_HARNESS = textwrap.dedent("""
       // so the readback can answer the three ways that matter: served hidden,
       // served without the property, and 2xx with nothing in it.
       if (path.includes(CONFIG.hiddenTitle)) {
+        if (Object.hasOwn(CONFIG, 'hiddenPayload')) return jsonResponse(200, CONFIG.hiddenPayload);
         if (CONFIG.hiddenRead === 'empty') return emptyResponse(200);
         if (CONFIG.hiddenRead === 'withheld') return jsonResponse(200, { NoCrawl: true });
         return jsonResponse(200, { Hidden: true, NoCrawl: true });
@@ -7649,6 +7650,9 @@ _CALC_CHOICE_HARNESS = textwrap.dedent("""
         // probe asks the first about a column's shape and the second about
         // what one validation store holds.
         const selected = rest.includes('$select=');
+        if (selected && field[1] === 'ProbeOwner' && Object.hasOwn(CONFIG, 'selectedPayload')) {
+          return jsonResponse(200, CONFIG.selectedPayload);
+        }
         const empty = selected ? CONFIG.emptySelectRead : CONFIG.emptyFieldRead;
         if (empty.includes(field[1])) return emptyResponse(200);
         if (selected && CONFIG.withholdSelected.includes(field[1])) {
@@ -7691,7 +7695,8 @@ _CALC_CHOICE_HARNESS = textwrap.dedent("""
         const row = rows.get(Number(item[1]));
         if (!row) return jsonResponse(404, { error: 'no such item' });
         if (CONFIG.emptyItemRead) return emptyResponse(200);
-        return jsonResponse(200, evaluate(fields, row));
+        return jsonResponse(200, Object.hasOwn(CONFIG, 'computedPayload')
+          ? CONFIG.computedPayload : evaluate(fields, row));
       }
       if (rest.includes('/items')) {
         if (method === 'POST') {
@@ -8042,6 +8047,7 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
         // 2 is 'none': the upload left the file checked in. The other two
         // readings are a 2xx with nothing in it and a payload that served the
         // file without the property the row is about.
+        if ('filePropsPayload' in CONFIG) return jsonResponse(200, CONFIG.filePropsPayload);
         if (CONFIG.filePropsRead === 'empty') return emptyResponse(200);
         if (CONFIG.filePropsRead === 'withheld') return jsonResponse(200, { MajorVersion: 1 });
         return jsonResponse(200, { CheckOutType: 2, MajorVersion: 1 });
@@ -8182,32 +8188,57 @@ def test_a_library_columns_run_measures_the_required_column_and_the_rule() -> No
         ({"controlStatus": 429}, "NOT ESTABLISHED"),
     ],
 )
-def test_library_columns_failed_control_voids_catalog_dependents_and_keeps_observations(
+def test_library_columns_failed_control_preserves_independent_observations(
     changes: dict[str, Any], control_outcome: str,
 ) -> None:
-    """The catalog's control dependencies must also govern the pasted probe."""
     baseline = _run_lib_cols_probe()
     rows = _run_lib_cols_probe(**changes)
-    control = "library.column.control-missing-column-refused"
-    assert rows[control]["outcome"] == control_outcome
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
-    probe = next(p for p in catalog["probes"] if p["file"] == LIB_COLS_PROBE.name)
-    dependent_ids = {
-        finding["id"]
-        for scenario in probe["scenarios"]
-        for finding in scenario["findings"]
-        if control in finding["depends_on"]
-    }
-    assert len(dependent_ids) == 5
-    for finding in dependent_ids:
-        observed = rows[finding]
-        assert observed["outcome"] == "NOT ESTABLISHED", finding
-        assert observed["state"] == "void", finding
-        assert "negative control did not hold" in observed["evidence"], finding
-        assert baseline[finding]["outcome"] in observed["evidence"], finding
-        assert baseline[finding]["evidence"] in observed["evidence"], finding
-    fixture = "library.doc-lib.fixture-library-created"
-    assert rows[fixture] == baseline[fixture]
+    assert rows["library.column.control-missing-column-refused"]["outcome"] == control_outcome
+    for finding in (
+        "library.column.choice-column-on-library",
+        "library.column.lookup-column-on-library",
+        "library.column.calculated-column-on-library",
+        "library.column.required-column-enforced-on-upload",
+        "library.doc-lib.fixture-library-created",
+    ):
+        assert rows[finding] == baseline[finding]
+    rule = rows["library.validation.validation-formula-on-library"]
+    assert rule["outcome"] == "NOT ESTABLISHED"
+    assert rule["state"] == "void"
+    assert "negative control did not hold" in rule["evidence"]
+    assert "observed ENFORCED" in rule["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("column,value", [("choice", "Beta"), ("lookup", "1")])
+@pytest.mark.parametrize("control_status,expected", [(400, "FAIL"), (429, "NOT ESTABLISHED")])
+def test_library_column_metadata_refusals_require_control(
+    column: str, value: str, control_status: int, expected: str,
+) -> None:
+    rows = _run_lib_cols_probe(controlStatus=control_status, writeFailsFor={value: 400})
+    row = rows[f"library.column.{column}-column-on-library"]
+    assert row["outcome"] == expected
+    assert row["state"] == ("void" if expected == "NOT ESTABLISHED" else "settled")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_library_upload_refusal_is_independent_of_metadata_control() -> None:
+    rows = _run_lib_cols_probe(uploadStatus=400)
+    assert rows["library.column.control-missing-column-refused"]["outcome"] == "NOT ESTABLISHED"
+    assert rows["library.column.required-column-enforced-on-upload"]["outcome"] == "UPLOAD REFUSED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_library_validation_accepted_write_survives_failed_refusal_control() -> None:
+    rows = _run_lib_cols_probe(controlStatus=429, ruleEnforces=False)
+    assert rows["library.validation.validation-formula-on-library"]["outcome"] == "INERT"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", ["malformed", 17, True, [], [1], None])
+def test_library_upload_malformed_file_properties_do_not_throw(payload: Any) -> None:
+    rows = _run_lib_cols_probe(filePropsPayload=payload)
+    assert rows["library.column.required-column-enforced-on-upload"]["outcome"] == "NOT ESTABLISHED"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -8851,3 +8882,22 @@ def test_an_operand_under_another_display_title_stops_the_calc_choice_run() -> N
     accepted = rows["formula.choice.spaced-display-name-accepted"]
     assert accepted["outcome"] == "NOT ESTABLISHED"
     assert accepted["evidence"] == "the run did not reach this question"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", ["broken", 42, False, [], None])
+def test_hidden_list_malformed_payload_cannot_settle_visibility(payload: Any) -> None:
+    rows = _run_scratch_probe(
+        SCRATCH_SAVE_PATHS_PROBE, hidden_list=True, hiddenPayload=payload,
+    )
+    assert rows["field.list.hidden-list-readback"]["outcome"] == "NOT ESTABLISHED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", ["broken", 42, False, [], None])
+def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: Any) -> None:
+    rows = _run_calc_choice_probe(computedPayload=payload, selectedPayload=payload)
+    for row in (*_CALC_CHOICE_RENDER_ROWS, "formula.validation.person-operand",
+                "expression.client-validation.person-operand"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+    assert rows["formula.validation.lookup-operand"]["outcome"] == "ACCEPTED"

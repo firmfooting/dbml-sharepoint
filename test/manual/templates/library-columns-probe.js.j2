@@ -25,7 +25,7 @@
  *        NEGATIVE CONTROL: Is a MERGE naming a column that does not exist,
  *        sent to a library file's list item, REFUSED? Establishes that this
  *        probe can detect a failed metadata write on a file item. Without it,
- *        every refusal observed below is unproven.
+ *        item-MERGE refusals observed below are unproven.
  *   library.column.choice-column-on-library
  *        Does a choice column behave the same on a library (create the field,
  *        write a value via item MERGE, and read it back)?
@@ -286,11 +286,12 @@
   const itemId = row ? row.Id : null;
 
   // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
+  const metadataRefusals = new Set();
   let controlHeld = false;
   if (itemId === null) {
     record('library.column.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a file item is refused', 'NOT ESTABLISHED',
            `no list item was found for '${FILE}' (HTTP ${items.status}), so there was `
-           + 'nothing to send a test write to. Every refusal below this line is '
+           + 'nothing to send a test write to. Item-MERGE refusals below this line are '
            + 'unproven rather than answered.');
   } else {
     digest = await getDigest();
@@ -324,6 +325,7 @@
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
     );
     if (!writeChoice.ok) {
+      if (isRefusal(writeChoice.status)) metadataRefusals.add('library.column.choice-column-on-library');
       // A refused write answers the question; a 401, 403, 408 or 429 does not,
       // and FAIL would settle the row as the column behaving differently here.
       record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
@@ -362,6 +364,7 @@
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
     );
     if (!writeLookup.ok) {
+      if (isRefusal(writeLookup.status)) metadataRefusals.add('library.column.lookup-column-on-library');
       record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
              isRefusal(writeLookup.status) ? 'FAIL' : 'NOT ESTABLISHED',
              `MERGE with ColLookupId=${targetRowId} failed: HTTP ${writeLookup.status} ${writeLookup.text.slice(0, 200)}`);
@@ -469,7 +472,8 @@
       // Both outcome heads below name what the upload left behind, so the
       // property has to be in hand: a 2xx with no payload, and a payload that
       // withheld CheckOutType, both used to read as 'not checked out'.
-      const served = !readFailed(fileProps) && 'CheckOutType' in fileProps.body;
+      const served = !readFailed(fileProps) && typeof fileProps.body === 'object'
+        && !Array.isArray(fileProps.body) && 'CheckOutType' in fileProps.body;
       const colLine = readFailed(reqItems)
         ? `the uploaded file's item did not read back (HTTP ${reqItems.status})`
         : reqRow
@@ -548,6 +552,7 @@
     const refused = !badWrite.ok && isRefusal(badWrite.status);
 
     if (refused) {
+      metadataRefusals.add('library.validation.validation-formula-on-library');
       digest = await getDigest();
       const goodWrite = await spPost(
         `${listPath}/items(${itemId})`,
@@ -570,15 +575,9 @@
     }
   }
 
-  // Keep observations, but a failed control cannot license dependent verdicts.
+  // Only item-MERGE refusals depend on the missing-column control.
   if (!controlHeld) {
-    for (const id of [
-      'library.column.choice-column-on-library',
-      'library.column.lookup-column-on-library',
-      'library.column.calculated-column-on-library',
-      'library.column.required-column-enforced-on-upload',
-      'library.validation.validation-formula-on-library',
-    ]) {
+    for (const id of metadataRefusals) {
       const observed = RESULTS.find((result) => result.id === id);
       record(id, observed.question, 'NOT ESTABLISHED',
              `negative control did not hold; observed ${observed.outcome}: ${observed.evidence}`, 'void');

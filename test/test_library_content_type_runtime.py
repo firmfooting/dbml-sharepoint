@@ -1,4 +1,4 @@
-"""A failed metadata control cannot establish library content type findings."""
+"""Metadata controls gate item refusals without discarding independent findings."""
 
 import json
 from typing import Any
@@ -9,7 +9,7 @@ from _paths import MANUAL
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
-_DEPENDENT = (
+_FINDINGS = (
     "library.content-type.custom-content-type-on-library",
     "library.content-type.content-type-at-upload",
     "library.content-type.column-bound-to-one-content-type",
@@ -64,7 +64,10 @@ globalThis.fetch = async (url, options = {}) => {
     }
   }
   if (path.startsWith(pathRoot + '/items(2)')) {
-    if (post) Object.assign(uploadItem, JSON.parse(options.body));
+    if (post) {
+      if (config.mergeStatus !== 204) return response(config.mergeStatus, {});
+      Object.assign(uploadItem, JSON.parse(options.body));
+    }
     return response(post ? 204 : 200, uploadItem);
   }
   throw new Error(`Unexpected request: ${options.method || 'GET'} ${path}`);
@@ -72,7 +75,9 @@ globalThis.fetch = async (url, options = {}) => {
 """
 
 
-def _run_probe(control_status: int = 400, *, no_item: bool = False) -> dict[str, Any]:
+def _run_probe(
+    control_status: int = 400, *, no_item: bool = False, merge_status: int = 204
+) -> dict[str, Any]:
     source = (MANUAL / "library-content-type-probe.js").read_text(encoding="utf-8")
     source = source.replace("const CONFIRMED = false;", "const CONFIRMED = true;")
     source = source.replace("const ALLOW_WRITES = false;", "const ALLOW_WRITES = true;")
@@ -80,7 +85,9 @@ def _run_probe(control_status: int = 400, *, no_item: bool = False) -> dict[str,
         "const report = () => {",
         "const report = () => { console.log('__ROWS__' + JSON.stringify(RESULTS));",
     )
-    config = json.dumps({"controlStatus": control_status, "noItem": no_item})
+    config = json.dumps(
+        {"controlStatus": control_status, "noItem": no_item, "mergeStatus": merge_status}
+    )
     output = run_node(_HARNESS.replace("__CONFIG__", config) + source)
     rows = [line.removeprefix("__ROWS__") for line in output.splitlines()
             if line.startswith("__ROWS__")]
@@ -92,34 +99,45 @@ def _run_probe(control_status: int = 400, *, no_item: bool = False) -> dict[str,
 def test_library_content_type_control_allows_observed_findings(status: int) -> None:
     rows = _run_probe(status)
     assert rows["library.content-type.control-missing-column-refused"]["outcome"] == "PASS"
-    assert rows[_DEPENDENT[0]]["outcome"] == "PASS"
-    assert rows[_DEPENDENT[1]]["outcome"] == (
+    assert rows[_FINDINGS[0]]["outcome"] == "PASS"
+    assert rows[_FINDINGS[1]]["outcome"] == (
         "UPLOAD LANDS AS DEFAULT DOCUMENT; CHANGED VIA ITEM MERGE"
     )
-    assert rows[_DEPENDENT[2]]["outcome"] == "BOUND TO DOCUMENT ONLY (PER-CONTENT-TYPE)"
-    for finding in _DEPENDENT:
+    assert rows[_FINDINGS[2]]["outcome"] == "BOUND TO DOCUMENT ONLY (PER-CONTENT-TYPE)"
+    for finding in _FINDINGS:
         assert rows[finding]["state"] == "settled"
 
 
 @pytest.mark.parametrize("status", [200, 204, 401, 403, 408, 429, 0])
-def test_library_content_type_voids_unestablished_control(status: int) -> None:
+def test_library_content_type_preserves_independent_findings(status: int) -> None:
     rows = _run_probe(status)
-    for finding in _DEPENDENT:
-        assert rows[finding]["outcome"] == "NOT ESTABLISHED"
-        assert rows[finding]["state"] == "void"
-        assert "negative control did not hold; observed:" in rows[finding]["evidence"]
-    assert "list-scoped content type ID: 0x010100ABC" in rows[_DEPENDENT[0]]["evidence"]
-    assert "updated the item to 0x010100ABC" in rows[_DEPENDENT[1]]["evidence"]
-    assert "Folder (0x0120): absent" in rows[_DEPENDENT[2]]["evidence"]
-    assert rows["library.content-type.default-content-types"]["state"] == "settled"
+    assert rows[_FINDINGS[0]]["outcome"] == "PASS"
+    assert rows[_FINDINGS[1]]["outcome"] == (
+        "UPLOAD LANDS AS DEFAULT DOCUMENT; CHANGED VIA ITEM MERGE"
+    )
+    assert rows[_FINDINGS[2]]["outcome"] == "BOUND TO DOCUMENT ONLY (PER-CONTENT-TYPE)"
+    for finding in _FINDINGS:
+        assert rows[finding]["state"] == "settled"
 
 
-def test_library_content_type_voids_control_without_file_item() -> None:
+def test_library_content_type_preserves_findings_without_control_item() -> None:
     rows = _run_probe(no_item=True)
     assert rows["library.content-type.control-missing-column-refused"]["outcome"] == (
         "NOT ESTABLISHED"
     )
-    for finding in _DEPENDENT:
-        assert rows[finding]["outcome"] == "NOT ESTABLISHED"
-        assert rows[finding]["state"] == "void"
-    assert rows["library.content-type.default-content-types"]["state"] == "settled"
+    for finding in _FINDINGS:
+        assert rows[finding]["state"] == "settled"
+
+
+@pytest.mark.parametrize("control_status", [400, 429, 0])
+def test_library_content_type_refused_merge_requires_control(control_status: int) -> None:
+    rows = _run_probe(control_status, merge_status=400)
+    assert rows[_FINDINGS[0]]["outcome"] == "PASS"
+    assert rows[_FINDINGS[2]]["state"] == "settled"
+    upload = rows[_FINDINGS[1]]
+    assert "Initial upload ContentTypeId was 0x0101" in upload["evidence"]
+    assert "Post-upload MERGE returned HTTP 400" in upload["evidence"]
+    assert upload["state"] == ("settled" if control_status == 400 else "void")
+    assert upload["outcome"] == (
+        "UPLOAD LANDS AS DEFAULT DOCUMENT" if control_status == 400 else "NOT ESTABLISHED"
+    )

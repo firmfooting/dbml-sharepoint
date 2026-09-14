@@ -304,7 +304,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c0ca5077. Quote this when reporting results.');
+  log('INFO', 'probe revision 4567a446. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe ContentType';
   const FILE = 'dbmlsp-content-type-probe.txt';
@@ -647,7 +647,7 @@
     }
 
     const landsAsDoc = initialCtId.startsWith('0x0101');
-    const changedToCustom = postMergeCtId === listScopedCtId;
+    const changedToCustom = !!listScopedCtId && postMergeCtId === listScopedCtId;
     record('library.content-type.content-type-at-upload',
            'Can a file upload attach a custom content type or is post-upload update required',
            landsAsDoc && changedToCustom
@@ -662,6 +662,11 @@
                  + 'Files/add takes url and overwrite parameters (dn450841); assigning a non-default content type requires a post-upload item MERGE.'
                : `Post-upload MERGE returned HTTP ${mergeStatus}: ${mergeText.slice(0, 160)}. ContentTypeId after write: ${postMergeCtId}.`)
              : 'Custom content type was not available on the library, so post-upload item MERGE was skipped.'));
+    if (listScopedCtId && !mergeOk && isRefusal(mergeStatus) && !controlHeld) {
+      const observed = RESULTS.find((result) => result.id === 'library.content-type.content-type-at-upload');
+      record(observed.id, observed.question, 'NOT ESTABLISHED',
+             'negative control did not hold for the item MERGE refusal; observed: ' + observed.evidence, 'void');
+    }
   }
 
   // ---- column-bound-to-one-content-type --------------------------------
@@ -722,18 +727,6 @@
            + `Document has ${docLinks.length} fieldlink(s); Folder has ${folderLinks.length} fieldlink(s).`);
   }
 
-  // Keep observations, but a failed control cannot license dependent verdicts.
-  if (!controlHeld) {
-    for (const id of [
-      'library.content-type.custom-content-type-on-library',
-      'library.content-type.content-type-at-upload',
-      'library.content-type.column-bound-to-one-content-type',
-    ]) {
-      const observed = RESULTS.find((result) => result.id === id);
-      record(id, observed.question, 'NOT ESTABLISHED',
-             'negative control did not hold; observed: ' + observed.evidence, 'void');
-    }
-  }
 
   report();
 })();

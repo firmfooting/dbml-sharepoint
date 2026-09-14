@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY COLUMN INTERACTIONS
  *
- * REVISION: 64927c2f
+ * REVISION: f886d583
  *
  * ONE QUESTION:
  *   How do multi-value columns and custom column formatting behave on a document library?
@@ -269,7 +269,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 64927c2f. Quote this when reporting results.');
+  log('INFO', 'probe revision f886d583. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibColInteractions';
   const TARGET_LIB = 'dbmlsp Probe LibColTarget';
@@ -478,6 +478,7 @@
   const itemId = row ? row.Id : null;
 
   // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
+  const metadataRefusals = new Set();
   let controlHeld = false;
   if (itemId === null) {
     record(
@@ -546,6 +547,7 @@
     }
 
     if (!writeRes.ok) {
+      if (isRefusal(writeRes.status)) metadataRefusals.add('library.column.multi-choice-column-on-library');
       record(
         'library.column.multi-choice-column-on-library',
         'Does a multi-value choice column work on a document library',
@@ -608,6 +610,7 @@
     }
 
     if (!writeRes.ok) {
+      if (isRefusal(writeRes.status)) metadataRefusals.add('library.column.multi-lookup-column-on-library');
       record(
         'library.column.multi-lookup-column-on-library',
         'Does a multi-value lookup column work on a document library',
@@ -688,13 +691,9 @@
     }
   }
 
-  // Keep observations, but a failed control cannot license dependent verdicts.
+  // Only item-MERGE refusals depend on the missing-column control.
   if (!controlHeld) {
-    for (const id of [
-      'library.column.multi-choice-column-on-library',
-      'library.column.multi-lookup-column-on-library',
-      'library.column.custom-column-formatting',
-    ]) {
+    for (const id of metadataRefusals) {
       const observed = RESULTS.find((result) => result.id === id);
       record(id, observed.question, 'NOT ESTABLISHED',
              'negative control did not hold; observed: ' + observed.evidence, 'void');

@@ -258,6 +258,7 @@
   const itemId = row ? row.Id : null;
 
   // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
+  const metadataRefusals = new Set();
   let controlHeld = false;
   if (itemId === null) {
     record(
@@ -326,6 +327,7 @@
     }
 
     if (!writeRes.ok) {
+      if (isRefusal(writeRes.status)) metadataRefusals.add('library.column.multi-choice-column-on-library');
       record(
         'library.column.multi-choice-column-on-library',
         'Does a multi-value choice column work on a document library',
@@ -388,6 +390,7 @@
     }
 
     if (!writeRes.ok) {
+      if (isRefusal(writeRes.status)) metadataRefusals.add('library.column.multi-lookup-column-on-library');
       record(
         'library.column.multi-lookup-column-on-library',
         'Does a multi-value lookup column work on a document library',
@@ -468,13 +471,9 @@
     }
   }
 
-  // Keep observations, but a failed control cannot license dependent verdicts.
+  // Only item-MERGE refusals depend on the missing-column control.
   if (!controlHeld) {
-    for (const id of [
-      'library.column.multi-choice-column-on-library',
-      'library.column.multi-lookup-column-on-library',
-      'library.column.custom-column-formatting',
-    ]) {
+    for (const id of metadataRefusals) {
       const observed = RESULTS.find((result) => result.id === id);
       record(id, observed.question, 'NOT ESTABLISHED',
              'negative control did not hold; observed: ' + observed.evidence, 'void');

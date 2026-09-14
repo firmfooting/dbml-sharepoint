@@ -247,7 +247,8 @@
       // FAIL is the claim that the list did not stay hidden, so it needs the
       // property in hand: neither a 2xx with no payload nor a payload that
       // withheld Hidden is a list reading back visible.
-      const read = hb !== null && !readFailed(hb) && 'Hidden' in hb.body;
+      const read = hb !== null && !readFailed(hb)
+        && typeof hb.body === 'object' && !Array.isArray(hb.body) && 'Hidden' in hb.body;
       record('field.list.hidden-list-readback', 'a list created with Hidden=true reads back hidden',
         !h.ok ? 'FAIL' : !read ? 'NOT ESTABLISHED' : hb.body.Hidden ? 'PASS' : 'FAIL',
         !h.ok

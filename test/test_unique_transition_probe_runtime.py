@@ -36,6 +36,7 @@ globalThis.fetch = async (url, options = {}) => {
       Object.assign(fields[name], sent);
     }
     const body = {...fields[name]};
+    if (Object.hasOwn(config, 'fieldPayload')) return response(200, config.fieldPayload);
     if (merges && config.omitAfter) delete body[config.omitAfter];
     return response(200, body);
   }
@@ -47,7 +48,7 @@ globalThis.fetch = async (url, options = {}) => {
     return response(200, config.omitItems ? {} : {value: items});
   }
   if (path.startsWith('web/lists/getbytitle(')) {
-    return response(200, config.list || {BaseTemplate: 100});
+    return response(200, Object.hasOwn(config, 'list') ? config.list : {BaseTemplate: 100});
   }
   throw new Error(`Unhandled ${options.method || 'GET'} ${path}`);
 };
@@ -113,11 +114,18 @@ def test_unique_transition_missing_constraint_is_not_false(property_name: str) -
     assert rows['control-note-column-refused']['state'] == 'void'
 
 
-@pytest.mark.parametrize('shape', [{}, {'BaseTemplate': 101}])
-def test_unique_transition_requires_generic_list(shape: dict[str, int]) -> None:
+@pytest.mark.parametrize('shape', [{}, {'BaseTemplate': 101}, 'broken', 42, False, [], None])
+def test_unique_transition_requires_generic_list(shape: Any) -> None:
     rows = _run_probe(list=shape)
     assert rows['fixture-transition-list']['outcome'] == 'FAIL'
     assert rows['fixture-unconstrained-columns']['state'] == 'void'
+
+
+@pytest.mark.parametrize('shape', ['broken', 42, False, [], None])
+def test_unique_transition_malformed_field_payload_voids_measurements(shape: Any) -> None:
+    rows = _run_probe(fieldPayload=shape)
+    assert rows['fixture-unconstrained-columns']['outcome'] == 'FAIL'
+    assert rows['control-note-column-refused']['state'] == 'void'
 
 
 def test_unique_transition_missing_item_collection_is_not_an_empty_list() -> None:
