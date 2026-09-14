@@ -22,8 +22,9 @@ from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
+from dbml_sharepoint.analysis.typemap import map_column
 from dbml_sharepoint.model.mapping_types import MappingBundle
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
@@ -33,6 +34,34 @@ class Requirement:
     key: str
     description: str
     level_on_fail: str  # BLOCKED | WARN | INFO
+
+
+def _declared_unique_columns(
+    table: Table, enum_names: set[str], cross_site_cols: set[str],
+) -> list[str]:
+    """Internal names of the columns this table's deploy declares unique.
+
+    Asked through `map_column`, the mapper whose `unique` the deploy's field
+    bodies read, so assess cannot disagree with the constraint the deploy will
+    actually send. The built-in Title is the one column that never reaches the
+    field-body builder: `jsgen._title_patch` takes `col.unique` straight off
+    the column, and this follows it. Cross-site columns are skipped because
+    the active extension builds their bodies and core cannot know what it
+    declares. `test_assess_targets_name_the_columns_the_deploy_declares_unique`
+    holds the two spellings equal.
+    """
+    names: list[str] = []
+    for col in table.columns:
+        if col.name in cross_site_cols:
+            continue
+        if col.name == "Id" and col.is_pk and col.is_auto_increment:
+            continue
+        if col.name == "Title":
+            if col.unique:
+                names.append("Title")
+        elif map_column(col, enum_names).unique:
+            names.append(col.name)
+    return names
 
 
 def assess_targets(
@@ -85,6 +114,11 @@ def assess_targets(
     # [[library title, [folder, ...]], ...] for every library that declares
     # folders: the assessment checks nothing stands where a folder will go.
     library_folders: list[list[Any]] = []
+    # [[list title, [internal name, ...]], ...] in DECLARATION order, for
+    # every list holding at least one column declared unique. Pairs for the
+    # same reason `markers` is.
+    unique_columns: list[list[Any]] = []
+    enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
@@ -118,6 +152,12 @@ def assess_targets(
             ]
             if declared:
                 display_titles.append([prefix + table_name, declared])
+            unique = _declared_unique_columns(
+                table, enum_names,
+                {c for (e, c) in cross_site_keys if e == table_name},
+            )
+            if unique:
+                unique_columns.append([prefix + table_name, unique])
     m = bundle.mapping
     perms = m.permissions
     # [[current name, [[previous name, previous marker], ...]], ...] for
@@ -156,6 +196,7 @@ def assess_targets(
         "list_titles": titles,
         "list_markers": markers,
         "list_display_titles": display_titles,
+        "list_unique_columns": unique_columns,
         "list_renames": renames,
         "level_renames": level_renames,
         "group_renames": group_renames,
@@ -223,6 +264,24 @@ def derive_requirements(
             f"Each declared folder of '{title}' ({', '.join(folders)}) is absent "
             f"or a folder, not a file of that name",
             "BLOCKED",
+        ))
+    for title, columns in t["list_unique_columns"]:
+        # #550 made a declared `unique` actually deploy its constraint, so a
+        # list provisioned before that fix holds the column unconstrained and
+        # the next field phase asks for the constraint over data that never
+        # carried it. Asked here because deploy's own preflight says it before
+        # any write but does not stop the run, so by the time the field phase
+        # asks, the rename, security, logging and list phases have written.
+        #
+        # WARN and never BLOCKED. What SharePoint does with that transition
+        # over existing duplicate values is not established, so refusing a
+        # deploy on it would be a rule stronger than anything measured.
+        reqs.append(Requirement(
+            f"pending_unique:{title}",
+            f"Columns of '{title}' declared unique ({', '.join(columns)}) already "
+            f"carry EnforceUniqueValues, so the next deploy asks for no "
+            f"constraint over existing data",
+            "WARN",
         ))
     for title, _marker in t["list_markers"]:
         # Ownership is required before ordinary deploy may reconcile an

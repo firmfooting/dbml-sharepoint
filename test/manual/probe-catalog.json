@@ -8996,6 +8996,91 @@
       ]
     },
     {
+      "file": "unique-transition-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with three unconstrained Text columns and one Note column, two items on it carrying one repeated value and two distinct ones, and one EnforceUniqueValues MERGE against each of the four columns"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.unique.fixture-transition-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.unique.fixture-unconstrained-columns",
+              "depends_on": [
+                "field.unique.fixture-transition-list"
+              ]
+            },
+            {
+              "id": "field.unique.fixture-duplicate-items",
+              "depends_on": [
+                "field.unique.fixture-transition-list",
+                "field.unique.fixture-unconstrained-columns"
+              ]
+            },
+            {
+              "id": "field.unique.control-note-column-refused",
+              "depends_on": [
+                "field.unique.fixture-transition-list",
+                "field.unique.fixture-unconstrained-columns",
+                "field.unique.fixture-duplicate-items"
+              ]
+            },
+            {
+              "id": "field.unique.control-transition-on-unique-values",
+              "depends_on": [
+                "field.unique.fixture-transition-list",
+                "field.unique.fixture-unconstrained-columns",
+                "field.unique.fixture-duplicate-items",
+                "field.unique.control-note-column-refused"
+              ]
+            },
+            {
+              "id": "field.unique.transition-on-duplicate-values",
+              "depends_on": [
+                "field.unique.fixture-transition-list",
+                "field.unique.fixture-unconstrained-columns",
+                "field.unique.fixture-duplicate-items",
+                "field.unique.control-note-column-refused",
+                "field.unique.control-transition-on-unique-values"
+              ]
+            },
+            {
+              "id": "field.unique.transition-without-index",
+              "depends_on": [
+                "field.unique.fixture-transition-list",
+                "field.unique.fixture-unconstrained-columns",
+                "field.unique.fixture-duplicate-items",
+                "field.unique.control-note-column-refused",
+                "field.unique.control-transition-on-unique-values"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.unique.fixture-transition-list",
+            "field.unique.fixture-unconstrained-columns",
+            "field.unique.fixture-duplicate-items",
+            "field.unique.control-note-column-refused",
+            "field.unique.control-transition-on-unique-values"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "library-guards-probe.js",
       "surface": "library",
       "harness": "shared-v1",

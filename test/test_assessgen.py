@@ -906,24 +906,74 @@ def test_a_refused_digest_reads_one_at_a_time_rather_than_reporting_nothing() ->
     assert not refused, f"a $batch went out without a usable digest: {refused}"
 
 
-def _fields_harness(fields: list[dict[str, str]]) -> str:
+def _fields_harness(
+    fields: list[dict[str, Any]], *, next_link: str | None = None,
+) -> str:
     """`_ASSESS_HARNESS` answering every field enumeration with `fields`.
 
     The default harness answers `/fields` with an empty result set, which the
     display-title check reads as "not provisioned yet" and skips. That is the
     right default and it is also why a variant is needed to make the check
     fire at all.
+
+    Each row is PROJECTED to what `$select` names, the way a live site answers.
+    Handing back every property regardless made a check that reads one the
+    script never selected pass here and read `undefined` on a real tenant,
+    which is the silence a mock is supposed to expose rather than cover.
+
+    `next_link` puts a `d.__next` beside the rows, which is a server paging
+    below the asked-for `$top` rather than the `$top` itself truncating.
     """
     # Two-space indent: _ASSESS_HARNESS is dedented, so the source's own
     # indentation is not what this has to match at runtime.
+    paged = (
+        "" if next_link is None
+        else f"    answer.__next = {json.dumps(next_link)};\n"
+    )
     branch = (
         "  if (path.endsWith('/fields')) {\n"
-        f"    return respond(200, {{ d: {{ results: {json.dumps(fields)} }} }});\n"
+        f"    const rows = {json.dumps(fields)};\n"
+        "    const selected = ((u.split('$select=')[1] || '').split('&')[0] || '')\n"
+        "      .split(',').filter(Boolean);\n"
+        "    const projected = selected.length === 0 ? rows : rows.map((row) =>\n"
+        "      Object.fromEntries(Object.entries(row)\n"
+        "        .filter(([name]) => selected.includes(name))));\n"
+        "    const answer = { results: projected };\n"
+        + paged
+        + "    return respond(200, { d: answer });\n"
         "  }\n"
     )
     marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
     assert _ASSESS_HARNESS.count(marker) == 1
     return _ASSESS_HARNESS.replace(marker, branch + marker, 1)
+
+
+#: The page size the column enumeration asks for. A page that came back
+#: holding this many rows may have ended before the list did, and `$top` is
+#: client-driven paging, which returns no next link to say so.
+_COLUMN_PAGE_SIZE = 500
+
+
+def _filler_columns(count: int) -> list[dict[str, Any]]:
+    """`count` columns no pack declares, for filling a page to its size."""
+    return [
+        {"InternalName": f"Filler{n}", "Title": f"Filler{n}",
+         "EnforceUniqueValues": False}
+        for n in range(count)
+    ]
+
+
+def test_the_column_page_size_this_suite_fills_is_the_one_the_script_asks_for(
+) -> None:
+    """Filling a page proves nothing if the script asks for a different one.
+
+    A suite building a 500-row page against a script reading 1,000 would run
+    green over a read that was never truncated, so the number is pinned to
+    the emitted text rather than written twice.
+    """
+    js = _unique_assess_js()
+    assert f"const COLUMN_PAGE_SIZE = {_COLUMN_PAGE_SIZE};" in js
+    assert "$top=${COLUMN_PAGE_SIZE}" in js
 
 
 _DISPLAY_KEY = "display_titles:"
@@ -986,6 +1036,506 @@ def test_a_column_the_site_does_not_have_yet_is_not_reported_as_drifted() -> Non
     red over every declared column would bury the findings that matter."""
     summary = _run_assess(_declared_descriptions())  # the default: no fields
     assert _display_findings(summary) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_full_column_page_names_the_display_titles_it_could_not_compare(
+) -> None:
+    """A column missing from a page that came back full was not compared.
+
+    Reading it as "not provisioned yet" makes the check silent about a column
+    that may be renamed on the site, which is the one thing it exists to
+    report. The page holds APP_Task's declared column and not APP_Project's,
+    so the two arms are separated by the same run.
+    """
+    summary = _run_assess(
+        _declared_descriptions(),
+        harness=_fields_harness([
+            {"InternalName": "DueDate", "Title": "Due Date"},
+            *_filler_columns(_COLUMN_PAGE_SIZE - 1),
+        ]),
+    )
+    unseen = _display_findings(summary)
+    assert [f["key"] for f in unseen] == ["display_titles:APP_Project"], (
+        summary["findings"]
+    )
+    assert unseen[0]["level"] == "INFO", unseen
+    detail = unseen[0]["detail"]
+    assert "SortOrder" in detail and f"{_COLUMN_PAGE_SIZE}-row" in detail, detail
+    # Not DueDate: it was in the page and it matched, so naming it would send
+    # the operator to check a column this run actually compared.
+    assert "DueDate" not in detail, detail
+
+
+# --- Declared unique, against what the site actually carries ----------------
+#
+# #550 made a declared `unique` actually deploy its constraint, so a list
+# provisioned before that fix holds the column unconstrained and the next
+# field phase asks SharePoint for the constraint over data that never carried
+# it. deploy.js says so in its preflight, which runs before any write but
+# prints into a console the run then carries past; assess is read before the
+# paste, which is the only point the operator can still act on it.
+
+_UNIQUE_KEY = "pending_unique:"
+
+
+def _unique_pack() -> tuple[Schema, MappingBundle]:
+    """A one-list pack declaring one ordinary column unique."""
+    return (
+        make_schema(make_table(
+            "Asset",
+            column("Title", required=True),
+            column("Reference", required=True, unique=True),
+            column("Owner", "person"),
+            note="Assets, each carrying one unique reference.",
+        )),
+        make_bundle(entities=["Asset"]),
+    )
+
+
+def _unique_title_pack() -> tuple[Schema, MappingBundle]:
+    """A one-list pack declaring the BUILT-IN Title unique.
+
+    Title never reaches the field-body builder (it is `list.title_patch`), and
+    that divergence is exactly how a `[unique]` Title once deployed with no
+    constraint at all (#307). A pack that only ever declares an ordinary
+    column unique would not cover it.
+    """
+    return (
+        make_schema(make_table(
+            "Asset",
+            column("Title", required=True, unique=True),
+            note="Assets, each titled once.",
+        )),
+        make_bundle(entities=["Asset"]),
+    )
+
+
+def _identity_pack() -> tuple[Schema, MappingBundle]:
+    """A pack whose auto-increment identity column declares `[unique]`.
+
+    The deploy skips it on NAME, arity and increment alone, without consulting
+    the type mapper, so a column SharePoint provides for itself and the deploy
+    never creates would otherwise be reported as a constraint about to be
+    asked for. Spelled here as `nvarchar` because `int` resolves to a kind the
+    mapper already reports as never unique, which would make the case vacuous.
+    """
+    schema = make_schema(make_table("Asset", column("Title", required=True)))
+    identity = schema.tables[0].columns[0]
+    identity.type = "nvarchar"
+    identity.unique = True
+    return schema, make_bundle(entities=["Asset"])
+
+
+def _deployed_unique_columns(
+    pack: tuple[Schema, MappingBundle],
+) -> dict[str, set[str]]:
+    """List title -> the columns the DEPLOY sends EnforceUniqueValues for.
+
+    Read out of `build_schema_json`, for the same reason
+    `_declared_descriptions` is: building the expectation from assess's own
+    payload would make it agree with whatever assess happens to believe.
+    """
+    schema, bundle = pack
+    schema_json = build_schema_json(schema, bundle, "default")
+    deployed: dict[str, set[str]] = {}
+    for entry in schema_json["lists"]:
+        names = {
+            f["title"] for f in entry["fields_phase1"]
+            if f["body"].get("EnforceUniqueValues") is True
+        }
+        if (entry["title_patch"] or {}).get("EnforceUniqueValues") is True:
+            names.add("Title")
+        if names:
+            deployed[entry["title"]] = names
+    for deferred in schema_json["phase2_lookups"]:
+        if deferred["field"]["body"].get("EnforceUniqueValues") is True:
+            deployed.setdefault(deferred["list"], set()).add(deferred["field"]["title"])
+    return deployed
+
+
+def test_assess_targets_name_the_columns_the_deploy_declares_unique() -> None:
+    """Pinned against the deploy, never against assess's own belief.
+
+    A second spelling of "declared unique" would let assess stay quiet about
+    the one constraint the field phase is about to ask for, which is the
+    silence this check exists to end. Sets rather than sequences: the deploy
+    splits the built-in Title out into its own patch, so the two orders cannot
+    be compared, and declaration order is asserted separately below.
+    """
+    for pack in (
+        _simple(), _library_pack(), _unique_pack(), _unique_title_pack(),
+        _identity_pack(),
+    ):
+        targets = assess_targets(pack[0], pack[1], "default")
+        named = {title: set(columns) for title, columns in targets["list_unique_columns"]}
+        assert named == _deployed_unique_columns(pack), targets["list_unique_columns"]
+
+
+def test_declared_unique_columns_are_named_in_declaration_order() -> None:
+    """The operator reads them beside the mapping, so they run in its order."""
+    schema = make_schema(make_table(
+        "Asset",
+        column("Title", required=True, unique=True),
+        column("Reference", required=True, unique=True),
+        column("Serial", required=True),
+        column("Tag", required=True, unique=True),
+        note="Assets.",
+    ))
+    targets = assess_targets(schema, make_bundle(entities=["Asset"]), "default")
+    assert targets["list_unique_columns"] == [
+        ["APP_Asset", ["Title", "Reference", "Tag"]],
+    ]
+
+
+def test_a_pending_unique_requirement_warns_and_never_blocks() -> None:
+    """What SharePoint does with this transition over existing duplicates is
+    not established, so refusing a deploy on it would be a rule stronger than
+    anything measured."""
+    reqs = {
+        r.key: r for r in derive_requirements(*_unique_pack(), "default")
+    }
+    assert reqs["pending_unique:APP_Asset"].level_on_fail == "WARN"
+    assert "Reference" in reqs["pending_unique:APP_Asset"].description
+    # And absent entirely for a pack that declares no unique column, rather
+    # than a requirement every family carries and nothing ever files.
+    plain = {r.key for r in derive_requirements(*_simple(), "default")}
+    assert not [key for key in plain if key.startswith(_UNIQUE_KEY)]
+
+
+def _unique_assess_js(pack: tuple[Schema, MappingBundle] | None = None) -> str:
+    schema, bundle = pack if pack is not None else _unique_pack()
+    return generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="unique.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def _unique_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """The pending-unique check's own findings, selected by key.
+
+    By key and never by the word "unique" in a detail string: several other
+    findings mention it, and they have nothing to do with this check.
+    """
+    return [f for f in summary["findings"] if f["key"].startswith(_UNIQUE_KEY)]
+
+
+def _fields_refused_harness() -> str:
+    """`_ASSESS_HARNESS` refusing every column enumeration.
+
+    One non-2xx part refuses the whole envelope, which is what makes this the
+    read that did not answer.
+    """
+    branch = (
+        "  if (path.endsWith('/fields')) {\n"
+        "    return respond(500, { error: { message: { value: 'Field read refused' } } });\n"
+        "  }\n"
+    )
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    assert _ASSESS_HARNESS.count(marker) == 1
+    return _ASSESS_HARNESS.replace(marker, branch + marker, 1)
+
+
+def _run_unique_assess(
+    fields: list[dict[str, Any]] | None = None,
+    *,
+    harness: str | None = None,
+    present: bool = True,
+    pack: tuple[Schema, MappingBundle] | None = None,
+    wrap: str = "",
+) -> dict[str, Any]:
+    """Run the unique pack's assess script against a site holding `fields`.
+
+    `present=False` leaves the declared list off the site altogether, which is
+    a first deploy rather than drift.
+    """
+    pack = pack if pack is not None else _unique_pack()
+    held = _declared_descriptions(pack)
+    return _run_assess(
+        held if present else {},
+        js=_unique_assess_js(pack),
+        harness=harness if harness is not None else _fields_harness(fields or []),
+        wrap=wrap,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_warns_about_a_declared_unique_column_the_site_holds_unconstrained(
+) -> None:
+    """The whole point of saying it here: before the paste.
+
+    deploy's preflight makes the same comparison, but by the time its console
+    is read the renames, security, logging and list phases have written.
+    """
+    rows = [
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+        {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
+        {"InternalName": "Owner", "Title": "Owner", "EnforceUniqueValues": False},
+    ]
+    # Healthy, so the DEGRADED below comes from this WARN and not from the
+    # three keys a bare `_ASSESS_HARNESS` leaves unanswered. The control is
+    # the test beneath, where the same harness reads COMPATIBLE.
+    summary = _run_unique_assess(harness=_healthy_harness(_fields_harness(rows)))
+    warned = [f for f in _unique_findings(summary) if f["level"] == "WARN"]
+    assert warned, f"an unconstrained unique column drew no warning: {summary['findings']}"
+    detail = warned[0]["detail"]
+    assert "APP_Asset" in detail and "Reference" in detail
+    # Not Owner: it is not declared unique, so the deploy asks nothing of it
+    # and naming it would send the operator to check a column nobody touches.
+    assert "Owner" not in detail, detail
+    # Says what it did NOT do, so its silence is not read as a clean bill, and
+    # claims nothing about how SharePoint answers the write.
+    assert "did not count duplicate values" in detail, detail
+    assert "cannot say whether the request will be accepted" in detail, detail
+    assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_unique_column_already_constrained_is_not_warned_about() -> None:
+    """A check that always fires is noise, and noise gets ignored.
+
+    Also the control for the DEGRADED above: the same healthy site, differing
+    only in what the one column reads back, comes out COMPATIBLE.
+    """
+    rows = [
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+        {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": True},
+    ]
+    summary = _run_unique_assess(harness=_healthy_harness(_fields_harness(rows)))
+    assert _levels(summary).get("pending_unique:APP_Asset") == "PASS", summary["findings"]
+    assert summary["verdict"] == "COMPATIBLE", summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_unique_column_the_site_does_not_have_yet_is_not_pending() -> None:
+    """Absent is not unconstrained: the column is not provisioned yet, and the
+    deploy creates it carrying the constraint."""
+    summary = _run_unique_assess([
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+    ])
+    assert _levels(summary).get("pending_unique:APP_Asset") == "PASS", summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_does_not_exist_yet_has_no_pending_constraint() -> None:
+    """A first deploy is nothing but absent lists, and painting the console
+    red over every one of them buries the findings that matter."""
+    summary = _run_unique_assess(present=False)
+    finding = _levels(summary).get("pending_unique:APP_Asset")
+    assert finding == "PASS", summary["findings"]
+    assert summary["verdict"] != "BLOCKED", summary["verdict"]
+
+
+def _no_enumeration_harness() -> str:
+    """`_ASSESS_HARNESS` refusing the list-title enumeration.
+
+    With nothing enumerated the reads go out one at a time and a getbytitle
+    404 is the only evidence of absence there is, which is the arm the
+    enumeration otherwise hides. A column enumeration of a list that does not
+    exist answers 404 here for that reason: the base harness answers every
+    `/fields` read 200 with an empty set, which reads as a provisioned list
+    holding no declared column and settles the question the wrong way.
+    """
+    marker = "  if (path.endsWith('/lists')) {"
+    assert _ASSESS_HARNESS.count(marker) == 1
+    spliced = (
+        "  if (path.endsWith('/fields') && !LIST_DESCRIPTIONS.has(listOf(path))) {\n"
+        "    return respond(404, { error: { message: { value: 'List not found' } } });\n"
+        "  }\n"
+        f"{marker}\n"
+        "    return respond(500, { error: { message: { value: 'Enumeration refused' } } });\n"
+        "  }\n"
+    )
+    return _ASSESS_HARNESS.replace(marker, spliced + marker, 1)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_404_is_absence_when_the_title_enumeration_was_refused() -> None:
+    """Absent is still not unconstrained with nothing enumerated to filter on.
+
+    The enumeration is what normally settles absence, and reporting a first
+    deploy's every declared list as unassessable would degrade a verdict over
+    lists that simply are not there yet.
+    """
+    summary = _run_unique_assess(present=False, harness=_no_enumeration_harness())
+    assert _levels(summary).get("pending_unique:APP_Asset") == "PASS", summary["findings"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
+) -> None:
+    """Absence of evidence is not evidence: a refused read did not say these
+    columns are constrained, so it must not settle the key as a pass."""
+    summary = _run_unique_assess(harness=_fields_refused_harness())
+    assert _levels(summary).get("pending_unique:APP_Asset") == "NOT-ASSESSABLE", (
+        summary["findings"]
+    )
+    assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_reporting_no_enforce_unique_values_settles_nothing() -> None:
+    """A property the site did not report is not a false one.
+
+    `!undefined` is true, so a guard testing only falsity reads a payload that
+    never mentioned the property as a column declared unique and unconstrained
+    -- a warning manufactured out of a row that answered nothing.
+    """
+    summary = _run_unique_assess([
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+        {"InternalName": "Reference", "Title": "Reference"},
+    ])
+    findings = _unique_findings(summary)
+    assert [f["level"] for f in findings] == ["NOT-ASSESSABLE"], findings
+    assert "Reference" in findings[0]["detail"], findings
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_unique_column_missing_from_a_full_page_is_not_absent(
+) -> None:
+    """A read that did not see every column established no absence.
+
+    The enumeration asks for one page. A list holding more columns than that
+    answers with the page it asked for, and a declared column on a later one
+    is missing from the answer exactly as a column that is not provisioned
+    yet is. Reading the second meaning passes the check on a list that may
+    hold the column unconstrained, which is what the check exists to catch.
+    """
+    rows = [
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+        *_filler_columns(_COLUMN_PAGE_SIZE - 1),
+    ]
+    assert len(rows) == _COLUMN_PAGE_SIZE, "the page is not full, so it may not be short"
+    assert not [r for r in rows if r["InternalName"] == "Reference"], rows[:2]
+    summary = _run_unique_assess(harness=_healthy_harness(_fields_harness(rows)))
+    findings = _unique_findings(summary)
+    assert [f["level"] for f in findings] == ["NOT-ASSESSABLE"], findings
+    detail = findings[0]["detail"]
+    assert "Reference" in detail and f"{_COLUMN_PAGE_SIZE}-row" in detail, detail
+    assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_page_carrying_a_next_link_is_not_a_whole_list() -> None:
+    """The other truncation, where the server pages below the asked-for size.
+
+    Learn's "PageSize, Top and MaxTop" documents both: `$top` returns no next
+    link of its own, and a service whose own page size is smaller answers a
+    short page WITH one. A short page is what an absent column looks like, so
+    the link is the only thing separating them here.
+    """
+    summary = _run_unique_assess(harness=_healthy_harness(_fields_harness(
+        [{"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True}],
+        next_link=(
+            "https://example.sharepoint.com/sites/test/_api/web/lists/"
+            "getbytitle('APP_Asset')/fields?$skiptoken=Paged"
+        ),
+    )))
+    findings = _unique_findings(summary)
+    assert [f["level"] for f in findings] == ["NOT-ASSESSABLE"], findings
+    assert "Reference" in findings[0]["detail"], findings
+    assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_full_page_holding_the_declared_column_still_answers_for_it() -> None:
+    """The control: the guard withholds an absence, never a reading.
+
+    A page that came back full is unreliable about what is NOT in it and
+    exact about what is, so a declared column present in one is compared the
+    way it always was. Without this, reporting every full page unassessable
+    would satisfy the test above while telling the operator nothing.
+    """
+    rows = [
+        {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
+        {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
+        *_filler_columns(_COLUMN_PAGE_SIZE - 2),
+    ]
+    assert len(rows) == _COLUMN_PAGE_SIZE
+    summary = _run_unique_assess(harness=_healthy_harness(_fields_harness(rows)))
+    findings = _unique_findings(summary)
+    assert [f["level"] for f in findings] == ["WARN"], findings
+    assert "Reference" in findings[0]["detail"], findings
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_built_in_title_declared_unique_is_compared_too() -> None:
+    """Title is provisioned through its own patch rather than the field-body
+    builder, and that divergence is how a `[unique]` Title once deployed with
+    no constraint at all (#307)."""
+    summary = _run_unique_assess(
+        [{"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": False}],
+        pack=_unique_title_pack(),
+    )
+    warned = [f for f in _unique_findings(summary) if f["level"] == "WARN"]
+    assert warned, summary["findings"]
+    assert "Title" in warned[0]["detail"], warned
+
+
+def _renamed_and_unique_pack() -> tuple[Schema, MappingBundle]:
+    """One list carrying both a display rename and a column declared unique.
+
+    Without both, a test of the shared enumeration is vacuous: the two checks
+    would be reading it for different lists and could not collide.
+    """
+    return (
+        make_schema(make_table(
+            "Asset",
+            column("Title", required=True),
+            column("AssetTag", required=True),
+            column("Reference", required=True, unique=True),
+            note="Assets, tagged and referenced.",
+        )),
+        make_bundle(entities=["Asset"], display_name_mode="auto"),
+    )
+
+
+#: Fails the read the second time one list's columns are enumerated. Installed
+#: outside the batch mock, which redispatches each part through
+#: `globalThis.fetch`, so it sees the unpacked GETs rather than the envelope.
+_ONE_FIELDS_READ_PER_LIST = r"""
+{
+  const _under = globalThis.fetch;
+  const _seen = new Set();
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('/fields?')) {
+      const list = (u.match(/getbytitle\('(.*?)'\)/) || [])[1];
+      if (_seen.has(list)) throw new Error(`the columns of '${list}' were read twice`);
+      _seen.add(list);
+    }
+    return _under(url, opts);
+  };
+}
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_one_column_enumeration_serves_both_column_checks() -> None:
+    """Display titles and unique constraints read the same enumeration.
+
+    A second request per list would undo the batching that brought tier 2 down
+    to one request per loop, and on a large family that is the whole cost.
+    """
+    pack = _renamed_and_unique_pack()
+    targets = assess_targets(pack[0], pack[1], "default")
+    assert [title for title, _ in targets["list_display_titles"]] == ["APP_Asset"]
+    assert [title for title, _ in targets["list_unique_columns"]] == ["APP_Asset"]
+    summary = _run_unique_assess(
+        [
+            {"InternalName": "AssetTag", "Title": "Renamed By Hand",
+             "EnforceUniqueValues": False},
+            {"InternalName": "Reference", "Title": "Reference",
+             "EnforceUniqueValues": False},
+        ],
+        pack=pack, wrap=_ONE_FIELDS_READ_PER_LIST,
+    )
+    levels = _levels(summary)
+    assert levels.get("display_titles:APP_Asset") == "INFO", summary["findings"]
+    assert levels.get("pending_unique:APP_Asset") == "WARN", summary["findings"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

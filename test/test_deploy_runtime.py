@@ -2671,6 +2671,326 @@ def test_a_list_that_does_not_exist_is_silent_in_preflight() -> None:
     assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == []
 
 
+_NEWLY_UNIQUE_HEADING = "Declared unique constraints this site does not carry yet:"
+
+
+def _unique_column_harness(*, enforced: bool) -> str:
+    """`_ADOPTED_HARNESS` with `Code` already on the site.
+
+    `enforced` is what the live column carries. False is the state a list
+    provisioned before #550 is in: the declaration says unique and the column
+    does not. MaxLength rides along because the declared Text column owns it,
+    so `readFieldShape` probes for it and throws on a body that has none.
+    """
+    return _ADOPTED_HARNESS + textwrap.dedent(f"""
+        created['APP_Escalation Code'] = fieldShape('APP_Escalation', 'Code', {{
+          FieldTypeKind: 2, Required: false, Description: '', MaxLength: 255,
+          EnforceUniqueValues: {json.dumps(enforced)},
+        }});
+    """)
+
+
+def _unique_column_deploy_js(tmp_path: Path) -> str:
+    """deploy.js for a list whose `Code` column declares unique."""
+    return _declared_deploy_js(tmp_path, "", extra_lines=("Code nvarchar [unique]",))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_unique_constraint_the_site_lacks_is_named_before_any_write(
+    tmp_path: Path,
+) -> None:
+    """#550 made a declared `unique` deploy its constraint, and a list that has
+    been running since before that fix holds the column unconstrained.
+
+    The field phase asks for the constraint with the list already
+    part-reconciled by earlier phases. The preflight makes the same comparison
+    before anything is written, so the position of the warning in the
+    transcript is the point of it and is asserted here rather than its
+    presence alone.
+    """
+    summary, calls, output = _run_capturing_calls(
+        _unique_column_harness(enforced=False), _unique_column_deploy_js(tmp_path),
+    )
+    assert _NEWLY_UNIQUE_HEADING in output, output[-3000:]
+    assert (
+        "  APP_Escalation.Code: declared unique, readback EnforceUniqueValues false"
+        in output
+    ), output[-3000:]
+    first_write = f"Starting Phase {pn('renames')}"
+    assert first_write in output, output[-3000:]
+    assert output.index(_NEWLY_UNIQUE_HEADING) < output.index(first_write), output[:8000]
+    # Nothing is relaxed by naming it: the constraint still goes out.
+    sent = [
+        json.loads(call["body"])
+        for call in _field_writes(calls, "APP_Escalation")
+        if call["body"] and "EnforceUniqueValues" in call["body"]
+    ]
+    assert [body["EnforceUniqueValues"] for body in sent] == [True], sent
+    assert not summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_unique_warning_claims_nothing_about_what_sharepoint_will_do(
+    tmp_path: Path,
+) -> None:
+    """What the preflight measured is the declaration and the readback. What
+    SharePoint does with the write over existing duplicates is NOT ESTABLISHED:
+    no Microsoft page states it, and `test/manual/unique-transition-probe.js`
+    asks it and has not been run.
+
+    A warning that states the rule anyway is the failure class AGENTS.md
+    names, printed straight at an operator who cannot check it. The mock here
+    accepts the constraint, so this test could never have validated such a
+    claim either; what it can pin is that the warning does not make one.
+    """
+    _summary, _calls, output = _run_capturing_calls(
+        _unique_column_harness(enforced=False), _unique_column_deploy_js(tmp_path),
+    )
+    warning = output[output.index(_NEWLY_UNIQUE_HEADING):]
+    warning = warning[:warning.index("Starting Phase")]
+
+    assert "will attempt to set EnforceUniqueValues" in warning, warning
+    assert "did not count duplicate values" in warning, warning
+    assert "cannot say whether the attempt will be accepted" in warning, warning
+    # The wording the reviewer refused, and the shape of it: an unhedged
+    # present tense about the platform's own rule.
+    assert "refuses that on a column" not in warning, warning
+    assert "not already unique" not in warning, warning
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_unique_constraint_stops_the_run_and_relays_the_reason(
+    tmp_path: Path,
+) -> None:
+    """The warning tells the operator that a refused write is reported with
+    SharePoint's reason and stops the run, so that has to be true of the
+    deploy whatever SharePoint's rule turns out to be.
+
+    The refusal is the mock's, not a measurement of SharePoint. What is
+    measured is this code: the field phase relays the message it was given,
+    the run aborts rather than carrying on part-applied, and the column it
+    names is the one the preflight named before any write.
+    """
+    refuse = textwrap.dedent(r"""
+        const _passThrough = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const u = String(url);
+          const sent = !opts.body || /\/_api\/\$batch$/.test(u)
+            ? {} : JSON.parse(opts.body);
+          if (sent.EnforceUniqueValues !== true) return _passThrough(url, opts);
+          const payload = { error: { message: {
+            value: 'duplicate values found in the column' } } };
+          return {
+            ok: false, status: 500,
+            headers: { get: () => null },
+            json: async () => payload,
+            text: async () => JSON.stringify(payload),
+          };
+        };
+    """)
+    summary, _calls, output = _run_capturing_calls(
+        _unique_column_harness(enforced=False) + refuse,
+        _unique_column_deploy_js(tmp_path),
+    )
+
+    assert output.index(_NEWLY_UNIQUE_HEADING) < output.index("duplicate values found"), (
+        "the preflight named the column after the field phase failed on it, "
+        "which is the ordering the warning exists to fix"
+    )
+    assert summary.get("aborted") == "phase-1-schema-errors", summary
+    refused = [
+        error for error in summary["errors"]
+        if error.get("column") == "Code"
+        and "duplicate values found in the column" in error.get("error", "")
+    ]
+    assert refused, summary["errors"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_unique_constraint_the_site_already_carries_is_silent(
+    tmp_path: Path,
+) -> None:
+    """A warning on every run about a constraint that is already there is
+    noise the operator learns to scroll past.
+
+    The same declaration and the same column, differing only in what the live
+    field reads back, so what the warning keys on is the comparison rather
+    than the declaration.
+    """
+    _summary, _calls, output = _run_capturing_calls(
+        _unique_column_harness(enforced=True), _unique_column_deploy_js(tmp_path),
+    )
+    assert _NEWLY_UNIQUE_HEADING not in output, output[-3000:]
+    # The per-column line too, not the heading alone: a printer that dropped
+    # the heading and kept the entries would still be reporting the column.
+    assert (
+        "APP_Escalation.Code: declared unique, readback EnforceUniqueValues false"
+        not in output
+    ), output[-3000:]
+
+
+# The comparison above is made from ONE field enumeration per list, which asks
+# for one page. A list holding more fields than that answers with the page it
+# asked for, and a declared column on a later one is missing from the answer
+# exactly as a column that is not provisioned yet is. Reading the second
+# meaning made `readFieldShape` answer null and the comparison never run, so
+# the warning stayed silent on the long list it exists for.
+
+#: The page size the field enumeration asks for. A page that came back holding
+#: this many rows may have ended before the list did, and `$top` is
+#: client-driven paging, which returns no next link to say so.
+_FIELD_PAGE_SIZE = 500
+
+_UNSEEN_UNIQUE_HEADING = "Declared unique columns this preflight could not read:"
+
+
+def test_the_field_page_size_is_spelled_once_and_the_assess_side_reads_it_too(
+) -> None:
+    """Filling a page proves nothing if the script asks for a different one.
+
+    A suite building a 500-row page against a script reading 1,000 would run
+    green over a read that was never truncated, so the number is pinned to the
+    emitted text rather than written twice. The assess body's own page size is
+    pinned to the same value here: the two make the same comparison over the
+    same lists, and an operator who ran assess.js before pasting must not be
+    told one thing there and another in the preflight.
+    """
+    js = _deploy_js()
+    assert f"const FIELD_PAGE_SIZE = {_FIELD_PAGE_SIZE};" in js
+    assert "$top=${FIELD_PAGE_SIZE}" in js
+    assert f"const COLUMN_PAGE_SIZE = {_FIELD_PAGE_SIZE};" in js
+
+
+def _paged_fields_harness(
+    *, rows: int, holds_code: bool, next_link: str | None = None,
+) -> str:
+    """`_unique_column_harness(enforced=False)` answering ONE enumeration by hand.
+
+    The site still holds `Code` unconstrained: the by-name probe finds it, as
+    a live site's would for a column on a later page. What changes is the
+    enumeration the preflight reads, which answers `rows` rows and shows
+    `Code` only if `holds_code`.
+
+    The fiction is confined to the preflight phase, because what the later
+    phases do with a page that may be short is the subject of #577 and not of
+    this comparison. Filler rows carry every property the request selects, so
+    a guard cannot pass here on a payload thinner than SharePoint's.
+    """
+    return _unique_column_harness(enforced=False) + textwrap.dedent(f"""
+        const PAGE_ROWS = {rows};
+        const PAGE_HOLDS_CODE = {json.dumps(holds_code)};
+        const PAGE_NEXT = {json.dumps(next_link)};
+        const fillerField = (n) => ({{
+          Id: '66666666-6666-6666-6666-666666666666',
+          InternalName: `Filler${{n}}`, Title: `Filler${{n}}`,
+          TypeAsString: 'Text', Description: '', Required: false,
+          EnforceUniqueValues: false, Indexed: false, ReadOnlyField: false,
+          Sealed: false, DefaultValue: null, DefaultFormula: null,
+          CustomFormatter: null,
+        }});
+        const _passThrough = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {{}}) => {{
+          const u = String(url);
+          // The list's one enumeration, not a by-name probe of it: those two
+          // are what the run tells apart, so the mock must too.
+          const enumerating = mockPhase === {json.dumps(pn("preflight"))}
+            && u.includes("getbytitle('APP_Escalation')/fields?")
+            && !u.includes('getbyinternalnameortitle');
+          if (!enumerating) return _passThrough(url, opts);
+          const results = PAGE_HOLDS_CODE ? [created['APP_Escalation Code']] : [];
+          while (results.length < PAGE_ROWS) results.push(fillerField(results.length));
+          const answer = {{ results }};
+          if (PAGE_NEXT) answer.__next = PAGE_NEXT;
+          const payload = {{ d: answer }};
+          calls.push({{ url: u, method: opts.method || 'GET', body: null }});
+          return {{
+            ok: true, status: 200,
+            headers: {{ get: () => null }},
+            json: async () => payload,
+            text: async () => JSON.stringify(payload),
+          }};
+        }};
+    """)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_unique_column_missing_from_a_full_page_is_not_absent(
+    tmp_path: Path,
+) -> None:
+    """A read that did not see every column established no absence.
+
+    This is the case the whole comparison exists for: a list long enough that
+    a column provisioned before #550 sits past the page. Treating the null as
+    "not provisioned yet" left the preflight silent, and silence here is
+    indistinguishable from a site that carries every declared constraint.
+    """
+    _summary, _calls, output = _run_capturing_calls(
+        _paged_fields_harness(rows=_FIELD_PAGE_SIZE, holds_code=False),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _UNSEEN_UNIQUE_HEADING in output, output[-4000:]
+    assert (
+        f"  APP_Escalation.Code: not in a field enumeration that came back at "
+        f"its {_FIELD_PAGE_SIZE}-row page size" in output
+    ), output[-4000:]
+    # Not reported as a constraint the site lacks: what this read established
+    # is that it established nothing, and the two must not collapse.
+    assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
+    # Before the first write, for the same reason the warning beside it is.
+    first_write = f"Starting Phase {pn('renames')}"
+    assert first_write in output, output[-4000:]
+    assert output.index(_UNSEEN_UNIQUE_HEADING) < output.index(first_write), output[:8000]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_page_carrying_a_next_link_is_not_a_whole_list(
+    tmp_path: Path,
+) -> None:
+    """The other truncation, where the server pages below the asked-for size.
+
+    Learn's "PageSize, Top and MaxTop" documents both: `$top` returns no next
+    link of its own, and a service whose own page size is smaller answers a
+    short page WITH one. A short page is what an absent column looks like, so
+    the link is the only thing separating them here.
+    """
+    _summary, _calls, output = _run_capturing_calls(
+        _paged_fields_harness(
+            rows=1, holds_code=False,
+            next_link=(
+                "https://example.sharepoint.com/sites/test/_api/web/lists/"
+                "getbytitle('APP_Escalation')/fields?$skiptoken=Paged"
+            ),
+        ),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _UNSEEN_UNIQUE_HEADING in output, output[-4000:]
+    assert "APP_Escalation.Code" in output, output[-4000:]
+    assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_full_page_holding_the_declared_column_still_answers_for_it(
+    tmp_path: Path,
+) -> None:
+    """The control: the guard withholds an absence, never a reading.
+
+    A page that came back full is unreliable about what is NOT in it and
+    exact about what is, so a declared column present in one is compared the
+    way it always was. Without this, reporting every full page unreadable
+    would satisfy the two tests above while telling the operator nothing.
+    """
+    _summary, _calls, output = _run_capturing_calls(
+        _paged_fields_harness(rows=_FIELD_PAGE_SIZE, holds_code=True),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _NEWLY_UNIQUE_HEADING in output, output[-4000:]
+    assert (
+        "  APP_Escalation.Code: declared unique, readback EnforceUniqueValues false"
+        in output
+    ), output[-4000:]
+    assert _UNSEEN_UNIQUE_HEADING not in output, output[-4000:]
+
+
 # The collector's two collaborators. Stubbed because this test is about what the
 # collector RECORDS, not about how a declaration is read or a probe is answered.
 _COLLECTOR_STUBS = textwrap.dedent("""

@@ -5998,3 +5998,424 @@ def test_a_projected_id_read_that_did_not_answer_is_not_a_fill_failure() -> None
     for row in _FILL_ROWS:
         assert rows[row]["state"] == "void", row
         assert "did not read back" in rows[row]["evidence"], row
+
+
+# --------------------------------------------------------------------------
+# unique-transition-probe.js: the transition nothing has measured, and what
+# the probe must refuse to conclude when one of its controls did not hold.
+#
+# The mock below answers the way the SQL Server analogy suggests SharePoint
+# might. That is a SCENARIO, not a measurement: what these tests pin is what
+# the probe CONCLUDES from an answer, never what SharePoint actually does
+# with the write. Only a live run settles that.
+# --------------------------------------------------------------------------
+TRANSITION_PROBE = MANUAL / "unique-transition-probe.js"
+
+#: The probe's own column names. Spelled here because every fault below is
+#: addressed to one of them, and a rename in the probe must fail these tests
+#: rather than leave them matching nothing and still passing.
+_TRANSITION_COLUMNS = ("DupRef", "UniqRef", "IdxRef", "NoteRef")
+#: The two rows that are void the moment a control does not hold.
+_TRANSITION_MEASUREMENTS = (
+    "field.unique.transition-on-duplicate-values",
+    "field.unique.transition-without-index",
+)
+
+# A SharePoint with four columns, two items and one knob per thing a live run
+# could do to this probe: refuse a MERGE, accept one and change nothing, drop
+# a property out of a readback, or hand back rows an earlier run left.
+_TRANSITION_HARNESS = textwrap.dedent(r"""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    let listExists = CONFIG.listExists;
+    const fields = new Map();
+    const items = [];
+    for (let n = 0; n < CONFIG.seededItems; n += 1) {
+      items.push({
+        Id: n + 1, Title: `left behind ${n + 1}`,
+        DupRef: 'old', UniqRef: `old-${n}`, IdxRef: `old-${n}`,
+      });
+    }
+
+    const respond = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const FIELD = /getbyinternalnameortitle\('([^']*)'\)/;
+
+    // A read fault is armed by the COLUMN it is about plus how many reads of
+    // that column to let past, never by a global call count: a count pins the
+    // test to today's request order and moves the moment a question is added
+    // earlier in the run.
+    const readFaults = CONFIG.readFaults.map((fault) => ({ ...fault, seen: 0 }));
+    const faultFor = (column) => {
+      const rule = readFaults.find((fault) => fault.column === column);
+      if (!rule) return null;
+      rule.seen += 1;
+      if (rule.seen <= rule.skip) return null;
+      if (rule.seen > rule.skip + rule.times) return null;
+      return rule;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const body = opts.body ? JSON.parse(opts.body) : null;
+      console.log(`__CALL__${verb} ${u}`);
+
+      if (u.includes('/contextinfo')) {
+        return respond(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.endsWith('/_api/web/lists') && method === 'POST') {
+        listExists = true;
+        return respond(201, { Id: 'list-1' });
+      }
+
+      const named = FIELD.exec(u);
+      if (named) {
+        const column = named[1];
+        if (verb === 'MERGE') {
+          const refused = CONFIG.refuseMerge[column];
+          if (refused) {
+            return respond(refused, { error: { message: {
+              value: 'the write was refused' } } });
+          }
+          const held = fields.get(column);
+          if (held && CONFIG.mergeApplies[column] !== false) {
+            for (const [key, value] of Object.entries(body)) {
+              if (key !== '__metadata') held[key] = value;
+            }
+          }
+          return respond(204, {});
+        }
+        const fault = faultFor(column);
+        if (fault && fault.status) {
+          return respond(fault.status, { error: 'the read did not answer' });
+        }
+        const held = fields.get(column);
+        if (!held) return respond(404, { error: `no column '${column}'` });
+        const shape = { ...held };
+        if (fault && fault.drop) delete shape[fault.drop];
+        return respond(200, shape);
+      }
+
+      if (u.includes('/fields') && method === 'POST') {
+        fields.set(body.Title, {
+          Title: body.Title,
+          TypeAsString: body.FieldTypeKind === 3 ? 'Note' : 'Text',
+          EnforceUniqueValues: false,
+          Indexed: false,
+          ...(CONFIG.fieldSeeds[body.Title] || {}),
+        });
+        return respond(201, { Title: body.Title });
+      }
+      if (u.includes('/items') && method === 'POST') {
+        items.push({ Id: items.length + 1, ...body });
+        return respond(201, { Id: items.length });
+      }
+      if (u.includes('/items')) {
+        if (CONFIG.itemsReadStatus) {
+          return respond(CONFIG.itemsReadStatus, { error: 'the read did not answer' });
+        }
+        const rows = items.map((row) => {
+          const copy = { ...row, ...(CONFIG.itemOverrides[row.Id] || {}) };
+          if (CONFIG.dropItemColumn) delete copy[CONFIG.dropItemColumn];
+          return copy;
+        });
+        return respond(200, { value: rows });
+      }
+      if (u.includes("getbytitle('")) {
+        return listExists
+          ? respond(200, { Id: 'list-1', Title: 'dbmlsp Probe Unique Transition' })
+          : respond(404, { error: { message: 'the list does not exist' } });
+      }
+      return respond(404, { error: 'no such endpoint' });
+    };
+""")
+
+#: A run on a site that answers the way the SQL Server analogy suggests: the
+#: unsupported column type and the duplicate column are refused, and the two
+#: columns whose values are distinct are not. Each test changes one thing.
+_TRANSITION_HEALTHY: dict[str, Any] = {
+    "listExists": False,
+    "seededItems": 0,
+    "fieldSeeds": {},
+    "refuseMerge": {"NoteRef": 500, "DupRef": 500},
+    "mergeApplies": {},
+    "readFaults": [],
+    "itemsReadStatus": None,
+    "dropItemColumn": None,
+    "itemOverrides": {},
+}
+
+
+def _transition_read_fault(
+    column: str,
+    *,
+    skip: int = 0,
+    times: int = 1,
+    status: int | None = None,
+    drop: str | None = None,
+) -> dict[str, Any]:
+    """One field-read fault: which column, how many reads to let past, what it does."""
+    return {
+        "column": column, "skip": skip, "times": times, "status": status, "drop": drop,
+    }
+
+
+def _transition_probe_js() -> str:
+    """The rendered probe with its gates opened and its result table exposed.
+
+    The gates are flipped rather than the file being re-rendered with other
+    values: what an operator pastes is what these tests must run.
+    """
+    js = TRANSITION_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    for column in _TRANSITION_COLUMNS:
+        assert f"'{column}'" in js, f"the probe no longer names the column {column!r}"
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n"
+        "    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _run_transition_probe(**changes: Any) -> dict[str, dict[str, str]]:
+    """Run the probe against `_TRANSITION_HEALTHY` plus `changes`.
+
+    `refuseMerge` replaces rather than merges: a test that lifts the refusal
+    on one column is saying exactly that, and a merge would leave it in place
+    and measure a run nobody asked for.
+    """
+    config = json.loads(json.dumps(_TRANSITION_HEALTHY))
+    config.update(changes)
+    script = (
+        _TRANSITION_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _transition_probe_js()
+    )
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
+    )
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_transition_run_whose_controls_hold_answers_both_measurements() -> None:
+    """The control for every test below.
+
+    Without it a probe that voided everything would pass them all: each one
+    asserts that a row is not a settled verdict, and a row that never settles
+    under any conditions measures nothing at all.
+
+    The outcomes here are the mock's behaviour, not SharePoint's. What is
+    pinned is that the probe reads a refusal as REFUSED, reads an accepted
+    write that reads back enforced as ACCEPTED, and reaches both
+    measurements.
+    """
+    rows = _run_transition_probe()
+
+    assert rows["field.unique.fixture-transition-list"]["outcome"] == "PASS"
+    assert rows["field.unique.fixture-unconstrained-columns"]["outcome"] == "PASS"
+    assert rows["field.unique.fixture-duplicate-items"]["outcome"] == "PASS"
+    assert rows["field.unique.control-note-column-refused"]["outcome"] == "REFUSED"
+    control = rows["field.unique.control-transition-on-unique-values"]
+    assert control["outcome"] == "ACCEPTED", control
+    assert rows["field.unique.transition-on-duplicate-values"]["outcome"] == "REFUSED"
+    assert rows["field.unique.transition-without-index"]["outcome"] == "ACCEPTED"
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_endpoint_that_accepts_the_unsupported_type_voids_every_measurement() -> None:
+    """Microsoft documents Multiple lines of text as an unsupported column
+    type for unique columns, so an endpoint that takes the write there is not
+    refusing on content at all.
+
+    Under that endpoint a refusal below could be anything and an acceptance
+    could be a server saying yes to whatever it is sent, so neither
+    measurement is a measurement.
+    """
+    rows = _run_transition_probe(refuseMerge={"DupRef": 500})
+
+    assert rows["field.unique.control-note-column-refused"]["outcome"] == "ACCEPTED"
+    voided = ("field.unique.control-transition-on-unique-values", *_TRANSITION_MEASUREMENTS)
+    for name in voided:
+        assert rows[name]["state"] == "void", name
+        assert "rather than a refusal" in rows[name]["evidence"], name
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_transition_refused_on_distinct_values_voids_the_duplicate_row() -> None:
+    """A tenant that refuses the write wherever it is sent has said nothing
+    about duplicates.
+
+    This is what the positive control exists for: without it the duplicate
+    row would record REFUSED and be read back as the answer to the question
+    the probe was written to ask.
+    """
+    rows = _run_transition_probe(
+        refuseMerge={"NoteRef": 500, "UniqRef": 500, "DupRef": 500},
+    )
+
+    control = rows["field.unique.control-transition-on-unique-values"]
+    assert control["outcome"] == "REFUSED", control
+    for name in _TRANSITION_MEASUREMENTS:
+        assert rows[name]["state"] == "void", name
+        assert "say nothing about the duplicates" in rows[name]["evidence"], name
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_write_that_is_accepted_and_changes_nothing_is_not_recorded_as_accepted() -> None:
+    """HTTP 204 with the constraint still off is the silent failure this
+    project exists to catch, and ACCEPTED would report it as the constraint
+    having been applied."""
+    rows = _run_transition_probe(
+        refuseMerge={"NoteRef": 500}, mergeApplies={"DupRef": False},
+    )
+
+    row = rows["field.unique.transition-on-duplicate-values"]
+    assert row["outcome"] == "ACCEPTED, NOT APPLIED", row
+    assert "EnforceUniqueValues=false" in row["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_write_whose_column_will_not_read_back_answers_neither_way() -> None:
+    """The write was accepted and nothing was read after it, so whether the
+    constraint is on is exactly what this run does not know.
+
+    The fault is armed on the THIRD read of the column, which is the one the
+    transition makes: the create check and the fixture verification come
+    first and both have to answer for the run to get this far.
+    """
+    rows = _run_transition_probe(
+        refuseMerge={"NoteRef": 500},
+        readFaults=[_transition_read_fault("DupRef", skip=2, status=500)],
+    )
+
+    row = rows["field.unique.transition-on-duplicate-values"]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert row["state"] == "open", row
+    assert "did not read back" in row["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_readback_payload_without_the_property_is_not_read_as_unconstrained() -> None:
+    """A body that omits `EnforceUniqueValues` reads as undefined, which
+    compares unequal to true and looks identical to the constraint not having
+    been applied. It is a read that did not answer."""
+    rows = _run_transition_probe(
+        refuseMerge={"NoteRef": 500},
+        readFaults=[
+            _transition_read_fault("DupRef", skip=2, drop="EnforceUniqueValues"),
+        ],
+    )
+
+    row = rows["field.unique.transition-on-duplicate-values"]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert "carries no EnforceUniqueValues" in row["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throttled_write_is_not_recorded_as_a_refusal() -> None:
+    """429 is about the moment, not about the content. Recorded as a refusal
+    it would answer the probe's one question with a throttle."""
+    rows = _run_transition_probe(refuseMerge={"NoteRef": 500, "DupRef": 429})
+
+    row = rows["field.unique.transition-on-duplicate-values"]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert "HTTP 429" in row["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_that_already_carries_the_constraint_voids_the_run() -> None:
+    """CLEANUP ships false, so a second run finds the columns its first run
+    left. The transition out of the unconstrained state cannot be asked of a
+    column that has already made it."""
+    rows = _run_transition_probe(
+        fieldSeeds={"DupRef": {"EnforceUniqueValues": True, "Indexed": True}},
+    )
+
+    fixture = rows["field.unique.fixture-unconstrained-columns"]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert "EnforceUniqueValues reads back true" in fixture["evidence"], fixture
+    for name in _TRANSITION_MEASUREMENTS:
+        assert rows[name]["state"] == "void", name
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_fixture_readback_missing_indexed_fails_rather_than_assuming_false() -> None:
+    """The starting state is a dependency, and a payload that does not carry
+    `Indexed` has not established that it is false."""
+    rows = _run_transition_probe(
+        readFaults=[_transition_read_fault("IdxRef", skip=1, drop="Indexed")],
+    )
+
+    fixture = rows["field.unique.fixture-unconstrained-columns"]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert "carries no Indexed" in fixture["evidence"], fixture
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_items_an_earlier_run_left_are_not_measured_as_this_run_s_values() -> None:
+    """The duplicate is the independent variable. Rows this run did not write
+    are not known to hold it, and a run that reads them is measuring somebody
+    else's data."""
+    rows = _run_transition_probe(listExists=True, seededItems=2)
+
+    items = rows["field.unique.fixture-duplicate-items"]
+    assert items["outcome"] == "FAIL", items
+    assert "already holds 2 item(s)" in items["evidence"], items
+    voided = (
+        "field.unique.control-note-column-refused",
+        "field.unique.control-transition-on-unique-values",
+        *_TRANSITION_MEASUREMENTS,
+    )
+    for name in voided:
+        assert rows[name]["state"] == "void", name
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_duplicate_column_that_reads_back_two_values_fails_the_fixture() -> None:
+    """A site that rewrote, trimmed or dropped one of the two writes leaves a
+    column with no duplicate in it, and every row below would then be about a
+    column whose values are distinct."""
+    rows = _run_transition_probe(itemOverrides={"2": {"DupRef": "something-else"}})
+
+    items = rows["field.unique.fixture-duplicate-items"]
+    assert items["outcome"] == "FAIL", items
+    assert "which is not 1 distinct value(s)" in items["evidence"], items
+    for name in _TRANSITION_MEASUREMENTS:
+        assert rows[name]["state"] == "void", name
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_item_payload_without_the_column_is_not_read_as_a_value() -> None:
+    """A row that does not carry `DupRef` reads as undefined, and a set of
+    undefined values is one distinct value, which is exactly the shape the
+    duplicate fixture is looking for."""
+    rows = _run_transition_probe(dropItemColumn="DupRef")
+
+    items = rows["field.unique.fixture-duplicate-items"]
+    assert items["outcome"] == "FAIL", items
+    assert "carries no DupRef" in items["evidence"], items
