@@ -17,6 +17,11 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.model.conditions import Condition, parse_condition
+from dbml_sharepoint.model.errors import (
+    MappingShapeError,
+    MappingValueError,
+    UnknownMappingKeyError,
+)
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
@@ -458,7 +463,9 @@ def test_reconcile_defaults_to_exact(tmp_path: object) -> None:
 
 
 def test_column_validation_requires_both_when_and_message(tmp_path: object) -> None:
-    with pytest.raises(ValueError, match="'message' is required"):
+    with pytest.raises(
+        MappingShapeError, match=r"column_validation\.Escalation\.columns\.Note",
+    ):
         _load(tmp_path, """
             column_validation:
               Escalation:
@@ -470,7 +477,7 @@ def test_column_validation_requires_both_when_and_message(tmp_path: object) -> N
 
 
 def test_unknown_keys_are_rejected_in_both_sections(tmp_path: object) -> None:
-    with pytest.raises(ValueError, match="unknown key"):
+    with pytest.raises(UnknownMappingKeyError, match="'edit'"):
         _load(tmp_path, """
             form_visibility:
               Escalation:
@@ -480,7 +487,7 @@ def test_unknown_keys_are_rejected_in_both_sections(tmp_path: object) -> None:
 
 
 def test_bad_reconcile_mode_is_rejected(tmp_path: object) -> None:
-    with pytest.raises(ValueError, match="'exact' or 'declared'"):
+    with pytest.raises(MappingValueError, match=r"form_visibility\.Escalation\.reconcile"):
         _load(tmp_path, """
             form_visibility:
               Escalation:
@@ -494,12 +501,12 @@ def test_removed_sections_fail_loudly(tmp_path: object) -> None:
     silently would leave a mapping that builds clean and quietly makes
     every declared column visible."""
     for removed in ("hidden_on_forms", "hidden_on_display"):
-        with pytest.raises(ValueError, match=f"{removed!r} has been replaced"):
+        with pytest.raises(UnknownMappingKeyError, match=f"{removed!r}"):
             _load(tmp_path, f"{removed}:\n  Escalation: [Note]\n")
 
 
 def test_list_validation_formula_key_names_its_replacement(tmp_path: object) -> None:
-    with pytest.raises(ValueError, match="'formula' has been replaced by 'when'"):
+    with pytest.raises(UnknownMappingKeyError, match=r"list_validation\.Escalation: 'formula'"):
         _load(tmp_path, """
             list_validation:
               Escalation:
@@ -514,7 +521,7 @@ def test_boolean_flags_reject_quoted_yaml(tmp_path: object) -> None:
     """bool("false") is True, so a quoted boolean meant its opposite: the
     author writing `new: "false"` to hide a column got it shown."""
     for value in ('"false"', "'no'", '"0"'):
-        with pytest.raises(ValueError, match="expected true or false"):
+        with pytest.raises(MappingShapeError, match=r"columns\.Note\.new"):
             _load(tmp_path, (
                 "form_visibility:\n  Escalation:\n    columns:\n"
                 f"      Note: {{ new: {value} }}\n"
@@ -522,7 +529,7 @@ def test_boolean_flags_reject_quoted_yaml(tmp_path: object) -> None:
 
 
 def test_empty_when_is_an_error_not_an_absence(tmp_path: object) -> None:
-    with pytest.raises(ValueError, match="empty"):
+    with pytest.raises(MappingShapeError, match=r"columns\.Note\.when"):
         _load(tmp_path, """
             form_visibility:
               Escalation:

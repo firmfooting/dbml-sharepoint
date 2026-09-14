@@ -20,6 +20,7 @@ from _packs import pack
 from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     ENTITY_KINDS,
     EntityKind,
@@ -231,14 +232,18 @@ def test_a_default_scoped_grouped_library_view_does_not_warn(tmp_path: Path) -> 
 
 
 def test_an_unknown_scope_is_refused_at_load(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="scope"):
+    with pytest.raises(MappingValueError, match=r"views\.Docs\[0\]: scope"):
         _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: sideways")
 
 
 def test_a_list_shaped_scope_is_refused_at_load(tmp_path: Path) -> None:
     """A list is unhashable, so without an isinstance guard the loader would
-    raise TypeError, which the CLI does not catch, instead of its refusal."""
-    with pytest.raises(ValueError, match="scope"):
+    raise TypeError, which the CLI does not catch, instead of its refusal.
+
+    A shape error and not a value error: the vocabulary is about which word,
+    and this is not a word.
+    """
+    with pytest.raises(MappingShapeError, match=r"views\.Docs\[0\]: scope"):
         _scoped_view(tmp_path, "DocumentLibrary", 101, "scope: [recursive]")
 
 
@@ -344,7 +349,7 @@ def test_a_demo_file_name_needs_the_marker_and_legal_characters(tmp_path: Path) 
 
 
 def test_a_demo_file_needs_a_name_at_load(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="name"):
+    with pytest.raises(MappingShapeError, match=r"demo_items\.Docs\[0\]\.file"):
         _demo(
             tmp_path, "DocumentLibrary", 101,
             'values: { Division: "Clinical services" }\n'
