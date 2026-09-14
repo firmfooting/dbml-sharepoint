@@ -21,6 +21,7 @@ not a dependency of the package.
 
 import json
 import textwrap
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -6636,3 +6637,2149 @@ def test_an_item_payload_without_the_column_is_not_read_as_a_value() -> None:
     items = rows["field.unique.fixture-duplicate-items"]
     assert items["outcome"] == "FAIL", items
     assert "carries no DupRef" in items["evidence"], items
+
+
+# --------------------------------------------------------------------------
+# save-instant-paths-probe.js and form-validation-probe.js: the scratch-list
+# fixtures both write, and the rows that may not answer when one of them was
+# accepted and then dropped.
+# --------------------------------------------------------------------------
+SCRATCH_SAVE_PATHS_PROBE = MANUAL / "save-instant-paths-probe.js"
+SCRATCH_FORM_PROBE = MANUAL / "form-validation-probe.js"
+
+
+def _fixture_probe_js(path: Path) -> str:
+    """A rendered probe with its gates open and its result table exposed.
+
+    The gates are flipped rather than the file being re-rendered, for the
+    reason `_probe_js` gives: what an operator pastes is what these tests
+    must run. The dump is spliced into report() itself rather than into one
+    call site, because these probes return through report() from several
+    places and those early exits are exactly what a failed fixture takes.
+    """
+    js = path.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _fixture_rows(output: str) -> dict[str, dict[str, str]]:
+    """id -> the whole recorded row. The whole row, because what a voided row
+    has to carry is a REASON, and an outcome alone says nothing about that."""
+    line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
+    assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+
+
+#: A SharePoint holding the scratch list both probes write to, controllable
+#: in the five ways a run can go wrong with every request still answering:
+#: the field create refused, the dynamic default dropped, either rule
+#: accepted and not stored, and the =TODAY() default never filled.
+_SCRATCH_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => 'Mon, 14 Sep 2026 09:00:00 GMT' },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // A 2xx carrying an empty or non-JSON body. `res.json()` rejects, which
+    // spGet catches, so the probe is handed { ok: true, body: null }.
+    const emptyResponse = (status) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => 'Mon, 14 Sep 2026 09:00:00 GMT' },
+      json: async () => { throw new Error('the response carried no JSON'); },
+      text: async () => '',
+    });
+
+    // The columns the scratch list holds, by name, and the list's own rule.
+    // Both are stored VERBATIM as the writes leave them, so a probe reading
+    // one back sees what it sent rather than a mock paraphrasing it.
+    const fields = new Map(Object.entries(CONFIG.fields));
+    let listFormula = CONFIG.initialListFormula;
+    let nextItem = 1;
+
+    const FIELD = /\\/fields\\/getby(?:internalnameortitle|title)\\('([^']+)'\\)/;
+    const ITEM = /\\/items\\((\\d+)\\)/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const sent = opts.body === undefined ? {} : JSON.parse(String(opts.body));
+      const path = u.split('/_api/')[1] || '';
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (path.startsWith('web/regionalsettings/timezone')) {
+        return jsonResponse(200, { Description: '(UTC) Coordinated Universal Time' });
+      }
+
+      const named = FIELD.exec(path);
+      if (named) {
+        const held = fields.get(named[1]);
+        if (!held) return jsonResponse(404, { error: 'no such field' });
+        if (verb === 'MERGE') {
+          if (CONFIG.columnRuleLands && 'ValidationFormula' in sent) {
+            held.ValidationFormula = sent.ValidationFormula;
+          }
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, { InternalName: named[1], Title: named[1], ...held });
+      }
+
+      if (path.includes('/fields')) {
+        if (method === 'POST') {
+          if (!CONFIG.createLands) {
+            return jsonResponse(500, { error: 'the field create was refused' });
+          }
+          fields.set(sent.Title, {
+            TypeAsString: 'DateTime',
+            DisplayFormat: sent.DisplayFormat,
+            // A default the server took and did not keep is the knob this
+            // exists for: the create still answers 201.
+            DefaultValue: CONFIG.defaultLands ? (sent.DefaultValue || null) : null,
+            ValidationFormula: null,
+            // Served explicitly, because SharePoint serves the whole entity
+            // and a probe reading a property it withheld must not read that
+            // as the column carrying nothing.
+            Required: false,
+          });
+          return jsonResponse(201, { d: { Id: `field-${sent.Title}` } });
+        }
+        return jsonResponse(200, {
+          value: [...fields.keys()].map((title) => ({ Title: title })),
+        });
+      }
+
+      if (path.includes('AddValidateUpdateItemUsingPath')) {
+        if (CONFIG.formEndpointStatus) {
+          return jsonResponse(CONFIG.formEndpointStatus, { error: 'the form endpoint failed' });
+        }
+        // This endpoint answers 200 for a refusal too, so a 200 nobody can
+        // read is the one shape that says nothing either way.
+        if (CONFIG.emptyFormEndpoint) return emptyResponse(200);
+        const id = nextItem;
+        nextItem += 1;
+        return jsonResponse(200, { d: { AddValidateUpdateItemUsingPath: { results: [
+          { FieldName: 'Id', FieldValue: String(id), HasException: false },
+        ] } } });
+      }
+
+      // The optional hidden list, which is read back by title. Its own branch,
+      // so the readback can answer the three ways that matter: served hidden,
+      // served without the property, and 2xx with nothing in it.
+      if (path.includes(CONFIG.hiddenTitle)) {
+        if (CONFIG.hiddenRead === 'empty') return emptyResponse(200);
+        if (CONFIG.hiddenRead === 'withheld') return jsonResponse(200, { NoCrawl: true });
+        return jsonResponse(200, { Hidden: true, NoCrawl: true });
+      }
+
+      const item = ITEM.exec(path);
+      if (item) {
+        if (CONFIG.emptyItemRead) return emptyResponse(200);
+        return jsonResponse(200, {
+          Id: Number(item[1]),
+          Title: `row ${item[1]}`,
+          DM: null,
+          TR: '2026-09-14T00:00:00Z',
+          WR: '2026-09-14T09:00:00Z',
+          T: CONFIG.tValue,
+          Created: '2026-09-14T09:00:00Z',
+          Modified: '2026-09-14T09:00:00Z',
+        });
+      }
+      if (path.includes('/items')) {
+        if (method === 'POST') {
+          if (CONFIG.itemCreateStatus) {
+            return jsonResponse(CONFIG.itemCreateStatus, { error: 'the item create failed' });
+          }
+          if (CONFIG.emptyItemCreate) return emptyResponse(201);
+          const id = nextItem;
+          nextItem += 1;
+          return jsonResponse(201, { d: { Id: id } });
+        }
+        // The bare 'today-now' row an earlier setup run left behind, which
+        // form-validation reuses rather than accumulating one per run.
+        if (CONFIG.bareItemLeft && path.includes('today-now')) {
+          return jsonResponse(200, {
+            value: [{ Id: CONFIG.bareItemLeft, Title: 'today-now' }],
+          });
+        }
+        return jsonResponse(200, { value: [] });
+      }
+
+      if (verb === 'MERGE') {
+        if (CONFIG.listMergeStatus) {
+          return jsonResponse(CONFIG.listMergeStatus, { error: 'the list MERGE failed' });
+        }
+        if (CONFIG.listRuleLands) listFormula = sent.ValidationFormula;
+        return jsonResponse(204, {});
+      }
+      const list = {
+        Id: 'list-1',
+        ListItemEntityTypeFullName: 'SP.Data.ScratchListItem',
+        ValidationFormula: listFormula,
+        RootFolder: { ServerRelativeUrl: '/sites/test/Lists/Scratch' },
+      };
+      // An $expand can answer 2xx without the expansion in it.
+      if (!CONFIG.rootFolderServed) delete list.RootFolder;
+      return jsonResponse(200, list);
+    };
+""")
+
+#: A date column as the today-semantics probe leaves it, and the one carrying
+#: the =TODAY() default that form-validation reads rather than creates.
+_SCRATCH_DATE = {
+    "TypeAsString": "DateTime", "DisplayFormat": 0,
+    "DefaultValue": None, "ValidationFormula": None, "Required": False,
+}
+_SCRATCH_TODAY = {**_SCRATCH_DATE, "DefaultValue": "=TODAY()"}
+
+#: Nothing has gone wrong: the scratch list is there with DM and T, every
+#: create lands, every default is kept and both rules store.
+_SCRATCH_HEALTHY: dict[str, Any] = {
+    "fields": {"DM": dict(_SCRATCH_DATE), "T": dict(_SCRATCH_TODAY)},
+    "createLands": True,
+    "defaultLands": True,
+    "columnRuleLands": True,
+    "listRuleLands": True,
+    "tValue": "2026-09-14T00:00:00Z",
+    # What the list already holds before this run writes anything, and the
+    # three ways a request can fail for a reason that is not a refusal.
+    "initialListFormula": "",
+    "itemCreateStatus": None,
+    "formEndpointStatus": None,
+    "listMergeStatus": None,
+    "bareItemLeft": None,
+    # A request can answer 2xx and carry nothing a probe can read: an empty
+    # body on an item create, on an item read or on the hidden list's
+    # readback, and a payload that withheld what was asked for.
+    "emptyItemCreate": False,
+    "emptyItemRead": False,
+    "emptyFormEndpoint": False,
+    "rootFolderServed": True,
+    "hiddenTitle": "dbml-probe-hidden-verify",
+    "hiddenRead": "served",
+}
+
+
+def _run_scratch_probe(
+    probe: Path, hidden_list: bool = False, **changes: Any,
+) -> dict[str, dict[str, str]]:
+    """Run one scratch-list probe against `_SCRATCH_HEALTHY` plus `changes`.
+
+    `hidden_list` opens the one gate beyond CONFIRMED and ALLOW_WRITES that a
+    probe here ships closed, because the row behind it is the only one that
+    reports on a list this probe creates rather than on the scratch list.
+    """
+    config = json.loads(json.dumps(_SCRATCH_HEALTHY))
+    config.update(changes)
+    js = _fixture_probe_js(probe)
+    if hidden_list:
+        opened = js.replace(
+            "  const CREATE_HIDDEN_LIST = false;", "  const CREATE_HIDDEN_LIST = true;", 1)
+        assert opened != js, "the CREATE_HIDDEN_LIST gate is not spelled as this test expects"
+        js = opened
+    script = _SCRATCH_HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + js
+    return _fixture_rows(_run(script))
+
+
+#: What save-instant-paths records about the [today] default racing the save,
+#: and the six steps it sends a person away to perform by hand.
+_SAVE_PATHS_RACE_ROWS = (
+    "formula.validation.today-default-races-modified-rule-rest",
+    "formula.validation.today-default-races-modified-rule-form-endpoint",
+    "formula.validation.form-new-prefilled-default-under-modified-rule",
+)
+_SAVE_PATHS_HUMAN_ROWS = (
+    "formula.validation.form-edit-today-under-three-column-rule",
+    "formula.validation.form-edit-tomorrow-under-three-column-rule",
+    "formula.validation.grid-edit-today-under-modified-rule",
+    "formula.validation.grid-edit-tomorrow-under-modified-rule",
+    "formula.validation.bulk-edit-today-under-modified-rule",
+    "formula.validation.form-new-prefilled-default-under-modified-rule",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_save_paths_run_with_the_defaults_in_place_answers_the_race() -> None:
+    """The control for the two below.
+
+    Without it, a probe that had stopped measuring the race at all would pass
+    both of them.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE)
+
+    assert rows["formula.validation.fixture-default-columns"]["outcome"] == "PASS"
+    assert "[today]" in rows["formula.validation.fixture-default-columns"]["evidence"]
+    assert rows["formula.validation.fixture-three-column-modified-rule-stored"]["outcome"] == "PASS"
+    assert rows["formula.validation.today-default-races-modified-rule-rest"]["outcome"] == (
+        "ALL SAVED"
+    )
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes"),
+    [
+        ("two columns of the right Title were left by an earlier run with no default",
+         {"fields": {"DM": dict(_SCRATCH_DATE), "T": dict(_SCRATCH_TODAY),
+                     "TR": dict(_SCRATCH_DATE),
+                     "WR": {**_SCRATCH_DATE, "DisplayFormat": 1}}}),
+        ("the create was accepted and the dynamic default was not kept",
+         {"defaultLands": False}),
+    ],
+)
+def test_columns_without_the_today_default_do_not_answer_the_race(
+    why: str, changes: dict[str, Any],
+) -> None:
+    """`fixture-default-columns` was a literal 'PASS' over a reuse by Title.
+
+    With no dynamic default a bare create races nothing, all five land, and
+    the probe reports that the default does not race the rule. That is the
+    reassuring answer three shipped solutions are gated on, recorded off a
+    column that has no default at all.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+
+    fixture = rows["formula.validation.fixture-default-columns"]
+    assert fixture["outcome"] == "FAIL", why
+    assert "DefaultValue" in fixture["evidence"]
+    for row in _SAVE_PATHS_RACE_ROWS:
+        assert rows[row]["state"] == "void", f"{row} answered when {why}"
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+    # The rule is still stored, so the rows that are only about [DM] under it
+    # are still a person's to perform.
+    assert rows["formula.validation.grid-edit-today-under-modified-rule"]["outcome"] == "MANUAL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_rule_that_never_stored_voids_every_save_path_row_under_it() -> None:
+    """The MERGE answers 204 whether or not the store kept the formula.
+
+    A save accepted with no rule in place is not a save accepted under the
+    rule, and six of these rows are steps a person is sent to perform by hand
+    before anyone looks at the fixture row above them.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, listRuleLands=False)
+
+    stored = rows["formula.validation.fixture-three-column-modified-rule-stored"]
+    assert stored["outcome"] == "FAIL"
+    assert 'stored: ""' in stored["evidence"]
+    for row in (*_SAVE_PATHS_RACE_ROWS, *_SAVE_PATHS_HUMAN_ROWS):
+        assert rows[row]["state"] == "void", row
+
+
+#: The two form steps that are only about the DT column rule, and the four
+#: that are only about the list rule over [DM] and [Modified].
+_FORM_DT_ROWS = (
+    "formula.validation.form-new-today-under-today-rule",
+    "formula.validation.form-new-tomorrow-under-today-rule",
+)
+_FORM_DM_ROWS = (
+    "formula.validation.form-new-today-under-modified-rule",
+    "formula.validation.form-new-tomorrow-under-modified-rule",
+    "formula.validation.form-edit-today-under-modified-rule",
+    "formula.validation.form-edit-tomorrow-under-modified-rule",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_form_validation_run_with_both_rules_stored_sends_the_person_out() -> None:
+    """The control for the three below."""
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE)
+
+    assert rows["formula.validation.fixture-dt-column"]["outcome"] == "PASS"
+    assert rows["formula.validation.fixture-today-column-rule-stored"]["outcome"] == "PASS"
+    assert rows["formula.validation.fixture-modified-list-rule-stored"]["outcome"] == "PASS"
+    assert rows["formula.datetime.today-function-default-value"]["outcome"] == "PASS"
+    for row in (*_FORM_DT_ROWS, *_FORM_DM_ROWS):
+        assert rows[row]["outcome"] == "MANUAL", row
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_rule_accepted_and_dropped_voids_only_the_dt_form_steps() -> None:
+    """Six MANUAL form findings hang off these two fixture rows.
+
+    Recorded from the MERGE status alone, a rule that never landed is written
+    up as a form-versus-REST divergence: the form accepts tomorrow because
+    there is no rule, and the transcript reads as the modern form evaluating
+    TODAY() differently from REST.
+    """
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, columnRuleLands=False)
+
+    stored = rows["formula.validation.fixture-today-column-rule-stored"]
+    assert stored["outcome"] == "FAIL"
+    assert "stored null" in stored["evidence"]
+    for row in _FORM_DT_ROWS:
+        assert rows[row]["state"] == "void", row
+    for row in _FORM_DM_ROWS:
+        assert rows[row]["outcome"] == "MANUAL", f"{row} is not about the DT column rule"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_rule_accepted_and_dropped_voids_only_the_modified_form_steps() -> None:
+    """The other half of the same fixture, and the other four steps."""
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, listRuleLands=False)
+
+    assert rows["formula.validation.fixture-modified-list-rule-stored"]["outcome"] == "FAIL"
+    for row in _FORM_DM_ROWS:
+        assert rows[row]["state"] == "void", row
+    for row in _FORM_DT_ROWS:
+        assert rows[row]["outcome"] == "MANUAL", f"{row} is not about the list rule"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_bare_item_whose_today_default_never_filled_resolves_nothing() -> None:
+    """T and its =TODAY() default come from the today-semantics probe.
+
+    The row was a literal 'PASS' over whatever the read returned, so a run
+    against a list without that column printed "T = undefined" beside the word
+    PASS and the site's resolved TODAY() was recorded as observed.
+    """
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, tValue=None)
+
+    resolved = rows["formula.datetime.today-function-default-value"]
+    assert resolved["outcome"] == "NOT ESTABLISHED"
+    assert "today-semantics" in resolved["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_bare_item_create_that_served_no_id_leaves_the_row_open() -> None:
+    """`bare.body.d.Id` was read off a response that only had to be 2xx, so an
+    empty body threw before the six form steps were printed."""
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, emptyItemCreate=True)
+
+    resolved = rows["formula.datetime.today-function-default-value"]
+    assert resolved["outcome"] == "NOT ESTABLISHED"
+    assert "served no id" in resolved["evidence"]
+    # The fixture rows and the steps a person performs are still reported.
+    assert rows["formula.validation.fixture-today-column-rule-stored"]["outcome"] == "PASS"
+    for row in (*_FORM_DT_ROWS, *_FORM_DM_ROWS):
+        assert rows[row]["outcome"] == "MANUAL", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes", "marker"),
+    [
+        ("the create served no id", {"emptyItemCreate": True}, "served no id"),
+        ("the row did not read back", {"emptyItemRead": True}, "did not read back"),
+    ],
+)
+def test_five_creates_that_answered_still_count_when_the_rows_do_not_read(
+    why: str, changes: dict[str, Any], marker: str,
+) -> None:
+    """The race row counts what each CREATE answered, so a readback that never
+    answered costs the evidence line its values and nothing else.
+
+    `r.body.d.Id` and `row.body.Id` were both dereferenced unguarded, and
+    either one threw away all fourteen rows, including the six a person is
+    sent to perform.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+
+    race = rows["formula.validation.today-default-races-modified-rule-rest"]
+    assert race["outcome"] == "ALL SAVED", why
+    assert marker in race["evidence"]
+    for row in _SAVE_PATHS_HUMAN_ROWS:
+        assert rows[row]["outcome"] == "MANUAL", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_form_endpoint_answer_nobody_could_read_is_not_a_save() -> None:
+    """AddValidateUpdateItemUsingPath reports a refusal INSIDE a 200, so the
+    payload is the answer rather than the status.
+
+    The row read the results out of `r2.ok && r2.body && ...`, which is an
+    empty list both for a payload nobody could read and for a save that went
+    through, and recorded SAVED for the first.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, emptyFormEndpoint=True)
+
+    endpoint = rows["formula.validation.today-default-races-modified-rule-form-endpoint"]
+    assert endpoint["outcome"] == "NOT ESTABLISHED"
+    assert "no form-endpoint results" in endpoint["evidence"]
+    assert rows["formula.validation.today-default-races-modified-rule-rest"]["outcome"] == (
+        "ALL SAVED"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_served_no_root_folder_leaves_the_form_endpoint_open() -> None:
+    """`list.body.RootFolder.ServerRelativeUrl` assumed the $expand came back.
+
+    A 2xx without the expansion threw, so the run lost the race row it had
+    already measured as well as the row this one is about.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, rootFolderServed=False)
+
+    endpoint = rows["formula.validation.today-default-races-modified-rule-form-endpoint"]
+    assert endpoint["outcome"] == "NOT ESTABLISHED"
+    assert "no RootFolder path" in endpoint["evidence"]
+    assert rows["formula.validation.today-default-races-modified-rule-rest"]["outcome"] == (
+        "ALL SAVED"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("hidden_read", "outcome", "marker"),
+    [
+        ("served", "PASS", "Hidden=true"),
+        ("empty", "NOT ESTABLISHED", "did not read back"),
+        ("withheld", "NOT ESTABLISHED", "carried no Hidden property"),
+    ],
+)
+def test_a_hidden_list_nobody_read_is_not_a_list_that_came_back_visible(
+    hidden_read: str, outcome: str, marker: str,
+) -> None:
+    """FAIL on this row says the tenant would not keep a list hidden, which
+    decides where the verification artifact may write.
+
+    It was recorded off `hb.body && hb.body.Hidden`, so a readback that
+    answered 2xx with nothing, and one whose payload withheld the property,
+    both produced it. The first case here is the control: without it a probe
+    that had stopped reading the list at all would pass the other two.
+    """
+    rows = _run_scratch_probe(
+        SCRATCH_SAVE_PATHS_PROBE, hidden_list=True, hiddenRead=hidden_read)
+
+    hidden = rows["field.list.hidden-list-readback"]
+    assert hidden["outcome"] == outcome
+    assert marker in hidden["evidence"]
+
+
+# --------------------------------------------------------------------------
+# folder-under-schema-probe.js: the state each row NAMES, read back off the
+# library rather than taken from the 2xx of the write meant to enter it.
+# --------------------------------------------------------------------------
+FOLDER_SCHEMA_PROBE = MANUAL / "folder-under-schema-probe.js"
+
+#: Every row the bare-library control gates, which is all of them.
+_FOLDER_SCHEMA_GATED_ROWS = (
+    "library.folder.add-with-broken-inheritance",
+    "library.folder.add-with-required-column",
+    "library.folder.add-with-column-validation",
+    "library.folder.add-with-list-validation",
+    "library.folder.add-using-path-under-validation",
+    "library.folder.add-as-list-item-under-validation",
+    "library.folder.clear-list-validation-to-create",
+    "library.folder.restore-list-validation-after-folders",
+    "library.folder.folder-survives-restored-validation",
+    "library.folder.control-restored-validation-refuses-a-folder",
+)
+
+#: The four rows that measure the only shape a fix can take: clear the list
+#: formula, create the folder, put the formula back.
+_FOLDER_SCHEMA_RESTORE_ROWS = _FOLDER_SCHEMA_GATED_ROWS[-4:]
+
+_FOLDER_SCHEMA_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    const ROOT = '/sites/test/ProbeLib';
+    // The folders that exist under the library root, by name. A create that
+    // answers 200 and adds nothing here is the silent no-op every row would
+    // otherwise report as the state accepting a folder, and one seeded here is
+    // the folder an earlier run of this probe left under that state's name.
+    const folders = new Set(CONFIG.preexistingFolders);
+    let listExists = false;
+    let unique = false;
+    // A guard column an earlier run left behind. CLEANUP ships false, so this
+    // is the reuse path rather than an exotic one.
+    let guard = CONFIG.preexistingGuard;
+    let listFormula = '';
+    let clearedOnce = false;
+
+    const ADD = /folders\\/add\\(url='([^']*)'\\)/;
+    const USING_PATH = /AddUsingPath\\(decodedurl='([^']*)'\\)/;
+    const BY_URL = /GetFolderByServerRelativeUrl\\('([^']*)'\\)/;
+
+    // The live finding this probe is chasing: a library carrying a list
+    // ValidationFormula refuses the create. 500 is the status every
+    // SharePoint refusal this project has recorded came back as.
+    const refusedByRule = () => CONFIG.refuseUnderRule && listFormula !== '';
+
+    const createFolder = (name) => {
+      // Named rather than counted, so a test says WHICH create failed and
+      // stays pinned to that one when a question is added before it.
+      if (CONFIG.addFailsFor[name]) {
+        return jsonResponse(CONFIG.addFailsFor[name], { error: 'the folder create failed' });
+      }
+      if (refusedByRule()) {
+        return jsonResponse(500, { error: { message: { value: 'Cannot create folder' } } });
+      }
+      if (CONFIG.folderLands) folders.add(name);
+      return jsonResponse(200, { d: { Exists: true } });
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const sent = opts.body === undefined ? {} : JSON.parse(String(opts.body) || '{}');
+      const path = u.split('/_api/')[1] || '';
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+
+      const added = ADD.exec(path);
+      if (added) return createFolder(added[1]);
+      const usingPath = USING_PATH.exec(path);
+      if (usingPath) return createFolder(usingPath[1].slice(ROOT.length + 1));
+
+      const byUrl = BY_URL.exec(path);
+      if (byUrl && method === 'GET') {
+        const name = byUrl[1].slice(ROOT.length + 1);
+        if (!folders.has(name)) return jsonResponse(404, { error: 'not found' });
+        return jsonResponse(200, { Exists: true, ServerRelativeUrl: byUrl[1] });
+      }
+
+      if (path === 'web/lists' && method === 'POST') {
+        listExists = true;
+        return jsonResponse(201, { Id: 'list-1' });
+      }
+      if (!path.startsWith('web/lists/getbytitle')) {
+        return jsonResponse(404, { error: 'no such endpoint' });
+      }
+      if (!listExists) return jsonResponse(404, { error: 'list not found' });
+
+      if (path.includes('/breakroleinheritance')) {
+        if (CONFIG.roleBreakLands) unique = true;
+        return jsonResponse(200, {});
+      }
+      if (path.includes('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: ROOT });
+      }
+      if (path.includes('/fields/getbyinternalnameortitle')) {
+        if (!guard) return jsonResponse(404, { error: 'no such field' });
+        if (verb === 'MERGE') {
+          if (CONFIG.columnRuleLands) guard.ValidationFormula = sent.ValidationFormula;
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, { ...guard });
+      }
+      if (path.includes('/fields') && method === 'POST') {
+        if (!CONFIG.guardCreateOk) return jsonResponse(500, { error: 'refused' });
+        // SharePoint refuses a second column of the same name, so a reused
+        // library answers the create rather than rebuilding the column.
+        if (guard) {
+          return jsonResponse(500, { error: { message: { value:
+            'A field or property with the name dbmlspGuard already exists.' } } });
+        }
+        guard = {
+          Title: sent.Title, TypeAsString: 'Text',
+          // Required arriving true and reading back false is the case this
+          // knob is for: the create still answers 201.
+          Required: CONFIG.guardRequired, ValidationFormula: null,
+          // The probe sends no DefaultValue, so a created column has none.
+          DefaultValue: null,
+        };
+        return jsonResponse(201, { d: { Id: 'field-guard' } });
+      }
+      if (path.includes('/items')) {
+        if (method === 'POST') {
+          if (sent.FileSystemObjectType === 1) return createFolder(sent.FileLeafRef);
+          return jsonResponse(201, { d: { Id: 1 } });
+        }
+        const wanted = /FileLeafRef%20eq%20'([^']*)'/.exec(path);
+        const name = wanted ? decodeURIComponent(wanted[1]) : '';
+        if (!folders.has(name)) return jsonResponse(200, { value: [] });
+        return jsonResponse(200, { value: [
+          { Id: 7, FileSystemObjectType: 1, FileLeafRef: name, dbmlspGuard: null },
+        ] });
+      }
+
+      if (verb === 'MERGE') {
+        const wanted = String(sent.ValidationFormula);
+        const clearing = wanted === '';
+        // The restore is the first non-clearing list MERGE AFTER a clear, so
+        // it is recognised by the call it follows rather than by a request
+        // count, which would shift the moment a question is added earlier.
+        if (!clearing && clearedOnce && CONFIG.restoreMergeStatus) {
+          return jsonResponse(CONFIG.restoreMergeStatus, { error: 'the restore failed' });
+        }
+        if (clearing) clearedOnce = true;
+        if (clearing ? CONFIG.clearLands : CONFIG.listRuleLands) listFormula = wanted;
+        return jsonResponse(204, {});
+      }
+      return jsonResponse(200, {
+        Id: 'list-1',
+        HasUniqueRoleAssignments: unique,
+        ValidationFormula: listFormula,
+        ListItemEntityTypeFullName: 'SP.Data.ProbeLibItem',
+      });
+    };
+""")
+
+#: A run that reproduces what the live deploy hit: the bare library takes a
+#: folder, so do the first three states, and the list ValidationFormula is
+#: what refuses one. Each test changes one knob.
+_FOLDER_SCHEMA_HEALTHY: dict[str, Any] = {
+    "folderLands": True,
+    "refuseUnderRule": True,
+    "roleBreakLands": True,
+    "guardCreateOk": True,
+    "guardRequired": True,
+    "columnRuleLands": True,
+    "listRuleLands": True,
+    "clearLands": True,
+    # A column an earlier run left on the library, and the two ways a write can
+    # fail for a reason that is not the server rejecting it.
+    "preexistingGuard": None,
+    "preexistingFolders": [],
+    "addFailsFor": {},
+    "restoreMergeStatus": None,
+}
+
+
+def _run_folder_schema_probe(**changes: Any) -> dict[str, dict[str, str]]:
+    config = json.loads(json.dumps(_FOLDER_SCHEMA_HEALTHY))
+    config.update(changes)
+    script = (
+        _FOLDER_SCHEMA_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _fixture_probe_js(FOLDER_SCHEMA_PROBE)
+    )
+    return _fixture_rows(_run(script))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_folder_schema_run_attributes_the_refusal_to_the_list_formula() -> None:
+    """The control for every test below, and the answer the probe was written
+    to get: three states take a folder and the list formula is the one that
+    does not, so the clear-create-restore shape is worth measuring."""
+    rows = _run_folder_schema_probe()
+
+    assert rows["library.folder.control-add-on-bare-library"]["outcome"] == "PASS"
+    for row in ("library.folder.add-with-broken-inheritance",
+                "library.folder.add-with-required-column",
+                "library.folder.add-with-column-validation"):
+        assert rows[row]["outcome"] == "PASS", row
+    assert rows["library.folder.add-with-list-validation"]["outcome"] == "REFUSED"
+    assert rows["library.folder.clear-list-validation-to-create"]["outcome"] == "PASS"
+    assert rows["library.folder.restore-list-validation-after-folders"]["outcome"] == "PASS"
+    assert rows["library.folder.folder-survives-restored-validation"]["outcome"] == "PASS"
+    assert rows["library.folder.control-restored-validation-refuses-a-folder"]["outcome"] == "PASS"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_create_that_answers_2xx_and_leaves_no_folder_attributes_nothing() -> None:
+    """Eight rows recorded PASS on the status alone while the evidence beside
+    them read "no list item was served for that name".
+
+    On the bare-library control that is the whole run: every later refusal
+    would be attributed to a setting, on a library where the create never
+    made a folder in any state.
+    """
+    rows = _run_folder_schema_probe(folderLands=False)
+
+    control = rows["library.folder.control-add-on-bare-library"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "left no folder" in control["evidence"]
+    for row in _FOLDER_SCHEMA_GATED_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_inheritance_that_was_not_broken_is_not_a_state_the_run_entered() -> None:
+    """breakroleinheritance was gated on a bare `ok`.
+
+    A 200 that left the library inheriting means the folder that follows was
+    created on an inheriting library, and the row says it was not.
+    """
+    rows = _run_folder_schema_probe(roleBreakLands=False)
+
+    acl = rows["library.folder.add-with-broken-inheritance"]
+    assert acl["outcome"] == "NOT ESTABLISHED"
+    assert "HasUniqueRoleAssignments reads back false" in acl["evidence"]
+    # The states after it are still entered, so they still answer.
+    assert rows["library.folder.add-with-required-column"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_that_is_not_required_is_not_the_required_state() -> None:
+    """`Required: true` was gated on the create's status.
+
+    Everything downstream names that column, so a column that came back
+    optional leaves three further states measuring something else.
+    """
+    rows = _run_folder_schema_probe(guardRequired=False)
+
+    required = rows["library.folder.add-with-required-column"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert "Required=false" in required["evidence"]
+    assert rows["library.folder.add-with-column-validation"]["outcome"] == "NOT ESTABLISHED"
+    assert rows["library.folder.add-with-list-validation"]["outcome"] == "NOT ESTABLISHED"
+    for row in _FOLDER_SCHEMA_RESTORE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_formula_that_did_not_store_is_not_the_final_state() -> None:
+    """The MERGE answers 204 either way, and the four rows about the fix are
+    all about a library the formula is supposed to be on."""
+    rows = _run_folder_schema_probe(listRuleLands=False)
+
+    validated = rows["library.folder.add-with-list-validation"]
+    assert validated["outcome"] == "NOT ESTABLISHED"
+    assert 'it reads back ""' in validated["evidence"]
+    for row in _FOLDER_SCHEMA_RESTORE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_formula_that_did_not_clear_is_not_the_window_the_fix_needs() -> None:
+    """The clear was gated on a bare `ok` too.
+
+    A create accepted while the formula was still there would be recorded as
+    the cleared library accepting it, which is the one claim the whole
+    clear-create-restore shape rests on.
+    """
+    rows = _run_folder_schema_probe(clearLands=False)
+
+    for row in _FOLDER_SCHEMA_RESTORE_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert "was not cleared" in rows[row]["evidence"], row
+
+
+# --------------------------------------------------------------------------
+# calculated-choice-operand.js: the acceptance rows, which say what SharePoint
+# ALLOWS. A column left by an earlier run is not this run accepting anything,
+# and neither is a 200 that added no column.
+# --------------------------------------------------------------------------
+CALC_CHOICE_PROBE = MANUAL / "calculated-choice-operand.js"
+
+#: Every row that reports whether a createfieldasxml was accepted. These are
+#: what the Person-operand negative control is FOR: an acceptance means
+#: nothing from a probe that could not have seen a refusal.
+_CALC_CHOICE_ACCEPTANCE_ROWS = (
+    "formula.choice.calc-column-accepted",
+    "formula.choice.spaced-display-name-accepted",
+    "formula.choice.number-result-accepted",
+    "formula.choice.datetime-result-accepted",
+    "formula.calc.lookup-operand-accepted",
+    "formula.choice.retitled-operand-referenced-anew",
+)
+
+#: The columns those rows create, in the same order, so a reuse run can be
+#: expressed as "an earlier run left all six behind".
+_CALC_CHOICE_ACCEPTANCE_FIELDS = [
+    "ProbeRoute", "SpacedRoute", "ProbeScore", "ProbeDue", "LookupCalc", "RetiredRef",
+]
+
+_CALC_CHOICE_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // A 2xx carrying an empty or non-JSON body. `res.json()` rejects, which
+    // spGet catches, so the probe is handed { ok: true, body: null }.
+    const emptyResponse = (status) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => { throw new Error('the response carried no JSON'); },
+      text: async () => '',
+    });
+
+    // Lists by title, each holding its own columns by internal name. Columns
+    // are stored as the SchemaXml left them, so a probe reading Formula back
+    // sees what it sent.
+    const lists = new Map();
+    // The items each create left, by id. A calculated column is evaluated on
+    // READ, as SharePoint does: it is never written and never stored.
+    const rows = new Map();
+    let nextItem = 1;
+    for (const title of CONFIG.existingLists) lists.set(title, new Map());
+    for (const name of CONFIG.preexistingFields) {
+      lists.get(CONFIG.existingLists[0])
+        .set(name, { InternalName: name, Formula: '=sent by an earlier run' });
+    }
+
+    // The leading space matters: DisplayName="..." ends in Name="...", so an
+    // unanchored pattern reads every display name as an internal one.
+    const NAME_IN_SCHEMA = / Name="([^"]+)"/;
+    const TYPE_IN_SCHEMA = /Type="([^"]+)"/;
+    const DISPLAY_IN_SCHEMA = /DisplayName="([^"]+)"/;
+    const FORMULA_IN_SCHEMA = /<Formula>([^<]*)<\\/Formula>/;
+    const LIST = /web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)/;
+    const FIELD = /\\/fields\\/getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM = /^\\/items\\((\\d+)\\)/;
+
+    // The four calculated columns this probe creates, evaluated over the row
+    // the create sent. Each is served only while its column is on the list.
+    const evaluate = (fields, row) => {
+      const due = new Date(new Date(row.ProbeRaised || 0).getTime()
+        + (row.ProbePriority === 'High' ? 1 : 7) * 86400000);
+      const served = { ...row };
+      if (fields.has('ProbeRoute')) {
+        served.ProbeRoute = row.RaisedAtTier === undefined
+          ? null : `${row.RaisedAtTier} -> ${row.TargetTier || ''}`;
+      }
+      if (fields.has('SpacedRoute')) {
+        served.SpacedRoute = row.SpacedFrom === undefined
+          ? null : `${row.SpacedFrom} -> ${row.SpacedTo || ''}`;
+      }
+      if (fields.has('ProbeScore')) {
+        served.ProbeScore = row.ProbePriority === undefined ? null
+          : row.ProbePriority === 'High' ? 3 : row.ProbePriority === 'Medium' ? 2 : 1;
+      }
+      if (fields.has('ProbeDue')) {
+        served.ProbeDue = row.ProbeRaised === undefined ? null : due.toISOString();
+      }
+      if (fields.has('RetireRoute')) {
+        served.RetireRoute = row.RetireMe === undefined ? null : `${row.RetireMe} fixed`;
+      }
+      for (const prop of CONFIG.withholdItemProps) delete served[prop];
+      return served;
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const sent = opts.body === undefined ? {} : JSON.parse(String(opts.body) || '{}');
+      const path = u.split('/_api/')[1] || '';
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (path === 'web/lists' && method === 'POST') {
+        lists.set(sent.Title, new Map());
+        return jsonResponse(201, { Id: `list-${sent.Title}` });
+      }
+
+      const named = LIST.exec(path);
+      if (!named) return jsonResponse(404, { error: 'no such endpoint' });
+      const fields = lists.get(named[1]);
+      if (!fields) return jsonResponse(404, { error: 'list not found' });
+      const rest = named[2];
+
+      const field = FIELD.exec(rest);
+      if (field) {
+        const held = fields.get(field[1]);
+        if (!held) return jsonResponse(404, { error: 'no such field' });
+        if (verb === 'MERGE') {
+          if (CONFIG.fieldMergeStatus) {
+            return jsonResponse(CONFIG.fieldMergeStatus, { error: 'the field MERGE failed' });
+          }
+          Object.assign(held, sent);
+          return jsonResponse(204, {});
+        }
+        // The whole-entity read and the $select read are separate knobs: the
+        // probe asks the first about a column's shape and the second about
+        // what one validation store holds.
+        const selected = rest.includes('$select=');
+        const empty = selected ? CONFIG.emptySelectRead : CONFIG.emptyFieldRead;
+        if (empty.includes(field[1])) return emptyResponse(200);
+        if (selected && CONFIG.withholdSelected.includes(field[1])) {
+          return jsonResponse(200, { InternalName: field[1] });
+        }
+        return jsonResponse(200, { ...held });
+      }
+      if (rest.includes('/createfieldasxml')) {
+        const schema = String((sent.parameters || {}).SchemaXml || '');
+        const name = (NAME_IN_SCHEMA.exec(schema) || [null, '?'])[1];
+        const type = (TYPE_IN_SCHEMA.exec(schema) || [null, '?'])[1];
+        // The documented refusal this probe's negative control rests on: a
+        // Person operand inside a calculated formula.
+        if (CONFIG.personOperandRefused && type === 'Calculated' && schema.includes('ProbeOwner')) {
+          // The status is a knob because 500 is a refusal and 429 is not, and
+          // the control may only conclude from the first.
+          return jsonResponse(CONFIG.personControlStatus, { error: { message: { value:
+            'One or more column references are not allowed' } } });
+        }
+        if (CONFIG.refuse.includes(name)) {
+          return jsonResponse(CONFIG.refuseStatus, { error: { message: { value: 'refused' } } });
+        }
+        // An accepted create that adds no column: the readback is what tells
+        // this from an acceptance.
+        if (!CONFIG.noReadbackFor.includes(name)) {
+          fields.set(name, {
+            InternalName: name,
+            TypeAsString: type,
+            Title: (DISPLAY_IN_SCHEMA.exec(schema) || [null, name])[1],
+            Formula: (FORMULA_IN_SCHEMA.exec(schema) || [null, ''])[1],
+            // What an earlier run left this column as. CLEANUP ships false, so
+            // a create is skipped and the probe reads whatever is there.
+            ...(CONFIG.leftoverShape[name] || {}),
+          });
+        }
+        return jsonResponse(200, { Id: `field-${name}` });
+      }
+      const item = ITEM.exec(rest);
+      if (item) {
+        const row = rows.get(Number(item[1]));
+        if (!row) return jsonResponse(404, { error: 'no such item' });
+        if (CONFIG.emptyItemRead) return emptyResponse(200);
+        return jsonResponse(200, evaluate(fields, row));
+      }
+      if (rest.includes('/items')) {
+        if (method === 'POST') {
+          if (CONFIG.emptyItemCreate) return emptyResponse(201);
+          const id = nextItem;
+          nextItem += 1;
+          rows.set(id, { Id: id, ...sent });
+          return jsonResponse(201, { Id: id });
+        }
+        return jsonResponse(200, { value: [] });
+      }
+      // The lookup target, read for the GUID the lookup column points at.
+      if (CONFIG.emptyTargetRead && named[1].endsWith('Target')) return emptyResponse(200);
+      return jsonResponse(200, { Id: `list-${named[1]}`, Title: named[1] });
+    };
+""")
+
+#: A clean site: no leftover columns, every create landing, and a Person
+#: operand refused so the probe can tell acceptance from refusal.
+_CALC_CHOICE_HEALTHY: dict[str, Any] = {
+    "existingLists": [],
+    "preexistingFields": [],
+    "refuse": [],
+    "noReadbackFor": [],
+    "personOperandRefused": True,
+    # 500 is the status every SharePoint refusal this project has recorded came
+    # back as; the knobs exist so a test can send one that is not a refusal.
+    "personControlStatus": 500,
+    "refuseStatus": 500,
+    "fieldMergeStatus": None,
+    "leftoverShape": {},
+    # A request can answer 2xx and carry nothing a probe can read: an empty
+    # body on a field read, on a $select read, on an item read or on an item
+    # create, and a payload that simply withholds the property asked for.
+    "emptyFieldRead": [],
+    "emptySelectRead": [],
+    "withholdSelected": [],
+    "emptyItemRead": False,
+    "emptyItemCreate": False,
+    "emptyTargetRead": False,
+    "withholdItemProps": [],
+}
+
+
+def _run_calc_choice_probe(**changes: Any) -> dict[str, dict[str, str]]:
+    config = json.loads(json.dumps(_CALC_CHOICE_HEALTHY))
+    config.update(changes)
+    script = (
+        _CALC_CHOICE_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _fixture_probe_js(CALC_CHOICE_PROBE)
+    )
+    return _fixture_rows(_run(script))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_calc_choice_run_answers_what_sharepoint_accepts() -> None:
+    """The control for the three below. Without it, a probe that recorded NOT
+    ESTABLISHED for every acceptance would pass all of them."""
+    rows = _run_calc_choice_probe()
+
+    assert rows["formula.choice.calc-column-accepted"]["outcome"] == "PASS"
+    assert "reads back with Formula" in rows["formula.choice.calc-column-accepted"]["evidence"]
+    assert rows["formula.calc.lookup-operand-accepted"]["outcome"] == "ACCEPTED"
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "PASS"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_left_by_an_earlier_run_is_not_this_run_accepting_it() -> None:
+    """CLEANUP ships false, so finding the column already there is the normal
+    path, and it was recorded as PASS.
+
+    `formula.calc.lookup-operand-accepted` contradicts this project's own
+    denylist, so "SharePoint ALLOWS this" is the sentence that gets quoted,
+    and off a reuse this run sent no create at all.
+    """
+    rows = _run_calc_choice_probe(
+        existingLists=["dbmlsp Probe CalcChoice"],
+        preexistingFields=_CALC_CHOICE_ACCEPTANCE_FIELDS,
+    )
+
+    for row in _CALC_CHOICE_ACCEPTANCE_ROWS:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert "already exists from an earlier run" in rows[row]["evidence"], row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_create_that_answers_200_and_adds_no_column_is_not_an_acceptance() -> None:
+    """The other half of the same row: a status is not a column."""
+    rows = _run_calc_choice_probe(noReadbackFor=["ProbeRoute"])
+
+    accepted = rows["formula.choice.calc-column-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back" in accepted["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_insensitive_calc_choice_run_voids_every_acceptance_it_recorded() -> None:
+    """The header says to read the negative control first and treat the rest
+    as worthless if it did not hold, and nothing enforced that.
+
+    A Person operand accepted means this run cannot tell an accepted
+    createfieldasxml from a refused one, so every acceptance above is a
+    restatement of the probe's own insensitivity.
+    """
+    rows = _run_calc_choice_probe(personOperandRefused=False)
+
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "FAIL"
+    for row in _CALC_CHOICE_ACCEPTANCE_ROWS:
+        assert rows[row]["state"] == "void", row
+        assert "negative control did not hold" in rows[row]["evidence"], row
+
+
+#: The rows that report a value a saved item rendered, rather than whether a
+#: create was accepted. Each one is read off an item this run created.
+_CALC_CHOICE_RENDER_ROWS = (
+    "formula.choice.calc-column-renders",
+    "formula.choice.metachar-value-renders",
+    "formula.choice.blank-operand-renders",
+)
+_CALC_CHOICE_COMBO_ROWS = (
+    "formula.choice.spaced-display-name-renders",
+    "formula.choice.number-result-computes",
+    "formula.choice.datetime-result-computes",
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_field_read_that_carried_no_payload_is_not_an_acceptance() -> None:
+    """`ok: true` is not `I read this`: a 2xx with an empty or non-JSON body
+    leaves `body` null.
+
+    The row settled on `!back.ok`, so an empty 2xx fell through to the
+    acceptance line, which dereferenced the payload and threw. One odd
+    response then cost the run every result it had already gathered.
+    """
+    rows = _run_calc_choice_probe(emptyFieldRead=["ProbeRoute"])
+
+    accepted = rows["formula.choice.calc-column-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back" in accepted["evidence"]
+    stored = rows["formula.choice.formula-as-stored"]
+    assert stored["outcome"] == "NOT ESTABLISHED"
+    assert "did not read back" in stored["evidence"]
+    for row in _CALC_CHOICE_RENDER_ROWS:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+    # The run carried on and answered everything the unreadable column does
+    # not bear on, which is what an aborted run cannot do.
+    assert rows["formula.choice.number-result-accepted"]["outcome"] == "PASS"
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes"),
+    [
+        ("the column's shape read answered 2xx with no payload",
+         {"emptyFieldRead": ["ProbeLookup"]}),
+        ("the target list read answered 2xx with no payload", {"emptyTargetRead": True}),
+    ],
+)
+def test_a_lookup_shape_read_that_carried_no_payload_is_not_a_lookup_column(
+    why: str, changes: dict[str, Any],
+) -> None:
+    """The same shape one property further on: `lookupBack.ok` was tested and
+    `lookupBack.body.TypeAsString` read, so an empty 2xx threw. The target
+    list's own GUID was read the same way, one call earlier.
+
+    The three rows they gate are about a Lookup operand, so a column whose
+    type this run never read cannot answer any of them.
+    """
+    rows = _run_calc_choice_probe(**changes)
+
+    for row in (
+        "formula.calc.lookup-operand-accepted",
+        "formula.validation.lookup-operand",
+        "expression.client-validation.lookup-operand",
+    ):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", f"{row} when {why}"
+    assert rows["formula.validation.person-operand"]["outcome"] == "ACCEPTED"
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes"),
+    [
+        ("the readback answered 2xx with no payload", {"emptySelectRead": ["ProbeOwner"]}),
+        ("the payload withheld the property", {"withholdSelected": ["ProbeOwner"]}),
+    ],
+)
+def test_a_validation_store_nobody_read_is_not_a_store_that_discarded(
+    why: str, changes: dict[str, Any],
+) -> None:
+    """ACCEPTED THEN DISCARDED is a claim about what the store kept.
+
+    `readBackOf` answered null for a read that never happened, and null is
+    also what a store that dropped the formula reads back as. Only the second
+    is evidence.
+    """
+    rows = _run_calc_choice_probe(**changes)
+
+    for row in ("formula.validation.person-operand",
+                "expression.client-validation.person-operand"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", f"{row} when {why}"
+        assert "did not see whether the store kept" in rows[row]["evidence"], row
+    # The lookup stores were read, so they still answer.
+    assert rows["formula.validation.lookup-operand"]["outcome"] == "ACCEPTED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes", "marker"),
+    [
+        ("the item read answered 2xx with no payload", {"emptyItemRead": True},
+         "did not read back"),
+        ("the item create served no id", {"emptyItemCreate": True}, "served no id"),
+    ],
+)
+def test_a_computed_value_nobody_read_is_not_a_column_rendering_nothing(
+    why: str, changes: dict[str, Any], marker: str,
+) -> None:
+    """Seven rows report a value a saved item rendered, and each of them read
+    `made.body.Id` or `back.body.<column>` off a response that only had to be
+    2xx. Both threw, which lost the whole run.
+    """
+    rows = _run_calc_choice_probe(**changes)
+
+    for row in (*_CALC_CHOICE_RENDER_ROWS, *_CALC_CHOICE_COMBO_ROWS,
+                "formula.choice.retitled-operand-survives"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", f"{row} when {why}"
+        assert marker in rows[row]["evidence"], row
+    assert rows["formula.choice.calc-column-accepted"]["outcome"] == "PASS"
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_item_served_without_the_column_is_not_a_blank_computed_value() -> None:
+    """The blank-operand row reports the stored value as the finding, so a
+    payload that never carried the column would be written up as SharePoint
+    rendering nothing for it."""
+    rows = _run_calc_choice_probe(withholdItemProps=["ProbeRoute"])
+
+    for row in _CALC_CHOICE_RENDER_ROWS:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert "without a ProbeRoute property" in rows[row]["evidence"], row
+    # The combo item carries its own columns, so those rows still measure.
+    for row in _CALC_CHOICE_COMBO_ROWS:
+        assert rows[row]["outcome"] == "PASS", row
+
+
+# --------------------------------------------------------------------------
+# library-columns-probe.js: the required column and the list ValidationFormula
+# the two headline rows are ABOUT, read back off the library rather than taken
+# from the status of the write that was meant to put them there.
+# --------------------------------------------------------------------------
+LIB_COLS_PROBE = MANUAL / "library-columns-probe.js"
+
+_LIB_COLS_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // A 2xx carrying an empty or non-JSON body. `res.json()` rejects, which
+    // spGet catches, so the probe is handed { ok: true, body: null }.
+    const emptyResponse = (status) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => { throw new Error('the response carried no JSON'); },
+      text: async () => '',
+    });
+
+    const lists = new Map();
+    const items = new Map();
+    let nextItem = 1;
+    let listFormula = '';
+
+    // Only these reach a column. Anything else is the server refusing a
+    // property it does not have, which is the negative control's whole job.
+    const WRITABLE = ['Title', 'ColChoice', 'ColLookupId', 'ColRequired'];
+
+    const NAME_IN_SCHEMA = / Name="([^"]+)"/;
+    const TYPE_IN_SCHEMA = /Type="([^"]+)"/;
+    const REQUIRED_IN_SCHEMA = /Required="TRUE"/;
+    const LIST = /web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)/;
+    const FIELD = /\\/fields\\/getbyinternalnameortitle\\('([^']+)'\\)/;
+    const ITEM = /^\\/items\\((\\d+)\\)/;
+    const FILTERED = /FileLeafRef eq '([^']+)'/;
+    const UPLOAD = /Files\\/add\\(url='([^']+)'/;
+
+    const shapeOf = (row) => ({
+      ...row,
+      // The calculated column is evaluated on read, as SharePoint does: it is
+      // never written and never stored.
+      ColCalc: row.ColChoice === undefined || row.ColChoice === null
+        ? null : `${row.ColChoice} - calc`,
+    });
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      let sent = {};
+      try { sent = JSON.parse(raw || '{}'); } catch { sent = {}; }
+      const path = u.split('/_api/')[1] || '';
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (path === 'web/lists' && method === 'POST') {
+        lists.set(sent.Title, new Map());
+        return jsonResponse(201, { Id: `list-${sent.Title}` });
+      }
+
+      const named = LIST.exec(path);
+      if (!named) return jsonResponse(404, { error: 'no such endpoint' });
+      const fields = lists.get(named[1]);
+      if (!fields) return jsonResponse(404, { error: 'list not found' });
+      const rest = named[2];
+
+      const uploaded = UPLOAD.exec(rest);
+      if (uploaded) {
+        if (CONFIG.uploadStatus) {
+          return jsonResponse(CONFIG.uploadStatus, { error: 'the upload failed' });
+        }
+        const id = nextItem;
+        nextItem += 1;
+        items.set(id, { Id: id, FileLeafRef: uploaded[1], Title: uploaded[1] });
+        return jsonResponse(200, { d: { Name: uploaded[1] } });
+      }
+      if (rest.includes('/RootFolder/Files(')) {
+        // 2 is 'none': the upload left the file checked in. The other two
+        // readings are a 2xx with nothing in it and a payload that served the
+        // file without the property the row is about.
+        if (CONFIG.filePropsRead === 'empty') return emptyResponse(200);
+        if (CONFIG.filePropsRead === 'withheld') return jsonResponse(200, { MajorVersion: 1 });
+        return jsonResponse(200, { CheckOutType: 2, MajorVersion: 1 });
+      }
+
+      const field = FIELD.exec(rest);
+      if (field) {
+        const held = fields.get(field[1]);
+        if (!held) return jsonResponse(404, { error: 'no such field' });
+        return jsonResponse(200, { ...held });
+      }
+      if (rest.includes('/createfieldasxml')) {
+        const schema = String((sent.parameters || {}).SchemaXml || '');
+        const name = (NAME_IN_SCHEMA.exec(schema) || [null, '?'])[1];
+        fields.set(name, {
+          InternalName: name,
+          TypeAsString: (TYPE_IN_SCHEMA.exec(schema) || [null, '?'])[1],
+          // Required sent true and reading back false is what this knob is
+          // for: the create still answers 200.
+          Required: REQUIRED_IN_SCHEMA.test(schema) && CONFIG.requiredReadsBack,
+          // Served explicitly, because SharePoint serves the whole entity and
+          // a property it withheld must not read as the column carrying none.
+          DefaultValue: null,
+          ValidationFormula: null,
+          // What an earlier run left this column as. CLEANUP ships false, so
+          // the probe reuses whatever carries that name.
+          ...(CONFIG.leftoverShape[name] || {}),
+        });
+        return jsonResponse(200, { Id: `field-${name}` });
+      }
+
+      const one = ITEM.exec(rest);
+      if (one) {
+        const row = items.get(Number(one[1]));
+        if (!row) return jsonResponse(404, { error: 'no such item' });
+        if (verb !== 'MERGE' && CONFIG.emptyItemRead) return emptyResponse(200);
+        if (verb !== 'MERGE') return jsonResponse(200, shapeOf(row));
+        for (const key of Object.keys(sent)) {
+          if (key === '__metadata') continue;
+          if (!WRITABLE.includes(key)) {
+            return jsonResponse(500, { error: { message: { value:
+              `The field or property '${key}' does not exist.` } } });
+          }
+        }
+        // Keyed on the value written, so a test can fail the one write it is
+        // about without touching the negative control's own MERGE.
+        if (CONFIG.writeFailsFor[String(sent.ColChoice ?? sent.ColLookupId)]) {
+          return jsonResponse(
+            CONFIG.writeFailsFor[String(sent.ColChoice ?? sent.ColLookupId)],
+            { error: 'the metadata write failed' });
+        }
+        if (CONFIG.ruleEnforces && listFormula !== '' && sent.ColChoice === 'InvalidValue') {
+          return jsonResponse(500, { error: { message: { value:
+            'ColChoice cannot be InvalidValue' } } });
+        }
+        Object.assign(row, sent);
+        return jsonResponse(204, {});
+      }
+      if (rest.startsWith('/items')) {
+        if (method === 'POST') {
+          const id = nextItem;
+          nextItem += 1;
+          items.set(id, { Id: id, ...sent });
+          return jsonResponse(201, { Id: id });
+        }
+        const wanted = FILTERED.exec(rest);
+        const rows = [...items.values()].filter(
+          (row) => !wanted || row.FileLeafRef === wanted[1]);
+        return jsonResponse(200, { value: rows.map(shapeOf) });
+      }
+
+      if (verb === 'MERGE') {
+        if (CONFIG.ruleLands) listFormula = String(sent.ValidationFormula);
+        return jsonResponse(204, {});
+      }
+      return jsonResponse(200, {
+        Id: `list-${named[1]}`, Title: named[1], ValidationFormula: listFormula,
+      });
+    };
+""")
+
+#: Nothing has gone wrong: the required column comes back required, the list
+#: rule stores, and it refuses a violating metadata write.
+_LIB_COLS_HEALTHY: dict[str, Any] = {
+    "requiredReadsBack": True,
+    "ruleLands": True,
+    "ruleEnforces": True,
+    # The two ways a write can fail for a reason that is not the server
+    # rejecting what was sent.
+    "uploadStatus": None,
+    "writeFailsFor": {},
+    "leftoverShape": {},
+    # A request can answer 2xx and carry nothing a probe can read: an empty
+    # body on an item read, and a file served without the property asked for.
+    "emptyItemRead": False,
+    "filePropsRead": "served",
+}
+
+
+def _run_lib_cols_probe(**changes: Any) -> dict[str, dict[str, str]]:
+    config = json.loads(json.dumps(_LIB_COLS_HEALTHY))
+    config.update(changes)
+    script = (
+        _LIB_COLS_HARNESS.replace("__CONFIG__", json.dumps(config))
+        + "\n"
+        + _fixture_probe_js(LIB_COLS_PROBE)
+    )
+    return _fixture_rows(_run(script))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_columns_run_measures_the_required_column_and_the_rule() -> None:
+    """The control for the two below."""
+    rows = _run_lib_cols_probe()
+
+    assert rows["library.column.control-missing-column-refused"]["outcome"] == "PASS"
+    assert rows["library.column.choice-column-on-library"]["outcome"] == "PASS"
+    assert rows["library.column.calculated-column-on-library"]["outcome"] == "PASS"
+    assert rows["library.column.required-column-enforced-on-upload"]["outcome"] == (
+        "UPLOAD ACCEPTED WITHOUT CHECKOUT"
+    )
+    assert rows["library.validation.validation-formula-on-library"]["outcome"] == "ENFORCED"
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_upload_past_a_column_that_is_not_required_enforces_nothing() -> None:
+    """`Required` was never read back off the column.
+
+    An accepted upload then reports how a required column behaves during
+    upload, measured on a library that has no required column.
+    """
+    rows = _run_lib_cols_probe(requiredReadsBack=False)
+
+    required = rows["library.column.required-column-enforced-on-upload"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert required["state"] == "void"
+    assert "Required=false" in required["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_rule_that_never_stored_is_not_a_rule_that_is_inert() -> None:
+    """The headline of this file, and the exact finding a dropped formula
+    manufactures.
+
+    With no rule on the library the violating write is accepted, which the row
+    recorded as INERT: a list ValidationFormula does not enforce against
+    library item updates. That is a claim about SharePoint, published off a
+    MERGE whose result was never read back.
+    """
+    rows = _run_lib_cols_probe(ruleLands=False)
+
+    validation = rows["library.validation.validation-formula-on-library"]
+    assert validation["outcome"] == "NOT ESTABLISHED", (
+        "the formula was accepted and dropped, and an accepted violating write "
+        "on a library carrying no rule says nothing about whether a rule enforces"
+    )
+    assert validation["state"] == "void"
+    assert "no such rule" in validation["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_item_that_did_not_read_back_is_not_a_column_behaving_differently() -> None:
+    """FAIL on these three rows says a column does NOT behave the same on a
+    library, which is the sentence this file is read for.
+
+    Each was recorded off `(read.ok && read.body) ? read.body.X : null`, so a
+    2xx with nothing in it produced null and the row settled on a value this
+    run never saw.
+    """
+    rows = _run_lib_cols_probe(emptyItemRead=True)
+
+    for row in ("library.column.choice-column-on-library",
+                "library.column.lookup-column-on-library",
+                "library.column.calculated-column-on-library"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert "did not read back" in rows[row]["evidence"], row
+    # The rows that turn on a write rather than a read still answer.
+    assert rows["library.column.control-missing-column-refused"]["outcome"] == "PASS"
+    assert rows["library.validation.validation-formula-on-library"]["outcome"] == "ENFORCED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "changes", "marker"),
+    [
+        ("the read answered 2xx with no payload", {"filePropsRead": "empty"},
+         "did not read back"),
+        ("the payload withheld the property", {"filePropsRead": "withheld"},
+         "no CheckOutType property"),
+    ],
+)
+def test_a_file_whose_properties_were_not_read_left_nothing_behind_to_report(
+    why: str, changes: dict[str, Any], marker: str,
+) -> None:
+    """Both outcome heads name what the upload left behind, and CheckOutType
+    is the only thing that separates them.
+
+    A read that did not answer produced null, `null === 0` is false, and the
+    row settled as UPLOAD ACCEPTED WITHOUT CHECKOUT off a property nobody had.
+    """
+    rows = _run_lib_cols_probe(**changes)
+
+    required = rows["library.column.required-column-enforced-on-upload"]
+    assert required["outcome"] == "NOT ESTABLISHED", why
+    assert marker in required["evidence"]
+
+
+# --------------------------------------------------------------------------
+# The refusal boundary, across all five probes: a request that failed for a
+# reason `isRefusal` excludes settles nothing.
+#
+# `_probe_harness.js.j2` defines that boundary and says why: 401 and 403 are
+# about who is asking and 408 and 429 about the moment, so a row that reads
+# either as the server rejecting what was sent certifies a surface on the
+# strength of a throttle, and everything it gates is then read as evidence.
+# --------------------------------------------------------------------------
+
+#: Statuses the harness excludes from `isRefusal`, exercised as a pair: one
+#: about the caller and one about the moment.
+_NOT_A_REFUSAL = (403, 429)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("status", _NOT_A_REFUSAL)
+def test_a_person_operand_control_that_was_not_refused_holds_nothing(status: int) -> None:
+    """The control decided on `!negative.ok`, so a throttled create read as
+    SharePoint rejecting a Person operand.
+
+    That is the one row saying this probe can tell acceptance from refusal.
+    Held on a 429, every accepted create below it stays settled while nothing
+    established that a refusal is visible to the run at all.
+    """
+    rows = _run_calc_choice_probe(personControlStatus=status)
+
+    control = rows["formula.calc.control-person-operand-refused"]
+    assert control["outcome"] == "NOT ESTABLISHED", (
+        f"HTTP {status} is not the server rejecting the formula"
+    )
+    assert control["state"] != "settled"
+    for row in _CALC_CHOICE_ACCEPTANCE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("status", _NOT_A_REFUSAL)
+def test_a_create_that_was_not_refused_is_not_recorded_as_refused(status: int) -> None:
+    """`recordCreate` published its caller's refusal head on any non-2xx.
+
+    For `formula.choice.calc-column-accepted` that reads FAIL, and for
+    `formula.calc.lookup-operand-accepted` it reads REFUSED, which is a claim
+    about what SharePoint rejects.
+    """
+    rows = _run_calc_choice_probe(refuse=["ProbeRoute"], refuseStatus=status)
+
+    accepted = rows["formula.choice.calc-column-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert str(status) in accepted["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("status", _NOT_A_REFUSAL)
+def test_a_validation_store_write_that_failed_is_not_a_store_that_refuses(
+    status: int,
+) -> None:
+    """The four person-and-lookup store rows recorded REFUSED on any non-2xx.
+
+    Those rows are what `analysis/conditions.py` would be corrected against: a
+    REFUSED read off a throttle would tighten a rule SharePoint never rejected.
+    """
+    rows = _run_calc_choice_probe(fieldMergeStatus=status)
+
+    for row in ("formula.validation.person-operand",
+                "formula.validation.lookup-operand",
+                "expression.client-validation.person-operand",
+                "expression.client-validation.lookup-operand"):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert rows[row]["state"] != "settled", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("status", _NOT_A_REFUSAL)
+def test_a_folder_create_that_was_not_refused_settles_no_state(status: int) -> None:
+    """`addFolder` recorded FAIL for any non-refusal, which settles the row.
+
+    On the bare-library control that is the whole run: the operator reads that
+    a bare library did not take a folder, from a request the server never
+    considered.
+    """
+    rows = _run_folder_schema_probe(addFailsFor={"dbmlsp bare state": status})
+
+    control = rows["library.folder.control-add-on-bare-library"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert control["state"] != "settled"
+    for row in _FOLDER_SCHEMA_GATED_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_restore_that_was_not_refused_is_not_a_restore_that_failed() -> None:
+    """The restore row is half of the only shape a fix for this can take."""
+    rows = _run_folder_schema_probe(restoreMergeStatus=429)
+
+    restored = rows["library.folder.restore-list-validation-after-folders"]
+    assert restored["outcome"] == "NOT ESTABLISHED"
+    assert restored["state"] != "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throttled_create_does_not_report_a_restored_guard_as_absent() -> None:
+    """The last control asks whether the restored formula refuses a NEW folder.
+
+    Recorded FAIL on a throttle, it reads "the restored formula is not in
+    force and the three rows above are about an unguarded library", which is
+    the loudest wrong sentence this probe can print.
+    """
+    rows = _run_folder_schema_probe(addFailsFor={"dbmlsp after restore state": 429})
+
+    control = rows["library.folder.control-restored-validation-refuses-a-folder"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "not in force" not in control["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_five_creates_that_were_never_answered_do_not_read_as_all_refused() -> None:
+    """The race row counted saves and called everything else a refusal.
+
+    ALL REFUSED is the finding that the [today] default DOES race the rule and
+    loses, which is what three shipped solutions would be changed over.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, itemCreateStatus=429)
+
+    race = rows["formula.validation.today-default-races-modified-rule-rest"]
+    assert race["outcome"] == "NOT ESTABLISHED"
+    assert "neither saved nor were refused" in race["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("status", _NOT_A_REFUSAL)
+def test_a_form_endpoint_that_failed_is_not_a_form_endpoint_that_refused(
+    status: int,
+) -> None:
+    """The same question through the endpoint the form itself posts to."""
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, formEndpointStatus=status)
+
+    endpoint = rows["formula.validation.today-default-races-modified-rule-form-endpoint"]
+    assert endpoint["outcome"] == "NOT ESTABLISHED"
+    assert endpoint["state"] != "settled"
+
+
+#: The list rule form-validation writes, as the store reads it back: bracket
+#: stripping is what SharePoint did to it, measured 2026-09-02.
+_STORED_LIST_RULE = "=OR(ISBLANK(DM),DM<=Modified)"
+
+#: The same, for the three-column rule save-instant-paths writes.
+_STORED_THREE_COLUMN_RULE = (
+    "=AND(OR(ISBLANK(DM),DM<=Modified),OR(ISBLANK(TR),TR<=Modified),"
+    "OR(ISBLANK(WR),WR<=Modified))"
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throttled_merge_does_not_void_a_three_column_rule_already_stored() -> None:
+    """The same boundary on the probe whose rule gates eight rows.
+
+    Deciding on the MERGE's status, a 429 over a list that already carries the
+    rule voided every row measured under it, including the six a person is
+    sent away to perform by hand.
+    """
+    rows = _run_scratch_probe(
+        SCRATCH_SAVE_PATHS_PROBE, listMergeStatus=429,
+        initialListFormula=_STORED_THREE_COLUMN_RULE,
+    )
+
+    stored = rows["formula.validation.fixture-three-column-modified-rule-stored"]
+    assert stored["outcome"] == "PASS"
+    assert "429" in stored["evidence"]
+    assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throttled_merge_over_a_rule_already_stored_is_not_a_missing_rule() -> None:
+    """The row asks whether the rule IS stored, so the readback decides it.
+
+    Short-circuited on the write's status, a 429 over a list that already
+    carries the rule voided four form steps a person could have performed.
+    """
+    rows = _run_scratch_probe(
+        SCRATCH_FORM_PROBE, listMergeStatus=429, initialListFormula=_STORED_LIST_RULE,
+    )
+
+    stored = rows["formula.validation.fixture-modified-list-rule-stored"]
+    assert stored["outcome"] == "PASS"
+    assert "429" in stored["evidence"]
+    for row in _FORM_DM_ROWS:
+        assert rows[row]["outcome"] == "MANUAL", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_upload_that_failed_is_not_an_upload_a_required_column_refused() -> None:
+    """UPLOAD REFUSED is the finding that a required column blocks a file."""
+    rows = _run_lib_cols_probe(uploadStatus=429)
+
+    required = rows["library.column.required-column-enforced-on-upload"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert "was refused" not in required["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("row", "value"),
+    [
+        ("library.column.choice-column-on-library", "Beta"),
+        ("library.column.lookup-column-on-library", "1"),
+    ],
+)
+def test_a_metadata_write_that_failed_does_not_settle_the_column_row(
+    row: str, value: str,
+) -> None:
+    """FAIL here reads as the column behaving differently on a library, which
+    is the whole question the file exists to answer."""
+    rows = _run_lib_cols_probe(writeFailsFor={value: 429})
+
+    assert rows[row]["outcome"] == "NOT ESTABLISHED"
+    assert rows[row]["state"] != "settled"
+
+
+# --------------------------------------------------------------------------
+# The reused fixture's full shape: a property the measurement depends on that
+# a name match does not check.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_guard_column_carrying_a_default_is_not_the_blank_required_state() -> None:
+    """The state is "REQUIRED with NO default", which is what the shipped
+    family declares for two of its five library columns.
+
+    CLEANUP ships false, so a column an earlier run left behind is the normal
+    path. Carrying a default, it may be handing that default to every folder
+    created under it, and the row then reports on a required column that is
+    never blank.
+    """
+    rows = _run_folder_schema_probe(preexistingGuard={
+        "Title": "dbmlspGuard", "TypeAsString": "Text",
+        "Required": True, "ValidationFormula": None, "DefaultValue": "ok",
+    })
+
+    required = rows["library.folder.add-with-required-column"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert 'DefaultValue="ok"' in required["evidence"]
+    # The two states built on that column are not entered either, and the four
+    # rows about the fix are about a library that never reached the state.
+    assert rows["library.folder.add-with-column-validation"]["outcome"] == "NOT ESTABLISHED"
+    assert rows["library.folder.add-with-list-validation"]["outcome"] == "NOT ESTABLISHED"
+    for row in _FOLDER_SCHEMA_RESTORE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_column_carrying_its_own_rule_does_not_answer_the_race() -> None:
+    """The race rows read a refusal as the LIST rule firing.
+
+    A column rule an earlier run left on TR refuses the same create for a
+    reason this probe never asked about, so ALL REFUSED would be a finding
+    about the wrong rule.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, fields={
+        "DM": dict(_SCRATCH_DATE),
+        "T": dict(_SCRATCH_TODAY),
+        "TR": {**_SCRATCH_DATE, "DefaultValue": "[today]",
+               "ValidationFormula": "=TR<=Modified"},
+        "WR": {**_SCRATCH_DATE, "DisplayFormat": 1, "DefaultValue": "[today]"},
+    })
+
+    fixture = rows["formula.validation.fixture-default-columns"]
+    assert fixture["outcome"] == "FAIL"
+    assert "ValidationFormula" in fixture["evidence"]
+    for row in _SAVE_PATHS_RACE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_guard_column_carrying_a_rule_is_the_next_states_state() -> None:
+    """The same predicate, one property short again.
+
+    State 3 puts a ValidationFormula on that column, and CLEANUP ships false,
+    so the second run meets the formula the first one left. The state-2 create
+    then runs in the state the NEXT row names, and a refusal under it is
+    recorded against requiredness.
+    """
+    rows = _run_folder_schema_probe(preexistingGuard={
+        "Title": "dbmlspGuard", "TypeAsString": "Text", "Required": True,
+        "DefaultValue": None, "ValidationFormula": '=[dbmlspGuard]="ok"',
+    })
+
+    required = rows["library.folder.add-with-required-column"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert 'ValidationFormula="=[dbmlspGuard]=\\"ok\\""' in required["evidence"]
+    assert rows["library.folder.add-with-column-validation"]["outcome"] == "NOT ESTABLISHED"
+    assert rows["library.folder.add-with-list-validation"]["outcome"] == "NOT ESTABLISHED"
+    for row in _FOLDER_SCHEMA_RESTORE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("withheld", ["DefaultValue", "ValidationFormula"])
+def test_a_guard_property_the_site_withheld_is_not_a_column_carrying_none(
+    withheld: str,
+) -> None:
+    """`!back.body.X` is true for a property that is unset AND for one the
+    payload never carried, and only the first says the column is blank.
+
+    Read as a false value, a payload that stopped serving either property
+    would put every state back to being taken from the create's status.
+    """
+    guard = {
+        "Title": "dbmlspGuard", "TypeAsString": "Text", "Required": True,
+        "DefaultValue": None, "ValidationFormula": None,
+    }
+    del guard[withheld]
+    rows = _run_folder_schema_probe(preexistingGuard=guard)
+
+    required = rows["library.folder.add-with-required-column"]
+    assert required["outcome"] == "NOT ESTABLISHED"
+    assert f"{withheld}=undefined" in required["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_folder_an_earlier_run_left_is_not_this_state_taking_one() -> None:
+    """MEASURED 2026-09-13, `library.folder.add-under-existing-folder-name`: a
+    create on a name a folder already holds answers HTTP 200 and returns that
+    folder.
+
+    CLEANUP ships false and the names are one per state, so on the second run
+    every state meets its own folder, the create is a no-op, the read back
+    finds the old folder and each row reads PASS. The states this probe exists
+    to tell apart would all accept a folder, including the one the live deploy
+    was refused in.
+    """
+    rows = _run_folder_schema_probe(preexistingFolders=["dbmlsp bare state"])
+
+    control = rows["library.folder.control-add-on-bare-library"]
+    assert control["outcome"] == "NOT ESTABLISHED"
+    assert "was not read as free" in control["evidence"]
+    for row in _FOLDER_SCHEMA_GATED_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("row", "leftover"),
+    [
+        ("library.folder.add-using-path-under-validation", "dbmlsp using path state"),
+        ("library.folder.add-as-list-item-under-validation", "dbmlsp list item state"),
+        ("library.folder.control-restored-validation-refuses-a-folder",
+         "dbmlsp after restore state"),
+    ],
+)
+def test_a_leftover_name_answers_none_of_the_other_folder_spellings(
+    row: str, leftover: str,
+) -> None:
+    """The same no-op reaches the two other spellings and the restore control.
+
+    On the control it is the worse direction: a create that is really a no-op
+    over last run's folder is ACCEPTED, and the row then reports that the
+    restored formula is not in force and the three rows above it are about an
+    unguarded library.
+    """
+    rows = _run_folder_schema_probe(preexistingFolders=[leftover])
+
+    assert rows[row]["outcome"] == "NOT ESTABLISHED"
+    assert "was not read as free" in rows[row]["evidence"]
+    # Only that one row. The states before it were still measured.
+    assert rows["library.folder.control-add-on-bare-library"]["outcome"] == "PASS"
+    assert rows["library.folder.add-with-list-validation"]["outcome"] == "REFUSED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_date_column_left_required_does_not_answer_the_race_either() -> None:
+    """Requiredness refuses the same bare create the column rule would.
+
+    The race rows count five creates and read a refusal as the LIST rule
+    firing, so a TR an earlier run left required makes ALL REFUSED a finding
+    about the wrong constraint.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, fields={
+        "DM": dict(_SCRATCH_DATE),
+        "T": dict(_SCRATCH_TODAY),
+        "TR": {**_SCRATCH_DATE, "DefaultValue": "[today]", "Required": True},
+        "WR": {**_SCRATCH_DATE, "DisplayFormat": 1, "DefaultValue": "[today]"},
+    })
+
+    fixture = rows["formula.validation.fixture-default-columns"]
+    assert fixture["outcome"] == "FAIL"
+    assert "Required=true" in fixture["evidence"]
+    for row in _SAVE_PATHS_RACE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_race_column_property_the_site_withheld_is_not_one_it_carries_none_of() -> None:
+    """The same absent-is-not-false boundary on the shared scratch list.
+
+    A payload that stops serving Required reads, under a bare falsy test, as a
+    column carrying no requiredness, which is the reading the guard exists to
+    refuse.
+    """
+    carried = {**_SCRATCH_DATE, "DefaultValue": "[today]"}
+    del carried["Required"]
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, fields={
+        "DM": dict(_SCRATCH_DATE),
+        "T": dict(_SCRATCH_TODAY),
+        "TR": carried,
+        "WR": {**_SCRATCH_DATE, "DisplayFormat": 1, "DefaultValue": "[today]"},
+    })
+
+    fixture = rows["formula.validation.fixture-default-columns"]
+    assert fixture["outcome"] == "FAIL"
+    assert "Required=undefined" in fixture["evidence"]
+    for row in _SAVE_PATHS_RACE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_of_another_type_under_the_race_name_answers_nothing() -> None:
+    """The race is about a DATE column's dynamic default.
+
+    A Text column of that name can hold the literal string "[today]", and the
+    row would read as the fixture being in place.
+    """
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, fields={
+        "DM": dict(_SCRATCH_DATE),
+        "T": dict(_SCRATCH_TODAY),
+        "TR": {**_SCRATCH_DATE, "TypeAsString": "Text", "DefaultValue": "[today]"},
+        "WR": {**_SCRATCH_DATE, "DisplayFormat": 1, "DefaultValue": "[today]"},
+    })
+
+    fixture = rows["formula.validation.fixture-default-columns"]
+    assert fixture["outcome"] == "FAIL"
+    assert "TypeAsString=Text" in fixture["evidence"]
+    for row in _SAVE_PATHS_RACE_ROWS:
+        assert rows[row]["state"] == "void", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "shape"),
+    [
+        ("required", {"Required": True}),
+        ("carrying a default", {"DefaultValue": "2026-01-01T00:00:00Z"}),
+    ],
+)
+def test_a_dt_column_of_another_shape_voids_the_new_form_steps(
+    why: str, shape: dict[str, Any],
+) -> None:
+    """Every New step goes through a form that shows DT, and four of the six
+    leave it blank.
+
+    A DT an earlier run left required refuses those saves, and a DT carrying a
+    default fills them, both for a reason no step asked about. The refusal is
+    then written up against the rule the step names.
+    """
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, fields={
+        "DM": dict(_SCRATCH_DATE), "T": dict(_SCRATCH_TODAY),
+        "DT": {**_SCRATCH_DATE, **shape},
+    })
+
+    assert rows["formula.validation.fixture-dt-column"]["outcome"] == "FAIL", why
+    for row in (*_FORM_DT_ROWS, "formula.validation.form-new-today-under-modified-rule",
+                "formula.validation.form-new-tomorrow-under-modified-rule"):
+        assert rows[row]["state"] == "void", row
+    # The two Edit steps open an item that already carries a DT.
+    assert rows["formula.validation.form-edit-today-under-modified-rule"]["outcome"] == "MANUAL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_bare_item_an_earlier_run_left_is_not_what_today_resolves_to_now() -> None:
+    """The =TODAY() default fires once, at create.
+
+    The row is reused so repeated setup runs do not accumulate rows, and its T
+    then holds what TODAY() resolved to on the day that run made it. Recorded
+    as PASS beside a site-local midnight computed from now, a row a day old is
+    the transcript that says TODAY() resolves to yesterday.
+    """
+    rows = _run_scratch_probe(SCRATCH_FORM_PROBE, bareItemLeft=4)
+
+    resolved = rows["formula.datetime.today-function-default-value"]
+    assert resolved["outcome"] == "NOT ESTABLISHED"
+    assert "left by an earlier setup run" in resolved["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("why", "shape"),
+    [
+        ("a default fills the column the upload leaves out", {"DefaultValue": "draft"}),
+        ("a column rule refuses the upload for its own reason",
+         {"ValidationFormula": "=[ColRequired]<>\"\""}),
+    ],
+)
+def test_an_upload_past_a_column_that_is_never_blank_enforces_nothing(
+    why: str, shape: dict[str, Any],
+) -> None:
+    """The upload sends no metadata, so the question is whether a column that
+    would be BLANK on the file that lands blocks it.
+
+    A ColRequired an earlier run left carrying a default is never blank, and
+    UPLOAD ACCEPTED then reports that a required column does not block a file.
+    """
+    rows = _run_lib_cols_probe(leftoverShape={"ColRequired": shape})
+
+    required = rows["library.column.required-column-enforced-on-upload"]
+    assert required["outcome"] == "NOT ESTABLISHED", why
+    assert required["state"] == "void"
+    assert "no blank required column" in required["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_text_column_under_the_choice_name_is_not_a_choice_column() -> None:
+    """Each row is about a column of a PARTICULAR type.
+
+    A ColChoice an earlier run left as Text takes the string "Beta" and reads
+    it back, so the row records that a choice column behaves the same on a
+    document library, measured on a column that is not one.
+    """
+    rows = _run_lib_cols_probe(leftoverShape={"ColChoice": {"TypeAsString": "Text"}})
+
+    choice = rows["library.column.choice-column-on-library"]
+    assert choice["state"] == "void"
+    assert "TypeAsString=Text" in choice["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_person_column_left_as_text_is_not_the_negative_control_s_operand() -> None:
+    """N1 is the row that says this probe can tell acceptance from refusal.
+
+    A ProbeOwner an earlier run left as Text takes a calculated formula, and
+    the control then records that a Person operand was ACCEPTED: the probe
+    declares itself insensitive, voids every acceptance, and the sentence
+    quoted against this project's own denylist is about a Text column.
+    """
+    rows = _run_calc_choice_probe(
+        leftoverShape={"ProbeOwner": {"TypeAsString": "Text"}})
+
+    for row in _CALC_CHOICE_ACCEPTANCE_ROWS:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+        assert rows[row]["evidence"] == "the run did not reach this question", row
+    assert rows["formula.calc.control-person-operand-refused"]["outcome"] == "NOT ESTABLISHED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_operand_under_another_display_title_stops_the_calc_choice_run() -> None:
+    """D1 references its operands by DISPLAY title, which is the shape the
+    build actually emits.
+
+    A column re-titled since the run that made it answers "the formula refers
+    to a column that does not exist", and the row records that SharePoint
+    refuses a spaced display name.
+    """
+    rows = _run_calc_choice_probe(
+        leftoverShape={"SpacedFrom": {"Title": "Spaced From Tier (retired)"}})
+
+    accepted = rows["formula.choice.spaced-display-name-accepted"]
+    assert accepted["outcome"] == "NOT ESTABLISHED"
+    assert accepted["evidence"] == "the run did not reach this question"

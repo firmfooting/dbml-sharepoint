@@ -309,7 +309,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f0c5cc27. Quote this when reporting results.');
+  log('INFO', 'probe revision 3301ba93. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibCols';
   const TARGET_LIB = 'dbmlsp Probe LibCols Target';
@@ -433,43 +433,59 @@
   const fieldExists = async (name) =>
     (await spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')`)).ok;
 
+  // Each row below is about a column of a PARTICULAR type, and a column of the
+  // right name is not that. CLEANUP ships false, so one an earlier run left as
+  // another type is the normal path, and the write that follows would read
+  // back as that type behaving the same on a library. The whole field is read
+  // because `$select` naming a property the entity does not have answers 400.
+  const fieldOfType = async (name, typeAsString) => {
+    const back = await spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
+    const body = (back.ok && back.body) ? back.body : null;
+    return {
+      body,
+      held: body !== null && body.TypeAsString === typeAsString,
+      line: body === null
+        ? `${name} did not read back (HTTP ${back.status})`
+        : `${name} reads back TypeAsString=${body.TypeAsString}, and these rows are about a ${typeAsString} column`,
+    };
+  };
+  // `!body.X` is true both for a property that is unset and for one the site
+  // never served, and only the first says the column carries nothing.
+  const unset = (body, prop) => prop in body && !body[prop];
+
+  // A null schema means this run had nothing to create the column from.
+  const ensureField = async (name, typeAsString, schemaXml) => {
+    let sent = schemaXml === null
+      ? `${name} could not be created by this run`
+      : `${name} was already present, so this run sent no create`;
+    if (schemaXml !== null && !(await fieldExists(name))) {
+      const made = await addField(schemaXml);
+      sent = `the ${name} create answered HTTP ${made.status}`;
+    }
+    const shape = await fieldOfType(name, typeAsString);
+    return { ...shape, line: `${sent}; ${shape.line}` };
+  };
+
   // ---- Choice column setup --------------------------------------------
-  let choiceCreated = false;
-  if (!(await fieldExists('ColChoice'))) {
-    const resChoice = await addField(
-      '<Field Type="Choice" DisplayName="ColChoice" Name="ColChoice" Format="Dropdown">'
-      + '<CHOICES><CHOICE>Alpha</CHOICE><CHOICE>Beta</CHOICE><CHOICE>Gamma</CHOICE></CHOICES>'
-      + '<Default>Alpha</Default></Field>'
-    );
-    choiceCreated = resChoice.ok;
-  } else {
-    choiceCreated = true;
-  }
+  const choiceShape = await ensureField('ColChoice', 'Choice',
+    '<Field Type="Choice" DisplayName="ColChoice" Name="ColChoice" Format="Dropdown">'
+    + '<CHOICES><CHOICE>Alpha</CHOICE><CHOICE>Beta</CHOICE><CHOICE>Gamma</CHOICE></CHOICES>'
+    + '<Default>Alpha</Default></Field>');
+  const choiceCreated = choiceShape.held;
 
   // ---- Lookup column setup --------------------------------------------
-  let lookupCreated = false;
-  if (targetListId && !(await fieldExists('ColLookup'))) {
-    const resLookup = await addField(
-      `<Field Type="Lookup" DisplayName="ColLookup" Name="ColLookup"`
+  const lookupShape = await ensureField('ColLookup', 'Lookup', targetListId
+    ? `<Field Type="Lookup" DisplayName="ColLookup" Name="ColLookup"`
       + ` List="{${targetListId}}" ShowField="Title"/>`
-    );
-    lookupCreated = resLookup.ok;
-  } else if (targetListId) {
-    lookupCreated = true;
-  }
+    : null);
+  const lookupCreated = lookupShape.held;
 
   // ---- Calculated column setup ----------------------------------------
-  let calcCreated = false;
-  if (!(await fieldExists('ColCalc'))) {
-    const resCalc = await addField(
-      '<Field Type="Calculated" DisplayName="ColCalc" Name="ColCalc" ResultType="Text">'
-      + '<Formula>=[ColChoice]&amp;" - calc"</Formula>'
-      + '<FieldRefs><FieldRef Name="ColChoice"/></FieldRefs></Field>'
-    );
-    calcCreated = resCalc.ok;
-  } else {
-    calcCreated = true;
-  }
+  const calcShape = await ensureField('ColCalc', 'Calculated',
+    '<Field Type="Calculated" DisplayName="ColCalc" Name="ColCalc" ResultType="Text">'
+    + '<Formula>=[ColChoice]&amp;" - calc"</Formula>'
+    + '<FieldRefs><FieldRef Name="ColChoice"/></FieldRefs></Field>');
+  const calcCreated = calcShape.held;
 
   // ---- Upload initial file for metadata tests -------------------------
   digest = await getDigest();
@@ -519,7 +535,7 @@
   // ---- choice-column-on-library ---------------------------------------
   if (!choiceCreated || itemId === null) {
     record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
-           'VOID', 'ColChoice could not be created or file item was not found');
+           'VOID', `${choiceShape.line}; file item ${itemId === null ? 'was not found' : `is ${itemId}`}`, 'void');
   } else {
     digest = await getDigest();
     const writeChoice = await spPost(
@@ -529,23 +545,35 @@
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
     );
     if (!writeChoice.ok) {
+      // A refused write answers the question; a 401, 403, 408 or 429 does not,
+      // and FAIL would settle the row as the column behaving differently here.
       record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
-             'FAIL', `MERGE with ColChoice="Beta" failed: HTTP ${writeChoice.status} ${writeChoice.text.slice(0, 200)}`);
+             isRefusal(writeChoice.status) ? 'FAIL' : 'NOT ESTABLISHED',
+             `MERGE with ColChoice="Beta" failed: HTTP ${writeChoice.status} ${writeChoice.text.slice(0, 200)}`);
     } else {
       const readChoice = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice`);
-      const val = (readChoice.ok && readChoice.body) ? readChoice.body.ColChoice : null;
-      record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
-             val === 'Beta' ? 'PASS' : 'FAIL',
-             val === 'Beta'
-               ? 'choice column created, value written via item MERGE, and read back as written'
-               : `read back unexpected value: ${JSON.stringify(val)} (HTTP ${readChoice.status})`);
+      // FAIL is the claim that a choice column behaves differently on a
+      // library, and a read that never answered is not that claim's evidence.
+      if (readFailed(readChoice)) {
+        record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
+               'NOT ESTABLISHED',
+               `the MERGE answered HTTP ${writeChoice.status}, but item ${itemId} did not read back `
+               + `(HTTP ${readChoice.status})`);
+      } else {
+        const val = readChoice.body.ColChoice;
+        record('library.column.choice-column-on-library', 'Does a choice column behave the same on a document library',
+               val === 'Beta' ? 'PASS' : 'FAIL',
+               val === 'Beta'
+                 ? 'choice column created, value written via item MERGE, and read back as written'
+                 : `read back unexpected value: ${JSON.stringify(val)} (HTTP ${readChoice.status})`);
+      }
     }
   }
 
   // ---- lookup-column-on-library ---------------------------------------
   if (!lookupCreated || itemId === null || targetRowId === null) {
     record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
-           'VOID', `lookup column setup incomplete (lookupCreated=${lookupCreated}, itemId=${itemId}, targetRowId=${targetRowId})`);
+           'VOID', `lookup column setup incomplete (${lookupShape.line}; itemId=${itemId}, targetRowId=${targetRowId})`, 'void');
   } else {
     digest = await getDigest();
     const writeLookup = await spPost(
@@ -556,49 +584,86 @@
     );
     if (!writeLookup.ok) {
       record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
-             'FAIL', `MERGE with ColLookupId=${targetRowId} failed: HTTP ${writeLookup.status} ${writeLookup.text.slice(0, 200)}`);
+             isRefusal(writeLookup.status) ? 'FAIL' : 'NOT ESTABLISHED',
+             `MERGE with ColLookupId=${targetRowId} failed: HTTP ${writeLookup.status} ${writeLookup.text.slice(0, 200)}`);
     } else {
       const readLookup = await spGet(
         `${listPath}/items(${itemId})?$select=Id,ColLookupId`
       );
-      const readId = (readLookup.ok && readLookup.body) ? readLookup.body.ColLookupId : null;
-      record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
-             readId === targetRowId ? 'PASS' : 'FAIL',
-             readId === targetRowId
-               ? `lookup column created, set to target ID ${targetRowId} via item MERGE, and read back as written`
-               : `read back unexpected ColLookupId: ${JSON.stringify(readId)} (HTTP ${readLookup.status})`);
+      if (readFailed(readLookup)) {
+        record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
+               'NOT ESTABLISHED',
+               `the MERGE answered HTTP ${writeLookup.status}, but item ${itemId} did not read back `
+               + `(HTTP ${readLookup.status})`);
+      } else {
+        const readId = readLookup.body.ColLookupId;
+        record('library.column.lookup-column-on-library', 'Does a lookup column behave the same on a document library',
+               readId === targetRowId ? 'PASS' : 'FAIL',
+               readId === targetRowId
+                 ? `lookup column created, set to target ID ${targetRowId} via item MERGE, and read back as written`
+                 : `read back unexpected ColLookupId: ${JSON.stringify(readId)} (HTTP ${readLookup.status})`);
+      }
     }
   }
 
   // ---- calculated-column-on-library -----------------------------------
   if (!calcCreated || itemId === null) {
     record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
-           'VOID', 'ColCalc could not be created or file item was not found');
+           'VOID', `${calcShape.line}; file item ${itemId === null ? 'was not found' : `is ${itemId}`}`, 'void');
   } else {
     const readCalc = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice,ColCalc`);
-    const calcVal = (readCalc.ok && readCalc.body) ? readCalc.body.ColCalc : null;
     const expectedVal = 'Beta - calc';
-    record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
-           calcVal === expectedVal ? 'PASS' : 'FAIL',
-           calcVal === expectedVal
-             ? `calculated column evaluated operand [ColChoice] and read back as "${calcVal}"`
-             : `calculated column read back "${calcVal}", expected "${expectedVal}" (HTTP ${readCalc.status})`);
+    if (readFailed(readCalc)) {
+      record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
+             'NOT ESTABLISHED',
+             `item ${itemId} did not read back (HTTP ${readCalc.status}), so no computed value was seen`);
+    } else {
+      const calcVal = readCalc.body.ColCalc;
+      record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
+             calcVal === expectedVal ? 'PASS' : 'FAIL',
+             calcVal === expectedVal
+               ? `calculated column evaluated operand [ColChoice] and read back as "${calcVal}"`
+               : `calculated column read back "${calcVal}", expected "${expectedVal}" (HTTP ${readCalc.status})`);
+    }
   }
 
   // ---- required-column-enforced-on-upload -----------------------------
-  let reqCreated = false;
+  // Required is the whole question, so it is READ BACK off the column rather
+  // than taken from the create's status or from a column of that name being
+  // present. CLEANUP ships false, so a ColRequired left by an earlier run is
+  // the normal path; if it is not required, an accepted upload says nothing.
+  // The whole field is read: `$select` naming a property the entity does not
+  // have answers HTTP 400, which would read as an absent column.
+  //
+  // A default and a rule of its own are part of the shape too. The upload
+  // sends no metadata, so a column carrying a default is never blank on the
+  // file that lands and an accepted upload is not an upload past a required
+  // column, while a column rule refuses the same upload for a reason this
+  // never asked about. Each is read as served-and-falsy, because a property
+  // the site withheld is not a property that is unset.
+  let resReq = { ok: true, status: 0 };
+  let reqSent = 'ColRequired was already present, so this run sent no create';
   if (!(await fieldExists('ColRequired'))) {
-    const resReq = await addField(
+    resReq = await addField(
       '<Field Type="Text" DisplayName="ColRequired" Name="ColRequired" Required="TRUE"/>'
     );
-    reqCreated = resReq.ok;
-  } else {
-    reqCreated = true;
+    reqSent = `the ColRequired create answered HTTP ${resReq.status}`;
   }
+  const reqBack = await spGet(`${listPath}/fields/getbyinternalnameortitle('ColRequired')`);
+  const reqCreated = reqBack.ok && !!reqBack.body && reqBack.body.Required === true
+    && unset(reqBack.body, 'DefaultValue') && unset(reqBack.body, 'ValidationFormula');
 
   if (!reqCreated) {
     record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
-           'VOID', 'ColRequired could not be created on the library');
+           'NOT ESTABLISHED',
+           `the library carries no blank required column (${reqSent}; `
+           + `${reqBack.ok && reqBack.body
+             ? `ColRequired reads back TypeAsString=${reqBack.body.TypeAsString} Required=${reqBack.body.Required}`
+               + ` DefaultValue=${JSON.stringify(reqBack.body.DefaultValue)}`
+               + ` ValidationFormula=${JSON.stringify(reqBack.body.ValidationFormula)}`
+             : `ColRequired did not read back, HTTP ${reqBack.status}`}), `
+           + 'so an accepted upload is not an upload past a required column.',
+           'void');
   } else {
     digest = await getDigest();
     const reqUpload = await rawPost(
@@ -607,37 +672,58 @@
       digest
     );
     if (!reqUpload.ok) {
+      // UPLOAD REFUSED is the finding that a required column blocks a file, so
+      // a throttle or an authorization failure must not be able to produce it.
+      const refusal = isRefusal(reqUpload.status);
       record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
-             'UPLOAD REFUSED',
-             `Files/add was refused with HTTP ${reqUpload.status}: ${reqUpload.text.slice(0, 260)}`);
+             refusal ? 'UPLOAD REFUSED' : 'NOT ESTABLISHED',
+             `Files/add ${refusal ? 'was refused with' : 'failed with'} HTTP ${reqUpload.status}: ${reqUpload.text.slice(0, 260)}`);
     } else {
       const reqItems = await spGet(
         `${listPath}/items?$select=Id,FileLeafRef,ColRequired&$filter=FileLeafRef eq '${REQUIRED_FILE}'`
       );
-      const reqRows = (reqItems.ok && reqItems.body && Array.isArray(reqItems.body.value)) ? reqItems.body.value : [];
+      const reqRows = (!readFailed(reqItems) && Array.isArray(reqItems.body.value)) ? reqItems.body.value : [];
       const reqRow = reqRows.length ? reqRows[0] : null;
       const fileProps = await spGet(
         `${listPath}/RootFolder/Files('${REQUIRED_FILE}')?$select=CheckOutType,MajorVersion`
       );
-      const checkOutType = (fileProps.ok && fileProps.body) ? fileProps.body.CheckOutType : null;
-      const colVal = reqRow ? reqRow.ColRequired : null;
-
-      const checkedOut = checkOutType === 0;
-      record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
-             checkedOut ? 'UPLOAD ACCEPTED WITH CHECKOUT' : 'UPLOAD ACCEPTED WITHOUT CHECKOUT',
-             `Files/add succeeded (HTTP ${reqUpload.status}). CheckOutType=${checkOutType}`
-             + ` (${checkedOut ? 'checked out to author' : 'not checked out'}),`
-             + ` ColRequired value is ${JSON.stringify(colVal)}`);
+      // Both outcome heads below name what the upload left behind, so the
+      // property has to be in hand: a 2xx with no payload, and a payload that
+      // withheld CheckOutType, both used to read as 'not checked out'.
+      const served = !readFailed(fileProps) && 'CheckOutType' in fileProps.body;
+      const colLine = readFailed(reqItems)
+        ? `the uploaded file's item did not read back (HTTP ${reqItems.status})`
+        : reqRow
+          ? `ColRequired value is ${JSON.stringify(reqRow.ColRequired)}`
+          : 'no list item was served for the uploaded file';
+      if (!served) {
+        const why = readFailed(fileProps)
+          ? `the file's properties did not read back (HTTP ${fileProps.status})`
+          : 'the payload carried no CheckOutType property';
+        record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
+               'NOT ESTABLISHED',
+               `Files/add succeeded (HTTP ${reqUpload.status}), but ${why}, so what the upload `
+               + `left behind was never seen. ${colLine}`);
+      } else {
+        const checkOutType = fileProps.body.CheckOutType;
+        const checkedOut = checkOutType === 0;
+        record('library.column.required-column-enforced-on-upload', 'Is a required column enforced when a file is uploaded without it',
+               checkedOut ? 'UPLOAD ACCEPTED WITH CHECKOUT' : 'UPLOAD ACCEPTED WITHOUT CHECKOUT',
+               `Files/add succeeded (HTTP ${reqUpload.status}). CheckOutType=${checkOutType}`
+               + ` (${checkedOut ? 'checked out to author' : 'not checked out'}),`
+               + ` ${colLine}`);
+      }
     }
   }
 
   // ---- validation-formula-on-library ----------------------------------
+  const RULE = '=[ColChoice]<>"InvalidValue"';
   digest = await getDigest();
   const setRule = await spPost(
     listPath,
     {
       __metadata: { type: 'SP.List' },
-      ValidationFormula: '=[ColChoice]<>"InvalidValue"',
+      ValidationFormula: RULE,
       ValidationMessage: 'ColChoice cannot be InvalidValue',
     },
     digest,
@@ -647,14 +733,31 @@
       'IF-MATCH': '*',
     }
   );
+  // The rule is read back, because INERT is exactly what a rule that never
+  // landed produces: the violating write is accepted, and the row reports
+  // that a list ValidationFormula does not enforce on a library. A MERGE
+  // answers 204 either way.
+  // MEASURED 2026-09-02 (save-instant-paths-probe): SharePoint stores
+  // `[DM]<=[Modified]` and reads it back as `DM<=Modified`, so the comparison
+  // ignores the brackets, as the deployer's own readback does.
+  const canonical = (formula) => String(formula || '').replace(/[[\]]/g, '');
+  const ruleBack = await spGet(`${listPath}?$select=ValidationFormula`);
+  const ruleStored = setRule.ok && ruleBack.ok && ruleBack.body
+    && canonical(ruleBack.body.ValidationFormula) === canonical(RULE);
 
-  if (!setRule.ok) {
+  if (!ruleStored) {
     record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
            'NOT ESTABLISHED',
-           `setting ValidationFormula on the library returned HTTP ${setRule.status}: ${setRule.text.slice(0, 260)}`);
+           `the library carries no such rule (MERGE answered HTTP ${setRule.status}`
+           + `${setRule.ok ? '' : `: ${setRule.text.slice(0, 200)}`}; `
+           + `${ruleBack.ok && ruleBack.body
+             ? `ValidationFormula reads back ${JSON.stringify(ruleBack.body.ValidationFormula)}`
+             : `ValidationFormula did not read back, HTTP ${ruleBack.status}`}), `
+           + 'so an accepted violating write would say the rule is inert when there is no rule.',
+           'void');
   } else if (itemId === null) {
     record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
-           'VOID', 'ValidationFormula was set, but no test file item exists to test enforcement against');
+           'VOID', 'ValidationFormula was set, but no test file item exists to test enforcement against', 'void');
   } else {
     digest = await getDigest();
     const badWrite = await spPost(

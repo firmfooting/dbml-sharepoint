@@ -464,21 +464,28 @@
     `</CHOICES></Field>`;
 
   const bootstrap = [
-    ['RaisedAtTier', 'RaisedAtTier', choiceXml('RaisedAtTier', 'RaisedAtTier', [...TIERS, NASTY])],
-    ['TargetTier', 'TargetTier', choiceXml('TargetTier', 'TargetTier', [...TIERS, NASTY])],
+    ['RaisedAtTier', 'RaisedAtTier', 'Choice', choiceXml('RaisedAtTier', 'RaisedAtTier', [...TIERS, NASTY])],
+    ['TargetTier', 'TargetTier', 'Choice', choiceXml('TargetTier', 'TargetTier', [...TIERS, NASTY])],
     // Spaced display names, the shape the tool actually emits.
-    ['SpacedFrom', 'Spaced From Tier', choiceXml('SpacedFrom', 'Spaced From Tier', TIERS)],
-    ['SpacedTo', 'Spaced To Tier', choiceXml('SpacedTo', 'Spaced To Tier', TIERS)],
+    ['SpacedFrom', 'Spaced From Tier', 'Choice', choiceXml('SpacedFrom', 'Spaced From Tier', TIERS)],
+    ['SpacedTo', 'Spaced To Tier', 'Choice', choiceXml('SpacedTo', 'Spaced To Tier', TIERS)],
     // Drives a numeric score and a date offset, the two future shapes.
-    ['ProbePriority', 'Probe Priority', choiceXml('ProbePriority', 'Probe Priority', PRIORITIES)],
-    ['ProbeRaised', 'Probe Raised',
+    ['ProbePriority', 'Probe Priority', 'Choice', choiceXml('ProbePriority', 'Probe Priority', PRIORITIES)],
+    ['ProbeRaised', 'Probe Raised', 'DateTime',
      '<Field Type="DateTime" DisplayName="Probe Raised" Name="ProbeRaised" Format="DateOnly"/>'],
-    ['ProbeOwner', 'ProbeOwner',
+    ['ProbeOwner', 'ProbeOwner', 'User',
      '<Field Type="User" DisplayName="ProbeOwner" Name="ProbeOwner" UserSelectionMode="PeopleOnly"/>'],
-    // Retitled later to "Retire Me (retired)" to mimic the retirement fold.
-    ['RetireMe', 'Retire Me', choiceXml('RetireMe', 'Retire Me', TIERS)],
+    // Retitled later to "Retire Me (retired)" to mimic the retirement fold, so
+    // its title is this probe's own leftover and is not checked below.
+    ['RetireMe', null, 'Choice', choiceXml('RetireMe', 'Retire Me', TIERS)],
   ];
-  for (const [internal, , xml] of bootstrap) {
+  // Every row names an operand by TYPE, and the spaced ones reference it by
+  // DISPLAY title, so a column of that internal name left by an earlier run in
+  // another shape makes each row a finding about the wrong column. That is how
+  // a leftover gets cited as "SharePoint allows a Person operand" against this
+  // project's own denylist, and N1 is the row it would land on. Read back
+  // after the create OR the reuse, since CLEANUP ships false.
+  for (const [internal, display, typeAsString, xml] of bootstrap) {
     if (!(await fieldExists(internal))) {
       const made = await addField(xml);
       if (!made.ok) {
@@ -486,6 +493,20 @@
                `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
         return report();
       }
+    }
+    const back = await spGet(`${fieldsPath}/getbyinternalnameortitle('${internal}')`);
+    const shaped = back.ok && !!back.body && back.body.TypeAsString === typeAsString
+      && (display === null || back.body.Title === display);
+    if (!shaped) {
+      record('BOOT', `Column ${internal} is the operand the rows below name`, 'FAIL',
+             back.ok && back.body
+               ? `${internal} reads back TypeAsString=${JSON.stringify(back.body.TypeAsString)} `
+                 + `Title=${JSON.stringify(back.body.Title)}, and every row below is about a `
+                 + `${typeAsString} column${display === null ? '' : ` titled "${display}"`}. `
+                 + 'Set CLEANUP = true for a clean run.'
+               : `${internal} did not read back (HTTP ${back.status}), so nothing below would be `
+                 + 'measuring the operand it names');
+      return report();
     }
   }
 
@@ -501,30 +522,67 @@
     `<FieldRefs>${refs.map((r) => `<FieldRef Name="${r}"/>`).join('')}</FieldRefs>` +
     `</Field>`;
 
-  if (!(await fieldExists('ProbeRoute'))) {
-    const made = await addField(
-      calcXml('ProbeRoute', ROUTE_FORMULA, ['RaisedAtTier', 'TargetTier']));
-    record('formula.choice.calc-column-accepted',
-           'Calculated column over two Choice operands is accepted',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok
-             ? `HTTP ${made.status} on createfieldasxml`
-             : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
-  } else {
-    record('formula.choice.calc-column-accepted',
-           'Calculated column over two Choice operands is accepted', 'PASS',
-           'column already present from an earlier run of this probe');
-  }
+  // Every row below asks whether SharePoint ACCEPTS a create. CLEANUP ships
+  // false, so finding the column already there is the normal path, and it is
+  // not an answer: this run sent no create, so nothing accepted anything. That
+  // is how a leftover column gets cited as "SharePoint allows a Lookup
+  // operand" against this project's own denylist. An accepted create is read
+  // back too, because a status is not a column.
+  //
+  // ACCEPTED_IDS collects the rows that recorded an acceptance. A refusal is
+  // its own evidence; an acceptance is only evidence while the negative
+  // control shows this probe could have seen a refusal, so N1 gates these at
+  // the end of the run.
+  const ACCEPTED_IDS = [];
+  const recordCreate = async (id, question, name, xml, accepted, refused, note = '') => {
+    if (await fieldExists(name)) {
+      record(id, question, 'NOT ESTABLISHED',
+             `${name} already exists from an earlier run, so this run sent no create. ` +
+             'Set CLEANUP = true for a clean answer');
+      return { accepted: false, asked: false };
+    }
+    const made = await addField(xml);
+    if (!made.ok) {
+      // 401 and 403 are about who is asking and 408 and 429 about the moment,
+      // so neither is the server rejecting the formula.
+      record(id, question, isRefusal(made.status) ? refused : 'NOT ESTABLISHED',
+             `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
+      return { accepted: false, asked: true };
+    }
+    const back = await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')`);
+    // readFailed, not `!ok`: a 2xx that served no payload is not a column read
+    // back, and the Formula line below would throw on it and lose the run.
+    if (readFailed(back)) {
+      record(id, question, 'NOT ESTABLISHED',
+             `HTTP ${made.status} on createfieldasxml, but ${name} did not read back ` +
+             `(HTTP ${back.status}). An accepted create that left no column is not an acceptance`);
+      return { accepted: false, asked: true };
+    }
+    ACCEPTED_IDS.push(id);
+    record(id, question, accepted,
+           `HTTP ${made.status} on createfieldasxml, and ${name} reads back with Formula ` +
+           `${JSON.stringify(back.body.Formula)}${note}`);
+    return { accepted: true, asked: true };
+  };
+
+  await recordCreate('formula.choice.calc-column-accepted',
+                     'Calculated column over two Choice operands is accepted',
+                     'ProbeRoute',
+                     calcXml('ProbeRoute', ROUTE_FORMULA, ['RaisedAtTier', 'TargetTier']),
+                     'PASS', 'FAIL');
 
   // ---- C3: what did SharePoint actually store? ------------------------
   const route = await spGet(`${fieldsPath}/getbyinternalnameortitle('ProbeRoute')`);
-  if (route.ok) {
+  // A 2xx with no payload is a read that did not answer, not a column that
+  // stored nothing, and the two rows below are about what it holds.
+  const routeRead = !readFailed(route);
+  if (routeRead) {
     record('formula.choice.formula-as-stored', 'Formula as SharePoint stored it', 'INFO',
            `sent ${JSON.stringify(ROUTE_FORMULA)} / ` +
            `stored ${JSON.stringify(route.body.Formula)}`);
   } else {
     record('formula.choice.formula-as-stored', 'Formula as SharePoint stored it', 'NOT ESTABLISHED',
-           'the calculated column does not exist to read back');
+           `the calculated column did not read back (HTTP ${route.status})`);
   }
 
   // ---- C2 / C4 / C5: does it RENDER? ----------------------------------
@@ -537,9 +595,11 @@
      { Title: 'c5', RaisedAtTier: 'Tier 1' }, null],
   ];
 
-  if (!route.ok) {
+  if (!routeRead) {
     for (const [id, question] of cases) {
-      record(id, question, 'NOT ESTABLISHED', 'no calculated column to render');
+      record(id, question, 'NOT ESTABLISHED',
+             `the calculated column did not read back (HTTP ${route.status}), so there is nothing `
+             + 'to render');
     }
   } else {
     for (const [id, question, payload, expected] of cases) {
@@ -550,8 +610,29 @@
                `item create HTTP ${made.status}: ${made.text.slice(0, 300)}`);
         continue;
       }
-      const back = await spGet(`${itemsPath}(${made.body.Id})?$select=ProbeRoute`);
-      const actual = back.ok ? back.body.ProbeRoute : null;
+      // An accepted create that served no id leaves nothing to read, and the
+      // row below would be a finding about a URL built from `undefined`.
+      const itemId = made.body === null ? null : made.body.Id;
+      if (itemId === undefined || itemId === null) {
+        record(id, question, 'NOT ESTABLISHED',
+               `the item create answered HTTP ${made.status} and served no id, so no saved item `
+               + 'was read');
+        continue;
+      }
+      const back = await spGet(`${itemsPath}(${itemId})?$select=ProbeRoute`);
+      if (readFailed(back)) {
+        record(id, question, 'NOT ESTABLISHED',
+               `item ${itemId} was created, but it did not read back (HTTP ${back.status})`);
+        continue;
+      }
+      // A payload that never carried ProbeRoute is not a calculated column
+      // rendering nothing, and the blank-operand row reports exactly that.
+      if (!('ProbeRoute' in back.body)) {
+        record(id, question, 'NOT ESTABLISHED',
+               `item ${itemId} read back without a ProbeRoute property, so this run saw no value`);
+        continue;
+      }
+      const actual = back.body.ProbeRoute;
       if (expected === null) {
         // No expected value: a blank operand's behaviour is the finding.
         record(id, question, 'INFO', `stored value: ${JSON.stringify(actual)}`);
@@ -568,23 +649,20 @@
   // cannot have its brackets stripped without becoming ambiguous, so both
   // acceptance AND the stored form may differ from C1/C3.
   const SPACED_FORMULA = '=[Spaced From Tier]&" -> "&[Spaced To Tier]';
-  if (!(await fieldExists('SpacedRoute'))) {
-    const made = await addField(
-      calcXml('SpacedRoute', SPACED_FORMULA, ['SpacedFrom', 'SpacedTo']));
-    record('formula.choice.spaced-display-name-accepted',
-           'Accepts operands referenced by DISPLAY name containing spaces',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
-  } else {
-    record('formula.choice.spaced-display-name-accepted',
-           'Accepts operands referenced by DISPLAY name containing spaces',
-           'PASS', 'already present from an earlier run');
-  }
+  await recordCreate('formula.choice.spaced-display-name-accepted',
+                     'Accepts operands referenced by DISPLAY name containing spaces',
+                     'SpacedRoute',
+                     calcXml('SpacedRoute', SPACED_FORMULA, ['SpacedFrom', 'SpacedTo']),
+                     'PASS', 'FAIL');
   const spaced = await spGet(`${fieldsPath}/getbyinternalnameortitle('SpacedRoute')`);
-  if (spaced.ok) {
+  if (!readFailed(spaced)) {
     record('formula.choice.spaced-display-name-as-stored',
            'Spaced display-name formula as SharePoint stored it', 'INFO',
            `sent ${JSON.stringify(SPACED_FORMULA)} / stored ${JSON.stringify(spaced.body.Formula)}`);
+  } else {
+    record('formula.choice.spaced-display-name-as-stored',
+           'Spaced display-name formula as SharePoint stored it', 'NOT ESTABLISHED',
+           `the calculated column did not read back (HTTP ${spaced.status})`);
   }
 
   // ---- NUM / DAT: a Choice driving a score and a due date -------------
@@ -592,71 +670,74 @@
   // the natural next step for this template: a priority that sets a
   // response time, or an escalation score.
   const NUM_FORMULA = '=IF([Probe Priority]="High",3,IF([Probe Priority]="Medium",2,1))';
-  if (!(await fieldExists('ProbeScore'))) {
-    const made = await addField(
-      calcXml('ProbeScore', NUM_FORMULA, ['ProbePriority'], 'Number'));
-    record('formula.choice.number-result-accepted',
-           'ResultType Number over a Choice operand is accepted',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
-  } else {
-    record('formula.choice.number-result-accepted',
-           'ResultType Number over a Choice operand is accepted', 'PASS',
-           'already present from an earlier run');
-  }
+  await recordCreate('formula.choice.number-result-accepted',
+                     'ResultType Number over a Choice operand is accepted',
+                     'ProbeScore',
+                     calcXml('ProbeScore', NUM_FORMULA, ['ProbePriority'], 'Number'),
+                     'PASS', 'FAIL');
 
   const DATE_FORMULA = '=[Probe Raised]+IF([Probe Priority]="High",1,7)';
-  if (!(await fieldExists('ProbeDue'))) {
-    const made = await addField(
-      calcXml('ProbeDue', DATE_FORMULA, ['ProbeRaised', 'ProbePriority'], 'DateTime',
-              ' Format="DateOnly"'));
-    record('formula.choice.datetime-result-accepted',
-           'ResultType DateTime over Choice + Date operands is accepted',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
-  } else {
-    record('formula.choice.datetime-result-accepted',
-           'ResultType DateTime over Choice + Date operands is accepted', 'PASS',
-           'already present from an earlier run');
-  }
+  await recordCreate('formula.choice.datetime-result-accepted',
+                     'ResultType DateTime over Choice + Date operands is accepted',
+                     'ProbeDue',
+                     calcXml('ProbeDue', DATE_FORMULA, ['ProbeRaised', 'ProbePriority'], 'DateTime',
+                             ' Format="DateOnly"'),
+                     'PASS', 'FAIL');
 
   // One item exercises D3, NUM2 and DAT2 together.
+  const COMBO_IDS = [
+    'formula.choice.spaced-display-name-renders',
+    'formula.choice.number-result-computes',
+    'formula.choice.datetime-result-computes',
+  ];
+  const comboUnread = (why) => {
+    for (const id of COMBO_IDS) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED', why);
+    }
+  };
   digest = await getDigest();
   const combo = await spPost(itemsPath, {
     Title: 'combo',
     SpacedFrom: 'Tier 1', SpacedTo: 'Tier 3',
     ProbePriority: 'High', ProbeRaised: '2026-03-02T00:00:00Z',
   }, digest);
+  const comboId = combo.ok && combo.body !== null ? combo.body.Id : null;
   if (!combo.ok) {
-    for (const id of [
-      'formula.choice.spaced-display-name-renders',
-      'formula.choice.number-result-computes',
-      'formula.choice.datetime-result-computes',
-    ]) {
+    for (const id of COMBO_IDS) {
       record(id, RESULTS.find((r) => r.id === id).question, 'FAIL',
              `item create HTTP ${combo.status}: ${combo.text.slice(0, 300)}`);
     }
+  } else if (comboId === undefined || comboId === null) {
+    comboUnread(`the item create answered HTTP ${combo.status} and served no id, so there is no `
+                + 'saved item to read the three computed values off');
   } else {
     const read = await spGet(
-      `${itemsPath}(${combo.body.Id})?$select=SpacedRoute,ProbeScore,ProbeDue`);
-    const got = read.ok ? read.body : {};
-    record('formula.choice.spaced-display-name-renders',
-           'Renders a value through spaced display-name operands',
-           got.SpacedRoute === 'Tier 1 -> Tier 3' ? 'PASS' : 'FAIL',
-           `expected "Tier 1 -> Tier 3", got ${JSON.stringify(got.SpacedRoute)}`);
-    record('formula.choice.number-result-computes',
-           'Number result computes the branch the Choice selects',
-           Number(got.ProbeScore) === 3 ? 'PASS' : 'FAIL',
-           `Priority "High" should score 3, got ${JSON.stringify(got.ProbeScore)}`);
-    // Compared on the date part only: the stored value carries a timezone
-    // and an exact-string match would fail for a reason that is not the
-    // question being asked.
-    const due = String(got.ProbeDue || '').slice(0, 10);
-    record('formula.choice.datetime-result-computes',
-           'Date result computes the offset the Choice selects',
-           due === '2026-03-03' ? 'PASS' : 'FAIL',
-           `raised 2026-03-02 + High(1 day) should be 2026-03-03, got ` +
-           `${JSON.stringify(got.ProbeDue)} (date part ${JSON.stringify(due)})`);
+      `${itemsPath}(${comboId})?$select=SpacedRoute,ProbeScore,ProbeDue`);
+    // A 2xx with no payload used to read as an empty item, which recorded FAIL
+    // on all three rows for values this run never saw.
+    if (readFailed(read)) {
+      comboUnread(`item ${comboId} was created, but it did not read back `
+                  + `(HTTP ${read.status}), so no computed value was seen`);
+    } else {
+      const got = read.body;
+      record('formula.choice.spaced-display-name-renders',
+             'Renders a value through spaced display-name operands',
+             got.SpacedRoute === 'Tier 1 -> Tier 3' ? 'PASS' : 'FAIL',
+             `expected "Tier 1 -> Tier 3", got ${JSON.stringify(got.SpacedRoute)}`);
+      record('formula.choice.number-result-computes',
+             'Number result computes the branch the Choice selects',
+             Number(got.ProbeScore) === 3 ? 'PASS' : 'FAIL',
+             `Priority "High" should score 3, got ${JSON.stringify(got.ProbeScore)}`);
+      // Compared on the date part only: the stored value carries a timezone
+      // and an exact-string match would fail for a reason that is not the
+      // question being asked.
+      const due = String(got.ProbeDue || '').slice(0, 10);
+      record('formula.choice.datetime-result-computes',
+             'Date result computes the offset the Choice selects',
+             due === '2026-03-03' ? 'PASS' : 'FAIL',
+             `raised 2026-03-02 + High(1 day) should be 2026-03-03, got ` +
+             `${JSON.stringify(got.ProbeDue)} (date part ${JSON.stringify(due)})`);
+    }
   }
 
   // ---- R: retirement re-titles an operand -----------------------------
@@ -681,22 +762,31 @@
   } else {
     digest = await getDigest();
     const row = await spPost(itemsPath, { Title: 'retire', RetireMe: 'Tier 2' }, digest);
-    const readBack = row.ok
-      ? await spGet(`${itemsPath}(${row.body.Id})?$select=RetireRoute`)
-      : { ok: false };
+    const rowId = row.ok && row.body !== null ? row.body.Id : null;
+    const readBack = rowId === undefined || rowId === null
+      ? null
+      : await spGet(`${itemsPath}(${rowId})?$select=RetireRoute`);
     const after = await spGet(`${fieldsPath}/getbyinternalnameortitle('RetireRoute')`);
+    // A computed value nobody read is not a formula that stopped resolving,
+    // and FAIL here would report the rename as having broken the column.
+    const computed = readBack !== null && !readFailed(readBack);
     record('formula.choice.retitled-operand-survives',
            'An existing calculated column survives its operand being re-titled "(retired)"',
-           readBack.ok && readBack.body.RetireRoute === 'Tier 2 fixed' ? 'PASS' : 'FAIL',
-           `after rename the stored formula is ${JSON.stringify(after.ok ? after.body.Formula : null)}; ` +
-           `computed value ${JSON.stringify(readBack.ok ? readBack.body.RetireRoute : null)}`);
+           computed ? (readBack.body.RetireRoute === 'Tier 2 fixed' ? 'PASS' : 'FAIL')
+             : 'NOT ESTABLISHED',
+           computed
+             ? `after rename the stored formula is `
+               + `${JSON.stringify(readFailed(after) ? null : after.body.Formula)}; `
+               + `computed value ${JSON.stringify(readBack.body.RetireRoute)}`
+             : `no computed value was read back: ${readBack === null
+               ? `the item create answered HTTP ${row.status} and served no id`
+               : `the item did not read back (HTTP ${readBack.status})`}`);
 
-    const newRef = await addField(
-      calcXml('RetiredRef', '=[Retire Me (retired)]&" x"', ['RetireMe']));
-    record('formula.choice.retitled-operand-referenced-anew',
-           'A NEW calculated column can reference a display name containing "(retired)"',
-           newRef.ok ? 'PASS' : 'FAIL',
-           newRef.ok ? `HTTP ${newRef.status}` : `HTTP ${newRef.status}: ${newRef.text.slice(0, 300)}`);
+    await recordCreate('formula.choice.retitled-operand-referenced-anew',
+                       'A NEW calculated column can reference a display name containing "(retired)"',
+                       'RetiredRef',
+                       calcXml('RetiredRef', '=[Retire Me (retired)]&" x"', ['RetireMe']),
+                       'PASS', 'FAIL');
   }
 
   // ---- P / L: person and lookup, in all three formula stores ----------
@@ -721,15 +811,28 @@
     }, digest);
   }
   const target = await spGet(`web/lists/getbytitle('${targetList}')`);
-  if (target.ok) {
+  // The lookup needs the target list's GUID, so a read that did not answer
+  // leaves nothing to point a column at rather than a list of id undefined.
+  const targetId = readFailed(target) ? null : target.body.Id;
+  if (targetId) {
     digest = await getDigest();
     await spPost(`web/lists/getbytitle('${targetList}')/items`, { Title: 'row one' }, digest);
     if (!(await fieldExists('ProbeLookup'))) {
       await addField(
         `<Field Type="Lookup" DisplayName="ProbeLookup" Name="ProbeLookup" ` +
-        `List="{${target.body.Id}}" ShowField="Title"/>`);
+        `List="{${targetId}}" ShowField="Title"/>`);
     }
-    lookupReady = await fieldExists('ProbeLookup');
+    // Read the SHAPE, not the name: the three rows below are about a Lookup
+    // operand, and a column of that name left over as some other type would
+    // make each of them a finding about the wrong column. readFailed, because
+    // a 2xx that served no payload carries no TypeAsString to compare.
+    const lookupBack = await spGet(`${fieldsPath}/getbyinternalnameortitle('ProbeLookup')`);
+    lookupReady = !readFailed(lookupBack) && lookupBack.body.TypeAsString === 'Lookup';
+    if (!lookupReady) {
+      log('INFO', `ProbeLookup is not a Lookup column: ${readFailed(lookupBack)
+        ? `it did not read back (HTTP ${lookupBack.status})`
+        : `it reads back TypeAsString=${lookupBack.body.TypeAsString}`}`);
+    }
   }
 
   // L1: a Lookup operand in a calculated formula. N1 establishes that a
@@ -738,18 +841,14 @@
   if (!lookupReady) {
     record('formula.calc.lookup-operand-accepted',
            'A Lookup operand in a CALCULATED formula', 'NOT ESTABLISHED',
-           'the lookup column could not be created');
-  } else if (!(await fieldExists('LookupCalc'))) {
-    const made = await addField(calcXml('LookupCalc', '=[ProbeLookup]&" x"', ['ProbeLookup']));
-    record('formula.calc.lookup-operand-accepted', 'A Lookup operand in a CALCULATED formula',
-           made.ok ? 'ACCEPTED' : 'REFUSED',
-           made.ok
-             ? `HTTP ${made.status}: SharePoint ALLOWS this; the README says it does not`
-             : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+           'no Lookup column was there to write a formula over');
   } else {
-    record('formula.calc.lookup-operand-accepted',
-           'A Lookup operand in a CALCULATED formula', 'ACCEPTED',
-           'already present from an earlier run');
+    await recordCreate('formula.calc.lookup-operand-accepted',
+                       'A Lookup operand in a CALCULATED formula',
+                       'LookupCalc',
+                       calcXml('LookupCalc', '=[ProbeLookup]&" x"', ['ProbeLookup']),
+                       'ACCEPTED', 'REFUSED',
+                       '. SharePoint ALLOWS this; the README says it does not');
   }
 
   // Both validation stores live on the field and are set by MERGE.
@@ -761,9 +860,18 @@
     return spPost(`${fieldsPath}/getbyinternalnameortitle('${field}')`, body, digest,
                   { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
   };
+  // Separates "the store holds nothing" from "this run did not see what the
+  // store holds": a 2xx with no payload, and a payload that never carried the
+  // property, are both the second and both used to read as the first.
   const readBackOf = async (field, prop) => {
     const r = await spGet(`${fieldsPath}/getbyinternalnameortitle('${field}')?$select=${prop}`);
-    return r.ok ? r.body[prop] : null;
+    if (readFailed(r)) {
+      return { read: false, value: null, why: `${prop} did not read back (HTTP ${r.status})` };
+    }
+    if (!(prop in r.body)) {
+      return { read: false, value: null, why: `the payload carried no ${prop} property` };
+    }
+    return { read: true, value: r.body[prop], why: null };
   };
 
   const stores = [
@@ -794,14 +902,20 @@
     // would fool a deploy: read it back rather than trusting HTTP 200.
     const stored = set.ok ? await readBackOf(field, prop) : null;
     if (!set.ok) {
-      record(id, question, 'REFUSED',
+      // REFUSED is a claim about what this store rejects, so a throttle or an
+      // authorization failure must not produce it.
+      record(id, question, isRefusal(set.status) ? 'REFUSED' : 'NOT ESTABLISHED',
              `${toolStance}; HTTP ${set.status}: ${set.text.slice(0, 300)}`);
-    } else if (!stored) {
+    } else if (!stored.read) {
+      record(id, question, 'NOT ESTABLISHED',
+             `${toolStance}; HTTP ${set.status} on the write, but ${stored.why}, so this run did `
+             + 'not see whether the store kept the formula');
+    } else if (!stored.value) {
       record(id, question, 'ACCEPTED THEN DISCARDED',
-             `${toolStance}; HTTP ${set.status} but ${prop} reads back ${JSON.stringify(stored)}`);
+             `${toolStance}; HTTP ${set.status} but ${prop} reads back ${JSON.stringify(stored.value)}`);
     } else {
       record(id, question, 'ACCEPTED',
-             `${toolStance}; stored ${JSON.stringify(stored)}`);
+             `${toolStance}; stored ${JSON.stringify(stored.value)}`);
     }
   }
 
@@ -809,21 +923,45 @@
   // A Person operand in a calculated formula is documented as unsupported.
   // If this SUCCEEDS, this probe cannot distinguish acceptance from
   // refusal, and every PASS above is unproven rather than wrong.
+  let controlHeld = false;
   if (!(await fieldExists('ProbeNegative'))) {
     const negative = await addField(
       calcXml('ProbeNegative', '=[ProbeOwner]&" x"', ['ProbeOwner']));
+    // A failed request is not a refusal. 401 and 403 say the caller was not
+    // allowed to ask and 408 and 429 say the moment was wrong, and a control
+    // that counts either as the server rejecting a Person operand certifies
+    // this probe as able to see refusals on the strength of a throttle. Every
+    // acceptance it gates is then read as evidence.
+    const sawRefusal = !negative.ok && isRefusal(negative.status);
+    controlHeld = sawRefusal;
     record('formula.calc.control-person-operand-refused',
            'NEGATIVE CONTROL: a Person operand is refused',
-           negative.ok ? 'FAIL' : 'PASS',
+           negative.ok ? 'FAIL' : sawRefusal ? 'PASS' : 'NOT ESTABLISHED',
            negative.ok
              ? 'Person operand was ACCEPTED. This probe cannot detect a refusal, '
                + 'so treat every other row as unproven'
-             : `refused with HTTP ${negative.status}: ${negative.text.slice(0, 300)}`);
+             : sawRefusal
+               ? `refused with HTTP ${negative.status}: ${negative.text.slice(0, 300)}`
+               : `the create failed with HTTP ${negative.status}, which is not the server `
+                 + 'rejecting the formula, so this run did not establish that a refusal is '
+                 + `visible to it: ${negative.text.slice(0, 300)}`);
   } else {
     record('formula.calc.control-person-operand-refused',
            'NEGATIVE CONTROL: a Person operand is refused', 'NOT ESTABLISHED',
            'ProbeNegative already exists, so this run did not test the refusal. '
            + 'Delete the list and re-run for a clean control.');
+  }
+
+  // The header says to read this control first and treat an unproven probe's
+  // rows as worthless. It now does that by id rather than by asking the
+  // reader: without it, a createfieldasxml that cannot be refused makes every
+  // acceptance above a restatement of the probe's own insensitivity.
+  if (!controlHeld) {
+    for (const id of ACCEPTED_IDS) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+             'the negative control did not hold, so this run cannot tell an accepted '
+             + 'createfieldasxml from a refused one', 'void');
+    }
   }
 
   report();
