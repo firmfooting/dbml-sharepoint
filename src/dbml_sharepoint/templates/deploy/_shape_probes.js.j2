@@ -15,6 +15,25 @@
   const nameSet = (values) => new Set((values || []).map(nameKey));
   const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
 
+  // A malformed continuation cannot establish that a collection ended.
+  function validatedNextPage(page, what) {
+    const next = page && page.__next;
+    if (next != null && typeof next !== 'string') {
+      throw new Error(`${what}: invalid OData __next continuation`);
+    }
+    return next || null;
+  }
+
+  // An incomplete name index must fall back to direct existence probes.
+  function completeNamePage(json) {
+    const page = json && json.d;
+    if (!page || !Array.isArray(page.results)
+        || page.results.length >= 5000
+        || page.results.some(row => !row || typeof row.Title !== 'string')
+        || (page.__next != null && page.__next !== '')) return null;
+    return page.results;
+  }
+
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
   // operator reads as a failure; on a first deploy EVERY list probe is that
@@ -32,9 +51,9 @@
     // per-list probing, which is noisier but still correct.
     if (!r.ok) return null;
     const j = await r.json();
-    knownListTitles = nameSet(
-      ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
-    );
+    const rows = completeNamePage(j);
+    if (rows === null) { knownListTitles = null; return null; }
+    knownListTitles = nameSet(rows.map(row => row.Title));
     return knownListTitles;
   }
 
@@ -176,6 +195,7 @@
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
+    const next = validatedNextPage(j && j.d, `Field enumeration for '${listName}'`);
     // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
     // internal name first, so folding both into a single map lets one
     // field's display Title shadow another field's InternalName whenever
@@ -199,7 +219,7 @@
       // Read by a caller for whom a name this enumeration never saw is not a
       // name the list lacks; `get` answering undefined is the same value
       // either way.
-      truncated: fieldPageTruncated(rows, j && j.d && j.d.__next),
+      truncated: fieldPageTruncated(rows, next),
     };
     fieldShapesByList[listName] = shapes;
     return shapes;

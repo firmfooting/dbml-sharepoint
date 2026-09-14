@@ -153,8 +153,16 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
     return folderAnswer({ d: { ServerRelativeUrl: '/sites/test/APP_Escalation' } });
   }
   if (requested.includes('/folders/add(')) {
+    globalThis.__calls.push({
+      url: requested, method: opts.method || 'GET', body: opts.body || null,
+    });
     globalThis.__folderCreated = true;
     return folderAnswer({ d: { Name: 'Clinical services' } });
+  }
+  if (requested.includes('/ListItemAllFields')) {
+    const item = { FileSystemObjectType: 1,
+      FileRef: '/sites/test/APP_Escalation/Clinical services' };
+    return folderAnswer({ d: item });
   }
   if (requested.includes('GetFolderByServerRelativeUrl(')) {
     return folderAnswer({ d: {
@@ -164,7 +172,8 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
   }
   if (requested.includes('FileSystemObjectType')) {
     const rows = globalThis.__folderCreated
-      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services' }] : [];
+      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services',
+          FileRef: '/sites/test/APP_Escalation/Clinical services' }] : [];
     return folderAnswer({ d: { results: rows } });
   }
 """
@@ -483,6 +492,90 @@ def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> Non
     )
     assert summary["errors"] == [], summary["errors"]
     assert summary["foldersCreated"] == ["APP_Escalation/Clinical services"]
+
+
+@pytest.mark.parametrize("types", [[1, 0], [0, 1]])
+def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
+    tmp_path: Path, types: list[int],
+) -> None:
+    rows = [
+        {"FileSystemObjectType": value,
+         "FileRef": "/sites/test/APP_Escalation/"
+         + ("Nested/Clinical services" if value else "Clinical services")}
+        for value in types
+    ]
+    harness = _library_harness(declared_folder=True).replace(
+        "return folderAnswer({ d: { results: rows } });",
+        f"return folderAnswer({{ d: {{ results: {json.dumps(rows)} }} }});",
+    )
+    harness = harness.replace(
+        "globalThis.__folderCreated = true;",
+        "throw new Error('folder create refused');",
+    )
+    summary, _calls, _reads = _run(harness, _library_deploy_js(tmp_path, _FOLDERED_LIBRARY))
+    assert any("a file where a folder was declared" in e["error"] for e in summary["errors"])
+    assert not any("unexpected folder create" in e["error"] for e in summary["errors"])
+    assert summary["foldersCreated"] == []
+    assert summary["foldersVerified"] == []
+
+
+@pytest.mark.parametrize("payload", [
+    None, [], "bad", 0, {}, {"FileSystemObjectType": 1},
+    {"FileSystemObjectType": 0, "FileRef": "/sites/test/APP_Escalation/Clinical services"},
+    {"FileSystemObjectType": 1, "FileRef": "/wrong"},
+])
+@pytest.mark.parametrize("after_create", [False, True])
+def test_folder_deploy_refuses_unestablished_path_items(
+    tmp_path: Path, payload: Any, after_create: bool,
+) -> None:
+    harness = _library_harness(declared_folder=True).replace(
+        "return folderAnswer({ d: item });",
+        f"return folderAnswer({{ d: {json.dumps(payload)} }});",
+    )
+    harness = f"globalThis.__folderCreated = {json.dumps(not after_create)};\n" + harness
+    summary, calls, _reads = _run(harness, _library_deploy_js(tmp_path, _FOLDERED_LIBRARY))
+    assert any("folder item probe" in e["error"] for e in summary["errors"]), summary["errors"]
+    assert summary["foldersCreated"] == []
+    assert summary["foldersVerified"] == []
+    creates = [call for call in calls if '/folders/add(' in call['url']]
+    assert len(creates) == int(after_create)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_whole_deploy_verifies_folder_paths_without_unindexed_queries(
+    tmp_path: Path, existing: bool,
+) -> None:
+    harness = _library_harness(declared_folder=True).replace(
+        "return folderAnswer({ d: { results: rows } });",
+        "throw new Error('SPQueryThrottledException');",
+    )
+    harness = f"globalThis.__folderCreated = {json.dumps(existing)};\n" + harness
+    summary, _calls, _reads = _run(harness, _library_deploy_js(tmp_path, _FOLDERED_LIBRARY))
+    assert summary["errors"] == [], summary["errors"]
+    key = "foldersVerified" if existing else "foldersCreated"
+    assert summary[key] == ["APP_Escalation/Clinical services"]
+
+
+@pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}])
+def test_descendant_scope_enumeration_rejects_malformed_continuation(
+    tmp_path: Path, next_page: Any,
+) -> None:
+    harness = _library_harness(unique_after=1)
+    harness += """
+const scopeFetch = globalThis.fetch;
+globalThis.fetch = async (url, options) => {
+  if (String(url).includes('/items?$select=Id,HasUniqueRoleAssignments')) {
+    return {ok: true, status: 200, json: async () => ({d: {
+      results: [], __next: NEXT_PAGE
+    }})};
+  }
+  return scopeFetch(url, options);
+};
+""".replace("NEXT_PAGE", json.dumps(next_page))
+    summary, calls, _reads = _run(harness, _library_deploy_js(tmp_path, _BROKEN_INHERITANCE))
+    assert any("invalid OData __next" in e["error"] for e in summary["errors"])
+    assert not [c for c in calls if "addroleassignment" in c["url"]
+                or "removeroleassignment" in c["url"]]
 
 
 def _view_titles_created(calls: list[dict[str, Any]]) -> list[str]:

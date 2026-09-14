@@ -135,7 +135,8 @@ def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
     assert "removeBinding(principalId, binding.Id, 'unlisted')" in js
     assert "binding.Name === 'Limited Access'" in js
     assert "while (assignmentsUrl)" in js
-    assert "allJson.d.__next" in js
+    assert "const next = validatedNextPage(allJson.d," in js
+    assert "assignmentsUrl = next;" in js
     assert "cannot resolve desired assignment" in js
     assert js.index("addroleassignment") < js.index(
         "Exact mode treats the mapping as an allowlist",
@@ -221,7 +222,8 @@ def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
     assert '"require_empty_at_deploy": true' in js
     assert "/users?$select=Id&$top=5000" in js
     assert "while (membersUrl)" in js
-    assert "membersJson.d.__next" in js
+    assert "const next = validatedNextPage(membersJson.d," in js
+    assert "membersUrl = next;" in js
     assert "requires empty membership at deploy" in js
     assert "membership enumeration failed" in js
     assert "is empty as required for deployment" in js
@@ -329,7 +331,8 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
 
     assert "$select=Id,HasUniqueRoleAssignments&$top=5000" in js
     assert "while (itemsUrl)" in js
-    assert "itemsJson.d.__next" in js
+    assert "const next = validatedNextPage(itemsJson.d," in js
+    assert "itemsUrl = next;" in js
     assert "item/folder unique permission scope(s) remain" in js
     assert "never erase" in js
     assert (

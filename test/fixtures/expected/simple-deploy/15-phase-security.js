@@ -59,6 +59,9 @@
       if (!Array.isArray(rows)) {
         throw new Error(`Probe for permission level '${name}' returned an invalid response`);
       }
+      if (validatedNextPage(json.d, `Probe for permission level '${name}'`)) {
+        throw new Error(`Probe for permission level '${name}' returned an incomplete response`);
+      }
       return rows;
     }
 
@@ -80,6 +83,7 @@
         if (!json || !json.d || !Array.isArray(json.d.results)) {
           throw new Error('Role assignment enumeration returned an invalid response');
         }
+        const next = validatedNextPage(json.d, 'Role assignment enumeration');
         for (const row of json.d.results) {
           // Verbose is expected to render an expanded navigation property as
           // `{ results: [...] }`. That is inferred from _acls.js.j2's own
@@ -100,7 +104,7 @@
           }
           if (bindings.some((b) => String(b.Id) === String(levelId))) total += 1;
         }
-        url = json.d.__next || null;
+        url = next;
       }
       return total;
     }
@@ -327,7 +331,8 @@
           // probe per previous name.
           const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Id,Title,Description&$top=5000'), verbose);
           if (!r.ok) throw new Error(`site group enumeration for renames failed: HTTP ${r.status} ${spError(await r.text())}`);
-          const rows = (((await r.json()) || {}).d || {}).results || [];
+          const rows = completeNamePage(await r.json());
+          if (rows === null) throw new Error('Site group enumeration for renames returned an invalid or incomplete response');
           const byName = (name) => rows.filter((g) => nameKey(g.Title) === nameKey(name));
           for (const grp of SCHEMA.groups) {
             if (!(grp.previous_names || []).length) continue;
@@ -438,9 +443,8 @@
         // must not read as absent against a declared 'OR List
         // Administrators'; that turns an adoptable group into a create
         // that fails on a name collision.
-        knownGroupNames = nameSet(
-          ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
-        );
+        const rows = completeNamePage(j);
+        if (rows !== null) knownGroupNames = nameSet(rows.map(row => row.Title));
       }
     }
 
@@ -461,8 +465,9 @@
         if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
           throw new Error(`Group '${groupName}' membership enumeration returned an invalid response`);
         }
+        const next = validatedNextPage(membersJson.d, `Group '${groupName}' membership enumeration`);
         total += membersJson.d.results.length;
-        membersUrl = membersJson.d.__next || null;
+        membersUrl = next;
       }
       return total;
     }

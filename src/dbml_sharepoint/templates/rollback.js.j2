@@ -73,10 +73,14 @@
           throw new Error(`list enumeration failed: HTTP ${r.status} ${spError(await r.text())}`);
         }
         const j = await r.json();
+        const continuation = j && j.d ? j.d.__next : undefined;
+        if (continuation !== undefined && continuation !== null && typeof continuation !== 'string') {
+          throw new Error(`list enumeration: malformed OData __next; expected a string or null`);
+        }
         for (const l of ((j && j.d && j.d.results) || [])) {
           discovered[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
         }
-        nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+        nextUrl = continuation || null;
       }
       // Publish only a complete enumeration. A page failure leaves the cache
       // null, so no later target can mistake a partial catalogue for absence.

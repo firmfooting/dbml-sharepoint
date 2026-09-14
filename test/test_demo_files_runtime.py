@@ -75,6 +75,7 @@ def _demo_js() -> str:
 #: from the start, for the re-paste case), the MERGE stores what it was sent,
 #: and the read-back answers from STORED when it is set.
 _HARNESS = textwrap.dedent(r"""
+    globalThis.setTimeout = (fn) => { fn(); return 0; };
     const calls = [];
     globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
     globalThis._spPageContextInfo = {
@@ -105,10 +106,19 @@ _HARNESS = textwrap.dedent(r"""
           uploaded = true;
           payload = { d: {} };
         }
-      } else if (u.includes('FileLeafRef%20eq')) {
-        payload = { d: { results: uploaded && !STATE.vanishAfterUpload
-          ? [{ Id: 9, FileLeafRef: STATE.name, FileDirRef: STATE.root + '/' + STATE.folder }]
-          : [] } };
+      } else if (u.includes('FileLeafRef')) {
+        status = 500;
+        payload = { error: 'SPQueryThrottledException' };
+      } else if (u.includes('GetFileByServerRelativeUrl')) {
+        const itemRead = u.includes('/ListItemAllFields');
+        const path = STATE.root + '/' + STATE.folder + '/' + STATE.name;
+        const present = uploaded && !STATE.vanishAfterUpload;
+        payload = { d: itemRead
+          ? { Id: 9, FileRef: path, FileSystemObjectType: 0 }
+          : { Exists: present, ServerRelativeUrl: path } };
+        const override = itemRead ? 'itemPayload' : uploaded ? 'afterFileProbe' : 'beforeFileProbe';
+        if (Object.hasOwn(STATE, override)) payload = STATE[override];
+        status = (itemRead ? STATE.itemStatus : STATE.fileStatus) || 200;
       } else if (method === 'POST' && /\/items\(9\)$/.test(u)) {
         if (STATE.refuseMerge) {
           status = 500;
@@ -204,6 +214,59 @@ def test_a_refused_upload_is_reported_and_nothing_is_set() -> None:
     assert error["key"] == "d1" and "upload refused" in error["error"]
     assert _posts(calls, "/items(9)") == []
     assert summary["created"] == []
+
+
+@pytest.mark.parametrize("payload", [
+    None, {}, {"d": {}}, {"d": []}, {"d": "bad"}, {"d": 0},
+    {"d": {"Exists": "true"}}, {"d": {"Exists": True, "ServerRelativeUrl": "/wrong"}},
+])
+@pytest.mark.parametrize("after_upload", [False, True])
+def test_a_malformed_file_probe_never_seeds_or_merges(payload: Any, after_upload: bool) -> None:
+    key = "afterFileProbe" if after_upload else "beforeFileProbe"
+    summary, calls = _seed(**{key: payload})
+    assert "invalid response" in summary["errors"][0]["error"]
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert _posts(calls, "/items(9)") == []
+    assert len(_posts(calls, "Files/add(")) == int(after_upload)
+
+
+@pytest.mark.parametrize("bad", [
+    {"Id": None}, {"Id": 0}, {"Id": "9"}, {"Id": 1.5},
+    {"FileRef": None}, {"FileRef": "/wrong"}, {"FileSystemObjectType": 1},
+])
+@pytest.mark.parametrize("present", [False, True])
+def test_malformed_file_identity_never_selects_an_item_to_merge(
+    bad: dict[str, Any], present: bool,
+) -> None:
+    summary, calls = _seed(present=present, itemPayload={"d": {
+        "Id": 9, "FileRef": f"{_ROOT}/{_FOLDER}/{_NAME}", "FileSystemObjectType": 0, **bad,
+    }})
+    assert "invalid response" in summary["errors"][0]["error"]
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert _posts(calls, "/items(9)") == []
+    assert len(_posts(calls, "Files/add(")) == int(not present)
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_demo_file_paths_work_when_unindexed_queries_are_throttled(present: bool) -> None:
+    summary, calls = _seed(present=present, root="/sites/test/Original Library Slug")
+    assert summary["errors"] == []
+    assert len(summary["skipped"]) == int(present)
+    assert len(summary["created"]) == int(not present)
+    reads = [c["url"] for c in calls if "GetFileByServerRelativeUrl" in c["url"]]
+    assert reads and all("Original Library Slug/Clinical services/" in url for url in reads)
+    assert any("/ListItemAllFields?" in url for url in reads)
+    assert not any("$filter=" in c["url"] for c in calls)
+
+
+@pytest.mark.parametrize("status_key", ["fileStatus", "itemStatus"])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 429, 500])
+def test_failed_file_path_reads_do_not_allow_metadata_writes(status_key: str, status: int) -> None:
+    summary, calls = _seed(present=True, **{status_key: status})
+    assert summary["errors"]
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert _posts(calls, "/items(9)") == []
+    assert len(_posts(calls, "Files/add(")) == int(status_key == "fileStatus" and status == 404)
 
 
 def test_a_file_that_does_not_read_back_after_upload_is_reported() -> None:

@@ -74,6 +74,7 @@ _HARNESS = textwrap.dedent(r"""
     const STORED = null;
     const STORED_ROW = null;
     const READBACK_STATUS = 200;
+    const TITLE_PROBE = { d: { results: [] } };
     let nextId = 100;
     globalThis.fetch = async (url, opts = {}) => {
       const u = String(url);
@@ -88,6 +89,8 @@ _HARNESS = textwrap.dedent(r"""
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } };
       } else if (u.includes('ListItemEntityTypeFullName')) {
         payload = { d: { ListItemEntityTypeFullName: 'SP.Data.APP_AuditListItem' } };
+      } else if (u.includes('Title%20eq')) {
+        payload = TITLE_PROBE;
       } else if (method === 'POST') {
         payload = { d: { Id: nextId++ } };
       } else if (/\/items\(\d+\)/.test(u)) {
@@ -117,6 +120,7 @@ def _seed(
     stored: Any = _FAITHFUL,
     readback_status: int = 200,
     members: list[str] | None = None,
+    title_probe: Any = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Run demo-data.js against the mock and return (summary, calls)."""
     harness = _HARNESS.replace(
@@ -124,6 +128,11 @@ def _seed(
     ).replace(
         "const READBACK_STATUS = 200;", f"const READBACK_STATUS = {readback_status};", 1,
     )
+    if title_probe is not None:
+        harness = harness.replace(
+            'const TITLE_PROBE = { d: { results: [] } };',
+            f'const TITLE_PROBE = {json.dumps(title_probe)};', 1,
+        )
     # Preserve an explicit empty member list rather than replacing it through truthiness.
     script = harness + "\n" + _demo_js(_MEMBERS if members is None else members).replace(
         "})();",
@@ -158,6 +167,33 @@ def _readbacks(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+
+@pytest.mark.parametrize("payload", [
+    {}, {"d": {}}, {"d": {"results": {}}},
+    {"d": {"results": [], "__next": False}},
+    {"d": {"results": [None]}},
+    *[{"d": {"results": [{"Id": value}]}} for value in [None, 0, "9", 1.5]],
+])
+def test_malformed_title_probe_never_inserts_or_skips(payload: Any) -> None:
+    summary, calls = _seed(title_probe=payload)
+    assert "invalid response" in _error_for(summary, "a1")
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert not any(c["method"] == "POST" and c["url"].endswith("/items") for c in calls)
+
+
+def test_empty_paged_title_probe_cannot_establish_absence() -> None:
+    summary, calls = _seed(title_probe={"d": {"results": [], "__next": "next-page"}})
+    assert "incomplete collection" in _error_for(summary, "a1")
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert not any(c["method"] == "POST" and c["url"].endswith("/items") for c in calls)
+
+
+def test_a_valid_first_title_match_establishes_existence() -> None:
+    summary, calls = _seed(title_probe={"d": {"results": [{"Id": 9}], "__next": "next-page"}})
+    assert summary["errors"] == [] and summary["created"] == []
+    assert _keys(summary["skipped"]) == {"a1", "n1"}
+    assert not any(c["method"] == "POST" and c["url"].endswith("/items") for c in calls)
 
 
 def test_a_multi_value_row_is_read_back_before_it_is_recorded_created() -> None:

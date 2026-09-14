@@ -627,7 +627,7 @@
       }
       // A payload that never carried ProbeRoute is not a calculated column
       // rendering nothing, and the blank-operand row reports exactly that.
-      if (!('ProbeRoute' in back.body)) {
+      if (typeof back.body !== 'object' || Array.isArray(back.body) || !('ProbeRoute' in back.body)) {
         record(id, question, 'NOT ESTABLISHED',
                `item ${itemId} read back without a ProbeRoute property, so this run saw no value`);
         continue;
@@ -868,7 +868,7 @@
     if (readFailed(r)) {
       return { read: false, value: null, why: `${prop} did not read back (HTTP ${r.status})` };
     }
-    if (!(prop in r.body)) {
+    if (typeof r.body !== 'object' || Array.isArray(r.body) || !(prop in r.body)) {
       return { read: false, value: null, why: `the payload carried no ${prop} property` };
     }
     return { read: true, value: r.body[prop], why: null };

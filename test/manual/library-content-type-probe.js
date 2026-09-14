@@ -304,7 +304,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6d8075d1. Quote this when reporting results.');
+  log('INFO', 'probe revision 4567a446. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe ContentType';
   const FILE = 'dbmlsp-content-type-probe.txt';
@@ -477,7 +477,8 @@
     digest = await getDigest();
     const junk = await spPost(`${listPath}/items(${initialItemId})`,
                               { NoSuchColumnAtAll: 'x' }, digest,
-                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' })
+      .catch((error) => ({ ok: false, status: 0, text: String(error) }));
     controlHeld = !junk.ok && isRefusal(junk.status);
     record('library.content-type.control-missing-column-refused',
            'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused',
@@ -646,7 +647,7 @@
     }
 
     const landsAsDoc = initialCtId.startsWith('0x0101');
-    const changedToCustom = postMergeCtId === listScopedCtId;
+    const changedToCustom = !!listScopedCtId && postMergeCtId === listScopedCtId;
     record('library.content-type.content-type-at-upload',
            'Can a file upload attach a custom content type or is post-upload update required',
            landsAsDoc && changedToCustom
@@ -661,6 +662,11 @@
                  + 'Files/add takes url and overwrite parameters (dn450841); assigning a non-default content type requires a post-upload item MERGE.'
                : `Post-upload MERGE returned HTTP ${mergeStatus}: ${mergeText.slice(0, 160)}. ContentTypeId after write: ${postMergeCtId}.`)
              : 'Custom content type was not available on the library, so post-upload item MERGE was skipped.'));
+    if (listScopedCtId && !mergeOk && isRefusal(mergeStatus) && !controlHeld) {
+      const observed = RESULTS.find((result) => result.id === 'library.content-type.content-type-at-upload');
+      record(observed.id, observed.question, 'NOT ESTABLISHED',
+             'negative control did not hold for the item MERGE refusal; observed: ' + observed.evidence, 'void');
+    }
   }
 
   // ---- column-bound-to-one-content-type --------------------------------
@@ -720,6 +726,7 @@
            + `Column '${COL_NAME}' on Folder (${folderCtId}): ${inFolder ? 'present' : 'absent'}. `
            + `Document has ${docLinks.length} fieldlink(s); Folder has ${folderLinks.length} fieldlink(s).`);
   }
+
 
   report();
 })();

@@ -945,3 +945,36 @@ def test_a_drain_that_fails_part_way_still_reports_what_it_recycled() -> None:
     assert "'APP_Task': recycled 1 item(s)" in out
     assert len(_recycles(calls)) == 2, "it stopped at the item that failed"
     assert "recycle of item 2 failed" in summary["errors"][0]["error"]
+
+
+@pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
+def test_malformed_list_continuation_never_publishes_partial_catalogue(
+    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _HARNESS.replace(
+        "const d = { results };",
+        "const d = { results, __next: " + json.dumps(continuation) + " };",
+    )
+    monkeypatch.setattr(__name__ + "._HARNESS", harness)
+    summary, calls, prompts = _rollback({"APP_Task": _listing("APP_Task", ["Record"])})
+    assert summary["deleted"] == []
+    assert summary["skipped"] == []
+    assert len(summary["errors"]) == 3
+    assert all("malformed OData __next" in error["error"] for error in summary["errors"])
+    assert _non_empty_prompts(prompts) == []
+    assert _writes(calls) == []
+
+
+@pytest.mark.parametrize("continuation", [None, ""])
+def test_valid_rollback_terminators_preserve_non_empty_confirmation(
+    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _HARNESS.replace(
+        "const d = { results };",
+        "const d = { results, __next: " + json.dumps(continuation) + " };",
+    )
+    monkeypatch.setattr(__name__ + "._HARNESS", harness)
+    summary, calls, prompts = _rollback({"APP_Task": _listing("APP_Task", ["Record"])})
+    assert len(_non_empty_prompts(prompts)) == 1
+    assert _skips(summary)["APP_Task"] == "non-empty"
+    assert _writes(calls) == []

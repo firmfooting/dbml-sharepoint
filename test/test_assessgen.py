@@ -3,6 +3,7 @@ import json
 import re
 import textwrap
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
+    CustomPermissionLevel,
     EntitySection,
     ListPermissionPolicy,
     MappingBundle,
@@ -682,19 +684,26 @@ def _library_markers() -> dict[str, str]:
     return dict(assess_targets(schema, bundle, "default")["list_markers"])
 
 
-def _folder_harness(object_type: int | None, *, unreadable: bool = False) -> str:
-    """`_ASSESS_HARNESS` answering the folder shape read with one row of
-    `object_type` (1 a folder, 0 a file), no row, or a refusal, and Task
-    as a library."""
-    rows = (
-        "[]" if object_type is None
-        else f"[{{ Id: 7, FileSystemObjectType: {object_type}, "
-        "FileLeafRef: 'Clinical services' }]"
-    )
+def _folder_harness(
+    object_type: int | None, *, unreadable: bool = False, root_url: str = "/sites/test/APP_Task",
+) -> str:
+    """Answer path reads for a folder, a file, absence, or a refusal."""
+    path = root_url + "/Clinical services"
     body_head = "const body = (url) => {\n"
     shape_read = (
-        f"{body_head}  if (url.includes('FileSystemObjectType')) {{\n"
-        f"    return {{ d: {{ results: {rows} }} }};\n"
+        f"{body_head}  if (url.includes('/RootFolder?')) {{\n"
+        f"    return {{ d: {{ ServerRelativeUrl: {json.dumps(root_url)} }} }};\n"
+        "  }\n"
+        "  if (url.includes('/ListItemAllFields')) {\n"
+        f"    return {{ d: {{ FileSystemObjectType: 1, FileRef: {json.dumps(path)} }} }};\n"
+        "  }\n"
+        "  if (url.includes('GetFolderByServerRelativeUrl')) {\n"
+        f"    return {{ d: {{ Exists: {json.dumps(object_type == 1)}, "
+        f"ServerRelativeUrl: {json.dumps(path)} }} }};\n"
+        "  }\n"
+        "  if (url.includes('GetFileByServerRelativeUrl')) {\n"
+        f"    return {{ d: {{ Exists: {json.dumps(object_type == 0)}, "
+        f"ServerRelativeUrl: {json.dumps(path)} }} }};\n"
         "  }\n"
     )
     template_line = "Title: title, BaseTemplate: 100,"
@@ -704,7 +713,7 @@ def _folder_harness(object_type: int | None, *, unreadable: bool = False) -> str
         # The harness is dedented, so the dispatcher's lines sit two spaces in.
         answer_line = "  return respond(200, body(u));\n"
         refused_read = (
-            f"  if (u.includes('FileSystemObjectType')) return respond(500, {{}});\n{answer_line}"
+            f"  if (u.includes('ByServerRelativeUrl')) return respond(500, {{}});\n{answer_line}"
         )
         splices.append((answer_line, refused_read))
     harness = _ASSESS_HARNESS
@@ -754,8 +763,7 @@ def test_a_library_whose_folders_cannot_be_read_is_not_assessable() -> None:
     """NOT-ASSESSABLE, not WARN, and not a shape reported from no answer.
 
     The question is whether a file stands where a folder is declared. A read
-    that did not answer did not answer it, and these reads now travel as one
-    $batch, so a refusal covers every declared folder of the library at once.
+    that did not answer cannot establish whether a file blocks that path.
     Both levels degrade the verdict; only this one says which way.
     """
     summary = _run_assess(
@@ -1374,6 +1382,151 @@ def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
         summary["findings"]
     )
     assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
+                                     {"results": [None]}, {"results": [{}]},
+                                     *[{"results": [], "__next": value}
+                                       for value in [False, True, 0, 1, [], {}]]])
+def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) -> None:
+    harness = _fields_harness([]).replace(
+        "const answer = { results: projected };",
+        f"const answer = {json.dumps(payload)};",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "NOT-ASSESSABLE"
+    assert "malformed column collection" in _unique_findings(summary)[0]["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
+                                     {"results": [None]}, {"results": [{}]},
+                                     {"results": [], "__next": "next-page"},
+                                     {"results": [{"Title": "Other"}] * 5000},
+                                     *[{"results": [], "__next": value}
+                                       for value in [False, True, 0, 1, [], {}]]])
+def test_malformed_list_collections_do_not_establish_absence(payload: Any) -> None:
+    harness = _fields_harness([
+        {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
+    ])
+    marker = "  if (path.endsWith('/lists')) {"
+    assert harness.count(marker) == 1
+    harness = harness.replace(
+        marker,
+        f"{marker}\n    return respond(200, {{ d: {json.dumps(payload)} }});\n  }}\n{marker}",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "WARN"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("object_type", [None, 0, 1])
+def test_folder_assessment_avoids_unindexed_queries(object_type: int | None) -> None:
+    harness = _folder_harness(object_type, root_url="/sites/test/Original Library Slug")
+    harness = harness.replace(
+        "  return respond(200, body(u));",
+        "  if (u.includes('FileLeafRef')) return respond(500, {});\n"
+        "  return respond(200, body(u));",
+    )
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _folder_finding(summary)["level"] == ("BLOCKED" if object_type == 0 else "PASS")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("endpoint,object_type", [
+    ("GetFolderByServerRelativeUrl", 1), ("GetFileByServerRelativeUrl", None),
+    ("/ListItemAllFields", 1),
+])
+@pytest.mark.parametrize("payload", [None, [], 0, "bad", {}, {"Exists": "true"},
+                                     {"Exists": True, "ServerRelativeUrl": "/wrong"},
+                                     {"FileSystemObjectType": 0, "FileRef": "/wrong"}])
+def test_malformed_folder_path_evidence_is_not_assessable(
+    endpoint: str, object_type: int | None, payload: Any,
+) -> None:
+    harness = _folder_harness(object_type).replace(
+        "  return respond(200, body(u));",
+        f"  if (u.includes({json.dumps(endpoint)})) "
+        f"return respond(200, {{d: {json.dumps(payload)}}});\n"
+        "  return respond(200, body(u));",
+    )
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _folder_finding(summary)["level"] == "NOT-ASSESSABLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("endpoint", ["GetFolderByServerRelativeUrl", "GetFileByServerRelativeUrl"])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 429, 500])
+def test_folder_path_status_is_not_confused_with_absence(endpoint: str, status: int) -> None:
+    harness = _folder_harness(None).replace(
+        "  return respond(200, body(u));",
+        f"  if (u.includes({json.dumps(endpoint)})) return respond({status}, {{}});\n"
+        "  return respond(200, body(u));",
+    )
+    harness = "globalThis.setTimeout = (fn) => { fn(); return 0; };\n" + harness
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _folder_finding(summary)["level"] == ("PASS" if status == 404 else "NOT-ASSESSABLE")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("next_page", [None, ""])
+def test_column_collection_accepts_valid_pagination_terminators(next_page: Any) -> None:
+    harness = _fields_harness([]).replace(
+        "const answer = { results: projected };",
+        f"const answer = {{ results: projected, __next: {json.dumps(next_page)} }};",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}, "next-page", None, ""])
+def test_principal_rename_checks_require_complete_enumerations(next_page: Any) -> None:
+    schema, _ = _unique_pack()
+    bundle = make_bundle(entities=["Asset"], permissions=PermissionsConfig(
+        default_policy=None, overrides={},
+        levels=[CustomPermissionLevel(
+            name="Submit", description="Add", base_permissions=["AddListItems"],
+            previous_names=("Old Submit",),
+        )],
+        groups=[SiteGroup(
+            name="Handlers", description="Handlers", owner_group="Site Owners",
+            allow_members_edit_membership=False, allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False, only_allow_members_view_membership=False,
+            previous_names=("Old Handlers",),
+        )],
+    ))
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    harness = _ASSESS_HARNESS.replace(marker, (
+        "  if (path.endsWith('/roledefinitions') || path.endsWith('/sitegroups')) {\n"
+        f"    return respond(200, {{ d: {{ results: [], __next: {json.dumps(next_page)} }} }});\n"
+        "  }\n" + marker
+    ))
+    summary = _run_unique_assess(harness=harness, pack=(schema, bundle))
+    expected = "PASS" if next_page is None or next_page == "" else "NOT-ASSESSABLE"
+    assert _levels(summary)["rename_level:Submit"] == expected
+    assert _levels(summary)["rename_group:Handlers"] == expected
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("enumerated", [True, False])
+@pytest.mark.parametrize("previous_exists", [True, False])
+def test_unique_checks_account_for_previous_list_titles(
+    enumerated: bool, previous_exists: bool,
+) -> None:
+    schema, bundle = _unique_pack()
+    bundle.mapping.entities["Asset"] = replace(
+        bundle.mapping.entities["Asset"], renamed_from=("OldAsset",),
+    )
+    held = {"APP_OldAsset": marker_for(family_for(schema), "OldAsset")} if previous_exists else {}
+    summary = _run_assess(
+        held, js=_unique_assess_js((schema, bundle)),
+        harness=_ASSESS_HARNESS if enumerated else _no_enumeration_harness(),
+    )
+    expected = "NOT-ASSESSABLE" if previous_exists or not enumerated else "PASS"
+    assert _levels(summary)["pending_unique:APP_Asset"] == expected
+    if expected == "NOT-ASSESSABLE":
+        assert "APP_OldAsset" in _unique_findings(summary)[0]["detail"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

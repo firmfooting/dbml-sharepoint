@@ -30,8 +30,12 @@
       const r = await fetchWithRetry(nextUrl, verbose());
       if (!r.ok) throw new Error(`${what}: HTTP ${r.status} ${spError(await r.text())}`);
       const j = await r.json();
+      const continuation = j && j.d ? j.d.__next : undefined;
+      if (continuation !== undefined && continuation !== null && typeof continuation !== 'string') {
+        throw new Error(`${what}: malformed OData __next; expected a string or null`);
+      }
       for (const row of ((j && j.d && j.d.results) || [])) rows.push(row);
-      nextUrl = (j && j.d && typeof j.d.__next === 'string') ? j.d.__next : null;
+      nextUrl = continuation || null;
     }
     return rows;
   }

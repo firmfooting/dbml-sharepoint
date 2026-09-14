@@ -625,9 +625,9 @@
     const sizeKey = (title) => `item_count:${title}`;
 
     // Read-only GET helper: returns parsed .d (or the raw json) or null.
-    async function probeGet(suffix) {
+    async function probeGet(suffix, continuation = false) {
       try {
-        const r = await fetchWithRetry(apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        const r = await fetchWithRetry(continuation ? suffix : apiUrl(suffix), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!r.ok) return { ok: false, status: r.status };
         const j = await r.json();
         const d = (j && j.d !== undefined) ? j.d : j;
@@ -687,10 +687,14 @@
     // case-insensitively and without a getbytitle 404 (a first deploy has every
     // declared list absent, and the browser paints each 404 red). Null means
     // "enumeration refused"; callers fall back to per-list probing.
+    const malformedNextPage = (page) => page.__next != null && typeof page.__next !== 'string';
     const assessListTitleSet = async () => {
-      const r = await probeGet('web/lists?$select=Title&$top=5000');
-      if (!r.ok) return null;
-      const results = (r.d && r.d.results) || [];
+      const pageSize = 5000;
+      const r = await probeGet(`web/lists?$select=Title&$top=${pageSize}`);
+      if (!r.ok || malformedNextPage(r.d) || !Array.isArray(r.d.results)
+        || r.d.results.some((row) => !row || typeof row.Title !== 'string')) return null;
+      const results = r.d.results;
+      if (results.length >= pageSize || (typeof r.d.__next === 'string' && r.d.__next !== '')) return null;
       return new Set(results.map((l) => String(l.Title == null ? '' : l.Title).toLowerCase()));
     };
 
@@ -1095,38 +1099,28 @@
     // INFO rather than WARN, deliberately. The deploy repairs this, so it is
     // a report and not a gate, and a warning that always resolves itself is
     // how a warning stops meaning anything. Silent when everything matches.
-    // Declared library folders. A file standing where a folder is declared
-    // would stop the folder phase part-way through a paste, so it is a
-    // BLOCKED finding here. MEASURED 2026-09-03,
-    // `library.folder.filesystem-object-type` in folder-probe.js: a folder's
-    // list item reads FileSystemObjectType 1. This exact read, the items
-    // filter on FileLeafRef, served one row reading 0 for a file
-    // (`library.folder.item-shape-of-file-by-name`, 2026-09-13,
-    // folder-shape-probe.js), which is why the check asks the item shape
-    // rather than the folder endpoint: that one answers Exists false for a
-    // file and for nothing alike. Absence is read from the enumeration
-    // above, so a first deploy paints nothing red.
-    const folderShapePath = (title, name) => {
-      const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`;
-    };
-    // Every declared folder of every declared library in one request, where
-    // this was one request per folder. Handed back per library in declaration
-    // order, so the loop below reads each library's own answers.
+    // MEASURED 2026-09-08, library-index-threshold-probe.js: FileLeafRef filters fail past 5,000 items.
+    // https://learn.microsoft.com/en-us/sharepoint/dev/sp-add-ins/working-with-folders-and-files-with-rest
+    const libraryPathLiteral = (path) => String(path).replace(/'/g, "''");
+    async function pathExists(kind, path) {
+      const read = kind === 'Folder'
+        ? await probeGet(`web/GetFolderByServerRelativeUrl('${libraryPathLiteral(path)}')?$select=Exists,ServerRelativeUrl`)
+        : await probeGet(`web/GetFileByServerRelativeUrl('${libraryPathLiteral(path)}')?$select=Exists,ServerRelativeUrl`);
+      if (!read.ok && read.status === 404) return { ok: true, exists: false };
+      if (!read.ok) return read;
+      if (Array.isArray(read.d) || typeof read.d.Exists !== 'boolean'
+        || (read.d.Exists && read.d.ServerRelativeUrl !== path)) {
+        return { ok: false, error: `malformed ${kind} path response` };
+      }
+      return { ok: true, exists: read.d.Exists };
+    }
     const folderLibraries = (TARGETS.library_folders || []).filter(
       ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
-    const folderShapes = new Map();
+    const folderRoots = new Map();
     {
-      const queue = [];
-      for (const [title, folders] of folderLibraries) {
-        for (const name of folders) queue.push(folderShapePath(title, name));
-      }
-      const rows = await readMany(queue);
-      let at = 0;
-      for (const [title, folders] of folderLibraries) {
-        folderShapes.set(title, rows.slice(at, at + folders.length));
-        at += folders.length;
-      }
+      const roots = await readMany(folderLibraries.map(([title]) =>
+        `web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`));
+      for (let at = 0; at < folderLibraries.length; at += 1) folderRoots.set(folderLibraries[at][0], roots[at]);
     }
     for (const [title, folders] of (TARGETS.library_folders || [])) {
       const key = `folder_shape:${title}`;
@@ -1134,14 +1128,28 @@
         finding(2, key, 'PASS', `'${title}' absent; its ${folders.length} declared folder(s) will be created.`);
         continue;
       }
-      const shapes = folderShapes.get(title) || [];
       const files = [];
       let unreadable = null;
-      for (let at = 0; at < folders.length; at += 1) {
-        const rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
-        if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
-        const row = ((rows.d && rows.d.results) || [])[0];
-        if (row && Number(row.FileSystemObjectType) !== 1) files.push(folders[at]);
+      const root = folderRoots.get(title);
+      const rootUrl = root && root.ok && root.d.ServerRelativeUrl;
+      if (typeof rootUrl !== 'string' || !rootUrl.startsWith('/') || rootUrl.endsWith('/')) {
+        unreadable = 'missing or malformed library root URL';
+      }
+      for (const name of folders) {
+        if (unreadable !== null) break;
+        const path = `${rootUrl}/${name}`;
+        const folder = await pathExists('Folder', path);
+        if (!folder.ok) { unreadable = folder.status ? `HTTP ${folder.status}` : folder.error; break; }
+        if (folder.exists) {
+          const item = await probeGet(`web/GetFolderByServerRelativeUrl('${libraryPathLiteral(path)}')/ListItemAllFields?$select=FileSystemObjectType,FileRef`);
+          if (!item.ok || Array.isArray(item.d) || item.d.FileSystemObjectType !== 1 || item.d.FileRef !== path) {
+            unreadable = 'folder item did not read back as a folder at the declared path'; break;
+          }
+        } else {
+          const file = await pathExists('File', path);
+          if (!file.ok) { unreadable = file.status ? `HTTP ${file.status}` : file.error; break; }
+          if (file.exists) files.push(name);
+        }
       }
       if (unreadable !== null) {
         // NOT-ASSESSABLE rather than WARN. The question is whether a file
@@ -1177,8 +1185,16 @@
         `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title,EnforceUniqueValues&$top=${COLUMN_PAGE_SIZE}`));
       for (let at = 0; at < columnListTitles.length; at += 1) columnShapes.set(columnListTitles[at], rows[at]);
     }
-    const columnShapeOf = (title) => columnShapes.get(title)
-      || { ok: false, error: 'the batched read did not queue this list' };
+    const columnShapeOf = (title) => {
+      const live = columnShapes.get(title)
+        || { ok: false, error: 'the batched read did not queue this list' };
+      // A malformed collection cannot establish that declared columns are absent.
+      if (live.ok && (malformedNextPage(live.d) || !Array.isArray(live.d.results)
+        || live.d.results.some((row) => !row || typeof row.InternalName !== 'string'))) {
+        return { ok: false, error: 'missing or malformed column collection' };
+      }
+      return live;
+    };
     // Whether this page may have left columns unread, which is what decides
     // if a column missing from it is a column the list does not hold.
     //
@@ -1194,7 +1210,7 @@
     // an envelope BatchReader refuses whole, which is a first deploy.
     const columnsTruncated = (live) => {
       const next = live.d && live.d.__next;
-      return ((live.d && live.d.results) || []).length >= COLUMN_PAGE_SIZE
+      return live.d.results.length >= COLUMN_PAGE_SIZE
         || (typeof next === 'string' && next !== '');
     };
     for (const [title, columns] of (TARGETS.list_display_titles || [])) {
@@ -1211,7 +1227,7 @@
         continue;
       }
       const byInternal = new Map();
-      for (const f of ((live.d && live.d.results) || [])) {
+      for (const f of live.d.results) {
         byInternal.set(String(f.InternalName), f.Title);
       }
       const drifted = [];
@@ -1256,6 +1272,14 @@
       const absent = (knownTitles && !knownTitles.has(String(title).toLowerCase()))
         || (!live.ok && live.status === 404);
       if (absent) {
+        const rename = (TARGETS.list_renames || []).find(([current]) => current === title);
+        const possiblePrevious = rename ? rename[1].filter(([oldTitle]) =>
+          !knownTitles || knownTitles.has(String(oldTitle).toLowerCase())) : [];
+        // An absent current title can still adopt existing data through a rename.
+        if (possiblePrevious.length) {
+          finding(2, key, 'NOT-ASSESSABLE', `'${title}' is absent under its current title, but may adopt a previous list (${possiblePrevious.map(([oldTitle]) => oldTitle).join(', ')}). Its declared unique columns were not checked on those previous titles; deploy preflight checks the resolved rename target before writing.`);
+          continue;
+        }
         finding(2, key, 'PASS', `'${title}' absent; its ${columns.length} declared unique column(s) are provisioned carrying the constraint, not given one over existing data.`);
         continue;
       }
@@ -1266,7 +1290,7 @@
         continue;
       }
       const byInternal = new Map();
-      for (const f of ((live.d && live.d.results) || [])) {
+      for (const f of live.d.results) {
         byInternal.set(String(f.InternalName), f);
       }
       const pending = [];
@@ -1398,11 +1422,13 @@
     };
     await renameFinding('permission level', 'rename_level', TARGETS.level_renames || [], async () => {
       const r = await probeGet('web/roledefinitions?$select=Name,Description&$top=5000');
-      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+      return r.ok && !malformedNextPage(r.d) && !r.d.__next && Array.isArray(r.d.results)
+        && r.d.results.length < 5000 ? r.d.results : null;
     }, (row) => row.Name);
     await renameFinding('site group', 'rename_group', TARGETS.group_renames || [], async () => {
       const r = await probeGet('web/sitegroups?$select=Title,Description&$top=5000');
-      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+      return r.ok && !malformedNextPage(r.d) && !r.d.__next && Array.isArray(r.d.results)
+        && r.d.results.length < 5000 ? r.d.results : null;
     }, (row) => row.Title);
 
     // Property-surface probes against the first EXISTING declared list, else
