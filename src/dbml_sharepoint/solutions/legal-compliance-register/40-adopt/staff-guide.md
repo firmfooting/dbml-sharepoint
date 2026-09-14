@@ -9,16 +9,14 @@ compliance ratings, risk or gaps into library properties.
 
 ## Platform owners: file and assign
 
-1. Upload a new SAQ for this assessment into the executive's division folder.
-   Include a distinct assessment reference in its filename, preserving the
-   publisher's issuance label. Reuse the publisher's questionnaire when
-   appropriate, but create a new assessment file each time.
+1. Download the SAQ from the vendor platform and upload it into the executive's
+   division folder. Preserve its filename and issuance label. A new SAQ for
+   the same topic has a new period; users do not create or reuse questionnaires.
 2. Set **Type** to *SAQ*. Enter **Topic name**, **Portal topic ID**, **Issued
    year** and **Issued quarter** from the publisher's file. The issuance
    period is not your assessment period and is not filled automatically.
-3. Set **Assessment reference**, **Division**, **Executive responsible**,
-   **Platform owner** and **Due date**. The executive assignment is a manual
-   step based on the folder's division. Leave **Status** at *Required*.
+3. Set **Division** and **Executive responsible**. The executive assignment is
+   a manual step based on the folder's division. Leave **Status** at *Required*.
 4. Upload the supporting REG with **Type** set to *REG* and matching topic
    metadata. Its assessment properties are hidden and it stays out of the
    assessment worklists.
@@ -27,9 +25,8 @@ Open **Platform owner** for the flat workspace across every folder, including
 SAQs, REGs and files whose metadata still needs completing. It shows recently
 modified files first. Use its columns to maintain assignments and handoffs.
 
-Open **Pending** to chase outstanding assessments. **Overdue** shows the
-ones whose due date has passed. Blank owner columns need assignment, even
-when the file has otherwise saved successfully.
+Open **Pending** to chase outstanding assessments. Blank owner columns need
+assignment, even when the file has otherwise saved successfully.
 
 ## Executives: delegate and optionally review
 
@@ -41,8 +38,8 @@ Decide this when assigning the work so the platform owner knows the route.
 Completed SAQs needing review appear in **Awaiting review**. Open the Excel
 file, check the answers and set **Reviewed date**. If further work is needed,
 clear the completion and review dates, then return **Status** to *In progress*.
-A file already recorded in the portal needs a new assessment or a coordinated
-correction of both records.
+A correction to a file already recorded in the portal must be coordinated
+across the workbook and the platform record.
 
 ## Business owners: complete the workbook
 

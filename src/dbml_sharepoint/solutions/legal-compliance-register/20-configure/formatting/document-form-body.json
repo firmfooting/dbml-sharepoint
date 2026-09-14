@@ -16,11 +16,8 @@
     {
       "displayname": "Assign and complete",
       "fields": [
-        "AssessmentRef",
-        "PlatformOwner",
         "ExecutiveResponsible",
         "BusinessOwner",
-        "DueDate",
         "Status",
         "CompletedDate",
         "TrackingNotes"

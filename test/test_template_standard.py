@@ -2480,8 +2480,8 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
 def _legal_assessment(**changes: Any) -> dict[str, Any]:
     return {
         "ItemType": "SAQ", "TopicName": "VIC - Privacy",
-        "AssessmentRef": "assessment-2026-01", "Division": "Clinical services",
-        "DueDate": "today+10", "Status": "Complete", "CompletedDate": "today-1",
+        "Division": "Clinical services",
+        "Status": "Complete", "CompletedDate": "today-1",
         "ReviewRequirement": "Not required", **changes,
     }
 
@@ -2508,10 +2508,8 @@ def _legal_rule_accepts(row: dict[str, Any]) -> bool | None:
     ({"CompletedDate": "today+1"}, False),
     ({"ReviewedDate": "today+1"}, False),
     ({"ExternalRecorded": "today+1"}, False),
-    ({"AssessmentRef": None}, False),
     ({"TopicName": None}, False),
     ({"Division": None}, False),
-    ({"DueDate": None}, False),
 ])
 def test_legal_assessment_handoffs(changes: dict[str, Any], accepted: bool) -> None:
     assert _legal_rule_accepts(_legal_assessment(**changes)) is accepted
@@ -2566,7 +2564,8 @@ def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None
     assert not loaded.mapping.default_formulas
     assert not loaded.mapping.derived_columns
     types = loaded.column_types("Document")
-    assert {"IssuedYear", "IssuedQuarter", "AssessmentRef", "PlatformOwner"} <= types.keys()
+    assert {"IssuedYear", "IssuedQuarter"} <= types.keys()
+    assert not {"PlatformOwner", "AssessmentRef", "DueDate"} & types.keys()
     assert not {"Compliance", "RiskLevel", "Controls", "ActionUrl", "IdentifiedGaps"} & types.keys()
     year_rule = loaded.mapping.column_validation["Document"].columns["IssuedYear"]
     assert _evaluate(normalise(year_rule.when), {"IssuedYear": 2016}, types) is True
@@ -2594,6 +2593,6 @@ def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> 
     assert view.group_by is None
     assert [(sort.field, sort.direction) for sort in view.sort] == [("Modified", "desc")]
     assert {
-        "FileLeafRef", "ItemType", "TopicName", "PortalTopicId", "AssessmentRef", "Division",
-        "ExecutiveResponsible", "BusinessOwner", "PlatformOwner", "ExternalRecorded",
+        "FileLeafRef", "ItemType", "TopicName", "PortalTopicId", "Division",
+        "ExecutiveResponsible", "BusinessOwner", "ExternalRecorded",
     } <= set(view.fields)

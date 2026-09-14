@@ -2,7 +2,7 @@
 
 *Theme: governance, risk & compliance.*
 
-One document library, `LC_Document`, holds a new Excel SAQ for each assessment
+One document library, `LC_Document`, holds vendor-issued Excel SAQs
 and the REG workbooks people consult while answering it. There is no separate
 topic list. Library columns track assignment and handoffs; responses,
 compliance ratings, risk, controls, gaps and evidence remain in Excel for
@@ -10,9 +10,9 @@ Power Query and Power BI to read.
 
 ## The workflow
 
-1. The platform owner uploads a new SAQ into the executive's division folder,
-   identifies the topic and assessment, assigns that executive and sets a due
-   date. The platform owner also names themselves on the assessment.
+1. The platform owner downloads an SAQ from the vendor platform and uploads it
+   into the executive's division folder,
+   identifies the topic and assigns that executive.
 2. The executive assigns the business owner and decides whether executive
    review is required before portal recording.
 3. The business owner completes the Excel workbook, sets **Completed date**
@@ -28,16 +28,17 @@ permissions do not restrict individual workflow transitions to a role.
 
 ## Documents and assessment identity
 
-**SAQ** means self-assessment questionnaire. Each assessment has a new file,
-even when the publisher has not revised its questionnaire. Use an assessment
-reference in both the filename and **Assessment reference**, for example:
+**SAQ** means self-assessment questionnaire. Download it from the vendor platform
+and update that file. Users do not create SAQs or reuse an earlier questionnaire.
+A new SAQ for the same topic has a new vendor period. Preserve the vendor's
+filename and issuance label, for example:
 
-`SAQ - VIC - Health Privacy Principles [Q3-2023] - assessment-2026-01.xlsx`
+`SAQ - VIC - Health Privacy Principles [Q3-2023].xlsx`
 
 **Issued year** and **Issued quarter** describe the publisher's original
 issue, 2023 and Q3 in that example. They never default from today's date.
-The assessment reference, due date and completion date describe your work.
-Do not overwrite an earlier assessment to start a later one.
+The file itself identifies the assessment; completion dates describe your work.
+Keep successive vendor issues as separate files without overwriting earlier work.
 
 **REG** means the accompanying regulatory reference workbook. File it with
 **Type** set to *REG*. It has no completion, executive-review or recording
@@ -64,10 +65,9 @@ currently inherit library permissions; they do not yet isolate division access.
 | View | Purpose |
 | --- | --- |
 | Platform owner | Flat, unfiltered SAQs and REGs across all folders, recently modified first |
-| Pending | SAQs Required or In progress, earliest due first |
+| Pending | SAQs Required or In progress, recently modified first |
 | My responsibility | Open SAQs assigned to the current business owner |
 | My accountability | The executive's SAQs awaiting completion, review or recording |
-| Overdue | Open SAQs past their due date |
 | Awaiting review | Complete SAQs with requested review still outstanding |
 | To record in the portal | Complete SAQs ready for recording, with no recording date |
 | Recorded assessments | Complete SAQs recorded in the portal |
@@ -76,7 +76,7 @@ currently inherit library permissions; they do not yet isolate division access.
 
 Every view searches across the division folders. Build with `--seed` for
 nine synthetic demonstration files covering every worklist, including
-repeated assessments of one topic and both review routes.
+successive vendor periods for one topic and both review routes.
 
 ## Adopting version 2
 

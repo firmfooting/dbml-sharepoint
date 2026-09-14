@@ -99,7 +99,6 @@ display_names:
     Document:
       ItemType: Type
       PortalTopicId: Portal topic ID
-      AssessmentRef: Assessment reference
       ExternalRecorded: Recorded in portal
       TrackingNotes: Tracking notes
 
@@ -112,13 +111,10 @@ column_formatting:
         In progress: low
         Complete: good
         No longer required: muted
-    DueDate:
-      style: overdue-date
-      guard: {field: Status, not: [Complete, No longer required]}
 
 field_sets:
   Document:
-    identity: [FileLeafRef, TopicName, AssessmentRef, Division, ExecutiveResponsible, BusinessOwner, Status]
+    identity: [FileLeafRef, TopicName, Division, ExecutiveResponsible, BusinessOwner, Status]
 
 # Assessment worklists exclude REGs; the flat platform-owner workspace includes all files.
 
@@ -126,8 +122,8 @@ views:
   Document:
     - title: Platform owner
       scope: recursive
-      fields: [FileLeafRef, ItemType, TopicName, PortalTopicId, AssessmentRef, Division,
-        ExecutiveResponsible, BusinessOwner, PlatformOwner, Status, DueDate, CompletedDate,
+      fields: [FileLeafRef, ItemType, TopicName, PortalTopicId, Division,
+        ExecutiveResponsible, BusinessOwner, Status, CompletedDate,
         ReviewRequirement, ReviewedDate, ExternalRecorded]
       sort:
         - {field: Modified, direction: desc}
@@ -136,57 +132,49 @@ views:
         ItemType: 100
         TopicName: 220
         PortalTopicId: 140
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
-        PlatformOwner: 160
         Status: 150
-        DueDate: 140
         CompletedDate: 140
         ReviewRequirement: 140
         ReviewedDate: 140
         ExternalRecorded: 160
     - title: Pending
       scope: recursive
-      fields: ['@identity', PlatformOwner, DueDate]
+      fields: ['@identity']
       where:
         - {field: ItemType, op: eq, value: SAQ}
         - {field: Status, op: in, value: [Required, In progress]}
       sort:
-        - {field: DueDate, direction: asc}
+        - {field: Modified, direction: desc}
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
         Status: 150
-        PlatformOwner: 160
-        DueDate: 140
       default: true
     - title: My responsibility
       scope: recursive
-      fields: ['@identity', DueDate]
+      fields: ['@identity']
       where:
         - {field: ItemType, op: eq, value: SAQ}
         - {field: Status, op: in, value: [Required, In progress]}
         - {field: BusinessOwner, op: eq, value: me}
       sort:
-        - {field: DueDate, direction: asc}
+        - {field: Modified, direction: desc}
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
         Status: 150
-        DueDate: 140
     - title: My accountability
       scope: recursive
-      fields: ['@identity', DueDate, CompletedDate, ReviewRequirement, ReviewedDate]
+      fields: ['@identity', CompletedDate, ReviewRequirement, ReviewedDate]
       where:
         - {field: ItemType, op: eq, value: SAQ}
         - {field: ExecutiveResponsible, op: eq, value: me}
@@ -194,37 +182,17 @@ views:
         - {field: ExternalRecorded, op: is_null}
       sort:
         - {field: Status, direction: asc}
-        - {field: DueDate, direction: asc}
+        - {field: Modified, direction: desc}
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
         Status: 150
-        DueDate: 140
         CompletedDate: 140
         ReviewRequirement: 140
         ReviewedDate: 140
-    - title: Overdue
-      scope: recursive
-      fields: ['@identity', DueDate]
-      where:
-        - {field: ItemType, op: eq, value: SAQ}
-        - {field: Status, op: in, value: [Required, In progress]}
-        - {field: DueDate, op: lt, value: today}
-      sort:
-        - {field: DueDate, direction: asc}
-      widths:
-        FileLeafRef: 300
-        TopicName: 220
-        AssessmentRef: 160
-        Division: 180
-        ExecutiveResponsible: 180
-        BusinessOwner: 160
-        Status: 150
-        DueDate: 140
     - title: Awaiting review
       scope: recursive
       fields: ['@identity', CompletedDate, ReviewRequirement, ReviewedDate]
@@ -239,7 +207,6 @@ views:
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
@@ -249,7 +216,7 @@ views:
         ReviewedDate: 140
     - title: To record in the portal
       scope: recursive
-      fields: ['@identity', PlatformOwner, CompletedDate, ReviewedDate, ExternalRecorded]
+      fields: ['@identity', CompletedDate, ReviewedDate, ExternalRecorded]
       where:
         - {field: ItemType, op: eq, value: SAQ}
         - {field: Status, op: eq, value: Complete}
@@ -262,18 +229,16 @@ views:
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
         Status: 150
-        PlatformOwner: 160
         CompletedDate: 140
         ReviewedDate: 140
         ExternalRecorded: 160
     - title: Recorded assessments
       scope: recursive
-      fields: ['@identity', PlatformOwner, CompletedDate, ExternalRecorded]
+      fields: ['@identity', CompletedDate, ExternalRecorded]
       where:
         - {field: ItemType, op: eq, value: SAQ}
         - {field: Status, op: eq, value: Complete}
@@ -283,12 +248,10 @@ views:
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
         Status: 150
-        PlatformOwner: 160
         CompletedDate: 140
         ExternalRecorded: 160
     - title: Reference regulations
@@ -312,11 +275,10 @@ views:
         - {field: ItemType, op: eq, value: SAQ}
       sort:
         - {field: TopicName, direction: asc}
-        - {field: AssessmentRef, direction: asc}
+        - {field: FileLeafRef, direction: asc}
       widths:
         FileLeafRef: 300
         TopicName: 220
-        AssessmentRef: 160
         Division: 180
         ExecutiveResponsible: 180
         BusinessOwner: 160
@@ -336,19 +298,10 @@ form_formatting:
 form_visibility:
   Document:
     columns:
-      AssessmentRef:
-        when:
-          - {field: ItemType, op: eq, value: SAQ}
       ExecutiveResponsible:
         when:
           - {field: ItemType, op: eq, value: SAQ}
       BusinessOwner:
-        when:
-          - {field: ItemType, op: eq, value: SAQ}
-      PlatformOwner:
-        when:
-          - {field: ItemType, op: eq, value: SAQ}
-      DueDate:
         when:
           - {field: ItemType, op: eq, value: SAQ}
       Status:
@@ -396,9 +349,7 @@ list_validation:
                 - {field: Status, op: not_in, value: [In progress, Complete]}
                 - all_of:
                     - {field: TopicName, op: is_not_null}
-                    - {field: AssessmentRef, op: is_not_null}
                     - {field: Division, op: is_not_null}
-                    - {field: DueDate, op: is_not_null}
             - any_of:
                 - {field: Status, op: neq, value: Complete}
                 - {field: CompletedDate, op: is_not_null}
@@ -425,17 +376,17 @@ list_validation:
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
                 - {field: ExternalRecorded, op: leq, value: today}
-    message: SAQs in progress or complete need a topic, assessment reference, division and due date. Complete
+    message: SAQs in progress or complete need a topic and division. Complete
       needs a completion date. Review and portal recording need Complete; requested review must precede
       recording. Completion, review and recording dates cannot be in the future.
 
-# Synthetic files exercise both review routes and repeated assessments of one issue.
+# Synthetic files exercise both review routes and successive vendor periods.
 
 demo_items:
   Document:
     - key: assessment-01
       file:
-        name: '[DEMO] SAQ - Privacy and health records [Q3-2023] - assessment-01.txt'
+        name: '[DEMO] SAQ - Privacy and health records [Q3-2023].txt'
         folder: Clinical services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -446,15 +397,12 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Clinical services
-        AssessmentRef: assessment-01
         ExecutiveResponsible: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: Required
         ReviewRequirement: Not required
     - key: assessment-02
       file:
-        name: '[DEMO] SAQ - Work health and safety [Q3-2023] - assessment-02.txt'
+        name: '[DEMO] SAQ - Work health and safety [Q3-2023].txt'
         folder: Corporate services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -465,16 +413,13 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Corporate services
-        AssessmentRef: assessment-02
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: In progress
         ReviewRequirement: Not required
     - key: assessment-03
       file:
-        name: '[DEMO] SAQ - Child safe standards [Q3-2023] - assessment-03.txt'
+        name: '[DEMO] SAQ - Child safe standards [Q3-2023].txt'
         folder: Community services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -485,17 +430,14 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Community services
-        AssessmentRef: assessment-03
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: Complete
         ReviewRequirement: Required
         CompletedDate: today-2
     - key: assessment-04
       file:
-        name: '[DEMO] SAQ - Freedom of information [Q3-2023] - assessment-04.txt'
+        name: '[DEMO] SAQ - Freedom of information [Q3-2023].txt'
         folder: Executive and governance
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -506,16 +448,13 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Executive and governance
-        AssessmentRef: assessment-04
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today-7
         Status: Required
         ReviewRequirement: Not required
     - key: assessment-05
       file:
-        name: '[DEMO] SAQ - Food safety [Q3-2023] - assessment-05.txt'
+        name: '[DEMO] SAQ - Food safety [Q3-2023].txt'
         folder: Clinical services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -526,17 +465,14 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Clinical services
-        AssessmentRef: assessment-05
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: Complete
         ReviewRequirement: Not required
         CompletedDate: today-3
     - key: assessment-06
       file:
-        name: '[DEMO] SAQ - Procurement [Q3-2023] - assessment-06.txt'
+        name: '[DEMO] SAQ - Procurement [Q3-2023].txt'
         folder: Corporate services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -547,18 +483,15 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Corporate services
-        AssessmentRef: assessment-06
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: Complete
         ReviewRequirement: Required
         CompletedDate: today-4
         ReviewedDate: today-3
     - key: assessment-07
       file:
-        name: '[DEMO] SAQ - Privacy and health records [Q3-2023] - assessment-07.txt'
+        name: '[DEMO] SAQ - Privacy and health records [Q2-2023].txt'
         folder: Clinical services
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -567,20 +500,17 @@ demo_items:
         PortalTopicId: DEMO-PRIVACY
         ItemType: SAQ
         IssuedYear: 2023
-        IssuedQuarter: Q3
+        IssuedQuarter: Q2
         Division: Clinical services
-        AssessmentRef: assessment-07
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today-40
         Status: Complete
         ReviewRequirement: Not required
         CompletedDate: today-30
         ExternalRecorded: today-29
     - key: assessment-08
       file:
-        name: '[DEMO] SAQ - Retired assessment [Q3-2023] - assessment-08.txt'
+        name: '[DEMO] SAQ - Retired assessment [Q3-2023].txt'
         folder: Executive and governance
         content: Demo placeholder for an Excel assessment workbook. Answers, controls and gaps stay in
           the workbook.
@@ -591,11 +521,8 @@ demo_items:
         IssuedYear: 2023
         IssuedQuarter: Q3
         Division: Executive and governance
-        AssessmentRef: assessment-08
         ExecutiveResponsible: '@me'
         BusinessOwner: '@me'
-        PlatformOwner: '@me'
-        DueDate: today+10
         Status: No longer required
         ReviewRequirement: Not required
     - key: privacy-reference

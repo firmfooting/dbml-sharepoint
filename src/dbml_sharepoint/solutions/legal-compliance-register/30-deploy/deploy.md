@@ -34,8 +34,8 @@ dbml-sharepoint build \
 Paste `assess.js.txt`, review `deploy-manifest.md`, then paste `deploy.js.txt`.
 For a demonstration, paste `demo-data.js.txt` afterwards. It creates nine
 synthetic files: eight SAQs and one REG across all four example divisions.
-Two assessments reuse the same topic and publisher issue with different
-assessment references. Both the reviewed and unreviewed recording routes
+Two vendor issues share a topic but have different periods.
+Both the reviewed and unreviewed recording routes
 are represented. No uploaded organisation data is part of the demo.
 
 The family declares one business library. Standard deployment logging is
@@ -46,21 +46,21 @@ logging sidecars are not wanted.
 
 - [ ] `LC_Document` exists as a document library with the declared folders.
       No Topic list is declared by this version.
-- [ ] All ten views in the family README exist. **Pending** is the default.
+- [ ] All nine views in the family README exist. **Pending** is the default.
       Every view finds files across the division folders.
 - [ ] **Platform owner** is flat and unfiltered, includes SAQs and REGs across
       folders, and shows recently modified files first. An upload with missing
       assignments remains visible here.
-- [ ] The header names the file. The form sections are **The document**,
+- [ ] The header names the topic. The form sections are **The document**,
       **Assign and complete**, **Optional executive review** and **Record
       in the portal**.
 - [ ] Set Type to *REG*: assessment fields hide. The file appears in
       **Reference regulations** and no assessment worklist.
-- [ ] Upload an SAQ issued in Q3 2023 for a new assessment. **Issued year**
+- [ ] Upload a vendor SAQ issued in Q3 2023. **Issued year**
       and **Issued quarter** do not prefill from the upload date. Enter 2023
       and Q3; the issuance-year rule accepts it.
-- [ ] Try moving an SAQ to *In progress* without its topic, assessment
-      reference, division or due date. The save rule refuses the change.
+- [ ] Try moving an SAQ to *In progress* without its topic or division.
+      The save rule refuses the change.
 - [ ] Try *Complete* without a completed date. The save rule refuses it.
 - [ ] Complete an SAQ with review *Not required*. It appears in **To record
       in the portal** without a reviewed date.
@@ -109,10 +109,10 @@ Similarly, determine issuance from the publisher file, not the old period
 columns, which were intended as assessment periods.
 
 For the current tracking spreadsheet, match topics to publisher files and
-resolve duplicate topic rows, missing assignments and assessment references.
+resolve duplicate topic rows and missing assignments.
 Transfer identity, assignment and tracking dates only. Keep responses,
-ratings, risk, controls and gaps in Excel. Upload a new SAQ for each new
-assessment and retain its supporting REG. Migration automation is maintained
+ratings, risk, controls and gaps in Excel. Upload each new vendor-issued SAQ
+and retain its supporting REG. Migration automation is maintained
 separately from this public solution family.
 
 ## Redeploying

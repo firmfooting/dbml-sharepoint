@@ -42,11 +42,8 @@ Table Document {
   IssuedYear           int                [note: 'Publisher issuance year from the original filename, not the upload year or assessment year']
   IssuedQuarter        quarter            [note: 'Publisher issuance quarter from the original filename, not the assessment quarter']
   Division             division           [note: 'The executive division whose folder holds this file']
-  AssessmentRef        nvarchar           [note: 'Organisation-assigned assessment reference, also included in the filename. Each new assessment gets a new file even when the publisher issue is unchanged']
   ExecutiveResponsible person             [note: 'Assigned by the platform owner according to the executive division folder; assigns the business owner and may review the completed SAQ']
   BusinessOwner        person             [note: 'Assigned by the executive to complete this assessment in Excel']
-  PlatformOwner        person             [note: 'Files and assigns this assessment, then records the completed workbook in the compliance platform']
-  DueDate              date               [note: 'When the business owner must complete this assessment']
   Status               assessment_status  [default: 'Required', note: 'SAQ progress only. Complete means the business owner has finished; portal recording is tracked separately']
   CompletedDate        date               [note: 'When the business owner completed the SAQ in Excel']
   ReviewRequirement    review_requirement [default: 'Not required', note: 'The executive requests a review before portal recording. Choose Not required when executive review is not needed']
@@ -60,12 +57,9 @@ Table Document {
     PortalTopicId
     ItemType
     Division
-    AssessmentRef
     Status
-    DueDate
     ExecutiveResponsible
     BusinessOwner
-    PlatformOwner
   }
 
   Note: 'SAQ assessments and REG references, tracking assignment, completion, optional executive review and portal recording. Content stays in Excel.'
