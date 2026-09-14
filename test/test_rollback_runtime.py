@@ -64,6 +64,23 @@ _HARNESS = textwrap.dedent(r"""
         count: spec.count,
         description: spec.description,
         id: spec.id,
+        // The deletion lock, what the DELETE answers, and whether the write
+        // that puts the lock BACK is discarded. Rollback unlocks a locked
+        // list, deletes it and re-locks when that delete fails, and the mock
+        // could not reach any of those three until it carried these.
+        allowDeletion: spec.allowDeletion === undefined ? true : spec.allowDeletion,
+        deleteStatus: spec.deleteStatus,
+        // A DELETE whose fetch REJECTS, which is what a dropped connection
+        // looks like to the script, and which AllowDeletion read fails the
+        // same way. Neither is a refusal: the site keeps whatever the request
+        // before it wrote.
+        deleteThrows: spec.deleteThrows === true,
+        allowDeletionReadFailsAt: spec.allowDeletionReadFailsAt,
+        allowDeletionReads: 0,
+        discardRelock: spec.discardRelock === true,
+        // How many item recycles succeed before the rest are refused.
+        recycleFailsAfter: spec.recycleFailsAfter,
+        recycledOk: 0,
         // What the site says on every ownership read after the first, which
         // is the window between the confirmation prompt and the first
         // destructive write. Undefined means nothing changes in it.
@@ -85,11 +102,20 @@ _HARNESS = textwrap.dedent(r"""
       text: async () => JSON.stringify(payload),
     });
 
+    // A response whose BODY never arrives: the status is known and the stream
+    // then fails. A 400 is the case that needs its body read, because the
+    // status alone does not say whether it is the documented absent one.
+    const bodyFails = (status) => ({
+      ...reply(status, {}),
+      text: async () => { throw new TypeError('Failed to fetch'); },
+    });
+
     globalThis.fetch = async (url, opts = {}) => {
       const u = String(url);
       const method = opts.method || 'GET';
       const headers = opts.headers || {};
-      calls.push({ url: u, method, headers });
+      const body = opts.body ? JSON.parse(opts.body) : null;
+      calls.push({ url: u, method, headers, body });
       if (u.includes('contextinfo')) {
         return reply(200, { d: { GetContextWebInformation: {
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
@@ -123,6 +149,14 @@ _HARNESS = textwrap.dedent(r"""
         if (entry && entry.afterDelete === 'unreadable') {
           return reply(500, { error: { message: { value: 'readback failed' } } });
         }
+        // The confirming GET can drop exactly as the DELETE can, and its body
+        // can fail after its status arrives. Neither answers the question.
+        if (entry && entry.afterDelete === 'never-answers') {
+          throw new TypeError('Failed to fetch');
+        }
+        if (entry && entry.afterDelete === 'body-never-arrives') {
+          return bodyFails(400);
+        }
         return reply(404, { error: { message: { value: 'list not found' } } });
       }
       const match = /getbytitle\('([^']+)'\)/.exec(u);
@@ -143,17 +177,39 @@ _HARNESS = textwrap.dedent(r"""
           : reply(200, { d: { Id: id, Description: description } });
       }
       if (u.includes('$select=AllowDeletion')) {
-        return reply(200, { d: { AllowDeletion: true } });
+        s.allowDeletionReads += 1;
+        if (s.allowDeletionReadFailsAt === s.allowDeletionReads) {
+          return reply(500, { error: { message: { value: 'AllowDeletion unreadable' } } });
+        }
+        return reply(200, { d: { AllowDeletion: s.allowDeletion } });
       }
       const recycled = /\/items\((\d+)\)\/recycle\(\)/.exec(u);
       if (recycled) {
+        const cap = s.recycleFailsAfter === undefined ? Infinity : s.recycleFailsAfter;
+        if (s.recycledOk >= cap) {
+          return reply(403, { error: { message: { value: 'recycle refused' } } });
+        }
+        s.recycledOk += 1;
         s.rows = s.rows.filter((row) => row.Id !== Number(recycled[1]));
         return reply(200, { d: { Recycle: '00000000-0000-0000-0000-000000000000' } });
       }
       if (u.includes('/items?')) return reply(200, { d: { results: s.rows } });
       if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
+        if (s.deleteStatus) {
+          return reply(s.deleteStatus, { error: { message: { value: 'delete refused' } } });
+        }
         s.deleted = true;
+        // Thrown after the delete is applied, so `deleteThrows` is a DELETE
+        // SharePoint took whose answer never reached the browser.
+        if (s.deleteThrows) throw new TypeError('Failed to fetch');
         return reply(200, {});
+      }
+      if (method === 'POST' && headers['X-HTTP-Method'] === 'MERGE') {
+        const relock = body && body.AllowDeletion === false;
+        if (body && 'AllowDeletion' in body && !(s.discardRelock && relock)) {
+          s.allowDeletion = body.AllowDeletion;
+        }
+        return reply(204, {});
       }
       return reply(200, {});
     };
@@ -202,6 +258,12 @@ def _listing(
     list_id: str = _ID,
     after_prompt: dict[str, Any] | None = None,
     after_delete: str | None = None,
+    allow_deletion: bool = True,
+    delete_status: int | None = None,
+    delete_throws: bool = False,
+    allow_deletion_read_fails_at: int | None = None,
+    discard_relock: bool = False,
+    recycle_fails_after: int | None = None,
 ) -> dict[str, Any]:
     """One list's live state. `description=None` means unreadable.
 
@@ -211,7 +273,22 @@ def _listing(
 
     `after_delete` is what the by-id readback answers once the DELETE has
     returned 200: 'lingers' for a list that is still there, 'unreadable' for
-    a read that never answered the question.
+    a read that never answered the question, 'never-answers' for a fetch that
+    rejects the way the DELETE's own can, and 'body-never-arrives' for a
+    status that arrives while the body it has to be classified by does not.
+
+    `allow_deletion=False` is a list the deploy locked, which rollback has to
+    unlock before it can delete. `delete_status` refuses the DELETE, which is
+    what sends rollback down the re-lock path; `discard_relock` then lets that
+    re-lock answer success and keep the list unlocked, the failure a readback
+    is the only way to see. `recycle_fails_after` refuses every item recycle
+    past the first N.
+
+    `delete_throws` rejects the DELETE's fetch after the site has applied it,
+    which is a dropped connection rather than a refusal, and
+    `allow_deletion_read_fails_at` fails the Nth AllowDeletion read: the
+    probe is the first, the unlock's readback the second and the re-lock's
+    the third.
     """
     if ours and description is not None:
         description = f"{_MARKER[list_title]} {description}".strip()
@@ -220,11 +297,22 @@ def _listing(
         "description": description,
         "id": list_id,
         "titles": titles,
+        "allowDeletion": allow_deletion,
     }
     if after_prompt is not None:
         state["afterPrompt"] = after_prompt
     if after_delete is not None:
         state["afterDelete"] = after_delete
+    if delete_status is not None:
+        state["deleteStatus"] = delete_status
+    if delete_throws:
+        state["deleteThrows"] = True
+    if allow_deletion_read_fails_at is not None:
+        state["allowDeletionReadFailsAt"] = allow_deletion_read_fails_at
+    if discard_relock:
+        state["discardRelock"] = True
+    if recycle_fails_after is not None:
+        state["recycleFailsAfter"] = recycle_fails_after
     return state
 
 
@@ -240,6 +328,21 @@ def _rollback(
     js: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
     """Run rollback.js against the mock and return (summary, calls, prompts)."""
+    return _parse(_rollback_output(lists, answers, paged_titles, fail_second_page, js))
+
+
+def _rollback_output(
+    lists: dict[str, dict[str, Any]],
+    answers: list[str] | None = None,
+    paged_titles: list[str] | None = None,
+    fail_second_page: bool = False,
+    js: str | None = None,
+) -> str:
+    """One run's whole output, for the tests that read its log lines.
+
+    `_parse` reads the summary out of the same output, so a test asserting on
+    both does not run the script twice.
+    """
     harness = _HARNESS.replace(
         "const CONFIG = {};", f"const CONFIG = {json.dumps(lists)};", 1,
     ).replace(
@@ -264,7 +367,11 @@ def _rollback(
         "  console.log('__PROMPTS__' + JSON.stringify(prompts));\n"
         "});\n"
     )
-    output = _run(script)
+    return _run(script)
+
+
+def _parse(output: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """The three JSON markers out of one run's output."""
     lines = output.splitlines()
     found = {
         marker: next((ln for ln in lines if ln.startswith(marker)), None)
@@ -375,7 +482,7 @@ def test_a_list_still_reading_back_after_its_delete_is_not_reported_deleted() ->
     )
     assert summary["deleted"] == []
     assert [e["error"] for e in summary["errors"]] == [
-        ("the delete answered HTTP 200 but the list still reads back by its "
+        ("the delete answered HTTP 200 and the list still reads back by its "
          f"id ({_ID}); it has NOT been deleted."),
     ], summary["errors"]
 
@@ -642,3 +749,199 @@ def test_a_list_refused_at_the_prompt_is_never_rechecked() -> None:
     )
     reads = [c for c in calls if "$select=Id,Description" in c["url"]]
     assert len(reads) == 1, f"asked {len(reads)} times, expected 1"
+
+
+def _allow_deletion_writes(calls: list[dict[str, Any]], want: bool) -> list[int]:
+    """Where in the run each AllowDeletion MERGE sits."""
+    return [
+        i for i, c in enumerate(calls)
+        if c["body"] and c["body"].get("AllowDeletion") is want
+    ]
+
+
+def test_a_delete_that_fails_after_unlocking_puts_the_lock_back_and_reads_it_back() -> None:
+    """Rollback unlocks a list the deploy locked, and puts the lock back when
+    the delete then fails. That restore is a write like any other here, so it
+    is read back before the operator is told the protection is there."""
+    out = _rollback_output(
+        {"APP_Task": _listing("APP_Task", [], allow_deletion=False, delete_status=403)},
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    relocks = _allow_deletion_writes(calls, want=False)
+    assert len(relocks) == 1, "the lock this run took off was not put back"
+    assert any(
+        c["method"] == "GET" and "$select=AllowDeletion" in c["url"]
+        for c in calls[relocks[0] + 1:]
+    ), "the lock was reported restored without being read back"
+    assert "deletion block restored (read back)" in out
+
+
+def test_a_re_lock_the_site_discards_is_not_reported_as_restored() -> None:
+    """A MERGE SharePoint discards answers exactly as one it applied does, so
+    the MERGE's own status cannot say the protection is back. This is the
+    same guard `list.js` applies to the same write on the same property."""
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", [], allow_deletion=False, delete_status=403,
+                discard_relock=True,
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, _calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert "could NOT be confirmed restored" in out
+    assert "restored (read back)" not in out
+
+
+def test_an_unlock_whose_readback_fails_still_puts_the_block_back() -> None:
+    """A readback that FAILED is not a readback that answered false.
+
+    The MERGE took and the GET that would confirm it did not arrive, so the
+    list is standing unlocked. Recording the unlock only once its readback
+    answers leaves the restore skipped, and a list the deploy protected is
+    then deletable by anyone with nothing in the transcript saying so.
+    """
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", [], allow_deletion=False, allow_deletion_read_fails_at=2,
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert not [
+        c for c in calls
+        if c["method"] == "POST" and c["headers"].get("X-HTTP-Method") == "DELETE"
+    ], "it deleted a list on an unlock it never read back"
+    assert len(_allow_deletion_writes(calls, want=False)) == 1, (
+        "the block the unlock may have taken off was left off"
+    )
+    assert "could not be read back" in summary["errors"][0]["error"]
+    assert "restored (read back) after an unlock that could not be read back" in out
+
+
+def test_a_delete_whose_answer_is_lost_is_settled_by_the_id() -> None:
+    """A fetch that rejects says nothing about whether SharePoint applied the
+    DELETE. The list really went here, and reporting the transport failure as
+    a failed delete would send the operator looking for a list that is gone,
+    so the id is what settles it."""
+    out = _rollback_output(
+        {"APP_Task": _listing("APP_Task", [], delete_throws=True)},
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, _calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == ["APP_Task"]
+    assert summary["errors"] == []
+    assert "the DELETE never answered" in out
+
+
+def test_a_delete_that_never_answered_and_never_happened_puts_the_block_back() -> None:
+    """The other outcome of the same rejected fetch. The list is still there,
+    which the readback by id reports as the delete not having happened, and
+    the block this run took off goes back on: a stranded list is stranded
+    however its delete failed."""
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", [], allow_deletion=False, delete_throws=True,
+                after_delete="lingers",
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert "the delete never answered and the list still reads back" in (
+        summary["errors"][0]["error"]
+    )
+    assert len(_allow_deletion_writes(calls, want=False)) == 1, (
+        "the block was left off on a list still standing"
+    )
+    assert "restored (read back) after a failed delete" in out
+
+
+def test_an_unconfirmed_delete_puts_the_block_back_without_claiming_a_failure() -> None:
+    """A delete the readback could not settle strands the list exactly as a
+    refused one does, and the re-lock ran only on the refusal. What it says
+    has to keep the uncertainty: the list may be gone, in which case this
+    restore is the request that proves nothing was left unprotected."""
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", [], allow_deletion=False, after_delete="unreadable",
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+    assert len(_allow_deletion_writes(calls, want=False)) == 1, (
+        "a delete that could not be confirmed left the block off"
+    )
+    assert "after a delete that could not be confirmed" in out
+    assert "after a failed delete" not in out
+
+
+@pytest.mark.parametrize("after_delete", ["never-answers", "body-never-arrives"])
+def test_a_confirming_read_that_never_answered_leaves_the_delete_unknown(
+    after_delete: str,
+) -> None:
+    """The confirming GET can fail the way the DELETE it confirms can.
+
+    A rejected fetch, and a status whose body never arrives, both leave this
+    run knowing nothing about whether the list went. Reaching the catch with
+    a bare transport error instead reported "a failed delete" for a list that
+    may be gone, which is what `list.js` already settles by id. Same class,
+    same posture: the lock goes back on, and what the run says keeps the
+    uncertainty.
+    """
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", [], allow_deletion=False, after_delete=after_delete,
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+    assert len(_allow_deletion_writes(calls, want=False)) == 1, (
+        "a delete that could not be confirmed left the block off"
+    )
+    assert "after a delete that could not be confirmed" in out
+    assert "after a failed delete" not in out
+
+
+def test_a_drain_that_fails_part_way_still_reports_what_it_recycled() -> None:
+    """Items that reached the recycle bin before the failure are in it
+    whatever the run does next, and a run that never names them leaves the
+    operator no reason to go and restore them."""
+    out = _rollback_output(
+        {
+            "APP_Task": _listing(
+                "APP_Task", ["One", "Two", "Three"], recycle_fails_after=1,
+            ),
+        },
+        answers=["DELETE NON-EMPTY"],
+    )
+    summary, calls, _prompts = _parse(out)
+
+    assert summary["deleted"] == []
+    assert "'APP_Task': recycled 1 item(s)" in out
+    assert len(_recycles(calls)) == 2, "it stopped at the item that failed"
+    assert "recycle of item 2 failed" in summary["errors"][0]["error"]

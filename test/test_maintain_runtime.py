@@ -19,9 +19,11 @@ import pytest
 from _node import NODE
 from _node import run_node as _run
 
+from dbml_sharepoint.analysis import list_description, sidecars
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 from dbml_sharepoint.generators.maintaingen import (
     generate_columns_js,
+    generate_list_js,
     generate_protection_js,
 )
 
@@ -51,15 +53,28 @@ _HARNESS = textwrap.dedent(r"""
     const answers = ANSWERS.slice();
     globalThis.prompt = (message) => {
       prompts.push(message);
+      // A console prompt has no timeout, so a live list can change while it
+      // is open. `afterPrompt` is how a test makes that happen.
+      if (FLAGS.afterPrompt) Object.assign(state.list, FLAGS.afterPrompt);
       return answers.length ? answers.shift() : '';
     };
     console.table = (rows) => { tables.push(rows); };
 
     const state = {
-      list: CONFIG.list,
+      list: { ...CONFIG.list, deleted: false },
       fields: CONFIG.fields.map((f) => ({ ...f, deleted: false })),
       items: CONFIG.items,
       otherLists: CONFIG.otherLists || {},
+      // How much has already succeeded, so a flag can let the first N writes
+      // take and refuse the rest. A run that fails on its FIRST write leaves
+      // nothing behind, which is the one partial state that needs no report.
+      recycledOk: 0,
+      fieldMerges: 0,
+      // Which AllowDeletion readback this is. The unlock's is the first and
+      // the re-lock's the second, so a test can fail one of them.
+      lockReads: 0,
+      // Which read of the items collection this is, for the same job.
+      itemReads: 0,
     };
 
     const reply = (status, payload) => ({
@@ -68,6 +83,13 @@ _HARNESS = textwrap.dedent(r"""
       headers: { get: () => null },
       json: async () => payload,
       text: async () => JSON.stringify(payload),
+    });
+    // A response whose BODY never arrives: the status is known and the stream
+    // then fails. A 400 is the case that needs its body read, because the
+    // status alone does not say whether it is the documented absent one.
+    const bodyFails = (status) => ({
+      ...reply(status, {}),
+      text: async () => { throw new TypeError('Failed to fetch'); },
     });
     const notFound = (what) => reply(404, { error: { message: { value: `${what} not found` } } });
     // What a by-GUID read of a field that is no longer there answers. 404 is
@@ -119,15 +141,39 @@ _HARNESS = textwrap.dedent(r"""
       }
       const byPath = /GetList\(@listUrl\)\?@listUrl='([^']+)'/.exec(u);
       if (byPath) {
-        if (byPath[1] !== state.list.Path) return notFound('list');
+        if (byPath[1] !== state.list.Path || state.list.deleted) return notFound('list');
         return reply(200, { d: {
           Id: state.list.Id, Title: state.list.Title, Description: state.list.Description,
-          AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length,
+          AllowDeletion: state.list.AllowDeletion,
+          // A stale count is a real state: ItemCount is not updated in step
+          // with the items collection.
+          ItemCount: FLAGS.staleItemCount === undefined
+            ? state.items.length : FLAGS.staleItemCount,
         } });
       }
       const listGuid = /web\/lists\(guid'([^']+)'\)/.exec(u);
       if (!listGuid) return reply(400, { error: { message: { value: `unmocked ${u}` } } });
       const guid = listGuid[1].toLowerCase();
+      if (guid === state.list.Id && state.list.deleted) {
+        // A readback that REJECTS. A connection can drop on the confirming
+        // GET exactly as it can on the DELETE, and a request that never
+        // answered settles nothing, which no status code stands in for.
+        if (FLAGS.absentList === 'never-answers') throw new TypeError('Failed to fetch');
+        if (FLAGS.absentList === 'body-never-arrives') return bodyFails(400);
+        if (FLAGS.absentList === 'lingers') {
+          return reply(200, { d: { Id: state.list.Id, Title: state.list.Title } });
+        }
+        if (FLAGS.absentList === 'unreadable') {
+          return reply(500, { error: { message: { value: 'server error' } } });
+        }
+        if (FLAGS.absentList === 'absent400') {
+          return reply(400, { error: {
+            code: '-2147024809, System.ArgumentException',
+            message: { value: 'Value does not fall within the expected range.' },
+          } });
+        }
+        return notFound('list');
+      }
       if (guid !== state.list.Id) {
         const title = state.otherLists[guid];
         return title ? reply(200, { d: { Id: guid, Title: title } }) : notFound('list');
@@ -137,7 +183,11 @@ _HARNESS = textwrap.dedent(r"""
         const f = fieldById(fieldGuid[1]);
         if (!f || f.deleted) return absentField();
         if (method === 'POST' && headers['X-HTTP-Method'] === 'MERGE') {
-          if (!FLAGS.discardFieldMerge) Object.assign(f, body || {}, { __metadata: undefined });
+          state.fieldMerges += 1;
+          const takes = state.fieldMerges <= (FLAGS.discardFieldMergeAfter || 0);
+          if (!FLAGS.discardFieldMerge || takes) {
+            Object.assign(f, body || {}, { __metadata: undefined });
+          }
           return reply(204, {});
         }
         if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
@@ -158,10 +208,47 @@ _HARNESS = textwrap.dedent(r"""
         if (FLAGS.itemsStatus) {
           return reply(FLAGS.itemsStatus, { error: { message: { value: 'items refused' } } });
         }
-        return reply(200, { d: { results: state.items } });
+        // A row another user adds while this runs. Counted by READ so a test
+        // can place it after the drain has already come back empty, which is
+        // the one window the drain cannot close.
+        state.itemReads += 1;
+        if (FLAGS.itemArrivesBeforeRead === state.itemReads) {
+          state.items = state.items.concat([{ Id: 99 }]);
+        }
+        // $top is HONOURED: the final check asks for one row, and a mock
+        // answering every row would let a script reading results[1] pass.
+        const top = Number((/\$top=(\d+)/.exec(u) || [])[1]) || state.items.length;
+        return reply(200, { d: { results: state.items.slice(0, top) } });
+      }
+      const recycled = /\/items\((\d+)\)\/recycle\(\)/.exec(u);
+      if (recycled && method === 'POST') {
+        const takes = state.recycledOk < (FLAGS.recycleFailsAfter || 0);
+        if (FLAGS.recycleStatus && !takes) {
+          return reply(FLAGS.recycleStatus, { error: { message: { value: 'recycle refused' } } });
+        }
+        state.recycledOk += 1;
+        state.items = state.items.filter((row) => String(row.Id) !== recycled[1]);
+        return reply(200, {});
+      }
+      if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
+        if (FLAGS.listDeleteStatus) {
+          return reply(FLAGS.listDeleteStatus, { error: { message: { value: 'delete refused' } } });
+        }
+        if (!FLAGS.discardListDelete) state.list.deleted = true;
+        // A REJECTED fetch, which is what a dropped connection looks like to
+        // the script. Thrown after the delete is applied, so `listDeleteThrows`
+        // alone is a DELETE SharePoint took whose answer never arrived, and
+        // with `discardListDelete` one it never got.
+        if (FLAGS.listDeleteThrows) throw new TypeError('Failed to fetch');
+        return reply(200, {});
       }
       if (method === 'POST' && headers['X-HTTP-Method'] === 'MERGE') {
-        if (!FLAGS.discardListMerge && body && 'AllowDeletion' in body) {
+        // `discardRelockMerge` discards only the write that puts a lock BACK,
+        // so the unlock on the way in can take and the restore can be the
+        // thing that silently fails.
+        const relock = body && body.AllowDeletion === false;
+        const discarded = FLAGS.discardListMerge || (FLAGS.discardRelockMerge && relock);
+        if (!discarded && body && 'AllowDeletion' in body) {
           state.list.AllowDeletion = body.AllowDeletion;
         }
         return reply(204, {});
@@ -170,7 +257,19 @@ _HARNESS = textwrap.dedent(r"""
         const d = { AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length };
         return reply(200, { d });
       }
-      return reply(200, { d: { Id: state.list.Id, Title: state.list.Title } });
+      // A lock readback that FAILS, which is not a lock readback that reports
+      // the write was discarded: the site keeps whatever the MERGE wrote.
+      if (method === 'GET' && u.includes('$select=Id,AllowDeletion')) {
+        state.lockReads += 1;
+        if (FLAGS.lockReadbackFailsAt === state.lockReads) {
+          return reply(500, { error: { message: { value: 'readback failed' } } });
+        }
+      }
+      return reply(200, { d: {
+        Id: state.list.Id, Title: state.list.Title,
+        Description: state.list.Description,
+        AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length,
+      } });
     };
 """)
 
@@ -243,8 +342,12 @@ def _config(
     allow_deletion: bool = False,
     ours: bool = True,
     fields: list[dict[str, Any]] | None = None,
+    description: str | None = None,
 ) -> dict[str, Any]:
-    description = f"{MARKER_PREFIX} from demo for list Thing." if ours else "A hand-made list."
+    if description is None:
+        description = (
+            f"{MARKER_PREFIX} from demo for list Thing." if ours else "A hand-made list."
+        )
     return {
         "list": {
             # RENAMED, deliberately: the fixture list is TITLED APP_Thing and
@@ -310,7 +413,15 @@ def _run_script(
     """Run one emitted script against the mock.
 
     Returns (summary, calls, prompts, tables)."""
-    output = _run(_wrap(body, config, answers, flags))
+    return _parse(_run(_wrap(body, config, answers, flags)))
+
+
+def _parse(output: str) -> Run:
+    """The four JSON markers out of one run's output.
+
+    Separate from `_run_script` so a test that reads the script's log lines
+    can read the summary out of the SAME run rather than executing it twice.
+    """
     lines = output.splitlines()
     markers = ("__RESULT__", "__CALLS__", "__PROMPTS__", "__TABLES__")
     found = {
@@ -427,6 +538,20 @@ def test_a_seal_readback_that_disagrees_stops_the_run() -> None:
     assert summary["aborted"] == "readback-mismatch"
     assert _merges_of(calls, "AllowDeletion") == [], "the run must stop before the next action"
     assert len(prompts) == 1
+
+
+def test_a_seal_that_fails_part_way_reports_the_columns_it_did_seal() -> None:
+    """The same argument the list script's recycle count makes: columns
+    already written and read back are state the operator has to know about,
+    and a run reporting no actions at all hides them behind the error."""
+    summary, calls, _prompts, _tables = _protection(
+        _config(), ["unseal", "unlock"],
+        {"discardFieldMerge": True, "discardFieldMergeAfter": 1},
+    )
+
+    assert summary["aborted"] == "readback-mismatch"
+    assert summary["actions"] == [{"action": "unseal", "columns": 1, "verified": True}]
+    assert _merges_of(calls, "AllowDeletion") == [], "the run must stop before the next action"
 
 
 def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
@@ -792,3 +917,564 @@ def test_a_path_naming_no_list_names_the_path_not_a_title() -> None:
     # test would pass against the defect it exists to pin.
     assert "No list at '/sites/test/Lists/Nope'" in out
     assert "No list titled" not in out
+# --------------------------------------------------------------------------
+# list.js: deleting the whole list. Rollback deletes the lists a bundle
+# DECLARES; this is for the one it no longer does, so the marker test is the
+# weaker "provisioned by this tool at all" and every other guard is stricter.
+# --------------------------------------------------------------------------
+def _list_js() -> str:
+    return generate_list_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+
+
+def _list(
+    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+) -> Run:
+    return _run_script(_list_js(), config, answers, flags)
+
+
+def _list_output(
+    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+) -> str:
+    """One run's whole output, for the tests that read its log lines.
+
+    `_parse` reads the summary out of the same output, so a test asserting on
+    both does not run the script twice.
+    """
+    return _run(_wrap(_list_js(), config, answers, flags))
+
+
+#: What the script asks for first. The fixture list is TITLED APP_Thing and
+#: SERVED at /Lists/OldThing, so typing the slug back must not work.
+TITLE = "APP_Thing"
+
+#: Two items, because draining has to be observed rather than assumed: a
+#: single one passes even if the loop only ever recycles the first.
+_TWO_ITEMS = [{"Id": 1}, {"Id": 2}]
+
+
+def _recycles(calls: list[dict[str, Any]]) -> list[str]:
+    return [c["url"] for c in calls if "/recycle()" in c["url"]]
+
+
+def test_a_list_this_tool_did_not_provision_is_refused() -> None:
+    """The one gate the other two sidecars only report.
+
+    protection.js and columns.js change one flag or one column on a list the
+    operator named, and say whether it carries a marker. This removes the
+    list, and a hand-made list at a pasted URL is the mistake that cannot be
+    walked back, so here the same fact is a refusal.
+    """
+    summary, calls, prompts, _ = _list(_config(ours=False), [TITLE])
+
+    assert summary["aborted"] == "not-provisioned"
+    assert prompts == [], "it asked before it refused"
+    assert _deletes(calls) == [] and _recycles(calls) == []
+
+
+def test_a_description_that_only_mentions_this_tool_is_not_a_marker() -> None:
+    """The gate is the whole grammar, not the words a marker opens with.
+
+    A prefix search passes on any Description that happens to name the tool.
+    `test_identify_runtime.py` already exercises this decoy on the inventory,
+    where it costs a wrong row; here it stands between an operator and a
+    permanent delete.
+    """
+    summary, calls, prompts, _ = _list(
+        _config(description=(
+            f"Hand-made. Looks like something {MARKER_PREFIX} would leave behind."
+        )),
+        [TITLE],
+    )
+
+    assert summary["aborted"] == "not-provisioned"
+    assert prompts == [], "it asked before it refused"
+    assert _deletes(calls) == [] and _recycles(calls) == []
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        list_description.marker_for("demo", "Thing"),
+        list_description.list_description(
+            "A note the author wrote.", family="demo", entity="Thing",
+        ),
+        sidecars.run_log_marker(),
+        sidecars.change_log_marker(),
+        list_description.verify_marker(),
+    ],
+    ids=["family-list", "note-then-marker", "run-log", "change-log", "verify-scratch"],
+)
+def test_every_marker_this_tool_writes_on_a_list_is_accepted(description: str) -> None:
+    """The refusal must never be stronger than what the deploy writes.
+
+    A family's list carries `for list <entity>`; the verify scratch list and
+    the two log sidecars carry `for scratch <title>` and no family at all,
+    and a retired sidecar is the case this script was written for. The
+    markers come from the modules that write them, so a grammar change
+    reaches this test rather than going unnoticed.
+    """
+    summary, calls, _, _ = _list(
+        _config(description=description), [TITLE, "DELETE NON-EMPTY"],
+    )
+
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+    assert len(_deletes(calls)) == 1
+
+
+def test_the_title_has_to_be_typed_back_and_the_slug_will_not_do() -> None:
+    """The URL slug is what the operator has in front of them and is NOT the
+    title on any list that has been renamed in place. Accepting it would make
+    the confirmation a formality on exactly the lists this script is for."""
+    summary, calls, prompts, _ = _list(_config(), [LIST_SLUG])
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "title-not-typed"}
+    assert summary["deleted"] is None
+    assert _deletes(calls) == [] and _recycles(calls) == []
+    assert f"({TITLE})" in prompts[0]
+
+
+def test_a_list_holding_items_needs_delete_non_empty_as_well() -> None:
+    """Typing the title is consent to delete the list. It is not consent to
+    take two items with it, which is the second thing columns.js asks about
+    for the same reason."""
+    summary, calls, prompts = _list(_config(items=_TWO_ITEMS), [TITLE, "yes"])[:3]
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "items-unconfirmed"}
+    assert _deletes(calls) == [] and _recycles(calls) == []
+    assert "DELETE NON-EMPTY" in prompts[1]
+    assert "2 item(s)" in prompts[1]
+
+
+def test_a_list_reporting_no_items_is_asked_the_same_second_question() -> None:
+    """ItemCount is not an atomic gate, so the phrase has to authorise the
+    items rather than a snapshot of them: a stale zero would otherwise drain
+    a list on consent nobody gave. Rollback asks unconditionally too."""
+    summary, calls, prompts, _ = _list(_config(), [TITLE, "yes"])
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "items-unconfirmed"}
+    assert summary["deleted"] is None
+    assert len(prompts) == 2
+    assert "0 item(s)" in prompts[1]
+    assert _deletes(calls) == []
+
+
+def test_items_a_stale_count_missed_are_still_drained_before_the_delete() -> None:
+    """The other half of that: the phrase authorised whatever is there when
+    draining starts, so the run recycles the items and not the count."""
+    summary, calls, _, _ = _list(
+        _config(items=_TWO_ITEMS), [TITLE, "DELETE NON-EMPTY"],
+        flags={"staleItemCount": 0},
+    )
+
+    assert summary["recycled_items"] == 2
+    assert len(_recycles(calls)) == 2
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+
+
+def test_a_locked_list_holding_items_is_drained_unlocked_and_deleted() -> None:
+    """The whole sequence, in order: recycle every item, unlock and read the
+    unlock back, DELETE, then read the absence back by id."""
+    summary, calls, _, tables = _list(
+        _config(items=_TWO_ITEMS, allow_deletion=False),
+        [TITLE, "DELETE NON-EMPTY"],
+    )
+
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+    assert summary["recycled_items"] == 2
+    assert summary["errors"] == []
+    assert len(_recycles(calls)) == 2
+    assert len(_deletes(calls)) == 1
+    # The two recycles, then the unlock MERGE, then the DELETE. Recycling
+    # never needs AllowDeletion, so unlocking first would leave the list
+    # deletable by anybody else for as long as the drain takes, and rollback
+    # unlocks immediately before its own DELETE for that reason. An order this
+    # test does not pin is one a refactor can invert, in either direction:
+    # recycling after the delete would recycle nothing and still report two.
+    unlock_at = [
+        i for i, c in enumerate(calls)
+        if c["body"] and c["body"].get("AllowDeletion") is True
+    ]
+    recycle_at = [i for i, c in enumerate(calls) if "/recycle()" in c["url"]]
+    delete_at = [i for i, c in enumerate(calls) if _method(c) == "DELETE"]
+    assert recycle_at[-1] < unlock_at[0] < delete_at[0]
+    # The columns are printed before the prompt, because they are what says
+    # whether this is the list the operator meant.
+    assert tables and any(r["internal_name"] == "ColumnOne" for r in tables[0])
+
+
+def test_a_list_renamed_while_the_prompt_was_open_is_not_deleted() -> None:
+    """A console prompt has no timeout, so the read that authorised the
+    delete is as old as the operator took to answer. Rollback re-reads for
+    the same reason."""
+    summary, calls, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"],
+        flags={"afterPrompt": {"Title": "Something Else"}},
+    )
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "changed-during-confirmation"}
+    assert summary["deleted"] is None
+    assert _deletes(calls) == [] and _recycles(calls) == []
+
+
+def test_a_marker_removed_while_the_prompt_was_open_is_not_deleted() -> None:
+    """The other half of the re-read. A list that stopped being ours between
+    the refusal gate and the delete is not ours to delete."""
+    summary, calls, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"],
+        flags={"afterPrompt": {"Description": "A hand-made list."}},
+    )
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "changed-during-confirmation"}
+    assert _deletes(calls) == [] and _recycles(calls) == []
+
+
+def test_a_marker_replaced_by_prose_about_the_tool_is_not_deleted() -> None:
+    """The re-read tests the same grammar the gate does, so a Description
+    edited during the prompt into something that only mentions this tool
+    stops the delete exactly as one with no marker at all does."""
+    summary, calls, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"],
+        flags={"afterPrompt": {
+            "Description": f"Now only prose about {MARKER_PREFIX} and nothing more",
+        }},
+    )
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "changed-during-confirmation"}
+    assert _deletes(calls) == [] and _recycles(calls) == []
+
+
+def test_a_drain_that_fails_part_way_reports_what_it_already_recycled() -> None:
+    """Items that reached the recycle bin before the failure are in it
+    whatever the run does next, and an operator told none were moved has no
+    reason to go and restore them."""
+    summary, calls, _, _ = _list(
+        _config(items=_TWO_ITEMS), [TITLE, "DELETE NON-EMPTY"],
+        flags={"recycleStatus": 403, "recycleFailsAfter": 1},
+    )
+
+    assert summary["recycled_items"] == 1
+    assert len(_recycles(calls)) == 2, "it stopped at the item that failed"
+    assert summary["deleted"] is None
+    assert _deletes(calls) == []
+
+
+def test_a_delete_that_answers_200_while_the_list_stays_is_not_a_delete() -> None:
+    """The failure this project exists to close, one level up from a column:
+    the write reports success and nothing happened. An operator told "Deleted
+    X" stops looking for X."""
+    summary, _, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"],
+        flags={"discardListDelete": True, "absentList": "lingers"},
+    )
+
+    assert summary["deleted"] is None
+    assert summary["aborted"] == "write-failed"
+    assert "has NOT been deleted" in summary["errors"][0]["error"]
+
+
+def test_a_readback_that_cannot_settle_it_says_so_rather_than_claiming_a_delete() -> None:
+    """A 500 on the readback is not absence. Reporting a delete off it would
+    record a list as gone on the strength of a request that failed."""
+    summary, _, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"], flags={"absentList": "unreadable"},
+    )
+
+    assert summary["deleted"] is None
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+
+
+def test_the_documented_absent_400_counts_as_gone() -> None:
+    """Measured on a live list for a field (#383, 2026-09-03): a by-GUID read
+    of a just-deleted object answered 400, not 404. Treating only 404 as gone
+    read a successful delete as a failure."""
+    summary, _, _, _ = _list(
+        _config(), [TITLE, "DELETE NON-EMPTY"], flags={"absentList": "absent400"},
+    )
+
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+
+
+def test_a_discarded_unlock_stops_the_run_before_the_list_is_deleted() -> None:
+    """A MERGE SharePoint discards answers 204 exactly as one it applied
+    does, so the readback is the only thing that counts.
+
+    The items are in the recycle bin by the time this is discovered, because
+    the drain runs first. That is what the second prompt authorised and it is
+    restorable; the list is not deleted and its lock was never taken off, so
+    nothing here is a state the operator cannot walk back.
+    """
+    summary, calls, _, _ = _list(
+        _config(items=_TWO_ITEMS, allow_deletion=False),
+        [TITLE, "DELETE NON-EMPTY"],
+        flags={"discardListMerge": True},
+    )
+
+    assert summary["aborted"] == "readback-mismatch"
+    assert _deletes(calls) == []
+    assert len(_recycles(calls)) == 2
+    assert summary["recycled_items"] == 2
+    assert summary["relocked"] is None, "the lock was never taken off"
+
+
+def test_a_delete_that_fails_after_unlocking_puts_the_lock_back() -> None:
+    """Leaving a list unlocked that the deploy had locked is a state the
+    operator did not ask for and would not know to look for."""
+    summary, calls, _, _ = _list(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        flags={"listDeleteStatus": 403},
+    )
+
+    assert summary["deleted"] is None
+    assert summary["aborted"] == "write-failed"
+    relocks = [
+        c for c in calls
+        if c["body"] and c["body"].get("AllowDeletion") is False
+    ]
+    assert len(relocks) == 1, "the lock this run took off was not put back"
+    assert summary["relocked"] is True
+    after = calls.index(relocks[0])
+    assert any(
+        c["method"] == "GET" and "$select=Id,AllowDeletion" in c["url"]
+        for c in calls[after + 1:]
+    ), "the lock was reported restored without being read back"
+
+
+def test_a_re_lock_the_site_discards_is_not_reported_as_restored() -> None:
+    """The MERGE that puts the lock back gets the readback the MERGE that
+    took it off already gets. A discarded write answers 204 the same as one
+    that took, and this is the line that tells the operator the protection
+    is there."""
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"listDeleteStatus": 403, "discardRelockMerge": True},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["relocked"] is False
+    assert "its deletion lock is back" not in out
+    assert "is still UNLOCKED and was not deleted" in out
+
+
+def test_an_unlock_whose_readback_fails_still_puts_the_lock_back() -> None:
+    """A readback that FAILED is not a readback that answered false.
+
+    The MERGE took here and the GET that would confirm it did not arrive, so
+    the list is standing unlocked. Recording the unlock only once its readback
+    succeeds leaves the re-lock skipped, the run aborting on a list the deploy
+    had protected and anybody can now delete, and nothing in the transcript
+    saying so.
+    """
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"lockReadbackFailsAt": 1},
+    )
+    summary, calls, _, _ = _parse(out)
+
+    assert summary["deleted"] is None
+    assert _deletes(calls) == [], "it deleted a list on an unlock it never read back"
+    relocks = [
+        c for c in calls
+        if c["body"] and c["body"].get("AllowDeletion") is False
+    ]
+    assert len(relocks) == 1, "the lock the unlock may have taken off was left off"
+    assert summary["relocked"] is True
+    assert "its deletion lock is back" in out
+
+
+def test_an_unlock_that_could_not_be_read_back_reads_as_unknown_not_as_locked() -> None:
+    """And when the re-lock fails too, the report says which of the two
+    states it cannot tell apart.
+
+    The unlock's readback never arrived, so whether the lock came off is
+    unknown; a line saying the list is still UNLOCKED would state a fact this
+    run does not have, and one saying it is locked would send the operator
+    away from a list that may be standing open.
+    """
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"lockReadbackFailsAt": 1, "discardRelockMerge": True},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] is None
+    assert summary["relocked"] is False
+    assert "whether its deletion lock came off is UNKNOWN" in out
+    assert "is still UNLOCKED" not in out
+    assert "protection-script" in out
+
+
+def test_a_delete_whose_answer_is_lost_is_settled_by_the_id() -> None:
+    """A fetch that rejects says nothing about whether SharePoint applied the
+    DELETE. The list really went here, and reporting the transport failure as
+    a failed delete would send the operator looking for a list that is gone,
+    so the id is what settles it."""
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"listDeleteThrows": True},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+    assert summary["errors"] == []
+    assert "never answered" in out
+
+
+def test_a_delete_that_never_answered_and_never_happened_says_so() -> None:
+    """The other outcome of the same rejected fetch: the list is still there,
+    which the readback by id reports as the delete not having happened rather
+    than as a transport error the operator has to interpret."""
+    summary = _list(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        flags={"listDeleteThrows": True, "discardListDelete": True},
+    )[0]
+
+    assert summary["deleted"] is None
+    assert "has NOT been deleted" in summary["errors"][0]["error"]
+    assert "never answered" in summary["errors"][0]["error"]
+    assert summary["relocked"] is True, "the lock was not put back on a list still there"
+
+
+def test_a_delete_that_never_answered_and_cannot_be_read_back_is_unknown() -> None:
+    """Neither the transport nor the readback settled it, so the list's fate
+    is unknown and must read that way. A run reporting "was not deleted" off a
+    request that never answered claims the opposite of what happened here."""
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"listDeleteThrows": True, "absentList": "unreadable"},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] is None
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+    assert "could not be confirmed deleted" in out
+    assert "was not deleted" not in out
+
+
+def test_an_unsettled_delete_is_not_rewritten_into_a_list_that_survived() -> None:
+    """A readback that could not settle the delete leaves the list unknown.
+
+    If it really went, the re-lock then fails because there is nothing to
+    lock, and the line reporting that must not turn "unknown" into "was not
+    deleted": an operator reading that stops looking for the list.
+    """
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"absentList": "unreadable"},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] is None
+    assert summary["relocked"] is False
+    assert "is gone is unknown" in out
+    assert "could not be confirmed deleted" in out
+    assert "was not deleted" not in out
+
+
+def test_an_item_added_after_the_drain_stops_the_delete() -> None:
+    """The drain's last read is not the state the DELETE acts on.
+
+    Another user can add a row between the read that came back empty and the
+    delete, and that row is destroyed with the list rather than recycled. The
+    window cannot be closed, so the list is read empty once more immediately
+    before the DELETE and a run that finds anything refuses. The lock this
+    run took off goes back on, because the list is still there.
+    """
+    summary, calls, _, _ = _list(
+        _config(items=_TWO_ITEMS, allow_deletion=False),
+        [TITLE, "DELETE NON-EMPTY"],
+        flags={"itemArrivesBeforeRead": 3},
+    )
+
+    assert summary["deleted"] is None
+    assert _deletes(calls) == [], "it deleted a list holding a row it never recycled"
+    assert summary["recycled_items"] == 2
+    assert "was added to" in summary["errors"][0]["error"]
+    # Named apart from a failed write: nothing here failed, the run refused.
+    assert summary["aborted"] == "items-arrived"
+    assert summary["relocked"] is True
+
+
+@pytest.mark.parametrize(("items", "allow_deletion"), [
+    (_TWO_ITEMS, False),
+    # Nothing to recycle and no lock to take off, so this run reaches the
+    # delete having written nothing and holding no cached digest. Without the
+    # warm-up, the contextinfo POST lands between the check and the DELETE.
+    ([], True),
+], ids=["items-and-a-lock", "nothing-written-yet"])
+def test_the_final_drain_check_is_the_last_request_before_the_delete(
+    items: list[dict[str, Any]], allow_deletion: bool,
+) -> None:
+    """What narrowing the window means, and the part of it that can be
+    pinned: no request at all stands between the read that found the list
+    empty and the DELETE."""
+    summary, calls, _, _ = _list(
+        _config(items=items, allow_deletion=allow_deletion),
+        [TITLE, "DELETE NON-EMPTY"],
+    )
+
+    assert summary["deleted"] == {"list": TITLE, "id": LIST_ID}
+    delete_at = next(i for i, c in enumerate(calls) if _method(c) == "DELETE")
+    before = calls[delete_at - 1]
+    assert before["method"] == "GET" and "/items?" in before["url"], before
+
+
+def test_the_run_says_the_window_it_cannot_close_before_it_asks() -> None:
+    """The script's promise has to match what it can do. "Items are recycled
+    first and stay restorable" over-reaches for a row that arrives during the
+    run, and the operator reads that line before typing anything."""
+    out = _list_output(_config(items=_TWO_ITEMS), ["not the title"])
+    summary = _parse(out)[0]
+
+    assert summary["skipped"] == {"list": TITLE, "reason": "title-not-typed"}
+    assert "is NOT restorable" in out
+    assert "that window cannot be closed" in out
+
+
+def test_a_confirming_read_that_never_answered_leaves_the_delete_unknown() -> None:
+    """The same class one level in. The DELETE may have gone through and the
+    GET that would confirm it can reject just as the DELETE can, so a run
+    that treats the rejection as a plain fetch error reports a list "was not
+    deleted" when it is gone."""
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"absentList": "never-answers"},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] is None
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+    assert "could not be confirmed deleted" in out
+    assert "was not deleted" not in out
+
+
+def test_a_confirming_read_whose_body_never_arrived_leaves_the_delete_unknown() -> None:
+    """The same class one request further in again. The readback's STATUS
+    arrived and its body did not, and a 400 is only the documented absent one
+    if the body says so, so the read has not settled the delete either."""
+    out = _list_output(
+        _config(allow_deletion=False), [TITLE, "DELETE NON-EMPTY"],
+        {"absentList": "body-never-arrives"},
+    )
+    summary = _parse(out)[0]
+
+    assert summary["deleted"] is None
+    assert "is gone is unknown" in summary["errors"][0]["error"]
+    assert "could not be confirmed deleted" in out
+    assert "was not deleted" not in out
+
+
+def test_a_refused_item_recycle_stops_before_the_list_is_deleted() -> None:
+    """The items are recycled so the delete is survivable. A recycle that
+    failed means they are not, and deleting the list then takes them
+    permanently."""
+    summary, calls, _, _ = _list(
+        _config(items=_TWO_ITEMS), [TITLE, "DELETE NON-EMPTY"],
+        flags={"recycleStatus": 403},
+    )
+
+    assert summary["deleted"] is None
+    assert _deletes(calls) == []
+    assert "recycle of item 1 failed" in summary["errors"][0]["error"]

@@ -131,8 +131,65 @@ def test_a_bare_invocation_prints_help_when_not_a_terminal() -> None:
 #: whichever test happened to have it.
 DOCUMENTED_COMMANDS = (
     "build", "validate", "report", "extract", "extract-script",
-    "protection-script", "columns-script", "identify-script", "version",
+    "protection-script", "columns-script", "list-script", "identify-script",
+    "version",
 )
+
+
+def test_list_script_writes_into_the_folder_the_other_sidecars_use(
+    tmp_path: Path,
+) -> None:
+    """The three sidecars and `extract-script` all write into a folder named
+    after the list, which is what keeps one list's scripts together. This is
+    also the only CLI-level test that walks `_maintenance_script`, so it
+    pins the URL split as well: the site half and the server-relative path
+    both come out of the one string the address bar holds.
+    """
+    result = runner.invoke(app, [
+        "list-script",
+        "https://example.sharepoint.com/sites/risk/Lists/OldThing/AllItems.aspx",
+    ])
+
+    assert result.exit_code == 0, result.output
+    written = sorted(tmp_path.rglob("list.js.txt"))
+    assert len(written) == 1, [p.name for p in tmp_path.rglob("*")]
+    js = written[0].read_text(encoding="utf-8")
+    assert '"/sites/risk/Lists/OldThing"' in js
+    assert '"https://example.sharepoint.com/sites/risk"' in js
+
+
+def test_list_script_takes_a_document_library_url(tmp_path: Path) -> None:
+    """A retired library is the same problem as a retired list, and a
+    library's URL carries no /Lists/ segment. The path the script resolves by
+    is the library's root folder, which is the URL without
+    `/Forms/AllItems.aspx`."""
+    result = runner.invoke(app, [
+        "list-script",
+        "https://example.sharepoint.com/sites/risk/RG_Evidence/Forms/AllItems.aspx",
+    ])
+
+    assert result.exit_code == 0, result.output
+    written = sorted(tmp_path.rglob("list.js.txt"))
+    assert len(written) == 1, [p.name for p in tmp_path.rglob("*")]
+    js = written[0].read_text(encoding="utf-8")
+    assert '"/sites/risk/RG_Evidence"' in js
+    assert '"https://example.sharepoint.com/sites/risk"' in js
+
+
+def test_list_script_refuses_a_url_naming_neither_a_list_nor_a_library() -> None:
+    """Refused rather than guessed at: this script deletes what the path
+    resolves to, so a URL that names no list and no library must stop here
+    rather than reach a site as something else's path."""
+    result = runner.invoke(app, [
+        "list-script", "https://example.sharepoint.com/sites/risk/SitePages/Home.aspx",
+    ])
+
+    assert result.exit_code != 0
+    # Read through the whitespace-stripping helper, not raw. rich decides
+    # colour and wrap width from the environment, and this is ONE token: both
+    # CI runners broke it across two lines, where the raw assertion failed for
+    # a reason that has nothing to do with the refusal under test.
+    assert "/<library>/Forms/" in _rendered_without_whitespace(result.output)
 
 
 def test_the_wizard_is_reachable_by_name() -> None:

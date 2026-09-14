@@ -1749,6 +1749,137 @@ def test_a_percent_encoded_slug_is_decoded_once() -> None:
     assert parsed.list_path == "/sites/A/Lists/My List"
 
 
+@pytest.mark.parametrize(("url", "site", "title", "list_path"), [
+    # The shape the address bar shows with a library open. Microsoft Learn
+    # derives a library's root folder from exactly this string, by "deleting
+    # '/Forms/AllItems.aspx' and everything after that":
+    # https://learn.microsoft.com/graph/teams-configuring-builtin-tabs#document-library-tabs
+    ("https://contoso.sharepoint.com/sites/Risk/RG_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "RG_Evidence",
+     "/sites/Risk/RG_Evidence"),
+    # The default library, whose slug has a space, and a view query that says
+    # nothing about which library this is.
+    (("https://contoso.sharepoint.com/sites/Risk/Shared%20Documents/Forms/"
+      "AllItems.aspx?viewid=1234&web=1"),
+     "https://contoso.sharepoint.com/sites/Risk", "Shared Documents",
+     "/sites/Risk/Shared Documents"),
+    # Lowercase, and a form other than AllItems: the segment is what marks a
+    # library, not the page inside it.
+    ("https://contoso.sharepoint.com/sites/Risk/RG_Evidence/forms/EditForm.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "RG_Evidence",
+     "/sites/Risk/RG_Evidence"),
+    # A tenant root site has no /sites/ segment at all.
+    ("https://contoso.sharepoint.com/RG_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com", "RG_Evidence", "/RG_Evidence"),
+    # A site literally named Lists, where the library is not under /Lists/
+    # and the last /Lists/ in the path is the site's own segment.
+    ("https://contoso.sharepoint.com/sites/Lists/RG_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Lists", "RG_Evidence",
+     "/sites/Lists/RG_Evidence"),
+])
+def test_a_document_library_url_splits_the_same_way(
+    url: str, site: str, title: str, list_path: str,
+) -> None:
+    """`DocumentLibrary` is a kind this tool provisions, and a library's URL
+    carries no /Lists/ segment. A parser reading only the list shape leaves
+    the sidecars unable to address half of what the deploy creates."""
+    parsed = parse_list_url(url)
+    assert parsed.site_url == site
+    assert parsed.list_title == title
+    assert parsed.list_path == list_path
+
+
+def test_a_list_titled_forms_is_not_read_as_a_library_titled_lists() -> None:
+    """The one string both shapes can claim. `/Lists/` is the folder lists
+    are served under, so `/Lists/Forms/` is the list titled Forms."""
+    parsed = parse_list_url(
+        "https://contoso.sharepoint.com/sites/Risk/Lists/Forms/AllItems.aspx",
+    )
+    assert parsed.site_url == "https://contoso.sharepoint.com/sites/Risk"
+    assert parsed.list_title == "Forms"
+    assert parsed.list_path == "/sites/Risk/Lists/Forms"
+
+
+@pytest.mark.parametrize(("url", "site", "title", "list_path"), [
+    # THE REPORTED BUG. An ordinary list on a site called Forms: reading the
+    # library shape first matched the SITE's segment and cut there, leaving
+    # site root '/', slug 'sites' and path '/sites' for a maintenance script
+    # to delete against. The /Lists/ marker is later, so it is the one that
+    # names the object.
+    ("https://contoso.sharepoint.com/sites/Forms/Lists/APP_Task/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Forms", "APP_Task",
+     "/sites/Forms/Lists/APP_Task"),
+    # The same site with a library on it: now the /Forms/ marker is the later
+    # of the two, and the site's own segment is the earlier.
+    ("https://contoso.sharepoint.com/sites/Forms/RG_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Forms", "RG_Evidence",
+     "/sites/Forms/RG_Evidence"),
+    # A site called Forms holding a list titled Forms. Three candidate
+    # segments, and the marker that names the list is still the last /Lists/.
+    ("https://contoso.sharepoint.com/sites/Forms/Lists/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Forms", "Forms",
+     "/sites/Forms/Lists/Forms"),
+    # A /Forms/ marker with a /Lists/ segment above it. Both readings name
+    # the same object at the same path and differ only in where the web ends
+    # (a library under the web '/sites/Risk/Lists', or a list of '/sites/Risk'
+    # with a Forms folder under it). Learn's list shape puts the file name
+    # straight after the title, so the library reading is the one that fits.
+    # The same positional rule settles this as settles a site segment called
+    # Lists, because these two URLs are the same shape.
+    ("https://contoso.sharepoint.com/sites/Risk/Lists/APP_Task/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Risk/Lists", "APP_Task",
+     "/sites/Risk/Lists/APP_Task"),
+])
+def test_the_later_structural_segment_names_the_object(
+    url: str, site: str, title: str, list_path: str,
+) -> None:
+    """Either word can also be a site segment, so position decides.
+
+    `/Lists/` and `/Forms/` are both positional markers, and a site named
+    after either puts one of them in the part of the path that is the web.
+    The one nearer the end of the URL is the one naming the object.
+    """
+    parsed = parse_list_url(url)
+    assert parsed.site_url == site
+    assert parsed.list_title == title
+    assert parsed.list_path == list_path
+
+
+@pytest.mark.parametrize("url", [
+    # The site root of a site called Forms, which is the URL an operator is
+    # most likely to paste by mistake. Nothing follows the segment, so it is
+    # not a library's forms folder.
+    "https://contoso.sharepoint.com/sites/Forms/",
+    # A page on that site. Two segments follow the marker, and a library's
+    # forms folder is followed by its view page and nothing else.
+    "https://contoso.sharepoint.com/sites/Forms/SitePages/Home.aspx",
+    # A library URL trimmed back to the forms folder. It no longer says
+    # whether RG_Evidence is a library or Forms is a site of its own.
+    "https://contoso.sharepoint.com/sites/Risk/RG_Evidence/Forms/",
+])
+def test_a_forms_segment_that_is_not_a_forms_folder_is_refused(url: str) -> None:
+    """A /Forms/ this cannot place is refused rather than read as a library.
+
+    The marker comes after the name it identifies, so what follows it is the
+    only thing separating a library's forms folder from a site segment of
+    that name. These name neither a list nor a library, and the refusal says
+    so rather than pointing a delete at whatever the split produced.
+    """
+    message = "names neither a list nor a document library"
+    with pytest.raises(ListUrlError, match=re.escape(message)):
+        parse_list_url(url)
+
+
+def test_a_url_naming_neither_shape_names_both_in_the_refusal() -> None:
+    """The refusal is what stands between a mistyped URL and a script
+    pointed at something else, so it has to say what a URL that works looks
+    like for a library as well as for a list."""
+    with pytest.raises(ListUrlError) as caught:
+        parse_list_url("https://contoso.sharepoint.com/sites/Risk/RG_Evidence")
+    assert "/<library>/Forms/" in str(caught.value)
+    assert "/Lists/<name>/" in str(caught.value)
+
+
 def test_an_encoded_separator_in_the_slug_is_refused() -> None:
     """A slug is ONE segment, and this path is what `columns-script` points
     its deletes at. `%2F` decodes to a separator, so a crafted URL could

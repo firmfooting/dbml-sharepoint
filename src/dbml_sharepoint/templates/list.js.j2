@@ -1,0 +1,394 @@
+{# src/dbml_sharepoint/templates/list.js.j2 #}
+/**
+ * dbml-sharepoint LIST script for one list.
+ *
+ * Target site:  {{ site_url | comment_safe }}
+ * List:         {{ list_path | comment_safe }}
+ *               (resolved by URL; its title is read back at run time,
+ *                because a renamed list keeps its original slug)
+ * Deployer:     v{{ deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}
+ *
+ * Deletes ONE list, the one at the URL above, after five guards: the list
+ * must carry a well-formed dbml-sharepoint provenance marker; what is about
+ * to go is printed first (title, item count, deletion lock, custom columns);
+ * the list's title has to be typed back; DELETE NON-EMPTY has to be typed as
+ * well, for every list rather than only one a count called non-empty; and
+ * the list is re-read after the prompts, so a list that changed while the
+ * operator was reading is not the one deleted.
+ *
+ * The items it finds are recycled first and stay restorable from the site
+ * recycle bin. AN ITEM ANOTHER USER ADDS WHILE THIS RUNS MAY NOT BE. The
+ * drain and the DELETE cannot be made one operation, so the list is read
+ * empty once more immediately before the DELETE and the run refuses to
+ * delete when anything arrived. That narrows the window to a single round
+ * trip; it does not close it, and nothing SharePoint offers does. The one
+ * documented way to stop other people writing to a list is unique
+ * permissions (Learn, "Set custom permissions on a list by using the REST
+ * interface"), which is several requests of its own, is no more atomic with
+ * the drain, does not bind a site collection administrator (Learn, "Choose
+ * administrators and owners for the administration hierarchy": Full Control
+ * "to all site content in that site collection, even if they do not have
+ * explicit permissions on that site"), and would leave a permission set on
+ * somebody's production list that this script cannot put back.
+ *
+ * THE LIST ITSELF DOES NOT GO TO THE RECYCLE BIN: a REST DELETE on a
+ * list is permanent, and this script takes the same posture rollback.js
+ * takes rather than a second one, because two maintenance scripts
+ * disagreeing about what a delete means is how somebody loses a list at
+ * 5pm. `SP.List.Recycle` exists and would make the whole list restorable,
+ * but this project has never measured it on a live site, and the most
+ * destructive operation the tool has is not where an unmeasured surface
+ * goes first.
+ *
+ * Rollback deletes the lists a bundle DECLARES. This is for the one it no
+ * longer does: a retired sidecar, a list left behind by a rename, a list
+ * the family stopped declaring. The marker test is therefore the weaker
+ * "provisioned by this tool at all" rather than the deploy's exact-marker
+ * comparison, which a retired list can no longer satisfy: its marker names
+ * a family and a list the current bundle has no entry for. Weaker in the
+ * family it names, not in what it accepts: the whole marker grammar still
+ * has to be there, so a description that merely mentions this tool is
+ * refused.
+ *
+ * Paste the whole file into the browser console on the site above, from a
+ * classic page such as .../_layouts/15/settings.aspx.
+ */
+(async () => {
+  const SITE_URL = {{ site_url | tojson }};
+  const LIST_PATH = {{ list_path | tojson }};
+  const LIST_SLUG = {{ list_title | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-LIST] [${level}] ${msg}`);
+  const summary = {
+    list: null, deleted: null, recycled_items: 0, skipped: null,
+    // null until this run TRIES to take a deletion lock off: true once the
+    // lock is read back on again, false when putting it back could not be
+    // confirmed.
+    relocked: null, errors: [],
+  };
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+
+{% include "_maintain_list.js.j2" %}
+
+  summary.list = {
+    title: LIST_TITLE, id: LIST_ID, item_count: list.ItemCount,
+    provisioned_by_dbml_sharepoint: provisioned,
+  };
+
+  // GATED here, where the other two sidecars only report it. They change one
+  // column or one flag on a list the operator named; this removes the list,
+  // and a hand-made list at a pasted URL is exactly the mistake that cannot
+  // be walked back.
+  if (!provisioned) {
+    log('ERROR',
+      `'${LIST_TITLE}' carries no dbml-sharepoint provenance marker in its `
+      + 'Description, so this tool did not provision it. Refusing to delete a '
+      + 'list it does not own. Delete it from Site Contents if that is really '
+      + 'what you want.');
+    return { ...summary, aborted: 'not-provisioned' };
+  }
+
+  // Printed before the prompt, never after: the operator is about to type a
+  // title back, and the columns are what tells them whether this is the list
+  // they meant. A lookup on another list is not reported here the way
+  // columns.js reports it, because nothing survives this to be re-keyed.
+  const custom = (await readFields()).filter(isCustom);
+  console.table(custom.map((f) => ({
+    internal_name: f.InternalName, title: f.Title,
+    type: f.TypeAsString, sealed: f.Sealed === true,
+  })));
+  log('INFO',
+    `'${LIST_TITLE}' (${LIST_PATH}): ${list.ItemCount} item(s), `
+    + `${custom.length} custom column(s), deletion currently `
+    + `${list.AllowDeletion === false ? 'BLOCKED' : 'allowed'}.`);
+  log('WARN',
+    'The items this finds are recycled first and stay '
+    + 'restorable from the site recycle bin. The LIST is deleted permanently '
+    + 'and does not go to the recycle bin.');
+  // The promise the script can actually keep, said before it asks for
+  // anything: the drain and the delete are not one operation.
+  log('WARN',
+    `'${LIST_TITLE}' is read empty once more immediately before the delete, `
+    + 'and the run stops if anything arrived, but that window cannot be '
+    + 'closed. An item added between that read and the delete goes with the '
+    + 'list and is NOT restorable. Nobody else should be using this list.');
+
+  const typed = prompt(
+    `Type the title of the list to delete (${LIST_TITLE}), or anything else to stop:`);
+  if (typed !== LIST_TITLE) {
+    summary.skipped = { list: LIST_TITLE, reason: 'title-not-typed' };
+    log('INFO', 'Nothing was written.');
+    return summary;
+  }
+  // Asked for EVERY list, not only one the count called non-empty: ItemCount
+  // is not an atomic gate, so a stale zero would drain a list on a phrase
+  // nobody typed. Rollback asks unconditionally for the same reason.
+  const override = prompt(
+    `'${LIST_TITLE}' currently reports ${list.ItemCount} item(s). Type DELETE `
+    + 'NON-EMPTY to recycle every item present when draining starts and then '
+    + 'delete the list, or anything else to stop:');
+  if (override !== 'DELETE NON-EMPTY') {
+    summary.skipped = { list: LIST_TITLE, reason: 'items-unconfirmed' };
+    log('INFO', 'Nothing was written.');
+    return summary;
+  }
+
+  // Re-read AFTER the prompts. A console prompt has no timeout, so the read
+  // that authorised this is as old as the operator took to answer, and the
+  // same guard rollback applies for the same reason: what is deleted must be
+  // the list that was described, not whatever now answers at that id.
+  {
+    const now = await getOne(
+      `${listPath}?$select=Id,Title,Description,ItemCount`,
+      `'${LIST_TITLE}' re-read`);
+    const stillOurs = carriesMarker(now.Description);
+    const why = now.Title !== LIST_TITLE
+      ? `it is now titled '${now.Title}'`
+      : (!stillOurs ? 'its provenance marker is gone' : null);
+    if (why) {
+      summary.skipped = { list: LIST_TITLE, reason: 'changed-during-confirmation' };
+      log('WARN',
+        `'${LIST_TITLE}': confirmed for deletion, but ${why}. Nothing has `
+        + 'been recycled or deleted. Re-run to see the list as it is now.');
+      return summary;
+    }
+  }
+
+  // Drained before the delete because SharePoint refuses to delete a list
+  // that still contains items on a retention-governed site, while an emptied
+  // one deletes fine (MEASURED 2026-07-24, two teardowns, recorded in
+  // rollback.js). Paged by Id one at a time, the same shape rollback drains
+  // with: a $filter on an unindexed column throws past the view threshold.
+  const ITEM_PAGES_MAX = 40;
+  async function recycleItems() {
+    let total = 0;
+    let pages = 0;
+    // Counted into the summary in a finally, not after the loop: a drain that
+    // fails part way through has already moved rows to the recycle bin, and a
+    // run reporting none of them sends the operator looking for nothing.
+    try {
+      for (;;) {
+        if (++pages > ITEM_PAGES_MAX) {
+          throw new Error(
+            `recycled ${total} item(s) without draining '${LIST_TITLE}'; `
+            + 'aborting rather than deleting a list still holding rows');
+        }
+        const rows = await getOne(
+          `${listPath}/items?$select=Id&$orderby=Id&$top=2000`, 'items');
+        const results = (rows && rows.results) || [];
+        if (!results.length) break;
+        for (const row of results) {
+          const digest = await getDigest();
+          const rec = await fetchWithRetry(
+            apiUrl(`${listPath}/items(${row.Id})/recycle()`),
+            { method: 'POST', headers: spHeaders(digest) },
+          );
+          if (!rec.ok) {
+            throw new Error(
+              `recycle of item ${row.Id} failed: HTTP ${rec.status} `
+              + spError(await rec.text()));
+          }
+          total += 1;
+        }
+      }
+    } finally {
+      summary.recycled_items = total;
+    }
+    if (total) {
+      log('INFO', `Recycled ${total} item(s) (restorable from the recycle bin).`);
+    }
+    return total;
+  }
+
+  // The last read before the DELETE, and REFUSED rather than drained again:
+  // an item arriving means somebody is using the list, and recycling it here
+  // would hold the unlocked list open for another round trip. The header
+  // carries why this window can only be narrowed.
+  async function confirmDrained() {
+    // The drain's own query shape, one row of it: an unordered read is not
+    // one this project has any evidence about past the view threshold.
+    const rows = await getOne(
+      `${listPath}/items?$select=Id&$orderby=Id&$top=1`,
+      `'${LIST_TITLE}' final drain check`);
+    const results = (rows && rows.results) || [];
+    if (!results.length) return;
+    // NAMED, because a run that refused a delete is not a run whose write
+    // failed, and the summary is what a caller reads rather than the log.
+    const arrived = new Error(
+      `item ${results[0].Id} was added to '${LIST_TITLE}' after it was `
+      + 'drained, and the delete would destroy it rather than recycle it, so '
+      + 'nothing has been deleted. Re-run when nobody else is using the list.');
+    arrived.itemsArrived = true;
+    throw arrived;
+  }
+
+  // FLAGGED, because the re-lock below has to keep this uncertainty: a list
+  // whose delete could not be settled is not a list known to be still there.
+  const unsettled = (message) => {
+    const err = new Error(message);
+    err.deletionUnknown = true;
+    return err;
+  };
+
+  // The delete's readback, the same three-way `rollback.js` makes: a 200 on
+  // the DELETE is not the list being gone. By id, not by title, so a
+  // same-titled replacement created since does not read as this list. `what`
+  // is what the DELETE did, because a request that never answered has to be
+  // settled here exactly as a response is, and so does a READBACK that never
+  // answered.
+  async function confirmDeleted(what) {
+    let gone;
+    try {
+      gone = await fetchWithRetry(
+        apiUrl(`web/lists(guid'${LIST_ID}')?$select=Id`), verbose());
+    } catch (transport) {
+      // The readback can reject for the same reason the DELETE can, and a
+      // request that never answered settles nothing either way.
+      throw unsettled(
+        `the delete ${what}, and the readback that would confirm it never `
+        + `answered (${transport.message}); whether '${LIST_TITLE}' is gone `
+        + 'is unknown.');
+    }
+    if (gone.ok) {
+      throw new Error(
+        `the delete ${what} and the list still reads back by its id `
+        + `(${LIST_ID}); it has NOT been deleted.`);
+    }
+    if (gone.status === 404) return 'HTTP 404 on readback';
+    let text;
+    try {
+      text = await gone.text();
+    } catch (body) {
+      // The status alone cannot say which 400 this is, so a body that never
+      // arrived leaves the readback as unable to settle the delete.
+      throw unsettled(
+        `the delete ${what}, and the body of the HTTP ${gone.status} readback `
+        + `that would confirm it never arrived (${body.message}); whether `
+        + `'${LIST_TITLE}' is gone is unknown.`);
+    }
+    if (isAbsent400(gone.status, text)) return 'HTTP 400 absent on readback';
+    throw unsettled(
+      `the delete ${what}, and the readback that would confirm it failed with `
+      + `HTTP ${gone.status}; whether '${LIST_TITLE}' is gone is unknown.`);
+  }
+
+  // The DELETE, and the three ways out of it: SharePoint refused it, it
+  // answered, or the request never came back at all. The last is not the list
+  // surviving, because a connection can drop after SharePoint has accepted
+  // the delete, so the id settles it rather than the transport failure.
+  async function deleteList() {
+    const digest = await getDigest();
+    let r;
+    try {
+      r = await fetchWithRetry(apiUrl(listPath), {
+        method: 'POST',
+        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+      });
+    } catch (transport) {
+      log('WARN',
+        `The DELETE of '${LIST_TITLE}' never answered (${transport.message}); `
+        + 'reading the list back by its id to settle whether it went.');
+      return confirmDeleted(`never answered (${transport.message})`);
+    }
+    if (!r.ok) throw new Error(`DELETE refused: HTTP ${r.status} ${spError(await r.text())}`);
+    return confirmDeleted(`answered HTTP ${r.status}`);
+  }
+
+  // What this run has done to the deletion lock: 'untouched' until it tries
+  // to take one off, 'unknown' from the moment the unlock is attempted, and
+  // 'off' once a readback proves the lock came off.
+  let unlock = 'untouched';
+  try {
+    // DRAINED FIRST, then unlocked, the order rollback.js uses. Recycling an
+    // item never needs AllowDeletion, so unlocking before the drain would
+    // leave the list deletable by anyone else for as long as the drain takes.
+    await recycleItems();
+    if (list.AllowDeletion === false) {
+      // Recorded BEFORE the write, not after its readback: a MERGE that took
+      // effect and a readback that then failed leaves the lock off with
+      // nothing saying so, and the re-lock below is what puts it back.
+      unlock = 'unknown';
+      // Written and read back, because a MERGE that is discarded reports 204
+      // just as a MERGE that took does.
+      await merge(
+        listPath,
+        { __metadata: { type: 'SP.List' }, AllowDeletion: true },
+        `'${LIST_TITLE}' unlock`);
+      const back = await getOne(
+        `${listPath}?$select=Id,AllowDeletion`, `'${LIST_TITLE}' unlock readback`);
+      if (back.AllowDeletion !== true) {
+        // The one case that needs no restoring: the readback ANSWERED, and it
+        // says the write was discarded and the lock is still on.
+        unlock = 'untouched';
+        throw mismatch(
+          `'${LIST_TITLE}' reads back AllowDeletion=${back.AllowDeletion} after `
+          + 'unlocking; the write was discarded');
+      }
+      unlock = 'off';
+      log('INFO', `Unlocked '${LIST_TITLE}' for deletion (read back).`);
+    }
+    // The digest first, so nothing sits between the final read and the
+    // DELETE: a contextinfo POST there would widen the window it narrows.
+    await getDigest();
+    await confirmDrained();
+    const how = await deleteList();
+    summary.deleted = { list: LIST_TITLE, id: LIST_ID };
+    log('INFO', `Deleted '${LIST_TITLE}' and confirmed it is gone (${how}).`);
+  } catch (err) {
+    summary.errors.push({ list: LIST_TITLE, error: err.message });
+    log('ERROR', `'${LIST_TITLE}': ${err.message}`);
+    // Put the lock back if this run may have taken it off and the delete then
+    // did not happen. Leaving a list unlocked that the deploy had locked is a
+    // state the operator did not ask for and would not know to look for.
+    if (unlock !== 'untouched' && summary.deleted === null) {
+      // What a failed re-lock may claim, and no more. A delete whose readback
+      // could not settle it leaves the list unknown, and an unlock whose
+      // readback could not settle it leaves the lock unknown; reporting
+      // either as a fact answers a question this run cannot answer.
+      const stranded = err.deletionUnknown
+        ? `'${LIST_TITLE}' could not be confirmed deleted, and if it survived `
+          + 'it is still UNLOCKED'
+        : (unlock === 'off'
+          ? `'${LIST_TITLE}' is still UNLOCKED and was not deleted`
+          : `'${LIST_TITLE}' was not deleted, and whether its deletion lock `
+            + 'came off is UNKNOWN');
+      try {
+        await merge(
+          listPath,
+          { __metadata: { type: 'SP.List' }, AllowDeletion: false },
+          `'${LIST_TITLE}' re-lock`);
+        // Read back, like the unlock on the way in: a MERGE SharePoint
+        // discards answers 204 just as one it applied does, and this line is
+        // what tells the operator the protection is back.
+        const back = await getOne(
+          `${listPath}?$select=Id,AllowDeletion`, `'${LIST_TITLE}' re-lock readback`);
+        if (back.AllowDeletion !== false) {
+          throw mismatch(
+            `it reads back AllowDeletion=${back.AllowDeletion} after re-locking; `
+            + 'the write was discarded');
+        }
+        summary.relocked = true;
+        log('INFO', `Re-locked '${LIST_TITLE}'; its deletion lock is back (read back).`);
+      } catch (relockErr) {
+        summary.relocked = false;
+        log('ERROR',
+          `${stranded}: ${relockErr.message}. Run protection-script, which `
+          + 'reports whether the list is still there and locks it.');
+      }
+    }
+    const aborted = err.readbackMismatch ? 'readback-mismatch'
+      : (err.itemsArrived ? 'items-arrived' : 'write-failed');
+    return { ...summary, aborted };
+  }
+
+  log('INFO', `DONE: ${summary.recycled_items} item(s) recycled, 1 list deleted, ${requestCount} request(s).`);
+  return summary;
+})();

@@ -97,12 +97,22 @@
       } else if (word === 'seal' || word === 'unseal') {
         const want = word === 'seal';
         const targets = state.fields.filter((f) => (f.Sealed === true) !== want);
-        for (const field of targets) {
-          await setSealed(field, want);
-          log('INFO', `'${field.InternalName}': Sealed is now ${want} (read back).`);
+        let written = 0;
+        try {
+          for (const field of targets) {
+            await setSealed(field, want);
+            written += 1;
+            log('INFO', `'${field.InternalName}': Sealed is now ${want} (read back).`);
+          }
+        } catch (err) {
+          // Recorded before the run stops. The columns already written and
+          // read back are state the operator has to know about, and a summary
+          // reporting no action at all hides them behind the error.
+          if (written) summary.actions.push({ action: word, columns: written, verified: true });
+          throw err;
         }
-        summary.actions.push({ action: word, columns: targets.length, verified: true });
-        log('INFO', `${word}: ${targets.length} column(s) written and read back.`);
+        summary.actions.push({ action: word, columns: written, verified: true });
+        log('INFO', `${word}: ${written} column(s) written and read back.`);
       } else {
         log('WARN', `'${word}' is not one of lock, unlock, seal or unseal.`);
       }

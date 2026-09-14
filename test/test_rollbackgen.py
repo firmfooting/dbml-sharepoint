@@ -219,17 +219,23 @@ def test_rollback_probe_failure_does_not_block_delete() -> None:
 
 
 def test_rollback_relocks_when_delete_fails_after_unlock() -> None:
-    """If rollback unlocked a deletion-blocked list and the DELETE still
-    failed, it must best-effort restore AllowDeletion=false rather than
-    leave the list unprotected on a partially rolled-back site."""
+    """If rollback unlocked a deletion-blocked list and the delete did not go
+    through, it must best-effort restore AllowDeletion=false rather than
+    leave the list unprotected on a partially rolled-back site.
+
+    The restore sits in the per-list catch rather than on the refused-DELETE
+    path, because a delete whose response never arrived and one whose
+    readback could not settle it strand the list the same way.
+    """
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
-    assert "unlockedForDelete" in js
-    relock_idx = js.index("setAllowDeletion(name, false)")
-    throw_idx = js.index("throw new Error(`HTTP ${r.status}${detail ? `, ${detail}` : ''}`)")
-    assert relock_idx < throw_idx
+    loop_idx = js.index("for (const target of TARGET_LISTS)")
+    assert "unlock !== 'untouched'" in js
+    catch_idx = js.index("} catch (err) {", loop_idx)
+    relock_idx = js.index("setAllowDeletion(name, false)", loop_idx)
+    assert catch_idx < relock_idx
 
 
 def test_rollback_documents_why_sealed_columns_need_no_unseal() -> None:

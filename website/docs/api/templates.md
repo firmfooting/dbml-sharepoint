@@ -73,6 +73,22 @@ Makes NO changes: every request is a GET, and this script carries no write helpe
 
 Request budget: five fixed reads plus one per list this tool owns. A live run on 2026-09-03 tripped a tenant throttle at 3,156 requests in 145 seconds, so columns are read for owned lists only.
 
+### `list.js.j2`
+
+dbml-sharepoint LIST script for one list.
+
+Target site: List: (resolved by URL; its title is read back at run time, because a renamed list keeps its original slug) Deployer:     v Generated at:
+
+Deletes ONE list, the one at the URL above, after five guards: the list must carry a well-formed dbml-sharepoint provenance marker; what is about to go is printed first (title, item count, deletion lock, custom columns); the list's title has to be typed back; DELETE NON-EMPTY has to be typed as well, for every list rather than only one a count called non-empty; and the list is re-read after the prompts, so a list that changed while the operator was reading is not the one deleted.
+
+The items it finds are recycled first and stay restorable from the site recycle bin. AN ITEM ANOTHER USER ADDS WHILE THIS RUNS MAY NOT BE. The drain and the DELETE cannot be made one operation, so the list is read empty once more immediately before the DELETE and the run refuses to delete when anything arrived. That narrows the window to a single round trip; it does not close it, and nothing SharePoint offers does. The one documented way to stop other people writing to a list is unique permissions (Learn, "Set custom permissions on a list by using the REST interface"), which is several requests of its own, is no more atomic with the drain, does not bind a site collection administrator (Learn, "Choose administrators and owners for the administration hierarchy": Full Control "to all site content in that site collection, even if they do not have explicit permissions on that site"), and would leave a permission set on somebody's production list that this script cannot put back.
+
+THE LIST ITSELF DOES NOT GO TO THE RECYCLE BIN: a REST DELETE on a list is permanent, and this script takes the same posture rollback.js takes rather than a second one, because two maintenance scripts disagreeing about what a delete means is how somebody loses a list at 5pm. `SP.List.Recycle` exists and would make the whole list restorable, but this project has never measured it on a live site, and the most destructive operation the tool has is not where an unmeasured surface goes first.
+
+Rollback deletes the lists a bundle DECLARES. This is for the one it no longer does: a retired sidecar, a list left behind by a rename, a list the family stopped declaring. The marker test is therefore the weaker "provisioned by this tool at all" rather than the deploy's exact-marker comparison, which a retired list can no longer satisfy: its marker names a family and a list the current bundle has no entry for. Weaker in the family it names, not in what it accepts: the whole marker grammar still has to be there, so a description that merely mentions this tool is refused.
+
+Paste the whole file into the browser console on the site above, from a classic page such as .../_layouts/15/settings.aspx.
+
 ### `manifest.md.j2`
 
 The operator-facing deploy manifest: supported mode, step-by-step run instructions, validation findings (must be zero errors), and the full deployment inventory - list creation order, deferred lookups, indexes, views, formatting, permissions - with phase numbers taken from the phases manifest.
@@ -117,7 +133,7 @@ The cross-web form of apiUrl(): same suffix discipline, pointed at ANOTHER site 
 
 ### `_digest_cached.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared cached request digest. Expects apiUrl, fetchWithRetry and spError to be defined. The digest is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use for lifetime safety and the cache refreshes 60s before expiry, the same safety as per-call contextinfo POSTs at ~one POST per run.
 
@@ -141,7 +157,7 @@ A GUID SharePoint returned, checked before it is spliced into a URL. Every id he
 
 ### `_http.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SharePoint HTTP transport + request diagnostics. Expects `log` to be defined. Every script's REST traffic rides fetchWithRetry: SharePoint Online throttles bursts (HTTP 429) and sheds load (503), and a teardown or demo seed deserves the same Retry-After handling as a deployment. READ-SAFE by construction. Write helpers live in _http_write.js.j2 so the read-only assess script never carries them. THROTTLING ANSWERS THESE SCRIPTS THE BROWSER WAY, NOT THE API WAY. Microsoft Learn, "Avoid getting throttled or blocked in SharePoint Online": "For requests that a user performs directly in the browser, SharePoint Online redirects you to the throttling information page, and the requests fail. For requests that an application makes ... SharePoint Online returns HTTP status code 429 ... or 503". These scripts are pasted into a console and carry the operator's own cookies, so they get the redirect, not the status code.
 
@@ -159,15 +175,15 @@ The READ half of the shared OData $batch transport: the boundary and byte helper
 
 ### `_http_write.js.j2`
 
-Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared SP WRITE-request headers. Included only by scripts that make writes (deploy, rollback, demo). The read-only assess script includes the transport partial alone, keeping its no-write property auditable from its text.
 
 ### `_maintain_list.js.j2`
 
-Included by: `columns.js.j2`, `protection.js.j2`
+Included by: `columns.js.j2`, `list.js.j2`, `protection.js.j2`
 
-Shared list resolution for the two maintenance scripts (protection.js, columns.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-URL list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, and the MERGE helpers every write goes through. RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the reason. LIST_TITLE is read back from the list here, so every message below names what the list is called now rather than what its folder is called.
+Shared list resolution for the three maintenance scripts (protection.js, columns.js, list.js). Expects log, LIST_PATH, LIST_SLUG, summary, apiUrl, odataName, fetchWithRetry, spError, spHeaders and getDigest to be defined. Emits the ManageLists preflight, the by-URL list read that names what does exist on a miss, the guid-addressed list and field paths, the custom column filter, the provenance grammar every script tests a Description against, and the MERGE helpers every write goes through. RESOLVED BY URL, NOT BY TITLE; `_get_list_by_path.js.j2` carries the reason. LIST_TITLE is read back from the list here, so every message below names what the list is called now rather than what its folder is called.
 
 ### `_odata_read.js.j2`
 
@@ -183,7 +199,7 @@ Shared provenance header fields, rendered INSIDE each script's leading block com
 
 ### `_site_guard.js.j2`
 
-Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
+Included by: `assess.js.j2`, `columns.js.j2`, `demo.js.j2`, `deploy.js.j2`, `extract.js.j2`, `identify.js.j2`, `list.js.j2`, `protection.js.j2`, `rollback.js.j2`, `verify.js.j2`
 
 Shared web-context resolution for every pasteable script. Expects a `log` function to be defined already, and a SITE_URL const whenever `require_site_match` is on; emits the site-match guard, WEB, apiUrl, odataName, and the operator-identity line. `require_site_match` defaults ON, so a caller that omits it keeps the guard. identify.js.j2 is the one caller that turns it off: the guard is here because a write on the wrong site cannot be taken back, and a read-only inventory has nothing to guard. Pinning it would only stop one file walking a whole fleet.
 

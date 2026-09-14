@@ -43,8 +43,10 @@ from dbml_sharepoint.generators.identifygen import (
 )
 from dbml_sharepoint.generators.maintaingen import (
     COLUMNS_SCRIPT,
+    LIST_SCRIPT,
     PROTECTION_SCRIPT,
     generate_columns_js,
+    generate_list_js,
     generate_protection_js,
 )
 from dbml_sharepoint.model.env_file import (
@@ -552,7 +554,8 @@ def extract_script(
 
 _LIST_URL_HELP = (
     "The list's URL, copied from the browser address bar with the list open, "
-    "e.g. https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx"
+    "e.g. https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx. "
+    "A document library's own URL works too, the one ending /Forms/AllItems.aspx."
 )
 
 
@@ -576,6 +579,10 @@ def _maintenance_script(
     script 404s on its first read. The slug still names the output folder,
     which is where `extract-script` writes too, so one list's scripts stay
     together.
+
+    A `DocumentLibrary` is addressed the same way. Its path is its root
+    folder, which is its browser URL without `/Forms/AllItems.aspx`, and
+    `web/GetList` takes that string exactly as it takes a list's.
     """
     try:
         target = parse_list_url(url)
@@ -642,6 +649,38 @@ def columns_script(
     _maintenance_script(
         url, out, script_name=COLUMNS_SCRIPT, render=generate_columns_js,
         does="asks for a typed confirmation before every delete.",
+    )
+
+
+@app.command("list-script")
+def list_script(
+    url: str = typer.Argument(..., help=_LIST_URL_HELP),
+    out: Path | None = typer.Option(
+        None, help=f"Where to write the script. Default: <list name>/{LIST_SCRIPT}",
+    ),
+) -> None:
+    """Generate the browser-paste script that deletes one whole list, by URL.
+
+    For the list this tool provisioned and no longer declares: a retired
+    sidecar, a list left behind by a rename. `rollback.js.txt` deletes the
+    lists a bundle declares, and is the wrong instrument for one it does
+    not.
+
+    The script refuses a list carrying no well-formed dbml-sharepoint
+    provenance marker, prints the title, item count, deletion lock and
+    custom columns first, then asks for the list's title to be typed back,
+    and for DELETE NON-EMPTY as well, whatever the item count reports. It
+    re-reads the list after the prompts, unlocks it if the deploy locked it,
+    recycles the items, deletes the list and reads back its absence by id.
+
+    The items stay restorable from the site recycle bin. The list itself
+    does not: a REST DELETE on a list is permanent, which is the posture
+    rollback.js.txt already takes.
+    """
+    _maintenance_script(
+        url, out, script_name=LIST_SCRIPT, render=generate_list_js,
+        does="refuses a list this tool did not provision, and asks for its "
+        "title to be typed back.",
     )
 
 

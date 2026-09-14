@@ -183,6 +183,30 @@ table is printed again after each delete; a blank answer finishes.
 Deleting a column removes its values from every item, and nothing goes
 to the recycle bin.
 
+### `list_script`
+
+```python
+def list_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+```
+
+Generate the browser-paste script that deletes one whole list, by URL.
+
+For the list this tool provisioned and no longer declares: a retired
+sidecar, a list left behind by a rename. `rollback.js.txt` deletes the
+lists a bundle declares, and is the wrong instrument for one it does
+not.
+
+The script refuses a list carrying no well-formed dbml-sharepoint
+provenance marker, prints the title, item count, deletion lock and
+custom columns first, then asks for the list's title to be typed back,
+and for DELETE NON-EMPTY as well, whatever the item count reports. It
+re-reads the list after the prompts, unlocks it if the deploy locked it,
+recycles the items, deletes the list and reads back its absence by id.
+
+The items stay restorable from the site recycle bin. The list itself
+does not: a REST DELETE on a list is permanent, which is the posture
+rollback.js.txt already takes.
+
 ### `identify_script`
 
 ```python
