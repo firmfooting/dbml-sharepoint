@@ -103,14 +103,13 @@ keyed by -- while the message beside it is prose that may be reworded in
 any release. So the code is the only part worth looking up, and until
 now the only place to look it up was a website.
 
-Reads `FINDING_HELP`, which ships inside the package. The published
-reference at `reference/findings.md` is generated from the same data, so
-the two cannot disagree.
+The catalogue lookup is `execute_explain`; this is the terminal it
+reaches, and the exit code an unknown token earns.
 
 ### `report`
 
 ```python
-def report(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., time_zone: str = ..., site_role: str = ..., out: pathlib.Path = ..., release: pathlib.Path | None = ...) -> None
+def report(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., release: pathlib.Path | None = ..., env_file: pathlib.Path | None = ...) -> None
 ```
 
 Generate reporting queries (Power Query M + SQL views) from the schema.
@@ -120,12 +119,13 @@ usage instructions and the Power BI relationship table, and a
 data-dictionary.md companion. Assumes a schema that `build` accepts;
 run `build --dry-run` first if unsure.
 
-`--time-zone` is a required option here rather than one the env file
-may supply: this command reads no `dbml-sharepoint.env`, and inventing
-that discovery for one key would give `report` half of `build`'s
-precedence rules. It needs no site URL, because the pack it writes
-reads a `SiteUrl` parameter instead, but the zone shapes the queries
-themselves and has no parameter to fall back on.
+The zone is required, from `--time-zone` or from the env file, and is
+read with the precedence `build` reads it with. It needs no site URL,
+because the pack it writes reads a `SiteUrl` parameter instead, but the
+zone shapes the queries themselves and has no parameter to fall back on.
+
+The other five env keys are `build` inputs and are not read here. The
+file is still parsed whole, so a malformed line is refused either way.
 
 ### `extract_script`
 

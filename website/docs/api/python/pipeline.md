@@ -52,6 +52,65 @@ given", and a build refuses once the env file has also had its say and
 still named none. It defaults to ``None`` rather than being a required
 keyword so the file can supply it, the same shape as `enterprise_reader`.
 
+### `execute_validation`
+
+```python
+def execute_validation(*, schema: pathlib.Path, mapping: pathlib.Path, site_role: str = 'default', extension: str | None = None) -> list[dbml_sharepoint.analysis.findings.Finding]
+```
+
+The `validate` pipeline, callable without going through typer.
+
+Returns the findings rather than printing them. The command computed
+this list and then destroyed it, so the wizard could not offer a check
+and an extension CLI could not compose one (#171).
+
+`site_role` does NOT scope the check. `validate_all` takes no role and
+`execute_build` calls it identically, so this reports exactly what a
+build would; the role is here to refuse one the mapping does not
+declare, which moves a typo's discovery earlier.
+
+### `UnknownFindingCodeError`
+
+`explain` was given a code no catalogue entry answers.
+
+Named rather than a bare `LookupError` so a caller can tell "there is
+no such code" from any other lookup failure, and carries the message
+the command prints, suggestion included, because composing that needs
+the catalogue this side already holds.
+
+### `execute_explain`
+
+```python
+def execute_explain(code: str) -> str
+```
+
+What `explain` prints, for one code or for the whole catalogue.
+
+Returns the text rather than echoing it, so the same answer can reach
+a console, a wizard panel or a test without the catalogue lookup being
+re-implemented beside each one.
+
+Reads `FINDING_HELP`, which ships inside the package. The published
+reference at `reference/findings.md` is generated from the same data,
+so the two cannot disagree.
+
+### `execute_report`
+
+```python
+def execute_report(*, schema: pathlib.Path, mapping: pathlib.Path, site_role: str = 'default', out: pathlib.Path = Path('reports'), release: pathlib.Path | None = None, time_zone: str | None = None, env_file: pathlib.Path | None = None) -> dict[str, str]
+```
+
+The `report` pipeline, callable without going through typer.
+
+Returns the pack it wrote, relpath to content, so a caller can say what
+landed without re-deriving the file names from the schema.
+
+`time_zone` reads the same way `execute_build`'s does: a value given
+here wins, `env_file` supplies one when nothing was, and a run with
+neither refuses. `report` used to take the zone as a hard-required flag
+and read no env file at all, so the two commands disagreed about where
+the same site fact could come from (#171).
+
 ### `execute_extraction`
 
 ```python

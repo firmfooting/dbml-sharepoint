@@ -797,7 +797,18 @@ def test_dictionary_sql_views_from_values() -> None:
     assert "N'APP_Task'" in sql  # rows embedded, no landing table needed
 
 
-def test_cli_report_writes_queries_and_docs(tmp_path: Path) -> None:
+@pytest.fixture
+def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`report` reads a CWD-relative `dbml-sharepoint.env` for its zone, so
+    a contributor's own file at the repository root would otherwise decide
+    what these tests observe. Mirrors `test_cli.py`'s autouse fixture; only
+    the CLI tests below need it, since the rest call the renderers."""
+    monkeypatch.chdir(tmp_path)
+
+
+def test_cli_report_writes_queries_and_docs(
+    tmp_path: Path, _cwd_has_no_env_file: None,
+) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app
@@ -828,7 +839,9 @@ def test_cli_report_writes_queries_and_docs(tmp_path: Path) -> None:
     assert "[vw_APP_UserAddedColumns]" in views
 
 
-def test_cli_report_works_without_release(tmp_path: Path) -> None:
+def test_cli_report_works_without_release(
+    tmp_path: Path, _cwd_has_no_env_file: None,
+) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app
@@ -845,7 +858,9 @@ def test_cli_report_works_without_release(tmp_path: Path) -> None:
     assert (out / "data-dictionary.md").exists()
 
 
-def test_cli_report_rejects_unknown_site_role(tmp_path: Path) -> None:
+def test_cli_report_rejects_unknown_site_role(
+    tmp_path: Path, _cwd_has_no_env_file: None,
+) -> None:
     from typer.testing import CliRunner
 
     from dbml_sharepoint.cli import app

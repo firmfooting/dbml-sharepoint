@@ -11,11 +11,15 @@ import into a function body to break the cycle (#171).
 """
 
 import datetime as dt
+from contextlib import suppress
+from difflib import get_close_matches
 from pathlib import Path
+from textwrap import wrap
 from typing import Any
 
 import typer
 
+from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -28,6 +32,11 @@ from dbml_sharepoint.analysis.sidecars import (
 )
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
+    REPORT_DICTIONARY,
+    REPORT_GUIDE,
+    REPORT_POWERQUERY_DIR,
+    REPORT_SQL_DIR,
+    REPORT_VIEWS_SQL,
     SeedRequiresDemoItemsError,
     clear_generated,
     emit_bundle,
@@ -55,6 +64,7 @@ from dbml_sharepoint.extract.run import write as write_extraction
 from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
+from dbml_sharepoint.generators.reportgen import render_reporting
 from dbml_sharepoint.project import (
     CONFIG_ERRORS,
     EnterpriseReaderDeclined,
@@ -64,6 +74,7 @@ from dbml_sharepoint.project import (
     missing_time_zone,
     require_known_site_role,
     resolve_env_settings,
+    resolve_env_time_zone,
     resolve_extension_or_refuse,
     site_url_notice,
     validate_enterprise_reader,
@@ -449,6 +460,216 @@ def execute_build(
         raise typer.Exit(code=2) from exc
     typer.echo(message)
     _echo_warnings(findings)
+
+
+def execute_validation(
+    *,
+    schema: Path,
+    mapping: Path,
+    site_role: str = "default",
+    extension: str | None = None,
+) -> list[Finding]:
+    """The `validate` pipeline, callable without going through typer.
+
+    Returns the findings rather than printing them. The command computed
+    this list and then destroyed it, so the wizard could not offer a check
+    and an extension CLI could not compose one (#171).
+
+    `site_role` does NOT scope the check. `validate_all` takes no role and
+    `execute_build` calls it identically, so this reports exactly what a
+    build would; the role is here to refuse one the mapping does not
+    declare, which moves a typo's discovery earlier.
+    """
+    parsed_schema, bundle, _ = load_config(schema, mapping, None)
+    ext = resolve_extension_or_refuse(extension, bundle, mapping)
+    require_known_site_role(bundle, site_role)
+    return validate_all(parsed_schema, bundle, ext)
+
+
+class UnknownFindingCodeError(LookupError):
+    """`explain` was given a code no catalogue entry answers.
+
+    Named rather than a bare `LookupError` so a caller can tell "there is
+    no such code" from any other lookup failure, and carries the message
+    the command prints, suggestion included, because composing that needs
+    the catalogue this side already holds.
+    """
+
+
+def execute_explain(code: str) -> str:
+    """What `explain` prints, for one code or for the whole catalogue.
+
+    Returns the text rather than echoing it, so the same answer can reach
+    a console, a wizard panel or a test without the catalogue lookup being
+    re-implemented beside each one.
+
+    Reads `FINDING_HELP`, which ships inside the package. The published
+    reference at `reference/findings.md` is generated from the same data,
+    so the two cannot disagree.
+    """
+    if not code:
+        rows = [f"  {member.severity:<7}  {member}" for member in sorted(FINDING_HELP)]
+        return "\n".join([
+            *rows,
+            "",
+            (
+                f"{len(FINDING_HELP)} codes. "
+                "Run `dbml-sharepoint explain <code>` for any one of them."
+            ),
+        ])
+
+    # Tolerate the token exactly as a build prints it. Findings render as
+    # `[ERROR] unknown_column_type: schema[Project].Sponsor: ...`, and the obvious
+    # thing to do is select the code and paste it -- which brings the colon.
+    wanted = code.strip().rstrip(":").lower()
+    found = next((c for c in FINDING_HELP if str(c) == wanted), None)
+    if found is None and wanted in RETIRED_FINDINGS:
+        # A code an older build printed stays answerable after its rule goes.
+        return f"{wanted}  [retired]\n\n" + "\n".join(
+            wrap(RETIRED_FINDINGS[wanted], width=76),
+        )
+    if found is None:
+        near = get_close_matches(wanted, [str(c) for c in FINDING_HELP], n=3, cutoff=0.6)
+        suggestion = f" Did you mean: {', '.join(near)}?" if near else ""
+        raise UnknownFindingCodeError(
+            f"No finding code {wanted!r}.{suggestion}\n"
+            "Run `dbml-sharepoint explain` with no argument to list them all.",
+        )
+
+    # Severity off the code, meaning off the catalogue: the two facts have
+    # one home each, and this is just the place they are printed together.
+    return f"{found}  [{found.severity}]\n\n" + "\n".join(
+        wrap(FINDING_HELP[found], width=76),
+    )
+
+
+
+# Includes the pre-normalisation names for the same reason `bundle`'s
+# _LEGACY_ARTIFACTS does: `report` clears its previous output so a query
+# for a list that has left the schema cannot outlive it, and a name this
+# command used to write is exactly that kind of survivor. Note the old
+# DATA-DICTIONARY.md spelling was unique to THIS command -- `build` has
+# always written reporting/data-dictionary.md -- which is the
+# inconsistency the rename closed.
+_REPORT_FILES = (
+    REPORT_GUIDE,
+    REPORT_DICTIONARY,
+    # Superseded names, newest first. `reporting.md` existed only briefly
+    # between the case normalisation and this rename, but "briefly" is not
+    # "never" for anyone tracking main.
+    "reporting.md",
+    "REPORTING.md",
+    "DATA-DICTIONARY.md",
+)
+# (subdirectory, glob) pairs naming everything `report` writes below `out`.
+_REPORT_DIRECTORY_CONTENTS = (
+    (REPORT_POWERQUERY_DIR, "*.pq"),
+    (REPORT_SQL_DIR, REPORT_VIEWS_SQL),
+)
+
+
+def _clear_report_output(out: Path) -> None:
+    """Remove the artifacts this command writes, and nothing else.
+
+    Deliberately not `rmtree` on powerquery/ and sql/. Those names are
+    generic, `--out` is routinely aimed at a directory the operator also
+    keeps their own work in, and a hand-written migration sitting beside
+    views.sql is not this command's to delete. Remove by the names `report`
+    generates, then drop each directory only if emptying it left nothing
+    behind.
+
+    `*.pq` is the one broad pattern, and it is deliberate: a stale query
+    from a list that has left the schema is indistinguishable from a
+    hand-written one, and leaving it is the worse failure, because it
+    documents a list that no longer exists. The docs say so; `--out` is not the place
+    to keep your own .pq files.
+    """
+    for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
+        directory = out / dirname
+        for path in sorted(directory.glob(pattern)):
+            if path.is_file():
+                path.unlink()
+        with suppress(OSError):
+            directory.rmdir()  # refuses when the operator left anything here
+    for filename in _REPORT_FILES:
+        (out / filename).unlink(missing_ok=True)
+
+
+def execute_report(
+    *,
+    schema: Path,
+    mapping: Path,
+    site_role: str = "default",
+    out: Path = Path("./reports"),
+    release: Path | None = None,
+    time_zone: str | None = None,
+    env_file: Path | None = None,
+) -> dict[str, str]:
+    """The `report` pipeline, callable without going through typer.
+
+    Returns the pack it wrote, relpath to content, so a caller can say what
+    landed without re-deriving the file names from the schema.
+
+    `time_zone` reads the same way `execute_build`'s does: a value given
+    here wins, `env_file` supplies one when nothing was, and a run with
+    neither refuses. `report` used to take the zone as a hard-required flag
+    and read no env file at all, so the two commands disagreed about where
+    the same site fact could come from (#171).
+    """
+    # Resolved and refused before anything is read or written: a zone the
+    # database does not declare has nothing to derive from, and nothing in
+    # `out` is touched.
+    resolved_zone, env_provenance = resolve_env_time_zone(env_file, time_zone)
+    echo_env_provenance(env_provenance)
+    if resolved_zone is None:
+        raise missing_time_zone()
+    time_zone = validate_time_zone(resolved_zone)
+
+    parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
+    require_known_site_role(bundle, site_role)
+
+    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+
+    # Render everything before writing anything. This command does not
+    # validate, documenting the contract as "assumes a schema that `build`
+    # accepts", so the generators are the first thing to meet a schema
+    # mistake, and they signal one by raising: an unmapped column type, a
+    # composite DBML index. Unhandled, that printed a traceback for a typo
+    # in a file the operator hand-edited, which is exactly what
+    # `config_error` exists to prevent on the loading side. Rendering up
+    # front also keeps a failure from leaving a half-written report set
+    # behind, where the stale files outlive the error on the terminal.
+    # `render_reporting` is the same composition `build` ships, so the two
+    # commands cannot drift in what they write.
+    try:
+        pack = render_reporting(
+            parsed_schema, bundle, site_role,
+            release=release_obj, generated_at=generated_at,
+            source_schema=schema.name, source_mapping=mapping.name,
+            time_zone=time_zone,
+        )
+    except ValueError as exc:
+        # The schema was read and refused, so whatever is in `out` describes
+        # a schema that no longer exists. Clear it rather than leave a stale
+        # set looking current. Only reachable once the config loaded and the
+        # role resolved: a mistyped --schema path or an unknown --site-role
+        # never learns anything about the report, and must not destroy the
+        # last good one on its way out.
+        _clear_report_output(out)
+        typer.echo(
+            f"[ERROR] schema {schema}: {exc}\n"
+            "Run `build --dry-run` for the full validation report.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    # Drop the previous set so a list removed from the schema does not leave
+    # its .pq file behind, outliving the schema that justified it.
+    _clear_report_output(out)
+
+    for relpath, content in pack.items():
+        write_artifact(out / relpath, content)
+    return pack
 
 
 def _refuse_existing_project(out: Path, *, force: bool) -> None:

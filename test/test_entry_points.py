@@ -101,9 +101,10 @@ def test_a_mapping_rule_does_not_appear_in_the_schema_pass(tmp_path: Path) -> No
 def test_validate_all_is_the_union_and_is_what_the_cli_runs(
     broken_schema: tuple[Schema, MappingBundle],
 ) -> None:
-    """`cli.py` calls `validate_all`, which is why a misspelled type reaches
-    the operator as `[ERROR] unknown_column_type: schema[Risk].Owner: unknown
-    type 'peson'.` rather than as a traceback out of the generator.
+    """`execute_build` and `execute_validation` both call `validate_all`,
+    which is why a misspelled type reaches the operator as `[ERROR]
+    unknown_column_type: schema[Risk].Owner: unknown type 'peson'.` rather
+    than as a traceback out of the generator.
 
     A test that wants to claim "this declaration is clean" should use this,
     not one of the halves.

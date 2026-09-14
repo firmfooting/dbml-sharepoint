@@ -26,6 +26,7 @@ from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
+from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
@@ -37,7 +38,14 @@ from dbml_sharepoint.cli import (
 )
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
-from dbml_sharepoint.pipeline import execute_build, execute_extraction
+from dbml_sharepoint.pipeline import (
+    UnknownFindingCodeError,
+    execute_build,
+    execute_explain,
+    execute_extraction,
+    execute_report,
+    execute_validation,
+)
 
 runner = CliRunner()
 
@@ -2956,6 +2964,98 @@ def test_report_succeeds_in_a_project_with_no_release_file(
     assert (Path("reports") / "data-dictionary.md").is_file()
 
 
+def test_report_takes_the_zone_from_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The zone is a fact about the site, and `dbml-sharepoint.env` is where
+    site facts stop being retyped. `build` read `DBMLSP_TIME_ZONE` and
+    `report` did not, so the two commands disagreed about where the same
+    input could come from (#171)."""
+    project = _project(tmp_path)
+    (project / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Australia/Melbourne\n", encoding="utf-8", newline="\n",
+    )
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0, result.output
+    assert "DBMLSP_TIME_ZONE = Australia/Melbourne (from the file)" in result.output
+    assert (Path("reports") / "data-dictionary.md").is_file()
+
+
+def test_report_prefers_the_flag_over_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One precedence rule for every setting and every command: a flag given
+    at all beats the file, and the losing candidate is named rather than
+    silently dropped."""
+    project = _project(tmp_path)
+    (project / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Australia/Melbourne\n", encoding="utf-8", newline="\n",
+    )
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["report", "--time-zone", "Europe/London"])
+
+    assert result.exit_code == 0, result.output
+    assert "overridden, using Europe/London" in result.output
+
+
+def test_report_refuses_when_nothing_names_a_zone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--time-zone` stopped being a typer-level required option so the file
+    could supply it, which means the refusal has to be made here instead.
+    It is the same refusal `build` gives, naming both places to put it."""
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 2, result.output
+    output = _normalise_rendered_output(result.output)
+    assert "--time-zone is required" in output
+    assert "DBMLSP_TIME_ZONE" in output
+    assert not (Path("reports")).exists(), "a refused run wrote a pack"
+
+
+def test_report_reads_the_whole_env_file_and_applies_only_the_zone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other five keys are `build` inputs. The file is still parsed
+    whole, so a malformed line is refused for both commands, but a `report`
+    run must not report an enterprise reader it never looks at: a line
+    saying a key was used is a claim that it was."""
+    project = _project(tmp_path)
+    (project / ENV_FILENAME).write_text(
+        "DBMLSP_TIME_ZONE=Australia/Melbourne\n"
+        "DBMLSP_ENTERPRISE_READER=svc-reporting@example.org\n",
+        encoding="utf-8", newline="\n",
+    )
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0, result.output
+    assert "DBMLSP_TIME_ZONE" in result.output
+    assert "DBMLSP_ENTERPRISE_READER" not in result.output
+
+
+def test_report_refuses_an_env_file_that_is_not_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same rule `build` applies: an explicit `--env-file` names a specific
+    file, so a typo must not fall back to running without it."""
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "report", "--time-zone", "UTC", "--env-file", str(tmp_path / "nope.env"),
+    ])
+
+    assert result.exit_code == 2, result.output
+    assert "does not exist" in _normalise_rendered_output(result.output)
+
+
 def test_validate_accepts_a_valid_schema_without_a_site_url(tmp_path: Path) -> None:
     """The whole point: `validate_all` takes a schema, a mapping bundle and
     an extension. Not a site URL, not a release. Requiring either to answer
@@ -2989,6 +3089,88 @@ def test_validate_refuses_an_invalid_schema(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "unknown_column_type" in result.output
+
+
+def test_execute_validation_hands_back_the_findings_the_command_prints(
+    tmp_path: Path,
+) -> None:
+    """`validate` computed this list and destroyed it at the end of its own
+    body, so nothing else in the program could ask whether a mapping is
+    clean without going through a CliRunner (#171)."""
+    bad = tmp_path / "bad.dbml"
+    bad.write_text(
+        replaced(
+            (FIXTURES / "simple.dbml").read_text(encoding="utf-8"),
+            "Status    status     [not null, default: 'Open']",
+            "Status    persson",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = execute_validation(
+        schema=bad, mapping=FIXTURES / "sharepoint-mapping.yaml",
+    )
+
+    assert [f for f in findings if str(f.code) == "unknown_column_type"]
+    assert all(isinstance(f, Finding) for f in findings)
+
+
+def test_execute_validation_is_clean_on_a_schema_the_command_accepts() -> None:
+    """The other half of the claim: the entry point is not simply a thing
+    that returns findings, it returns the ones `validate` reports, and an
+    accepted schema produces no errors through it either."""
+    findings = execute_validation(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping.yaml",
+    )
+
+    assert [f for f in findings if f.severity == "error"] == []
+
+
+def test_execute_explain_answers_a_code_without_a_terminal() -> None:
+    """The catalogue lookup returns text. `explain` is the terminal it
+    reaches, and a wizard panel or a test is another."""
+    text = execute_explain("display_title_too_long")
+
+    assert text.startswith("display_title_too_long  [error]")
+    assert "255" in text
+
+
+def test_execute_explain_lists_every_code_when_given_none() -> None:
+    text = execute_explain("")
+
+    assert "display_title_too_long" in text
+    assert "codes. Run `dbml-sharepoint explain <code>`" in text
+
+
+def test_execute_explain_names_an_unknown_code_rather_than_exiting() -> None:
+    """A named error, so a caller can tell "no such code" from any other
+    lookup failure. The message is composed here because the suggestion
+    needs the catalogue this side already holds."""
+    with pytest.raises(UnknownFindingCodeError) as caught:
+        execute_explain("display_title_too_lng")
+
+    assert "No finding code 'display_title_too_lng'" in str(caught.value)
+    assert "Did you mean: display_title_too_long" in str(caught.value)
+
+
+def test_execute_report_returns_exactly_what_it_wrote(tmp_path: Path) -> None:
+    """The pack comes back relpath to content, so a caller can say what
+    landed without re-deriving the file names from the schema."""
+    out = tmp_path / "reports"
+
+    pack = execute_report(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping.yaml",
+        out=out,
+        time_zone="UTC",
+    )
+
+    written = sorted(
+        p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()
+    )
+    assert sorted(pack) == written
+    assert "data-dictionary.md" in pack
 
 
 def test_validate_writes_nothing(tmp_path: Path) -> None:
