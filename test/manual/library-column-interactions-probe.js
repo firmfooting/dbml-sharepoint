@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY COLUMN INTERACTIONS
  *
- * REVISION: aae7420d
+ * REVISION: 64927c2f
  *
  * ONE QUESTION:
  *   How do multi-value columns and custom column formatting behave on a document library?
@@ -269,7 +269,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision aae7420d. Quote this when reporting results.');
+  log('INFO', 'probe revision 64927c2f. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibColInteractions';
   const TARGET_LIB = 'dbmlsp Probe LibColTarget';
@@ -495,7 +495,7 @@
       { NoSuchColumnAtAll: 'x' },
       digest,
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
-    );
+    ).catch((error) => ({ ok: false, status: 0, text: String(error) }));
     controlHeld = !junk.ok && isRefusal(junk.status);
     record(
       'library.column.control-missing-column-refused',
@@ -685,6 +685,19 @@
           ? "successfully wrote and read back CustomFormatter on library column 'ColFormat'"
           : `read back ${JSON.stringify(backFmt)}, expected ${JSON.stringify(sampleFormatter)} (read HTTP ${readFmtRes.status})`
       );
+    }
+  }
+
+  // Keep observations, but a failed control cannot license dependent verdicts.
+  if (!controlHeld) {
+    for (const id of [
+      'library.column.multi-choice-column-on-library',
+      'library.column.multi-lookup-column-on-library',
+      'library.column.custom-column-formatting',
+    ]) {
+      const observed = RESULTS.find((result) => result.id === id);
+      record(id, observed.question, 'NOT ESTABLISHED',
+             'negative control did not hold; observed: ' + observed.evidence, 'void');
     }
   }
 

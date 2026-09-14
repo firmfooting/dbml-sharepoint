@@ -3,6 +3,7 @@ import json
 import re
 import textwrap
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -1374,6 +1375,82 @@ def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
         summary["findings"]
     )
     assert summary["verdict"] == "DEGRADED", summary["verdict"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
+                                     {"results": [None]}, {"results": [{}]}])
+def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) -> None:
+    harness = _fields_harness([]).replace(
+        "const answer = { results: projected };",
+        f"const answer = {json.dumps(payload)};",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "NOT-ASSESSABLE"
+    assert "malformed column collection" in _unique_findings(summary)[0]["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
+                                     {"results": [None]}, {"results": [{}]},
+                                     {"results": [], "__next": "next-page"},
+                                     {"results": [{"Title": "Other"}] * 5000}])
+def test_malformed_list_collections_do_not_establish_absence(payload: Any) -> None:
+    harness = _fields_harness([
+        {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
+    ])
+    marker = "  if (path.endsWith('/lists')) {"
+    assert harness.count(marker) == 1
+    harness = harness.replace(
+        marker,
+        f"{marker}\n    return respond(200, {{ d: {json.dumps(payload)} }});\n  }}\n{marker}",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "WARN"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
+                                     {"results": [None]}, {"results": [{}]}])
+def test_malformed_folder_collections_do_not_establish_absence(payload: Any) -> None:
+    harness = _folder_harness(None)
+    marker = "    return { d: { results: [] } };"
+    assert marker in harness
+    harness = harness.replace(marker, f"    return {{ d: {json.dumps(payload)} }};", 1)
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _levels(summary)["folder_shape:APP_Task"] == "NOT-ASSESSABLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_folder_assessment_checks_every_returned_match() -> None:
+    harness = _folder_harness(None).replace(
+        "    return { d: { results: [] } };",
+        "    return { d: { results: [{FileSystemObjectType: 1},"
+        " {FileSystemObjectType: 0}] } };", 1,
+    )
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _levels(summary)["folder_shape:APP_Task"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("enumerated", [True, False])
+@pytest.mark.parametrize("previous_exists", [True, False])
+def test_unique_checks_account_for_previous_list_titles(
+    enumerated: bool, previous_exists: bool,
+) -> None:
+    schema, bundle = _unique_pack()
+    bundle.mapping.entities["Asset"] = replace(
+        bundle.mapping.entities["Asset"], renamed_from=("OldAsset",),
+    )
+    held = {"APP_OldAsset": marker_for(family_for(schema), "OldAsset")} if previous_exists else {}
+    summary = _run_assess(
+        held, js=_unique_assess_js((schema, bundle)),
+        harness=_ASSESS_HARNESS if enumerated else _no_enumeration_harness(),
+    )
+    expected = "NOT-ASSESSABLE" if previous_exists or not enumerated else "PASS"
+    assert _levels(summary)["pending_unique:APP_Asset"] == expected
+    if expected == "NOT-ASSESSABLE":
+        assert "APP_OldAsset" in _unique_findings(summary)[0]["detail"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

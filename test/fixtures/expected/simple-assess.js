@@ -688,9 +688,12 @@
     // declared list absent, and the browser paints each 404 red). Null means
     // "enumeration refused"; callers fall back to per-list probing.
     const assessListTitleSet = async () => {
-      const r = await probeGet('web/lists?$select=Title&$top=5000');
-      if (!r.ok) return null;
-      const results = (r.d && r.d.results) || [];
+      const pageSize = 5000;
+      const r = await probeGet(`web/lists?$select=Title&$top=${pageSize}`);
+      if (!r.ok || !Array.isArray(r.d.results)
+        || r.d.results.some((row) => !row || typeof row.Title !== 'string')) return null;
+      const results = r.d.results;
+      if (results.length >= pageSize || (typeof r.d.__next === 'string' && r.d.__next !== '')) return null;
       return new Set(results.map((l) => String(l.Title == null ? '' : l.Title).toLowerCase()));
     };
 
@@ -1140,8 +1143,11 @@
       for (let at = 0; at < folders.length; at += 1) {
         const rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
         if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
-        const row = ((rows.d && rows.d.results) || [])[0];
-        if (row && Number(row.FileSystemObjectType) !== 1) files.push(folders[at]);
+        if (!Array.isArray(rows.d.results) || rows.d.results.some((row) =>
+          !row || ![0, 1].includes(row.FileSystemObjectType))) {
+          unreadable = 'missing or malformed folder collection'; break;
+        }
+        if (rows.d.results.some((row) => row.FileSystemObjectType === 0)) files.push(folders[at]);
       }
       if (unreadable !== null) {
         // NOT-ASSESSABLE rather than WARN. The question is whether a file
@@ -1177,8 +1183,16 @@
         `web/lists/getbytitle('${odataName(title)}')/fields?$select=InternalName,Title,EnforceUniqueValues&$top=${COLUMN_PAGE_SIZE}`));
       for (let at = 0; at < columnListTitles.length; at += 1) columnShapes.set(columnListTitles[at], rows[at]);
     }
-    const columnShapeOf = (title) => columnShapes.get(title)
-      || { ok: false, error: 'the batched read did not queue this list' };
+    const columnShapeOf = (title) => {
+      const live = columnShapes.get(title)
+        || { ok: false, error: 'the batched read did not queue this list' };
+      // A malformed collection cannot establish that declared columns are absent.
+      if (live.ok && (!Array.isArray(live.d.results)
+        || live.d.results.some((row) => !row || typeof row.InternalName !== 'string'))) {
+        return { ok: false, error: 'missing or malformed column collection' };
+      }
+      return live;
+    };
     // Whether this page may have left columns unread, which is what decides
     // if a column missing from it is a column the list does not hold.
     //
@@ -1194,7 +1208,7 @@
     // an envelope BatchReader refuses whole, which is a first deploy.
     const columnsTruncated = (live) => {
       const next = live.d && live.d.__next;
-      return ((live.d && live.d.results) || []).length >= COLUMN_PAGE_SIZE
+      return live.d.results.length >= COLUMN_PAGE_SIZE
         || (typeof next === 'string' && next !== '');
     };
     for (const [title, columns] of (TARGETS.list_display_titles || [])) {
@@ -1211,7 +1225,7 @@
         continue;
       }
       const byInternal = new Map();
-      for (const f of ((live.d && live.d.results) || [])) {
+      for (const f of live.d.results) {
         byInternal.set(String(f.InternalName), f.Title);
       }
       const drifted = [];
@@ -1256,6 +1270,14 @@
       const absent = (knownTitles && !knownTitles.has(String(title).toLowerCase()))
         || (!live.ok && live.status === 404);
       if (absent) {
+        const rename = (TARGETS.list_renames || []).find(([current]) => current === title);
+        const possiblePrevious = rename ? rename[1].filter(([oldTitle]) =>
+          !knownTitles || knownTitles.has(String(oldTitle).toLowerCase())) : [];
+        // An absent current title can still adopt existing data through a rename.
+        if (possiblePrevious.length) {
+          finding(2, key, 'NOT-ASSESSABLE', `'${title}' is absent under its current title, but may adopt a previous list (${possiblePrevious.map(([oldTitle]) => oldTitle).join(', ')}). Its declared unique columns were not checked on those previous titles; deploy preflight checks the resolved rename target before writing.`);
+          continue;
+        }
         finding(2, key, 'PASS', `'${title}' absent; its ${columns.length} declared unique column(s) are provisioned carrying the constraint, not given one over existing data.`);
         continue;
       }
@@ -1266,7 +1288,7 @@
         continue;
       }
       const byInternal = new Map();
-      for (const f of ((live.d && live.d.results) || [])) {
+      for (const f of live.d.results) {
         byInternal.set(String(f.InternalName), f);
       }
       const pending = [];

@@ -171,39 +171,37 @@
       + `${readFailed(back) ? `the rule did not read back (HTTP ${back.status})` : `stored: ${JSON.stringify(back.body.ValidationFormula)}`}`);
 
     // ---- R1: the default race through REST, five times --------------------
-    // Counted by what each create ANSWERED, not by matching the evidence text:
-    // a create that was throttled or refused for lack of permission is neither
-    // a save nor a refusal, and folding it into either produces ALL REFUSED or
-    // MIXED for a run that did not race anything.
+    // Count saves only after readback; accepted writes can leave their rows unobserved.
     const outcomes = [];
+    let attempted = 0;
     let saved = 0;
     let refused = 0;
     for (let i = 1; i <= 5; i += 1) {
+      attempted += 1;
       const r = await post(items, { __metadata: { type: itemType }, Title: `R1-${i}` });
       if (r.ok) {
-        saved += 1;
-        // The create answering is what SAVED counts, so a readback that never
-        // answered costs this line its values rather than the whole run: the
-        // id and the row were both dereferenced unguarded and threw.
         const id = r.body !== null && r.body.d ? r.body.d.Id : null;
         const row = id === undefined || id === null
           ? null
           : await spGet(`${items}(${id})?$select=Id,TR,WR,Created,Modified`);
-        outcomes.push(row !== null && !readFailed(row)
+        const observed = row !== null && !readFailed(row) && row.body.Id === id;
+        if (observed) saved += 1;
+        outcomes.push(observed
           ? `R1-${i} SAVED id=${row.body.Id} TR=${row.body.TR} WR=${row.body.WR} Modified=${row.body.Modified}`
-          : `R1-${i} SAVED, but the row it created did not read back (${row === null
+          : `R1-${i} NOT ESTABLISHED: the row it created did not read back (${row === null
             ? `the create answered HTTP ${r.status} and served no id`
-            : `HTTP ${row.status}`})`);
+            : `HTTP ${row.status}; expected item id=${id}`})`);
       } else {
         if (isRefusal(r.status)) refused += 1;
         outcomes.push(`R1-${i} ${verdict(r)}`);
       }
     }
-    const answered = saved + refused === 5;
+    const answered = saved + refused === attempted;
     record('formula.validation.today-default-races-modified-rule-rest', 'five bare REST creates: does the [today] default race the rule?',
       !answered ? 'NOT ESTABLISHED' : saved === 5 ? 'ALL SAVED' : refused === 5 ? 'ALL REFUSED' : 'MIXED',
-      answered ? outcomes.join(' | ')
-        : `${5 - saved - refused} of the five creates neither saved nor were refused: ${outcomes.join(' | ')}`);
+      `${attempted} attempted; ${saved} saved by readback; ${refused} refused; `
+      + (answered ? outcomes.join(' | ')
+        : `${attempted - saved - refused} of the five creates neither saved nor were refused: ${outcomes.join(' | ')}`));
 
     // ---- R2: the same through the form's endpoint -----------------------------
     // An $expand can answer 2xx without the expansion, and dereferencing a

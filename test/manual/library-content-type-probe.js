@@ -304,7 +304,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6d8075d1. Quote this when reporting results.');
+  log('INFO', 'probe revision c0ca5077. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe ContentType';
   const FILE = 'dbmlsp-content-type-probe.txt';
@@ -477,7 +477,8 @@
     digest = await getDigest();
     const junk = await spPost(`${listPath}/items(${initialItemId})`,
                               { NoSuchColumnAtAll: 'x' }, digest,
-                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' })
+      .catch((error) => ({ ok: false, status: 0, text: String(error) }));
     controlHeld = !junk.ok && isRefusal(junk.status);
     record('library.content-type.control-missing-column-refused',
            'NEGATIVE CONTROL: a MERGE naming a missing column on a library item is refused',
@@ -719,6 +720,19 @@
            `Column '${COL_NAME}' on Document (${docCtId}): ${inDoc ? 'present' : 'absent'}. `
            + `Column '${COL_NAME}' on Folder (${folderCtId}): ${inFolder ? 'present' : 'absent'}. `
            + `Document has ${docLinks.length} fieldlink(s); Folder has ${folderLinks.length} fieldlink(s).`);
+  }
+
+  // Keep observations, but a failed control cannot license dependent verdicts.
+  if (!controlHeld) {
+    for (const id of [
+      'library.content-type.custom-content-type-on-library',
+      'library.content-type.content-type-at-upload',
+      'library.content-type.column-bound-to-one-content-type',
+    ]) {
+      const observed = RESULTS.find((result) => result.id === id);
+      record(id, observed.question, 'NOT ESTABLISHED',
+             'negative control did not hold; observed: ' + observed.evidence, 'void');
+    }
   }
 
   report();

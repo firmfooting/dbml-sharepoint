@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: IS ENFORCEUNIQUEVALUES REFUSED ON EXISTING DUPLICATES
  *
- * REVISION: 76226145
+ * REVISION: c8102232
  *
  * ONE QUESTION:
  *   A single-line text column already holds items, and two of them carry the
@@ -327,7 +327,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 76226145. Quote this when reporting results.');
+  log('INFO', 'probe revision c8102232. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique Transition';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -424,8 +424,10 @@
   // value, because that is the thing being measured.
   const constraintAfter = (read) => {
     if (readFailed(read)) return { known: false, why: `the column did not read back (HTTP ${read.status})` };
-    if (!('EnforceUniqueValues' in read.body)) {
-      return { known: false, why: 'the readback payload carries no EnforceUniqueValues' };
+    for (const property of ['EnforceUniqueValues', 'Indexed']) {
+      if (typeof read.body[property] !== 'boolean') {
+        return { known: false, why: `the readback payload carries no boolean ${property}` };
+      }
     }
     return {
       known: true,
@@ -484,6 +486,13 @@
     }
   }
 
+  const listFault = propertyFault(await spGet(listPath), 'BaseTemplate', 100);
+  if (listFault) {
+    record('field.unique.fixture-transition-list', Q.fixture, 'FAIL', listFault);
+    voidAll(IDS, 'the generic-list fixture could not be established');
+    return report();
+  }
+
   // ---- The four columns, created the way a pre-#550 deploy created them ---
   const COLUMNS = [
     { name: DUP, kind: 2, type: 'SP.FieldText' },
@@ -507,10 +516,9 @@
   const columnFaults = [];
   for (const column of COLUMNS) {
     const back = await readField(column.name);
-    if (column.name === NOTE) {
-      if (readFailed(back)) columnFaults.push(`'${NOTE}' could not be read (HTTP ${back.status})`);
-      continue;
-    }
+    const typeFault = propertyFault(back, 'TypeAsString', column.name === NOTE ? 'Note' : 'Text');
+    if (typeFault) columnFaults.push(`'${column.name}': ${typeFault}`);
+    if (column.name === NOTE) continue;
     for (const [property, want] of [['EnforceUniqueValues', false], ['Indexed', false]]) {
       const fault = propertyFault(back, property, want);
       if (fault) columnFaults.push(`'${column.name}': ${fault}`);
@@ -520,24 +528,23 @@
          columnFaults.length === 0 ? 'PASS' : 'FAIL',
          `${creates.join('; ')}. `
          + (columnFaults.length === 0
-           ? 'All three Text columns read back EnforceUniqueValues false and Indexed false'
-           : `${columnFaults.join('; ')}. A column that does not start unconstrained cannot `
-             + 'answer what the transition out of that state does: set CLEANUP = true'));
+           ? 'All four column types match; the Text columns read back EnforceUniqueValues false and Indexed false'
+           : `${columnFaults.join('; ')}. The column fixture does not match the experiment: set CLEANUP = true`));
   if (columnFaults.length > 0) {
-    voidAll(IDS.slice(1), 'the columns do not start unconstrained, so nothing below is about the transition');
+    voidAll(IDS.slice(1), 'the column types or starting constraints could not be established');
     return report();
   }
 
   // ---- The two items, and the duplicate that is the independent variable --
   const before = await spGet(`${listPath}/items?$select=Id&$top=5`);
-  if (readFailed(before)) {
+  if (readFailed(before) || !Array.isArray(before.body.value)) {
     record('field.unique.fixture-duplicate-items', Q.items, 'FAIL',
-           `the existing items could not be read (HTTP ${before.status}), so this run cannot `
+           `the existing item collection could not be read (HTTP ${before.status}), so this run cannot `
            + 'tell its own rows from a previous run\'s');
     voidAll(IDS.slice(2), 'the item fixture could not be established');
     return report();
   }
-  const already = (before.body.value || []).length;
+  const already = before.body.value.length;
   if (already > 0) {
     record('field.unique.fixture-duplicate-items', Q.items, 'FAIL',
            `the list already holds ${already} item(s), so the values under test are not the ones `
@@ -553,10 +560,10 @@
   }
   const rows = await spGet(`${listPath}/items?$select=Id,Title,${DUP},${UNIQ},${IDX}&$top=5`);
   const itemFaults = [];
-  if (readFailed(rows)) {
-    itemFaults.push(`the items did not read back (HTTP ${rows.status})`);
+  if (readFailed(rows) || !Array.isArray(rows.body.value)) {
+    itemFaults.push(`the item collection did not read back (HTTP ${rows.status})`);
   } else {
-    const values = (rows.body.value || []);
+    const values = rows.body.value;
     if (values.length !== ITEMS.length) {
       itemFaults.push(`${values.length} item(s) read back, not ${ITEMS.length}`);
     }

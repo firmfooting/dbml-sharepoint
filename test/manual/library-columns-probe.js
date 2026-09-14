@@ -309,7 +309,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 3301ba93. Quote this when reporting results.');
+  log('INFO', 'probe revision 269f2c8e. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibCols';
   const TARGET_LIB = 'dbmlsp Probe LibCols Target';
@@ -517,7 +517,7 @@
     digest = await getDigest();
     const junk = await spPost(`${listPath}/items(${itemId})`,
                               { NoSuchColumnAtAll: 'x' }, digest,
-                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+                              { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }).catch((error) => ({ ok: false, status: 0, text: String(error) }));
     controlHeld = !junk.ok && isRefusal(junk.status);
     record('library.column.control-missing-column-refused', 'NEGATIVE CONTROL: a MERGE naming a missing column on a file item is refused',
            junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
@@ -788,6 +788,21 @@
       record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
              'NOT ESTABLISHED',
              `violating write failed with non-refusal HTTP ${badWrite.status}: ${badWrite.text.slice(0, 200)}`);
+    }
+  }
+
+  // Keep observations, but a failed control cannot license dependent verdicts.
+  if (!controlHeld) {
+    for (const id of [
+      'library.column.choice-column-on-library',
+      'library.column.lookup-column-on-library',
+      'library.column.calculated-column-on-library',
+      'library.column.required-column-enforced-on-upload',
+      'library.validation.validation-formula-on-library',
+    ]) {
+      const observed = RESULTS.find((result) => result.id === id);
+      record(id, observed.question, 'NOT ESTABLISHED',
+             `negative control did not hold; observed ${observed.outcome}: ${observed.evidence}`, 'void');
     }
   }
 

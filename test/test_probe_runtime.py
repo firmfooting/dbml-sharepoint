@@ -6356,7 +6356,8 @@ _TRANSITION_HARNESS = textwrap.dedent(r"""
       }
       if (u.includes("getbytitle('")) {
         return listExists
-          ? respond(200, { Id: 'list-1', Title: 'dbmlsp Probe Unique Transition' })
+          ? respond(200, { Id: 'list-1',
+              Title: 'dbmlsp Probe Unique Transition', BaseTemplate: 100 })
           : respond(404, { error: { message: 'the list does not exist' } });
       }
       return respond(404, { error: 'no such endpoint' });
@@ -6551,7 +6552,7 @@ def test_a_readback_payload_without_the_property_is_not_read_as_unconstrained() 
 
     row = rows["field.unique.transition-on-duplicate-values"]
     assert row["outcome"] == "NOT ESTABLISHED", row
-    assert "carries no EnforceUniqueValues" in row["evidence"], row
+    assert "carries no boolean EnforceUniqueValues" in row["evidence"], row
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -6797,7 +6798,12 @@ _SCRATCH_HARNESS = textwrap.dedent("""
 
       const item = ITEM.exec(path);
       if (item) {
+        if (CONFIG.itemReadStatus && (!CONFIG.itemReadIds
+            || CONFIG.itemReadIds.includes(Number(item[1])))) {
+          return jsonResponse(CONFIG.itemReadStatus, { error: 'the item read failed' });
+        }
         if (CONFIG.emptyItemRead) return emptyResponse(200);
+        if (CONFIG.itemReadWithoutId) return jsonResponse(200, {});
         return jsonResponse(200, {
           Id: Number(item[1]),
           Title: `row ${item[1]}`,
@@ -6811,8 +6817,9 @@ _SCRATCH_HARNESS = textwrap.dedent("""
       }
       if (path.includes('/items')) {
         if (method === 'POST') {
-          if (CONFIG.itemCreateStatus) {
-            return jsonResponse(CONFIG.itemCreateStatus, { error: 'the item create failed' });
+          const createStatus = CONFIG.itemCreateStatuses?.[sent.Title] || CONFIG.itemCreateStatus;
+          if (createStatus) {
+            return jsonResponse(createStatus, { error: 'the item create failed' });
           }
           if (CONFIG.emptyItemCreate) return emptyResponse(201);
           const id = nextItem;
@@ -7084,29 +7091,47 @@ def test_a_bare_item_create_that_served_no_id_leaves_the_row_open() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize(
-    ("why", "changes", "marker"),
+    ("changes", "marker"),
     [
-        ("the create served no id", {"emptyItemCreate": True}, "served no id"),
-        ("the row did not read back", {"emptyItemRead": True}, "did not read back"),
+        ({"emptyItemCreate": True}, "served no id"),
+        ({"emptyItemRead": True}, "did not read back"),
+        ({"itemReadStatus": 429}, "HTTP 429"),
+        ({"itemReadStatus": 404}, "HTTP 404"),
+        ({"itemReadWithoutId": True}, "expected item id="),
     ],
 )
-def test_five_creates_that_answered_still_count_when_the_rows_do_not_read(
-    why: str, changes: dict[str, Any], marker: str,
+def test_five_accepted_creates_without_readback_do_not_establish_saves(
+    changes: dict[str, Any], marker: str,
 ) -> None:
-    """The race row counts what each CREATE answered, so a readback that never
-    answered costs the evidence line its values and nothing else.
-
-    `r.body.d.Id` and `row.body.Id` were both dereferenced unguarded, and
-    either one threw away all fourteen rows, including the six a person is
-    sent to perform.
-    """
+    """A successful create response alone does not establish an observed save."""
     rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
-
     race = rows["formula.validation.today-default-races-modified-rule-rest"]
-    assert race["outcome"] == "ALL SAVED", why
+    assert race["outcome"] == "NOT ESTABLISHED"
+    assert "5 attempted; 0 saved by readback; 0 refused" in race["evidence"]
     assert marker in race["evidence"]
     for row in _SAVE_PATHS_HUMAN_ROWS:
         assert rows[row]["outcome"] == "MANUAL", row
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("changes", "outcome", "counts"),
+    [
+        ({}, "ALL SAVED", "5 saved by readback; 0 refused"),
+        ({"itemCreateStatus": 400}, "ALL REFUSED", "0 saved by readback; 5 refused"),
+        ({"itemCreateStatuses": {"R1-5": 400}}, "MIXED", "4 saved by readback; 1 refused"),
+        ({"itemCreateStatuses": {"R1-5": 400}, "itemReadStatus": 429, "itemReadIds": [1]},
+         "NOT ESTABLISHED", "3 saved by readback; 1 refused"),
+    ],
+)
+def test_save_race_aggregate_counts_only_observed_saves_and_refusals(
+    changes: dict[str, Any], outcome: str, counts: str,
+) -> None:
+    """One unobserved row keeps an otherwise answered run inconclusive."""
+    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+    race = rows["formula.validation.today-default-races-modified-rule-rest"]
+    assert race["outcome"] == outcome
+    assert f"5 attempted; {counts}" in race["evidence"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -8057,7 +8082,9 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
         for (const key of Object.keys(sent)) {
           if (key === '__metadata') continue;
           if (!WRITABLE.includes(key)) {
-            return jsonResponse(500, { error: { message: { value:
+            if (CONFIG.rejectControl) throw new Error('control network failure');
+            if (CONFIG.emptyControl) return emptyResponse(200);
+            return jsonResponse(CONFIG.controlStatus ?? 500, { error: { message: { value:
               `The field or property '${key}' does not exist.` } } });
           }
         }
@@ -8140,6 +8167,47 @@ def test_a_library_columns_run_measures_the_required_column_and_the_rule() -> No
     )
     assert rows["library.validation.validation-formula-on-library"]["outcome"] == "ENFORCED"
     assert not [row for row in rows.values() if row["state"] == "void"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("changes", "control_outcome"),
+    [
+        ({"controlStatus": 204}, "FAIL"),
+        ({"emptyControl": True}, "FAIL"),
+        ({"rejectControl": True}, "NOT ESTABLISHED"),
+        ({"controlStatus": 401}, "NOT ESTABLISHED"),
+        ({"controlStatus": 403}, "NOT ESTABLISHED"),
+        ({"controlStatus": 408}, "NOT ESTABLISHED"),
+        ({"controlStatus": 429}, "NOT ESTABLISHED"),
+    ],
+)
+def test_library_columns_failed_control_voids_catalog_dependents_and_keeps_observations(
+    changes: dict[str, Any], control_outcome: str,
+) -> None:
+    """The catalog's control dependencies must also govern the pasted probe."""
+    baseline = _run_lib_cols_probe()
+    rows = _run_lib_cols_probe(**changes)
+    control = "library.column.control-missing-column-refused"
+    assert rows[control]["outcome"] == control_outcome
+    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    probe = next(p for p in catalog["probes"] if p["file"] == LIB_COLS_PROBE.name)
+    dependent_ids = {
+        finding["id"]
+        for scenario in probe["scenarios"]
+        for finding in scenario["findings"]
+        if control in finding["depends_on"]
+    }
+    assert len(dependent_ids) == 5
+    for finding in dependent_ids:
+        observed = rows[finding]
+        assert observed["outcome"] == "NOT ESTABLISHED", finding
+        assert observed["state"] == "void", finding
+        assert "negative control did not hold" in observed["evidence"], finding
+        assert baseline[finding]["outcome"] in observed["evidence"], finding
+        assert baseline[finding]["evidence"] in observed["evidence"], finding
+    fixture = "library.doc-lib.fixture-library-created"
+    assert rows[fixture] == baseline[fixture]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
