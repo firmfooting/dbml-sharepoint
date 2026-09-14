@@ -50,7 +50,7 @@ hand-off into that same improvement/investment chain.
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
 | [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log -> dated chase trail -> raised theme; how promptly the record was made is itself a column |
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation -> owner -> evidence -> review |
-| [legal-compliance-register](legal-compliance-register/) | Portal-issued legal compliance questionnaires | The first document library in the collection: one SAQ file per topic per quarter with the workflow on the file, two personal worklists, and a loop-closing view that is empty once every confirmed result is recorded back in the portal |
+| [legal-compliance-register](legal-compliance-register/) | Portal-issued legal compliance questionnaires | One library for a new SAQ file per assessment and REG references, tracking assignment, completion, optional executive review and portal recording |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation, the lookup every other register's "per your delegations" points at |
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
@@ -281,8 +281,8 @@ that view exists as soon as the script finishes.
 **No exceptions.** Every entity in every template declares its views, its
 form header and its demo rows, and a test over every template says so.
 
-One family, `legal-compliance-register`, deploys a document library beside
-its list, and the library is held to the same standard as every list:
+One family, `legal-compliance-register`, deploys a single document library,
+and the library is held to the same standard as every list:
 declared views (recursive, so a file is found whichever folder it was filed
 in), a form header that names the file through `FileLeafRef` rather than
 the empty `Title`, demo files uploaded into declared folders under `--seed`,

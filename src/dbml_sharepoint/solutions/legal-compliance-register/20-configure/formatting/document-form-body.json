@@ -1,0 +1,43 @@
+{
+  "sections": [
+    {
+      "displayname": "The document",
+      "fields": [
+        "FileLeafRef",
+        "TopicName",
+        "PortalTopicId",
+        "ItemType",
+        "IssuedYear",
+        "IssuedQuarter",
+        "Division",
+        "Title"
+      ]
+    },
+    {
+      "displayname": "Assign and complete",
+      "fields": [
+        "AssessmentRef",
+        "PlatformOwner",
+        "ExecutiveResponsible",
+        "BusinessOwner",
+        "DueDate",
+        "Status",
+        "CompletedDate",
+        "TrackingNotes"
+      ]
+    },
+    {
+      "displayname": "Optional executive review",
+      "fields": [
+        "ReviewRequirement",
+        "ReviewedDate"
+      ]
+    },
+    {
+      "displayname": "Record in the portal",
+      "fields": [
+        "ExternalRecorded"
+      ]
+    }
+  ]
+}

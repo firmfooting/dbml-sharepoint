@@ -1,7 +1,9 @@
-release: "1.0.0"
-date: "2026-09-13"
+release: "2.0.0"
+date: "2026-09-14"
 deployer_version: "dbml-sharepoint/0.6.0"
-schema_version: "1.0.0"
+schema_version: "2.0.0"
 notes: |
-  Legal compliance register template. Bump schema_version on any DBML/mapping
-  change before redeploying.
+  Breaking redesign: one Document library replaces the Topic list and SAQ library.
+  A new file tracks each assessment; REGs are reference files. Content stays in
+  Excel, issuance is separate from assessment, and executive review is optional.
+  Deploy a new library and migrate deliberately; existing containers are not removed.
