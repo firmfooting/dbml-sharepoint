@@ -198,7 +198,8 @@ column's `DefaultFormula` property, what it fills at item create, and what
 `DefaultValue` reads back beside it), `unique` (a column's
 `EnforceUniqueValues` constraint and which writes it refuses), `sealed` (a
 column's `Sealed` flag, what SharePoint reports about deleting the column in
-each state, and what it does with a write of the read-only `CanBeDeleted`)
+each state, and what it does with a write of the read-only `CanBeDeleted`),
+`cross-web` (a Lookup whose target list is in another web)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
@@ -228,6 +229,23 @@ rest on the second question and nothing had measured it:
 `_maintain_list.js.j2` filters its column menu on
 `(f.CanBeDeleted !== false || f.Sealed === true)` and its delete path unseals,
 reads back and then deletes, both on the strength of one live observation.
+
+`cross-web` is separate from `lookup` because the two ask about different
+objects. `lookup` is about a column and the list it points at, and every
+result recorded under it was measured with both ends inside one web.
+`cross-web` is about the web boundary itself: whether SharePoint accepts a
+create whose target list is in another web, what the created field then
+reads back, and whether it carries a real row from over there. The last of
+those is separate from the second because properties that persisted are the
+weaker claim: a column can save what was asked for, read it back
+byte-identical and resolve nothing. A result about one does not transfer to
+the other, which is what keying checks by scope is for. A result under this
+scope also holds only for the pair of webs the run used, which each row
+names: the arm points at a child subweb of the pasted site unless an
+operator supplies a web in another site collection, and those two topologies
+are not the same measurement. `projected-lookup-probe.js` carries the arm
+because it already builds a two-list lookup fixture, and issue #184 is the
+evidence question it answers.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 

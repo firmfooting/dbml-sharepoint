@@ -447,3 +447,26 @@ LIST_VIEW_THRESHOLD_FALLBACK_ROWS = 1_250
 #: a probe that creates an index on a list over this ceiling and reads the
 #: refusal.
 INDEX_CHANGE_CEILING = 20_000
+
+# ------------------------------------------------- lookup target scope
+
+# No constant: `analysis/checks/_naming.py` enforces a Lookup's target list being in
+# the column's own web by comparing two `site_role` values, so only the sourcing
+# state lives here. Searched Learn and Support 2026-09-14 (#184), and the sources
+# describe different surfaces. FOR, on the Lists column pane rather than the
+# `_api/web/lists/.../fields` this project writes: "Lookup columns should be created
+# and used within the same site".
+# https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
+# AGAINST, on a surface this project does not use: `SPFieldCollection.AddLookup` takes
+# the target web's id, for "another list in a different website". NOT DOCUMENTED for
+# what this project writes: `FieldLookup.LookupList` and `LookupWebId` are bare
+# definitions with no constraint, so the refusing side the rule rests on is unmeasured.
+# PARKED until six rows of `test/manual/projected-lookup-probe.js` run, all
+# `field.cross-web.`: `createfieldasxml-other-web-refused`, `webid-attribute-refused`,
+# `list-spelling-targets-other-web`, `webid-spelling-targets-other-web`,
+# `list-spelling-resolves-remote-item`, `webid-spelling-resolves-remote-item`. The
+# resolution pair is what would move the rule, and would move it only for the pair of
+# webs a run used: two `site_role` labels can name any two sites in a tenant, while a
+# run measures one pair (a child subweb, or the web `OTHER_WEB_URL` names). So a
+# refusal bounds the rule at the closest two webs can be, and an acceptance relaxes it
+# no further than the topology that was measured.
