@@ -518,24 +518,21 @@
     // INFO rather than WARN, deliberately. The deploy repairs this, so it is
     // a report and not a gate, and a warning that always resolves itself is
     // how a warning stops meaning anything. Silent when everything matches.
-    // Declared library folders. A file standing where a folder is declared
-    // would stop the folder phase part-way through a paste, so it is a
-    // BLOCKED finding here. MEASURED 2026-09-03,
-    // `library.folder.filesystem-object-type` in folder-probe.js: a folder's
-    // list item reads FileSystemObjectType 1. This exact read, the items
-    // filter on FileLeafRef, served one row reading 0 for a file
-    // (`library.folder.item-shape-of-file-by-name`, 2026-09-13,
-    // folder-shape-probe.js), which is why the check asks the item shape
-    // rather than the folder endpoint: that one answers Exists false for a
-    // file and for nothing alike. Absence is read from the enumeration
-    // above, so a first deploy paints nothing red.
-    const folderShapePath = (title, name) => {
-      const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef,FileRef&$filter=${filter}`;
-    };
-    // Every declared folder of every declared library in one request, where
-    // this was one request per folder. Handed back per library in declaration
-    // order, so the loop below reads each library's own answers.
+    // MEASURED 2026-09-08, library-index-threshold-probe.js: FileLeafRef filters fail past 5,000 items.
+    // https://learn.microsoft.com/en-us/sharepoint/dev/sp-add-ins/working-with-folders-and-files-with-rest
+    const libraryPathLiteral = (path) => String(path).replace(/'/g, "''");
+    async function pathExists(kind, path) {
+      const read = kind === 'Folder'
+        ? await probeGet(`web/GetFolderByServerRelativeUrl('${libraryPathLiteral(path)}')?$select=Exists,ServerRelativeUrl`)
+        : await probeGet(`web/GetFileByServerRelativeUrl('${libraryPathLiteral(path)}')?$select=Exists,ServerRelativeUrl`);
+      if (!read.ok && read.status === 404) return { ok: true, exists: false };
+      if (!read.ok) return read;
+      if (Array.isArray(read.d) || typeof read.d.Exists !== 'boolean'
+        || (read.d.Exists && read.d.ServerRelativeUrl !== path)) {
+        return { ok: false, error: `malformed ${kind} path response` };
+      }
+      return { ok: true, exists: read.d.Exists };
+    }
     const folderLibraries = (TARGETS.library_folders || []).filter(
       ([title]) => !knownTitles || knownTitles.has(String(title).toLowerCase()));
     const folderRoots = new Map();
@@ -544,26 +541,12 @@
         `web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`));
       for (let at = 0; at < folderLibraries.length; at += 1) folderRoots.set(folderLibraries[at][0], roots[at]);
     }
-    const folderShapes = new Map();
-    {
-      const queue = [];
-      for (const [title, folders] of folderLibraries) {
-        for (const name of folders) queue.push(folderShapePath(title, name));
-      }
-      const rows = await readMany(queue);
-      let at = 0;
-      for (const [title, folders] of folderLibraries) {
-        folderShapes.set(title, rows.slice(at, at + folders.length));
-        at += folders.length;
-      }
-    }
     for (const [title, folders] of (TARGETS.library_folders || [])) {
       const key = `folder_shape:${title}`;
       if (knownTitles && !knownTitles.has(String(title).toLowerCase())) {
         finding(2, key, 'PASS', `'${title}' absent; its ${folders.length} declared folder(s) will be created.`);
         continue;
       }
-      const shapes = folderShapes.get(title) || [];
       const files = [];
       let unreadable = null;
       const root = folderRoots.get(title);
@@ -571,35 +554,21 @@
       if (typeof rootUrl !== 'string' || !rootUrl.startsWith('/') || rootUrl.endsWith('/')) {
         unreadable = 'missing or malformed library root URL';
       }
-      for (let at = 0; at < folders.length; at += 1) {
+      for (const name of folders) {
         if (unreadable !== null) break;
-        let rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
-        const seen = new Set([apiUrl(folderShapePath(title, folders[at]))]);
-        let pages = 0;
-        let matched = null;
-        while (true) {
-          if (++pages > 100) { unreadable = 'folder collection exceeded the 100-page safety limit'; break; }
-          if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
-          if (malformedNextPage(rows.d) || !Array.isArray(rows.d.results) || rows.d.results.some((row) =>
-            !row || typeof row !== 'object' || Array.isArray(row)
-            || ![0, 1].includes(row.FileSystemObjectType) || typeof row.FileRef !== 'string'
-            || !row.FileRef.startsWith('/') || row.FileRef.endsWith('/'))) {
-            unreadable = 'missing or malformed folder collection'; break;
+        const path = `${rootUrl}/${name}`;
+        const folder = await pathExists('Folder', path);
+        if (!folder.ok) { unreadable = folder.status ? `HTTP ${folder.status}` : folder.error; break; }
+        if (folder.exists) {
+          const item = await probeGet(`web/GetFolderByServerRelativeUrl('${libraryPathLiteral(path)}')/ListItemAllFields?$select=FileSystemObjectType,FileRef`);
+          if (!item.ok || Array.isArray(item.d) || item.d.FileSystemObjectType !== 1 || item.d.FileRef !== path) {
+            unreadable = 'folder item did not read back as a folder at the declared path'; break;
           }
-          // FileRef: https://learn.microsoft.com/en-us/openspecs/sharepoint_protocols/ms-wssts/bac496c6-c19e-4243-94e0-4f92477b6e82
-          for (const row of rows.d.results) {
-            if (row.FileRef.slice(0, row.FileRef.lastIndexOf('/')) !== rootUrl) continue;
-            if (matched !== null) { unreadable = 'ambiguous matches at the declared root path'; break; }
-            matched = row;
-          }
-          if (unreadable !== null || !rows.d.__next) break;
-          const next = rows.d.__next;
-          if (seen.has(next)) { unreadable = 'folder collection repeated a continuation URL'; break; }
-          if (pages >= 100) { unreadable = 'folder collection exceeded the 100-page safety limit'; break; }
-          seen.add(next);
-          rows = await probeGet(next, true);
+        } else {
+          const file = await pathExists('File', path);
+          if (!file.ok) { unreadable = file.status ? `HTTP ${file.status}` : file.error; break; }
+          if (file.exists) files.push(name);
         }
-        if (unreadable === null && matched && matched.FileSystemObjectType === 0) files.push(folders[at]);
       }
       if (unreadable !== null) {
         // NOT-ASSESSABLE rather than WARN. The question is whether a file

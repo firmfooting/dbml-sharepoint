@@ -61,6 +61,13 @@ _HARNESS = textwrap.dedent(r"""
         const quoted = url.split("GetFolderByServerRelativeUrl('")[1];
         const path = decodeURIComponent(quoted.split("')")[0]);
         const name = path.slice(STATE.root.length + 1);
+        if (url.includes('/ListItemAllFields')) {
+          if (STATE.refuseShapeRead) return [500, {}];
+          if (Object.hasOwn(STATE, 'itemPayload')) return [200, { d: STATE.itemPayload }];
+          return [200, { d: { FileRef: path,
+            FileSystemObjectType: STATE.createdAsFile && createdByRun.has(name) ? 0 : 1 } }];
+        }
+        if (Object.hasOwn(STATE, 'folderPayload')) return [200, { d: STATE.folderPayload }];
         // `library.folder.folder-read-on-file-path`, same run: a file's own
         // path reads Exists false, exactly as an empty path does. So a file
         // never reaches the "present already" branch.
@@ -68,6 +75,7 @@ _HARNESS = textwrap.dedent(r"""
         return [200, { d: { Exists: exists, Name: name, ServerRelativeUrl: path } }];
       }
       if (url.includes('FileSystemObjectType')) {
+        if (STATE.threshold) return [500, { error: 'SPQueryThrottledException' }];
         if (STATE.refuseShapeRead) return [500, { error: 'refused' }];
         if (STATE.firstShapePage && !createdByRun.size) return STATE.firstShapePage;
         // encodeURIComponent leaves the apostrophes bare, so the name sits
@@ -409,7 +417,7 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
         {"FileSystemObjectType": root_type, "FileRef": f"{root}/{name}"},
     ]
     result = _run_phase(_state(
-        root=root, existing=[name] if root_type == 1 else [],
+        root=root, refuseCreate=True,
         firstShapePage=[200, {"d": {"results": nested, "__next": next_url}}],
         shapePages={next_url: [200, {"d": {"results": matches}}]},
     ), [_library(name)])
@@ -417,14 +425,14 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
     assert queries
     assert all("$top=" not in url for url in queries)
     assert all("FileRef" in url.split("$select=")[1].split("&")[0].split(",") for url in queries)
+    assert len(result["posts"]) == 1
+    assert result["summary"]["foldersCreated"] == []
+    error = result["summary"]["errors"][0]["error"]
     if root_type == 0:
-        assert "a file where a folder was declared" in result["summary"]["errors"][0]["error"]
-        assert result["posts"] == []
+        assert "a file where a folder was declared" in error
     else:
-        assert result["summary"]["errors"] == []
-        key = "foldersCreated" if root_type is None else "foldersVerified"
-        assert result["summary"][key] == [f"APP_Doc/{name}"]
-        assert len(result["posts"]) == int(root_type is None)
+        assert "refused" in error
+        assert "a file where a folder was declared" not in error
 
 
 @pytest.mark.parametrize("later_page", [
@@ -437,10 +445,10 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
         {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Clinical services"},
     ]}}],
 ])
-def test_folder_shape_later_page_refusals_precede_writes(later_page: Any) -> None:
+def test_folder_collision_diagnosis_rejects_unreadable_later_pages(later_page: Any) -> None:
     next_url = "https://example.sharepoint.com/sites/test/_api/page2"
     result = _run_phase(_guarded(
-        firstShapePage=[200, {"d": {"results": [
+        refuseCreate=True, firstShapePage=[200, {"d": {"results": [
             {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Clinical services"},
         ], "__next": next_url}}],
         shapePages={next_url: later_page},
@@ -448,8 +456,9 @@ def test_folder_shape_later_page_refusals_precede_writes(later_page: Any) -> Non
     assert "folder item probe" in result["summary"]["errors"][0]["error"]
     assert result["summary"]["foldersCreated"] == []
     assert result["summary"]["foldersVerified"] == []
-    assert result["posts"] == []
-    assert result["listWrites"] == []
+    assert len(result["posts"]) == 1
+    assert result["listWrites"][-1]["ValidationFormula"] == _RULE
+    assert result["stillLifted"] == []
 
 
 def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
@@ -461,10 +470,51 @@ def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
         for index in range(1, 101)
     }
     result = _run_phase(_guarded(
-        firstShapePage=[200, {"d": {
+        refuseCreate=True, firstShapePage=[200, {"d": {
             "results": [], "__next": "https://example.sharepoint.com/sites/test/_api/page1",
         }}], shapePages=pages,
     ), [_library("Clinical services")])
     assert "incomplete folder collection" in result["summary"]["errors"][0]["error"]
-    assert result["posts"] == []
-    assert result["listWrites"] == []
+    assert len(result["posts"]) == 1
+    assert result["listWrites"][-1]["ValidationFormula"] == _RULE
+    assert result["stillLifted"] == []
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_folder_paths_work_when_unindexed_queries_are_throttled(existing: bool) -> None:
+    name = "Clinical services"
+    result = _run_phase(_guarded(
+        root="/sites/test/Original Library Slug", threshold=True,
+        existing=[name] if existing else [],
+    ), [_library(name)])
+    assert result["summary"]["errors"] == []
+    key = "foldersVerified" if existing else "foldersCreated"
+    assert result["summary"][key] == [f"APP_Doc/{name}"]
+    assert not any("$filter=" in url for url in result["gets"])
+    assert any("/ListItemAllFields?" in url for url in result["gets"])
+    assert result["stillLifted"] == []
+
+
+@pytest.mark.parametrize("property_name", ["folderPayload", "itemPayload"])
+@pytest.mark.parametrize("payload", [None, [], 7, "bad", {}, {"Exists": "true"},
+                                     {"Exists": True, "ServerRelativeUrl": "/wrong"},
+                                     {"FileSystemObjectType": 1, "FileRef": "/wrong"}])
+def test_malformed_folder_path_reads_do_not_allow_writes(property_name: str, payload: Any) -> None:
+    result = _run_phase(_guarded(
+        existing=["Clinical services"], **{property_name: payload},
+    ), [_library("Clinical services")])
+    assert result["summary"]["errors"]
+    assert result["summary"]["foldersVerified"] == []
+    assert result["posts"] == [] and result["listWrites"] == []
+
+
+def test_throttled_collision_diagnosis_keeps_the_create_error_and_restores_the_rule() -> None:
+    result = _run_phase(
+        _guarded(refuseCreate=True, threshold=True), [_library("Clinical services")],
+    )
+    error = result["summary"]["errors"][0]["error"]
+    assert "refused" in error and "collision diagnosis unavailable" in error
+    assert "SPQueryThrottledException" in error
+    assert result["summary"]["foldersCreated"] == []
+    assert result["listWrites"][-1]["ValidationFormula"] == _RULE
+    assert result["stillLifted"] == []

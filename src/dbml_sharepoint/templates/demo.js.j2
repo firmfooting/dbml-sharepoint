@@ -170,10 +170,8 @@
   // document-library-probe.js: a POST to a library's /items answers HTTP
   // 500, "To add an item to a document library, use SPFileCollection.Add()".
   // So a library row is uploaded through Files/add into its folder
-  // (`library.file.upload-path-files-add`, 2026-09-03), found again by its
-  // name (`library.file.name-field-is-leafref`, and FileDirRef carries the
-  // folder path: `library.folder.file-in-nested-folder`, 2026-09-08), and
-  // its declared values are MERGEd onto the file's item and read back.
+  // (`library.file.upload-path-files-add`, 2026-09-03).
+  // The path read identifies the item whose metadata will be set and verified.
   // Server-relative paths are spelled as the probes sent them, quotes doubled
   // and slashes left for fetch; names needing more are refused at build.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
@@ -191,36 +189,29 @@
     return rootFolders.get(listTitle);
   }
   async function findFile(listTitle, folderUrl, name) {
-    const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-    let url = apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileLeafRef,FileDirRef&$filter=${filter}`);
-    const seen = new Set();
-    let match = null;
-    while (url) {
-      if (seen.has(url) || seen.size >= 100) {
-        throw new Error(`file existence probe on '${listTitle}' returned an incomplete collection (pagination cycle or page limit)`);
-      }
-      seen.add(url);
-      const r = await fetchWithRetry(url, {
-        headers: { 'Accept': 'application/json;odata=verbose' },
-      });
-      if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
-      const j = await r.json();
-      const d = j && j.d;
-      const rows = d && d.results;
-      const invalid = `file existence probe on '${listTitle}' returned an invalid response`;
-      if (!Array.isArray(rows) || (d.__next != null && typeof d.__next !== 'string')
-        || rows.some((row) => !row || !Number.isInteger(row.Id) || row.Id <= 0
-          || typeof row.FileDirRef !== 'string'
-          || !row.FileDirRef.startsWith('/'))) throw new Error(invalid);
-      // The name filter alone would match the same name in another folder.
-      for (const row of rows) {
-        if (row.FileDirRef !== folderUrl) continue;
-        if (match) throw new Error(`file existence probe on '${listTitle}' returned ambiguous matches`);
-        match = row;
-      }
-      url = d.__next || null;
-    }
-    return match;
+    // MEASURED 2026-09-08, library-index-threshold-probe.js: FileLeafRef filters fail past 5,000 items.
+    const path = `${folderUrl}/${name}`;
+    const filePath = `web/GetFileByServerRelativeUrl('${pathLiteral(path)}')`;
+    const headers = { 'Accept': 'application/json;odata=verbose' };
+    const r = await fetchWithRetry(apiUrl(`${filePath}?$select=Exists,ServerRelativeUrl`), { headers });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
+    const j = await r.json();
+    const file = j && j.d;
+    const invalid = `file existence probe on '${listTitle}' returned an invalid response`;
+    if (!file || typeof file !== 'object' || Array.isArray(file)
+      || typeof file.Exists !== 'boolean') throw new Error(invalid);
+    if (!file.Exists) return null;
+    if (file.ServerRelativeUrl !== path) throw new Error(invalid);
+    // https://learn.microsoft.com/en-us/previous-versions/office/sharepoint-visio/jj246089(v=office.15)
+    const itemRead = await fetchWithRetry(apiUrl(`${filePath}/ListItemAllFields?$select=Id,FileRef,FileSystemObjectType`), { headers });
+    if (!itemRead.ok) throw new Error(`file item probe on '${listTitle}' failed (HTTP ${itemRead.status})`);
+    const itemJson = await itemRead.json();
+    const item = itemJson && itemJson.d;
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || !Number.isInteger(item.Id) || item.Id <= 0
+      || item.FileRef !== path || item.FileSystemObjectType !== 0) throw new Error(invalid);
+    return item;
   }
   // A rich Note does not return the bytes it was given. MEASURED 2026-09-13,
   // `text.item-value.rich-note-roundtrip` and `text.item-value.rich-note-colon`
